@@ -10,6 +10,9 @@ using zx;
 
 const MAX_RAIL_NAME_SIZE uint32 = 256;
 
+/// Maximum number of actively-monitored power rails.
+const MAX_RAILS uint32 = 32;
+
 /// An arbitrary, human-readable string that uniquely identifies a power rail.
 alias RailName = string:MAX_RAIL_NAME_SIZE;
 
@@ -38,49 +41,36 @@ type Options = table {
 };
 
 type PowerReading = table {
+    /// Hardware channel index.
+    1: channel_id uint32;
     /// Measured power in microwatts.
-    1: power_uw int32;
+    2: power_uw int32;
     /// Measurement time interval (omitted if unknown).
-    2: interval zx.Duration;
+    3: interval zx.Duration;
     /// Time when the reading was taken.
-    3: timestamp zx.Time;
+    4: timestamp zx.Time;
 };
 
 type CurrentReading = table {
+    /// Hardware channel index.
+    1: channel_id uint32;
     /// Measured current in microamperes.
-    1: current_ua int32;
+    2: current_ua int32;
     /// Measurement time interval (omitted if unknown).
-    2: interval zx.Duration;
+    3: interval zx.Duration;
     /// Time when the reading was taken.
-    3: timestamp zx.Time;
+    4: timestamp zx.Time;
 };
 
 type EnergyReading = table {
+    /// Hardware channel index.
+    1: channel_id uint32;
     /// Measured energy in microjoules.
-    1: energy_uj int64;
+    2: energy_uj int64;
     /// Measurement time interval (omitted if unknown).
-    2: interval zx.Duration;
+    3: interval zx.Duration;
     /// Time when the reading was taken.
-    3: timestamp zx.Time;
-};
-
-/// Provides power and power-related measurements for a single rail.
-@discoverable
-open protocol Device {
-    /// Returns metadata for the rail.
-    flexible GetRailMetadata() -> (RailMetadata) error zx.Status;
-
-    /// Returns the power consumption.
-    /// Returns ZX_ERR_NOT_SUPPORTED if the requested measurement type is not supported.
-    flexible GetPowerWatts(Options) -> (PowerReading) error zx.Status;
-
-    /// Returns the current.
-    /// Returns ZX_ERR_NOT_SUPPORTED if the requested measurement type is not supported.
-    flexible GetCurrentAmperes(Options) -> (CurrentReading) error zx.Status;
-
-    /// Returns the energy consumption.
-    /// Returns ZX_ERR_NOT_SUPPORTED if the requested measurement type is not supported.
-    flexible GetEnergyJoules(Options) -> (EnergyReading) error zx.Status;
+    4: timestamp zx.Time;
 };
 
 /// Minimum allowed hardware polling interval (10 ms).
@@ -94,10 +84,38 @@ type PollingConfig = table {
     2: polls_per_series_entry uint32;
 };
 
-/// Interface implemented by the ODPM driver to configure polling parameters. Settings apply to
-/// all devices exposed by fuchsia.hardware.google.odpm/Service
-@discoverable
-open protocol DriverConfig {
+/// Provides power and power-related measurements for all actively-monitored rails,
+/// as well as configuration for the ODPM driver's hardware polling loop.
+open protocol OdpmDevice {
+    /// Returns metadata for all actively-monitored rails.
+    flexible GetRailMetadata() -> (struct {
+        rails vector<RailMetadata>:MAX_RAILS;
+    }) error zx.Status;
+
+    /// Returns the power consumption for all actively-monitored rails.
+    /// Returns `ZX_ERR_NOT_SUPPORTED` if the requested measurement type is not supported.
+    /// Returns `ZX_ERR_UNAVAILABLE` if the hardware read fails.
+    /// Returns `ZX_ERR_INTERNAL` if internal rail state is inconsistent.
+    flexible GetPowerWatts(Options) -> (struct {
+        readings vector<PowerReading>:MAX_RAILS;
+    }) error zx.Status;
+
+    /// Returns the current for all actively-monitored rails.
+    /// Returns `ZX_ERR_NOT_SUPPORTED` if the requested measurement type is not supported.
+    /// Returns `ZX_ERR_UNAVAILABLE` if the hardware read fails.
+    /// Returns `ZX_ERR_INTERNAL` if internal rail state is inconsistent.
+    flexible GetCurrentAmperes(Options) -> (struct {
+        readings vector<CurrentReading>:MAX_RAILS;
+    }) error zx.Status;
+
+    /// Returns the energy consumption for all actively-monitored rails.
+    /// Returns `ZX_ERR_NOT_SUPPORTED` if the requested measurement type is not supported.
+    /// Returns `ZX_ERR_UNAVAILABLE` if the hardware read fails.
+    /// Returns `ZX_ERR_INTERNAL` if internal rail state is inconsistent.
+    flexible GetEnergyJoules(Options) -> (struct {
+        readings vector<EnergyReading>:MAX_RAILS;
+    }) error zx.Status;
+
     /// Overrides polling configuration parameters. Any omitted fields in `PollingConfig`
     /// remain unchanged.
     /// Returns `ZX_ERR_INVALID_ARGS` if `poll_interval` is less than `MIN_POLL_INTERVAL` or
@@ -111,10 +129,6 @@ open protocol DriverConfig {
     flexible ResetPollingConfig() -> () error zx.Status;
 };
 
-/// One instance of this service is implemented for each power rail.
-// TODO(https://fxbug.dev/558833146): Consider restructuring protocols so the driver can implement
-// a single service that provides access to all rails while also supporting reconfiguration that
-// affects all rails.
 service Service {
-    device client_end:Device;
+    device client_end:OdpmDevice;
 };

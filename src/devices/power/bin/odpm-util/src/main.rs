@@ -6,7 +6,6 @@ use std::io::Write;
 
 use anyhow::{Result, anyhow};
 use argh::FromArgs;
-use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_hardware_google_odpm as fgoogle_odpm;
 use fidl_fuchsia_io as fio;
 use fuchsia_component::client as fclient;
@@ -106,164 +105,136 @@ struct ConfigGetArgs {}
 /// Reset ODPM driver polling configuration to driver defaults.
 struct ConfigResetArgs {}
 
-struct PowerRails {
-    base_path: String,
-    entries: Vec<fuchsia_fs::directory::DirEntry>,
-}
+/// Directories to look for the service in: the provider's outgoing directory when run from within
+/// its namespace, then the incoming one.
+const SVC_DIRS: &[&str] = &["/out/svc", "/svc"];
 
-async fn find_power_rails() -> Result<PowerRails> {
-    const CANDIDATES: &[&str] = &[
-        "/out/svc/fuchsia.hardware.google.odpm.Service",
-        "/svc/fuchsia.hardware.google.odpm.Service",
-    ];
-
-    for &path in CANDIDATES {
-        if let Ok(dir) = fuchsia_fs::directory::open_in_namespace(path, fio::PERM_READABLE) {
-            if let Ok(mut entries) = fuchsia_fs::directory::readdir(&dir).await {
-                if !entries.is_empty() {
-                    entries.sort_by(|a, b| a.name.cmp(&b.name));
-                    return Ok(PowerRails { base_path: path.to_string(), entries });
-                }
-            }
+async fn connect_to_odpm_device() -> Result<fgoogle_odpm::OdpmDeviceProxy> {
+    for &path in SVC_DIRS {
+        let Ok(dir) = fuchsia_fs::directory::open_in_namespace(path, fio::PERM_READABLE) else {
+            continue;
+        };
+        let Ok(service) = fclient::Service::open_from_dir(dir, fgoogle_odpm::ServiceMarker) else {
+            continue;
+        };
+        if let Some(instance) = service.enumerate().await?.into_iter().next() {
+            return Ok(instance.connect_to_device()?);
         }
     }
 
-    Err(anyhow!(
-        "Failed to find power rails in /out/svc/fuchsia.hardware.google.odpm.Service or /svc/fuchsia.hardware.google.odpm.Service"
-    ))
+    Err(anyhow!("Failed to find an ODPM service provider in {}", SVC_DIRS.join(" or ")))
 }
 
 async fn run_read<W: Write>(args: ReadArgs, writer: &mut W) -> Result<()> {
-    let rails = find_power_rails().await?;
-    let mut matched = false;
+    let proxy = connect_to_odpm_device().await?;
+    run_read_with_proxy(args, &proxy, writer).await
+}
 
-    for entry in rails.entries {
-        let node_path = format!("{}/{}/device", rails.base_path, entry.name);
-
-        let proxy =
-            match fclient::connect_to_protocol_at_path::<fgoogle_odpm::DeviceMarker>(&node_path) {
-                Ok(proxy) => proxy,
-                Err(e) => {
-                    eprintln!("Failed to connect to {}: {:?}", node_path, e);
-                    continue;
+fn write_readings<W: Write, R>(
+    writer: &mut W,
+    matched_rails: &[(Option<u32>, String)],
+    readings: &[R],
+    metric_name: &str,
+    unit_suffix: &str,
+    extract: impl Fn(&R) -> (Option<u32>, Option<i64>, Option<i64>),
+) -> Result<()> {
+    for (channel_id, rail_label) in matched_rails {
+        let reading = channel_id.and_then(|id| readings.iter().find(|r| extract(r).0 == Some(id)));
+        if let Some(reading) = reading {
+            let (_, micro_value, timestamp) = extract(reading);
+            if let Some(micro_value) = micro_value {
+                let value = micro_value as f64 / 1e6;
+                if let Some(timestamp) = timestamp {
+                    writeln!(
+                        writer,
+                        "Rail {}: {:>8.6} {} (timestamp: {} nanos)",
+                        rail_label, value, unit_suffix, timestamp
+                    )?;
+                } else {
+                    writeln!(writer, "Rail {}: {:>8.6} {}", rail_label, value, unit_suffix)?;
                 }
-            };
-
-        let metadata = match proxy.get_rail_metadata().await {
-            Ok(Ok(meta)) => meta,
-            Ok(Err(status)) => {
-                eprintln!(
-                    "Failed to get rail metadata for {}: {:?}",
-                    entry.name,
-                    zx::Status::err_from_raw(status)
-                );
-                continue;
+            } else {
+                eprintln!("Rail {}: No {} data returned in reading", rail_label, metric_name);
             }
-            Err(e) => {
-                eprintln!("FIDL error getting rail metadata for {}: {:?}", entry.name, e);
-                continue;
-            }
-        };
+        } else {
+            eprintln!("Rail {}: No reading returned for channel", rail_label);
+        }
+    }
+    Ok(())
+}
 
-        let rail_name = metadata.name.unwrap_or_else(|| entry.name.clone());
-        let channel_id_str =
-            metadata.channel_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string());
+async fn run_read_with_proxy<W: Write>(
+    args: ReadArgs,
+    proxy: &fgoogle_odpm::OdpmDeviceProxy,
+    writer: &mut W,
+) -> Result<()> {
+    let metadata_list = proxy
+        .get_rail_metadata()
+        .await
+        .map_err(|e| anyhow!("FIDL error getting rail metadata: {:?}", e))?
+        .map_err(|s| anyhow!("Failed to get rail metadata: {:?}", zx::Status::err_from_raw(s)))?;
+
+    let mut matched_rails = Vec::new();
+    for metadata in metadata_list {
+        let rail_name = metadata.name.unwrap_or_default();
         let schematic_name = metadata.schematic_name.unwrap_or_default();
 
         if let Some(ref target) = args.rail {
-            if !entry.name.eq_ignore_ascii_case(target)
-                && !rail_name.eq_ignore_ascii_case(target)
+            if !rail_name.eq_ignore_ascii_case(target)
                 && !schematic_name.eq_ignore_ascii_case(target)
             {
                 continue;
             }
         }
 
-        matched = true;
+        let channel_id_str =
+            metadata.channel_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string());
         let rail_label =
             format!("{:<17} [{:<23},Ch{:>2}]", rail_name, schematic_name, channel_id_str);
-
-        read_rail(&proxy, &args, &rail_label, writer).await?;
+        matched_rails.push((metadata.channel_id, rail_label));
     }
 
     if let Some(ref target) = args.rail {
-        if !matched {
+        if matched_rails.is_empty() {
             return Err(anyhow!("Rail '{}' not found", target));
         }
     }
 
-    Ok(())
-}
-
-async fn read_rail<W: Write>(
-    proxy: &fgoogle_odpm::DeviceProxy,
-    args: &ReadArgs,
-    rail_label: &str,
-    writer: &mut W,
-) -> Result<()> {
     if args.energy {
         let options = fgoogle_odpm::Options {
             measurement_type: Some(fgoogle_odpm::MeasurementType::Cumulative),
             ..Default::default()
         };
-        match proxy.get_energy_joules(&options).await {
-            Ok(Ok(energy_reading)) => {
-                if let Some(energy_uj) = energy_reading.energy_uj {
-                    let energy_j = energy_uj as f64 / 1e6;
-                    if let Some(timestamp) = energy_reading.timestamp {
-                        writeln!(
-                            writer,
-                            "Rail {}: {:>8.6} J (timestamp: {} nanos)",
-                            rail_label, energy_j, timestamp
-                        )?;
-                    } else {
-                        writeln!(writer, "Rail {}: {:>8.6} J", rail_label, energy_j)?;
-                    }
-                } else {
-                    eprintln!("Rail {}: No energy data returned in reading", rail_label);
-                }
-            }
-            Ok(Err(status)) => {
-                eprintln!(
-                    "Rail {}: Error from driver: {:?}",
-                    rail_label,
-                    zx::Status::err_from_raw(status)
-                );
-            }
-            Err(e) => {
-                eprintln!("Rail {}: FIDL error: {:?}", rail_label, e);
-            }
-        }
+        let readings = proxy
+            .get_energy_joules(&options)
+            .await
+            .map_err(|e| anyhow!("FIDL error getting energy readings: {:?}", e))?
+            .map_err(|s| {
+                anyhow!(
+                    "Error from driver getting energy readings: {:?}",
+                    zx::Status::err_from_raw(s)
+                )
+            })?;
+
+        write_readings(writer, &matched_rails, &readings, "energy", "J", |r| {
+            (r.channel_id, r.energy_uj, r.timestamp)
+        })?;
     } else if args.current {
         let options = fgoogle_odpm::Options::default();
-        match proxy.get_current_amperes(&options).await {
-            Ok(Ok(current_reading)) => {
-                if let Some(current_ua) = current_reading.current_ua {
-                    let current_a = current_ua as f64 / 1e6;
-                    if let Some(timestamp) = current_reading.timestamp {
-                        writeln!(
-                            writer,
-                            "Rail {}: {:>8.6} A (timestamp: {} nanos)",
-                            rail_label, current_a, timestamp
-                        )?;
-                    } else {
-                        writeln!(writer, "Rail {}: {:>8.6} A", rail_label, current_a)?;
-                    }
-                } else {
-                    eprintln!("Rail {}: No current data returned in reading", rail_label);
-                }
-            }
-            Ok(Err(status)) => {
-                eprintln!(
-                    "Rail {}: Error from driver: {:?}",
-                    rail_label,
-                    zx::Status::err_from_raw(status)
-                );
-            }
-            Err(e) => {
-                eprintln!("Rail {}: FIDL error: {:?}", rail_label, e);
-            }
-        }
+        let readings = proxy
+            .get_current_amperes(&options)
+            .await
+            .map_err(|e| anyhow!("FIDL error getting current readings: {:?}", e))?
+            .map_err(|s| {
+                anyhow!(
+                    "Error from driver getting current readings: {:?}",
+                    zx::Status::err_from_raw(s)
+                )
+            })?;
+
+        write_readings(writer, &matched_rails, &readings, "current", "A", |r| {
+            (r.channel_id, r.current_ua.map(i64::from), r.timestamp)
+        })?;
     } else {
         let options = if args.instantaneous {
             fgoogle_odpm::Options {
@@ -273,61 +244,23 @@ async fn read_rail<W: Write>(
         } else {
             fgoogle_odpm::Options::default()
         };
-        match proxy.get_power_watts(&options).await {
-            Ok(Ok(power_reading)) => {
-                if let Some(power_uw) = power_reading.power_uw {
-                    let power_w = power_uw as f64 / 1e6;
-                    let mode_suffix = if args.instantaneous { " (instant)" } else { "" };
-                    if let Some(timestamp) = power_reading.timestamp {
-                        writeln!(
-                            writer,
-                            "Rail {}: {:>8.6} W{} (timestamp: {} nanos)",
-                            rail_label, power_w, mode_suffix, timestamp
-                        )?;
-                    } else {
-                        writeln!(writer, "Rail {}: {:>8.6} W{}", rail_label, power_w, mode_suffix)?;
-                    }
-                } else {
-                    eprintln!("Rail {}: No power data returned in reading", rail_label);
-                }
-            }
-            Ok(Err(status)) => {
-                eprintln!(
-                    "Rail {}: Error from driver: {:?}",
-                    rail_label,
-                    zx::Status::err_from_raw(status)
-                );
-            }
-            Err(e) => {
-                eprintln!("Rail {}: FIDL error: {:?}", rail_label, e);
-            }
-        }
+        let readings = proxy
+            .get_power_watts(&options)
+            .await
+            .map_err(|e| anyhow!("FIDL error getting power readings: {:?}", e))?
+            .map_err(|s| {
+                anyhow!(
+                    "Error from driver getting power readings: {:?}",
+                    zx::Status::err_from_raw(s)
+                )
+            })?;
+
+        let unit_suffix = if args.instantaneous { "W (instant)" } else { "W" };
+        write_readings(writer, &matched_rails, &readings, "power", unit_suffix, |r| {
+            (r.channel_id, r.power_uw.map(i64::from), r.timestamp)
+        })?;
     }
     Ok(())
-}
-
-async fn connect_to_driver_config() -> Result<fgoogle_odpm::DriverConfigProxy> {
-    // 1. Standard incoming namespace connection for discoverable protocol (/svc).
-    if let Ok(proxy) = fclient::connect_to_protocol::<fgoogle_odpm::DriverConfigMarker>() {
-        if proxy.get_polling_config().await.is_ok() {
-            return Ok(proxy);
-        }
-    }
-
-    // 2. Fallback for `ffx component explore` where outgoing capabilities live at /out/svc.
-    let out_path = format!("/out/svc/{}", fgoogle_odpm::DriverConfigMarker::PROTOCOL_NAME);
-    if let Ok(proxy) =
-        fclient::connect_to_protocol_at_path::<fgoogle_odpm::DriverConfigMarker>(&out_path)
-    {
-        if proxy.get_polling_config().await.is_ok() {
-            return Ok(proxy);
-        }
-    }
-
-    Err(anyhow!(
-        "Failed to connect to {} via /svc or /out/svc",
-        fgoogle_odpm::DriverConfigMarker::PROTOCOL_NAME
-    ))
 }
 
 fn format_config(cfg: &fgoogle_odpm::PollingConfig) -> String {
@@ -350,7 +283,7 @@ const MIN_POLL_INTERVAL_MS: u32 = (fgoogle_odpm::MIN_POLL_INTERVAL / 1_000_000) 
 
 async fn run_config_set_with_proxy<W: Write>(
     args: ConfigSetArgs,
-    proxy: &fgoogle_odpm::DriverConfigProxy,
+    proxy: &fgoogle_odpm::OdpmDeviceProxy,
     writer: &mut W,
 ) -> Result<()> {
     if args.poll_interval_ms.is_none() && args.polls_per_series_entry.is_none() {
@@ -396,7 +329,7 @@ async fn run_config_set_with_proxy<W: Write>(
 }
 
 async fn run_config_get_with_proxy<W: Write>(
-    proxy: &fgoogle_odpm::DriverConfigProxy,
+    proxy: &fgoogle_odpm::OdpmDeviceProxy,
     writer: &mut W,
 ) -> Result<()> {
     let current = proxy
@@ -409,7 +342,7 @@ async fn run_config_get_with_proxy<W: Write>(
 }
 
 async fn run_config_reset_with_proxy<W: Write>(
-    proxy: &fgoogle_odpm::DriverConfigProxy,
+    proxy: &fgoogle_odpm::OdpmDeviceProxy,
     writer: &mut W,
 ) -> Result<()> {
     match proxy.reset_polling_config().await {
@@ -433,7 +366,7 @@ async fn run_config_reset_with_proxy<W: Write>(
 }
 
 async fn run_config<W: Write>(args: ConfigArgs, writer: &mut W) -> Result<()> {
-    let proxy = connect_to_driver_config().await?;
+    let proxy = connect_to_odpm_device().await?;
     match args.subcommand {
         ConfigSubCommands::Set(set_args) => {
             run_config_set_with_proxy(set_args, &proxy, writer).await
@@ -719,16 +652,16 @@ mod tests {
     #[fuchsia::test]
     async fn test_run_config_set_update() {
         let (proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::DriverConfigMarker>();
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
         let task = fuchsia_async::Task::local(async move {
             while let Some(Ok(req)) = stream.next().await {
                 match req {
-                    fgoogle_odpm::DriverConfigRequest::SetPollingConfig { payload, responder } => {
+                    fgoogle_odpm::OdpmDeviceRequest::SetPollingConfig { payload, responder } => {
                         assert_eq!(payload.poll_interval, Some(250_000_000));
                         assert_eq!(payload.polls_per_series_entry, Some(10));
                         let _ = responder.send(Ok(()));
                     }
-                    fgoogle_odpm::DriverConfigRequest::GetPollingConfig { responder } => {
+                    fgoogle_odpm::OdpmDeviceRequest::GetPollingConfig { responder } => {
                         let _ = responder.send(Ok(&fgoogle_odpm::PollingConfig {
                             poll_interval: Some(250_000_000),
                             polls_per_series_entry: Some(10),
@@ -754,7 +687,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_run_config_set_no_options_error() {
         let (proxy, _stream) =
-            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::DriverConfigMarker>();
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
         let args = ConfigSetArgs { poll_interval_ms: None, polls_per_series_entry: None };
         let mut buf = Vec::new();
         let res = run_config_set_with_proxy(args, &proxy, &mut buf).await;
@@ -764,11 +697,11 @@ mod tests {
     #[fuchsia::test]
     async fn test_run_config_get() {
         let (proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::DriverConfigMarker>();
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
         let task = fuchsia_async::Task::local(async move {
             while let Some(Ok(req)) = stream.next().await {
                 match req {
-                    fgoogle_odpm::DriverConfigRequest::GetPollingConfig { responder } => {
+                    fgoogle_odpm::OdpmDeviceRequest::GetPollingConfig { responder } => {
                         let _ = responder.send(Ok(&fgoogle_odpm::PollingConfig {
                             poll_interval: Some(1_000_000_000),
                             polls_per_series_entry: Some(60),
@@ -792,14 +725,14 @@ mod tests {
     #[fuchsia::test]
     async fn test_run_config_reset() {
         let (proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::DriverConfigMarker>();
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
         let task = fuchsia_async::Task::local(async move {
             while let Some(Ok(req)) = stream.next().await {
                 match req {
-                    fgoogle_odpm::DriverConfigRequest::ResetPollingConfig { responder } => {
+                    fgoogle_odpm::OdpmDeviceRequest::ResetPollingConfig { responder } => {
                         let _ = responder.send(Ok(()));
                     }
-                    fgoogle_odpm::DriverConfigRequest::GetPollingConfig { responder } => {
+                    fgoogle_odpm::OdpmDeviceRequest::GetPollingConfig { responder } => {
                         let _ = responder.send(Ok(&fgoogle_odpm::PollingConfig {
                             poll_interval: Some(1_000_000_000),
                             polls_per_series_entry: Some(60),
@@ -826,7 +759,7 @@ mod tests {
         let expected_msg = format!("poll-interval-ms must be at least {MIN_POLL_INTERVAL_MS} ms");
 
         let (proxy, _stream) =
-            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::DriverConfigMarker>();
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
         let args = ConfigSetArgs { poll_interval_ms: Some(0), polls_per_series_entry: None };
         let mut buf = Vec::new();
         let res = run_config_set_with_proxy(args, &proxy, &mut buf).await;
@@ -846,7 +779,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_run_config_set_zero_polls_error() {
         let (proxy, _stream) =
-            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::DriverConfigMarker>();
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
         let args = ConfigSetArgs { poll_interval_ms: None, polls_per_series_entry: Some(0) };
         let mut buf = Vec::new();
         let res = run_config_set_with_proxy(args, &proxy, &mut buf).await;
@@ -854,18 +787,43 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_read_rail_energy() {
+    async fn test_run_read_energy() {
         let (proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::DeviceMarker>();
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
         let task = fuchsia_async::Task::local(async move {
             while let Some(Ok(req)) = stream.next().await {
                 match req {
-                    fgoogle_odpm::DeviceRequest::GetEnergyJoules { responder, .. } => {
-                        let _ = responder.send(Ok(&fgoogle_odpm::EnergyReading {
-                            energy_uj: Some(12_345_678),
-                            timestamp: Some(10_000_000_000),
-                            ..Default::default()
-                        }));
+                    fgoogle_odpm::OdpmDeviceRequest::GetRailMetadata { responder } => {
+                        let _ = responder.send(Ok(&[
+                            fgoogle_odpm::RailMetadata {
+                                name: Some("cpu_big".to_string()),
+                                channel_id: Some(12),
+                                schematic_name: Some("S2M_VDD_CPUCL2".to_string()),
+                                ..Default::default()
+                            },
+                            fgoogle_odpm::RailMetadata {
+                                name: Some("gpu".to_string()),
+                                channel_id: Some(42),
+                                schematic_name: Some("S2S_VDD_GPU".to_string()),
+                                ..Default::default()
+                            },
+                        ]));
+                    }
+                    fgoogle_odpm::OdpmDeviceRequest::GetEnergyJoules { responder, .. } => {
+                        let _ = responder.send(Ok(&[
+                            fgoogle_odpm::EnergyReading {
+                                channel_id: Some(12),
+                                energy_uj: Some(5_000_000),
+                                timestamp: Some(10_000_000_000),
+                                ..Default::default()
+                            },
+                            fgoogle_odpm::EnergyReading {
+                                channel_id: Some(42),
+                                energy_uj: Some(12_345_678),
+                                timestamp: Some(10_000_000_000),
+                                ..Default::default()
+                            },
+                        ]));
                     }
                     _ => panic!("Unexpected request"),
                 }
@@ -879,13 +837,140 @@ mod tests {
             energy: true,
         };
         let mut buf = Vec::new();
-        let res =
-            read_rail(&proxy, &args, "gpu               [S2S_VDD_GPU            ,Ch42]", &mut buf)
-                .await;
+        let res = run_read_with_proxy(args, &proxy, &mut buf).await;
         assert!(res.is_ok());
         let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("gpu               [S2S_VDD_GPU            ,Ch42]"));
         assert!(output.contains("12.345678 J"));
         assert!(output.contains("timestamp: 10000000000 nanos"));
+        assert!(!output.contains("cpu_big"));
+        drop(proxy);
+        task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_run_read_power() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
+        let task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fgoogle_odpm::OdpmDeviceRequest::GetRailMetadata { responder } => {
+                        let _ = responder.send(Ok(&[fgoogle_odpm::RailMetadata {
+                            name: Some("gpu".to_string()),
+                            channel_id: Some(42),
+                            schematic_name: Some("S2S_VDD_GPU".to_string()),
+                            ..Default::default()
+                        }]));
+                    }
+                    fgoogle_odpm::OdpmDeviceRequest::GetPowerWatts { payload, responder } => {
+                        let power_uw = if payload.measurement_type
+                            == Some(fgoogle_odpm::MeasurementType::Instantaneous)
+                        {
+                            3_500_000
+                        } else {
+                            2_500_000
+                        };
+                        let _ = responder.send(Ok(&[fgoogle_odpm::PowerReading {
+                            channel_id: Some(42),
+                            power_uw: Some(power_uw),
+                            timestamp: Some(20_000_000_000),
+                            ..Default::default()
+                        }]));
+                    }
+                    _ => panic!("Unexpected request"),
+                }
+            }
+        });
+
+        let args = ReadArgs { rail: None, instantaneous: false, current: false, energy: false };
+        let mut buf = Vec::new();
+        let res = run_read_with_proxy(args, &proxy, &mut buf).await;
+        assert!(res.is_ok());
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("gpu               [S2S_VDD_GPU            ,Ch42]"));
+        assert!(output.contains("2.500000 W (timestamp: 20000000000 nanos)"));
+
+        let args_inst = ReadArgs { rail: None, instantaneous: true, current: false, energy: false };
+        let mut buf_inst = Vec::new();
+        let res_inst = run_read_with_proxy(args_inst, &proxy, &mut buf_inst).await;
+        assert!(res_inst.is_ok());
+        let output_inst = String::from_utf8(buf_inst).unwrap();
+        assert!(output_inst.contains("3.500000 W (instant) (timestamp: 20000000000 nanos)"));
+
+        drop(proxy);
+        task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_run_read_current() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
+        let task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fgoogle_odpm::OdpmDeviceRequest::GetRailMetadata { responder } => {
+                        let _ = responder.send(Ok(&[fgoogle_odpm::RailMetadata {
+                            name: Some("gpu".to_string()),
+                            channel_id: Some(42),
+                            schematic_name: Some("S2S_VDD_GPU".to_string()),
+                            ..Default::default()
+                        }]));
+                    }
+                    fgoogle_odpm::OdpmDeviceRequest::GetCurrentAmperes { responder, .. } => {
+                        let _ = responder.send(Ok(&[fgoogle_odpm::CurrentReading {
+                            channel_id: Some(42),
+                            current_ua: Some(1_250_000),
+                            timestamp: Some(30_000_000_000),
+                            ..Default::default()
+                        }]));
+                    }
+                    _ => panic!("Unexpected request"),
+                }
+            }
+        });
+
+        let args = ReadArgs { rail: None, instantaneous: false, current: true, energy: false };
+        let mut buf = Vec::new();
+        let res = run_read_with_proxy(args, &proxy, &mut buf).await;
+        assert!(res.is_ok());
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("gpu               [S2S_VDD_GPU            ,Ch42]"));
+        assert!(output.contains("1.250000 A (timestamp: 30000000000 nanos)"));
+        drop(proxy);
+        task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_run_read_rail_not_found() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
+        let task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fgoogle_odpm::OdpmDeviceRequest::GetRailMetadata { responder } => {
+                        let _ = responder.send(Ok(&[fgoogle_odpm::RailMetadata {
+                            name: Some("gpu".to_string()),
+                            channel_id: Some(42),
+                            schematic_name: Some("S2S_VDD_GPU".to_string()),
+                            ..Default::default()
+                        }]));
+                    }
+                    _ => panic!("Unexpected request"),
+                }
+            }
+        });
+
+        let args = ReadArgs {
+            rail: Some("nonexistent".to_string()),
+            instantaneous: false,
+            current: false,
+            energy: false,
+        };
+        let mut buf = Vec::new();
+        let res = run_read_with_proxy(args, &proxy, &mut buf).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Rail 'nonexistent' not found"));
         drop(proxy);
         task.await;
     }

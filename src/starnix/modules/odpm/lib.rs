@@ -14,7 +14,6 @@ use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_google_odpm as fodpm;
 use fuchsia_async as fasync;
 use fuchsia_component::client::Service;
-use futures::future::Either;
 use futures::{FutureExt, TryStreamExt};
 use starnix_core::fs::sysfs::get_sysfs;
 use starnix_core::task::{CurrentTask, Kernel};
@@ -23,7 +22,7 @@ use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::BytesFile;
 use starnix_core::vfs::{FsNodeOps, FsString};
 use starnix_logging::{log_debug, log_error, log_warn};
-use starnix_sync::{LockDepMutex, OdpmRailLastReadingLock, OdpmRailProxyLock};
+use starnix_sync::{LockDepMutex, OdpmProxyLock, OdpmRailLastReadingLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use std::collections::{BTreeMap, btree_map};
@@ -32,7 +31,6 @@ use std::sync::{Arc, OnceLock};
 
 const NANOS_PER_MILLI: i64 = 1_000_000;
 const SERVICE_INITIAL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
-const QUIET_PERIOD: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
 const SYNC_PROXY_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 
 fn nanos_to_millis(nanos: i64) -> i64 {
@@ -52,7 +50,6 @@ pub struct OdpmRail {
     name: FsString,
     channel_id: u32,
     schematic_name: FsString,
-    proxy: LockDepMutex<Arc<fodpm::DeviceSynchronousProxy>, OdpmRailProxyLock>,
     last_reading: LockDepMutex<Option<RailReading>, OdpmRailLastReadingLock>,
 }
 
@@ -62,26 +59,20 @@ impl OdpmRail {
         name: impl Into<FsString>,
         channel_id: u32,
         schematic_name: impl Into<FsString>,
-        proxy: Arc<fodpm::DeviceSynchronousProxy>,
     ) -> Self {
         Self {
             name: name.into(),
             channel_id,
             schematic_name: schematic_name.into(),
-            proxy: LockDepMutex::new(proxy),
             last_reading: LockDepMutex::new(None),
         }
-    }
-
-    /// Updates the synchronous proxy connection for this rail (e.g. following a driver restart).
-    pub fn update_proxy(&self, proxy: Arc<fodpm::DeviceSynchronousProxy>) {
-        *self.proxy.lock() = proxy;
     }
 }
 
 /// An ODPM device aggregating power rails.
 pub struct OdpmDevice {
     rails: OnceLock<BTreeMap<u32, Arc<OdpmRail>>>,
+    proxy: LockDepMutex<Option<Arc<fodpm::OdpmDeviceSynchronousProxy>>, OdpmProxyLock>,
 }
 
 impl std::fmt::Debug for OdpmDevice {
@@ -95,7 +86,7 @@ impl std::fmt::Debug for OdpmDevice {
 
 impl Default for OdpmDevice {
     fn default() -> Self {
-        Self { rails: OnceLock::new() }
+        Self { rails: OnceLock::new(), proxy: LockDepMutex::new(None) }
     }
 }
 
@@ -105,9 +96,12 @@ impl OdpmDevice {
         Self::default()
     }
 
-    /// Creates a new [`OdpmDevice`] with the given power rails.
+    /// Creates a new [`OdpmDevice`] with the given power rails and proxy.
     #[cfg(test)]
-    pub fn new_with_rails(rails: Vec<OdpmRail>) -> Self {
+    pub fn new_with_rails(
+        rails: Vec<OdpmRail>,
+        proxy: Option<Arc<fodpm::OdpmDeviceSynchronousProxy>>,
+    ) -> Self {
         let mut map = BTreeMap::new();
         for rail in rails {
             match map.entry(rail.channel_id) {
@@ -122,9 +116,14 @@ impl OdpmDevice {
                 }
             }
         }
-        let rails = OnceLock::new();
-        let _ = rails.set(map);
-        Self { rails }
+        let rails_lock = OnceLock::new();
+        let _ = rails_lock.set(map);
+        Self { rails: rails_lock, proxy: LockDepMutex::new(proxy) }
+    }
+
+    /// Updates the synchronous proxy connection for this device (e.g. following a driver restart).
+    pub fn update_proxy(&self, proxy: Arc<fodpm::OdpmDeviceSynchronousProxy>) {
+        *self.proxy.lock() = Some(proxy);
     }
 
     /// Initializes this device with the discovered rails.
@@ -150,9 +149,13 @@ impl OdpmDevice {
     ///
     /// Returns a formatted string containing the maximum timestamp across all rail samples,
     /// followed by each rail's channel ID, sample duration, schematic name, and cumulative energy.
-    /// If reading an individual rail fails, cached readings or default values are used.
+    /// If reading fails, cached readings or default values are used.
     pub fn energy_value(&self) -> Result<FsString, Errno> {
         let rails = self.rails();
+        if rails.is_empty() {
+            return Ok("t=0\n".into());
+        }
+
         let mut max_timestamp_ms = 0i64;
         let mut readings = Vec::with_capacity(rails.len());
 
@@ -161,40 +164,40 @@ impl OdpmDevice {
             ..Default::default()
         };
 
-        for rail in rails.values() {
-            let proxy = Arc::clone(&rail.proxy.lock());
-            let reading = match proxy
+        let proxy = self.proxy.lock().clone();
+        let fetched_readings = match proxy {
+            Some(proxy) => match proxy
                 .get_energy_joules(&options, zx::MonotonicInstant::after(SYNC_PROXY_TIMEOUT))
             {
-                Ok(Ok(reading)) => {
+                Ok(Ok(readings)) => Some(readings),
+                Ok(Err(status)) => {
+                    log_debug!("ODPM GetEnergyJoules failed: status {}", status);
+                    None
+                }
+                Err(e) => {
+                    log_debug!("ODPM GetEnergyJoules FIDL error: {:?}", e);
+                    None
+                }
+            },
+            None => None,
+        };
+
+        for rail in rails.values() {
+            let reading = match fetched_readings
+                .as_ref()
+                .and_then(|list| list.iter().find(|r| r.channel_id == Some(rail.channel_id)))
+            {
+                Some(reading) => {
                     let timestamp_ms = reading.timestamp.map(nanos_to_millis).unwrap_or(0);
                     let duration_ms = reading.interval.map(nanos_to_millis).unwrap_or(timestamp_ms);
                     let energy_uj = reading.energy_uj.unwrap_or(0);
-                    let reading = RailReading { timestamp_ms, duration_ms, energy_uj };
-                    *rail.last_reading.lock() = Some(reading);
-                    reading
+                    let rail_reading = RailReading { timestamp_ms, duration_ms, energy_uj };
+                    *rail.last_reading.lock() = Some(rail_reading);
+                    rail_reading
                 }
-                Ok(Err(status)) => {
-                    log_debug!(
-                        "ODPM GetEnergyJoules failed for rail {}: status {}",
-                        rail.name,
-                        status
-                    );
-                    if let Some(cached) = *rail.last_reading.lock() {
-                        cached
-                    } else {
-                        RailReading::default()
-                    }
-                }
-                Err(e) => {
-                    log_debug!("ODPM GetEnergyJoules FIDL error for rail {}: {:?}", rail.name, e);
-                    if let Some(cached) = *rail.last_reading.lock() {
-                        cached
-                    } else {
-                        RailReading::default()
-                    }
-                }
+                None => (*rail.last_reading.lock()).unwrap_or_default(),
             };
+
             if max_timestamp_ms < reading.timestamp_ms {
                 max_timestamp_ms = reading.timestamp_ms;
             }
@@ -302,10 +305,9 @@ async fn watch_odpm_rails(odpm_device: Arc<OdpmDevice>) {
         }
     };
 
-    let mut timeout = Box::pin(Either::Left(
-        fasync::Timer::new(zx::MonotonicInstant::after(SERVICE_INITIAL_TIMEOUT)).fuse(),
-    ));
-    let mut rails = BTreeMap::new();
+    let mut timeout = std::pin::pin!(
+        fasync::Timer::new(zx::MonotonicInstant::after(SERVICE_INITIAL_TIMEOUT)).fuse()
+    );
 
     loop {
         futures::select! {
@@ -321,29 +323,7 @@ async fn watch_odpm_rails(odpm_device: Arc<OdpmDevice>) {
                         };
 
                         match device_proxy.get_rail_metadata().await {
-                            Ok(Ok(metadata)) => {
-                                let name = match metadata.name {
-                                    Some(name) => name,
-                                    None => {
-                                        log_warn!("ODPM rail missing name");
-                                        continue;
-                                    }
-                                };
-                                let channel_id = match metadata.channel_id {
-                                    Some(channel_id) => channel_id,
-                                    None => {
-                                        log_warn!("ODPM rail '{name}' missing channel_id");
-                                        continue;
-                                    }
-                                };
-                                let schematic_name = match metadata.schematic_name {
-                                    Some(schematic_name) => schematic_name,
-                                    None => {
-                                        log_warn!("ODPM rail '{name}' missing schematic_name");
-                                        continue;
-                                    }
-                                };
-
+                            Ok(Ok(metadata_list)) => {
                                 let client_end = match device_proxy.into_client_end() {
                                     Ok(client_end) => client_end,
                                     Err(_) => {
@@ -351,39 +331,55 @@ async fn watch_odpm_rails(odpm_device: Arc<OdpmDevice>) {
                                         continue;
                                     }
                                 };
-                                let sync_proxy = Arc::new(fodpm::DeviceSynchronousProxy::new(
+                                let sync_proxy = Arc::new(fodpm::OdpmDeviceSynchronousProxy::new(
                                     client_end.into_channel(),
                                 ));
+                                odpm_device.update_proxy(sync_proxy);
 
-                                match rails.entry(channel_id) {
-                                    btree_map::Entry::Vacant(entry) => {
-                                        if odpm_device.is_initialized() {
-                                            log_warn!(
-                                                "ODPM rail '{name}' (channel_id {channel_id}) arrived after initial discovery; ignoring new rail"
-                                            );
-                                        } else {
-                                            entry.insert(Arc::new(OdpmRail::new(
-                                                name,
-                                                channel_id,
-                                                schematic_name,
-                                                sync_proxy,
-                                            )));
+                                if !odpm_device.is_initialized() {
+                                    let mut rails = BTreeMap::new();
+                                    for metadata in metadata_list {
+                                        let name = match metadata.name {
+                                            Some(name) => name,
+                                            None => {
+                                                log_warn!("ODPM rail missing name");
+                                                continue;
+                                            }
+                                        };
+                                        let channel_id = match metadata.channel_id {
+                                            Some(channel_id) => channel_id,
+                                            None => {
+                                                log_warn!("ODPM rail '{name}' missing channel_id");
+                                                continue;
+                                            }
+                                        };
+                                        let schematic_name = match metadata.schematic_name {
+                                            Some(schematic_name) => schematic_name,
+                                            None => {
+                                                log_warn!("ODPM rail '{name}' missing schematic_name");
+                                                continue;
+                                            }
+                                        };
+
+                                        match rails.entry(channel_id) {
+                                            btree_map::Entry::Vacant(entry) => {
+                                                entry.insert(Arc::new(OdpmRail::new(
+                                                    name,
+                                                    channel_id,
+                                                    schematic_name,
+                                                )));
+                                            }
+                                            btree_map::Entry::Occupied(_) => {
+                                                log_warn!(
+                                                    "Duplicate ODPM rail '{name}' (channel_id {channel_id}); ignoring"
+                                                );
+                                            }
                                         }
                                     }
-                                    btree_map::Entry::Occupied(entry) => {
-                                        log_debug!(
-                                            "Updating ODPM rail '{name}' (channel_id {channel_id}) with new proxy"
-                                        );
-                                        entry.get().update_proxy(sync_proxy);
-                                    }
-                                }
-                                if !odpm_device.is_initialized() {
-                                    timeout = Box::pin(Either::Left(
-                                        fasync::Timer::new(
-                                            zx::MonotonicInstant::after(QUIET_PERIOD),
-                                        )
-                                        .fuse(),
-                                    ));
+                                    odpm_device.init(rails);
+                                    timeout.set(futures::future::Fuse::terminated());
+                                } else {
+                                    log_debug!("Updated ODPM device proxy with new service instance");
                                 }
                             }
                             Ok(Err(status)) => {
@@ -405,19 +401,15 @@ async fn watch_odpm_rails(odpm_device: Arc<OdpmDevice>) {
                 }
             }
             _ = timeout => {
-                if rails.is_empty() {
-                    log_warn!("ODPM service watcher timed out waiting for initial services");
-                } else {
-                    log_debug!("ODPM service watcher quiet period elapsed, finishing initial discovery");
-                }
-                odpm_device.init(rails.clone());
-                timeout = Box::pin(Either::Right(futures::future::pending().fuse()));
+                log_warn!("ODPM service watcher timed out waiting for initial service");
+                odpm_device.init(BTreeMap::new());
+                break;
             }
         }
     }
 
     if !odpm_device.is_initialized() {
-        odpm_device.init(rails);
+        odpm_device.init(BTreeMap::new());
     }
 }
 
@@ -491,32 +483,20 @@ mod tests {
     }
 
     fn spawn_fake_odpm_server(
-        metadata: fodpm::RailMetadata,
-        energy_uj: i64,
-        duration_ms: i64,
-        timestamp_ms: i64,
-    ) -> Arc<fodpm::DeviceSynchronousProxy> {
-        let (client_end, server_end) = fidl::endpoints::create_endpoints::<fodpm::DeviceMarker>();
-        let proxy = fodpm::DeviceSynchronousProxy::new(client_end.into_channel());
+        readings: Vec<fodpm::EnergyReading>,
+    ) -> Arc<fodpm::OdpmDeviceSynchronousProxy> {
+        let (client_end, server_end) =
+            fidl::endpoints::create_endpoints::<fodpm::OdpmDeviceMarker>();
+        let proxy = fodpm::OdpmDeviceSynchronousProxy::new(client_end.into_channel());
         std::thread::spawn(move || {
             let mut executor = fuchsia_async::LocalExecutorBuilder::new().build();
             let mut stream = server_end.into_stream();
             executor.run_singlethreaded(async move {
                 while let Some(Ok(request)) = stream.next().await {
-                    match request {
-                        fodpm::DeviceRequest::GetRailMetadata { responder } => {
-                            let _ = responder.send(Ok(&metadata));
-                        }
-                        fodpm::DeviceRequest::GetEnergyJoules { payload: _, responder } => {
-                            let reading = fodpm::EnergyReading {
-                                energy_uj: Some(energy_uj),
-                                interval: Some(millis_to_nanos(duration_ms)),
-                                timestamp: Some(millis_to_nanos(timestamp_ms)),
-                                ..Default::default()
-                            };
-                            let _ = responder.send(Ok(&reading));
-                        }
-                        _ => {}
+                    if let fodpm::OdpmDeviceRequest::GetEnergyJoules { payload: _, responder } =
+                        request
+                    {
+                        let _ = responder.send(Ok(&readings));
                     }
                 }
             });
@@ -526,34 +506,27 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_odpm_energy_value_output() {
-        let proxy0 = spawn_fake_odpm_server(
-            fodpm::RailMetadata {
-                name: Some("amb".to_string()),
+        let proxy = spawn_fake_odpm_server(vec![
+            fodpm::EnergyReading {
                 channel_id: Some(0),
-                schematic_name: Some("S1M_VDD_AMB".to_string()),
+                energy_uj: Some(51899976),
+                interval: Some(millis_to_nanos(1279315)),
+                timestamp: Some(millis_to_nanos(1279315)),
                 ..Default::default()
             },
-            51899976,
-            1279315,
-            1279315,
-        );
-
-        let proxy1 = spawn_fake_odpm_server(
-            fodpm::RailMetadata {
-                name: Some("cpu2".to_string()),
+            fodpm::EnergyReading {
                 channel_id: Some(1),
-                schematic_name: Some("S2M_VDD_CPU2".to_string()),
+                energy_uj: Some(185487825),
+                interval: Some(millis_to_nanos(1279315)),
+                timestamp: Some(millis_to_nanos(1279315)),
                 ..Default::default()
             },
-            185487825,
-            1279315,
-            1279315,
-        );
-
-        let odpm_device = OdpmDevice::new_with_rails(vec![
-            OdpmRail::new("amb", 0, "S1M_VDD_AMB", proxy0),
-            OdpmRail::new("cpu2", 1, "S2M_VDD_CPU2", proxy1),
         ]);
+
+        let odpm_device = OdpmDevice::new_with_rails(
+            vec![OdpmRail::new("amb", 0, "S1M_VDD_AMB"), OdpmRail::new("cpu2", 1, "S2M_VDD_CPU2")],
+            Some(proxy),
+        );
 
         let energy_val = odpm_device.energy_value().expect("energy_value failed");
         assert_eq!(
@@ -564,8 +537,9 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_odpm_energy_value_preserves_reading_on_error() {
-        let (client_end, server_end) = fidl::endpoints::create_endpoints::<fodpm::DeviceMarker>();
-        let proxy = Arc::new(fodpm::DeviceSynchronousProxy::new(client_end.into_channel()));
+        let (client_end, server_end) =
+            fidl::endpoints::create_endpoints::<fodpm::OdpmDeviceMarker>();
+        let proxy = Arc::new(fodpm::OdpmDeviceSynchronousProxy::new(client_end.into_channel()));
         std::thread::spawn(move || {
             let mut executor = fuchsia_async::LocalExecutorBuilder::new().build();
             let mut stream = server_end.into_stream();
@@ -573,16 +547,17 @@ mod tests {
                 let mut first_call = true;
                 while let Some(Ok(request)) = stream.next().await {
                     match request {
-                        fodpm::DeviceRequest::GetEnergyJoules { payload: _, responder } => {
+                        fodpm::OdpmDeviceRequest::GetEnergyJoules { payload: _, responder } => {
                             if first_call {
                                 first_call = false;
-                                let reading = fodpm::EnergyReading {
+                                let readings = [fodpm::EnergyReading {
+                                    channel_id: Some(0),
                                     energy_uj: Some(100),
                                     interval: Some(millis_to_nanos(1000)),
                                     timestamp: Some(millis_to_nanos(1000)),
                                     ..Default::default()
-                                };
-                                let _ = responder.send(Ok(&reading));
+                                }];
+                                let _ = responder.send(Ok(&readings));
                             } else {
                                 // Second call returns an error.
                                 let _ = responder.send(Err(zx::sys::ZX_ERR_INTERNAL));
@@ -595,7 +570,7 @@ mod tests {
         });
 
         let odpm_device =
-            OdpmDevice::new_with_rails(vec![OdpmRail::new("amb", 0, "S1M_VDD_AMB", proxy)]);
+            OdpmDevice::new_with_rails(vec![OdpmRail::new("amb", 0, "S1M_VDD_AMB")], Some(proxy));
 
         // First read succeeds.
         let energy_val1 = odpm_device.energy_value().expect("first read should succeed");
@@ -609,59 +584,50 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_odpm_enabled_rails() {
-        let (client1, _) = fidl::endpoints::create_sync_proxy::<fodpm::DeviceMarker>();
-        let (client2, _) = fidl::endpoints::create_sync_proxy::<fodpm::DeviceMarker>();
-        let odpm_device = OdpmDevice::new_with_rails(vec![
-            OdpmRail::new("cpu2", 1, "S2M_VDD_CPU2", Arc::new(client1)),
-            OdpmRail::new("amb", 0, "S1M_VDD_AMB", Arc::new(client2)),
-        ]);
+        let odpm_device = OdpmDevice::new_with_rails(
+            vec![OdpmRail::new("cpu2", 1, "S2M_VDD_CPU2"), OdpmRail::new("amb", 0, "S1M_VDD_AMB")],
+            None,
+        );
 
         assert_eq!(odpm_device.enabled_rails(), "CH0[S1M_VDD_AMB]:amb\nCH1[S2M_VDD_CPU2]:cpu2\n");
     }
 
     #[::fuchsia::test]
     async fn test_odpm_duplicate_rail_ignored() {
-        let (client1, _) = fidl::endpoints::create_sync_proxy::<fodpm::DeviceMarker>();
-        let (client2, _) = fidl::endpoints::create_sync_proxy::<fodpm::DeviceMarker>();
-        let odpm_device = OdpmDevice::new_with_rails(vec![
-            OdpmRail::new("cpu2", 1, "S2M_VDD_CPU2", Arc::new(client1)),
-            OdpmRail::new("cpu2_dup", 1, "S2M_VDD_CPU2_DUP", Arc::new(client2)),
-        ]);
+        let odpm_device = OdpmDevice::new_with_rails(
+            vec![
+                OdpmRail::new("cpu2", 1, "S2M_VDD_CPU2"),
+                OdpmRail::new("cpu2_dup", 1, "S2M_VDD_CPU2_DUP"),
+            ],
+            None,
+        );
         assert_eq!(odpm_device.enabled_rails(), "CH1[S2M_VDD_CPU2]:cpu2\n");
     }
 
     #[::fuchsia::test]
-    async fn test_odpm_rail_update_proxy() {
-        let proxy1 = spawn_fake_odpm_server(
-            fodpm::RailMetadata {
-                name: Some("amb".to_string()),
-                channel_id: Some(0),
-                schematic_name: Some("S1M_VDD_AMB".to_string()),
-                ..Default::default()
-            },
-            100,
-            1000,
-            1000,
-        );
-        let proxy2 = spawn_fake_odpm_server(
-            fodpm::RailMetadata {
-                name: Some("amb".to_string()),
-                channel_id: Some(0),
-                schematic_name: Some("S1M_VDD_AMB".to_string()),
-                ..Default::default()
-            },
-            200,
-            2000,
-            2000,
-        );
+    async fn test_odpm_device_update_proxy() {
+        let proxy1 = spawn_fake_odpm_server(vec![fodpm::EnergyReading {
+            channel_id: Some(0),
+            energy_uj: Some(100),
+            interval: Some(millis_to_nanos(1000)),
+            timestamp: Some(millis_to_nanos(1000)),
+            ..Default::default()
+        }]);
+        let proxy2 = spawn_fake_odpm_server(vec![fodpm::EnergyReading {
+            channel_id: Some(0),
+            energy_uj: Some(200),
+            interval: Some(millis_to_nanos(2000)),
+            timestamp: Some(millis_to_nanos(2000)),
+            ..Default::default()
+        }]);
 
         let odpm_device =
-            OdpmDevice::new_with_rails(vec![OdpmRail::new("amb", 0, "S1M_VDD_AMB", proxy1)]);
+            OdpmDevice::new_with_rails(vec![OdpmRail::new("amb", 0, "S1M_VDD_AMB")], Some(proxy1));
 
         let val1 = odpm_device.energy_value().expect("read with proxy1");
         assert_eq!(val1, "t=1000\nCH0(T=1000)[S1M_VDD_AMB], 100\n");
 
-        odpm_device.rails().get(&0).unwrap().update_proxy(proxy2);
+        odpm_device.update_proxy(proxy2);
 
         let val2 = odpm_device.energy_value().expect("read with proxy2");
         assert_eq!(val2, "t=2000\nCH0(T=2000)[S1M_VDD_AMB], 200\n");
@@ -669,15 +635,16 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_odpm_energy_value_defaults_to_zero_on_initial_failure() {
-        let (client_end, server_end) = fidl::endpoints::create_endpoints::<fodpm::DeviceMarker>();
-        let proxy = Arc::new(fodpm::DeviceSynchronousProxy::new(client_end.into_channel()));
+        let (client_end, server_end) =
+            fidl::endpoints::create_endpoints::<fodpm::OdpmDeviceMarker>();
+        let proxy = Arc::new(fodpm::OdpmDeviceSynchronousProxy::new(client_end.into_channel()));
         std::thread::spawn(move || {
             let mut executor = fuchsia_async::LocalExecutorBuilder::new().build();
             let mut stream = server_end.into_stream();
             executor.run_singlethreaded(async move {
                 while let Some(Ok(request)) = stream.next().await {
                     match request {
-                        fodpm::DeviceRequest::GetEnergyJoules { payload: _, responder } => {
+                        fodpm::OdpmDeviceRequest::GetEnergyJoules { payload: _, responder } => {
                             let _ = responder.send(Err(zx::sys::ZX_ERR_INTERNAL));
                         }
                         _ => {}
@@ -687,7 +654,7 @@ mod tests {
         });
 
         let odpm_device =
-            OdpmDevice::new_with_rails(vec![OdpmRail::new("amb", 0, "S1M_VDD_AMB", proxy)]);
+            OdpmDevice::new_with_rails(vec![OdpmRail::new("amb", 0, "S1M_VDD_AMB")], Some(proxy));
 
         let energy_val =
             odpm_device.energy_value().expect("energy_value should succeed with default 0");
@@ -695,9 +662,32 @@ mod tests {
     }
 
     #[::fuchsia::test]
+    async fn test_odpm_energy_value_empty_rails_skips_rpc() {
+        let (client_end, server_end) =
+            fidl::endpoints::create_endpoints::<fodpm::OdpmDeviceMarker>();
+        let proxy = Arc::new(fodpm::OdpmDeviceSynchronousProxy::new(client_end.into_channel()));
+        let server_thread = std::thread::spawn(move || {
+            let mut executor = fuchsia_async::LocalExecutorBuilder::new().build();
+            let mut stream = server_end.into_stream();
+            executor.run_singlethreaded(async move {
+                if let Some(request) = stream.next().await {
+                    panic!("Unexpected RPC when rails are empty: {:?}", request);
+                }
+            });
+        });
+
+        let odpm_device = OdpmDevice::new_with_rails(vec![], Some(proxy));
+        let energy_val = odpm_device.energy_value().expect("energy_value should succeed");
+        assert_eq!(energy_val, "t=0\n");
+
+        drop(odpm_device);
+        server_thread.join().expect("server thread should finish cleanly");
+    }
+
+    #[::fuchsia::test]
     async fn test_register_odpm_sysfs_device() {
         spawn_kernel_and_run(async |current_task| {
-            let odpm_device = Arc::new(OdpmDevice::new_with_rails(vec![]));
+            let odpm_device = Arc::new(OdpmDevice::new_with_rails(vec![], None));
 
             register_odpm_device(current_task.kernel(), odpm_device);
 

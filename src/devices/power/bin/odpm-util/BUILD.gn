@@ -16,7 +16,6 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.hardware.google.odpm:fuchsia.hardware.google.odpm_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
@@ -24,6 +23,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:argh",
   ]
   test_deps = [
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
   ]
