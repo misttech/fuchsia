@@ -470,8 +470,11 @@ pub enum NetExtError {
     #[error("Invalid interface ID: {0}")]
     InvalidInterfaceId(#[from] InvalidInterfaceIdError),
 
-    #[error("Could not parse '{0}'. Invalid address")]
-    ParseAddress(String),
+    #[error("Could not parse '{0}': {1}")]
+    ParseAddress(String, #[source] std::net::AddrParseError),
+
+    #[error("Could not parse port '{0}': {1}")]
+    ParsePort(String, #[source] std::num::ParseIntError),
 
     #[error("'{0}' is not a valid network interface name.")]
     InvalidInterfaceName(String),
@@ -548,7 +551,7 @@ fn name_to_scope_id_checked(name: &str) -> Result<u32, NetExtError> {
 ///
 /// Returns:
 ///
-/// `Ok(_)` if the address is in a valid format. [anyhow::Error] otherwise.
+/// `Ok(_)` if the address is in a valid format. [NetExtError] otherwise.
 ///
 /// Returned values should not be considered correct and should be verified. For example,
 /// `"[::1%foobar]:9898"` would parse, but there is no scope for the loopback device, and
@@ -559,9 +562,9 @@ pub fn parse_address_parts(
     addr_str: &str,
 ) -> Result<(IpAddr, Option<&str>, Option<u16>), NetExtError> {
     static V6_BRACKET: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^\[([^\]]+?[:]{1,2}[^\]]+)\](:\d+)?$").unwrap());
+        LazyLock::new(|| Regex::new(r"^\[([^\]]*:[^\]]*)\](?::(.*))?$").unwrap());
     static V4_PORT: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^(\d+\.\d+\.\d+\.\d+)(:\d+)?$").unwrap());
+        LazyLock::new(|| Regex::new(r"^(\d+\.\d+\.\d+\.\d+)(?::(.*))?$").unwrap());
     static WITH_SCOPE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^([^%]+)%([^%/ ]+)$").unwrap());
 
@@ -572,15 +575,20 @@ pub fn parse_address_parts(
             (addr_str, None)
         };
 
-    let port = if let Some(port) = port { port[1..].parse::<u16>().ok() } else { None };
-
     let (addr, scope) = if let Some(caps) = WITH_SCOPE.captures(addr) {
         (caps.get(1).map(|x| x.as_str()).unwrap(), Some(caps.get(2).map(|x| x.as_str()).unwrap()))
     } else {
         (addr, None)
     };
 
-    let addr = addr.parse::<IpAddr>().map_err(|_| NetExtError::ParseAddress(addr.to_string()))?;
+    let addr =
+        addr.parse::<IpAddr>().map_err(|e| NetExtError::ParseAddress(addr.to_string(), e))?;
+    let port = match port {
+        Some(port) => {
+            Some(port.parse::<u16>().map_err(|e| NetExtError::ParsePort(port.to_string(), e))?)
+        }
+        None => None,
+    };
     // Successfully parsing the address is the most important part. If this doesn't work,
     // then everything else is no longer valid.
     Ok((addr, scope, port))
@@ -1023,6 +1031,145 @@ mod tests {
     #[test]
     fn test_parse_address_parts_too_many_percents() {
         assert!(parse_address_parts("64:ff9b::192.0.2.33%fo%ober").is_err());
+    }
+
+    #[test]
+    fn test_parse_address_parts_ipv6_unspecified() {
+        // [::]:8022 and [::]:0
+        let (addr, scope, port) = parse_address_parts("[::]:8022").unwrap();
+        assert_eq!(addr, "::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, Some(8022));
+
+        let (addr, scope, port) = parse_address_parts("[::]:0").unwrap();
+        assert_eq!(addr, "::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, Some(0));
+
+        // [::] without port
+        let (addr, scope, port) = parse_address_parts("[::]").unwrap();
+        assert_eq!(addr, "::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, None);
+
+        // :: without brackets or port
+        let (addr, scope, port) = parse_address_parts("::").unwrap();
+        assert_eq!(addr, "::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, None);
+
+        // Unspecified with scope
+        let (addr, scope, port) = parse_address_parts("[::%eno1]:8022").unwrap();
+        assert_eq!(addr, "::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, Some("eno1"));
+        assert_eq!(port, Some(8022));
+
+        let (addr, scope, port) = parse_address_parts("[::%eno1]").unwrap();
+        assert_eq!(addr, "::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, Some("eno1"));
+        assert_eq!(port, None);
+
+        let (addr, scope, port) = parse_address_parts("::%eno1").unwrap();
+        assert_eq!(addr, "::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, Some("eno1"));
+        assert_eq!(port, None);
+    }
+
+    #[test]
+    fn test_parse_address_parts_ipv6_various_bracketed() {
+        let (addr, scope, port) = parse_address_parts("[::1]").unwrap();
+        assert_eq!(addr, "::1".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, None);
+
+        let (addr, scope, port) = parse_address_parts("[::1]:0").unwrap();
+        assert_eq!(addr, "::1".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, Some(0));
+
+        let (addr, scope, port) = parse_address_parts("[1::]").unwrap();
+        assert_eq!(addr, "1::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, None);
+
+        let (addr, scope, port) = parse_address_parts("[1::]:8022").unwrap();
+        assert_eq!(addr, "1::".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, Some(8022));
+
+        let (addr, scope, port) = parse_address_parts("[fe80::1%eno1]").unwrap();
+        assert_eq!(addr, "fe80::1".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, Some("eno1"));
+        assert_eq!(port, None);
+    }
+
+    #[test]
+    fn test_parse_address_parts_ipv4_ports() {
+        let (addr, scope, port) = parse_address_parts("127.0.0.1:0").unwrap();
+        assert_eq!(addr, "127.0.0.1".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, Some(0));
+
+        let (addr, scope, port) = parse_address_parts("127.0.0.1:65535").unwrap();
+        assert_eq!(addr, "127.0.0.1".parse::<IpAddr>().unwrap());
+        assert_eq!(scope, None);
+        assert_eq!(port, Some(65535));
+    }
+
+    #[test]
+    fn test_parse_address_parts_out_of_range_port() {
+        // Overflowing ports (> 65535) must return an error and not be defaulted to 0 or None.
+        assert!(matches!(
+            parse_address_parts("127.0.0.1:65536"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str == "65536"
+        ));
+        assert!(matches!(
+            parse_address_parts("[fe80::1]:99999"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str == "99999"
+        ));
+        assert!(matches!(
+            parse_address_parts("[::]:65536"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str == "65536"
+        ));
+        assert!(matches!(
+            parse_address_parts("[::]:99999"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str == "99999"
+        ));
+    }
+
+    #[test]
+    fn test_parse_address_parts_invalid_port_syntax() {
+        // Missing port digits after colon
+        assert!(matches!(
+            parse_address_parts("127.0.0.1:"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str.is_empty()
+        ));
+        assert!(matches!(
+            parse_address_parts("[::]:"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str.is_empty()
+        ));
+
+        // Non-numeric port
+        assert!(matches!(
+            parse_address_parts("127.0.0.1:abc"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str == "abc"
+        ));
+        assert!(matches!(
+            parse_address_parts("[::]:abc"),
+            Err(NetExtError::ParsePort(port_str, _)) if port_str == "abc"
+        ));
+    }
+
+    #[test]
+    fn test_parse_address_parts_invalid_address() {
+        assert!(matches!(
+            parse_address_parts("not-an-ip"),
+            Err(NetExtError::ParseAddress(addr_str, _)) if addr_str == "not-an-ip"
+        ));
+        assert!(matches!(
+            parse_address_parts("[not:an:ip]:8022"),
+            Err(NetExtError::ParseAddress(addr_str, _)) if addr_str == "not:an:ip"
+        ));
     }
 
     #[test]
