@@ -20,8 +20,9 @@ use super::types::{
 use super::wait_queue::WaitQueueBase;
 use crate::counters::define_kcounter;
 use crate::kconcurrent::{
-    Action, AllowFinalized, ChainLock, ChainLockGuard, ChainLockTransaction, DONE, IRQ_SAVE_OPTION,
-    NO_IRQ_SAVE_OPTION, RecordBackoff, SavedState, TransactionResult, clt_tag,
+    Action, AllowFinalized, ChainLock, ChainLockGuard, ChainLockProof, ChainLockTransaction,
+    ChainLockTransactionToken, DONE, IRQ_SAVE_OPTION, NO_IRQ_SAVE_OPTION, OwnerGuard,
+    RecordBackoff, SavedState, TransactionResult, assert_transaction_active, clt_tag,
     single_chain_lock_guard,
 };
 use crate::ktrace_rs;
@@ -1773,6 +1774,8 @@ unsafe extern "C" {
     fn cpp_save_state_list_destroy(holder: *mut SaveStateList);
 
     fn cpp_thread_call_migrate_fn_for_cpu(cpu: CpuNum);
+    fn cpp_scheduler_block(current_thread: *mut Thread);
+    fn cpp_scheduler_unblock(thread: *mut Thread);
 }
 
 /// Returns a pointer to the `ChainLock` embedded in `thread`.
@@ -5642,6 +5645,52 @@ pub unsafe extern "C" fn rust_scheduler_get_processing_limits(
     };
     // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
     unsafe { Scheduler::get_processing_limits(slice) };
+}
+
+/// Blocks `current_thread` in the scheduler.
+///
+/// The scheduler drops `current_thread`'s lock during the context switch and re-acquires it
+/// before returning when `current_thread` becomes runnable again.
+///
+/// # Safety
+///
+/// The caller must ensure that:
+/// - `current_thread.owner()` is the currently executing [`Thread`] on the current CPU in a
+///   blocked state (`Blocked` or `BlockedReadLock`), and blocking is permitted in the current
+///   context (no spinlocks held and blocking not disallowed).
+/// - The active transaction is finalized with `current_thread.owner().lock()` as the only held
+///   chain lock.
+#[inline]
+pub unsafe fn block(
+    current_thread: &mut ChainLockProof<'_, Thread>,
+    clt_token: &ChainLockTransactionToken,
+) {
+    assert_transaction_active(clt_token);
+    // SAFETY: `current_thread` proves `current_thread.owner().lock()` is held in the active
+    // transaction, and the caller upholds the scheduler blocking preconditions.
+    unsafe {
+        cpp_scheduler_block(current_thread.owner().as_raw());
+    }
+}
+
+/// Finishes unblocking `thread`, placing it into a compatible scheduler's run queue, releasing
+/// its lock, and rescheduling if needed/permitted.
+///
+/// # Safety
+///
+/// The caller must ensure that:
+/// - `thread.owner()` is a blocked thread that has been dequeued from its wait queue and is
+///   ready to be placed into a scheduler run queue.
+/// - The active transaction is finalized.
+#[inline]
+pub unsafe fn unblock(thread: OwnerGuard<'_, Thread>, clt_token: &ChainLockTransactionToken) {
+    assert_transaction_active(clt_token);
+    let thread = thread.into_unguarded();
+    // SAFETY: `thread.lock()` is held via the consumed `OwnerGuard` in the active transaction,
+    // and the caller guarantees `thread` is ready to be unblocked in the scheduler.
+    unsafe {
+        cpp_scheduler_unblock(thread.as_raw());
+    }
 }
 
 /// Kernel unit tests for Rust scheduler components.

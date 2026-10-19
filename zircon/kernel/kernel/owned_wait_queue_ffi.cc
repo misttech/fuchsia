@@ -268,4 +268,30 @@ FFI_ALWAYS_INLINE void cpp_owned_wait_queue_wake_and_requeue(
                                            requeue_count, wake_proxy, requeue_proxy, wake_option);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_owned_wait_queue_begin_propagate_remove_single_edge(
+    Thread* upstream_node, OwnedWaitQueue* downstream_node, ForceInheritance force_inheritance,
+    const SchedulerState::EffectiveProfile* old_target_ep) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream_node != nullptr);
+  DEBUG_ASSERT(downstream_node != nullptr);
+  OwnedWaitQueue::BeginPropagate(*upstream_node, *downstream_node,
+                                 OwnedWaitQueue::RemoveSingleEdgeOp, force_inheritance,
+                                 old_target_ep);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_owned_wait_queue_update_sched_state_storage_thread_removed(
+    OwnedWaitQueue* wait_queue, Thread* t) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(wait_queue != nullptr);
+  DEBUG_ASSERT(t != nullptr);
+  wait_queue->UpdateSchedStateStorageThreadRemoved(*t);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_owned_wait_queue_unlock_pi_chain_common_wait_queue(
+    WaitQueueBase* start, const void* stop_point) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(start != nullptr);
+  OwnedWaitQueue::UnlockPiChainCommon(*start, stop_point);
+}
+
 }  // extern "C"

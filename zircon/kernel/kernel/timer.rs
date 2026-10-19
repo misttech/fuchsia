@@ -5,9 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use core::marker::{PhantomData, PhantomPinned};
+use core::pin::Pin;
 use pin_init::pin_data;
 use zr::OpaqueBytes;
 
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     fn cpp_timer_init(timer: *mut core::ffi::c_void, clock_id: u32);
     fn cpp_timer_destroy(timer: *mut Timer);
@@ -18,6 +20,10 @@ unsafe extern "C" {
         arg: *mut core::ffi::c_void,
     );
     fn cpp_timer_cancel(timer: *mut Timer) -> bool;
+    fn cpp_timer_trylock_or_cancel(
+        timer: *mut Timer,
+        lock: *const crate::kconcurrent::ChainLock,
+    ) -> zx_types::zx_status_t;
 }
 
 pub const ZX_CLOCK_MONOTONIC: u32 = 0;
@@ -39,8 +45,15 @@ pub struct Timer {
 }
 
 impl Timer {
+    #[inline]
     pub fn init(clock_id: u32) -> impl pin_init::PinInit<Self, core::convert::Infallible> {
         zr::pin_init_ffi!(cpp_timer_init, clock_id)
+    }
+
+    /// Returns a raw mutable pointer to this [`Timer`] via its interior-mutable `OpaqueBytes`.
+    #[inline]
+    fn as_raw_mut(&self) -> *mut Self {
+        self._opaque.get().cast()
     }
 
     /// Schedules the timer to fire at the specified deadline.
@@ -48,18 +61,25 @@ impl Timer {
     /// # Safety
     ///
     /// The caller must ensure that:
+    /// - `self` remains pinned in memory and is not dropped, moved, or deallocated while
+    ///   scheduled; [`Self::cancel`] must be called before `self` is dropped if it may still be
+    ///   scheduled or executing its callback.
     /// - `callback` is a valid FFI callback that does not cause undefined behavior when executed.
-    /// - `arg` is either a valid pointer or a null pointer, and is safe to pass to `callback`.
+    /// - `arg` is either a valid pointer or a null pointer, and remains valid to pass to
+    ///   `callback` until either `callback` completes or [`Self::cancel`] returns.
+    /// - Neither [`Self::set_deadline`], [`Self::set_oneshot`], nor [`Self::cancel`] is called
+    ///   concurrently on `self` (except from within `callback` itself).
+    #[inline]
     pub unsafe fn set_deadline(
-        self: core::pin::Pin<&mut Self>,
+        self: Pin<&Self>,
         deadline: &Deadline,
         callback: Callback,
         arg: *mut core::ffi::c_void,
     ) {
-        // SAFETY: cpp_timer_set is safe as self and deadline are valid pointers.
+        // SAFETY: `self.as_raw_mut()` and `deadline` are valid pointers, and the caller upholds
+        // the pinning, lifetime, callback, and synchronization requirements.
         unsafe {
-            let me = self.get_unchecked_mut();
-            cpp_timer_set(me as *mut Timer, deadline as *const Deadline, callback, arg);
+            cpp_timer_set(self.as_raw_mut(), core::ptr::from_ref(deadline), callback, arg);
         }
     }
 
@@ -68,25 +88,49 @@ impl Timer {
     /// # Safety
     ///
     /// Same as [`Self::set_deadline`].
+    #[inline]
     pub unsafe fn set_oneshot(
-        mut self: core::pin::Pin<&mut Self>,
+        self: Pin<&Self>,
         deadline: i64,
         callback: Callback,
         arg: *mut core::ffi::c_void,
     ) {
         let dl = Deadline::no_slack(InstantUnknown(deadline));
-        // SAFETY: The caller guarantees the safety of callback and arg.
+        // SAFETY: The caller guarantees the safety preconditions of `set_deadline`.
         unsafe {
-            self.as_mut().set_deadline(&dl, callback, arg);
+            self.set_deadline(&dl, callback, arg);
         }
     }
 
-    pub fn cancel(self: core::pin::Pin<&mut Self>) -> bool {
-        // SAFETY: cpp_timer_cancel is safe as self is a valid pointer.
-        unsafe {
-            let me = self.get_unchecked_mut();
-            cpp_timer_cancel(me as *mut Timer)
-        }
+    #[inline]
+    pub fn cancel(&self) -> bool {
+        // SAFETY: `self.as_raw_mut()` is a valid pointer to an initialized `Timer`, and C++
+        // `Timer::Cancel()` is internally synchronized via `TimerLock`.
+        unsafe { cpp_timer_cancel(self.as_raw_mut()) }
+    }
+
+    /// Special helper routine to simultaneously try to acquire a
+    /// [`ChainLock`](crate::kconcurrent::ChainLock) and check for timer cancel, which is needed in
+    /// a few special cases. Returns `Ok(())` if `lock` was acquired, or `Err(Status::TIMED_OUT)`
+    /// if the timer was canceled.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - This method is called from within `self`'s own currently executing timer callback.
+    /// - A [`ChainLockTransaction`](crate::kconcurrent::ChainLockTransaction) is currently active
+    ///   on the current CPU and has not yet been finalized.
+    /// - `lock` is not already held by the current transaction.
+    /// - If `Ok(())` is returned, the caller assumes responsibility for releasing `lock`.
+    #[inline]
+    pub unsafe fn trylock_or_cancel(
+        &self,
+        lock: &crate::kconcurrent::ChainLock,
+    ) -> Result<(), zx_status::Status> {
+        // SAFETY: `self.as_raw_mut()` and `lock` are valid pointers, and the caller guarantees
+        // this is called from `self`'s timer callback within an active, unfinalized
+        // `ChainLockTransaction` that does not already hold `lock`.
+        unsafe { zx_status::Status::ok(cpp_timer_trylock_or_cancel(self.as_raw_mut(), lock)) }
     }
 }
 
@@ -129,7 +173,7 @@ mod tests {
         let now = unsafe { cpp_current_mono_time() };
         // SAFETY: timer_cb and arg are valid.
         unsafe {
-            timer.as_mut().set_oneshot(now + 1_000_000, timer_cb, arg);
+            timer.as_ref().set_oneshot(now + 1_000_000, timer_cb, arg);
         }
 
         // Poll up to 100ms (100 iterations of 1ms sleep) for the timer to fire.
@@ -156,11 +200,11 @@ mod tests {
         let now = unsafe { cpp_current_mono_time() };
         // SAFETY: timer_cb and arg are valid.
         unsafe {
-            timer.as_mut().set_oneshot(now + 10_000_000_000, timer_cb, arg);
+            timer.as_ref().set_oneshot(now + 10_000_000_000, timer_cb, arg);
         }
 
         // Cancel it immediately.
-        let cancelled = timer.as_mut().cancel();
+        let cancelled = timer.cancel();
         // Cancel should return true.
         unittest::expect_true!(cancelled);
 

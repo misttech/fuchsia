@@ -1787,6 +1787,12 @@ ThreadDispatcher* cpp_thread_user_thread(Thread* thread);
 zx_koid_t cpp_thread_tid(const Thread* thread);
 uint64_t cpp_thread_lock_flow_id(const Thread* thread);
 uint64_t cpp_thread_take_next_lock_flow_id(Thread* thread);
+uint32_t cpp_thread_signals(const Thread* thread);
+zx_status_t cpp_thread_check_kill_or_suspend_signal(const Thread* thread);
+thread_state cpp_thread_state(const Thread* thread);
+void cpp_thread_set_blocked(Thread* thread);
+void cpp_thread_set_blocked_read_lock(Thread* thread);
+const WaitQueueCollection::ThreadState* cpp_thread_wait_queue_state(const Thread* thread);
 }
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_THREAD_H_

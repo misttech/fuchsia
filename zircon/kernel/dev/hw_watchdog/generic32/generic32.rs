@@ -131,10 +131,10 @@ impl GenericWatchdog32Inner {
             TimerSlack::new(DurationUnknown(slack), SlackMode::Early),
         );
         // SAFETY: `owner` is a `'static` reference, so `pet_timer` is in a stable location
-        // and we can safely create a Pin<&mut Timer>.
+        // and we can safely create a Pin<&Timer>.
         unsafe {
-            let mut timer = core::pin::Pin::new_unchecked(&mut *self.pet_timer.as_mut_ptr());
-            timer.as_mut().set_deadline(
+            let timer = core::pin::Pin::new_unchecked(&*self.pet_timer.as_ptr());
+            timer.set_deadline(
                 &deadline,
                 watchdog_timer_cb,
                 core::ptr::from_ref(owner).cast_mut().cast(),

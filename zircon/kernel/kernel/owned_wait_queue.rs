@@ -473,7 +473,10 @@ impl Deref for OwnedWaitQueue {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.base
+        // SAFETY: `OwnedWaitQueue` is `#[repr(C)]` with `base: WaitQueueBase` at offset 0.
+        // Casting from `self` rather than projecting `&self.base` preserves pointer provenance
+        // over the entire `OwnedWaitQueue` allocation for `downcast_to_owq`.
+        unsafe { &*core::ptr::from_ref(self).cast::<WaitQueueBase>() }
     }
 }
 
@@ -507,7 +510,7 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// Re-expresses this proof as one for the embedded [`WaitQueueBase`] (same lock instance).
     /// `self` is unusable while the returned proof lives.
     pub(crate) fn as_base(&mut self) -> ChainLockProof<'_, WaitQueueBase> {
-        let base = &self.owner().base;
+        let base: &WaitQueueBase = self.owner();
         self.retag(base)
     }
 
@@ -578,36 +581,45 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     /// Returns `true` if no threads are currently blocked in this wait queue.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        // SAFETY: `self` proves `self.owner().lock()` is held by the active transaction.
-        unsafe { wait_queue_bindings::cpp_wait_queue_base_is_empty(self.owner().base.as_raw()) }
+        self.collection().is_empty()
     }
 
     /// Returns the number of threads currently blocked in this wait queue.
     #[inline]
     pub fn count(&self) -> u32 {
-        // SAFETY: `self` proves `self.owner().lock()` is held by the active transaction.
-        unsafe { wait_queue_bindings::cpp_wait_queue_base_count(self.owner().base.as_raw()) }
+        self.collection().count()
     }
 
     /// Peeks at the first [`Thread`] in the wait queue collection.
     #[inline]
     pub fn peek_front(&self) -> Option<ThreadPtr> {
-        // SAFETY: `self` proves `self.owner().lock()` is held by the active transaction. If the
-        // returned pointer is non-null, it points to a live `Thread`.
-        unsafe {
-            ThreadPtr::from_raw(
-                wait_queue_bindings::cpp_wait_queue_base_peek_front(self.owner().base.as_raw())
-                    .cast(),
-            )
-        }
+        self.collection().peek_front()
     }
 
     /// Validates the internal invariants of this wait queue.
     #[inline]
     pub fn validate_queue(&self) {
-        // SAFETY: `self` proves `self.owner().lock()` is held by the active transaction.
+        self.owner().base.debug_assert_magic_check();
+        self.collection().validate();
+    }
+
+    /// Updates the inherited scheduler state storage after `t` has been removed from this queue.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `t.owner()` was just removed from `self.owner()`'s collection
+    /// and that `self.owner().inherited_scheduler_state_storage` is currently `Some(...)`.
+    pub(crate) unsafe fn update_sched_state_storage_thread_removed(
+        &mut self,
+        t: &mut ChainLockProof<'_, Thread>,
+    ) {
+        // SAFETY: `self` and `t` prove both locks are held, and the caller guarantees `t` was
+        // just removed from `self.owner()`'s collection.
         unsafe {
-            wait_queue_bindings::cpp_wait_queue_base_validate_queue(self.owner().base.as_raw());
+            bindings::cpp_owned_wait_queue_update_sched_state_storage_thread_removed(
+                self.owner().as_raw(),
+                t.owner().as_raw().cast(),
+            );
         }
     }
 
@@ -909,6 +921,86 @@ impl OwnedWaitQueue {
             bindings::cpp_owned_wait_queue_lock_pi_chain_queue(start.owner().as_raw().cast())
         };
         chain_lock_result_from_bindings(res)
+    }
+
+    /// Downcast from a [`WaitQueueBase`] to an [`OwnedWaitQueue`] if possible, using the magic
+    /// number to detect the underlying nature of the object. Returns `None` if the object is not
+    /// an [`OwnedWaitQueue`].
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that if `wq.magic() == OWNED_MAGIC`, `wq` is the `base` subobject
+    /// of a live [`OwnedWaitQueue`] and carries provenance over the enclosing [`OwnedWaitQueue`].
+    #[inline]
+    pub(crate) unsafe fn downcast_to_owq(wq: &WaitQueueBase) -> Option<&Self> {
+        if wq.magic() == OWNED_MAGIC {
+            // SAFETY: `base` is at offset 0 of `OwnedWaitQueue`, and the caller guarantees that
+            // when `wq.magic() == OWNED_MAGIC`, `wq` is the `base` subobject of a live
+            // `OwnedWaitQueue` with provenance over the enclosing `OwnedWaitQueue`.
+            Some(unsafe { &*(core::ptr::from_ref(wq).cast::<Self>()) })
+        } else {
+            None
+        }
+    }
+
+    /// Propagates the removal of a single edge between `upstream_node` and `downstream_node`
+    /// along the PI chain.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `upstream_node.owner()` was just removed from `downstream_node.owner()`.
+    /// - All `ChainLock`s downstream of `downstream_node.owner()` in its PI graph are held by the
+    ///   active transaction.
+    pub(crate) unsafe fn begin_propagate_remove_single_edge(
+        upstream_node: &mut ChainLockProof<'_, Thread>,
+        downstream_node: &mut ChainLockProof<'_, Self>,
+        force_inheritance: ForceInheritance,
+        old_target_ep: Option<&SchedulerStateEffectiveProfile>,
+        clt_token: &ChainLockTransactionToken,
+        preempt_disabled_token: &PreemptDisabledToken,
+    ) {
+        assert_transaction_active(clt_token);
+        preempt_disabled_token.assert_held();
+        let old_ep_ptr = old_target_ep.map_or(core::ptr::null(), |ep| {
+            core::ptr::from_ref(ep).cast::<bindings::SchedulerState_EffectiveProfile>()
+        });
+        // SAFETY: `upstream_node.owner()` and `downstream_node.owner()` are valid, both locks are
+        // held via their proofs, the transaction and preemption-disabled tokens are verified, and
+        // the caller upholds the PI-chain preconditions.
+        unsafe {
+            bindings::cpp_owned_wait_queue_begin_propagate_remove_single_edge(
+                upstream_node.owner().as_raw().cast(),
+                downstream_node.owner().as_raw(),
+                force_inheritance.into(),
+                old_ep_ptr,
+            );
+        }
+    }
+
+    /// Releases all PI chain locks starting from `start` (`include_start = true`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `start`'s lock and all `ChainLock`s downstream of `start` in its PI graph are held by
+    ///   the active transaction and are not unlocked again by the caller after this call releases
+    ///   them.
+    /// - If `start.magic() == OWNED_MAGIC`, `start` is the `base` subobject of a live
+    ///   [`OwnedWaitQueue`] with provenance over the full [`OwnedWaitQueue`].
+    pub(crate) unsafe fn unlock_pi_chain_common_from_wait_queue(
+        start: &WaitQueueBase,
+        clt_token: &ChainLockTransactionToken,
+    ) {
+        assert_transaction_active(clt_token);
+        // SAFETY: `start.as_raw()` is valid, the active transaction is verified, and the caller
+        // upholds the PI-chain and `OwnedWaitQueue` provenance preconditions.
+        unsafe {
+            bindings::cpp_owned_wait_queue_unlock_pi_chain_common_wait_queue(
+                start.as_raw().cast(),
+                core::ptr::null(),
+            );
+        }
     }
 
     /// Debug assert wrapper which skips the thread analysis checks just to assert that a specific

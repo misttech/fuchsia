@@ -96,6 +96,13 @@ impl<Class> ClassedChainLock<Class> {
         self.lock.is_held(token)
     }
 
+    /// Asserts in debug builds that the lock is held by the transaction `token` belongs to and
+    /// must be released by the caller's scope.
+    #[inline]
+    pub fn assert_acquired(&self, token: &ChainLockTransactionToken) {
+        self.lock.assert_acquired(token);
+    }
+
     /// Returns `true` if the lock is unlocked.
     #[inline]
     pub fn is_unlocked(&self) -> bool {
@@ -379,6 +386,35 @@ impl<'a, O: ChainLocked> OwnerGuard<'a, O> {
         let mut guard = ChainLockGuard::defer(owner.lock().raw(), token);
         // `Self` is only returned once the deferred guard has actually acquired the lock.
         if guard.try_acquire() { Some(Self { guard, owner }) } else { None }
+    }
+
+    /// Conditionally acquires `owner.lock()` using the given `callable`, returning `None` on
+    /// failure.
+    ///
+    /// # Safety
+    ///
+    /// - If `callable` returns `true`, it must have acquired `owner.lock()` for the active
+    ///   transaction associated with `token`, no other guard or proof for `owner.lock()` may
+    ///   conflict or double-release it, and responsibility for releasing `owner.lock()` is
+    ///   transferred to the returned `OwnerGuard`.
+    /// - If `callable` returns `false`, `owner.lock()` must not have been acquired by `callable`.
+    #[inline]
+    #[must_use]
+    pub unsafe fn try_acquire_with<F>(
+        owner: &'a O,
+        token: &'a ChainLockTransactionToken,
+        callable: F,
+    ) -> Option<Self>
+    where
+        F: FnOnce(&'a ChainLock) -> bool,
+    {
+        let mut guard = ChainLockGuard::defer(owner.lock().raw(), token);
+        if guard.try_acquire_with(callable) {
+            debug_assert!(owner.lock().is_held(token));
+            Some(Self { guard, owner })
+        } else {
+            None
+        }
     }
 
     /// Mints a proof that `owner.lock()` is held: identity and hold by construction, uniqueness

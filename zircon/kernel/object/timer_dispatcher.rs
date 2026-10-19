@@ -279,7 +279,7 @@ impl TimerDispatcher {
         // `set()` using `fbl::RefPtr::add_ref(self)`. That reference is released either when the
         // callback completes or in `cancel_timer_locked()`.
         unsafe {
-            fields.timer.set_deadline(&slack_deadline, timer_irq_callback, dpc_ptr);
+            fields.timer.as_ref().set_deadline(&slack_deadline, timer_irq_callback, dpc_ptr);
         }
     }
 

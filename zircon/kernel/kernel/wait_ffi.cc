@@ -12,104 +12,23 @@
 
 extern "C" {
 
-static_assert(sizeof(ffi::Uninitialized<WaitQueueBase>) == sizeof(WaitQueueBase));
-static_assert(alignof(ffi::Uninitialized<WaitQueueBase>) == alignof(WaitQueueBase));
 static_assert(sizeof(ffi::Uninitialized<WaitQueue>) == sizeof(WaitQueue));
 static_assert(alignof(ffi::Uninitialized<WaitQueue>) == alignof(WaitQueue));
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_wait_queue_base_init(ffi::Uninitialized<WaitQueueBase>* wait_queue,
-                                                uint32_t magic) {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  new (wait_queue->GetAddressUnchecked()) WaitQueueBase(magic);
+FFI_ALWAYS_INLINE void cpp_wait_queue_collection_insert(
+    WaitQueueCollection* collection, Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(collection != nullptr);
+  DEBUG_ASSERT(thread != nullptr);
+  collection->Insert(thread);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint32_t cpp_wait_queue_base_magic(const WaitQueueBase* wait_queue) {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  return wait_queue->magic();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_wait_queue_base_is_empty(const WaitQueueBase* wait_queue)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  return wait_queue->IsEmpty();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint32_t cpp_wait_queue_base_count(const WaitQueueBase* wait_queue)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  return wait_queue->Count();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t
-cpp_wait_queue_base_unblock_thread(WaitQueueBase* wait_queue, Thread* t,
-                                   zx_status_t wait_queue_error) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  DEBUG_ASSERT(t != nullptr);
-  return wait_queue->UnblockThread(t, wait_queue_error);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE Thread* cpp_wait_queue_base_peek_front(WaitQueueBase* wait_queue)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  return wait_queue->PeekFront();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_wait_queue_base_block_etc_preamble(
-    WaitQueueBase* wait_queue, Thread* current_thread, const Deadline* deadline,
-    uint32_t signal_mask, ResourceOwnership reason,
-    Interruptible interruptible) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  DEBUG_ASSERT(current_thread != nullptr);
-  DEBUG_ASSERT(deadline != nullptr);
-  return wait_queue->BlockEtcPreamble(current_thread, *deadline, signal_mask, reason,
-                                      interruptible);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t
-cpp_wait_queue_base_block_etc_postamble(WaitQueueBase* wait_queue, Thread* current_thread,
-                                        const Deadline* deadline) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  DEBUG_ASSERT(current_thread != nullptr);
-  DEBUG_ASSERT(deadline != nullptr);
-  return wait_queue->BlockEtcPostamble(current_thread, *deadline);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_wait_queue_base_dequeue(WaitQueueBase* wait_queue, Thread* t,
-                                                   zx_status_t wait_queue_error)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  DEBUG_ASSERT(t != nullptr);
-  wait_queue->Dequeue(t, wait_queue_error);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_wait_queue_base_validate_queue(WaitQueueBase* wait_queue)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  wait_queue->ValidateQueue();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_wait_queue_base_timeout_handler(Timer* timer, zx_instant_mono_t now,
-                                                           void* arg) {
-  WaitQueueBase::TimeoutHandler(timer, now, arg);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_wait_queue_base_update_blocked_thread_effective_profile(
-    WaitQueueBase* wait_queue, Thread* t) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(wait_queue != nullptr);
-  DEBUG_ASSERT(t != nullptr);
-  wait_queue->UpdateBlockedThreadEffectiveProfile(*t);
+FFI_ALWAYS_INLINE void cpp_wait_queue_collection_remove(
+    WaitQueueCollection* collection, Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(collection != nullptr);
+  DEBUG_ASSERT(thread != nullptr);
+  collection->Remove(thread);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

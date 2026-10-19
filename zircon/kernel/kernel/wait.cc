@@ -86,75 +86,13 @@ static inline void WqTraceDepth(const WaitQueueCollection* collection, uint32_t 
 // Wait queues are building blocks that other locking primitives use to handle
 // blocking threads.
 void WaitQueueBase::TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
-  Thread& thread = *(static_cast<Thread*>(arg));
-  thread.canary().Assert();
-
-  // In order to wake the thread with a TIMED_OUT error, we need to hold the
-  // entire PI chain starting from the thread, and ending at the target of the
-  // PI graph that the thread is blocked in.  It is possible, however, that the
-  // thread has already woken up and is attempting to cancel the timeout
-  // handler.  So, use the Timer's TryLockOrCancel to lock the first node in the
-  // chain (the thread), being prepared to abort the operation if we are getting
-  // canceled.  Then proceed to lock the rest of the chain, backing off and
-  // retrying as needed.
-  //
-  // TODO(johngro): Optimize the case where the thread being unblocked has a
-  // non-inheritable profile.  We don't need to lock the entire PI chain if
-  // there will be no PI consequences to deal with.  It should be sufficient to
-  // simply lock the thread and the wait queue following it, and remove the
-  // thread from the queue.
-  const auto try_lock_or_cancel = [timer](ChainLock& lock) TA_TRY_ACQ(true, lock) {
-    return timer->TrylockOrCancel(lock) == ZX_OK;
-  };
-
-  // If the timeout has not been cancelled, handle the following:
-  // 1. The thread is still sitting in its wait queue, it has not been
-  //    explicitly unblocked yet. Its state must be either BLOCKED or
-  //    BLOCKED_READ_LOCK. Finish locking, and then unblock the thread.
-  // 2. The thread has been explicitly unblocked, but it has not become
-  //    scheduled yet. The thread will have no blocking wait queue, and its
-  //    state must be READY. It will eventually become scheduled, and as it
-  //    unwinds, it will attempt to cancel this timer (which is currently on
-  //    its stack).
-  const auto do_transaction = [&]()
-                                  TA_REQ(chainlock_transaction_token,
-                                         preempt_disabled_token) -> ChainLockTransaction::Result<> {
-    ChainLockGuard thread_guard{thread.get_lock(), ChainLockGuard::Defer};
-    if (!thread_guard.TryAcquireWith(try_lock_or_cancel)) {
-      return ChainLockTransaction::Done;
-    }
-
-    WaitQueueBase* wq = thread.wait_queue_state().blocking_wait_queue();
-    if (wq == nullptr) {
-      DEBUG_ASSERT(thread.state() == THREAD_READY);
-      return ChainLockTransaction::Done;
-    }
-
-    DEBUG_ASSERT((thread.state() == THREAD_BLOCKED) ||
-                 (thread.state() == THREAD_BLOCKED_READ_LOCK));
-    if (OwnedWaitQueue::LockPiChain(thread) == ChainLock::Result::Backoff) {
-      return ChainLockTransaction::Action::Backoff;
-    }
-    wq->get_lock().AssertAcquired();
-
-    ChainLockTransaction::Finalize();
-    thread_guard.Unguard();
-    wq->UnblockThread(&thread, ZX_ERR_TIMED_OUT);
-    return ChainLockTransaction::Done;
-  };
-  ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption,
-                                  CLT_TAG("WaitQueue::TimeoutHandler"), do_transaction);
+  rust_wait_queue_base_timeout_handler(timer, now, arg);
 }
 
 // Remove a thread from a wait queue, maintain the wait queue's internal count,
 // and update the WaitQueue specific bookkeeping in the thread in the process.
 void WaitQueueBase::Dequeue(Thread* t, zx_status_t wait_queue_error) {
-  DEBUG_ASSERT(t != nullptr);
-  AssertInWaitQueue(*t, *this);
-
-  collection_.Remove(t);
-  t->wait_queue_state().blocked_status_ = wait_queue_error;
-  t->wait_queue_state().blocking_wait_queue_ = nullptr;
+  rust_wait_queue_base_dequeue(this, t, wait_queue_error);
 }
 
 SchedDuration WaitQueueCollection::MinInheritableRelativeDeadline() const {
@@ -217,10 +155,7 @@ ChainLock::Result WaitQueueCollection::LockAll() {
   return ChainLock::Result::Ok;
 }
 
-void WaitQueueBase::ValidateQueue() {
-  DEBUG_ASSERT_MAGIC_CHECK(this);
-  collection_.Validate();
-}
+void WaitQueueBase::ValidateQueue() const { rust_wait_queue_base_validate_queue(this); }
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -544,16 +479,7 @@ void WaitQueue::MoveThread(WaitQueue* source, WaitQueue* dest, Thread* t) {
  * which case it would have called Block() on an invalid wait
  * queue.
  */
-WaitQueueBase::~WaitQueueBase() {
-  DEBUG_ASSERT_MAGIC_CHECK(this);
-
-  const uint32_t count = collection_.Count();
-  if (count != 0) {
-    panic("~WaitQueue() called on non-empty WaitQueue, count=%u, magic=0x%08x\n", count, magic_);
-  }
-
-  magic_ = 0;
-}
+WaitQueueBase::~WaitQueueBase() { rust_wait_queue_base_destroy(this); }
 
 /**
  * @brief  Wake a specific thread from a specific wait queue
@@ -576,59 +502,13 @@ WaitQueueBase::~WaitQueueBase() {
  *
  * @return ZX_ERR_BAD_STATE if thread was not in any wait queue.
  */
-zx_status_t WaitQueueBase::UnblockThread(Thread* t, zx_status_t wait_queue_error) {
-  DEBUG_ASSERT_MAGIC_CHECK(this);
-  t->canary().Assert();
-
-  if (WAIT_QUEUE_VALIDATION) {
-    ValidateQueue();
-  }
-
-  // Remove the thread from the wait queue and deal with any PI propagation
-  // required if the thread was removed from an owned wait queue. Finally,
-  // formally unblock the thread, allowing it to join a run queue.
-  Dequeue(t, wait_queue_error);
-
-  if (OwnedWaitQueue* owq = OwnedWaitQueue::DowncastToOwq(this); owq != nullptr) {
-    owq->get_lock().MarkHeld();
-    // Get the effective profile of the owned wait queue before propagation,
-    // which will recompute the effective profile of the queue. This is
-    // necessary for the scheduler PI logic to determine how the wait queue's
-    // effective profile changed.
-    const SchedulerState::EffectiveProfile old_target_ep = owq->GetEffectiveProfile();
-    OwnedWaitQueue::BeginPropagate(*t, *owq, OwnedWaitQueue::RemoveSingleEdgeOp,
-                                   ForceInheritance::No, &old_target_ep);
-    owq->UpdateSchedStateStorageThreadRemoved(*t);
-  }
-
-  // Now that any required propagation is complete, we can release all of the PI
-  // chain locks starting from this wait queue.
-  OwnedWaitQueue::UnlockPiChainCommon(*this);
-
-  // The PI consequences of the unblock (if any) have been applied, and all of
-  // the (previously) downstream PI chain has been unlocked.  Go ahead and
-  // unblock the thread in the scheduler, which will will drop the unblocking thread's
-  // lock for us.
-  Scheduler::Unblock(t);
-  return ZX_OK;
+zx_status_t WaitQueueBase::UnblockThread(Thread* t, zx_status_t wait_queue_error)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return rust_wait_queue_base_unblock_thread(this, t, wait_queue_error);
 }
 
 void WaitQueueBase::UpdateBlockedThreadEffectiveProfile(Thread& t) {
-  t.canary().Assert();
-  DEBUG_ASSERT_MAGIC_CHECK(this);
-  // Note, we don't do this in order to establish shared access to the thread's
-  // scheduler state.  We should already have the thread locked for exclusive
-  // access.  We just do this as an additional consistency check.
-  AssertInWaitQueue(t, *this);
-
-  SchedulerState& state = t.scheduler_state();
-  collection_.Remove(&t);
-  state.RecomputeEffectiveProfile();
-  collection_.Insert(&t);
-
-  if (WAIT_QUEUE_VALIDATION) {
-    ValidateQueue();
-  }
+  rust_wait_queue_base_update_blocked_thread_effective_profile(this, &t);
 }
 
 ktl::optional<BrwLockOps::LockForWakeResult> BrwLockOps::LockForWake(WaitQueue& queue,

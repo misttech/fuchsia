@@ -2265,6 +2265,8 @@ inline const Scheduler& Scheduler::PowerLevelControl::scheduler() const {
 
 extern "C" {
 void cpp_current_mono_time_and_boot_ticks(Scheduler::SchedMonoTimeAndBootTicks* out);
+void cpp_scheduler_block(Thread* current_thread);
+void cpp_scheduler_unblock(Thread* thread);
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_H_

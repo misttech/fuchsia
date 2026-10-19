@@ -87,7 +87,7 @@ impl RecurringCallback {
                     Deadline::new((InstantMono(now) + DurationMono::from_seconds(1)).into(), SLACK);
                 // SAFETY: `Self::callback_wrapper` and `arg` are valid for the timer callback.
                 unsafe {
-                    fields.timer.set_deadline(&deadline, Self::callback_wrapper, arg);
+                    fields.timer.as_ref().set_deadline(&deadline, Self::callback_wrapper, arg);
                 }
             }
         }
@@ -107,7 +107,7 @@ impl RecurringCallback {
             // SAFETY: `Self::callback_wrapper` is a valid FFI timer callback and `self` points to
             // a pinned `RecurringCallback` that remains valid while the timer is active.
             unsafe {
-                fields.timer.set_deadline(
+                fields.timer.as_ref().set_deadline(
                     &deadline,
                     Self::callback_wrapper,
                     (self as *const Self).cast_mut().cast(),

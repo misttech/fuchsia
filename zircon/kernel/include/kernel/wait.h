@@ -20,6 +20,7 @@
 #include <kernel/timer.h>
 
 struct Thread;
+class WaitQueueCollection;
 class WaitQueueBase;
 class WaitQueue;
 
@@ -40,26 +41,30 @@ enum class Interruptible : bool { No, Yes };
 enum class ForceInheritance : bool { No, Yes };
 
 extern "C" {
-void cpp_wait_queue_base_init(ffi::Uninitialized<WaitQueueBase>* wait_queue, uint32_t magic);
-uint32_t cpp_wait_queue_base_magic(const WaitQueueBase* wait_queue);
-bool cpp_wait_queue_base_is_empty(const WaitQueueBase* wait_queue);
-uint32_t cpp_wait_queue_base_count(const WaitQueueBase* wait_queue);
-zx_status_t cpp_wait_queue_base_unblock_thread(WaitQueueBase* wait_queue, Thread* t,
-                                               zx_status_t wait_queue_error);
-Thread* cpp_wait_queue_base_peek_front(WaitQueueBase* wait_queue);
-zx_status_t cpp_wait_queue_base_block_etc_preamble(WaitQueueBase* wait_queue,
-                                                   Thread* current_thread, const Deadline* deadline,
-                                                   uint32_t signal_mask, ResourceOwnership reason,
-                                                   Interruptible interruptible);
-zx_status_t cpp_wait_queue_base_block_etc_postamble(WaitQueueBase* wait_queue,
+void cpp_wait_queue_collection_insert(WaitQueueCollection* collection, Thread* thread);
+void cpp_wait_queue_collection_remove(WaitQueueCollection* collection, Thread* thread);
+
+void rust_wait_queue_base_destroy(WaitQueueBase* wait_queue);
+uint32_t rust_wait_queue_base_magic(const WaitQueueBase* wait_queue);
+bool rust_wait_queue_base_is_empty(const WaitQueueBase* wait_queue);
+uint32_t rust_wait_queue_base_count(const WaitQueueBase* wait_queue);
+zx_status_t rust_wait_queue_base_unblock_thread(WaitQueueBase* wait_queue, Thread* t,
+                                                zx_status_t wait_queue_error);
+Thread* rust_wait_queue_base_peek_front(const WaitQueueBase* wait_queue);
+zx_status_t rust_wait_queue_base_block_etc_preamble(WaitQueueBase* wait_queue,
                                                     Thread* current_thread,
-                                                    const Deadline* deadline);
-void cpp_wait_queue_base_dequeue(WaitQueueBase* wait_queue, Thread* t,
-                                 zx_status_t wait_queue_error);
-void cpp_wait_queue_base_validate_queue(WaitQueueBase* wait_queue);
-void cpp_wait_queue_base_timeout_handler(Timer* timer, zx_instant_mono_t now, void* arg);
-void cpp_wait_queue_base_update_blocked_thread_effective_profile(WaitQueueBase* wait_queue,
-                                                                 Thread* t);
+                                                    const Deadline* deadline, uint32_t signal_mask,
+                                                    ResourceOwnership reason,
+                                                    Interruptible interruptible);
+zx_status_t rust_wait_queue_base_block_etc_postamble(const WaitQueueBase* wait_queue,
+                                                     Thread* current_thread,
+                                                     const Deadline* deadline);
+void rust_wait_queue_base_dequeue(WaitQueueBase* wait_queue, Thread* t,
+                                  zx_status_t wait_queue_error);
+void rust_wait_queue_base_validate_queue(const WaitQueueBase* wait_queue);
+void rust_wait_queue_base_timeout_handler(Timer* timer, zx_instant_mono_t now, void* arg);
+void rust_wait_queue_base_update_blocked_thread_effective_profile(WaitQueueBase* wait_queue,
+                                                                  Thread* t);
 
 void cpp_wait_queue_init(ffi::Uninitialized<WaitQueue>* wait_queue);
 zx_status_t cpp_wait_queue_block(WaitQueue* wait_queue, Thread* current_thread,
@@ -247,9 +252,9 @@ class WaitQueueCollection {
 // Base class for wait queue types, providing common functionality.
 class WaitQueueBase : public ChainLockable {
  public:
-  uint32_t magic() const { return magic_; }
-  bool IsEmpty() const TA_REQ_SHARED(get_lock()) { return collection_.IsEmpty(); }
-  uint32_t Count() const TA_REQ_SHARED(get_lock()) { return collection_.Count(); }
+  uint32_t magic() const { return rust_wait_queue_base_magic(this); }
+  bool IsEmpty() const TA_REQ_SHARED(get_lock()) { return rust_wait_queue_base_is_empty(this); }
+  uint32_t Count() const TA_REQ_SHARED(get_lock()) { return rust_wait_queue_base_count(this); }
 
   // Remove a specific thread out of the wait queue it's blocked on, and deal
   // with any PI side effects.  Note: when calling this function:
@@ -271,27 +276,14 @@ class WaitQueueBase : public ChainLockable {
   friend struct BrwLockOps;
   friend struct WaitQueueLockOps;
   friend class Scheduler;
-  friend void cpp_wait_queue_base_init(ffi::Uninitialized<WaitQueueBase>* wait_queue,
-                                       uint32_t magic);
-  friend Thread* cpp_wait_queue_base_peek_front(WaitQueueBase* wait_queue);
-  friend zx_status_t cpp_wait_queue_base_block_etc_preamble(
-      WaitQueueBase* wait_queue, Thread* current_thread, const Deadline* deadline,
-      uint32_t signal_mask, ResourceOwnership reason, Interruptible interruptible);
-  friend zx_status_t cpp_wait_queue_base_block_etc_postamble(WaitQueueBase* wait_queue,
-                                                             Thread* current_thread,
-                                                             const Deadline* deadline);
-  friend void cpp_wait_queue_base_dequeue(WaitQueueBase* wait_queue, Thread* t,
-                                          zx_status_t wait_queue_error);
-  friend void cpp_wait_queue_base_validate_queue(WaitQueueBase* wait_queue);
-  friend void cpp_wait_queue_base_timeout_handler(Timer* timer, zx_instant_mono_t now, void* arg);
-  friend void cpp_wait_queue_base_update_blocked_thread_effective_profile(WaitQueueBase* wait_queue,
-                                                                          Thread* t);
 
   explicit constexpr WaitQueueBase(uint32_t magic) : magic_(magic) {}
   ~WaitQueueBase();
 
-  Thread* PeekFront() TA_REQ(get_lock()) { return collection_.PeekFront(); }
-  const Thread* PeekFront() const TA_REQ(get_lock()) { return collection_.PeekFront(); }
+  Thread* PeekFront() TA_REQ(get_lock()) { return rust_wait_queue_base_peek_front(this); }
+  const Thread* PeekFront() const TA_REQ(get_lock()) {
+    return rust_wait_queue_base_peek_front(this);
+  }
 
   inline zx_status_t BlockEtcPreamble(Thread* current_thread, const Deadline& deadline,
                                       uint signal_mask, ResourceOwnership reason,
@@ -305,7 +297,7 @@ class WaitQueueBase : public ChainLockable {
   void Dequeue(Thread* t, zx_status_t wait_queue_error)
       TA_REQ(get_lock(), ChainLockable::GetLock(*t));
 
-  void ValidateQueue() TA_REQ_SHARED(get_lock());
+  void ValidateQueue() const TA_REQ_SHARED(get_lock());
 
   static void TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg);
 

@@ -338,4 +338,12 @@ class TimerQueue {
   zx_ticks_t next_timer_deadline_ = ZX_TIME_INFINITE;
 };
 
+extern "C" {
+void cpp_timer_init(Timer* timer, zx_clock_t clock_id);
+void cpp_timer_destroy(Timer* timer);
+void cpp_timer_set(Timer* timer, const Deadline* deadline, Timer::Callback callback, void* arg);
+bool cpp_timer_cancel(Timer* timer);
+zx_status_t cpp_timer_trylock_or_cancel(Timer* timer, ChainLock* lock);
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_TIMER_H_

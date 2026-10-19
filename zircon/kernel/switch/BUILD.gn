@@ -352,6 +352,9 @@ foreach(level,
     if (level > 0) {
       rustflags += [ "--cfg=console_enabled" ]
     }
+    if (level > 2) {
+      rustflags += [ "--cfg=lk_debuglevel_gt2" ]
+    }
   }
 }
 

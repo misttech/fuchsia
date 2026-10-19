@@ -713,7 +713,7 @@ impl MemoryWatchdogState {
                         {
                             self.eviction_trigger();
                         } else {
-                            Pin::new_unchecked(&mut *self.eviction_trigger.get()).set_oneshot(
+                            Pin::new_unchecked(&*self.eviction_trigger.get()).set_oneshot(
                                 (time_now + *self.eviction_delay_ms.get()).into_nanos(),
                                 eviction_trigger_callback,
                                 self as *const Self as *mut c_void,

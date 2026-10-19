@@ -132,6 +132,22 @@ unsafe extern "C" {
     fn cpp_thread_take_next_lock_flow_id(thread: *mut Thread) -> u64;
     fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
     fn cpp_thread_dump(thread: *const Thread, full: bool);
+    fn cpp_thread_canary_assert(thread: *const Thread);
+    fn cpp_thread_signals(thread: *const Thread) -> u32;
+    fn cpp_thread_check_kill_or_suspend_signal(thread: *const Thread) -> zx_status_t;
+    fn cpp_thread_state(thread: *const Thread) -> crate::kernel::scheduler_state::ThreadStateKind;
+    fn cpp_thread_set_blocked(thread: *mut Thread);
+    fn cpp_thread_set_blocked_read_lock(thread: *mut Thread);
+    fn cpp_thread_wait_queue_state(
+        thread: *const Thread,
+    ) -> *const crate::kernel::wait_queue::WaitQueueCollectionThreadState;
+    // `scheduler.rs` declares `cpp_thread_get_scheduler_state` returning
+    // `*mut crate::kernel::scheduler::SchedulerState` (a distinct type from
+    // `scheduler_state::SchedulerState`), so this declaration must match to satisfy
+    // `-D clashing-extern-declarations`.
+    fn cpp_thread_get_scheduler_state(
+        thread: *mut Thread,
+    ) -> *mut crate::kernel::scheduler::SchedulerState;
 }
 
 /// Stall accounting state of a thread.
@@ -242,6 +258,88 @@ impl Thread {
     #[inline]
     pub fn as_raw(&self) -> *mut Self {
         core::ptr::from_ref(self).cast_mut()
+    }
+
+    /// Asserts that `self`'s canary magic value is valid.
+    #[inline]
+    pub fn assert_canary(&self) {
+        // SAFETY: By `Thread`'s safety invariant, `self` points to a live, initialized `Thread`.
+        unsafe {
+            cpp_thread_canary_assert(self);
+        }
+    }
+
+    /// Returns the current pending signals bitmask on this thread.
+    #[inline]
+    pub fn signals(&self) -> u32 {
+        // SAFETY: By `Thread`'s safety invariant, `self` points to a live, initialized `Thread`,
+        // and `signals()` performs a relaxed atomic load.
+        unsafe { cpp_thread_signals(self) }
+    }
+
+    /// Checks whether the kill or suspend signal has been raised. If kill has been raised, returns
+    /// `Err(Status::INTERNAL_INTR_KILLED)`. If suspend has been raised, returns
+    /// `Err(Status::INTERNAL_INTR_RETRY)`. Otherwise, returns `Ok(())`.
+    #[inline]
+    pub fn check_kill_or_suspend_signal(&self) -> Result<(), Status> {
+        // SAFETY: By `Thread`'s safety invariant, `self` points to a live, initialized `Thread`.
+        Status::ok(unsafe { cpp_thread_check_kill_or_suspend_signal(self) })
+    }
+}
+
+/// Accessors and locked operations for a [`Thread`] guarded by its chain lock.
+impl<'p> ChainLockProof<'p, Thread> {
+    /// Returns the scheduling state of this thread.
+    #[inline]
+    pub fn state(&self) -> crate::kernel::scheduler_state::ThreadStateKind {
+        // SAFETY: `self` proves `self.owner().lock()` is held.
+        unsafe { cpp_thread_state(self.owner()) }
+    }
+
+    /// Sets the thread's state to `ThreadStateKind::Blocked`.
+    #[inline]
+    pub fn set_blocked(&mut self) {
+        // SAFETY: `self` proves `self.owner().lock()` is held exclusively.
+        unsafe {
+            cpp_thread_set_blocked(self.owner().as_raw());
+        }
+    }
+
+    /// Sets the thread's state to `ThreadStateKind::BlockedReadLock`.
+    #[inline]
+    pub fn set_blocked_read_lock(&mut self) {
+        // SAFETY: `self` proves `self.owner().lock()` is held exclusively.
+        unsafe {
+            cpp_thread_set_blocked_read_lock(self.owner().as_raw());
+        }
+    }
+
+    /// Returns a reference to this thread's
+    /// [`WaitQueueCollectionThreadState`](super::wait_queue::WaitQueueCollectionThreadState).
+    #[inline]
+    pub fn wait_queue_state(
+        &self,
+    ) -> &'p crate::kernel::wait_queue::WaitQueueCollectionThreadState {
+        // SAFETY: `self` proves `self.owner().lock()` is held, and `cpp_thread_wait_queue_state`
+        // returns a valid pointer to `self.owner()`'s embedded `WaitQueueCollection::ThreadState`.
+        unsafe { &*cpp_thread_wait_queue_state(self.owner()) }
+    }
+
+    /// Returns a shared reference to this thread's [`SchedulerState`].
+    #[inline]
+    pub fn scheduler_state(&self) -> &SchedulerState {
+        // SAFETY: `self` proves `self.owner().lock()` is held.
+        unsafe { &*cpp_thread_scheduler_state(self.owner()) }
+    }
+
+    /// Returns a mutable reference to this thread's [`SchedulerState`].
+    #[inline]
+    pub fn scheduler_state_mut(&mut self) -> &mut SchedulerState {
+        // SAFETY: `self` proves `self.owner().lock()` is held exclusively, and the unique borrow
+        // of `self` ensures no other reference to `scheduler_state_` is live.
+        unsafe {
+            &mut *cpp_thread_get_scheduler_state(self.owner().as_raw()).cast::<SchedulerState>()
+        }
     }
 }
 

@@ -41,8 +41,18 @@ zr::static_assert!(core::mem::size_of::<ThreadStateKind>() == 1);
 zr::static_assert!(core::mem::align_of::<ThreadStateKind>() == 1);
 
 /// Facade for the C++ `SchedulerState` class.
+///
+/// # Safety Invariant
+///
+/// Any `&SchedulerState` or `&mut SchedulerState` reference must point to a valid, initialized
+/// C++ `SchedulerState` instance guarded by its owning [`Thread`](crate::kernel::thread::Thread)'s
+/// lock.
 #[repr(C)]
 pub struct SchedulerState {
+    // Safety invariant: `_facade` is zero-sized and private so safe code cannot construct a
+    // `SchedulerState` by value; any reference points to a live, initialized `SchedulerState`
+    // guarded by its owning `Thread`'s lock, and `OpaqueFacade` marks `SchedulerState` as
+    // `!Freeze` and `!Unpin` for FFI mutation.
     _facade: OpaqueFacade,
 }
 
@@ -69,6 +79,18 @@ impl SchedulerState {
     pub fn hard_affinity(&self) -> cpu_mask_t {
         // SAFETY: `self` is a valid `SchedulerState` reference.
         unsafe { cpp_scheduler_state_hard_affinity(self) }
+    }
+
+    /// Recomputes the effective profile of this scheduler state.
+    #[inline]
+    pub fn recompute_effective_profile(&mut self) {
+        // SAFETY: `self` is a valid mutable `SchedulerState` reference (guarded by the owning
+        // `Thread`'s lock), which has the same address and layout as
+        // `crate::kernel::scheduler::SchedulerState`.
+        let state = unsafe {
+            &mut *core::ptr::from_mut(self).cast::<crate::kernel::scheduler::SchedulerState>()
+        };
+        state.recompute_effective_profile();
     }
 }
 

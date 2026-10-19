@@ -2214,7 +2214,7 @@ template void OwnedWaitQueue::BeginPropagate(Thread&, OwnedWaitQueue&, RemoveSin
 // Explicit instantiation of the common lock/unlock routines.
 template fit::result<ChainLock::Result, const void*>
 OwnedWaitQueue::LockPiChainCommon<OwnedWaitQueue::LockingBehavior::RefuseCycle>(Thread& start);
-template fit::result<ChainLock::Result, const void*>
-OwnedWaitQueue::LockPiChainCommon<OwnedWaitQueue::LockingBehavior::RefuseCycle>(WaitQueue& start);
+template fit::result<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon<
+    OwnedWaitQueue::LockingBehavior::RefuseCycle>(WaitQueueBase& start);
 template void OwnedWaitQueue::UnlockPiChainCommon(Thread& start, const void* stop_point);
-template void OwnedWaitQueue::UnlockPiChainCommon(WaitQueue& start, const void* stop_point);
+template void OwnedWaitQueue::UnlockPiChainCommon(WaitQueueBase& start, const void* stop_point);

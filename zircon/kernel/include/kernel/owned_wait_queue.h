@@ -20,6 +20,17 @@
 
 // fwd decl so we can be friends with our tests.
 struct OwnedWaitQueueTopologyTests;
+class OwnedWaitQueue;
+
+extern "C" {
+void cpp_owned_wait_queue_begin_propagate_remove_single_edge(
+    Thread* upstream_node, OwnedWaitQueue* downstream_node, ForceInheritance force_inheritance,
+    const SchedulerState::EffectiveProfile* old_target_ep);
+void cpp_owned_wait_queue_update_sched_state_storage_thread_removed(OwnedWaitQueue* wait_queue,
+                                                                    Thread* t);
+void cpp_owned_wait_queue_unlock_pi_chain_common_wait_queue(WaitQueueBase* start,
+                                                            const void* stop_point);
+}  // extern "C"
 
 // Owned wait queues are an extension of wait queues which adds the concept of
 // ownership for use when profile inheritance semantics are needed.
@@ -332,9 +343,14 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
   }
 
  private:
-  // Give permission to the WaitQueue thunk to call the PropagateRemove method
-  friend zx_status_t WaitQueueBase::UnblockThread(Thread* t, zx_status_t wait_queue_error);
   friend struct OwnedWaitQueueTopologyTests;
+  friend void cpp_owned_wait_queue_begin_propagate_remove_single_edge(
+      Thread* upstream_node, OwnedWaitQueue* downstream_node, ForceInheritance force_inheritance,
+      const SchedulerState::EffectiveProfile* old_target_ep);
+  friend void cpp_owned_wait_queue_update_sched_state_storage_thread_removed(
+      OwnedWaitQueue* wait_queue, Thread* t);
+  friend void cpp_owned_wait_queue_unlock_pi_chain_common_wait_queue(WaitQueueBase* start,
+                                                                     const void* stop_point);
 
   struct DefaultWakeHooks : public IWakeRequeueHook {};
   static inline DefaultWakeHooks default_wake_hooks_;

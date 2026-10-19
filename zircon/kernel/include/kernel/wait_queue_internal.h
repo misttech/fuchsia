@@ -52,55 +52,14 @@ inline zx_status_t WaitQueueBase::BlockEtcPreamble(Thread* const current_thread,
                                                    ResourceOwnership reason,
                                                    Interruptible interruptible)
     TA_REQ(get_lock(), current_thread->get_lock()) {
-  DEBUG_ASSERT(current_thread == Thread::Current::Get());
-
-  if (deadline.when() != ZX_TIME_INFINITE && deadline.when() <= current_mono_time()) {
-    return ZX_ERR_TIMED_OUT;
-  }
-
-  if (interruptible == Interruptible::Yes && (unlikely(current_thread->signals() & ~signal_mask))) {
-    zx_status_t status = current_thread->CheckKillOrSuspendSignal();
-    if (status != ZX_OK) {
-      return status;
-    }
-  }
-
-  WaitQueueCollection::ThreadState& state = current_thread->wait_queue_state();
-
-  state.interruptible_ = interruptible;
-
-  collection_.Insert(current_thread);
-  if (reason == ResourceOwnership::Normal) {
-    current_thread->set_blocked();
-  } else {
-    current_thread->set_blocked_read_lock();
-  }
-  state.blocking_wait_queue_ = this;
-  state.blocked_status_ = ZX_OK;
-
-  return ZX_OK;
+  return rust_wait_queue_base_block_etc_preamble(this, current_thread, &deadline, signal_mask,
+                                                 reason, interruptible);
 }
 
 inline zx_status_t WaitQueueBase::BlockEtcPostamble(Thread* const current_thread,
                                                     const Deadline& deadline)
     TA_REQ(current_thread->get_lock()) TA_EXCL(get_lock()) {
-  DEBUG_ASSERT(current_thread == Thread::Current::Get());
-  Timer timer;
-
-  // if the deadline is nonzero or noninfinite, set a callback to yank us out of the queue
-  if (deadline.when() != ZX_TIME_INFINITE) {
-    timer.Set(deadline, &WaitQueueBase::TimeoutHandler, current_thread);
-  }
-
-  Scheduler::Block(current_thread);
-
-  // we don't really know if the timer fired or not, so it's better safe to try to cancel it
-  if (deadline.when() != ZX_TIME_INFINITE) {
-    timer.Cancel();
-  }
-
-  current_thread->wait_queue_state().interruptible_ = Interruptible::No;
-  return current_thread->wait_queue_state().blocked_status_;
+  return rust_wait_queue_base_block_etc_postamble(this, current_thread, &deadline);
 }
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_WAIT_QUEUE_INTERNAL_H_
