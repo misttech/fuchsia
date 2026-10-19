@@ -18,23 +18,15 @@ use super::handle::{HandleRef, KernelHandle};
 use super::job_dispatcher_ffi::{
     cpp_job_dispatcher_create, cpp_job_dispatcher_create_debug_exceptionate,
     cpp_job_dispatcher_create_root_job, cpp_job_dispatcher_enumerate_children,
-    cpp_job_dispatcher_exceptionate, cpp_job_dispatcher_get_info,
-    cpp_job_dispatcher_get_kill_on_oom, cpp_job_dispatcher_get_root_job,
+    cpp_job_dispatcher_exceptionate, cpp_job_dispatcher_get_info, cpp_job_dispatcher_get_root_job,
     cpp_job_dispatcher_get_root_job_handle, cpp_job_dispatcher_get_runtime_stats,
     cpp_job_dispatcher_is_root, cpp_job_dispatcher_kill,
     cpp_job_dispatcher_kill_job_with_kill_on_oom, cpp_job_dispatcher_lookup_job_by_id,
-    cpp_job_dispatcher_lookup_process_by_id, cpp_job_dispatcher_max_height,
-    cpp_job_dispatcher_parent, cpp_job_dispatcher_set_basic_policy_v1,
+    cpp_job_dispatcher_lookup_process_by_id, cpp_job_dispatcher_set_basic_policy_v1,
     cpp_job_dispatcher_set_basic_policy_v2, cpp_job_dispatcher_set_kill_on_oom,
     cpp_job_dispatcher_set_timer_slack_policy,
 };
 use super::process_dispatcher::ProcessDispatcher;
-
-/// Maximum height of the root job hierarchy.
-pub const ROOT_JOB_MAX_HEIGHT: u32 = 32;
-
-/// Typical inline capacity assumed for basic policy updates.
-pub const POLICY_BASIC_INLINE_COUNT: usize = 8;
 
 /// Job signal active when a job has no child jobs and no child processes.
 ///
@@ -147,24 +139,6 @@ impl JobDispatcher {
         unsafe { fbl::RefPtr::from_raw(cpp_job_dispatcher_create_root_job()) }
     }
 
-    /// Returns the parent job dispatcher, or `None` if this is the root job.
-    pub fn parent(&self) -> Option<fbl::RefPtr<JobDispatcher>> {
-        // SAFETY: `self` is a valid `JobDispatcher` reference.
-        let raw = unsafe { cpp_job_dispatcher_parent(self as *const _) };
-        if raw.is_null() {
-            None
-        } else {
-            // SAFETY: `raw` is a valid pointer carrying an acquired refcount.
-            Some(unsafe { fbl::RefPtr::from_raw(raw) })
-        }
-    }
-
-    /// Returns the maximum allowed height for child jobs under this job.
-    pub fn max_height(&self) -> u32 {
-        // SAFETY: `self` is a valid `JobDispatcher` reference.
-        unsafe { cpp_job_dispatcher_max_height(self as *const _) }
-    }
-
     /// Terminates this job and all child jobs and child processes.
     pub fn kill(&self, return_code: i64) -> bool {
         // SAFETY: `self` is a valid `JobDispatcher` reference.
@@ -175,12 +149,6 @@ impl JobDispatcher {
     pub fn set_kill_on_oom(&self, value: bool) {
         // SAFETY: `self` is a valid `JobDispatcher` reference.
         unsafe { cpp_job_dispatcher_set_kill_on_oom(self as *const _ as *mut _, value) }
-    }
-
-    /// Returns whether this job is configured to be killed on out-of-memory events.
-    pub fn get_kill_on_oom(&self) -> bool {
-        // SAFETY: `self` is a valid `JobDispatcher` reference.
-        unsafe { cpp_job_dispatcher_get_kill_on_oom(self as *const _) }
     }
 
     /// Kills the lowest child job that has `kill_on_oom` set.

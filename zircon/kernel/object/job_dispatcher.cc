@@ -260,7 +260,6 @@ bool JobDispatcher::RemoveChildJob(JobDispatcher* job) {
   }
 
   jobs_.erase(*job);
-  jobs_.size();
   UpdateSignalsLocked();
   return IsReadyForDeadTransitionLocked();
 }

@@ -67,17 +67,6 @@ FFI_ALWAYS_INLINE JobDispatcher* cpp_job_dispatcher_create_root_job() {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE JobDispatcher* cpp_job_dispatcher_parent(const JobDispatcher* job) {
-  auto parent = const_cast<JobDispatcher*>(job)->parent();
-  return fbl::ExportToRawPtr(&parent);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint32_t cpp_job_dispatcher_max_height(const JobDispatcher* job) {
-  return job->max_height();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_job_dispatcher_kill(JobDispatcher* job, int64_t return_code) {
   return job->Kill(return_code);
 }
@@ -85,11 +74,6 @@ FFI_ALWAYS_INLINE bool cpp_job_dispatcher_kill(JobDispatcher* job, int64_t retur
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_job_dispatcher_set_kill_on_oom(JobDispatcher* job, bool value) {
   job->set_kill_on_oom(value);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_job_dispatcher_get_kill_on_oom(const JobDispatcher* job) {
-  return job->get_kill_on_oom();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

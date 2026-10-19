@@ -91,20 +91,6 @@ unsafe extern "C" {
     /// Creates and returns a reference-counted pointer to a new root job dispatcher.
     pub(crate) fn cpp_job_dispatcher_create_root_job() -> *mut JobDispatcher;
 
-    /// Returns a reference-counted pointer to the parent job dispatcher, or null if root.
-    ///
-    /// # Safety
-    ///
-    /// `job` must point to a valid `JobDispatcher`.
-    pub(crate) fn cpp_job_dispatcher_parent(job: *const JobDispatcher) -> *mut JobDispatcher;
-
-    /// Returns the maximum height allowed for child jobs under this job.
-    ///
-    /// # Safety
-    ///
-    /// `job` must point to a valid `JobDispatcher`.
-    pub(crate) fn cpp_job_dispatcher_max_height(job: *const JobDispatcher) -> u32;
-
     /// Kills the job and all child processes and child jobs.
     ///
     /// # Safety
@@ -118,13 +104,6 @@ unsafe extern "C" {
     ///
     /// `job` must point to a valid `JobDispatcher`.
     pub(crate) fn cpp_job_dispatcher_set_kill_on_oom(job: *mut JobDispatcher, value: bool);
-
-    /// Returns whether this job should be killed on out-of-memory events.
-    ///
-    /// # Safety
-    ///
-    /// `job` must point to a valid `JobDispatcher`.
-    pub(crate) fn cpp_job_dispatcher_get_kill_on_oom(job: *const JobDispatcher) -> bool;
 
     /// Kills the lowest child job that has kill_on_oom set.
     ///
