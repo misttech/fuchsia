@@ -60,9 +60,4 @@ static inline zx_status_t validate_resource_mmio(
   return validate_ranged_resource(handle, ZX_RSRC_KIND_MMIO, base, len, strict_validation);
 }
 
-// Validates creation of an interrupt object based on a resource handle
-static inline zx_status_t validate_resource_irq(zx_handle_t handle, uint32_t irq) {
-  return validate_ranged_resource(handle, ZX_RSRC_KIND_IRQ, irq, 1);
-}
-
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_RESOURCE_H_

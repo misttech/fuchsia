@@ -7,11 +7,7 @@
 #include "object/resource_dispatcher.h"
 
 #include <lib/object-constants.h>
-#include <zircon/errors.h>
-#include <zircon/rights.h>
 #include <zircon/types.h>
-
-#include <object/handle.h>
 
 ResourceDispatcher::ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, size_t size,
                                        uint32_t flags, const char* name, size_t name_size,
@@ -24,18 +20,6 @@ ResourceDispatcher::ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, size_
 
 IMPLEMENT_DISPATCHER_RUST_STATE(ResourceDispatcher, rust_resource_dispatcher_state_get_lock,
                                 rust_resource_dispatcher_state_destroy)
-
-zx_status_t ResourceDispatcher::CreateRangedRoot(KernelHandle<ResourceDispatcher>* handle,
-                                                 zx_rights_t* rights, zx_rsrc_kind_t kind,
-                                                 const char name[ZX_MAX_NAME_LEN]) {
-  ffi::Uninitialized<KernelHandle<ResourceDispatcher>> uninit_handle;
-  zx_status_t status =
-      rust_resource_dispatcher_create_ranged_root(&uninit_handle, rights, kind, name);
-  if (status == ZX_OK) {
-    *handle = ktl::move(uninit_handle.Get());
-  }
-  return status;
-}
 
 zx_status_t ResourceDispatcher::InitializeAllocator(zx_rsrc_kind_t kind, uint64_t base,
                                                     size_t size) {

@@ -11,7 +11,6 @@
 #include <sys/types.h>
 #include <zircon/compiler.h>
 #include <zircon/rights.h>
-#include <zircon/syscalls/object.h>
 #include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
 
@@ -34,24 +33,14 @@ void rust_resource_dispatcher_state_init(void* state, void* disp, zx_rsrc_kind_t
 void rust_resource_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_resource_dispatcher_state_get_lock(const void* state);
 
-zx_status_t rust_resource_dispatcher_create_ranged_root(
-    ffi::Uninitialized<KernelHandle<ResourceDispatcher>>* handle_out, zx_rights_t* rights_out,
-    zx_rsrc_kind_t kind, const char* name);
 zx_status_t rust_resource_dispatcher_initialize_allocator(zx_rsrc_kind_t kind, uint64_t base,
                                                           size_t size);
 zx_status_t rust_resource_dispatcher_get_name(const ResourceDispatcher* disp,
                                               char out_name[ZX_MAX_NAME_LEN]);
-void rust_resource_dispatcher_get_info(const ResourceDispatcher* disp,
-                                       zx_info_resource_t* info_out);
 }  // extern "C"
 
 class ResourceDispatcher final : public Dispatcher {
  public:
-  // Creates ResourceDispatcher object representing access rights to all
-  // regions of address space for a ranged resource.
-  static zx_status_t CreateRangedRoot(KernelHandle<ResourceDispatcher>* handle, zx_rights_t* rights,
-                                      zx_rsrc_kind_t kind, const char name[ZX_MAX_NAME_LEN]);
-
   // Initializes the static members used for bookkeeping and storage.
   static zx_status_t InitializeAllocator(zx_rsrc_kind_t kind, uint64_t base, size_t size);
 
@@ -62,12 +51,6 @@ class ResourceDispatcher final : public Dispatcher {
   // Returns a null-terminated name.
   [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final {
     return rust_resource_dispatcher_get_name(this, out_name);
-  }
-
-  zx_info_resource_t GetInfo() const {
-    zx_info_resource_t info;
-    rust_resource_dispatcher_get_info(this, &info);
-    return info;
   }
 
   zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
