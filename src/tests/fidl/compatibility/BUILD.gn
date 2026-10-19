@@ -40,7 +40,6 @@ fidl_compatibility_tests_categories = [
 fidl_compatibilty_test_impls = [
   "cpp",
   "hlcpp",
-  "go",
   "llcpp",
   "rust",
 ]

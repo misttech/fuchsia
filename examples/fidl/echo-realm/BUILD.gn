@@ -54,37 +54,6 @@ group("hermetic_tests") {
     ":echo-service-rust-next-test",
     ":echo-service-rust-test",
   ]
-
-  if (current_cpu != "riscv64") {
-    # The Go toolchain does not support RISC-V.
-    deps += [
-      ":echo-go-client-test",
-      ":echo-launcher-go-test",
-    ]
-  }
-}
-
-if (current_cpu != "riscv64") {
-  # The Go toolchain does not support RISC-V.
-
-  # Go example integration test packages
-  fuchsia_test_package("echo-go-client-test") {
-    test_components = [ ":fidl_examples_test" ]
-    deps = [
-      "//examples/fidl/echo-realm:echo_realm",
-      "//examples/fidl/go/client:echo-client",
-      "//examples/fidl/go/server:echo-server",
-    ]
-  }
-
-  fuchsia_test_package("echo-launcher-go-test") {
-    test_components = [ ":fidl_examples_test" ]
-    deps = [
-      "//examples/fidl/echo-realm:echo_realm",
-      "//examples/fidl/go/request_pipelining/client:echo-client",
-      "//examples/fidl/go/request_pipelining/server:echo-server",
-    ]
-  }
 }
 
 # C++ natural example integration test packages

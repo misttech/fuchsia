@@ -142,7 +142,6 @@ _PRODUCT_CACHE_PACKAGES = [
     "//src/tests/fidl/compatibility/cpp",
     "//src/tests/fidl/compatibility/hlcpp",
     "//src/tests/fidl/compatibility/llcpp",
-    "//src/tests/fidl/compatibility/go",
     "//src/tests/fidl/compatibility/rust",
 ]
 

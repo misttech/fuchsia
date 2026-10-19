@@ -37,7 +37,6 @@ common_bazel_inputs = [
   "//src/tests/fidl/compatibility/cpp:cpp.bazel_input",
   "//src/tests/fidl/compatibility/hlcpp:hlcpp.bazel_input",
   "//src/tests/fidl/compatibility/llcpp:llcpp.bazel_input",
-  "//src/tests/fidl/compatibility/go:go.bazel_input",
   "//src/tests/fidl/compatibility/rust:rust.bazel_input",
 ]
 if (target_cpu == "riscv64") {

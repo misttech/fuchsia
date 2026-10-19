@@ -9,7 +9,6 @@ runners = [
   "cpp_sync",
   "cpp_wire_async",
   "cpp_wire_sync",
-  "go",
   "hlcpp_async",
   "hlcpp_sync",
   "rust_async",

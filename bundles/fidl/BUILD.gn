@@ -19,8 +19,6 @@ group("tests_no_e2e") {
     "//src/tests/fidl/dynsuite/channel_util:tests",
     "//src/tests/fidl/dynsuite/client_suite",
     "//src/tests/fidl/dynsuite/server_suite",
-    "//src/tests/fidl/go_bindings_test",
-    "//third_party/go:fidl-tests",
     "//tools/fidl:tests",
     "//tools/fidlcat:tests",
   ]
@@ -32,7 +30,6 @@ group("e2e_tests") {
     "//src/tests/benchmarks/fidl:tests",
     "//src/tests/fidl/compatibility",
     "//src/tests/fidl/dangerous_identifiers:tests",
-    "//src/tests/fidl/fidl_go_conformance:tests",
   ]
 }
 

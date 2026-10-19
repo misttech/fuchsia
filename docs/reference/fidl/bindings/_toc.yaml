@@ -12,5 +12,3 @@ toc:
   path: /docs/reference/fidl/bindings/cpp-bindings.md
 - title: "Rust bindings"
   path: /docs/reference/fidl/bindings/rust-bindings.md
-- title: "Go bindings"
-  path: /docs/reference/fidl/bindings/go-bindings.md

@@ -5,15 +5,9 @@
 import("//build/host.gni")
 import("//build/testing/golden_files.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
-import(
-    "//third_party/go/src/syscall/zx/fidl/fidl_test/conformance_test_files.gni")
 import("//tools/fidl/gidl/gidl.gni")
 
 conformance_golden_items = [
-  {
-    language = "go"
-    extension = "go"
-  },
   {
     language = "cpp"
     extension = "cc"

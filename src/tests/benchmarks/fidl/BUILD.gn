@@ -9,7 +9,6 @@ _tests = [
   "driver_cpp",
   "driver_llcpp",
   "hlcpp",
-  "go",
   "libfidl",
   "llcpp",
   "reference",
@@ -29,9 +28,6 @@ foreach(test, _tests) {
 
     if (test == "rust") {
       process_runs = 1
-    } else if (test == "go") {
-      process_runs = 1
-      results_path_test_arg = "--out_file"
     } else {
       process_runs = 6
       results_path_test_arg = "--out"

@@ -71,7 +71,7 @@ and wire).
 * Update the [bindings tutorials][bindings-tutorials] to reflect the current
   best practices and patterns.
   * Incorporate example code which compiles and runs in the build (e.g.
-    [//examples/fidl/go/fidl_packages/fidl_test.go][go-example]).
+    [//examples/fidl/rust/fidl_crates/src/main.rs][rust-example]).
 * Update any relevant guides:
   * [FIDL API rubric][api-rubric] for guidance on using this feature.
   * For example, when changing the memory allocation APIs in C++ wire types, the
@@ -138,12 +138,12 @@ Add coverage to:
 [fidlgen-tests]: /tools/fidl/lib/fidlgentest
 [fidlmerge]: /tools/fidl/fidlmerge
 [gidl]: /tools/fidl/gidl
-[go-example]: /examples/fidl/go/fidl_packages/fidl_test.go
 [ldmsg]: /zircon/system/ulib/ldmsg/ldmsg.c
 [lexicon]: /docs/reference/fidl/language/lexicon.md
 [cpp-allocators]: /docs/development/languages/fidl/tutorials/cpp/topics/wire-memory-ownership.md
 [measure-tape]: /tools/fidl/measure-tape
 [RELRO]: https://www.redhat.com/en/blog/hardening-elf-binaries-using-relocation-read-only-relro
+[rust-example]: /examples/fidl/rust/fidl_crates/src/main.rs
 [sanitizer-abi]: /zircon/system/ulib/ldmsg/BUILD.gn
 [summarize]: /tools/fidl/fidl_api_summarize/
 [server suite]: /src/tests/fidl/dynsuite/server_suite/

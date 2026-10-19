@@ -10,7 +10,6 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/backend/driver_llcpp"
 	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/backend/dynfidl"
 	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/backend/fuzzer_corpus"
-	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/backend/golang"
 	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/backend/hlcpp"
 	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/backend/llcpp"
 	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/backend/python"
@@ -27,7 +26,6 @@ var generators = map[ir.OutputType]map[ir.Language]cli.Generator{
 		ir.LanguageCpp:          cpp.GenerateConformanceTests,
 		ir.LanguageDynfidl:      dynfidl.GenerateConformanceTests,
 		ir.LanguageFuzzerCorpus: fuzzer_corpus.GenerateConformanceTests,
-		ir.LanguageGo:           golang.GenerateConformanceTests,
 		ir.LanguageHlcpp:        hlcpp.GenerateConformanceTests,
 		ir.LanguageLlcpp:        llcpp.GenerateConformanceTests,
 		ir.LanguagePython:       python.GenerateConformanceTests,
@@ -39,7 +37,6 @@ var generators = map[ir.OutputType]map[ir.Language]cli.Generator{
 		ir.LanguageCpp:         cpp.GenerateBenchmarks,
 		ir.LanguageDriverCpp:   driver_cpp.GenerateBenchmarks,
 		ir.LanguageDriverLlcpp: driver_llcpp.GenerateBenchmarks,
-		ir.LanguageGo:          golang.GenerateBenchmarks,
 		ir.LanguageHlcpp:       hlcpp.GenerateBenchmarks,
 		ir.LanguageLlcpp:       llcpp.GenerateBenchmarks,
 		ir.LanguageReference:   reference.GenerateBenchmarks,
