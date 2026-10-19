@@ -16,7 +16,6 @@
 
 #include <lk/init.h>
 #include <object/diagnostics.h>
-#include <object/event_dispatcher.h>
 #include <object/executor.h>
 #include <object/job_dispatcher.h>
 #include <object/memory_watchdog.h>
@@ -30,10 +29,6 @@ const fbl::RefPtr<JobDispatcher>& GetRootJobDispatcher() {
 }
 
 const Handle& GetRootJobHandle() { return gExecutor.GetRootJobHandle(); }
-
-fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind) {
-  return gExecutor.GetMemPressureEvent(kind);
-}
 
 MemoryWatchdog& GetMemoryWatchdog() { return gExecutor.GetMemoryWatchdog(); }
 

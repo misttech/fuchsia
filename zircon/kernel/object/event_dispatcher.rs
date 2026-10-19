@@ -5,14 +5,13 @@
 // https://opensource.org/licenses/MIT
 
 use super::event_dispatcher_ffi::{
-    cpp_event_dispatcher_create, cpp_event_dispatcher_get_mem_pressure_event,
-    cpp_event_dispatcher_user_signal_self, cpp_memory_stall_event_dispatcher_create,
+    cpp_event_dispatcher_create, cpp_memory_stall_event_dispatcher_create,
 };
+use super::memory_watchdog::get_memory_watchdog;
 use super::{DispatcherOps, KernelHandle};
 use crate::counters::define_kcounter;
 use crate::platform_rs::timer::DurationMono;
 use crate::stall::{EventReceiver, StallAggregator, StallObserver};
-use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -85,13 +84,8 @@ impl EventDispatcher {
     }
 
     /// Returns the kernel-owned memory pressure event dispatcher for the given kind.
-    pub fn get_mem_pressure_event(kind: u32) -> fbl::RefPtr<EventDispatcher> {
-        let mut out = MaybeUninit::<fbl::RefPtr<EventDispatcher>>::zeroed();
-        // SAFETY: `out` points to valid uninitialized memory for a `RefPtr`.
-        unsafe {
-            cpp_event_dispatcher_get_mem_pressure_event(kind, out.as_mut_ptr());
-            out.assume_init()
-        }
+    pub fn get_mem_pressure_event(kind: u32) -> Result<fbl::RefPtr<EventDispatcher>, Status> {
+        get_memory_watchdog().get_mem_pressure_event(kind).ok_or(Status::INVALID_ARGS)
     }
 
     /// Creates a memory stall watch event dispatcher.
@@ -162,20 +156,6 @@ impl EventDispatcher {
                     .cast_mut(),
             )
         }
-    }
-
-    /// Sets or clears user signals on this event dispatcher.
-    pub fn user_signal_self(&self, clear_mask: u32, set_mask: u32) -> Result<(), Status> {
-        // SAFETY: `self` is a valid `EventDispatcher` reference, and `user_signal_self` is
-        // internally synchronized by the dispatcher's lock.
-        let status = unsafe {
-            cpp_event_dispatcher_user_signal_self(
-                self as *const Self as *mut Self,
-                clear_mask,
-                set_mask,
-            )
-        };
-        Status::ok(status)
     }
 }
 

@@ -1060,25 +1060,6 @@ pub unsafe extern "C" fn rust_memory_watchdog_destroy(storage: *mut MemoryWatchd
     }
 }
 
-/// Retrieves the memory pressure event for `kind`.
-///
-/// # Safety
-///
-/// `storage` must point to a valid, initialized `MemoryWatchdogState`, and `out_event` must point
-/// to valid uninitialized memory for `Option<fbl::RefPtr<EventDispatcher>>`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_watchdog_get_mem_pressure_event(
-    storage: *const MemoryWatchdogState,
-    kind: u32,
-    out_event: *mut MaybeUninit<Option<fbl::RefPtr<EventDispatcher>>>,
-) {
-    // SAFETY: `storage` and `out_event` are valid pointers per the caller contract.
-    unsafe {
-        let state = &*storage;
-        (*out_event).write(state.get_mem_pressure_event(kind));
-    }
-}
-
 /// Returns the number of bytes of memory to allocate to reach `level`.
 ///
 /// # Safety

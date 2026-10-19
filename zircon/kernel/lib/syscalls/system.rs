@@ -66,7 +66,7 @@ pub fn sys_system_get_event(
         | ZX_SYSTEM_EVENT_MEMORY_PRESSURE_CRITICAL
         | ZX_SYSTEM_EVENT_MEMORY_PRESSURE_WARNING
         | ZX_SYSTEM_EVENT_MEMORY_PRESSURE_NORMAL => {
-            let event = EventDispatcher::get_mem_pressure_event(kind);
+            let event = EventDispatcher::get_mem_pressure_event(kind)?;
             // Do not grant default event rights, as we don't want userspace to, for
             // example, be able to signal this event.
             *out = ProcessDispatcher::with_current(|up| {

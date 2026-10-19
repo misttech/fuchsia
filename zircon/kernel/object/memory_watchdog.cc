@@ -26,9 +26,6 @@ extern "C" {
 
 void rust_memory_watchdog_construct(ffi::Uninitialized<MemoryWatchdog>* storage);
 void rust_memory_watchdog_destroy(void* storage);
-void rust_memory_watchdog_get_mem_pressure_event(
-    const void* storage, uint32_t kind,
-    ffi::Uninitialized<fbl::RefPtr<EventDispatcher>>* out_event);
 uint64_t rust_memory_watchdog_debug_num_bytes_till_pressure_level(const void* storage,
                                                                   uint8_t level);
 void rust_memory_watchdog_dump(const void* storage);
@@ -44,14 +41,6 @@ MemoryWatchdog::MemoryWatchdog() {
 }
 
 MemoryWatchdog::~MemoryWatchdog() { rust_memory_watchdog_destroy(&opaque_storage_); }
-
-fbl::RefPtr<EventDispatcher> MemoryWatchdog::GetMemPressureEvent(uint32_t kind) {
-  fbl::RefPtr<EventDispatcher> out;
-  rust_memory_watchdog_get_mem_pressure_event(
-      &opaque_storage_, kind,
-      reinterpret_cast<ffi::Uninitialized<fbl::RefPtr<EventDispatcher>>*>(&out));
-  return out;
-}
 
 uint64_t MemoryWatchdog::DebugNumBytesTillPressureLevel(PressureLevel level) {
   return rust_memory_watchdog_debug_num_bytes_till_pressure_level(&opaque_storage_,

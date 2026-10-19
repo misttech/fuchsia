@@ -10,7 +10,6 @@ use core::ptr::NonNull;
 use executor_bindings as bindings;
 use pin_init::{PinInit, pin_data, pin_init};
 
-use super::event_dispatcher::EventDispatcher;
 use super::handle::{HandleOwner, HandleRef};
 use super::job_dispatcher::JobDispatcher;
 use super::memory_watchdog::MemoryWatchdog;
@@ -119,11 +118,6 @@ impl Executor {
         // SAFETY: `root_job_handle` is initialized once in `init` before any calls to this method
         // and is not modified afterwards.
         unsafe { (*self.root_job_handle.get()).as_ref().unwrap().as_ref() }
-    }
-
-    /// Returns the memory pressure event for the given `kind`.
-    pub fn get_mem_pressure_event(&self, kind: u32) -> Option<fbl::RefPtr<EventDispatcher>> {
-        self.memory_watchdog.get_mem_pressure_event(kind)
     }
 
     /// Returns a reference to the memory watchdog for this executor.

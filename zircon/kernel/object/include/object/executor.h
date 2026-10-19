@@ -36,10 +36,6 @@ class Executor {
 
   const Handle& GetRootJobHandle() { return *root_job_handle_; }
 
-  fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind) {
-    return memory_watchdog_.GetMemPressureEvent(kind);
-  }
-
   MemoryWatchdog& GetMemoryWatchdog() { return memory_watchdog_; }
 
   // Start watching the root job, taking a system-level action (such as restart) if

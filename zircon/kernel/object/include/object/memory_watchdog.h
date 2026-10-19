@@ -9,11 +9,8 @@
 
 #include <lib/object-constants.h>
 #include <stdint.h>
-#include <zircon/types.h>
 
-#include <fbl/ref_ptr.h>
 #include <kernel/ffi.h>
-#include <object/event_dispatcher.h>
 #include <object/opaque_storage.h>
 
 // Object is thread safe.
@@ -34,8 +31,6 @@ class MemoryWatchdog {
 
   MemoryWatchdog(const MemoryWatchdog&) = delete;
   MemoryWatchdog& operator=(const MemoryWatchdog&) = delete;
-
-  fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind);
 
   uint64_t DebugNumBytesTillPressureLevel(PressureLevel level);
   void Dump();

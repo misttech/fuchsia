@@ -22,25 +22,12 @@ class EventDispatcher;
 extern "C" {
 zx_status_t cpp_event_dispatcher_create(
     uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
-zx_status_t rust_event_dispatcher_create(
-    uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out,
-    zx_rights_t* rights_out);
-void cpp_event_dispatcher_get_mem_pressure_event(uint32_t kind,
-                                                 fbl::RefPtr<EventDispatcher>* out_event);
 zx_status_t cpp_memory_stall_event_dispatcher_create(
     uint32_t kind, ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle);
-zx_status_t cpp_event_dispatcher_user_signal_self(EventDispatcher* event, uint32_t clear_mask,
-                                                  uint32_t set_mask);
 }
 
 class EventDispatcher : public Dispatcher {
  public:
-  static zx_status_t Create(uint32_t options,
-                            ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle,
-                            zx_rights_t* rights) {
-    return rust_event_dispatcher_create(options, handle, rights);
-  }
-
   ~EventDispatcher() override;
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_EVENT; }
@@ -51,9 +38,6 @@ class EventDispatcher : public Dispatcher {
   zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
     return ZX_ERR_NOT_SUPPORTED;
   }
-
-  using Dispatcher::UpdateState;
-  using Dispatcher::UpdateStateLocked;
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;
@@ -83,7 +67,5 @@ class MemoryStallEventDispatcher final : public EventDispatcher {
   OpaqueStorage<kMemoryStallEventDispatcherStateSize, kMemoryStallEventDispatcherStateAlign>
       opaque_storage_;
 };
-
-fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind);
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EVENT_DISPATCHER_H_

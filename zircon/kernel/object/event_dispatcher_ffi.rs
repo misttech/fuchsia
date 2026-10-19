@@ -23,17 +23,6 @@ unsafe extern "C" {
         handle_out: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
     ) -> zx_status_t;
 
-    /// Retrieves a reference to the kernel-owned memory pressure event dispatcher for the given
-    /// kind.
-    ///
-    /// # Safety
-    ///
-    /// `out_event` must point to uninitialized memory for a `fbl::RefPtr<EventDispatcher>`.
-    pub(crate) fn cpp_event_dispatcher_get_mem_pressure_event(
-        kind: u32,
-        out_event: *mut fbl::RefPtr<EventDispatcher>,
-    );
-
     /// Calls into C++ to allocate a memory stall event dispatcher watching `kind`.
     ///
     /// # Safety
@@ -45,17 +34,6 @@ unsafe extern "C" {
     pub(crate) fn cpp_memory_stall_event_dispatcher_create(
         kind: u32,
         out_handle: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
-    ) -> zx_status_t;
-
-    /// Calls into C++ implementation to signal an event dispatcher.
-    ///
-    /// # Safety
-    ///
-    /// `event` must point to a valid `EventDispatcher`.
-    pub(crate) fn cpp_event_dispatcher_user_signal_self(
-        event: *mut EventDispatcher,
-        clear_mask: u32,
-        set_mask: u32,
     ) -> zx_status_t;
 }
 
@@ -111,29 +89,5 @@ pub unsafe extern "C" fn rust_memory_stall_event_dispatcher_state_init(
     // remains pinned until dropped in place.
     unsafe {
         let _ = pin_init::PinInit::__pinned_init(MemoryStallEventDispatcherState::init(kind), ptr);
-    }
-}
-
-/// FFI trampoline for creating an EventDispatcher from C++.
-///
-/// # Safety
-///
-/// `handle_out` and `rights_out` must point to valid, non-null, writable memory.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_event_dispatcher_create(
-    options: u32,
-    handle_out: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
-    rights_out: *mut zx_types::zx_rights_t,
-) -> zx_types::zx_status_t {
-    // SAFETY: `handle_out` and `rights_out` are valid non-null writable pointers.
-    unsafe {
-        match EventDispatcher::create(options) {
-            Ok((handle, rights)) => {
-                (*handle_out).write(handle);
-                rights_out.write(rights);
-                zx_types::ZX_OK
-            }
-            Err(status) => status.into_raw(),
-        }
     }
 }
