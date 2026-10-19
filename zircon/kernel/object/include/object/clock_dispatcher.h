@@ -11,7 +11,6 @@
 #include <lib/page/size.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
-#include <zircon/syscalls/clock.h>
 #include <zircon/types.h>
 
 #include <fbl/ref_ptr.h>
@@ -40,8 +39,6 @@ class ClockDispatcher final : public Dispatcher {
  public:
   static inline constexpr uint64_t kMappedSize = kPageSize;
 
-  static constexpr zx_rights_t default_rights() { return ZX_DEFAULT_CLOCK_RIGHTS; }
-
   ~ClockDispatcher() final;
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_CLOCK; }
   zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
@@ -61,13 +58,10 @@ class ClockDispatcher final : public Dispatcher {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  using Dispatcher::UpdateState;
-
  protected:
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  friend class fbl::RefPtr<ClockDispatcher>;
   friend zx_status_t cpp_clock_dispatcher_create(
       uint64_t options, zx_time_t backstop_time, VmObjectPaged* vmo,
       ffi::Uninitialized<KernelHandle<ClockDispatcher>>* handle_out);
