@@ -1414,6 +1414,8 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             ("ipv4_with_port", "192.168.1.1:8022", "192.168.1.1", "8022"),
             ("ipv4_loopback_with_port", "127.0.0.1:22", "127.0.0.1", "22"),
             ("hostname_with_port", "localhost:8022", "localhost", "8022"),
+            ("usb_cid", "usb:cid:3", "usb:cid", "3"),
+            ("vsock_cid", "vsock:cid:4", "vsock:cid", "4"),
         ]
     )
     def test_parse_device_address_valid(
@@ -1446,6 +1448,8 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             ("unbracketed_empty_scope_id", "fe80::1%"),
             ("missing_host_before_colon", ":8022"),
             ("no_colon_no_ipv6", "nohost"),
+            ("usb_cid_non_numeric", "usb:cid:abc"),
+            ("usb_cid_empty", "usb:cid:"),
         ]
     )
     def test_parse_device_address_invalid(

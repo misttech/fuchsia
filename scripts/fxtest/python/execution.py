@@ -876,6 +876,16 @@ def _parse_device_address(
             port = remainder[1:].strip()
         else:
             port = "22"
+    elif target_line.startswith(("usb:cid:", "vsock:cid:")):
+        last_colon_index = target_line.rfind(":")
+        ip = target_line[0:last_colon_index].strip()
+        port = target_line[last_colon_index + 1 :].strip()
+        if not port.isdigit():
+            raise DeviceConfigError(
+                f"Invalid CID in target address: {port!r}.\n"
+                f"Expected non-negative integer."
+            )
+        return ip, port
     elif target_line.count(":") > 1:
         # Unbracketed IPv6 address without port (e.g. fe80::1 or fe80::1%eth0)
         base_ip = target_line
