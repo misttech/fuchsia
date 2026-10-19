@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 import os
+import struct
 import sys
 import tempfile
 import unittest
@@ -44,6 +45,46 @@ def _target_infos(
             for target, platform in targets
         ]
     )
+
+
+def _generate_stripped_elf(build_id: bytes) -> bytes:
+    """Generate a minimal stripped ELF64 file with a PT_NOTE program header."""
+    note_name = b"GNU\x00"
+    note_header = struct.pack("<III", len(note_name), len(build_id), 3)
+    note_data = note_header + note_name + build_id
+    elf_header_size = 64
+    ph_size = 56
+    ph_offset = elf_header_size
+    note_offset = elf_header_size + ph_size
+    elf_header = struct.pack(
+        "<16sHHIQQQIHHHHHH",
+        b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+        2,
+        0x3E,
+        1,
+        0,
+        ph_offset,
+        0,
+        0,
+        elf_header_size,
+        ph_size,
+        1,
+        0,
+        0,
+        0,
+    )
+    ph = struct.pack(
+        "<IIQQQQQQ",
+        4,
+        4,
+        note_offset,
+        0,
+        0,
+        len(note_data),
+        len(note_data),
+        4,
+    )
+    return elf_header + ph + note_data
 
 
 class ReadExtraBazelTargetsTest(unittest.TestCase):
@@ -501,6 +542,88 @@ class MergeDebugSymbolManifestsTest(unittest.TestCase):
                 },
             )
 
+    def test_merge_debug_symbol_manifests_with_prebuilt_container(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        import bazel_action_impl
+        import build_utils
+
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            build_dir = tmp_dir / "out/default"
+            execroot = build_dir / "execroot"
+            container_dir = (
+                execroot / "bazel-out/arm64/bin/smart_product_config"
+            )
+            packages_dir = container_dir / "packages"
+            blobs_dir = container_dir / "blobs"
+            packages_dir.mkdir(parents=True)
+            blobs_dir.mkdir(parents=True)
+
+            prebuilt_build_id_dir = tmp_dir / "prebuilt/.build-id"
+            build_id = "a6d0f3618ca5fa790dd486b2f22cf3669964b272"
+            debug_file = (
+                prebuilt_build_id_dir / f"{build_id[:2]}/{build_id[2:]}.debug"
+            )
+            debug_file.parent.mkdir(parents=True)
+            debug_file.write_text("DEBUG SYMBOLS")
+
+            merkle = "e7d02d73177f1486e5b26ee5d5349bdd43be54817965e30d6a0e499146487f7b"
+            blob_file = blobs_dir / merkle
+            blob_file.write_text("ELF BINARY")
+
+            manifest_content = [
+                {
+                    "container_dir": "bazel-out/arm64/bin/smart_product_config",
+                    "os": "fuchsia",
+                    "cpu": "arm64",
+                    "label": "@@//vendor/smart:smart_product_config",
+                }
+            ]
+            manifest_file = (
+                execroot / "bazel-out/arm64/bin/smart.debug_symbols.json"
+            )
+            manifest_file.parent.mkdir(parents=True, exist_ok=True)
+            manifest_file.write_text(json.dumps(manifest_content))
+
+            with mock.patch.object(
+                bazel_action_impl.DebugSymbolsManifestParser,
+                "extract_build_id",
+                return_value=build_id,
+            ):
+                (
+                    merged,
+                    by_target,
+                ) = bazel_action_impl.merge_debug_symbol_manifests(
+                    [
+                        "@@//vendor/smart:smart_product_config,bazel-out/arm64/bin/smart.debug_symbols.json",
+                    ],
+                    bazel_execroot=execroot,
+                    build_dir=build_dir,
+                    time_profile=build_utils.TimeProfile(),
+                    prebuilt_build_id_dir=prebuilt_build_id_dir,
+                )
+
+            expected_entry = {
+                "debug": f"../../prebuilt/.build-id/{build_id[:2]}/{build_id[2:]}.debug",
+                "elf_build_id": build_id,
+                "dest_path": f"blobs/{merkle}",
+                "os": "fuchsia",
+                "cpu": "arm64",
+                "label": "@@//vendor/smart:smart_product_config",
+            }
+
+            self.assertEqual(merged, [expected_entry])
+            self.assertEqual(
+                by_target,
+                {
+                    "//vendor/smart:smart_product_config": [expected_entry],
+                },
+            )
+
     def test_prebuilt_package_expander(self) -> None:
         import json
         import tempfile
@@ -576,6 +699,237 @@ class MergeDebugSymbolManifestsTest(unittest.TestCase):
             # Check cache hit returns the same list.
             cached = expander.expand(entry)
             self.assertIs(cached, expanded)
+
+    def test_prebuilt_container_expander(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        import bazel_action_impl
+
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            build_dir = tmp_dir / "out/default"
+            execroot = build_dir / "execroot"
+            container_dir = (
+                execroot / "bazel-out/arm64/bin/smart_product_config"
+            )
+            packages_dir = container_dir / "packages"
+            blobs_dir = container_dir / "blobs"
+            packages_dir.mkdir(parents=True)
+            blobs_dir.mkdir(parents=True)
+
+            prebuilt_build_id_dir = tmp_dir / "prebuilt/.build-id"
+            build_id = "a6d0f3618ca5fa790dd486b2f22cf3669964b272"
+            debug_file = (
+                prebuilt_build_id_dir / f"{build_id[:2]}/{build_id[2:]}.debug"
+            )
+            debug_file.parent.mkdir(parents=True)
+            debug_file.write_text("DEBUG SYMBOLS")
+
+            merkle = "e7d02d73177f1486e5b26ee5d5349bdd43be54817965e30d6a0e499146487f7b"
+            blob_file = blobs_dir / merkle
+            blob_file.write_text("ELF BINARY")
+
+            pkg_manifest_path = packages_dir / "smart_pkg"
+            pkg_manifest = {
+                "version": "1",
+                "repository": "fuchsia.com",
+                "package": {
+                    "name": "smart_pkg",
+                    "version": "0",
+                },
+                "blobs": [
+                    {
+                        "source_path": f"../../blobs/{merkle}",
+                        "path": "bin/smart_daemon",
+                        "merkle": merkle,
+                        "size": 100,
+                    }
+                ],
+                "blob_sources_relative": "file",
+            }
+            pkg_manifest_path.write_text(json.dumps(pkg_manifest))
+
+            parser = bazel_action_impl.DebugSymbolsManifestParser(build_dir)
+            with mock.patch.object(
+                bazel_action_impl.DebugSymbolsManifestParser,
+                "extract_build_id",
+                return_value=build_id,
+            ):
+                expander = bazel_action_impl._PrebuiltPackageExpander(
+                    execroot, prebuilt_build_id_dir, build_dir, parser
+                )
+                entry = {
+                    "container_dir": "bazel-out/arm64/bin/smart_product_config",
+                    "os": "fuchsia",
+                    "cpu": "arm64",
+                    "label": "@@//vendor/smart:smart_product_config",
+                }
+                expanded = expander.expand_container(entry)
+
+            self.assertEqual(len(expanded), 1)
+            self.assertEqual(expanded[0]["elf_build_id"], build_id)
+            self.assertEqual(expanded[0]["dest_path"], "bin/smart_daemon")
+
+            # Check that implicit input files were tracked.
+            self.assertIn(pkg_manifest_path, expander.extra_input_files)
+            self.assertIn(blob_file, expander.extra_input_files)
+            self.assertIn(debug_file, expander.extra_input_files)
+
+            # Check cache hit returns the same list.
+            cached = expander.expand_container(entry)
+            self.assertIs(cached, expanded)
+
+    def test_prebuilt_container_expander_with_product_configuration_and_merkle_blob(
+        self,
+    ) -> None:
+        import json
+
+        import bazel_action_impl
+
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            build_dir = tmp_dir / "out/default"
+            execroot = build_dir / "execroot"
+            container_dir = (
+                execroot / "bazel-out/arm64/bin/smart_product_config"
+            )
+            blobs_dir = container_dir / "blobs"
+            blobs_dir.mkdir(parents=True)
+
+            build_id = "a6d0f3618ca5fa790dd486b2f22cf3669964b272"
+            prebuilt_build_id_dir = tmp_dir / "prebuilt/.build-id"
+            debug_file = (
+                prebuilt_build_id_dir / f"{build_id[:2]}/{build_id[2:]}.debug"
+            )
+            debug_file.parent.mkdir(parents=True)
+            debug_file.write_text("DEBUG")
+
+            merkle = "e7d02d73177f1486e5b26ee5d5349bdd43be54817965e30d6a0e499146487f7b"
+            blob_file = blobs_dir / merkle
+            blob_file.write_bytes(
+                _generate_stripped_elf(bytes.fromhex(build_id))
+            )
+
+            pkg_manifest_path = container_dir / "packages/amlogic_keys"
+            pkg_manifest_path.parent.mkdir(parents=True)
+            pkg_manifest = {
+                "version": "1",
+                "package": {"name": "amlogic-keys", "version": "0"},
+                "blobs": [
+                    {
+                        "source_path": "bin/amlogic-netflix-keys",
+                        "path": "bin/amlogic-netflix-keys",
+                        "merkle": merkle,
+                        "size": 1234,
+                    }
+                ],
+                "blob_sources_relative": "file",
+            }
+            pkg_manifest_path.write_text(json.dumps(pkg_manifest))
+
+            prod_config = {
+                "packages": {"base": [{"manifest": "packages/amlogic_keys"}]}
+            }
+            (container_dir / "product_configuration.json").write_text(
+                json.dumps(prod_config)
+            )
+
+            parser = bazel_action_impl.DebugSymbolsManifestParser(build_dir)
+            expander = bazel_action_impl._PrebuiltPackageExpander(
+                execroot, prebuilt_build_id_dir, build_dir, parser
+            )
+            entry = {
+                "container_dir": "bazel-out/arm64/bin/smart_product_config",
+                "os": "fuchsia",
+                "cpu": "arm64",
+                "label": "@@//vendor/smart:smart_product_config",
+            }
+            expanded = expander.expand_container(entry)
+            self.assertEqual(len(expanded), 1)
+            self.assertEqual(expanded[0]["elf_build_id"], build_id)
+            self.assertEqual(
+                expanded[0]["dest_path"], "bin/amlogic-netflix-keys"
+            )
+
+    def test_prebuilt_container_expander_with_image_assembly(
+        self,
+    ) -> None:
+        import json
+
+        import bazel_action_impl
+
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            build_dir = tmp_dir / "out/default"
+            execroot = build_dir / "execroot"
+            container_dir = execroot / "bazel-out/arm64/bin/assembly_out"
+            container_dir.mkdir(parents=True)
+
+            build_id1 = "1111222233334444555566667777888899990000"
+            build_id2 = "aaaabbbbccccddddeeeeffff0000111122223333"
+            prebuilt_build_id_dir = tmp_dir / "prebuilt/.build-id"
+            for bid in (build_id1, build_id2):
+                debug_file = (
+                    prebuilt_build_id_dir / f"{bid[:2]}/{bid[2:]}.debug"
+                )
+                debug_file.parent.mkdir(parents=True, exist_ok=True)
+                debug_file.write_text("DEBUG")
+
+            pkg_manifest_path = container_dir / "base_pkg.json"
+            blob_file = container_dir / "base_blob"
+            blob_file.write_bytes(
+                _generate_stripped_elf(bytes.fromhex(build_id1))
+            )
+            pkg_manifest = {
+                "version": "1",
+                "package": {"name": "base-pkg", "version": "0"},
+                "blobs": [
+                    {
+                        "source_path": "base_blob",
+                        "path": "bin/base_bin",
+                        "merkle": "1234",
+                        "size": 100,
+                    }
+                ],
+                "blob_sources_relative": "file",
+            }
+            pkg_manifest_path.write_text(json.dumps(pkg_manifest))
+
+            bootfs_bin = container_dir / "bootfs_bin"
+            bootfs_bin.write_bytes(
+                _generate_stripped_elf(bytes.fromhex(build_id2))
+            )
+
+            image_assembly = {
+                "base": ["base_pkg.json"],
+                "bootfs_files": [
+                    {
+                        "source": "bootfs_bin",
+                        "destination": "bin/bootfs_bin",
+                    }
+                ],
+            }
+            (container_dir / "image_assembly.json").write_text(
+                json.dumps(image_assembly)
+            )
+
+            parser = bazel_action_impl.DebugSymbolsManifestParser(build_dir)
+            expander = bazel_action_impl._PrebuiltPackageExpander(
+                execroot, prebuilt_build_id_dir, build_dir, parser
+            )
+            entry = {
+                "container_dir": "bazel-out/arm64/bin/assembly_out",
+                "os": "fuchsia",
+                "cpu": "arm64",
+                "label": "@@//products:assembly",
+            }
+            expanded = expander.expand_container(entry)
+            self.assertEqual(len(expanded), 2)
+            bids = {e["elf_build_id"] for e in expanded}
+            self.assertEqual(bids, {build_id1, build_id2})
 
 
 if __name__ == "__main__":

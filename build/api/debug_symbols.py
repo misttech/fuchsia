@@ -23,59 +23,138 @@ _DEBUG_BINARY_DENYLIST = {
 }
 
 
+def _find_build_id_in_notes(data: bytes, align: int = 4) -> str:
+    """Finds the build-id value in a sequence of ELF note structures."""
+    offset = 0
+    total = len(data)
+    align_mask = align - 1
+    while offset + 12 <= total:
+        namesz = int.from_bytes(data[offset : offset + 4], "little")
+        descsz = int.from_bytes(data[offset + 4 : offset + 8], "little")
+        ntype = int.from_bytes(data[offset + 8 : offset + 12], "little")
+        name_offset = offset + 12
+        name_aligned = (namesz + align_mask) & ~align_mask
+        desc_offset = name_offset + name_aligned
+        desc_aligned = (descsz + align_mask) & ~align_mask
+        if desc_offset + descsz > total or namesz > 256 or descsz > 256:
+            break
+        name = data[name_offset : name_offset + namesz]
+        if ntype == 3 and name.rstrip(b"\0") == b"GNU":
+            return data[desc_offset : desc_offset + descsz].hex()
+        offset = desc_offset + desc_aligned
+    return ""
+
+
 def extract_gnu_build_id(elf_file: str | Path) -> str:
-    """Extracts the GNU build ID from an ELF64 file.
+    """Extracts the GNU build ID from an ELF file (ELF64 or ELF32).
 
     Args:
         elf_file: Path to input file.
     Returns:
-        The build-id value has an hexadecimal string, or
+        The build-id value as an hexadecimal string, or
         an empty string on failure (e.g. not an ELF file,
-        or no .note.gnu.build-id section in it).
+        or no .note.gnu.build-id in it).
     """
     try:
         # See https://en.wikipedia.org/wiki/Executable_and_Linkable_Format
         with open(elf_file, "rb") as f:
             # Read ELF header
             e_ident = f.read(16)
-            if e_ident[:4] != b"\x7fELF":
+            if len(e_ident) < 16 or e_ident[:4] != b"\x7fELF":
                 return ""  # Not an ELF file
 
-            def read(count: int) -> int:
-                return int.from_bytes(f.read(count), "little")
+            ei_class = e_ident[4]
+            if ei_class not in (1, 2):
+                return ""  # Not ELF32 or ELF64
+            is_64 = ei_class == 2
 
-            f.seek(40)  # e_shoff location.
-            e_shoff = read(8)
-            if e_shoff == 0:
-                return ""  # no section headers.
+            ei_data = e_ident[5]
+            if ei_data != 1:  # ELFDATA2LSB (little-endian)
+                return ""
 
-            f.seek(58)  # read e_shentsize, e_shnum and e_shstrndx
-            e_shentsize, e_shnum, e_shstrndx = read(2), read(2), read(2)
+            def read_int(offset: int, size: int) -> int:
+                f.seek(offset)
+                return int.from_bytes(f.read(size), "little")
 
-            f.seek(
-                e_shoff + e_shentsize * e_shstrndx + 24
-            )  # sh_offset in string table Elf64_shdr entry
-            shstrtab_offset = read(8)
+            if is_64:
+                e_phoff = read_int(32, 8)
+                e_shoff = read_int(40, 8)
+                e_phentsize = read_int(54, 2)
+                e_phnum = read_int(56, 2)
+                e_shentsize = read_int(58, 2)
+                e_shnum = read_int(60, 2)
+                e_shstrndx = read_int(62, 2)
+            else:
+                e_phoff = read_int(28, 4)
+                e_shoff = read_int(32, 4)
+                e_phentsize = read_int(42, 2)
+                e_phnum = read_int(44, 2)
+                e_shentsize = read_int(46, 2)
+                e_shnum = read_int(48, 2)
+                e_shstrndx = read_int(50, 2)
 
-            f.seek(e_shoff)
-            for i in range(e_shnum):
-                f.seek(e_shoff + i * e_shentsize)
-                sh_name = read(4)
-                f.read(4 + 8 + 8)  # skip sh_flags and sh_addr
-                sh_offset = read(8)
-                sh_size = read(8)
+            # 1. Check section headers if present.
+            if e_shoff != 0 and e_shnum > 0 and e_shstrndx < e_shnum:
+                shstrtab_entry = e_shoff + e_shentsize * e_shstrndx
+                shstrtab_offset = (
+                    read_int(shstrtab_entry + 24, 8)
+                    if is_64
+                    else read_int(shstrtab_entry + 16, 4)
+                )
 
-                f.seek(shstrtab_offset + sh_name)
-                name = b""
-                while True:
-                    byte = f.read(1)
-                    if byte == b"\x00":
-                        break
-                    name += byte
+                for i in range(e_shnum):
+                    entry = e_shoff + i * e_shentsize
+                    sh_name = read_int(entry, 4)
+                    if is_64:
+                        sh_offset = read_int(entry + 24, 8)
+                        sh_size = read_int(entry + 32, 8)
+                        sh_addralign = read_int(entry + 48, 8)
+                    else:
+                        sh_offset = read_int(entry + 16, 4)
+                        sh_size = read_int(entry + 20, 4)
+                        sh_addralign = read_int(entry + 32, 4)
 
-                if name == b".note.gnu.build-id":
-                    f.seek(sh_offset + 16)  # note description offset.
-                    return f.read(sh_size - 16).hex()
+                    f.seek(shstrtab_offset + sh_name)
+                    name = b""
+                    while True:
+                        byte = f.read(1)
+                        if not byte or byte == b"\x00":
+                            break
+                        name += byte
+
+                    if name == b".note.gnu.build-id":
+                        f.seek(sh_offset)
+                        data = f.read(sh_size)
+                        align = sh_addralign if sh_addralign in (4, 8) else 4
+                        build_id = _find_build_id_in_notes(data, align=align)
+                        if build_id:
+                            return build_id
+                        if sh_size > 16:
+                            return data[16:].hex()
+
+            # 2. Check program headers for PT_NOTE (type 4).
+            if e_phoff != 0 and e_phnum > 0:
+                for i in range(e_phnum):
+                    entry = e_phoff + i * e_phentsize
+                    p_type = read_int(entry, 4)
+                    if p_type == 4:  # PT_NOTE
+                        if is_64:
+                            p_offset = read_int(entry + 8, 8)
+                            p_filesz = read_int(entry + 32, 8)
+                            p_align = read_int(entry + 48, 8)
+                        else:
+                            p_offset = read_int(entry + 4, 4)
+                            p_filesz = read_int(entry + 16, 4)
+                            p_align = read_int(entry + 28, 4)
+                        if p_filesz > 0:
+                            f.seek(p_offset)
+                            data = f.read(p_filesz)
+                            align = p_align if p_align in (4, 8) else 4
+                            build_id = _find_build_id_in_notes(
+                                data, align=align
+                            )
+                            if build_id:
+                                return build_id
     except Exception:
         # Ignore missing file, unreadable file, or truncated file errors.
         pass
@@ -359,6 +438,7 @@ class DebugSymbolsManifestParser(object):
                 "cpu",
                 "os",
                 "dest_path",
+                "stripped",
             ):
                 cur_value = cur_entry.get(key, "")
                 new_value = entry.get(key, "")
@@ -366,13 +446,19 @@ class DebugSymbolsManifestParser(object):
                     continue
                 if cur_value == "":
                     cur_entry[key] = new_value
-                elif new_value != "" and key not in ("label", "dest_path"):
+                elif new_value != "" and key not in (
+                    "label",
+                    "dest_path",
+                    "breakpad",
+                    "gsym",
+                    "stripped",
+                ):
                     # A single binary can legitimately be referenced by
                     # multiple targets, e.g. a Bazel cc_binary used as the
                     # `binary` of several host_test() targets, or prebuilt
                     # packages with different destination paths. Differing
-                    # labels and destination paths are not a conflict; keep
-                    # the first one.
+                    # labels, destination paths, breakpad, gsym, or stripped
+                    # symbol paths are not a conflict; keep the first one.
                     errors.append(
                         f"Incompatible '{key}' value between {cur_entry} and {entry}"
                     )
@@ -591,7 +677,9 @@ class DebugSymbolExporter(object):
                     self._log(f"Missing elf_build_id in entry: {entry}")
                 continue
 
-            self._build_ids_to_labels[build_id] = entry.get("label", "")
+            label = entry.get("label", "")
+            if build_id not in self._build_ids_to_labels or label:
+                self._build_ids_to_labels[build_id] = label
             if entry["os"] == "fuchsia":
                 self._fuchsia_build_ids.add(build_id)
 
@@ -622,7 +710,12 @@ class DebugSymbolExporter(object):
                 self._symlink_map[breakpad_dst_path] = (
                     self._build_dir / breakpad_file
                 )
-            elif entry["os"] == "fuchsia" and self._dump_syms_tool:
+                self._breakpad_map.pop(breakpad_dst_path, None)
+            elif (
+                entry["os"] == "fuchsia"
+                and self._dump_syms_tool
+                and breakpad_dst_path not in self._symlink_map
+            ):
                 self._breakpad_map[breakpad_dst_path] = entry
 
             # Same for GSYM symbols.
@@ -630,7 +723,12 @@ class DebugSymbolExporter(object):
             gsym_file = entry.get("gsym")
             if gsym_file:
                 self._symlink_map[gsym_dst_path] = self._build_dir / gsym_file
-            elif entry["os"] == "fuchsia" and self._gsymutil_tool:
+                self._gsym_map.pop(gsym_dst_path, None)
+            elif (
+                entry["os"] == "fuchsia"
+                and self._gsymutil_tool
+                and gsym_dst_path not in self._symlink_map
+            ):
                 self._gsym_map[gsym_dst_path] = entry
 
             debug_symbol = entry.copy()
@@ -643,8 +741,10 @@ class DebugSymbolExporter(object):
                     build_id[:2], build_id[2:]
                 )
             debug_symbol.pop("breakpad", None)
-            if breakpad_file or (
-                entry["os"] == "fuchsia" and self._dump_syms_tool
+            if (
+                breakpad_file
+                or breakpad_dst_path in self._symlink_map
+                or (entry["os"] == "fuchsia" and self._dump_syms_tool)
             ):
                 debug_symbol["breakpad"] = str(breakpad_dst_path)
             debug_symbol.pop("elf_build_id_file", None)
@@ -951,7 +1051,7 @@ class DebugSymbolExporter(object):
         log = self._log
         log_error = self._log_error
 
-        if len(self._breakpad_map) == 0:
+        if not self._breakpad_map:
             if log:
                 log("Skipping breakpad symbol generation (no inputs).")
             return True
@@ -1003,6 +1103,7 @@ class DebugSymbolExporter(object):
 
             symbol_path = output_dir / symbol_path
             symbol_path.parent.mkdir(parents=True, exist_ok=True)
+            symbol_path.unlink(missing_ok=True)
             symbol_file = symbol_path.open("wt")
 
             # Save for closing in the result processor.
@@ -1069,10 +1170,8 @@ class DebugSymbolExporter(object):
         """
         log = self._log
         log_error = self._log_error
-        log = self._log
-        log_error = self._log_error
 
-        if len(self._gsym_map) == 0:
+        if not self._gsym_map:
             if log:
                 log("Skipping GSYM symbol generation (no inputs).")
             return True
@@ -1114,6 +1213,7 @@ class DebugSymbolExporter(object):
             ]
 
             dst_symbol_path.parent.mkdir(parents=True, exist_ok=True)
+            dst_symbol_path.unlink(missing_ok=True)
 
             return subprocess.Popen(
                 gsymutil_cmd,

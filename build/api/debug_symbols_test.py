@@ -178,6 +178,84 @@ def generate_elf_with_build_id(build_id: bytes) -> bytes:
     return writer.output
 
 
+def generate_stripped_elf_with_build_id(
+    build_id: bytes, is_64: bool = True
+) -> bytes:
+    """Generate a stripped ELF file (no section headers) with a PT_NOTE program header."""
+    note_name = b"GNU\x00"
+    note_header = struct.pack("<III", len(note_name), len(build_id), 3)
+    note_data = note_header + note_name + build_id
+
+    if is_64:
+        elf_header_size = 64
+        ph_size = 56
+        ph_offset = elf_header_size
+        note_offset = elf_header_size + ph_size
+        elf_header = struct.pack(
+            "<16sHHIQQQIHHHHHH",
+            b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            2,
+            0x3E,
+            1,
+            0,
+            ph_offset,
+            0,
+            0,
+            elf_header_size,
+            ph_size,
+            1,
+            0,
+            0,
+            0,
+        )
+        ph = struct.pack(
+            "<IIQQQQQQ",
+            4,
+            4,
+            note_offset,
+            0,
+            0,
+            len(note_data),
+            len(note_data),
+            4,
+        )
+        return elf_header + ph + note_data
+    else:
+        elf_header_size = 52
+        ph_size = 32
+        ph_offset = elf_header_size
+        note_offset = elf_header_size + ph_size
+        elf_header = struct.pack(
+            "<16sHHIIIIIHHHHHH",
+            b"\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            2,
+            0x28,
+            1,
+            0,
+            ph_offset,
+            0,
+            0,
+            elf_header_size,
+            ph_size,
+            1,
+            0,
+            0,
+            0,
+        )
+        ph = struct.pack(
+            "<IIIIIIII",
+            4,
+            note_offset,
+            0,
+            0,
+            len(note_data),
+            len(note_data),
+            4,
+            4,
+        )
+        return elf_header + ph + note_data
+
+
 # A constant .build-id value used by several tests.
 TINY_ELF_BUILD_ID_VALUE = bytes.fromhex(
     "0123456789012345678901234567890123456789"
@@ -206,6 +284,24 @@ class ExtractGnuBuildIdTest(unittest.TestCase):
         self.assertEqual(extract_gnu_build_id(self._elf), "00")
 
         self._write_elf_with_build_id(b"\xde\xad\xbe\xef")
+        self.assertEqual(extract_gnu_build_id(self._elf), "deadbeef")
+
+    def test_stripped_elf64(self) -> None:
+        self._elf.write_bytes(
+            generate_stripped_elf_with_build_id(
+                TINY_ELF_BUILD_ID_VALUE, is_64=True
+            )
+        )
+        self.assertEqual(
+            extract_gnu_build_id(self._elf), TINY_ELF_BUILD_ID_VALUE.hex()
+        )
+
+    def test_stripped_elf32(self) -> None:
+        self._elf.write_bytes(
+            generate_stripped_elf_with_build_id(
+                b"\xde\xad\xbe\xef", is_64=False
+            )
+        )
         self.assertEqual(extract_gnu_build_id(self._elf), "deadbeef")
 
 
@@ -653,6 +749,35 @@ class DebugSymbolsManifestParserTest(unittest.TestCase):
                 "label": "//src:label_3",
                 "debug": "../../prebuilt/.build-id/00/11223344.debug",
                 "elf_build_id": "0011223344",
+            },
+        ]
+        parser = DebugSymbolsManifestParser(self._root)
+        parser.parse_manifest_json(manifest, "manifest.json")
+        parser.deduplicate_entries()
+        self.assertListEqual(parser.entries, manifest)
+
+    def test_entries_with_same_build_id_and_differing_debug_paths_kept(
+        self,
+    ) -> None:
+        # Check that two distinct binaries with differing debug paths but matching
+        # elf_build_id (e.g. identical binaries compiled for different targets)
+        # are not merged, do not conflict on elf_build_id_file, and both are kept.
+        manifest = [
+            {
+                "cpu": "arm64",
+                "debug": "exe.unstripped/trace-static-engine",
+                "elf_build_id": "0d0aab3b7779751bcb53f913727f4d8a4e3b777f",
+                "elf_build_id_file": "gen/trace-static-engine.elf_build_id",
+                "label": "//zircon/system/utest/trace:trace-static-engine",
+                "os": "fuchsia",
+            },
+            {
+                "cpu": "arm64",
+                "debug": "zircon-migrated/exe.unstripped/trace",
+                "elf_build_id": "0d0aab3b7779751bcb53f913727f4d8a4e3b777f",
+                "elf_build_id_file": "gen/trace.elf_build_id",
+                "label": "//zircon/system/utest/trace:trace",
+                "os": "fuchsia",
             },
         ]
         parser = DebugSymbolsManifestParser(self._root)
@@ -1480,6 +1605,55 @@ with open(args.out_file, "wt") as f:
         self.assertIn(
             "prebuilt/.build-id/ab/cdef0123456789.debug", self._err_lines[0]
         )
+
+    def test_export_debug_symbols_prebuilt_breakpad_symlink_safety(
+        self,
+    ) -> None:
+        build_id = "aabbccddeeff00112233"
+        debug_so = self._root / "libfoo.so"
+        debug_so.write_bytes(
+            generate_elf_with_build_id(bytes.fromhex(build_id))
+        )
+        prebuilt_sym = self._root / "libfoo.sym"
+        prebuilt_sym.write_text("MODULE Linux x86_64 aabbcc libfoo.so")
+        prebuilt_sym.chmod(0o444)
+
+        entry_with_sym = {
+            "debug": "libfoo.so",
+            "elf_build_id": build_id,
+            "breakpad": "libfoo.sym",
+            "label": "//prebuilt:libfoo",
+            "os": "fuchsia",
+        }
+        entry_without_sym = {
+            "debug": "libfoo.so",
+            "elf_build_id": build_id,
+            "label": "//vendor/pkg:libfoo",
+            "os": "fuchsia",
+        }
+
+        for entries in (
+            [entry_with_sym, entry_without_sym],
+            [entry_without_sym, entry_with_sym],
+        ):
+            exporter = DebugSymbolExporter(
+                build_dir=self._root,
+                dump_syms_tool=self._dump_syms,
+                log=self._log,
+                log_error=self._log_error,
+            )
+            exporter.parse_debug_symbols(entries)
+            output_dir = self._root / "out_symlink_test"
+            self.assertTrue(exporter.export_debug_symbols(output_dir))
+
+            sym_file = (
+                output_dir / ".build-id" / build_id[:2] / f"{build_id[2:]}.sym"
+            )
+            self.assertTrue(sym_file.is_symlink())
+            self.assertEqual(sym_file.resolve(), prebuilt_sym.resolve())
+            self.assertEqual(
+                sym_file.read_text(), "MODULE Linux x86_64 aabbcc libfoo.so"
+            )
 
 
 if __name__ == "__main__":

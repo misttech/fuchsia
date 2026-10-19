@@ -664,7 +664,6 @@ build_api_module("debug_symbols") {
   deps = [
     ":default",
     "//:bazel_host_test_suites",
-    "//:prebuilt_binaries",
   ]
 }
 

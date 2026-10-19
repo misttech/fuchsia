@@ -1389,8 +1389,8 @@ class _PrebuiltPackageExpander(object):
         parser: DebugSymbolsManifestParser,
     ):
         self.base_path = Path(base_path)
-        self.prebuilt_build_id_dir = Path(prebuilt_build_id_dir)
-        self.build_dir = Path(build_dir)
+        self.prebuilt_build_id_dir = Path(prebuilt_build_id_dir).resolve()
+        self.build_dir = Path(build_dir).resolve()
         self.parser = parser
         self.cache: dict[str, list[DebugSymbolEntryType]] = {}
         self._extra_input_files: set[Path] = set()
@@ -1459,6 +1459,204 @@ class _PrebuiltPackageExpander(object):
         self.cache[pkg_manifest_rel] = expanded
         return expanded
 
+    def expand_container(
+        self, input_entry: dict[str, T.Any]
+    ) -> list[DebugSymbolEntryType]:
+        """Expand an assembly container entry into a list of debug symbol entries."""
+        container_rel = input_entry["container_dir"]
+        if container_rel in self.cache:
+            return self.cache[container_rel]
+
+        expanded: list[DebugSymbolEntryType] = []
+        container_path = self.base_path / container_rel
+        if not container_path.exists():
+            self.cache[container_rel] = expanded
+            return expanded
+
+        self._extra_input_files.add(container_path)
+        self.parser.extra_input_files.add(container_path)
+
+        seen_build_ids: set[str] = set()
+
+        def _process_blob(blob_path: Path, dest_path: str) -> None:
+            if not blob_path.exists() or not blob_path.is_file():
+                return
+            self._extra_input_files.add(blob_path)
+            self.parser.extra_input_files.add(blob_path)
+            build_id = self.parser.extract_build_id(blob_path)
+            if not build_id or len(build_id) <= 2 or build_id in seen_build_ids:
+                return
+            debug_file_path = (
+                self.prebuilt_build_id_dir
+                / build_id[:2]
+                / f"{build_id[2:]}.debug"
+            )
+            if not debug_file_path.exists():
+                return
+            seen_build_ids.add(build_id)
+            self._extra_input_files.add(debug_file_path)
+            self.parser.extra_input_files.add(debug_file_path)
+            expanded.append(
+                {
+                    "debug": os.path.relpath(debug_file_path, self.build_dir),
+                    "elf_build_id": build_id,
+                    "dest_path": dest_path,
+                    "os": input_entry["os"],
+                    "cpu": input_entry["cpu"],
+                    "label": input_entry["label"],
+                }
+            )
+
+        def _process_package_manifest(pkg_file: Path) -> None:
+            if not pkg_file.exists() or not pkg_file.is_file():
+                return
+            try:
+                with open(pkg_file, "rt") as pf:
+                    pkg_manifest = json.load(pf)
+            except Exception:
+                return
+            if (
+                not isinstance(pkg_manifest, dict)
+                or "blobs" not in pkg_manifest
+            ):
+                return
+            self._extra_input_files.add(pkg_file)
+            self.parser.extra_input_files.add(pkg_file)
+            sources_relative = pkg_manifest.get("blob_sources_relative")
+            if not sources_relative:
+                sources_relative = pkg_manifest.get(
+                    "sources_relative", "working_dir"
+                )
+            pkg_manifest_dir = pkg_file.parent
+            for blob in pkg_manifest.get("blobs", []):
+                dest_path = blob.get("path", "")
+                if dest_path.startswith("meta/"):
+                    continue
+                blob_source_path = blob.get("source_path", "")
+                merkle = blob.get("merkle", "")
+                blob_path = None
+                if sources_relative == "file" and blob_source_path:
+                    p = pkg_manifest_dir / blob_source_path
+                    if p.exists():
+                        blob_path = p
+                elif blob_source_path:
+                    p = self.base_path / blob_source_path
+                    if p.exists():
+                        blob_path = p
+                if blob_path is None and merkle:
+                    # Fall back to container's blobs directory by merkle root
+                    p = container_path / "blobs" / merkle
+                    if p.exists():
+                        blob_path = p
+                if blob_path is None and blob_source_path:
+                    # Fall back to container's blobs directory by filename
+                    p = container_path / "blobs" / Path(blob_source_path).name
+                    if p.exists():
+                        blob_path = p
+                if blob_path is not None:
+                    _process_blob(blob_path, dest_path)
+
+        # 1. Check for package manifests under packages/ and subpackages/
+        for sub_dir_name in ("packages", "subpackages"):
+            sub_dir = container_path / sub_dir_name
+            if sub_dir.is_dir():
+                for pkg_file in sub_dir.rglob("*"):
+                    if pkg_file.is_file():
+                        _process_package_manifest(pkg_file)
+
+        # 2. Check for product_configuration.json
+        prod_config_file = container_path / "product_configuration.json"
+        if prod_config_file.is_file():
+            self._extra_input_files.add(prod_config_file)
+            self.parser.extra_input_files.add(prod_config_file)
+            try:
+                with open(prod_config_file, "rt") as f:
+                    prod_config = json.load(f)
+                pkgs_section = prod_config.get("packages", {})
+                for pkg_list in (
+                    pkgs_section.get("base", []),
+                    pkgs_section.get("cache", []),
+                    pkgs_section.get("bootfs", []),
+                ):
+                    items = (
+                        pkg_list.values()
+                        if isinstance(pkg_list, dict)
+                        else pkg_list
+                    )
+                    for entry in items:
+                        manifest_path = (
+                            entry
+                            if isinstance(entry, str)
+                            else entry.get("manifest")
+                            if isinstance(entry, dict)
+                            else None
+                        )
+                        if manifest_path:
+                            for base in (container_path, self.base_path):
+                                p = base / manifest_path
+                                if p.is_file():
+                                    _process_package_manifest(p)
+                                    break
+            except Exception:
+                pass
+
+        # 3. Check for image_assembly.json
+        image_assembly_file = container_path / "image_assembly.json"
+        if image_assembly_file.is_file():
+            self._extra_input_files.add(image_assembly_file)
+            self.parser.extra_input_files.add(image_assembly_file)
+            try:
+                with open(image_assembly_file, "rt") as f:
+                    image_assembly = json.load(f)
+                for pkg_list in (
+                    image_assembly.get("base", []),
+                    image_assembly.get("cache", []),
+                    image_assembly.get("bootfs_packages", []),
+                ):
+                    items = (
+                        pkg_list.values()
+                        if isinstance(pkg_list, dict)
+                        else pkg_list
+                    )
+                    for entry in items:
+                        manifest_path = (
+                            entry
+                            if isinstance(entry, str)
+                            else entry.get("manifest")
+                            if isinstance(entry, dict)
+                            else None
+                        )
+                        if manifest_path:
+                            for base in (container_path, self.base_path):
+                                p = base / manifest_path
+                                if p.is_file():
+                                    _process_package_manifest(p)
+                                    break
+                for bootfs_file in image_assembly.get("bootfs_files", []):
+                    if isinstance(bootfs_file, dict):
+                        source = bootfs_file.get("source")
+                        destination = bootfs_file.get(
+                            "destination", "bootfs_file"
+                        )
+                        if source:
+                            for base in (container_path, self.base_path):
+                                p = base / source
+                                if p.is_file():
+                                    _process_blob(p, destination)
+                                    break
+            except Exception:
+                pass
+
+        # 4. Check any remaining blobs directly under blobs/
+        blobs_dir = container_path / "blobs"
+        if blobs_dir.is_dir():
+            for blob_file in blobs_dir.iterdir():
+                if blob_file.is_file():
+                    _process_blob(blob_file, f"blobs/{blob_file.name}")
+
+        self.cache[container_rel] = expanded
+        return expanded
+
 
 def merge_debug_symbol_manifests(
     debug_symbol_manifest_paths: list[str],
@@ -1518,7 +1716,16 @@ def merge_debug_symbol_manifests(
 
         for input_entry in input_manifest:
             if "package_manifest" in input_entry:
-                for expanded_entry in prebuilt_expander.expand(input_entry):
+                expanded_entries = prebuilt_expander.expand(input_entry)
+            elif "container_dir" in input_entry:
+                expanded_entries = prebuilt_expander.expand_container(
+                    input_entry
+                )
+            else:
+                expanded_entries = None
+
+            if expanded_entries is not None:
+                for expanded_entry in expanded_entries:
                     src_debug = expanded_entry["debug"]
                     if src_debug not in seen_in_target:
                         seen_in_target.add(src_debug)
