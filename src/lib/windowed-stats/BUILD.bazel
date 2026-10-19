@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "windowed-stats",
+    srcs = [
+        "src/experimental/clock.rs",
+        "src/experimental/inspect.rs",
+        "src/experimental/mod.rs",
+        "src/experimental/series/buffer/decode.rs",
+        "src/experimental/series/buffer/delta_simple8b_rle.rs",
+        "src/experimental/series/buffer/delta_zigzag_simple8b_rle.rs",
+        "src/experimental/series/buffer/encoding.rs",
+        "src/experimental/series/buffer/mod.rs",
+        "src/experimental/series/buffer/simple8b_rle.rs",
+        "src/experimental/series/buffer/uncompressed.rs",
+        "src/experimental/series/buffer/zigzag_simple8b_rle.rs",
+        "src/experimental/series/interpolation.rs",
+        "src/experimental/series/interval.rs",
+        "src/experimental/series/metadata.rs",
+        "src/experimental/series/mod.rs",
+        "src/experimental/series/statistic.rs",
+        "src/experimental/testing.rs",
+        "src/experimental/vec1.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/profiles/bt-rfcomm:__pkg__",
+        "//src/connectivity/network/netstack3:__pkg__",
+        "//src/connectivity/policy/netcfg:__pkg__",
+        "//src/connectivity/policy/reachability/core:__pkg__",
+        "//src/connectivity/wlan/lib/telemetry:__pkg__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-integer",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "windowed-stats_test",
+    crate = ":windowed-stats",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//src/lib/proptest-support",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:proptest",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "windowed-stats-tests",
+    unit_tests = [":windowed-stats_test"],
+)
