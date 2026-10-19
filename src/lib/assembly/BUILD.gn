@@ -2,16 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/testing/standardized_test_groups.gni")
 
 standardized_test_groups("tests") {
   host = [
+    ":bazel_tests",
     "//src/lib/assembly/api:api_test",
     "//src/lib/assembly/artifact_cache:artifact_cache_test",
     "//src/lib/assembly/assembled_system:assembled_system_test",
     "//src/lib/assembly/base_package:base_package_test",
     "//src/lib/assembly/blob_size:blob_size_test",
-    "//src/lib/assembly/blobfs:blobfs_test",
     "//src/lib/assembly/container:container_test",
     "//src/lib/assembly/component_id_index:component_id_index_test",
     "//src/lib/assembly/component_manager_config:component_manager_config_test",
@@ -29,8 +30,6 @@ standardized_test_groups("tests") {
     "//src/lib/assembly/images_config:images_config_test",
     "//src/lib/assembly/memory_buckets:memory_buckets_test",
     "//src/lib/assembly/named_file_map:named_file_map_test",
-    "//src/lib/assembly/package_copy:package_copy_test",
-    "//src/lib/assembly/package_list:package_list_test",
     "//src/lib/assembly/package_utils:package_utils_test",
     "//src/lib/assembly/partitions_config:partitions_config_test",
     "//src/lib/assembly/platform_configuration:platform_configuration_test",
@@ -52,4 +51,8 @@ standardized_test_groups("tests") {
     "//src/lib/assembly/vbmeta:vbmeta_test",
     "//src/lib/assembly/zbi:zbi_test",
   ]
+}
+
+bazel_test_suite("bazel_tests") {
+  host_tests = [ "//src/lib/assembly:host_tests" ]
 }
