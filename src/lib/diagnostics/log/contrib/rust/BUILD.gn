@@ -36,7 +36,7 @@ rustc_library("fuchsia-log-contrib") {
   visibility = [
     ":*",
     "//src/lib/diagnostics/log:*",
-    "//vendor/google/moonflower/hrtimer/drivers/qcom-pm5100-hrtimer-rust:*",
+    "//vendor/google/*",
   ]
   deps = [
     "//sdk/rust/zx",

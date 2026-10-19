@@ -15,7 +15,7 @@ rustc_library(
     edition = "2024",
     visibility = [
         "//src/lib/diagnostics/log:__pkg__",
-        "//vendor/google/moonflower/hrtimer/drivers/qcom-pm5100-hrtimer-rust:__pkg__",
+        "//vendor/google:__subpackages__",
     ],
     deps = [
         "//sdk/rust/zx",
