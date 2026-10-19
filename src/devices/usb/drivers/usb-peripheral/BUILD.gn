@@ -48,7 +48,6 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.peripheral:fuchsia.hardware.usb.peripheral_cpp",
-    "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",

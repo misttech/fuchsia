@@ -5,7 +5,6 @@
 #include "src/devices/usb/drivers/usb-peripheral/usb-peripheral.h"
 
 #include <assert.h>
-#include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
 #include <lib/driver/component/cpp/driver_export2.h>
@@ -45,7 +44,6 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffunction = fuchsia_hardware_usb_function;
 namespace fperipheral = fuchsia_hardware_usb_peripheral;
-namespace fphy = fuchsia_hardware_usb_phy;
 
 }  // namespace usb_peripheral
 
@@ -199,20 +197,6 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   }
   if (zx_status_t status = InitializeDci(std::move(*dci_fidl)); status != ZX_OK) {
     return zx::error(status);
-  }
-
-  // Starting USB mode is determined from device metadata.
-  // We read initial value and store it in dev->usb_mode, but do not actually
-  // enable it until after all of our functions have bound.
-  zx::result metadata = fdf_metadata::GetMetadataIfExists<fphy::Metadata>(incoming_);
-  if (metadata.is_error()) {
-    fdf::error("Failed to get metadata: {}", metadata);
-    return metadata.take_error();
-  }
-  if (!metadata.value().has_value()) {
-    fbl::AutoLock lock(&lock_);
-    // Assume peripheral mode by default.
-    parent_usb_mode_ = fdescriptor::UsbMode::kPeripheral;
   }
 
   // Create child.
@@ -838,10 +822,6 @@ zx_status_t UsbPeripheral::StartController() {
     if (cur_usb_mode_ == fdescriptor::UsbMode::kPeripheral) {
       fdf::info("Controller already in mode UsbMode::kPeripheral");
       return ZX_OK;
-    }
-    if (parent_usb_mode_ != fdescriptor::UsbMode::kPeripheral) {
-      fdf::error("DCI device is not in peripheral mode, cannot start the controller");
-      return ZX_ERR_BAD_STATE;
     }
 
     fdf::info("Starting controller: cur_mode={} new_mode=UsbMode::kPeripheral (state={})",

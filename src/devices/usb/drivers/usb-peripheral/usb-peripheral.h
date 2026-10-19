@@ -502,8 +502,6 @@ class UsbPeripheral : public fdf::DriverBase2,
   mutable fbl::Mutex lock_;
   // Current USB mode.
   fdescriptor::UsbMode cur_usb_mode_ __TA_GUARDED(lock_) = fdescriptor::UsbMode::kNone;
-  // Our parent's USB mode. Should not change after being set.
-  fdescriptor::UsbMode parent_usb_mode_ __TA_GUARDED(lock_) = fdescriptor::UsbMode::kNone;
   // True if we are connected to a host.
   bool connected_ __TA_GUARDED(lock_) = false;
   // Current configuration number selected via StandardRequest::SET_CONFIGURATION

@@ -30,7 +30,6 @@
                 "fuchsia.boot.metadata.MacAddressMetadata",
                 "fuchsia.boot.metadata.SerialNumberMetadata",
                 "fuchsia.hardware.usb.dci.UsbDciService",
-                "fuchsia.hardware.usb.phy.Metadata",
             ],
         },
         {
