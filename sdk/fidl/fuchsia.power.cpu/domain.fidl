@@ -4,6 +4,8 @@
 @available(added=HEAD)
 library fuchsia.power.cpu;
 
+using fuchsia.power.broker;
+
 type DomainInfo = table {
     // ID of the domain.
     1: id uint64;
@@ -15,20 +17,8 @@ type DomainInfo = table {
     4: name string:MAX;
 };
 
-/// Errors returned by [`fuchsia.power.cpu/DomainController.GetMaxFrequency`].
-type GetMaxFrequencyError = flexible enum {
-    INTERNAL = 1;
-    INVALID_ARGUMENTS = 2;
-};
-
-/// Errors returned by [`fuchsia.power.cpu/DomainController.SetMaxFrequency`].
-type SetMaxFrequencyError = flexible enum {
-    INTERNAL = 1;
-    INVALID_ARGUMENTS = 2;
-};
-
-/// Errors returned by [`fuchsia.power.cpu/DomainController.ClearMaxFrequency`].
-type ClearMaxFrequencyError = flexible enum {
+/// Errors returned by [`fuchsia.power.cpu/DomainController`] methods.
+type DomainControllerError = flexible enum {
     INTERNAL = 1;
     INVALID_ARGUMENTS = 2;
 };
@@ -49,15 +39,16 @@ open protocol DomainController {
     /// this domain's `available_frequencies_hz` list retrieved via
     /// [`ListDomains`].
     ///
-    /// If SetMaxFrequency has never been called, this will return the index
-    /// that corresponds to the highest available frequency for this domain.
+    /// If SetMaxFrequency or LeaseMaxFrequency has never been called, this will
+    /// return the index that corresponds to the highest available frequency for
+    /// this domain.
     ///
     /// If `domain_id` is invalid, INVALID_ARGUMENTS is returned.
     flexible GetMaxFrequency(struct {
         domain_id uint64;
     }) -> (struct {
         max_frequency_index uint64;
-    }) error GetMaxFrequencyError;
+    }) error DomainControllerError;
 
     /// Sets the max frequency the CPU can run at.
     ///
@@ -73,12 +64,74 @@ open protocol DomainController {
     flexible SetMaxFrequency(struct {
         domain_id uint64;
         frequency_index uint64;
-    }) -> () error SetMaxFrequencyError;
+    }) -> () error DomainControllerError;
 
     /// Clears the max frequency limit the CPU can run at.
     ///
     /// If `domain_id` is invalid, INVALID_ARGUMENTS is returned.
     flexible ClearMaxFrequency(struct {
         domain_id uint64;
-    }) -> () error ClearMaxFrequencyError;
+    }) -> () error DomainControllerError;
+
+    /// Gets the index of the min frequency the CPU can run at.
+    ///
+    /// `min_frequency_index` corresponds to the index of a frequency within
+    /// this domain's `available_frequencies_hz` list retrieved via
+    /// [`ListDomains`].
+    ///
+    /// If no floor lease is currently active, this will return the index that
+    /// corresponds to the lowest available frequency for this domain.
+    ///
+    /// If `domain_id` is invalid, INVALID_ARGUMENTS is returned.
+    flexible GetMinFrequency(struct {
+        domain_id uint64;
+    }) -> (struct {
+        min_frequency_index uint64;
+    }) error DomainControllerError;
+
+    /// Acquires a ceiling lease on `domain_id` capping its maximum operating
+    /// point at `frequency_index`.
+    ///
+    /// Multiple clients may hold concurrent ceiling leases on the same domain;
+    /// the server enforces the lowest maximum frequency (highest
+    /// `frequency_index`) across all active leases. Each call creates an
+    /// independent lease whose lifetime is governed solely by the returned
+    /// `lease_token` handle; closing all handles to `lease_token` releases the
+    /// lease.
+    ///
+    /// `lease_name` is a human-readable label for diagnostics and Inspect only
+    /// and is not required to be unique.
+    ///
+    /// If `domain_id` or `frequency_index` is invalid, INVALID_ARGUMENTS is
+    /// returned.
+    flexible LeaseMaxFrequency(struct {
+        domain_id uint64;
+        frequency_index uint64;
+        lease_name string:fuchsia.power.broker.MAX_ELEMENT_NAME_LEN;
+    }) -> (resource struct {
+        lease_token fuchsia.power.broker.LeaseToken;
+    }) error DomainControllerError;
+
+    /// Acquires a floor lease on `domain_id` raising its minimum operating
+    /// point to `frequency_index`.
+    ///
+    /// Multiple clients may hold concurrent floor leases on the same domain;
+    /// the server enforces the highest minimum frequency (lowest
+    /// `frequency_index`) across all active leases. Each call creates an
+    /// independent lease whose lifetime is governed solely by the returned
+    /// `lease_token` handle; closing all handles to `lease_token` releases the
+    /// lease.
+    ///
+    /// `lease_name` is a human-readable label for diagnostics and Inspect only
+    /// and is not required to be unique.
+    ///
+    /// If `domain_id` or `frequency_index` is invalid, INVALID_ARGUMENTS is
+    /// returned.
+    flexible LeaseMinFrequency(struct {
+        domain_id uint64;
+        frequency_index uint64;
+        lease_name string:fuchsia.power.broker.MAX_ELEMENT_NAME_LEN;
+    }) -> (resource struct {
+        lease_token fuchsia.power.broker.LeaseToken;
+    }) error DomainControllerError;
 };

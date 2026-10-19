@@ -116,7 +116,7 @@ async fn get_max_frequency_returns_error_on_unknown_domain_id() {
     let env = create_test_env().await;
     let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
     let err = domain_controller.get_max_frequency(2).await.unwrap().unwrap_err();
-    assert_eq!(fcpu::GetMaxFrequencyError::InvalidArguments, err);
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
 }
 
 #[fuchsia::test]
@@ -124,7 +124,7 @@ async fn set_max_frequency_error_on_unknown_domain_id() {
     let env = create_test_env().await;
     let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
     let err = domain_controller.set_max_frequency(2, 1).await.unwrap().unwrap_err();
-    assert_eq!(fcpu::SetMaxFrequencyError::InvalidArguments, err);
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
 }
 
 #[fuchsia::test]
@@ -132,7 +132,7 @@ async fn set_max_frequency_error_on_unknown_frequency() {
     let env = create_test_env().await;
     let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
     let err = domain_controller.set_max_frequency(DOMAIN_ID0, 999).await.unwrap().unwrap_err();
-    assert_eq!(fcpu::SetMaxFrequencyError::InvalidArguments, err);
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
 }
 
 #[fuchsia::test]
@@ -140,5 +140,77 @@ async fn clear_max_frequency_error_on_unknown_domain_id() {
     let env = create_test_env().await;
     let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
     let err = domain_controller.clear_max_frequency(4).await.unwrap().unwrap_err();
-    assert_eq!(fcpu::ClearMaxFrequencyError::InvalidArguments, err);
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
+}
+
+#[fuchsia::test]
+async fn get_min_frequency_returns_default() {
+    let env = create_test_env().await;
+    let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
+    let min_frequency_index =
+        domain_controller.get_min_frequency(DOMAIN_ID0).await.unwrap().unwrap();
+    assert_eq!((FREQUENCIES_HZ[0].len() - 1) as u64, min_frequency_index);
+}
+
+#[fuchsia::test]
+async fn get_min_frequency_returns_error_on_unknown_domain_id() {
+    let env = create_test_env().await;
+    let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
+    let err = domain_controller.get_min_frequency(2).await.unwrap().unwrap_err();
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
+}
+
+#[fuchsia::test]
+async fn lease_max_frequency_errors_on_invalid_arguments() {
+    let env = create_test_env().await;
+    let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
+    let err = domain_controller.lease_max_frequency(2, 1, "test").await.unwrap().unwrap_err();
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
+    let err =
+        domain_controller.lease_max_frequency(DOMAIN_ID0, 999, "test").await.unwrap().unwrap_err();
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
+}
+
+#[fuchsia::test]
+async fn lease_min_frequency_errors_on_invalid_arguments() {
+    let env = create_test_env().await;
+    let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
+    let err = domain_controller.lease_min_frequency(2, 1, "test").await.unwrap().unwrap_err();
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
+    let err =
+        domain_controller.lease_min_frequency(DOMAIN_ID0, 999, "test").await.unwrap().unwrap_err();
+    assert_eq!(fcpu::DomainControllerError::InvalidArguments, err);
+}
+
+#[fuchsia::test]
+async fn lease_max_and_min_frequency_multi_client() {
+    let env = create_test_env().await;
+    let domain_controller = env.connect_to_protocol::<fcpu::DomainControllerMarker>();
+
+    let lease_a =
+        domain_controller.lease_max_frequency(DOMAIN_ID0, 1, "voter_a").await.unwrap().unwrap();
+    let lease_b =
+        domain_controller.lease_max_frequency(DOMAIN_ID0, 2, "voter_b").await.unwrap().unwrap();
+    assert_eq!(2, domain_controller.get_max_frequency(DOMAIN_ID0).await.unwrap().unwrap());
+
+    drop(lease_b);
+    assert_eq!(1, domain_controller.get_max_frequency(DOMAIN_ID0).await.unwrap().unwrap());
+
+    drop(lease_a);
+    assert_eq!(0, domain_controller.get_max_frequency(DOMAIN_ID0).await.unwrap().unwrap());
+
+    let min_a =
+        domain_controller.lease_min_frequency(DOMAIN_ID0, 2, "min_voter_a").await.unwrap().unwrap();
+    let min_b =
+        domain_controller.lease_min_frequency(DOMAIN_ID0, 1, "min_voter_b").await.unwrap().unwrap();
+    assert_eq!(1, domain_controller.get_min_frequency(DOMAIN_ID0).await.unwrap().unwrap());
+
+    drop(min_b);
+    assert_eq!(2, domain_controller.get_min_frequency(DOMAIN_ID0).await.unwrap().unwrap());
+
+    drop(min_a);
+    assert_eq!(
+        (FREQUENCIES_HZ[0].len() - 1) as u64,
+        domain_controller.get_min_frequency(DOMAIN_ID0).await.unwrap().unwrap()
+    );
 }

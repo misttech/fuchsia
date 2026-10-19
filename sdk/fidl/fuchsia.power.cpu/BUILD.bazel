@@ -12,4 +12,7 @@ fidl_library(
         "domain.fidl",
     ],
     visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/fidl/fuchsia.power.broker",
+    ],
 )

@@ -30,4 +30,5 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 fidl("fuchsia.power.cpu") {
   sources = [ "domain.fidl" ]
   visibility = [ "*" ]
+  public_deps = [ "//sdk/fidl/fuchsia.power.broker" ]
 }

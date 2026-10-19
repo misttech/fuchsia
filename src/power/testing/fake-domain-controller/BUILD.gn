@@ -12,7 +12,9 @@ rustc_binary("bin") {
   testonly = true
 
   deps = [
+    "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
+    "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",

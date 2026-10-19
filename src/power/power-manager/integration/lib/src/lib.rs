@@ -29,6 +29,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const POWER_MANAGER_URL: &str = "#meta/power-manager.cm";
 const CPU_MANAGER_URL: &str = "#meta/cpu-manager.cm";
+const POWER_BROKER_URL: &str = "#meta/power-broker.cm";
 const FAKE_COBALT_URL: &str = "#meta/fake_cobalt.cm";
 const FAKE_CLOCK_URL: &str = "#meta/fake_clock.cm";
 
@@ -102,6 +103,11 @@ impl TestEnvBuilder {
             .add_child("cpu_manager", CPU_MANAGER_URL, ChildOptions::new())
             .await
             .expect("Failed to add child: cpu_manager");
+
+        let power_broker = realm_builder
+            .add_child("power_broker", POWER_BROKER_URL, ChildOptions::new())
+            .await
+            .expect("Failed to add child: power_broker");
 
         let fake_cobalt = realm_builder
             .add_child("fake_cobalt", FAKE_COBALT_URL, ChildOptions::new())
@@ -310,6 +316,21 @@ impl TestEnvBuilder {
             .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"));
         realm_builder
             .add_route(parent_to_cpu_manager_routes.from(Ref::parent()).to(&cpu_manager))
+            .await
+            .unwrap();
+
+        let parent_to_power_broker_routes = Route::new()
+            .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
+            .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"));
+        realm_builder
+            .add_route(parent_to_power_broker_routes.from(Ref::parent()).to(&power_broker))
+            .await
+            .unwrap();
+
+        let power_broker_to_cpu_manager_routes =
+            Route::new().capability(Capability::protocol_by_name("fuchsia.power.broker.Topology"));
+        realm_builder
+            .add_route(power_broker_to_cpu_manager_routes.from(&power_broker).to(&cpu_manager))
             .await
             .unwrap();
 

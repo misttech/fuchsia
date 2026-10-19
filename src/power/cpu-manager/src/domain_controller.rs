@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::common_utils::result_debug_panic::ResultDebugPanic;
+use crate::error::CpuManagerError;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use crate::ok_or_default_err;
@@ -28,6 +29,9 @@ use std::rc::Rc;
 ///     - GetDomainInfos
 ///     - GetMaxFrequency
 ///     - SetMaxFrequency
+///     - LeaseMaxFrequency
+///     - GetMinFrequency
+///     - LeaseMinFrequency
 ///
 /// FIDL dependencies: No direct dependencies
 ///
@@ -138,7 +142,7 @@ impl DomainController {
                 }
                 fcpu::DomainControllerRequest::GetMaxFrequency { domain_id, responder } => {
                     if !domain_info_map.contains_key(&domain_id) {
-                        let _ = responder.send(Err(fcpu::GetMaxFrequencyError::InvalidArguments));
+                        let _ = responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
                         continue;
                     }
 
@@ -149,9 +153,18 @@ impl DomainController {
                         Ok(MessageReturn::GetMaxFrequency(max_frequency_index)) => {
                             max_frequency_index
                         }
+                        Err(CpuManagerError::InvalidArgument(e)) => {
+                            warn!(
+                                "Invalid arguments to GetMaxFrequency for domain {}: {}",
+                                domain_id, e
+                            );
+                            let _ =
+                                responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                            continue;
+                        }
                         e => {
                             error!("Failed to get max frequency for domain {}: {:?}", domain_id, e);
-                            let _ = responder.send(Err(fcpu::GetMaxFrequencyError::Internal));
+                            let _ = responder.send(Err(fcpu::DomainControllerError::Internal));
                             continue;
                         }
                     };
@@ -167,7 +180,7 @@ impl DomainController {
                     responder,
                 } => {
                     if !domain_info_map.contains_key(&domain_id) {
-                        let _ = responder.send(Err(fcpu::SetMaxFrequencyError::InvalidArguments));
+                        let _ = responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
                         continue;
                     }
 
@@ -179,9 +192,18 @@ impl DomainController {
                             // MessageReturn::SetMaxFrequency is the expected message type here.
                             // Any other message type will be treated as an error.
                         }
+                        Err(CpuManagerError::InvalidArgument(e)) => {
+                            warn!(
+                                "Invalid arguments to SetMaxFrequency for domain {}: {}",
+                                domain_id, e
+                            );
+                            let _ =
+                                responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                            continue;
+                        }
                         e => {
                             error!("Failed to set max frequency for domain {}: {:?}", domain_id, e);
-                            let _ = responder.send(Err(fcpu::SetMaxFrequencyError::Internal));
+                            let _ = responder.send(Err(fcpu::DomainControllerError::Internal));
                             continue;
                         }
                     };
@@ -193,7 +215,7 @@ impl DomainController {
                 }
                 fcpu::DomainControllerRequest::ClearMaxFrequency { domain_id, responder } => {
                     if !domain_info_map.contains_key(&domain_id) {
-                        let _ = responder.send(Err(fcpu::ClearMaxFrequencyError::InvalidArguments));
+                        let _ = responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
                         continue;
                     }
 
@@ -202,18 +224,149 @@ impl DomainController {
                         .await
                     {
                         Ok(MessageReturn::SetMaxFrequency) => {}
+                        Err(CpuManagerError::InvalidArgument(e)) => {
+                            warn!(
+                                "Invalid arguments to ClearMaxFrequency for domain {}: {}",
+                                domain_id, e
+                            );
+                            let _ =
+                                responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                            continue;
+                        }
                         e => {
                             error!(
                                 "Failed to clear max frequency for domain {}: {:?}",
                                 domain_id, e
                             );
-                            let _ = responder.send(Err(fcpu::ClearMaxFrequencyError::Internal));
+                            let _ = responder.send(Err(fcpu::DomainControllerError::Internal));
                             continue;
                         }
                     };
 
                     if let Err(e) = responder.send(Ok(())) {
                         error!("Failed to send ClearMaxFrequency response to client: {:?}", e);
+                        continue;
+                    }
+                }
+                fcpu::DomainControllerRequest::GetMinFrequency { domain_id, responder } => {
+                    if !domain_info_map.contains_key(&domain_id) {
+                        let _ = responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                        continue;
+                    }
+
+                    let min_frequency_index = match cpu_manager_main
+                        .handle_message(&Message::GetMinFrequency(domain_id))
+                        .await
+                    {
+                        Ok(MessageReturn::GetMinFrequency(min_frequency_index)) => {
+                            min_frequency_index
+                        }
+                        Err(CpuManagerError::InvalidArgument(e)) => {
+                            warn!(
+                                "Invalid arguments to GetMinFrequency for domain {}: {}",
+                                domain_id, e
+                            );
+                            let _ =
+                                responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                            continue;
+                        }
+                        e => {
+                            error!("Failed to get min frequency for domain {}: {:?}", domain_id, e);
+                            let _ = responder.send(Err(fcpu::DomainControllerError::Internal));
+                            continue;
+                        }
+                    };
+
+                    if let Err(e) = responder.send(Ok(min_frequency_index as u64)) {
+                        error!("Failed to send GetMinFrequency response to client: {:?}", e);
+                        continue;
+                    }
+                }
+                fcpu::DomainControllerRequest::LeaseMaxFrequency {
+                    domain_id,
+                    frequency_index,
+                    lease_name,
+                    responder,
+                } => {
+                    if !domain_info_map.contains_key(&domain_id) {
+                        let _ = responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                        continue;
+                    }
+
+                    let token = match cpu_manager_main
+                        .handle_message(&Message::LeaseMaxFrequency(
+                            domain_id,
+                            frequency_index,
+                            lease_name,
+                        ))
+                        .await
+                    {
+                        Ok(MessageReturn::LeaseMaxFrequency(token)) => token,
+                        Err(CpuManagerError::InvalidArgument(e)) => {
+                            warn!(
+                                "Invalid arguments to LeaseMaxFrequency for domain {}: {}",
+                                domain_id, e
+                            );
+                            let _ =
+                                responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                            continue;
+                        }
+                        e => {
+                            error!(
+                                "Failed to lease max frequency for domain {}: {:?}",
+                                domain_id, e
+                            );
+                            let _ = responder.send(Err(fcpu::DomainControllerError::Internal));
+                            continue;
+                        }
+                    };
+
+                    if let Err(e) = responder.send(Ok(token)) {
+                        error!("Failed to send LeaseMaxFrequency response to client: {:?}", e);
+                        continue;
+                    }
+                }
+                fcpu::DomainControllerRequest::LeaseMinFrequency {
+                    domain_id,
+                    frequency_index,
+                    lease_name,
+                    responder,
+                } => {
+                    if !domain_info_map.contains_key(&domain_id) {
+                        let _ = responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                        continue;
+                    }
+
+                    let token = match cpu_manager_main
+                        .handle_message(&Message::LeaseMinFrequency(
+                            domain_id,
+                            frequency_index,
+                            lease_name,
+                        ))
+                        .await
+                    {
+                        Ok(MessageReturn::LeaseMinFrequency(token)) => token,
+                        Err(CpuManagerError::InvalidArgument(e)) => {
+                            warn!(
+                                "Invalid arguments to LeaseMinFrequency for domain {}: {}",
+                                domain_id, e
+                            );
+                            let _ =
+                                responder.send(Err(fcpu::DomainControllerError::InvalidArguments));
+                            continue;
+                        }
+                        e => {
+                            error!(
+                                "Failed to lease min frequency for domain {}: {:?}",
+                                domain_id, e
+                            );
+                            let _ = responder.send(Err(fcpu::DomainControllerError::Internal));
+                            continue;
+                        }
+                    };
+
+                    if let Err(e) = responder.send(Ok(token)) {
+                        error!("Failed to send LeaseMinFrequency response to client: {:?}", e);
                         continue;
                     }
                 }
@@ -335,6 +488,8 @@ mod tests {
         let expected_domain_id = 0;
         let default_max_frequency_index = 0;
         let new_max_frequency_index = 1;
+        let default_min_frequency_index = 1;
+        let new_min_frequency_index = 0;
 
         let expected_domain_infos = vec![fcpu::DomainInfo {
             id: Some(expected_domain_id),
@@ -343,6 +498,9 @@ mod tests {
             available_frequencies_hz: Some(vec![2000000000, 1000000000]),
             ..Default::default()
         }];
+
+        let (max_lease_token, _max_lease_peer) = fidl_fuchsia_power_broker::LeaseToken::create();
+        let (min_lease_token, _min_lease_peer) = fidl_fuchsia_power_broker::LeaseToken::create();
 
         let mock_node = mock_node_maker.make(
             "cpu_manager_main",
@@ -365,6 +523,26 @@ mod tests {
                 (
                     MessageMatcher::Eq(Message::SetMaxFrequency(expected_domain_id, None)),
                     Ok(MessageReturn::SetMaxFrequency),
+                ),
+                (
+                    MessageMatcher::Eq(Message::LeaseMaxFrequency(
+                        expected_domain_id,
+                        new_max_frequency_index,
+                        "test_max_lease".to_string(),
+                    )),
+                    Ok(MessageReturn::LeaseMaxFrequency(max_lease_token)),
+                ),
+                (
+                    MessageMatcher::Eq(Message::GetMinFrequency(expected_domain_id)),
+                    Ok(MessageReturn::GetMinFrequency(default_min_frequency_index)),
+                ),
+                (
+                    MessageMatcher::Eq(Message::LeaseMinFrequency(
+                        expected_domain_id,
+                        new_min_frequency_index,
+                        "test_min_lease".to_string(),
+                    )),
+                    Ok(MessageReturn::LeaseMinFrequency(min_lease_token)),
                 ),
             ],
         );
@@ -403,11 +581,151 @@ mod tests {
                 .unwrap()
                 .unwrap();
             domain_controller_proxy.clear_max_frequency(expected_domain_id).await.unwrap().unwrap();
+            let _max_lease = domain_controller_proxy
+                .lease_max_frequency(expected_domain_id, new_max_frequency_index, "test_max_lease")
+                .await
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(
+                default_min_frequency_index,
+                domain_controller_proxy
+                    .get_min_frequency(expected_domain_id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+            );
+            let _min_lease = domain_controller_proxy
+                .lease_min_frequency(expected_domain_id, new_min_frequency_index, "test_min_lease")
+                .await
+                .unwrap()
+                .unwrap();
         }
 
         // Tasks and connections must be explicitly aborted and dropped before MockNodeMaker goes
         // out of scope to prevent a panic from cpu_manager_main still being held by Tasks within
         // domain_controller's scope.
+        domain_controller.scope.on_no_tasks().await;
+        task.abort().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_invalid_arguments() {
+        let mut mock_node_maker = MockNodeMaker::new();
+        let valid_domain_id = 0;
+        let unknown_domain_id = 99;
+        let invalid_frequency_index = 99;
+
+        let expected_domain_infos = vec![fcpu::DomainInfo {
+            id: Some(valid_domain_id),
+            name: Some(format!("cluster{valid_domain_id}")),
+            core_ids: Some(vec![0, 1]),
+            available_frequencies_hz: Some(vec![2000000000, 1000000000]),
+            ..Default::default()
+        }];
+
+        let mock_node = mock_node_maker.make(
+            "cpu_manager_main",
+            vec![
+                (
+                    MessageMatcher::Eq(Message::GetDomainInfos),
+                    Ok(MessageReturn::GetDomainInfos(expected_domain_infos)),
+                ),
+                (
+                    MessageMatcher::Eq(Message::SetMaxFrequency(
+                        valid_domain_id,
+                        Some(invalid_frequency_index),
+                    )),
+                    Err(CpuManagerError::InvalidArgument("out of bounds".to_string())),
+                ),
+                (
+                    MessageMatcher::Eq(Message::LeaseMaxFrequency(
+                        valid_domain_id,
+                        invalid_frequency_index,
+                        "test_max_lease".to_string(),
+                    )),
+                    Err(CpuManagerError::InvalidArgument("out of bounds".to_string())),
+                ),
+                (
+                    MessageMatcher::Eq(Message::LeaseMinFrequency(
+                        valid_domain_id,
+                        invalid_frequency_index,
+                        "test_min_lease".to_string(),
+                    )),
+                    Err(CpuManagerError::InvalidArgument("out of bounds".to_string())),
+                ),
+            ],
+        );
+
+        let mut service_fs = ServiceFs::new_local();
+        let domain_controller = DomainControllerBuilder::new()
+            .with_cpu_manager_main(mock_node)
+            .with_outgoing_svc_dir(service_fs.root_dir())
+            .build()
+            .unwrap();
+        domain_controller.init().await.unwrap();
+
+        let connector = service_fs.create_protocol_connector().unwrap();
+        let task = fasync::Task::local(service_fs.collect::<()>());
+
+        {
+            let domain_controller_proxy =
+                connector.connect_to_protocol::<fcpu::DomainControllerMarker>().unwrap();
+
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy.get_max_frequency(unknown_domain_id).await.unwrap()
+            );
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy.set_max_frequency(unknown_domain_id, 0).await.unwrap()
+            );
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy.clear_max_frequency(unknown_domain_id).await.unwrap()
+            );
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy.get_min_frequency(unknown_domain_id).await.unwrap()
+            );
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy
+                    .lease_max_frequency(unknown_domain_id, 0, "test_max_lease")
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy
+                    .lease_min_frequency(unknown_domain_id, 0, "test_min_lease")
+                    .await
+                    .unwrap()
+            );
+
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy
+                    .set_max_frequency(valid_domain_id, invalid_frequency_index)
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy
+                    .lease_max_frequency(valid_domain_id, invalid_frequency_index, "test_max_lease")
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(
+                Err(fcpu::DomainControllerError::InvalidArguments),
+                domain_controller_proxy
+                    .lease_min_frequency(valid_domain_id, invalid_frequency_index, "test_min_lease")
+                    .await
+                    .unwrap()
+            );
+        }
+
         domain_controller.scope.on_no_tasks().await;
         task.abort().await;
     }
