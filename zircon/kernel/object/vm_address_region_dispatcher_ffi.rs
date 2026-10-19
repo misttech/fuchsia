@@ -10,11 +10,9 @@ use super::vm_address_region_dispatcher::{
 };
 use crate::vm::arch_vm_aspace::ArchMmuFlags;
 use crate::vm::vm_address_region::VmAddressRegion;
-use crate::vm::vm_mapping::VmMapping;
-use crate::vm::vm_object::VmObject;
 use core::mem::MaybeUninit;
 use fbl::RefPtr;
-use zx_types::{ZX_OK, zx_rights_t, zx_status_t, zx_vaddr_t};
+use zx_types::{ZX_OK, zx_rights_t, zx_status_t};
 
 unsafe extern "C" {
     /// Calls into C++ to allocate and initialize a `VmAddressRegionDispatcher`.
@@ -36,14 +34,6 @@ crate::object::dispatcher::impl_dispatcher_state_init!(
     vmar: RefPtr<VmAddressRegion>,
     base_arch_mmu_flags: ArchMmuFlags,
 );
-
-/// Returns a pointer to the `RefPtr<VmAddressRegion>` stored in `disp`.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_vmar_dispatcher_get_vmar(
-    disp: &VmAddressRegionDispatcher,
-) -> *const RefPtr<VmAddressRegion> {
-    disp.vmar()
-}
 
 /// Creates a `VmAddressRegionDispatcher` from C++.
 ///
@@ -67,66 +57,6 @@ pub unsafe extern "C" fn rust_vmar_dispatcher_create(
             unsafe {
                 (*handle_out).write(handle);
                 (*rights_out).write(rights);
-            }
-            ZX_OK
-        }
-        Err(status) => status.into_raw(),
-    }
-}
-
-/// Allocates a sub-VMAR from C++.
-///
-/// # Safety
-///
-/// `handle_out` and `rights_out` must point to valid uninitialized memory.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vmar_dispatcher_allocate(
-    disp: &VmAddressRegionDispatcher,
-    offset: usize,
-    size: usize,
-    flags: u32,
-    handle_out: *mut MaybeUninit<KernelHandle<VmAddressRegionDispatcher>>,
-    rights_out: *mut MaybeUninit<zx_rights_t>,
-) -> zx_status_t {
-    match disp.allocate(offset, size, flags) {
-        Ok((handle, rights)) => {
-            // SAFETY: Caller guarantees `handle_out` and `rights_out` point to valid
-            // uninitialized memory.
-            unsafe {
-                (*handle_out).write(handle);
-                (*rights_out).write(rights);
-            }
-            ZX_OK
-        }
-        Err(status) => status.into_raw(),
-    }
-}
-
-/// Maps a VMO into `disp` from C++.
-///
-/// # Safety
-///
-/// `vmo_raw` must be a valid raw pointer exported from `fbl::RefPtr<VmObject>`.
-/// `out_mapping` and `out_base` must be valid writable pointers.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vmar_dispatcher_map(
-    disp: &VmAddressRegionDispatcher,
-    vmar_offset: usize,
-    vmo_raw: *mut VmObject,
-    vmo_offset: u64,
-    len: usize,
-    flags: u32,
-    out_mapping: *mut *mut VmMapping,
-    out_base: *mut zx_vaddr_t,
-) -> zx_status_t {
-    // SAFETY: `vmo_raw` was exported from `fbl::RefPtr<VmObject>`.
-    let vmo = unsafe { RefPtr::from_raw(vmo_raw) };
-    match disp.map(vmar_offset, vmo, vmo_offset, len, flags) {
-        Ok(res) => {
-            // SAFETY: Caller guarantees `out_mapping` and `out_base` are valid writable pointers.
-            unsafe {
-                *out_mapping = RefPtr::into_raw(res.mapping).cast_mut();
-                *out_base = res.base;
             }
             ZX_OK
         }

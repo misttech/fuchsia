@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_VM_ADDRESS_REGION_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <lib/zx/result.h>
 #include <sys/types.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
@@ -19,8 +18,6 @@
 #include <object/opaque_storage.h>
 #include <vm/vm_address_region.h>
 
-class VmMapping;
-class VmObject;
 class VmAddressRegionDispatcher;
 
 extern "C" {
@@ -34,19 +31,10 @@ void rust_vm_address_region_dispatcher_state_init(void* state,
                                                   arch_mmu_flags_t base_arch_mmu_flags);
 void rust_vm_address_region_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_vm_address_region_dispatcher_state_get_lock(const void* state);
-const fbl::RefPtr<VmAddressRegion>* rust_vmar_dispatcher_get_vmar(
-    const VmAddressRegionDispatcher* disp);
 zx_status_t rust_vmar_dispatcher_create(
     VmAddressRegion* vmar_raw, arch_mmu_flags_t base_arch_mmu_flags,
     ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* handle_out,
     ffi::Uninitialized<zx_rights_t>* rights_out);
-zx_status_t rust_vmar_dispatcher_allocate(
-    const VmAddressRegionDispatcher* disp, size_t offset, size_t size, uint32_t flags,
-    ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* handle_out,
-    ffi::Uninitialized<zx_rights_t>* rights_out);
-zx_status_t rust_vmar_dispatcher_map(const VmAddressRegionDispatcher* disp, size_t vmar_offset,
-                                     VmObject* vmo_raw, uint64_t vmo_offset, size_t len,
-                                     uint32_t flags, VmMapping** out_mapping, vaddr_t* out_base);
 }
 
 class VmAddressRegionDispatcher final : public Dispatcher {
@@ -66,16 +54,6 @@ class VmAddressRegionDispatcher final : public Dispatcher {
   zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
     return ZX_ERR_NOT_SUPPORTED;
   }
-
-  // TODO(teisenbe): Make this the planned batch interface
-  zx_status_t Allocate(size_t offset, size_t size, uint32_t flags,
-                       KernelHandle<VmAddressRegionDispatcher>* handle, zx_rights_t* rights) const;
-
-  using MapResult = VmAddressRegion::MapResult;
-  zx::result<MapResult> Map(size_t vmar_offset, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
-                            size_t len, uint32_t flags) const;
-
-  const fbl::RefPtr<VmAddressRegion>& vmar() const;
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;
