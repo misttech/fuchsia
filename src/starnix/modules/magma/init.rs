@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{MagmaFile, get_magma_params};
+use crate::{GpuDeviceConfig, MagmaFile, get_magma_params};
 use anyhow::{Error, anyhow};
 use argh::FromArgs;
 use bstr::BString;
@@ -61,6 +61,7 @@ pub fn module_init(kernel: &Kernel, args: &[&str]) -> Result<(), Error> {
     registry
         .register_dyn_device(kernel, "magma0".into(), registry.objects.starnix_class(), builder)
         .expect("can register magma0");
+    crate::gpu_class_directory::register_gpu_devices(kernel, GpuDeviceConfig::default());
     Ok(())
 }
 

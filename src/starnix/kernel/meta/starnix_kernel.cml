@@ -90,7 +90,10 @@
         },
         {
             // This service replaces the directory capability above.
-            service: "fuchsia.gpu.magma.Service",
+            service: [
+                "fuchsia.gpu.magma.PowerService",
+                "fuchsia.gpu.magma.Service",
+            ],
             availability: "optional",
         },
         {

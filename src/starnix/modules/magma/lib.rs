@@ -7,6 +7,7 @@
 
 mod ffi;
 mod file;
+mod gpu_class_directory;
 mod image_file;
 mod init;
 #[allow(clippy::module_inception)]
@@ -14,4 +15,5 @@ mod magma;
 
 use ffi::get_magma_params;
 pub use file::MagmaFile;
+pub use gpu_class_directory::GpuDeviceConfig;
 pub use init::{cmdline_params, module_init, validate_args};

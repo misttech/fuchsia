@@ -329,6 +329,7 @@ lock_ordering! {
     Terminal(KgslSyncSourcesLock),
     Terminal(MagmaBuffersLock),
     Terminal(MagmaDevicesLock),
+    Terminal(MagmaPowerDomainLock),
     Terminal(MagmaSemaphoresLock),
     Terminal(MapInfoCacheBufLock),
     Terminal(MemoryManagerCachedStatsLock),

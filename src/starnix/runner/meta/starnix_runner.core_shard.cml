@@ -221,6 +221,12 @@
             to: [ "#starnix_runner" ],
         },
         {
+            service: "fuchsia.gpu.magma.PowerService",
+            from: "parent",
+            to: [ "#starnix_runner" ],
+            availability: "optional",
+        },
+        {
             service: [
                 "fuchsia.hardware.adb.Service",
                 "fuchsia.hardware.cpu.ctrl.Service",

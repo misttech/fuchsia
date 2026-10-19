@@ -204,6 +204,12 @@
             to: [ "#kernels" ],
         },
         {
+            service: "fuchsia.gpu.magma.PowerService",
+            from: "parent",
+            to: [ "#kernels" ],
+            availability: "optional",
+        },
+        {
             service: [
                 "fuchsia.hardware.adb.Service",
                 "fuchsia.hardware.cpu.ctrl.Service",
