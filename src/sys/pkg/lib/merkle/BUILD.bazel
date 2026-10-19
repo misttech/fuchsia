@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -18,9 +19,10 @@ go_library(
     ],
 )
 
-go_test(
+# @bazel2gn:skip
+host_go_test(
     name = "go_merkle_test",
     srcs = ["merkle_test.go"],
     embed = [":merkle"],
-    target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip
+    target_compatible_with = HOST_OS_CONSTRAINTS,
 )
