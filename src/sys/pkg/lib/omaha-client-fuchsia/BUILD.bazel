@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:omaha-client-fuchsia_test` and `:omaha-client-fuchsia-tests`)
+# stay in BUILD.gn because `:omaha-client-fuchsia_test` depends on
+# `//src/lib/testing/fuchsia-hyper-test-support` and
+# `:omaha-client-fuchsia-tests` packages GN-only components
+# (`//src/connectivity/network/dns:component`,
+# `//src/connectivity/network/netstack3:component-for-tests`,
+# `//src/connectivity/policy/http-client:component`,
+# `//src/power/shutdown-shim/tests:shutdown_shim_component`, and
+# `//src/sys/stash:stash2_v2`).
+rustc_library(
+    name = "omaha-client-fuchsia",
+    srcs = [
+        "src/app_set.rs",
+        "src/http_request.rs",
+        "src/install_plan.rs",
+        "src/installer.rs",
+        "src/lib.rs",
+        "src/timer.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/sys/pkg/bin/omaha-client:__pkg__",
+        "//src/sys/pkg/lib:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-url",
+        "//src/sys/lib/fidl-connector",
+        "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+        "//src/sys/pkg/lib/channel-config",
+        "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:omaha_client",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
