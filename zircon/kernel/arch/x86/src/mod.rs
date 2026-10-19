@@ -14,7 +14,7 @@ pub mod fake_msr_access;
 pub mod feature;
 #[cfg(console_enabled)]
 pub mod hwp;
-#[cfg(console_enabled)]
+#[cfg(any(console_enabled, ktest))]
 mod hwp_ffi;
 pub mod interrupts;
 pub mod ioapic;
@@ -558,5 +558,36 @@ mod x86_tests {
         // Kernel address.
         assert_false!(is_valid_user_pc(KERNEL_ASPACE_BASE));
         assert_false!(is_valid_user_pc(0xffff_8000_0000_0000));
+    }
+}
+
+#[cfg(ktest)]
+/// Hardware P-states (HWP) unit tests.
+#[unittest::suite(name = "x86_hwp_rust")]
+mod x86_hwp_tests {
+    use super::hwp_ffi::cpp_x86_intel_hwp_parse_policy;
+    use boot_options::IntelHwpPolicy;
+    use unittest::{assert_true, expect_eq, expect_false};
+
+    /// TestParsePolicy
+    #[test]
+    fn test_parse_policy() {
+        let mut policy: u8 = 0;
+
+        // Valid parse.
+        // SAFETY: `c"bios-specified"` is a valid NUL-terminated string and `policy` is valid.
+        assert_true!(unsafe {
+            cpp_x86_intel_hwp_parse_policy(c"bios-specified".as_ptr(), &mut policy)
+        });
+        expect_eq!(policy, IntelHwpPolicy::BiosSpecified as u8);
+
+        // Invalid parses.
+        // SAFETY: `cpp_x86_intel_hwp_parse_policy` handles null and NUL-terminated C strings.
+        unsafe {
+            expect_false!(cpp_x86_intel_hwp_parse_policy(core::ptr::null(), &mut policy));
+            expect_false!(cpp_x86_intel_hwp_parse_policy(c"".as_ptr(), &mut policy));
+            expect_false!(cpp_x86_intel_hwp_parse_policy(c"invalid".as_ptr(), &mut policy));
+            expect_false!(cpp_x86_intel_hwp_parse_policy(c"\n".as_ptr(), &mut policy));
+        }
     }
 }
