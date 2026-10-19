@@ -1013,6 +1013,7 @@
 
                 // xattr_test
                 "XattrTest.SecurityCapacityXattr",
+                "XattrTest.UnknownPrefixRequiresReadPermission",
 
                 // fuse_test
                 "FuseTest.CloneDevice",
@@ -1387,6 +1388,27 @@
 
                 // TODO(https://fxbug.dev/568844571): Preserve x0 on arm64 SECCOMP_RET_TRAP (passes on x64, fails on arm64).
                 "SeccompTest.RetTrapCausesSIGSYS",
+
+                // TODO(https://fxbug.dev/575405588): These tests time out
+                "FuseCheckpointTest.SentRequest",
+                "FuseCheckpointTest.SentRequestMultipleCheckpoints",
+                "FuseCheckpointTest.UnsentRequest",
+                "FuseInterruptTest.FatalSignalDequeuesUnsentRequest",
+                "FuseInterruptTest.FatalSignalSentRequest",
+                "FuseInterruptTest.InterruptEAGAINRequeues",
+                "FuseInterruptTest.InterruptENOSYSDisablesInterrupts",
+                "FuseInterruptTest.InterruptIgnored",
+                "FuseInterruptTest.InterruptSentRequest",
+                "FuseInterruptTest.InterruptTakesPrecedence",
+                "FuseInterruptTest.InterruptUnsentRequest",
+                "FuseInterruptTest.InvalidInterruptReplies",
+                "FuseInterruptTest.UnhandledFatalSignalDequeuesUnsentRequest",
+                "FuseTest.AioRead",
+
+                // TODO(https://fxbug.dev/575406543): These tests time out
+                "PtraceTest.AccessVmUsesAttachCreds_CapDroppedAfterAttach",
+                "PtraceTest.AccessVmUsesAttachCreds_CapGainedAfterAttach",
+                "PtraceTest.TracemeNonDumpableInUserns",
             ],
         },
     ],
