@@ -43,21 +43,51 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
         This test case calls the following tracing methods:
                 * `tracing.initialize()`
+                * `tracing.is_session_initialized()`
+                * `tracing.is_active()`
                 * `tracing.start()`
                 * `tracing.stop()`
                 * `tracing.terminate()`
         """
         # Initialize Tracing Session.
         self.dut.tracing.initialize()
+        asserts.assert_true(
+            self.dut.tracing.is_session_initialized(),
+            msg="Expected trace session to be initialized",
+        )
+        asserts.assert_false(
+            self.dut.tracing.is_active(),
+            msg="Expected trace session to be inactive before start()",
+        )
 
         # Start Tracing.
         await self.dut.tracing.start()
+        asserts.assert_true(
+            self.dut.tracing.is_active(),
+            msg="Expected trace session to be active after start()",
+        )
 
         # Stop Tracing.
         await self.dut.tracing.stop()
+        asserts.assert_true(
+            self.dut.tracing.is_session_initialized(),
+            msg="Expected trace session to remain initialized after stop()",
+        )
+        asserts.assert_false(
+            self.dut.tracing.is_active(),
+            msg="Expected trace session to be inactive after stop()",
+        )
 
         # Terminate the tracing session.
         await self.dut.tracing.terminate()
+        asserts.assert_false(
+            self.dut.tracing.is_session_initialized(),
+            msg="Expected trace session to be uninitialized after terminate()",
+        )
+        asserts.assert_false(
+            self.dut.tracing.is_active(),
+            msg="Expected trace session to be inactive after terminate()",
+        )
 
     @parameterized.expand(
         [(False,), (True,)],
@@ -126,7 +156,22 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     async def test_tracing_session(self) -> None:
         """This test case tests the `tracing.trace_session()` context manager"""
         async with self.dut.tracing.trace_session():
-            pass
+            asserts.assert_true(
+                self.dut.tracing.is_session_initialized(),
+                msg="Expected trace session to be initialized inside trace_session()",
+            )
+            asserts.assert_true(
+                self.dut.tracing.is_active(),
+                msg="Expected trace session to be active inside trace_session()",
+            )
+        asserts.assert_false(
+            self.dut.tracing.is_session_initialized(),
+            msg="Expected trace session to be uninitialized after trace_session()",
+        )
+        asserts.assert_false(
+            self.dut.tracing.is_active(),
+            msg="Expected trace session to be inactive after trace_session()",
+        )
 
     async def test_tracing_session_download(self) -> None:
         """This test case tests the `tracing.trace_session()` context manager
@@ -138,7 +183,22 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
                 directory=os.path.dirname(trace_fxt.name),
                 trace_file=os.path.basename(trace_fxt.name),
             ):
-                pass
+                asserts.assert_true(
+                    self.dut.tracing.is_session_initialized(),
+                    msg="Expected trace session to be initialized inside trace_session()",
+                )
+                asserts.assert_true(
+                    self.dut.tracing.is_active(),
+                    msg="Expected trace session to be active inside trace_session()",
+                )
+            asserts.assert_false(
+                self.dut.tracing.is_session_initialized(),
+                msg="Expected trace session to be uninitialized after trace_session()",
+            )
+            asserts.assert_false(
+                self.dut.tracing.is_active(),
+                msg="Expected trace session to be inactive after trace_session()",
+            )
             asserts.assert_true(
                 os.path.exists(trace_fxt.name), msg="trace failed"
             )
@@ -146,9 +206,33 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     async def test_multi_tracing_session(self) -> None:
         """This test case tests the multiple traces using trace context manager"""
         async with self.dut.tracing.trace_session():
+            asserts.assert_true(
+                self.dut.tracing.is_active(),
+                msg="Expected trace session to be active inside trace_session()",
+            )
             await self.dut.tracing.stop()
+            asserts.assert_true(
+                self.dut.tracing.is_session_initialized(),
+                msg="Expected trace session to remain initialized after stop()",
+            )
+            asserts.assert_false(
+                self.dut.tracing.is_active(),
+                msg="Expected trace session to be inactive after stop()",
+            )
             time.sleep(1)
             await self.dut.tracing.start()
+            asserts.assert_true(
+                self.dut.tracing.is_active(),
+                msg="Expected trace session to be active after start()",
+            )
+        asserts.assert_false(
+            self.dut.tracing.is_session_initialized(),
+            msg="Expected trace session to be uninitialized after trace_session()",
+        )
+        asserts.assert_false(
+            self.dut.tracing.is_active(),
+            msg="Expected trace session to be inactive after trace_session()",
+        )
 
 
 if __name__ == "__main__":

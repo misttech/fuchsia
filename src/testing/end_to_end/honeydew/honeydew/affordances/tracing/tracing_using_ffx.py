@@ -18,22 +18,55 @@ from honeydew.transports.ffx.errors import FfxCommandError
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
+# Specified here: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/ffx/plugins/trace/data/config.json;l=4
+# LINT.IfChange
 DEFAULT_CATEGORIES: list[str] = [
     "app",
     "audio",
     "benchmark",
     "blobfs",
+    "driver_dispatcher",
+    "dvfs",
+    "fxfs",
     "gfx",
     "input",
+    "kernel:meta",
+    "kernel:power",
+    "kernel:sched",
     "magma",
+    "memory:kernel",
+    "minfs",
     "modular",
+    "net",
+    "sdmmc",
+    "starnix",
+    "starnix:binder",
+    "starnix:pager",
+    "storage",
     "system_metrics",
     "view",
+    "flutter",
+    "dart",
+    "dart:compiler",
+    "dart:dart",
+    "dart:debugger",
+    "dart:embedder",
+    "dart:gc",
+    "dart:isolate",
+    "dart:profiler",
+    "dart:vm",
 ]
+# LINT.ThenChange(//src/developer/ffx/plugins/trace/data/config.json)
 
 
 class TracingUsingFfx(tracing.Tracing):
-    """Async Tracing affordance implementation using ffx."""
+    """Async Tracing affordance implementation using FFX (`ffx trace`).
+
+    Implements the `Tracing` lifecycle state machine (`uninitialized` ->
+    `initialized` -> `active` -> `stopped` -> `uninitialized`) by invoking
+    `ffx trace start --background`, `ffx trace stop --output <tempfile>`, and
+    `ffx trace stop --abort`.
+    """
 
     def __init__(
         self,
@@ -54,7 +87,7 @@ class TracingUsingFfx(tracing.Tracing):
         reboot_affordance.register_for_on_device_boot(fn=self.reboot_handler)
 
     async def reboot_handler(self) -> None:
-        """A method for handling reboots meant to be passed to the reboot affordance."""
+        """Resets active/initialized tracing state upon device reboot."""
         _LOGGER.info("Received device boot signal. Resetting")
         await self._reset_state()
 
@@ -72,7 +105,8 @@ class TracingUsingFfx(tracing.Tracing):
         self._buffering_mode = None
 
     def verify_supported(self) -> None:
-        """Check if Trace is supported on the DUT.
+        """Checks if Trace is supported on the DUT.
+
         Raises:
             NotSupportedError: Tracing affordance is not supported by Fuchsia device.
         """
@@ -87,7 +121,11 @@ class TracingUsingFfx(tracing.Tracing):
         return self._session_started
 
     def is_session_initialized(self) -> bool:
-        """Checks if the session is initialized or not."""
+        """Checks if the session is initialized or not.
+
+        Returns:
+            True if the session is initialized, False otherwise.
+        """
         return self._session_initialized
 
     def initialize(
@@ -102,24 +140,28 @@ class TracingUsingFfx(tracing.Tracing):
         """Initializes a trace session.
 
         Args:
-            categories: list of categories to trace.
-            buffer_size: buffer size to use in MB.
-            start_timeout_milliseconds: milliseconds to wait for trace providers
-                to acknowledge that they've started tracing. NB: trace providers
-                that don't ACK by this deadline may still emit tracing events
-                starting at some later point.
-            buffering_mode: Tells tracing providers how to buffer data
-                ONESHOT - When the buffer fills the provider drops subsequent records
-                CIRCULAR - When the buffer fills, older records are discarded to make space
-                STREAMING - Data is streamed back to the trace_manager. Providers may still drop
-                            records if events are produced faster than they can be streamed
-            defer_transfer: Ignored by this implementation. Instead, this behavior is triggered
-                automatically when using STREAMING mode.
-            compression: If true, compress the trace data. Defaults to True.
+            categories: List of categories to trace. If `None`, defaults to
+                `DEFAULT_CATEGORIES`. Any `"#default"` or `"default"` element
+                expands to `DEFAULT_CATEGORIES` and deduplicates with custom
+                categories.
+            buffer_size: Buffer size to use in MB.
+            start_timeout_milliseconds: Ignored by this implementation.
+            buffering_mode: Tells tracing providers how to buffer data:
+                ONESHOT - When the buffer fills, the provider drops subsequent
+                    records.
+                CIRCULAR - When the buffer fills, older records are discarded to
+                    make space.
+                STREAMING - Data is streamed back to `trace_manager`. Providers
+                    may still drop records if events are produced faster than
+                    they can be streamed.
+            defer_transfer: Ignored by this implementation. Instead, this
+                behavior is triggered automatically when using `STREAMING` mode.
+            compression: If True, compress the trace data. Defaults to True.
 
         Raises:
             TracingStateError: When trace session is already initialized.
-            TracingError: When compression is False (uncompressed tracing is not supported).
+            TracingError: When `compression` is False (uncompressed tracing is
+                not supported in `TracingUsingFfx`).
         """
         if compression is False:
             raise TracingError(
@@ -150,7 +192,13 @@ class TracingUsingFfx(tracing.Tracing):
         self._session_initialized = True
 
     async def start(self) -> None:
-        """Starts tracing."""
+        """Starts tracing via `ffx trace start --background`.
+
+        Raises:
+            TracingStateError: When trace session is not initialized or is
+                already started.
+            TracingError: On `ffx trace start` command failure.
+        """
         if not self._session_initialized:
             raise TracingStateError(
                 f"Trace session is not initialized on {self._name}"
@@ -186,11 +234,15 @@ class TracingUsingFfx(tracing.Tracing):
         self._session_started = True
 
     async def stop(self, verify_trace: bool = True) -> None:
-        """Stops the current trace.
+        """Stops the current trace via `ffx trace stop --output`.
 
         Args:
             verify_trace: If True, verifies that the trace file is valid and
                 not empty.
+
+        Raises:
+            TracingStateError: When trace session is not started.
+            TracingError: On `ffx trace stop` command failure.
         """
         if not self._session_started:
             raise TracingStateError(
@@ -218,7 +270,15 @@ class TracingUsingFfx(tracing.Tracing):
         self._session_started = False
 
     async def terminate(self) -> None:
-        """Terminates the trace session."""
+        """Terminates the trace session without saving trace data and resets
+        session state to `uninitialized`.
+
+        If tracing is currently active, runs `ffx trace stop --abort`. Also
+        removes any temporary trace file captured by a prior `stop()`.
+
+        Raises:
+            TracingError: On `ffx trace stop --abort` command failure.
+        """
         if self._session_started:
             try:
                 self._ffx.run(["trace", "stop", "--abort"])
@@ -240,7 +300,27 @@ class TracingUsingFfx(tracing.Tracing):
     async def terminate_and_download(
         self, directory: str, trace_file: str | None = None
     ) -> str:
-        """Terminates the trace session and downloads the trace data."""
+        """Terminates the trace session, moves the downloaded `.fxt` trace file
+        to the specified directory, and resets session state to `uninitialized`.
+
+        If tracing is still active (`is_active() == True`), automatically calls
+        `stop()` before moving the trace file.
+
+        Args:
+            directory: Absolute path on the host where the trace file will be
+                saved. Created if it does not exist.
+            trace_file: Name of the output trace file. If not provided, defaults
+                to `"trace_{device_name}_{'%Y-%m-%d-%I-%M-%S-%p'}.fxt"`.
+
+        Returns:
+            The path to the downloaded `.fxt` trace file.
+
+        Raises:
+            TracingStateError: When trace session is not initialized.
+            ValueError: When `directory` is not an absolute path.
+            TracingError: When stopping an active trace fails or the temporary
+                trace file is missing.
+        """
         if not self._session_initialized:
             raise TracingStateError(
                 f"Trace session is not initialized on {self._name}"

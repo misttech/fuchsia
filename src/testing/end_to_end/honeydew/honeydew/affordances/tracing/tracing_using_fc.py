@@ -33,7 +33,7 @@ _FC_PROXIES: dict[str, custom_types.FidlEndpoint] = {
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-# Specified here: https://source.corp.google.com/h/fuchsia/fuchsia/+/main:src/developer/ffx/plugins/trace/data/config.json;l=3
+# Specified here: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/developer/ffx/plugins/trace/data/config.json;l=4
 # LINT.IfChange
 DEFAULT_CATEGORIES: list[str] = [
     "app",
@@ -41,10 +41,12 @@ DEFAULT_CATEGORIES: list[str] = [
     "benchmark",
     "blobfs",
     "driver_dispatcher",
+    "dvfs",
     "fxfs",
     "gfx",
     "input",
     "kernel:meta",
+    "kernel:power",
     "kernel:sched",
     "magma",
     "memory:kernel",
@@ -73,7 +75,14 @@ DEFAULT_CATEGORIES: list[str] = [
 
 
 class TracingUsingFc(tracing.Tracing):
-    """Async tracing affordance implementation using Fuchsia-Controller."""
+    """Async Tracing affordance implementation using Fuchsia-Controller.
+
+    Implements the `Tracing` lifecycle state machine (`uninitialized` ->
+    `initialized` -> `active` -> `stopped` -> `uninitialized`) over the
+    `fuchsia.tracing.controller.Provisioner` and
+    `fuchsia.tracing.controller.Session` FIDL protocols, draining trace records
+    from a Zircon socket in a background task.
+    """
 
     def __init__(
         self,
@@ -96,14 +105,15 @@ class TracingUsingFc(tracing.Tracing):
         reboot_affordance.register_for_on_device_boot(fn=self.reboot_handler)
 
     def verify_supported(self) -> None:
-        """Check if Trace is supported on the DUT.
+        """Checks if Trace is supported on the DUT.
+
         Raises:
             NotSupportedError: Tracing affordance is not supported by Fuchsia device.
         """
         # TODO(http://b/409625325): Implement the method logic
 
     async def reboot_handler(self) -> None:
-        """A method for handling reboots meant to be passed to the reboot affordance."""
+        """Resets active/initialized tracing state upon device reboot."""
         _LOGGER.info("Received device boot signal. Resetting")
         await self._reset_state()
 
@@ -152,22 +162,30 @@ class TracingUsingFc(tracing.Tracing):
         defer_transfer: bool | None = None,
         compression: bool | None = None,
     ) -> None:
-        """Initializes a trace session.
+        """Initializes a trace session via `fuchsia.tracing.controller.Provisioner`.
 
         Args:
-            categories: list of categories to trace.
-            buffer_size: buffer size to use in MB.
-            start_timeout_milliseconds: milliseconds to wait for trace providers
+            categories: List of categories to trace. If `None`, defaults to
+                `DEFAULT_CATEGORIES`. Any `"#default"` or `"default"` element
+                expands to `DEFAULT_CATEGORIES` and deduplicates with custom
+                categories.
+            buffer_size: Buffer size to use in MB.
+            start_timeout_milliseconds: Milliseconds to wait for trace providers
                 to acknowledge that they've started tracing. NB: trace providers
                 that don't ACK by this deadline may still emit tracing events
                 starting at some later point.
-            buffering_mode: Tells tracing providers how to buffer data
-                ONESHOT - When the buffer fills the provider drops subsequent records
-                CIRCULAR - When the buffer fills, older records are discarded to make space
-                STREAMING - Data is streamed back to the trace_manager. Providers may still drop
-                            records if events are produced faster than they can be streamed
-            defer_transfer: If true, the trace_manager will delay sending data until tracing has stopped
-            compression: If true, compress the trace data.
+            buffering_mode: Tells tracing providers how to buffer data:
+                ONESHOT - When the buffer fills, the provider drops subsequent
+                    records.
+                CIRCULAR - When the buffer fills, older records are discarded to
+                    make space.
+                STREAMING - Data is streamed back to `trace_manager`. Providers
+                    may still drop records if events are produced faster than
+                    they can be streamed.
+            defer_transfer: If True, `trace_manager` will delay sending data
+                until tracing has stopped.
+            compression: Unsupported in `TracingUsingFc`; logs a warning if
+                True.
 
         Raises:
             TracingStateError: When trace session is already initialized.
@@ -228,12 +246,12 @@ class TracingUsingFc(tracing.Tracing):
         self._session_initialized = True
 
     async def start(self) -> None:
-        """Starts tracing.
+        """Starts tracing via `fuchsia.tracing.controller.Session.StartTracing`.
 
         Raises:
-           TracingStateError: When trace session is not initialized or
-               already started.
-           TracingError: On FIDL communication failure.
+            TracingStateError: When trace session is not initialized or is
+                already started.
+            TracingError: On FIDL communication failure.
         """
         if not self._session_initialized:
             raise TracingStateError(
@@ -259,15 +277,15 @@ class TracingUsingFc(tracing.Tracing):
 
     @decorators.async_liveness_check
     async def stop(self, verify_trace: bool = True) -> None:
-        """Stops the current trace.
+        """Stops the current trace via `fuchsia.tracing.controller.Session.StopTracing`.
 
         Args:
             verify_trace: Ignored by this implementation.
 
         Raises:
-           TracingStateError: When trace session is not initialized or
-               not started.
-           TracingError: On FIDL communication failure.
+            TracingStateError: When trace session is not initialized or not
+                started.
+            TracingError: On FIDL communication failure.
         """
         if not self._session_initialized:
             raise TracingStateError(
@@ -320,7 +338,10 @@ class TracingUsingFc(tracing.Tracing):
         _LOGGER.info("Finished reading the socket")
 
     async def terminate(self) -> None:
-        """Terminates the trace session, waiting for it to fully stop."""
+        """Terminates the trace session without saving trace data, waiting for
+        the session socket drain task to complete, and resets state to
+        `uninitialized`.
+        """
         if not self._session_initialized:
             await self._reset_state()
             return
@@ -342,7 +363,24 @@ class TracingUsingFc(tracing.Tracing):
     async def terminate_and_download(
         self, directory: str, trace_file: str | None = None
     ) -> str:
-        """Terminates the trace session and downloads the trace data."""
+        """Terminates the trace session, writes collected trace bytes to a
+        `.fxt` file in `directory`, and resets session state to `uninitialized`.
+
+        Args:
+            directory: Path on the host where the trace file will be saved.
+                Normalized via `os.path.abspath()` and created if it does not
+                exist.
+            trace_file: Name of the output trace file. If not provided, defaults
+                to `"trace_{device_name}_{'%Y-%m-%d-%I-%M-%S-%p'}.fxt"`.
+
+        Returns:
+            The path to the downloaded `.fxt` trace file.
+
+        Raises:
+            TracingStateError: When trace session is not initialized or trace
+                was not stopped before calling `terminate_and_download()`.
+            TracingError: When collecting trace data from the socket fails.
+        """
         if not self._session_initialized:
             raise TracingStateError(
                 "Cannot download: Trace session is not "

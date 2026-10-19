@@ -1760,7 +1760,7 @@ class FuchsiaDevice(
     ) -> tracing_types.Implementation:
         """Parses the tracing affordance config and returns which implementation to use."""
         if self._config is None:
-            return tracing_types.Implementation.FUCHSIA_CONTROLLER
+            return tracing_types.Implementation.FFX
 
         tracing_affordance_implementation: str | None = common.read_from_dict(
             self._config,
@@ -1768,7 +1768,7 @@ class FuchsiaDevice(
             should_exist=should_exist,
         )
         if tracing_affordance_implementation is None:
-            return tracing_types.Implementation.FUCHSIA_CONTROLLER
+            return tracing_types.Implementation.FFX
 
         try:
             return tracing_types.Implementation(

@@ -108,13 +108,57 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_verify_supported(self) -> None:
         """Test if verify_supported works."""
-        # TODO(http://b/409625325): Implement the test method logic
+        self.tracing_obj.verify_supported()
+
+    async def test_default_categories_alignment(self) -> None:
+        """Test that DEFAULT_CATEGORIES is aligned with ffx trace config.json."""
+        expected_categories = [
+            "app",
+            "audio",
+            "benchmark",
+            "blobfs",
+            "driver_dispatcher",
+            "dvfs",
+            "fxfs",
+            "gfx",
+            "input",
+            "kernel:meta",
+            "kernel:power",
+            "kernel:sched",
+            "magma",
+            "memory:kernel",
+            "minfs",
+            "modular",
+            "net",
+            "sdmmc",
+            "starnix",
+            "starnix:binder",
+            "starnix:pager",
+            "storage",
+            "system_metrics",
+            "view",
+            "flutter",
+            "dart",
+            "dart:compiler",
+            "dart:dart",
+            "dart:debugger",
+            "dart:embedder",
+            "dart:gc",
+            "dart:isolate",
+            "dart:profiler",
+            "dart:vm",
+        ]
+        self.assertEqual(
+            tracing_using_fc.DEFAULT_CATEGORIES, expected_categories
+        )
+        self.assertEqual(len(tracing_using_fc.DEFAULT_CATEGORIES), 34)
 
     @parameterized.expand(
         [
             (
                 {
                     "label": "with_no_categories_and_no_buffer_size",
+                    "expected_categories": tracing_using_fc.DEFAULT_CATEGORIES,
                 },
             ),
             (
@@ -122,6 +166,52 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
                     "label": "with_categories_and_buffer_size",
                     "categories": ["category1", "category2"],
                     "buffer_size": 1024,
+                    "expected_categories": ["category1", "category2"],
+                },
+            ),
+            (
+                {
+                    "label": "with_default_category_tag",
+                    "categories": ["#default"],
+                    "expected_categories": tracing_using_fc.DEFAULT_CATEGORIES,
+                },
+            ),
+            (
+                {
+                    "label": "with_default_category_without_hash",
+                    "categories": ["default"],
+                    "expected_categories": tracing_using_fc.DEFAULT_CATEGORIES,
+                },
+            ),
+            (
+                {
+                    "label": "with_default_and_custom_categories",
+                    "categories": ["#default", "app", "custom_cat"],
+                    "expected_categories": [
+                        *tracing_using_fc.DEFAULT_CATEGORIES,
+                        "custom_cat",
+                    ],
+                },
+            ),
+            (
+                {
+                    "label": "with_buffering_mode_oneshot",
+                    "buffering_mode": f_tracing.BufferingMode.ONESHOT,
+                    "expected_categories": tracing_using_fc.DEFAULT_CATEGORIES,
+                },
+            ),
+            (
+                {
+                    "label": "with_buffering_mode_circular",
+                    "buffering_mode": f_tracing.BufferingMode.CIRCULAR,
+                    "expected_categories": tracing_using_fc.DEFAULT_CATEGORIES,
+                },
+            ),
+            (
+                {
+                    "label": "with_buffering_mode_streaming",
+                    "buffering_mode": f_tracing.BufferingMode.STREAMING,
+                    "expected_categories": tracing_using_fc.DEFAULT_CATEGORIES,
                 },
             ),
             (
@@ -151,8 +241,26 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
             self.tracing_obj.initialize(
                 categories=parameterized_dict.get("categories"),
                 buffer_size=parameterized_dict.get("buffer_size"),
+                buffering_mode=parameterized_dict.get("buffering_mode"),
             )
-            self.mock_provisioner_client.initialize_tracing.assert_called()
+            self.mock_provisioner_client.initialize_tracing.assert_called_once()
+            (
+                _,
+                kwargs,
+            ) = self.mock_provisioner_client.initialize_tracing.call_args
+            config = kwargs["config"]
+            self.assertCountEqual(
+                config.categories or [],
+                parameterized_dict.get("expected_categories") or [],
+            )
+            self.assertEqual(
+                config.buffer_size_megabytes_hint,
+                parameterized_dict.get("buffer_size"),
+            )
+            self.assertEqual(
+                config.buffering_mode,
+                parameterized_dict.get("buffering_mode"),
+            )
 
     async def test_initialize_error(self) -> None:
         """Test for Tracing.initialize() when the FIDL transport raises an error.
@@ -194,22 +302,28 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
         parameterized_dict: dict[str, Any],
     ) -> None:
         """Test for Tracing.start() method."""
-        # Perform setup based on parameters.
-        if parameterized_dict.get("session_initialized"):
-            self.tracing_obj.initialize()
-        if parameterized_dict.get("tracing_active"):
-            await self.tracing_obj.start()
-
-        # Check whether an `TracingStateError` exception is raised when
-        # state is not valid.
-        if not parameterized_dict.get(
-            "session_initialized"
-        ) or parameterized_dict.get("tracing_active"):
-            with self.assertRaises(TracingStateError):
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            _initialize_tracing_fake
+        )
+        try:
+            # Perform setup based on parameters.
+            if parameterized_dict.get("session_initialized"):
+                self.tracing_obj.initialize()
+            if parameterized_dict.get("tracing_active"):
                 await self.tracing_obj.start()
-        else:
-            await self.tracing_obj.start()
-            self.mock_session_client.start_tracing.assert_called()
+
+            # Check whether an `TracingStateError` exception is raised when
+            # state is not valid.
+            if not parameterized_dict.get(
+                "session_initialized"
+            ) or parameterized_dict.get("tracing_active"):
+                with self.assertRaises(TracingStateError):
+                    await self.tracing_obj.start()
+            else:
+                await self.tracing_obj.start()
+                self.mock_session_client.start_tracing.assert_called()
+        finally:
+            await self.tracing_obj._reset_state()
 
     async def test_start_error(self) -> None:
         """Test for Tracing.start() when the FIDL transport raises an error.
@@ -310,6 +424,13 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
                     "session_initialized": True,
                 },
             ),
+            (
+                {
+                    "label": "when_tracing_is_active",
+                    "session_initialized": True,
+                    "tracing_active": True,
+                },
+            ),
         ],
         name_func=_custom_test_name_func,
     )
@@ -318,9 +439,14 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
         parameterized_dict: dict[str, Any],
     ) -> None:
         """Test for Tracing.terminate() method."""
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            _initialize_tracing_fake
+        )
         # Perform setup based on parameters.
         if parameterized_dict.get("session_initialized"):
             self.tracing_obj.initialize()
+        if parameterized_dict.get("tracing_active"):
+            await self.tracing_obj.start()
 
         await self.tracing_obj.terminate()
 
@@ -348,6 +474,20 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("test error", cm.output[0])
 
         self.mock_provisioner_client.initialize_tracing.assert_called_once()
+        self.assertFalse(self.tracing_obj.is_session_initialized())
+        self.assertFalse(self.tracing_obj.is_active())
+
+    async def test_reboot_handler(self) -> None:
+        """Test for Tracing.reboot_handler() resetting session and active state."""
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            _initialize_tracing_fake
+        )
+        self.tracing_obj.initialize()
+        await self.tracing_obj.start()
+        self.assertTrue(self.tracing_obj.is_session_initialized())
+        self.assertTrue(self.tracing_obj.is_active())
+
+        await self.tracing_obj.reboot_handler()
         self.assertFalse(self.tracing_obj.is_session_initialized())
         self.assertFalse(self.tracing_obj.is_active())
 
@@ -425,6 +565,13 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 {
+                    "label": "when_not_started",
+                    "session_initialized": True,
+                    "not_started": True,
+                },
+            ),
+            (
+                {
                     "label": "with_tracing_download_default_file_name",
                     "return_value": "samp_trace_data",
                     "session_initialized": True,
@@ -436,6 +583,24 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
                     "trace_file": "trace.fxt",
                     "return_value": "samp_trace_data",
                     "session_initialized": True,
+                },
+            ),
+            (
+                {
+                    "label": "when_already_stopped",
+                    "trace_file": "trace.fxt",
+                    "return_value": "samp_trace_data",
+                    "session_initialized": True,
+                    "already_stopped": True,
+                },
+            ),
+            (
+                {
+                    "label": "with_relative_directory",
+                    "trace_file": "trace.fxt",
+                    "return_value": "samp_trace_data",
+                    "session_initialized": True,
+                    "use_relative_dir": True,
                 },
             ),
         ],
@@ -469,21 +634,32 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
         # Perform setup based on parameters.
         if parameterized_dict.get("session_initialized"):
             self.tracing_obj.initialize()
-            await self.tracing_obj.start()
+            if not parameterized_dict.get("not_started"):
+                await self.tracing_obj.start()
+                if parameterized_dict.get("already_stopped"):
+                    await self.tracing_obj.stop()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            if not parameterized_dict.get("session_initialized"):
+            if not parameterized_dict.get(
+                "session_initialized"
+            ) or parameterized_dict.get("not_started"):
                 with self.assertRaises(TracingStateError):
                     await self.tracing_obj.terminate_and_download(
                         directory=tmpdir
                     )
                 return
 
+            directory_arg = (
+                os.path.relpath(tmpdir)
+                if parameterized_dict.get("use_relative_dir")
+                else tmpdir
+            )
             trace_file: str = parameterized_dict.get("trace_file", "")
             trace_path: str = await self.tracing_obj.terminate_and_download(
-                directory=tmpdir, trace_file=trace_file
+                directory=directory_arg, trace_file=trace_file
             )
             self.assertFalse(self.tracing_obj.is_active())
+            self.assertFalse(self.tracing_obj.is_session_initialized())
 
             # Check the return value of the terminate method.
             if trace_file:
@@ -568,6 +744,28 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
                     data: str = file.read()
                     self.assertEqual(data, return_value)
 
+    async def test_trace_session_invalid_args(self) -> None:
+        """Test for Tracing.trace_session() when download=True with invalid directory/trace_file."""
+        self.mock_provisioner_client.initialize_tracing.side_effect = (
+            _initialize_tracing_fake
+        )
+        for directory, trace_file in [
+            ("", "trace.fxt"),
+            (None, "trace.fxt"),
+            ("relative/dir", "trace.fxt"),
+            ("/tmp", None),
+        ]:
+            try:
+                with self.assertRaises(ValueError):
+                    async with self.tracing_obj.trace_session(
+                        download=True,
+                        directory=directory,
+                        trace_file=trace_file,
+                    ):
+                        pass
+            finally:
+                await self.tracing_obj._reset_state()
+
     @mock.patch.object(fc, "Context")
     @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
     async def test_trace_session_with_args(
@@ -618,6 +816,36 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
                 for line in log_context.output
             )
         )
+
+    @mock.patch.object(fc, "Context")
+    @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
+    async def test_multi_tracing_session(
+        self,
+        mock_async_socket_read_all: mock.AsyncMock,
+        mock_fc_context: mock.Mock,
+    ) -> None:
+        """Test multiple stop/start cycles inside trace_session() context manager."""
+        mock_fc_context.socket_create.return_value = (
+            mock.MagicMock(),
+            mock.MagicMock(),
+        )
+        mock_fc_context.channel_create.return_value = (
+            mock.MagicMock(),
+            mock.MagicMock(),
+        )
+
+        async with self.tracing_obj.trace_session():
+            self.assertTrue(self.tracing_obj.is_session_initialized())
+            self.assertTrue(self.tracing_obj.is_active())
+            await self.tracing_obj.stop()
+            self.assertTrue(self.tracing_obj.is_session_initialized())
+            self.assertFalse(self.tracing_obj.is_active())
+            await self.tracing_obj.start()
+            self.assertTrue(self.tracing_obj.is_session_initialized())
+            self.assertTrue(self.tracing_obj.is_active())
+
+        self.assertFalse(self.tracing_obj.is_session_initialized())
+        self.assertFalse(self.tracing_obj.is_active())
 
     @mock.patch.object(fc, "Context")
     @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)

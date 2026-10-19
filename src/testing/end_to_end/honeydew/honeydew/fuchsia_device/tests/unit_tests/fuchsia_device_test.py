@@ -34,7 +34,11 @@ from honeydew.affordances.power.system_power_state_controller import (
 from honeydew.affordances.rtc import rtc_using_fc
 from honeydew.affordances.session import session_using_ffx
 from honeydew.affordances.starnix import starnix_using_ffx
-from honeydew.affordances.tracing import tracing_using_fc
+from honeydew.affordances.tracing import (
+    tracing_using_fc,
+    tracing_using_ffx,
+)
+from honeydew.affordances.tracing import types as tracing_types
 from honeydew.affordances.ui.screenshot import screenshot_using_ffx
 from honeydew.affordances.ui.user_input import user_input_using_fc
 from honeydew.affordances.virtual_audio import audio_using_fuchsia_controller
@@ -685,11 +689,93 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
     def test_tracing(self) -> None:
         """Test case to make sure fuchsia_device supports tracing affordance
-        implemented using fuchsia-controller"""
+        implemented using ffx by default."""
         self.assertIsInstance(
             self.fd_fc_obj.tracing,
-            tracing_using_fc.TracingUsingFc,
+            tracing_using_ffx.TracingUsingFfx,
         )
+
+    @parameterized.expand(
+        [
+            param(
+                label="when_config_is_none",
+                config=None,
+                expected_impl=tracing_types.Implementation.FFX,
+                expected_cls=tracing_using_ffx.TracingUsingFfx,
+            ),
+            param(
+                label="when_tracing_config_is_missing",
+                config={"affordances": {}},
+                expected_impl=tracing_types.Implementation.FFX,
+                expected_cls=tracing_using_ffx.TracingUsingFfx,
+            ),
+            param(
+                label="when_tracing_config_is_fuchsia_controller",
+                config={
+                    "affordances": {
+                        "tracing": {
+                            "implementation": "fuchsia-controller",
+                        },
+                    },
+                },
+                expected_impl=tracing_types.Implementation.FUCHSIA_CONTROLLER,
+                expected_cls=tracing_using_fc.TracingUsingFc,
+            ),
+            param(
+                label="when_tracing_config_is_ffx",
+                config={
+                    "affordances": {
+                        "tracing": {
+                            "implementation": "ffx",
+                        },
+                    },
+                },
+                expected_impl=tracing_types.Implementation.FFX,
+                expected_cls=tracing_using_ffx.TracingUsingFfx,
+            ),
+        ],
+        name_func=_custom_test_name_func,
+    )
+    def test_tracing_implementation_selection(
+        self,
+        label: str,  # pylint: disable=unused-argument
+        config: dict[str, Any] | None,
+        expected_impl: tracing_types.Implementation,
+        expected_cls: type[Any],
+    ) -> None:
+        """Test FuchsiaDevice._get_tracing_affordance_implementation and .tracing."""
+        original_config = self.fd_fc_obj._config
+        self.fd_fc_obj.__dict__.pop("tracing", None)
+        try:
+            self.fd_fc_obj._config = config
+            self.assertEqual(
+                self.fd_fc_obj._get_tracing_affordance_implementation(),
+                expected_impl,
+            )
+            self.assertIsInstance(self.fd_fc_obj.tracing, expected_cls)
+        finally:
+            self.fd_fc_obj.__dict__.pop("tracing", None)
+            self.fd_fc_obj._config = original_config
+
+    def test_tracing_invalid_config(self) -> None:
+        """Test FuchsiaDevice._get_tracing_affordance_implementation raises ConfigError."""
+        original_config = self.fd_fc_obj._config
+        self.fd_fc_obj.__dict__.pop("tracing", None)
+        try:
+            self.fd_fc_obj._config = {
+                "affordances": {
+                    "tracing": {
+                        "implementation": "invalid-impl",
+                    },
+                },
+            }
+            with self.assertRaises(errors.ConfigError):
+                self.fd_fc_obj._get_tracing_affordance_implementation()
+            with self.assertRaises(errors.ConfigError):
+                _ = self.fd_fc_obj.tracing
+        finally:
+            self.fd_fc_obj.__dict__.pop("tracing", None)
+            self.fd_fc_obj._config = original_config
 
     @mock.patch.object(
         ffx.FFX,
