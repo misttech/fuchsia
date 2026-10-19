@@ -90,8 +90,3 @@ zx_status_t VmObjectDispatcher::CreateChild(uint32_t options, uint64_t offset, u
   *child_vmo = ktl::move(uninit_child.Get());
   return ZX_OK;
 }
-
-zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, VmoOwnership ownership,
-                             zx_rights_t handle_rights) {
-  return rust_vmo_to_info_entry(vmo, ownership, handle_rights);
-}

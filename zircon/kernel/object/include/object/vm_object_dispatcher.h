@@ -11,7 +11,6 @@
 #include <lib/zx/result.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
-#include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
@@ -22,14 +21,6 @@
 #include <vm/vm_object.h>
 
 class VmObjectDispatcher;
-
-// LINT.IfChange(VmoOwnership)
-enum class VmoOwnership : uint32_t {  // NOLINT(performance-enum-size)
-  kHandle = 0,
-  kMapping = 1,
-  kIoBuffer = 2,
-};
-// LINT.ThenChange(//zircon/kernel/object/vm_object_dispatcher.rs:VmoOwnership)
 
 extern "C" {
 zx_status_t cpp_vm_object_dispatcher_create(
@@ -64,8 +55,6 @@ zx_status_t rust_vm_object_dispatcher_create_child(
 zx_status_t rust_vm_object_dispatcher_set_stream_size(VmObjectDispatcher* disp,
                                                       uint64_t stream_size);
 uint64_t rust_vm_object_dispatcher_get_stream_size(const VmObjectDispatcher* disp);
-zx_info_vmo_t rust_vmo_to_info_entry(const VmObject* vmo, VmoOwnership ownership,
-                                     zx_rights_t handle_rights);
 }
 
 class VmObjectDispatcher final : public Dispatcher, public VmObjectChildObserver {
@@ -120,7 +109,6 @@ class VmObjectDispatcher final : public Dispatcher, public VmObjectChildObserver
   uint64_t GetStreamSize() const { return rust_vm_object_dispatcher_get_stream_size(this); }
 
   const fbl::RefPtr<VmObject>& vmo() const { return *rust_vm_object_dispatcher_get_vmo(this); }
-  zx_koid_t pager_koid() const { return vmo()->GetPageSourceKoid().value_or(ZX_KOID_INVALID); }
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;
@@ -136,8 +124,5 @@ class VmObjectDispatcher final : public Dispatcher, public VmObjectChildObserver
 
   OpaqueStorage<kVmObjectDispatcherStateSize, kVmObjectDispatcherStateAlign> opaque_storage_;
 };
-
-zx_info_vmo_t VmoToInfoEntry(const VmObject* vmo, VmoOwnership ownership,
-                             zx_rights_t handle_rights);
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_VM_OBJECT_DISPATCHER_H_

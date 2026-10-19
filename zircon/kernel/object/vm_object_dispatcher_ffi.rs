@@ -5,16 +5,14 @@
 // https://opensource.org/licenses/MIT
 
 use super::handle::KernelHandle;
-use super::vm_object_dispatcher::{
-    InitialMutability, VmObjectDispatcher, VmObjectDispatcherState, VmoOwnership, vmo_to_info_entry,
-};
+use super::vm_object_dispatcher::{InitialMutability, VmObjectDispatcher, VmObjectDispatcherState};
 use crate::vm::stream_size_manager::StreamSizeManager;
 use crate::vm::vm_object::{VmObject, VmObjectChildObserver};
 use core::ffi::c_char;
 use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_status::Status;
-use zx_types::{ZX_MAX_NAME_LEN, ZX_OK, zx_info_vmo_t, zx_rights_t, zx_status_t};
+use zx_types::{ZX_MAX_NAME_LEN, ZX_OK, zx_rights_t, zx_status_t};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -205,14 +203,4 @@ pub extern "C" fn rust_vm_object_dispatcher_set_stream_size(
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_vm_object_dispatcher_get_stream_size(disp: &VmObjectDispatcher) -> u64 {
     disp.get_stream_size()
-}
-
-/// Populates a `zx_info_vmo_t` entry for `vmo` from C++.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_vmo_to_info_entry(
-    vmo: &VmObject,
-    ownership: VmoOwnership,
-    handle_rights: zx_rights_t,
-) -> zx_info_vmo_t {
-    vmo_to_info_entry(vmo, ownership, handle_rights)
 }

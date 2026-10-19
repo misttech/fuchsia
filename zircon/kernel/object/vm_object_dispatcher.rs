@@ -60,19 +60,13 @@ pub enum InitialMutability {
 zr::static_assert!(core::mem::size_of::<InitialMutability>() == 4);
 zr::static_assert!(core::mem::align_of::<InitialMutability>() == 4);
 
-// LINT.IfChange(VmoOwnership)
 /// Specifies how a VMO is owned when generating `zx_info_vmo_t`.
-#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VmoOwnership {
-    Handle = 0,
-    Mapping = 1,
-    IoBuffer = 2,
+    Handle,
+    Mapping,
+    IoBuffer,
 }
-// LINT.ThenChange(//zircon/kernel/object/include/object/vm_object_dispatcher.h:VmoOwnership)
-
-zr::static_assert!(core::mem::size_of::<VmoOwnership>() == 4);
-zr::static_assert!(core::mem::align_of::<VmoOwnership>() == 4);
 
 /// Internal state of a `VmObjectDispatcher`.
 #[guarded]
