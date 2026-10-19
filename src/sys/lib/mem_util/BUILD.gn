@@ -73,7 +73,7 @@ rustc_library("mem_util") {
     "//src/sys/component_manager:*",
     "//src/sys/lib/routing:*",
     "//src/sys/pkg/bin/pkg-resolver:*",
-    "//src/sys/pkg/tests/pkg-cache-as-base-resolver/using-realm-builder:*",
+    "//src/sys/pkg/tests/pkg-cache:*",
     "//src/sys/test_manager:*",
   ]
   deps = [

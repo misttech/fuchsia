@@ -46,6 +46,7 @@ rustc_test("driver") {
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
+    "//src/sys/lib/mem_util",
     "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
     "//src/sys/pkg/lib/blobfs",
     "//src/sys/pkg/lib/fuchsia-hash",
@@ -53,6 +54,7 @@ rustc_test("driver") {
     "//src/sys/pkg/lib/fuchsia-pkg",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
     "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
+    "//src/sys/pkg/lib/system-image",
     "//src/sys/pkg/testing/blobfs-ramdisk",
     "//src/sys/pkg/testing/mock-health-verification",
     "//src/sys/pkg/testing/mock-metrics",
@@ -69,6 +71,7 @@ rustc_test("driver") {
 
   sources = [
     "src/base_pkg_index.rs",
+    "src/base_resolver.rs",
     "src/cache_pkg_index.rs",
     "src/cobalt.rs",
     "src/driver_blob_paging.rs",

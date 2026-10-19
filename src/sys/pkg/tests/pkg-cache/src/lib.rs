@@ -42,6 +42,7 @@ use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable as _;
 
 mod base_pkg_index;
+mod base_resolver;
 mod cache_pkg_index;
 mod cobalt;
 mod driver_blob_paging;
@@ -1061,6 +1062,19 @@ where
                 .root
                 .connect_to_protocol_at_exposed_dir()
                 .expect("connect to retained blobs"),
+            base_package_resolver: realm_instance
+                .root
+                .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(&format!(
+                    "{}-base",
+                    fpkg::PackageResolverMarker::PROTOCOL_NAME
+                ))
+                .expect("connect to base package resolver"),
+            base_component_resolver: realm_instance
+                .root
+                .connect_to_named_protocol_at_exposed_dir::<fcomponent_resolution::ResolverMarker>(
+                    &format!("{}-base", fcomponent_resolution::ResolverMarker::PROTOCOL_NAME),
+                )
+                .expect("connect to base component resolver"),
             ota_package_resolver: realm_instance
                 .root
                 .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(&format!(
@@ -1115,6 +1129,8 @@ struct Proxies {
     package_cache: fpkg::PackageCacheProxy,
     retained_packages: fpkg::RetainedPackagesProxy,
     retained_blobs: fpkg::RetainedBlobsProxy,
+    base_package_resolver: fpkg::PackageResolverProxy,
+    base_component_resolver: fcomponent_resolution::ResolverProxy,
     ota_package_resolver: fpkg::PackageResolverProxy,
     full_package_resolver: fpkg::PackageResolverProxy,
     full_component_resolver: fcomponent_resolution::ResolverProxy,
@@ -1259,6 +1275,33 @@ impl<B: Blobfs> TestEnv<B> {
         .unwrap();
     }
 
+    pub async fn resolve_base(
+        &self,
+        url: &str,
+    ) -> Result<(fio::DirectoryProxy, fpkg::ResolutionContext), fpkg::ResolveError> {
+        let (package, package_server_end) = fidl::endpoints::create_proxy();
+        self.proxies
+            .base_package_resolver
+            .resolve(url, package_server_end)
+            .await
+            .unwrap()
+            .map(|context| (package, context))
+    }
+
+    pub async fn resolve_with_context_base(
+        &self,
+        url: &str,
+        context: &fpkg::ResolutionContext,
+    ) -> Result<(fio::DirectoryProxy, fpkg::ResolutionContext), fpkg::ResolveError> {
+        let (package, package_server_end) = fidl::endpoints::create_proxy();
+        self.proxies
+            .base_package_resolver
+            .resolve_with_context(url, context, package_server_end)
+            .await
+            .unwrap()
+            .map(|context| (package, context))
+    }
+
     pub async fn resolve_ota(
         &self,
         url: &str,
@@ -1350,6 +1393,21 @@ impl<B: Blobfs> TestEnv<B> {
         let urls: Vec<_> =
             urls.into_iter().map(|url| fpkg::PackageUrl { url: url.to_string() }).collect();
         self.proxies.package_cache.set_upgradable_urls(&urls).await.unwrap()
+    }
+
+    pub async fn resolve_base_component(
+        &self,
+        url: &str,
+    ) -> Result<fcomponent_resolution::Component, fcomponent_resolution::ResolverError> {
+        self.proxies.base_component_resolver.resolve(url).await.unwrap()
+    }
+
+    pub async fn resolve_with_context_base_component(
+        &self,
+        url: &str,
+        context: &fcomponent_resolution::Context,
+    ) -> Result<fcomponent_resolution::Component, fcomponent_resolution::ResolverError> {
+        self.proxies.base_component_resolver.resolve_with_context(url, context).await.unwrap()
     }
 
     pub async fn resolve_full_component(

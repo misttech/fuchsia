@@ -24,7 +24,7 @@ rustc_library(
         "//src/sys/component_manager:__pkg__",
         "//src/sys/lib/routing:__pkg__",
         "//src/sys/pkg/bin/pkg-resolver:__pkg__",
-        "//src/sys/pkg/tests/pkg-cache-as-base-resolver/using-realm-builder:__pkg__",
+        "//src/sys/pkg/tests/pkg-cache:__pkg__",
         "//src/sys/test_manager:__pkg__",
     ],
     deps = [
