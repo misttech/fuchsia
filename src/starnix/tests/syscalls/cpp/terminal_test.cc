@@ -1127,10 +1127,264 @@ TEST_F(Pty, CloseMainTerminalSendsSighup) {
     sleep(2);
 
     close(replica_terminal);
-    // If we reach here, we didn't get SIGHUP.
+    // Reaching this point means SIGHUP was not delivered.
     _exit(1);
   });
   ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verifies that an orphaned process group containing only running jobs does
+// not receive SIGHUP or SIGCONT upon transition.
+TEST(JobControl, OrphanedProcessGroupRunningDoesNotReceiveSignal) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+
+    helper.RunInForkedProcess([&] {
+      SAFE_SYSCALL(setpgid(0, 0));
+
+      test_helper::Rendezvous child_ready = test_helper::MakeRendezvous();
+      test_helper::Rendezvous parent_done = test_helper::MakeRendezvous();
+
+      helper.RunInForkedProcess([child_ready = std::move(child_ready.poker),
+                                 parent_done = std::move(parent_done.holder)]() mutable {
+        RecordSignal(SIGHUP);
+        child_ready.poke();
+
+        // Wait until immediate parent exits, making this process group orphaned.
+        parent_done.hold();
+
+        // Give the kernel an opportunity to deliver signals, if any.
+        SleepNs(50e6);
+        SAFE_SYSCALL(getpid());
+
+        // Since the process group had no stopped members, no SIGHUP is delivered.
+        EXPECT_EQ(g_received_signal[SIGHUP], 0);
+      });
+
+      child_ready.holder.hold();
+      // Parent exits while child remains running.
+      parent_done.poker.poke();
+    });
+
+    ASSERT_TRUE(helper.WaitForChildren());
+  });
+}
+
+// Verifies that session leader exit revokes /dev/tty across all process groups
+// in the session.
+TEST(JobControl, SessionLeaderExitRevokesDevTtyForEntireSession) {
+  if (!test_helper::IsStarnix() && access("/dev/ptmx", F_OK) == -1) {
+    GTEST_SKIP() << "Pseudoterminal not available, skipping...";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal();
+    int replica_terminal = SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR));
+    SAFE_SYSCALL(ioctl(replica_terminal, TIOCSCTTY, 0));
+
+    // Verify /dev/tty can be opened while session leader is alive.
+    int initial_tty = SAFE_SYSCALL(open("/dev/tty", O_RDWR));
+    close(initial_tty);
+
+    test_helper::Rendezvous child_ready = test_helper::MakeRendezvous();
+    pid_t session_leader_pid = getpid();
+
+    // Fork child into a separate process group in the same session.
+    helper.RunInForkedProcess(
+        [child_ready = std::move(child_ready.poker), session_leader_pid]() mutable {
+          SAFE_SYSCALL(setpgid(0, 0));
+          IgnoreSignal(SIGHUP);
+
+          child_ready.poke();
+
+          // Wait until the session leader exits.
+          while (getppid() == session_leader_pid) {
+            usleep(1000);
+          }
+
+          // After session leader exits, opening /dev/tty must fail with ENXIO.
+          int ret = 0;
+          for (int i = 0; i < 100; ++i) {
+            ret = open("/dev/tty", O_RDWR);
+            if (ret == -1 && errno == ENXIO) {
+              break;
+            }
+            if (ret >= 0) {
+              close(ret);
+            }
+            usleep(1000);
+          }
+          EXPECT_EQ(ret, -1);
+          EXPECT_EQ(errno, ENXIO);
+        });
+
+    child_ready.holder.hold();
+    // Session leader exits.
+    exit(0);
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verifies job control signal broadcast across all members of a multi-process
+// pipeline process group.
+TEST(JobControl, MultiProcessPipelineSignalBroadcast) {
+  if (!test_helper::IsStarnix() && access("/dev/ptmx", F_OK) == -1) {
+    GTEST_SKIP() << "Pseudoterminal not available, skipping...";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+    int main_terminal = OpenMainTerminal();
+    int replica_terminal = SAFE_SYSCALL(open(ptsname(main_terminal), O_RDWR));
+    SAFE_SYSCALL(ioctl(replica_terminal, TIOCSCTTY, 0));
+
+    IgnoreSignal(SIGTTOU);
+
+    test_helper::Rendezvous p1_ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous p2_ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous p1_resized = test_helper::MakeRendezvous();
+    test_helper::Rendezvous p2_resized = test_helper::MakeRendezvous();
+
+    pid_t p1_pid = helper.RunInForkedProcess([p1_ready = std::move(p1_ready.poker),
+                                              p1_resized = std::move(p1_resized.holder)]() mutable {
+      SAFE_SYSCALL(setpgid(0, 0));
+      RecordSignal(SIGWINCH);
+      p1_ready.poke();
+
+      p1_resized.hold();
+      while (g_received_signal[SIGWINCH] == 0) {
+        SleepNs(10e6);
+      }
+      EXPECT_GE(g_received_signal[SIGWINCH], 1);
+    });
+
+    p1_ready.holder.hold();
+
+    helper.RunInForkedProcess([p1_pid, p2_ready = std::move(p2_ready.poker),
+                               p2_resized = std::move(p2_resized.holder)]() mutable {
+      // Join p1's process group.
+      SAFE_SYSCALL(setpgid(0, p1_pid));
+      RecordSignal(SIGWINCH);
+      p2_ready.poke();
+
+      p2_resized.hold();
+      while (g_received_signal[SIGWINCH] == 0) {
+        SleepNs(10e6);
+      }
+      EXPECT_GE(g_received_signal[SIGWINCH], 1);
+    });
+
+    p2_ready.holder.hold();
+
+    // Set p1's process group as the foreground group.
+    SAFE_SYSCALL(tcsetpgrp(replica_terminal, p1_pid));
+    EXPECT_EQ(SAFE_SYSCALL(tcgetpgrp(replica_terminal)), p1_pid);
+
+    // Trigger window resize on main terminal.
+    struct winsize ws = {.ws_row = 24, .ws_col = 80};
+    SAFE_SYSCALL(ioctl(main_terminal, TIOCSWINSZ, &ws));
+
+    p1_resized.poker.poke();
+    p2_resized.poker.poke();
+    ASSERT_TRUE(helper.WaitForChildren());
+  });
+}
+
+// Verifies that setpgid cannot move a process into a process group belonging
+// to a different session.
+TEST(JobControl, SetpgidCannotCrossSessions) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+    test_helper::Rendezvous child_in_new_session = test_helper::MakeRendezvous();
+    test_helper::Rendezvous parent_tested = test_helper::MakeRendezvous();
+
+    pid_t child_pid =
+        helper.RunInForkedProcess([child_in_new_session = std::move(child_in_new_session.poker),
+                                   parent_tested = std::move(parent_tested.holder)]() mutable {
+          // Create a separate session in the child.
+          SAFE_SYSCALL(setsid());
+          child_in_new_session.poke();
+
+          parent_tested.hold();
+        });
+
+    child_in_new_session.holder.hold();
+
+    // Parent attempts cross-session move into parent's process group.
+    int ret = setpgid(child_pid, getpid());
+    EXPECT_EQ(ret, -1);
+    EXPECT_EQ(errno, EPERM);
+
+    parent_tested.poker.poke();
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verifies that when a multi-process process group becomes orphaned and at
+// least one member is stopped, SIGHUP followed by SIGCONT is delivered to ALL
+// members in the process group (both stopped and running processes).
+TEST(JobControl, OrphanedMultiProcessGroupSignalsBothStoppedAndRunning) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setsid());
+
+    helper.RunInForkedProcess([&] {
+      // Create new process group G.
+      SAFE_SYSCALL(setpgid(0, 0));
+      pid_t group_leader = getpid();
+
+      test_helper::Rendezvous group_ready = test_helper::MakeRendezvous();
+      test_helper::Rendezvous parent_done = test_helper::MakeRendezvous();
+
+      // Fork running child in group G.
+      helper.RunInForkedProcess([group_leader, group_ready = std::move(group_ready.poker),
+                                 parent_done = std::move(parent_done.holder)]() mutable {
+        SAFE_SYSCALL(setpgid(0, group_leader));
+
+        RecordSignal(SIGHUP);
+        group_ready.poke();
+
+        parent_done.hold();
+
+        // Wait for SIGHUP to be received.
+        for (int i = 0; i < 100 && g_received_signal[SIGHUP] == 0; ++i) {
+          SleepNs(10e6);
+        }
+        EXPECT_EQ(g_received_signal[SIGHUP], 1);
+      });
+
+      // Fork stopped child in group G.
+      pid_t stopped_child = helper.RunInForkedProcess(
+          [group_leader, group_ready = std::move(group_ready.holder)]() mutable {
+            SAFE_SYSCALL(setpgid(0, group_leader));
+            group_ready.hold();
+
+            RecordSignal(SIGHUP);
+            SAFE_SYSCALL(kill(getpid(), SIGTSTP));
+
+            SAFE_SYSCALL(getpid());
+            EXPECT_EQ(g_received_signal[SIGHUP], 1);
+          });
+
+      // Wait until stopped_child stops.
+      SAFE_SYSCALL(waitid(P_PID, stopped_child, nullptr, WSTOPPED));
+
+      // Parent exits while running_child and stopped_child remain in group G.
+      parent_done.poker.poke();
+    });
+
+    ASSERT_TRUE(helper.WaitForChildren());
+  });
 }
 
 }  // namespace

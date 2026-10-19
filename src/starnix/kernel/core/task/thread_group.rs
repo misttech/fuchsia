@@ -3105,4 +3105,609 @@ mod test {
         })
         .await;
     }
+
+    #[::fuchsia::test]
+    async fn test_setpgid_multithreaded_task_migration() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Spawn a child process (thread group leader) and a secondary thread.
+            let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let child_pid = child.get_pid();
+            let child_thread = child.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+
+            let old_pgid_entry = kernel.pids.get(current_task.get_pid()).unwrap();
+            let scope = RcuReadScope::new();
+
+            // Verify child thread group starts in current_task's process group.
+            let initial_members: Vec<_> =
+                old_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert!(initial_members.contains(&child_pid));
+
+            // Move the multithreaded child process to its own process group (PGID = child.pid).
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child, &child.pid),
+                Ok(())
+            );
+
+            // Verify child thread group was removed from the old process group.
+            let old_members: Vec<_> =
+                old_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert!(!old_members.contains(&child_pid));
+
+            // Verify child thread group and all its threads observe the new process group.
+            let new_pgid_entry = kernel.pids.get(child_pid).unwrap();
+            let new_members: Vec<_> =
+                new_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert_eq!(new_members, vec![child_pid]);
+            assert_eq!(child_thread.thread_group().read().process_group, child.pid);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setsid_multithreaded_task_migration() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Spawn a child process (thread group leader) and a secondary thread.
+            let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let child_pid = child.get_pid();
+            let child_thread = child.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+
+            let old_sid_entry = kernel.pids.get(current_task.get_pid()).unwrap();
+            let scope = RcuReadScope::new();
+
+            // Verify child thread group starts in parent's session.
+            let initial_sid_members: Vec<_> =
+                old_sid_entry.sid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert!(initial_sid_members.contains(&child_pid));
+
+            // Call setsid on the multithreaded child thread group.
+            assert_eq!(child.thread_group().setsid(), Ok(()));
+
+            // Verify child thread group was removed from the parent's session.
+            let old_sid_members: Vec<_> =
+                old_sid_entry.sid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert!(!old_sid_members.contains(&child_pid));
+
+            // Verify child thread group is attached to the new session and process group.
+            let new_pid_entry = kernel.pids.get(child_pid).unwrap();
+            let new_sid_members: Vec<_> =
+                new_pid_entry.sid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert_eq!(new_sid_members, vec![child_pid]);
+
+            let new_pgid_members: Vec<_> =
+                new_pid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert_eq!(new_pgid_members, vec![child_pid]);
+            assert_eq!(child_thread.thread_group().read().session, child.pid);
+            assert_eq!(child_thread.thread_group().read().process_group, child.pid);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_orphaned_pgrp_detection_and_signaling() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Spawn a parent process (PID 2 != 1) so it is not treated as init.
+            let parent_proc = current_task.clone_task_for_test(0, Some(SIGCHLD));
+
+            // Spawn a child process from parent_proc and move to a new process group.
+            let child = parent_proc.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                parent_proc.thread_group().setpgid(&parent_proc, &child, &child.pid),
+                Ok(())
+            );
+
+            let child_pgid_entry = kernel.pids.get(child.get_pid()).unwrap();
+            let scope = RcuReadScope::new();
+
+            // Child's parent is parent_proc (PID != 1), which is in the same session but outside the group.
+            // Therefore, the group is not orphaned.
+            assert!(!child_pgid_entry.will_become_orphaned_pgrp(&scope, None));
+
+            // If parent_proc is ignored (as if exiting), the child group becomes orphaned.
+            assert!(
+                child_pgid_entry
+                    .will_become_orphaned_pgrp(&scope, Some(parent_proc.thread_group()))
+            );
+
+            // Verify has_stopped_jobs is initially false.
+            assert!(!child_pgid_entry.has_stopped_jobs(&scope));
+
+            // Set stopped state on child thread group.
+            child.thread_group().set_stopped(StopState::GroupStopped, None, false);
+            assert!(child_pgid_entry.has_stopped_jobs(&scope));
+
+            // Verify kill_orphaned_pgrp delivers SIGHUP and SIGCONT.
+            {
+                let pids = kernel.pids.lock();
+                child.thread_group().kill_orphaned_pgrp(
+                    &pids,
+                    Some(parent_proc.thread_group()),
+                    Some(parent_proc.thread_group()),
+                );
+            }
+            assert!(child.thread_group().has_signal_queued(SIGHUP));
+            assert!(child.thread_group().has_signal_queued(SIGCONT));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setsid_rejected_on_process_group_leader() {
+        spawn_kernel_and_run(async |current_task| {
+            // PID 1 is already a session and process group leader.
+            assert_eq!(current_task.thread_group().setsid(), error!(EPERM));
+
+            // Spawn child 1.
+            let child1 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+
+            // Move child 1 to its own process group (becomes process group leader).
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child1, &child1.pid),
+                Ok(())
+            );
+            assert_eq!(child1.thread_group().read().process_group, child1.tid);
+
+            // setsid on process group leader must be rejected with EPERM.
+            assert_eq!(child1.thread_group().setsid(), error!(EPERM));
+
+            // Spawn child 2 in the same process group as child 1.
+            let child2 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child2, &child1.pid),
+                Ok(())
+            );
+            // Child 2 is a member but not the leader of child 1's process group.
+            assert_eq!(child2.thread_group().read().process_group, child1.tid);
+
+            // Child 2 is not a process group leader, so setsid must succeed.
+            assert_eq!(child2.thread_group().setsid(), Ok(()));
+            assert_eq!(child2.thread_group().read().process_group, child2.tid);
+            assert_eq!(child2.thread_group().read().session, child2.tid);
+
+            // Child 2 is now a process group leader; subsequent setsid must fail with EPERM.
+            assert_eq!(child2.thread_group().setsid(), error!(EPERM));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setpgid_many_threads_stress_and_teardown() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Spawn child process leader and 7 worker threads (8 threads total).
+            let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let child_pid = child.get_pid();
+            let mut thread_tasks = vec![];
+            for _ in 0..7 {
+                let thread = child.clone_task_for_test(
+                    (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                    Some(SIGCHLD),
+                );
+                thread_tasks.push(thread);
+            }
+            assert_eq!(child.thread_group().read().tasks_count(), 8);
+
+            let old_pgid_entry = kernel.pids.get(current_task.get_pid()).unwrap();
+            let scope = RcuReadScope::new();
+
+            // Child thread group initially belongs to current_task's process group.
+            let initial_members: Vec<_> =
+                old_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert!(initial_members.contains(&child_pid));
+
+            // Move entire child thread group to its own process group.
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child, &child.pid),
+                Ok(())
+            );
+
+            // Verify child thread group left the old process group and joined the new one once.
+            let old_members_after: Vec<_> =
+                old_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert!(!old_members_after.contains(&child_pid));
+
+            let new_pgid_entry = kernel.pids.get(child_pid).unwrap();
+            let new_members: Vec<_> =
+                new_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert_eq!(new_members, vec![child_pid]);
+
+            // Spawn another child process to act as target process group.
+            let target_child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                current_task.thread_group().setpgid(
+                    &current_task,
+                    &target_child,
+                    &target_child.pid
+                ),
+                Ok(())
+            );
+
+            // Migrate multithreaded child process to target_child's process group.
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child, &target_child.pid),
+                Ok(())
+            );
+
+            // Verify child's vacated PGID list is empty.
+            assert_eq!(new_pgid_entry.pgid_thread_groups(&scope).count(), 0);
+
+            // Verify target PGID list contains target_child and child thread groups.
+            let target_pgid_entry = kernel.pids.get(target_child.get_pid()).unwrap();
+            let target_members: Vec<_> =
+                target_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert_eq!(target_members.len(), 2);
+            assert!(target_members.contains(&child_pid));
+            assert!(target_members.contains(&target_child.get_pid()));
+
+            // Dropping worker threads one by one keeps child's thread group attached while its leader lives.
+            for thread in thread_tasks {
+                drop(thread);
+                let updated_members: Vec<_> =
+                    target_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+                assert_eq!(updated_members.len(), 2);
+                assert!(updated_members.contains(&child_pid));
+            }
+
+            // Dropping the final task in child detaches its thread group, leaving target_child.
+            child.thread_group().kill(ExitStatus::Exit(0), None);
+            drop(child);
+            let remaining_members: Vec<_> =
+                target_pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert_eq!(remaining_members, vec![target_child.get_pid()]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_multi_process_orphan_detection_and_signaling() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Session leader P (PID 2 != 1).
+            let leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+
+            // C1 is child of leader.
+            let c1 = leader.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(leader.thread_group().setpgid(&leader, &c1, &c1.pid), Ok(()));
+            let c1_pid = c1.get_pid();
+            let c1_pgid_entry = kernel.pids.get(c1_pid).unwrap();
+
+            // C2 is also child of leader, moved into C1's process group.
+            let c2 = leader.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(leader.thread_group().setpgid(&leader, &c2, &c1.pid), Ok(()));
+
+            // C3 is child of C1, moved into C1's process group.
+            let c3 = c1.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(c1.thread_group().setpgid(&c1, &c3, &c1.pid), Ok(()));
+
+            let scope = RcuReadScope::new();
+
+            // While leader is alive: C1 and C2 have parent `leader` (same session, outside PGID).
+            // Group is not orphaned.
+            assert!(!c1_pgid_entry.will_become_orphaned_pgrp(&scope, None));
+
+            // Mark C1 as stopped. C2 and C3 remain running.
+            c1.thread_group().set_stopped(StopState::GroupStopped, None, false);
+            assert!(c1_pgid_entry.has_stopped_jobs(&scope));
+
+            // When leader exits (ignored_tg = leader.thread_group()):
+            // Neither C1 nor C2 nor C3 has a living parent in the session outside the group.
+            assert!(c1_pgid_entry.will_become_orphaned_pgrp(&scope, Some(leader.thread_group())));
+
+            // Trigger orphan killing as occurs during leader exit.
+            {
+                let pids = kernel.pids.lock();
+                c1.thread_group().kill_orphaned_pgrp(
+                    &pids,
+                    Some(leader.thread_group()),
+                    Some(leader.thread_group()),
+                );
+            }
+
+            // Verify all member processes in the group received SIGHUP and SIGCONT.
+            assert!(c1.thread_group().has_signal_queued(SIGHUP));
+            assert!(c1.thread_group().has_signal_queued(SIGCONT));
+            assert!(c2.thread_group().has_signal_queued(SIGHUP));
+            assert!(c2.thread_group().has_signal_queued(SIGCONT));
+            assert!(c3.thread_group().has_signal_queued(SIGHUP));
+            assert!(c3.thread_group().has_signal_queued(SIGCONT));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_orphan_prevented_by_sibling_external_parent() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Session leader P (PID 2 != 1).
+            let leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+
+            // External parent P2 in same session, but different PGID.
+            let p2 = leader.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(leader.thread_group().setpgid(&leader, &p2, &p2.pid), Ok(()));
+
+            // C1 is child of leader, in PGID = C1's PID.
+            let c1 = leader.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(leader.thread_group().setpgid(&leader, &c1, &c1.pid), Ok(()));
+            let c1_pid = c1.get_pid();
+            let c1_pgid_entry = kernel.pids.get(c1_pid).unwrap();
+
+            // C2 is child of P2, but moved into C1's process group.
+            let c2 = p2.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(p2.thread_group().setpgid(&p2, &c2, &c1.pid), Ok(()));
+
+            let scope = RcuReadScope::new();
+
+            // Mark C1 as stopped.
+            c1.thread_group().set_stopped(StopState::GroupStopped, None, false);
+
+            // Simulate leader exiting (ignored_tg = leader.thread_group()).
+            // C1's parent is leader (exiting).
+            // C2 is in the process group, and C2's parent is P2 (running, same session, outside PGID).
+            // Therefore, C1's process group is not orphaned even though leader exited.
+            assert!(!c1_pgid_entry.will_become_orphaned_pgrp(&scope, Some(leader.thread_group())));
+
+            // If kill_orphaned_pgrp is invoked with leader, no signals should be queued.
+            {
+                let pids = kernel.pids.lock();
+                c1.thread_group().kill_orphaned_pgrp(
+                    &pids,
+                    Some(leader.thread_group()),
+                    Some(leader.thread_group()),
+                );
+            }
+            assert!(!c1.thread_group().has_signal_queued(SIGHUP));
+            assert!(!c2.thread_group().has_signal_queued(SIGHUP));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setpgid_vacated_group_orphaned_and_signaled() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Leader P (PID 2 != 1).
+            let leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+
+            // Child 1 in new process group PGID = C1's PID.
+            let c1 = leader.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(leader.thread_group().setpgid(&leader, &c1, &c1.pid), Ok(()));
+            let c1_pid = c1.get_pid();
+
+            // Child 2 joined to C1's process group.
+            let c2 = leader.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(leader.thread_group().setpgid(&leader, &c2, &c1.pid), Ok(()));
+
+            // Mark C1 as stopped.
+            c1.thread_group().set_stopped(StopState::GroupStopped, None, false);
+
+            // Set C1's parent to None (as if C1 was reparented to init) and remove C1 from leader's children.
+            leader.thread_group().write().children.remove(&c1.tid);
+            c1.thread_group().write().parent = None;
+
+            let scope = RcuReadScope::new();
+            let c1_pgid_entry = kernel.pids.get(c1_pid).unwrap();
+
+            // Because C2 is in C1's process group and C2's parent is leader (outside group),
+            // C1's process group is not orphaned yet.
+            assert!(!c1_pgid_entry.will_become_orphaned_pgrp(&scope, None));
+
+            // Move C2 out of C1's process group into its own group.
+            assert_eq!(leader.thread_group().setpgid(&leader, &c2, &c2.pid), Ok(()));
+
+            // C1's process group now contains only C1 (whose parent is None/init).
+            // Moving C2 out vacated the group's external parent link.
+            // C1 was stopped, so C1's process group should now have received SIGHUP and SIGCONT.
+            assert!(c1.thread_group().has_signal_queued(SIGHUP));
+            assert!(c1.thread_group().has_signal_queued(SIGCONT));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_lifecycle_stress_concurrent_rcu_traversal() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Spawn child process leader in its own session and process group.
+            let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            child.thread_group().setsid().expect("setsid");
+            let child_pid = child.get_pid();
+
+            let pgid_entry = kernel.pids.get(child_pid).unwrap();
+            let running = Arc::new(AtomicBool::new(true));
+
+            // Background reader 1: iterates pgid_thread_groups and dereferences member groups.
+            let r1_entry = pgid_entry.clone();
+            let r1_running = Arc::clone(&running);
+            let reader1 = std::thread::spawn(move || {
+                while r1_running.load(Ordering::Relaxed) {
+                    let scope = RcuReadScope::new();
+                    let mut count = 0;
+                    for tg in r1_entry.pgid_thread_groups(&scope) {
+                        count += 1;
+                        let _pid = tg.leader.id;
+                        let _is_running = tg.read().is_running();
+                        assert!(count <= 20, "Cycle or unexpected count in pgid_thread_groups");
+                    }
+                }
+            });
+
+            // Background reader 2: iterates sid_thread_groups and dereferences member groups.
+            let r2_entry = pgid_entry.clone();
+            let r2_running = Arc::clone(&running);
+            let reader2 = std::thread::spawn(move || {
+                while r2_running.load(Ordering::Relaxed) {
+                    let scope = RcuReadScope::new();
+                    let mut count = 0;
+                    for tg in r2_entry.sid_thread_groups(&scope) {
+                        count += 1;
+                        let _pid = tg.leader.id;
+                        let _is_running = tg.read().is_running();
+                        assert!(count <= 20, "Cycle or unexpected count in sid_thread_groups");
+                    }
+                }
+            });
+
+            // Background reader 3: repeatedly evaluates orphan status and stopped jobs.
+            let r3_entry = pgid_entry.clone();
+            let r3_running = Arc::clone(&running);
+            let reader3 = std::thread::spawn(move || {
+                while r3_running.load(Ordering::Relaxed) {
+                    let scope = RcuReadScope::new();
+                    let _orphaned = r3_entry.will_become_orphaned_pgrp(&scope, None);
+                    let _has_stopped = r3_entry.has_stopped_jobs(&scope);
+                }
+            });
+
+            // Background worker 4: repeatedly dispatches signals to the process group.
+            let r4_entry = pgid_entry.clone();
+            let r4_running = Arc::clone(&running);
+            let signaler = std::thread::spawn(move || {
+                while r4_running.load(Ordering::Relaxed) {
+                    r4_entry.send_signals_to_pgid(&[SIGCONT]);
+                }
+            });
+
+            // Writer loop: rapidly spawn, kill, and reap child processes while readers run.
+            for _ in 0..15 {
+                let mut procs = Vec::new();
+                for _ in 0..4 {
+                    let p = child.clone_task_for_test(0, Some(SIGCHLD));
+                    procs.push(p);
+                }
+
+                for p in procs.drain(..2) {
+                    p.thread_group().kill(ExitStatus::Exit(0), None);
+                    drop(p);
+                }
+
+                let p = child.clone_task_for_test(0, Some(SIGCHLD));
+                procs.push(p);
+
+                for p in procs {
+                    p.thread_group().kill(ExitStatus::Exit(0), None);
+                    drop(p);
+                }
+
+                let mut pids = kernel.pids.lock();
+                for zombie in child.thread_group().write().zombie_children.drain(..) {
+                    zombie.release(&mut pids);
+                }
+            }
+
+            running.store(false, Ordering::Relaxed);
+            reader1.join().expect("Reader 1 failed");
+            reader2.join().expect("Reader 2 failed");
+            reader3.join().expect("Reader 3 failed");
+            signaler.join().expect("Signaler failed");
+
+            // Final state verification.
+            let scope = RcuReadScope::new();
+            let remaining: Vec<_> =
+                pgid_entry.pgid_thread_groups(&scope).map(|tg| tg.leader.id).collect();
+            assert_eq!(remaining, vec![child_pid]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_process_group_thread_groups_deduplicates_multithreaded() {
+        spawn_kernel_and_run(async |current_task| {
+            // Spawn child process 1 and move it into its own process group.
+            let child1 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child1, &child1.pid),
+                Ok(())
+            );
+            let pgrp = Arc::clone(&child1.thread_group().read().process_group);
+
+            // Spawn 3 additional threads in child1 (4 tasks total in child1).
+            let _c1_t1 = child1.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+            let _c1_t2 = child1.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+            let _c1_t3 = child1.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+
+            // Spawn child process 2, move it into child1's process group, and spawn 2 threads (3 tasks total in child2).
+            let child2 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child2, &child1.pid),
+                Ok(())
+            );
+            let _c2_t1 = child2.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+            let _c2_t2 = child2.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+
+            // Verify PidEntry::pgid_thread_groups() yields each distinct ThreadGroup once.
+            let scope = RcuReadScope::new();
+            let groups: Vec<_> = pgrp.pgid_thread_groups(&scope).collect();
+            assert_eq!(groups.len(), 2);
+            assert!(groups.contains(child1.thread_group()));
+            assert!(groups.contains(child2.thread_group()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_thread_group_remove_detaches_last_task() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+
+            // Spawn a child process in its own process group.
+            let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child, &child.pid),
+                Ok(())
+            );
+            let child_pid = child.get_pid();
+            let pgid_entry = kernel.pids.get(child_pid).unwrap();
+            let sid_entry = kernel.pids.get(current_task.get_pid()).unwrap();
+
+            // Spawn a second thread in the child process.
+            let extra_thread = child.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+
+            // Dropping the non-final thread leaves the thread group attached to PGID and SID.
+            drop(extra_thread);
+            let scope = RcuReadScope::new();
+            assert!(pgid_entry.pgid_thread_groups(&scope).any(|tg| tg.leader.id == child_pid));
+            assert!(sid_entry.sid_thread_groups(&scope).any(|tg| tg.leader.id == child_pid));
+
+            // Killing and dropping the final task detaches the thread group from PGID and SID.
+            child.thread_group().kill(ExitStatus::Exit(0), None);
+            drop(child);
+            assert!(!pgid_entry.pgid_thread_groups(&scope).any(|tg| tg.leader.id == child_pid));
+            assert!(!sid_entry.sid_thread_groups(&scope).any(|tg| tg.leader.id == child_pid));
+        })
+        .await;
+    }
 }

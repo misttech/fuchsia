@@ -913,13 +913,18 @@ mod tests {
     use super::*;
     use crate::tty_device_init;
     use starnix_core::fs::tmpfs::TmpFs;
+    use starnix_core::task::ExitStatus;
     use starnix_core::testing::*;
     use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use starnix_core::vfs::fs_args::MountParams;
     use starnix_core::vfs::{MountInfo, NamespaceNode, OpenAccessCheck};
+    use starnix_types::ownership::Releasable;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::file_mode::FileMode;
-    use starnix_uapi::signals::{SIGCHLD, SIGTTOU};
+    use starnix_uapi::signals::{
+        SIGCHLD, SIGCONT, SIGHUP, SIGINT, SIGQUIT, SIGTSTP, SIGTTOU, SigSet,
+    };
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     fn new_pts_fs(kernel: &Kernel) -> FileSystemHandle {
         let mut options = FileSystemOptions::default();
@@ -1510,6 +1515,298 @@ mod tests {
 
             // Data has not been echoed
             assert!(!has_data_ready_to_read(&pts));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_foreground_pgrp_persistence_and_signal_noop_on_exit() {
+        spawn_kernel_and_run(async |init| {
+            let kernel = init.kernel();
+            tty_device_init(kernel).expect("tty_device_init");
+
+            let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
+            task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            task1.thread_group().setsid().expect("setsid");
+            let task1_pgid = task1.thread_group().read().process_group.clone();
+
+            let fs = new_pts_fs(kernel);
+            let _opened_main = open_ptmx_and_unlock(init, &fs).expect("ptmx");
+            let opened_replica = open_file(&task1, &fs, "0".into()).expect("open replica");
+            set_controlling_terminal(&task1, &opened_replica, false)
+                .expect("set controlling terminal");
+
+            let terminal =
+                Arc::clone(&task1.thread_group().controlling_terminal().as_ref().unwrap().terminal);
+
+            // Spawn two tasks in a new foreground process group.
+            let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task2.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            task2.thread_group().setpgid(&task2, &task2, &task2.pid).expect("setpgid task2");
+            let task2_pgid = task2.thread_group().read().process_group.clone();
+            let task2_pgid_id = task2_pgid.id;
+
+            let task3 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task3.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            task1.thread_group().setpgid(&task1, &task3, &task2_pgid).expect("setpgid task3");
+
+            // Set task2's process group as the foreground process group.
+            ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &task2_pgid_id)
+                .expect("set foreground process group");
+            assert_eq!(ioctl::<i32>(&task1, &opened_replica, TIOCGPGRP, &0), Ok(task2_pgid_id));
+
+            // Mask SIGWINCH on all three tasks so default-ignore disposition does not discard it.
+            task1.write().set_signal_mask(SigSet::from(SIGWINCH));
+            task2.write().set_signal_mask(SigSet::from(SIGWINCH));
+            task3.write().set_signal_mask(SigSet::from(SIGWINCH));
+
+            // Deliver SIGWINCH to the foreground group while both tasks are alive.
+            terminal.send_signals(&[SIGWINCH]);
+            assert!(task2.thread_group().has_signal_queued(SIGWINCH));
+            assert!(task3.thread_group().has_signal_queued(SIGWINCH));
+            assert!(!task1.thread_group().has_signal_queued(SIGWINCH));
+
+            // Terminate the process group leader (task2) while task3 remains alive in the group.
+            task2.thread_group().kill(ExitStatus::Exit(0), None);
+            std::mem::drop(task2);
+
+            // Foreground PGID remains task2_pgid_id, and signals reach the surviving member task3.
+            assert_eq!(ioctl::<i32>(&task1, &opened_replica, TIOCGPGRP, &0), Ok(task2_pgid_id));
+            terminal.send_signals(&[SIGINT]);
+            assert!(task3.thread_group().has_signal_queued(SIGINT));
+            assert!(!task1.thread_group().has_signal_queued(SIGINT));
+
+            // Terminate the final member (task3) and reap both zombies so the foreground process
+            // group is completely reclaimed from PidTable.
+            task3.thread_group().kill(ExitStatus::Exit(0), None);
+            std::mem::drop(task3);
+            {
+                let mut pids = kernel.pids.lock();
+                for zombie in task1.thread_group().write().zombie_children.drain(..) {
+                    zombie.release(&mut pids);
+                }
+            }
+            assert_eq!(kernel.pids.get(task2_pgid_id), error!(ESRCH));
+
+            // Verify tcgetpgrp (TIOCGPGRP) still returns the exited group's PGID.
+            assert_eq!(ioctl::<i32>(&task1, &opened_replica, TIOCGPGRP, &0), Ok(task2_pgid_id));
+
+            // Verify signal dispatch to the exited foreground process group is a safe no-op.
+            terminal.send_signals(&[SIGINT, SIGQUIT, SIGTSTP, SIGWINCH, SIGHUP]);
+            assert!(!task1.thread_group().has_signal_queued(SIGINT));
+            assert!(!task1.thread_group().has_signal_queued(SIGQUIT));
+            assert!(!task1.thread_group().has_signal_queued(SIGTSTP));
+            assert!(!task1.thread_group().has_signal_queued(SIGWINCH));
+            assert!(!task1.thread_group().has_signal_queued(SIGHUP));
+
+            // Mask SIGTTOU on task1 and reclaim the foreground process group.
+            task1.write().set_signal_mask(SigSet::from(SIGTTOU) | SigSet::from(SIGWINCH));
+            ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &task1_pgid.id)
+                .expect("reclaim foreground process group");
+            assert_eq!(ioctl::<i32>(&task1, &opened_replica, TIOCGPGRP, &0), Ok(task1_pgid.id));
+
+            // Move foreground to another short-lived process group, exit it, and disassociate.
+            let task4 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task4.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            task4.thread_group().setpgid(&task4, &task4, &task4.pid).expect("setpgid task4");
+            let task4_pgid_id = task4.pid.id;
+            ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &task4_pgid_id)
+                .expect("set foreground to task4");
+            task4.thread_group().kill(ExitStatus::Exit(0), None);
+            std::mem::drop(task4);
+
+            terminal.disassociate_controlling_session();
+            assert!(task1.thread_group().controlling_terminal().is_none());
+            assert!(!task1.thread_group().has_signal_queued(SIGHUP));
+            assert!(!task1.thread_group().has_signal_queued(SIGCONT));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_concurrent_terminal_job_control_stress() {
+        spawn_kernel_and_run(async |init| {
+            let kernel = init.kernel();
+            tty_device_init(kernel).expect("tty_device_init");
+
+            let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
+            task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            task1.thread_group().setsid().expect("setsid task1");
+            task1.write().set_signal_mask(SigSet::from(SIGTTOU));
+            let task1_pgid = task1.thread_group().read().process_group.clone();
+
+            let child_a = task1.clone_task_for_test(0, Some(SIGCHLD));
+            child_a.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            child_a
+                .thread_group()
+                .setpgid(&child_a, &child_a, &child_a.pid)
+                .expect("setpgid child_a");
+            let child_a_pgid = child_a.pid.clone();
+
+            let child_b = task1.clone_task_for_test(0, Some(SIGCHLD));
+            child_b.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            child_b
+                .thread_group()
+                .setpgid(&child_b, &child_b, &child_b.pid)
+                .expect("setpgid child_b");
+            let child_b_pgid = child_b.pid.clone();
+
+            let child_m = task1.clone_task_for_test(0, Some(SIGCHLD));
+            child_m.running_state().mm.update(Some(init.mm().unwrap().clone()));
+
+            let fs = new_pts_fs(kernel);
+            let _opened_main = open_ptmx_and_unlock(init, &fs).expect("ptmx 0");
+            let opened_replica = open_file(&task1, &fs, "0".into()).expect("open replica 0");
+            set_controlling_terminal(&task1, &opened_replica, false)
+                .expect("set controlling terminal 0");
+            let terminal =
+                Arc::clone(&task1.thread_group().controlling_terminal().as_ref().unwrap().terminal);
+
+            // Create a second session leader and terminal to stress concurrent disassociation.
+            let task_s2 = init.clone_task_for_test(0, Some(SIGCHLD));
+            task_s2.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            task_s2.thread_group().setsid().expect("setsid task_s2");
+            task_s2.write().set_signal_mask(SigSet::from(SIGTTOU));
+            let task_s2_pgid = task_s2.pid.clone();
+
+            let _opened_main2 = open_ptmx_and_unlock(init, &fs).expect("ptmx 1");
+            let opened_replica2 = open_file(&task_s2, &fs, "1".into()).expect("open replica 1");
+            set_controlling_terminal(&task_s2, &opened_replica2, false)
+                .expect("set controlling terminal 1");
+            let terminal2 = Arc::clone(
+                &task_s2.thread_group().controlling_terminal().as_ref().unwrap().terminal,
+            );
+
+            let running = Arc::new(AtomicBool::new(true));
+
+            // Thread 1: Concurrently dispatch signals to the foreground process groups.
+            let sig_term1 = Arc::clone(&terminal);
+            let sig_term2 = Arc::clone(&terminal2);
+            let sig_running = Arc::clone(&running);
+            let signal_thread = std::thread::spawn(move || {
+                while sig_running.load(Ordering::Relaxed) {
+                    sig_term1.send_signals(&[SIGWINCH, SIGCONT]);
+                    sig_term2.send_signals(&[SIGWINCH, SIGCONT]);
+                }
+            });
+
+            // Thread 2: Concurrently read the foreground process group and verify PGID validity.
+            let get_tg1 = Arc::clone(task1.thread_group());
+            let get_term1 = Arc::clone(&terminal);
+            let get_running = Arc::clone(&running);
+            let valid_pgids = [task1_pgid.id, child_a_pgid.id, child_b_pgid.id];
+            let getter_thread = std::thread::spawn(move || {
+                while get_running.load(Ordering::Relaxed) {
+                    if let Ok(pgid) = get_tg1.get_foreground_process_group(&get_term1) {
+                        assert!(valid_pgids.contains(&pgid));
+                    }
+                }
+            });
+
+            // Thread 3: Concurrently invoke setsid on group leaders (acquiring PidTableLock).
+            let setsid_tg1 = Arc::clone(task1.thread_group());
+            let setsid_tga = Arc::clone(child_a.thread_group());
+            let setsid_running = Arc::clone(&running);
+            let setsid_thread = std::thread::spawn(move || {
+                while setsid_running.load(Ordering::Relaxed) {
+                    assert_eq!(setsid_tg1.setsid(), error!(EPERM));
+                    assert_eq!(setsid_tga.setsid(), error!(EPERM));
+                }
+            });
+
+            // Thread 4: Concurrently disassociate the controlling session on terminal2.
+            let disassoc_term2 = Arc::clone(&terminal2);
+            let disassoc_running = Arc::clone(&running);
+            let disassoc_thread = std::thread::spawn(move || {
+                while disassoc_running.load(Ordering::Relaxed) {
+                    disassoc_term2.disassociate_controlling_session();
+                }
+            });
+
+            // Main thread: Interleave TIOCSPGRP, setpgid task migration, and terminal attach/detach.
+            for _ in 0..75 {
+                let _ = ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &child_a_pgid.id);
+                task1
+                    .thread_group()
+                    .setpgid(&task1, &child_m, &child_a_pgid)
+                    .expect("migrate child_m to child_a");
+
+                let _ = ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &child_b_pgid.id);
+                task1
+                    .thread_group()
+                    .setpgid(&task1, &child_m, &child_b_pgid)
+                    .expect("migrate child_m to child_b");
+
+                let _ = ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &task1_pgid.id);
+
+                let _ = set_controlling_terminal(&task_s2, &opened_replica2, false);
+                let _ = task_s2.thread_group().set_foreground_process_group(
+                    &task_s2,
+                    &terminal2,
+                    &task_s2_pgid,
+                );
+                let _ = ioctl::<i32>(&task_s2, &opened_replica2, TIOCNOTTY, &0);
+            }
+
+            // Disassociate primary terminal while background threads are still active.
+            terminal.disassociate_controlling_session();
+
+            running.store(false, Ordering::Relaxed);
+            signal_thread.join().expect("signal_thread join");
+            getter_thread.join().expect("getter_thread join");
+            setsid_thread.join().expect("setsid_thread join");
+            disassoc_thread.join().expect("disassoc_thread join");
+
+            assert!(task1.thread_group().controlling_terminal().is_none());
+            assert!(task_s2.thread_group().controlling_terminal().is_none());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_tiocnotty_non_leader_only_detaches_caller() {
+        spawn_kernel_and_run(async |init| {
+            let kernel = init.kernel();
+            tty_device_init(kernel).expect("tty_device_init");
+
+            let leader = init.clone_task_for_test(0, Some(SIGCHLD));
+            leader.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            leader.thread_group().setsid().expect("setsid");
+
+            let fs = new_pts_fs(kernel);
+            let _opened_main = open_ptmx_and_unlock(init, &fs).expect("ptmx");
+            let opened_replica = open_file(&leader, &fs, "0".into()).expect("open replica");
+            set_controlling_terminal(&leader, &opened_replica, false)
+                .expect("set controlling terminal");
+
+            // Spawn a non-leader process in the same session.
+            let child = leader.clone_task_for_test(0, Some(SIGCHLD));
+            child.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            assert!(leader.thread_group().controlling_terminal().is_some());
+            assert!(child.thread_group().controlling_terminal().is_some());
+
+            let terminal = Arc::clone(
+                &leader.thread_group().controlling_terminal().as_ref().unwrap().terminal,
+            );
+
+            // Non-leader calling TIOCNOTTY only detaches its own controlling terminal without
+            // disassociating the session or signaling the foreground process group.
+            ioctl::<i32>(&child, &opened_replica, TIOCNOTTY, &0)
+                .expect("non-leader TIOCNOTTY should succeed");
+            assert!(child.thread_group().controlling_terminal().is_none());
+            assert!(leader.thread_group().controlling_terminal().is_some());
+            assert_eq!(terminal.read().controlling_session(), Some(&leader.pid));
+            assert!(!leader.thread_group().has_signal_queued(SIGHUP));
+            assert!(!child.thread_group().has_signal_queued(SIGHUP));
+
+            // A second TIOCNOTTY from the already-detached non-leader fails with ENOTTY.
+            assert_eq!(ioctl::<i32>(&child, &opened_replica, TIOCNOTTY, &0), error!(ENOTTY));
+
+            // Session leader calling TIOCNOTTY disassociates the entire session.
+            ioctl::<i32>(&leader, &opened_replica, TIOCNOTTY, &0)
+                .expect("leader TIOCNOTTY should succeed");
+            assert!(leader.thread_group().controlling_terminal().is_none());
+            assert!(terminal.read().controlling_session().is_none());
         })
         .await;
     }
