@@ -67,6 +67,10 @@ _ARG_PREFIXES_TO_IGNORE = (
     "--remote-worker-pool=",
     # Crash diagnostic / reproducers
     "-fcrash-diagnostics-dir=",
+    # ThinLTO cache directory is used by GN/Ninja for local incremental builds,
+    # whereas Bazel intentionally omits it as it is incompatible with action
+    # sandboxing and remote execution.
+    "-Wl,--thinlto-cache-dir=",
 )
 
 

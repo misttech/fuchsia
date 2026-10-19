@@ -9,6 +9,7 @@ import("//build/config/riscv64/riscv64.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/variant.gni")
 
+# LINT.IfChange(fat_lto_objects)
 config("fat-lto-objects") {
   if (!is_kernel) {
     configs = [
@@ -77,6 +78,9 @@ config("no-fat-lto-objects") {
   ]
 }
 
+# LINT.ThenChange(BUILD.bazel:fat_lto_objects)
+
+# LINT.IfChange(lto_workarounds)
 compiler_config("lto-workarounds") {
   visibility = [ ":*" ]
 
@@ -95,6 +99,9 @@ compiler_config("lto-workarounds") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:lto_workarounds)
+
+# LINT.IfChange(lto_whole_program_devirtualization)
 # This enables whole program devirtualization when LTO is enabled. Individual
 # binaries can opt-in to using this for LTO builds. This can be turned on safely
 # for self-contained binaries that do not expose the C++ ABI (such as the
@@ -131,6 +138,9 @@ compiler_config("no-lto-whole-program-devirtualization") {
   c_family_flags = [ "-fno-whole-program-vtables" ]
 }
 
+# LINT.ThenChange(BUILD.bazel:lto_whole_program_devirtualization)
+
+# LINT.IfChange(lto_rust_linker_plugin)
 # Enables linker plugin LTO.
 #
 # If an rlib is only ever going to get used later with a -Clto compilation then
@@ -162,6 +172,10 @@ config("lto-rust-linker-plugin") {
     ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:lto_rust_linker_plugin)
+
+# LINT.IfChange(lto)
 
 # This can be appended with:
 # ```
@@ -204,6 +218,10 @@ config("lto-if-compatible") {
     configs = [ ":lto" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:lto)
+
+# LINT.IfChange(thinlto)
 
 config("thinlto-clang") {
   cflags = [ "-flto=thin" ]
@@ -281,3 +299,4 @@ config("thinlto-if-compatible") {
     configs = [ ":thinlto" ]
   }
 }
+# LINT.ThenChange(BUILD.bazel:thinlto)

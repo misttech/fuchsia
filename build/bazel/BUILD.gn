@@ -427,6 +427,26 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/config/riscv64/riscv64.gni:riscv64_enable_vector)
+
+  # LINT.IfChange(lto)
+  declaration = "//build/config/lto/config.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "thinlto_jobs"
+      value = "$thinlto_jobs"
+      type = "string"
+      location = declaration
+    },
+    {
+      name = "fat_lto_objects"
+      value = fat_lto_objects
+      type = "bool"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/config/lto/config.gni:lto)
 }
 
 if (current_toolchain == default_toolchain) {

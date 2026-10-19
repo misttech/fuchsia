@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 declare_args() {
+  # LINT.IfChange(lto)
+
   # Number of parallel ThinLTO jobs.
   thinlto_jobs = 8
 
@@ -12,4 +14,6 @@ declare_args() {
   # Whether to enable -ffat-lto-objects in LTO builds.
   # https://llvm.org/docs/FatLTO.html
   fat_lto_objects = true
+
+  # LINT.ThenChange(//build/bazel/BUILD.gn:lto)
 }

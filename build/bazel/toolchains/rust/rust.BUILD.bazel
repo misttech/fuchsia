@@ -8,7 +8,16 @@ load("@//build/bazel/versioning:rustc_api_level.bzl", "get_rustc_api_level_flags
 load("@fuchsia_build_config//:defs.bzl", "build_config")
 load("@fuchsia_rules_common//build_flags:toolchain.bzl", "rust_toolchain_with_build_flags")
 load("@rules_rust//rust:toolchain.bzl", "rust_stdlib_filegroup", "rust_toolchain")
+load("@rules_rust//rust/private:lto.bzl", "rust_lto_flag")
 load("//:generated_constants.bzl", rust_constants = "constants")
+
+# LTO flags for Rust are managed via build_flags() in //build/config/lto.
+# Setting @rules_rust's LTO mode to "manual" prevents it from passing
+# `-Cembed-bitcode=no` by default, which conflicts with `-Clto=*`.
+rust_lto_flag(
+    name = "lto_manual",
+    build_setting_default = "manual",
+)
 
 host_os = build_config.host_os
 
@@ -214,6 +223,7 @@ rust_toolchain(
     extra_rustc_flags = _EXTRA_HOST_RUST_FLAGS,
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+    lto = "//:lto_manual",
     rust_doc = "//:bin/rustdoc",
     rust_std = "//:rust_std_linux_x64",
     rustc = "//:bin/rustc",
@@ -273,6 +283,7 @@ rust_toolchain(
     extra_rustc_flags = _EXTRA_HOST_RUST_FLAGS,
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+    lto = "//:lto_manual",
     rust_doc = "//:bin/rustdoc",
     rust_std = "//:rust_std_linux_arm64",
     rustc = "//:bin/rustc",
@@ -330,6 +341,7 @@ rust_toolchain(
     extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS,
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+    lto = "//:lto_manual",
     rust_doc = "//:bin/rustdoc",
     rust_std = "//:rust_std_fuchsia_x64",
     rustc = "//:bin/rustc",
@@ -392,6 +404,7 @@ rust_toolchain(
     ],
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+    lto = "//:lto_manual",
     rust_doc = "//:bin/rustdoc",
     rust_std = "//:rust_std_fuchsia_arm64",
     rustc = "//:bin/rustc",
@@ -458,6 +471,7 @@ rust_toolchain(
     ],
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+    lto = "//:lto_manual",
     rust_doc = "//:bin/rustdoc",
     rust_std = "//:rust_std_fuchsia_riscv64",
     rustc = "//:bin/rustc",
