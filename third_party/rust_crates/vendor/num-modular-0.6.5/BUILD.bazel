@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "num-modular",
     package_url = "https://github.com/cmpute/num-modular",
-    package_version = "0.6.4",
+    package_version = "0.6.5",
 )
 
 license(
@@ -69,5 +69,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.6.4",
+    version = "0.6.5",
 )

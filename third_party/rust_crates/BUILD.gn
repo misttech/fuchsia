@@ -15042,16 +15042,16 @@ rustc_library("num-iter-v0_1_45") {
   applicable_licenses = [ ":num-iter-v0_1_45.license" ]
 }
 
-license("num-modular-v0_6_4.license") {
+license("num-modular-v0_6_5.license") {
   public_package_name = "num_modular"
   license_files =
-      [ "//third_party/rust_crates/vendor/num-modular-0.6.4/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/num-modular-0.6.5/LICENSE" ]
 }
 
-rustc_library("num-modular-v0_6_4") {
+rustc_library("num-modular-v0_6_5") {
   crate_name = "num_modular"
-  source_root = "//third_party/rust_crates/vendor/num-modular-0.6.4/src/lib.rs"
-  output_name = "num_modular-2b5a187a8bc39172"
+  source_root = "//third_party/rust_crates/vendor/num-modular-0.6.5/src/lib.rs"
+  output_name = "num_modular-e6e89582dce4c7"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15063,13 +15063,13 @@ rustc_library("num-modular-v0_6_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2b5a187a8bc39172",
-    "-Cextra-filename=-2b5a187a8bc39172",
+    "-Cmetadata=e6e89582dce4c7",
+    "-Cextra-filename=-e6e89582dce4c7",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":num-modular-v0_6_4.license" ]
+  applicable_licenses = [ ":num-modular-v0_6_5.license" ]
 }
 
 license("num-order-v1_2_0.license") {
@@ -15087,7 +15087,7 @@ rustc_library("num-order-v1_2_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":num-modular-v0_6_4" ]
+  deps += [ ":num-modular-v0_6_5" ]
 
   rustenv = []
 

@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "1.2.0",
     deps = [
-        "//third_party/rust_crates/vendor/num-modular-0.6.4:num_modular",
+        "//third_party/rust_crates/vendor/num-modular-0.6.5:num_modular",
     ],
 )
