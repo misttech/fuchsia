@@ -277,6 +277,38 @@ async fn serve_recording<D: DeliveryHandler>(
     }
 }
 
+/// Runs the FIDL request loop for a verifier-backed child `MapperSession` where the caller
+/// (`BlobPagerAndVerifier`) owns the `zx::Pager` and handles `CreateVmo`, while the driver
+/// processes `mapping_vmo` and services `child_port` page faults via the parent's `Verifier`.
+async fn run_child_mapper_session_loop<D: DeliveryHandler>(
+    session: ServerEnd<fblock::MapperSessionMarker>,
+    mapping_vmo: zx::Vmo,
+    files: Arc<Files<dyn BlockService, D>>,
+) -> Result<(), Error> {
+    let _mapper_vmo_thread = MapperVmoThread::spawn(&mapping_vmo, files)?;
+    let mut stream = session.into_stream();
+    while let Some(request) = stream.try_next().await? {
+        match request {
+            fblock::MapperSessionRequest::CreateVmo { responder, .. } => {
+                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            }
+            fblock::MapperSessionRequest::CloseVmo { .. } => {}
+            fblock::MapperSessionRequest::OpenChildSession { responder, .. } => {
+                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            }
+            fblock::MapperSessionRequest::RecordProfile { responder, .. } => {
+                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            }
+            fblock::MapperSessionRequest::Close { responder } => {
+                responder.send(Ok(()))?;
+                break;
+            }
+            fblock::MapperSessionRequest::_UnknownMethod { .. } => {}
+        }
+    }
+    Ok(())
+}
+
 async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
     handler: Arc<M>,
     service: Arc<dyn BlockService>,
@@ -307,6 +339,11 @@ async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
                     responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
                 }
             }
+            fblock::MapperSessionRequest::CloseVmo { key, .. } => {
+                if let Some(direct_pager) = direct_pager.as_ref() {
+                    direct_pager.vmos.lock().remove(&key);
+                }
+            }
             fblock::MapperSessionRequest::OpenChildSession {
                 session,
                 mapping_vmo,
@@ -323,6 +360,30 @@ async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
                         continue;
                     }
                 };
+                if port.is_some() && delivery_queue.is_none() && direct_pager.is_none() {
+                    // When `port` is provided without a new `delivery_queue` on a verifier-backed
+                    // parent session, the child session shares the parent's `Verifier` and
+                    // delivery queue so parent blob chunks are verified before child pages are
+                    // supplied.
+                    let child_port = port.unwrap();
+                    let child_files = Arc::new(Files::new_with_shared_handler(
+                        service.clone(),
+                        files.delivery_handler().clone(),
+                        child_port,
+                        Some((parent_key, parent_file)),
+                    ));
+                    let pager_thread = child_files.spawn_pager_thread();
+                    scope.spawn(async move {
+                        let _pager_thread = pager_thread;
+                        if let Err(e) =
+                            run_child_mapper_session_loop(session, mapping_vmo, child_files).await
+                        {
+                            log::warn!(e:?; "Child mapper session failed");
+                        }
+                    });
+                    responder.send(Ok(()))?;
+                    continue;
+                }
                 let child_service = Arc::new(ChildBlockService::new(service.clone(), parent_file));
                 match serve_mapper_session(
                     handler.clone(),

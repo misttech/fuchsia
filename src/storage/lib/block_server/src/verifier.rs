@@ -50,7 +50,78 @@ impl DeliveryHandler for Verifier {
             committed_len: 0,
             delivered_len: 0,
             data: Vec::new(),
+            child_target: None,
         }
+    }
+
+    /// Returns a [`Buffer`] configured to deliver parent blob chunks for a child file extent via
+    /// [`DeliveryCommand::ChildData`].
+    fn get_child_page_request(
+        self: &Arc<Self>,
+        parent_key: u64,
+        child_key: u64,
+        child_target_offset: u64,
+        parent_byte_range: Range<u64>,
+    ) -> Buffer {
+        Buffer {
+            verifier: Arc::clone(self),
+            key: parent_key,
+            read_range: parent_byte_range.clone(),
+            read_alignment: 0,
+            committed_len: 0,
+            delivered_len: 0,
+            data: Vec::new(),
+            child_target: Some(ChildTarget { child_key, child_target_offset, parent_byte_range }),
+        }
+    }
+
+    /// Pushes a header-only [`DeliveryCommand::ChildInlineTail`] command onto the delivery queue
+    /// so the verifier can supply the child tail page from the verified parent VMO.
+    fn deliver_child_inline_tail(
+        self: &Arc<Self>,
+        parent_key: u64,
+        parent_byte_offset: u64,
+        child_key: u64,
+        child_target_offset: u64,
+        tail_length: u32,
+    ) {
+        let mut sender = self.sender.lock();
+        if let Some(sender) = sender.as_mut() {
+            let cmd = DeliveryCommand::ChildInlineTail {
+                parent_key,
+                parent_byte_offset,
+                child_key,
+                child_target_offset,
+                tail_length,
+            };
+            let _ = sender.push(cmd.into());
+        }
+    }
+
+    /// Pushes a [`DeliveryCommand::ChildData`] command with `length == 0` onto the delivery queue
+    /// to supply a zero-filled sparse range to `child_key`.
+    fn deliver_child_sparse(
+        &self,
+        parent_key: u64,
+        child_key: u64,
+        child_target_offset: u64,
+        child_length: u64,
+    ) -> Result<(), anyhow::Error> {
+        let mut sender = self.sender.lock();
+        if let Some(sender) = sender.as_mut() {
+            let cmd = DeliveryCommand::ChildData {
+                parent_key,
+                parent_offset: 0,
+                offset: 0,
+                length: 0,
+                child_key,
+                child_target_offset,
+                in_chunk_offset: 0,
+                child_length: child_length as u32,
+            };
+            sender.push(cmd.into())?;
+        }
+        Ok(())
     }
 
     /// Registers a blob's Merkle tree leaf hashes with the verifier via the delivery queue.
@@ -60,8 +131,8 @@ impl DeliveryHandler for Verifier {
         merkle_leaves: &[[u8; 32]],
         read_alignment: usize,
     ) -> Result<(), anyhow::Error> {
-        let mut sender_guard = self.sender.lock();
-        if let Some(sender) = sender_guard.as_mut() {
+        let mut sender = self.sender.lock();
+        if let Some(sender) = sender.as_mut() {
             let leaf_bytes: &[u8] = merkle_leaves.as_flattened();
             let mut payload = sender.reserve_payload(leaf_bytes.len())?;
             payload.data().copy_from_slice(leaf_bytes);
@@ -75,6 +146,17 @@ impl DeliveryHandler for Verifier {
         }
         Ok(())
     }
+}
+
+/// Target metadata for a [`Buffer`] servicing a page request on a child file mapped over a
+/// parent blob.
+struct ChildTarget {
+    /// Key identifying the child VMO within the child session.
+    child_key: u64,
+    /// Starting page-aligned logical byte offset in the child VMO for this request.
+    child_target_offset: u64,
+    /// Byte range in the parent blob corresponding to this child extent slice.
+    parent_byte_range: Range<u64>,
 }
 
 /// Implementation of [`PageRequest`] for verifier deliveries that forwards
@@ -91,6 +173,7 @@ pub struct Buffer {
     // Bytes delivered to the verifier queue so far.
     delivered_len: usize,
     data: Vec<u8>,
+    child_target: Option<ChildTarget>,
 }
 
 impl Buffer {
@@ -99,8 +182,8 @@ impl Buffer {
         let chunk_data = &self.data[self.delivered_len..self.delivered_len + size];
         let offset = self.read_range.start + self.delivered_len as u64;
 
-        let mut sender_guard = self.verifier.sender.lock();
-        if let Some(sender) = sender_guard.as_mut() {
+        let mut sender = self.verifier.sender.lock();
+        if let Some(sender) = sender.as_mut() {
             let page_size = zx::system_get_page_size() as usize;
             let aligned_size = size.next_multiple_of(page_size);
             let mut payload = sender.reserve_payload(aligned_size).map_err(|e| {
@@ -111,11 +194,31 @@ impl Buffer {
             let payload_data = payload.data();
             payload_data.subslice_mut(0..size).copy_from_slice(chunk_data);
             payload_data.subslice_mut(size..aligned_size).fill(0);
-            let cmd = DeliveryCommand::Data {
-                key: self.key,
-                target_offset: offset,
-                length: aligned_size as u32,
-                offset: payload.offset(),
+            let cmd = if let Some(target) = &self.child_target {
+                let chunk_end = offset + aligned_size as u64;
+                let slice_start = std::cmp::max(offset, target.parent_byte_range.start);
+                let slice_end = std::cmp::min(chunk_end, target.parent_byte_range.end);
+                let in_chunk_offset = (slice_start - offset) as u32;
+                let child_target_offset =
+                    target.child_target_offset + (slice_start - target.parent_byte_range.start);
+                let child_length = (slice_end.saturating_sub(slice_start)) as u32;
+                DeliveryCommand::ChildData {
+                    parent_key: self.key,
+                    parent_offset: offset,
+                    offset: payload.offset(),
+                    length: aligned_size as u32,
+                    child_key: target.child_key,
+                    child_target_offset,
+                    in_chunk_offset,
+                    child_length,
+                }
+            } else {
+                DeliveryCommand::Data {
+                    key: self.key,
+                    target_offset: offset,
+                    length: aligned_size as u32,
+                    offset: payload.offset(),
+                }
             };
             payload.commit(cmd.into()).map_err(|_| ChunkedArchiveError::IntegrityError)?;
         }

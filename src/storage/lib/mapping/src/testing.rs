@@ -233,3 +233,21 @@ where
         (self.0)(key, range)
     }
 }
+
+/// Serializes uncompressed `BlobMetadata` with the given `merkle_leaves` for testing.
+pub fn serialize_uncompressed_blob_metadata(merkle_leaves: &[[u8; 32]]) -> Vec<u8> {
+    use bincode::Options as _;
+    use blob_metadata::{BlobFormat, BlobMetadata};
+    use byteorder::{LittleEndian, WriteBytesExt as _};
+    let metadata = BlobMetadata {
+        merkle_leaves: merkle_leaves.to_vec().into(),
+        format: BlobFormat::Uncompressed,
+    };
+    let mut bytes = Vec::new();
+    bytes.write_u32::<LittleEndian>(crate::file::BLOB_METADATA_VERSION).unwrap();
+    bincode::DefaultOptions::new()
+        .allow_trailing_bytes()
+        .serialize_into(&mut bytes, &metadata)
+        .unwrap();
+    bytes
+}

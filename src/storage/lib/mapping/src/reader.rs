@@ -420,6 +420,7 @@ pub(crate) mod tests {
         allocator: Arc<BufferAllocator>,
         device_data: Mutex<Vec<u8>>,
         cap: Option<usize>,
+        read_count: AtomicUsize,
     }
 
     impl FakeBlockService {
@@ -438,7 +439,16 @@ pub(crate) mod tests {
         ) -> Self {
             let source = BufferSource::new(pool_size);
             let allocator = Arc::new(BufferAllocator::new(4096, source));
-            Self { allocator, device_data: Mutex::new(device_data), cap }
+            Self {
+                allocator,
+                device_data: Mutex::new(device_data),
+                cap,
+                read_count: AtomicUsize::new(0),
+            }
+        }
+
+        pub(crate) fn read_count(&self) -> usize {
+            self.read_count.load(Ordering::Relaxed)
         }
     }
 
@@ -458,6 +468,7 @@ pub(crate) mod tests {
             mut dest_buffer: OwnedBuffer,
             on_complete: Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>,
         ) -> Result<(), Error> {
+            self.read_count.fetch_add(1, Ordering::Relaxed);
             assert_eq!(
                 device_offset % 512,
                 0,

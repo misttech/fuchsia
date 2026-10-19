@@ -589,6 +589,11 @@ open protocol MapperSession {
         vmo zx.Handle:VMO;
     }) error zx.Status;
 
+    /// Closes the pager-backed VMO associated with `key`.
+    flexible CloseVmo(struct {
+        key uint64;
+    });
+
     /// Opens a child mapper session whose reads map through `parent_key` in the parent session.
     /// When a parent session is closed, all child sessions opened from it are closed as well.
     flexible OpenChildSession(resource struct {

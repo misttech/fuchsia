@@ -219,6 +219,7 @@ impl DeliveryQueueProcessor {
                 let leaf_data = raw_msg.payload_slice(offset, length);
                 provider.register_blob(key, leaf_data, read_alignment as usize)?;
             }
+            _ => {}
         }
         Ok(())
     }
