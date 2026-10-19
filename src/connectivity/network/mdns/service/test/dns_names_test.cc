@@ -158,12 +158,37 @@ TEST(MdnsNamesTest, IsValidHostName) {
   // Empty.
   EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName()));
 
+  // Empty labels.
+  EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName(".")));
+
+  // Empty labels.
+  EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName("..")));
+
+  // Empty label.
+  EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName("gopher..")));
+
+  // Empty label.
+  EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName("gopher..cow")));
+
+  // Empty initial label.
+  EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName(".gopher")));
+
+  // Embedded dot in initial label.
+  EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName("gopher.cow", 10)));
+
   // Too long.
   EXPECT_FALSE(MdnsNames::IsValidHostName(
       DnsName("012345678901234567890123456789012345678901234567890123456789012."
               "012345678901234567890123456789012345678901234567890123456789012."
               "012345678901234567890123456789012345678901234567890123456789012."
               "01234567890123456789012345678901234567890123456789012345")));
+
+  // Label too long.
+  EXPECT_FALSE(MdnsNames::IsValidHostName(
+      DnsName("0123456789012345678901234567890123456789012345678901234567890123")));
+  EXPECT_FALSE(MdnsNames::IsValidHostName(
+      DnsName("gopher.0123456789012345678901234567890123456789012345678901234567890123")));
+  EXPECT_FALSE(MdnsNames::IsValidHostName(DnsName(std::string(192, 'a'))));
 }
 
 // Tests |IsValidServiceName|.
@@ -181,7 +206,11 @@ TEST(MdnsNamesTest, IsValidServiceName) {
   EXPECT_FALSE(MdnsNames::IsValidServiceName(DnsName("_printer._qfc.")));
 
   // Empty label.
-  EXPECT_FALSE(MdnsNames::IsValidServiceName(DnsName(")._tcp.")));
+  EXPECT_FALSE(MdnsNames::IsValidServiceName(DnsName("._tcp.")));
+  EXPECT_FALSE(MdnsNames::IsValidServiceName(DnsName("_printer._tcp..")));
+
+  // Embedded dot in initial label.
+  EXPECT_FALSE(MdnsNames::IsValidServiceName(DnsName("_pretty.printer._tcp.", 15)));
 
   // Label too long.
   EXPECT_FALSE(MdnsNames::IsValidServiceName(DnsName("_0123456789012345._tcp.")));

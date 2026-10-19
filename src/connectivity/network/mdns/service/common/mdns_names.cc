@@ -171,9 +171,32 @@ bool MdnsNames::MatchServiceName(const DnsName& name, const DnsName& service_nam
 
 // static
 bool MdnsNames::IsValidHostName(const DnsName& host_name) {
-  // A host name has one or more labels. A complete host name with separators must be at most
-  // 247 characters long (254 minus 6 to accommodate a "local." suffix).
-  return !host_name.empty() && host_name.length() <= kMaxHostNameLength;
+  // A host name has one or more labels, each of which is [1..63] characters long and contains no
+  // '.'s. A complete host name with separators must be at most 248 characters long (254 minus 6 to
+  // accommodate a "local." suffix).
+  if (host_name.empty() || host_name.length() > kMaxHostNameLength) {
+    return false;
+  }
+
+  auto label = host_name.first_label_view();
+  if (cpp23::contains(label, kLabelSeparator)) {
+    // `DnsName` allows '.' in the first label, but it is not allowed in host names.
+    return false;
+  }
+
+  // Check the aggregate size, because `next_label_view` can return an empty view for a number of
+  // reasons.
+  size_t size_by_labels = 0;
+
+  for (; !label.empty(); label = host_name.next_label_view(label)) {
+    if (label.size() > kMaxLabelLength) {
+      return false;
+    }
+
+    size_by_labels += label.size() + 1;
+  }
+
+  return size_by_labels == host_name.length();
 }
 
 // static
@@ -183,7 +206,8 @@ bool MdnsNames::IsValidServiceName(const DnsName& service_name) {
   // second label must be "_tcp" or "_udp".
 
   auto service_name_label_view = service_name.first_label_view();
-  if (service_name_label_view.empty()) {
+  if (service_name_label_view.empty() ||
+      cpp23::contains(service_name_label_view, kLabelSeparator)) {
     return false;
   }
 
@@ -196,8 +220,11 @@ bool MdnsNames::IsValidServiceName(const DnsName& service_name) {
     return false;
   }
 
-  return service_name_label_view.length() >= 1 && service_name_label_view.length() <= 16 &&
-         service_name_label_view[0] == '_' &&
+  // Check the aggregate size, because `next_label_view` can return an empty view for a number of
+  // reasons.
+  return service_name_label_view.size() <= 16 && service_name_label_view[0] == '_' &&
+         (service_name_label_view.size() + protocol_label_view.size() + 2 ==
+          service_name.length()) &&
          (protocol_label_view == kTcpSuffix || protocol_label_view == kUdpSuffix);
 }
 

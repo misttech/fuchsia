@@ -8,6 +8,7 @@
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
 #include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 #include "src/connectivity/network/mdns/service/mdns.h"
+#include "src/connectivity/network/mdns/service/services/host_name_resolver_service_impl.h"
 #include "src/connectivity/network/mdns/service/services/proxy_host_publisher_service_impl.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 
@@ -988,6 +989,37 @@ TEST_F(MdnsUnitTests, DeferAndUndeferMessages) {
   ExpectSendMessageCalled(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
 
   // Clean up.
+  under_test().Stop();
+  RunLoopUntilIdle();
+}
+
+// Tests that |HostNameResolver.ResolveHostName| rejects a host name with a label exceeding 63
+// bytes (e.g., 192 bytes, which would otherwise be encoded as a 0xC0 compression pointer).
+TEST_F(MdnsUnitTests, ResolveHostNameInvalidHostName) {
+  SetHasInterfaces(true);
+  Start(false);
+
+  RunLoopUntilIdle();
+  ExpectSendMessageNotCalled();
+
+  fuchsia::net::mdns::HostNameResolverPtr service_ptr;
+  bool deleter_called = false;
+  HostNameResolverServiceImpl service_impl(under_test(), service_ptr.NewRequest(),
+                                           [&deleter_called]() { deleter_called = true; });
+  RunLoopUntilIdle();
+
+  bool callback_called = false;
+  service_ptr->ResolveHostName(
+      std::string(192, 'a'), zx::sec(1).get(), {},
+      [&callback_called](std::vector<fuchsia::net::mdns::HostAddress> addresses) {
+        callback_called = true;
+      });
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(deleter_called);
+  EXPECT_FALSE(callback_called);
+  ExpectSendMessageNotCalled();
+
   under_test().Stop();
   RunLoopUntilIdle();
 }
