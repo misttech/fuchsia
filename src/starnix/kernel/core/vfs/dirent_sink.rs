@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use smallvec::SmallVec;
 use std::mem;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -12,7 +13,7 @@ use starnix_uapi::errors::{ENOSPC, Errno};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::user_address::UserAddress;
-use starnix_uapi::{error, ino_t, off_t};
+use starnix_uapi::{NAME_MAX, error, ino_t, off_t};
 
 #[derive(Debug, Default, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub struct DirectoryEntryType(u8);
@@ -63,6 +64,11 @@ struct DirentHeader64 {
 }
 
 const DIRENT64_HEADER_SIZE: usize = mem::size_of::<DirentHeader64>() - DIRENT64_PADDING_SIZE;
+
+// Large enough for a 32-bit or 64-bit dirent whose name is at most NAME_MAX bytes.
+const DIRENT_BUFFER_SIZE: usize =
+    (DIRENT64_HEADER_SIZE + NAME_MAX as usize + 1).next_multiple_of(8);
+type DirentBuffer = SmallVec<[u8; DIRENT_BUFFER_SIZE]>;
 
 pub trait DirentSink {
     /// Add the given directory entry to this buffer.
@@ -167,7 +173,7 @@ impl DirentSink for DirentSink64<'_> {
     ) -> Result<(), Errno> {
         let content_size = DIRENT64_HEADER_SIZE + name.len();
         let entry_size = round_up_to_increment(content_size + 1, 8)?; // +1 for the null terminator.
-        let mut buffer = Vec::with_capacity(entry_size);
+        let mut buffer = DirentBuffer::with_capacity(entry_size);
         let header = DirentHeader64 {
             d_ino: inode_num,
             d_off: offset,
@@ -197,18 +203,23 @@ pub use x86_64::*;
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64 {
-    use super::{BaseDirentSink, DirectoryEntryType, DirentSink};
+    use super::{BaseDirentSink, DirectoryEntryType, DirentBuffer, DirentSink};
     use crate::task::CurrentTask;
     use crate::vfs::FsStr;
     use starnix_uapi::errors::Errno;
     use starnix_uapi::math::round_up_to_increment;
     use starnix_uapi::user_address::UserAddress;
-    use starnix_uapi::{ino_t, off_t};
+    use starnix_uapi::{NAME_MAX, ino_t, off_t};
     use std::mem;
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
     const DIRENT32_PADDING_SIZE: usize = 6;
     const DIRENT32_HEADER_SIZE: usize = mem::size_of::<DirentHeader32>() - DIRENT32_PADDING_SIZE;
+
+    const _: () = assert!(
+        (DIRENT32_HEADER_SIZE + NAME_MAX as usize + 2).next_multiple_of(8)
+            <= super::DIRENT_BUFFER_SIZE
+    );
 
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone, IntoBytes, KnownLayout, FromBytes, Immutable)]
@@ -259,7 +270,7 @@ mod x86_64 {
             let content_size = DIRENT32_HEADER_SIZE + name.len();
             // +1 for the null terminator, +1 for the type.
             let entry_size = round_up_to_increment(content_size + 2, 8)?;
-            let mut buffer = Vec::with_capacity(entry_size);
+            let mut buffer = DirentBuffer::with_capacity(entry_size);
             let header = DirentHeader32 {
                 d_ino: inode_num,
                 d_off: offset,
@@ -282,5 +293,86 @@ mod x86_64 {
         fn user_capacity(&self) -> Option<usize> {
             self.base.user_capacity()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mm::{MemoryAccessorExt, PAGE_SIZE};
+    use crate::testing::{map_memory, spawn_kernel_and_run};
+
+    const SHORT_RECLEN: usize = 24;
+    const LONG_RECLEN: usize = 288;
+
+    #[::fuchsia::test]
+    fn dirent_buffer_inline_capacity() {
+        let max_entry =
+            round_up_to_increment(DIRENT64_HEADER_SIZE + NAME_MAX as usize + 1, 8).unwrap();
+        assert!(!DirentBuffer::with_capacity(max_entry).spilled());
+        assert!(DirentBuffer::with_capacity(max_entry + 8).spilled());
+    }
+
+    #[::fuchsia::test]
+    async fn test_dirent_sink64_add() {
+        spawn_kernel_and_run(async |current_task| {
+            let user_buffer = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let mut offset = 0;
+            let mut sink =
+                DirentSink64::new(current_task, &mut offset, user_buffer, *PAGE_SIZE as usize);
+
+            // Short entry (fits in stack buffer, padded with zeros to 8-byte alignment).
+            sink.add(42, 1, DirectoryEntryType::REG, "a".into()).expect("add short entry");
+            assert_eq!(sink.offset(), 1);
+
+            // Max standard filename (NAME_MAX = 255 -> 280-byte entry, exact stack buffer size).
+            let max_name = vec![b'x'; NAME_MAX as usize];
+            sink.add(43, 2, DirectoryEntryType::DIR, max_name.as_slice().into())
+                .expect("add NAME_MAX entry");
+            assert_eq!(sink.offset(), 2);
+
+            // Oversized filename (> NAME_MAX -> exercises heap fallback).
+            let long_name = vec![b'y'; NAME_MAX as usize + 10];
+            sink.add(44, 3, DirectoryEntryType::LNK, long_name.as_slice().into())
+                .expect("add oversized entry");
+            assert_eq!(sink.offset(), 3);
+
+            let total_written = sink.map_result_with_actual(Ok(())).expect("map_result");
+            assert_eq!(total_written, SHORT_RECLEN + DIRENT_BUFFER_SIZE + LONG_RECLEN);
+
+            let bytes = current_task.read_memory_to_vec(user_buffer, total_written).expect("read");
+
+            let (hdr1, _) = DirentHeader64::read_from_prefix(&bytes[..SHORT_RECLEN]).unwrap();
+            assert_eq!(hdr1.d_ino, 42);
+            assert_eq!(hdr1.d_off, 1);
+            assert_eq!(hdr1.d_reclen, SHORT_RECLEN as u16);
+            assert_eq!(hdr1.d_type, DirectoryEntryType::REG.bits());
+            assert_eq!(&bytes[DIRENT64_HEADER_SIZE..SHORT_RECLEN], b"a\0\0\0\0");
+
+            let entry2 = &bytes[SHORT_RECLEN..SHORT_RECLEN + DIRENT_BUFFER_SIZE];
+            let (hdr2, _) = DirentHeader64::read_from_prefix(entry2).unwrap();
+            assert_eq!(hdr2.d_ino, 43);
+            assert_eq!(hdr2.d_off, 2);
+            assert_eq!(hdr2.d_reclen, DIRENT_BUFFER_SIZE as u16);
+            assert_eq!(hdr2.d_type, DirectoryEntryType::DIR.bits());
+            assert_eq!(
+                &entry2[DIRENT64_HEADER_SIZE..DIRENT64_HEADER_SIZE + max_name.len()],
+                &max_name[..]
+            );
+            assert!(entry2[DIRENT64_HEADER_SIZE + max_name.len()..].iter().all(|&b| b == 0));
+
+            let entry3 = &bytes[SHORT_RECLEN + DIRENT_BUFFER_SIZE..];
+            let (hdr3, _) = DirentHeader64::read_from_prefix(entry3).unwrap();
+            assert_eq!(hdr3.d_ino, 44);
+            assert_eq!(hdr3.d_off, 3);
+            assert_eq!(hdr3.d_reclen, LONG_RECLEN as u16);
+            assert_eq!(hdr3.d_type, DirectoryEntryType::LNK.bits());
+            assert_eq!(
+                &entry3[DIRENT64_HEADER_SIZE..DIRENT64_HEADER_SIZE + long_name.len()],
+                &long_name[..]
+            );
+            assert!(entry3[DIRENT64_HEADER_SIZE + long_name.len()..].iter().all(|&b| b == 0));
+        })
+        .await;
     }
 }
