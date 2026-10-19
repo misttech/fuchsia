@@ -69,13 +69,3 @@ pub unsafe extern "C" fn rust_timer_dispatcher_on_timer_fired(disp: *const Timer
         OnTimerFiredAction::RetainRef => core::mem::forget(disp),
     }
 }
-
-/// # Safety
-///
-/// `disp` must be a valid reference to an initialized `TimerDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_timer_dispatcher_get_info(
-    disp: &TimerDispatcher,
-) -> zx_types::zx_info_timer_t {
-    disp.get_info()
-}

@@ -61,7 +61,3 @@ TimerDispatcher::TimerDispatcher(uint32_t options, zx_clock_t clock_id) : Dispat
 
 IMPLEMENT_DISPATCHER_RUST_STATE(TimerDispatcher, rust_timer_dispatcher_state_get_lock,
                                 rust_timer_dispatcher_state_destroy)
-
-void TimerDispatcher::OnTimerFired() { rust_timer_dispatcher_on_timer_fired(this); }
-
-zx_info_timer_t TimerDispatcher::GetInfo() const { return rust_timer_dispatcher_get_info(this); }

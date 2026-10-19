@@ -36,7 +36,6 @@ void rust_timer_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_timer_dispatcher_state_get_lock(const void* state);
 void rust_timer_dispatcher_on_zero_handles(const TimerDispatcher* disp);
 void rust_timer_dispatcher_on_timer_fired(const TimerDispatcher* disp);
-zx_info_timer_t rust_timer_dispatcher_get_info(const TimerDispatcher* disp);
 
 }  // extern "C"
 
@@ -54,11 +53,6 @@ class TimerDispatcher final : public Dispatcher {
   zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
     return ZX_ERR_NOT_SUPPORTED;
   }
-
-  // Timer callback.
-  void OnTimerFired();
-
-  zx_info_timer_t GetInfo() const;
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;
