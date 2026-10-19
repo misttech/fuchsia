@@ -18,5 +18,3 @@ GuestDispatcher::GuestDispatcher(ktl::unique_ptr<Guest> guest) : Dispatcher(0u) 
 
 IMPLEMENT_DISPATCHER_RUST_STATE(GuestDispatcher, rust_guest_dispatcher_state_get_lock,
                                 rust_guest_dispatcher_state_destroy)
-
-Guest& GuestDispatcher::guest() const { return *rust_guest_dispatcher_get_guest(this); }

@@ -27,7 +27,6 @@ zx_status_t cpp_guest_dispatcher_create(
 void rust_guest_dispatcher_state_init(void* state, void* disp, Guest* guest);
 void rust_guest_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_guest_dispatcher_state_get_lock(const void* state);
-Guest* rust_guest_dispatcher_get_guest(const GuestDispatcher* disp);
 }
 
 class GuestDispatcher final : public Dispatcher {
@@ -46,8 +45,6 @@ class GuestDispatcher final : public Dispatcher {
   zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
     return ZX_ERR_NOT_SUPPORTED;
   }
-
-  Guest& guest() const;
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;

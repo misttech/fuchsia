@@ -43,9 +43,3 @@ pub unsafe extern "C" fn rust_guest_dispatcher_state_init(
         let _ = pin_init::PinInit::__pinned_init(init, state);
     }
 }
-
-/// Returns the raw pointer to the underlying C++ `Guest` object.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_guest_dispatcher_get_guest(disp: &GuestDispatcher) -> *mut Guest {
-    disp.guest().as_ffi_mut()
-}
