@@ -136,7 +136,7 @@ struct OutstandingUpdate {
 #[derive(Debug)]
 pub(crate) struct MdnsResultMessage {
     update_id: ot::SrpServerServiceUpdateId,
-    result: Result<(), anyhow::Error>,
+    result: Result<(), ot::Error>,
 }
 
 #[derive(Debug)]
@@ -153,7 +153,7 @@ impl UpdateTracker {
         Self { sender, update_id }
     }
 
-    fn resolve(mut self, result: Result<(), anyhow::Error>) {
+    fn resolve(mut self, result: Result<(), ot::Error>) {
         if let Some(update_id) = self.update_id.take() {
             let _ = self.sender.unbounded_send(MdnsResultMessage { update_id, result });
         }
@@ -368,7 +368,9 @@ impl AdvertisingProxy {
 
     /// Processes an mDNS result message received from the channel
     pub(crate) fn process_mdns_result(&self, instance: &ot::Instance, msg: MdnsResultMessage) {
-        self.inner.lock().on_mdns_publish_result(instance, msg.update_id, msg.result);
+        self.inner.lock().on_mdns_publish_result(msg.update_id, msg.result, |id, err| {
+            instance.srp_server_handle_service_update_result(id, err)
+        });
     }
 }
 
@@ -444,32 +446,25 @@ impl<T: AsRef<ot::Instance> + AsRef<Option<AdvertisingProxy>>> MdnsResultPollerE
 
 impl AdvertisingProxyInner {
     /// Handles mDNS publish results and updates outstanding update tracking.
-    #[allow(dead_code)] // Called by process_mdns_result
-    fn on_mdns_publish_result(
+    fn on_mdns_publish_result<F: FnOnce(ot::SrpServerServiceUpdateId, Result<(), ot::Error>)>(
         &mut self,
-        instance: &ot::Instance,
         update_id: ot::SrpServerServiceUpdateId,
-        error: Result<(), anyhow::Error>,
+        result: Result<(), ot::Error>,
+        handle_result: F,
     ) {
         if let Some(update) = self.outstanding_updates.get_mut(&update_id) {
             update.callback_count -= 1;
-            if error.is_err() || update.callback_count == 0 {
-                // Either we have an error or this is the last callback
-                let ot_error = match error {
-                    Ok(()) => Ok(()),
-                    Err(_) => Err(ot::Error::Failed),
-                };
-
+            if result.is_err() || update.callback_count == 0 {
                 // Remove the update before notifying OpenThread
                 let update = self.outstanding_updates.remove(&update_id).unwrap();
 
                 debug!(
                     tag = "srp_advertising_proxy";
                     "Completing SRP update {:?} for host {:?} with result {:?}",
-                    update_id, update.host_name, ot_error
+                    update_id, update.host_name, result
                 );
 
-                instance.srp_server_handle_service_update_result(update_id, ot_error);
+                handle_result(update_id, result);
             } else {
                 // Still waiting for more callbacks
                 debug!(
@@ -589,9 +584,18 @@ impl AdvertisingProxyInner {
                     .await
                     {
                         futures::future::Either::Left(_) => {
-                            Err(anyhow::anyhow!("Timeout waiting for host removal"))
+                            warn!(tag = "srp_advertising_proxy"; "Timeout waiting for host removal");
+                            Err(ot::Error::Failed)
                         }
-                        futures::future::Either::Right((res, _)) => res,
+                        futures::future::Either::Right((Ok(()), _)) => Ok(()),
+                        futures::future::Either::Right((Err(err), _)) => {
+                            warn!(
+                                tag = "srp_advertising_proxy";
+                                "Error waiting for host removal: {:?}",
+                                err
+                            );
+                            Err(ot::Error::Failed)
+                        }
                     };
 
                     let _ = sender.unbounded_send(MdnsResultMessage { update_id, result });
@@ -738,7 +742,7 @@ impl AdvertisingProxyInner {
                             &local_name_str,
                             &addrs,
                             &ProxyHostPublicationOptions {
-                                perform_probe: Some(false),
+                                perform_probe: Some(true),
                                 ..Default::default()
                             },
                             s,
@@ -782,13 +786,25 @@ impl AdvertisingProxyInner {
                             retries_left -= 1;
                             continue;
                         }
+                        Ok(Err(
+                            err @ (PublishProxyHostError::AlreadyPublishedLocally
+                            | PublishProxyHostError::AlreadyPublishedOnSubnet),
+                        )) => {
+                            warn!(
+                                tag = "srp_advertising_proxy";
+                                "publish_proxy_host: {:?} already published: {:?}",
+                                local_name_str,
+                                err
+                            );
+                            Err(ot::Error::Duplicated)
+                        }
                         Ok(Err(err)) => {
                             error!(tag = "srp_advertising_proxy"; "publish_proxy_host: {:?}", err);
-                            Err(anyhow::anyhow!("publish_proxy_host: {:?}", err))
+                            Err(ot::Error::Failed)
                         }
                         Err(err) => {
                             error!(tag = "srp_advertising_proxy"; "publish_proxy_host: {:?}", err);
-                            Err(anyhow::anyhow!("publish_proxy_host: {:?}", err))
+                            Err(ot::Error::Failed)
                         }
                     };
 
@@ -807,11 +823,7 @@ impl AdvertisingProxyInner {
 
                     // Send result via channel if we're tracking this update
                     if let Some(tracker) = tracker {
-                        let result_to_send = match &result {
-                            Ok(()) => Ok(()),
-                            Err(_) => Err(anyhow::anyhow!("host publish error")),
-                        };
-                        tracker.resolve(result_to_send);
+                        tracker.resolve(result);
                     }
                     return;
                 }
@@ -906,9 +918,21 @@ impl AdvertisingProxyInner {
                             .await
                             {
                                 futures::future::Either::Left(_) => {
-                                    Err(anyhow::anyhow!("Timeout waiting for service removal"))
+                                    warn!(
+                                        tag = "srp_advertising_proxy";
+                                        "Timeout waiting for service removal"
+                                    );
+                                    Err(ot::Error::Failed)
                                 }
-                                futures::future::Either::Right((res, _)) => res,
+                                futures::future::Either::Right((Ok(()), _)) => Ok(()),
+                                futures::future::Either::Right((Err(err), _)) => {
+                                    warn!(
+                                        tag = "srp_advertising_proxy";
+                                        "Error waiting for service removal: {:?}",
+                                        err
+                                    );
+                                    Err(ot::Error::Failed)
+                                }
                             };
 
                             let _ = sender.unbounded_send(MdnsResultMessage {
@@ -1014,7 +1038,7 @@ impl AdvertisingProxyInner {
                     }
                     let _ = sender.unbounded_send(MdnsResultMessage {
                         update_id: update_id.clone(),
-                        result: Err(anyhow::anyhow!("Service name too long")),
+                        result: Err(ot::Error::Failed),
                     });
                 }
 
@@ -1038,7 +1062,7 @@ impl AdvertisingProxyInner {
                     }
                     let _ = sender.unbounded_send(MdnsResultMessage {
                         update_id: update_id.clone(),
-                        result: Err(anyhow::anyhow!("Instance name too long")),
+                        result: Err(ot::Error::Failed),
                     });
                 }
 
@@ -1063,8 +1087,7 @@ impl AdvertisingProxyInner {
             let service_info_data = service_info;
 
             let publish_service_future = async move {
-                // Wait for the host publisher to fully resolve before attempting to publish
-                // services.
+                // Wait for the host publisher to fully resolve before attempting to publish services
                 let _ = publisher_notifier.clone().await;
 
                 let publisher = {
@@ -1130,19 +1153,24 @@ impl AdvertisingProxyInner {
                             retries_left -= 1;
                             continue;
                         }
-                        Ok(Err(err)) => {
-                            error!(
+                        Ok(Err(
+                            err @ (PublishServiceInstanceError::AlreadyPublishedLocally
+                            | PublishServiceInstanceError::AlreadyPublishedOnSubnet),
+                        )) => {
+                            warn!(
                                 tag = "srp_advertising_proxy";
-                                "publish_service_instance: {:?}", err
+                                "publish_service_instance: {:?} already published: {:?}",
+                                instance_name,
+                                err
                             );
-                            Err(anyhow::anyhow!("publish_service_instance: {:?}", err))
+                            Err(ot::Error::Duplicated)
                         }
                         Err(err) => {
                             error!(
                                 tag = "srp_advertising_proxy";
                                 "publish_service_instance: {:?}", err
                             );
-                            Err(anyhow::anyhow!("publish_service_instance: {:?}", err))
+                            Err(ot::Error::Failed)
                         }
                     };
 
@@ -1233,11 +1261,7 @@ impl AdvertisingProxyInner {
 
                     // Send result via channel if we're tracking this update
                     if let Some(tracker) = tracker {
-                        let result_to_send = match &result {
-                            Ok(()) => Ok(()),
-                            Err(_) => Err(anyhow::anyhow!("service publish error")),
-                        };
-                        tracker.resolve(result_to_send);
+                        tracker.resolve(result);
                     }
                     return;
                 }
@@ -1270,5 +1294,145 @@ impl AdvertisingProxyInner {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    #[fuchsia::test]
+    async fn test_update_tracker_resolve() {
+        let (sender, mut receiver) = mpsc::unbounded();
+        // SAFETY: `SrpServerServiceUpdateId` is a `#[repr(transparent)]` wrapper around `u32`.
+        let update_id: ot::SrpServerServiceUpdateId = unsafe { std::mem::transmute(12345u32) };
+        let tracker = UpdateTracker::new(sender, Some(update_id.clone()));
+
+        tracker.resolve(Ok(()));
+
+        let message = receiver.next().await.expect("should receive message");
+        assert_eq!(message.update_id, update_id);
+        assert_eq!(message.result, Ok(()));
+    }
+
+    #[fuchsia::test]
+    async fn test_update_tracker_drop() {
+        let (sender, mut receiver) = mpsc::unbounded();
+        // SAFETY: `SrpServerServiceUpdateId` is a `#[repr(transparent)]` wrapper around `u32`.
+        let update_id: ot::SrpServerServiceUpdateId = unsafe { std::mem::transmute(54321u32) };
+        {
+            let _tracker = UpdateTracker::new(sender, Some(update_id.clone()));
+        }
+
+        let message = receiver.next().await.expect("should receive message");
+        assert_eq!(message.update_id, update_id);
+        assert_eq!(message.result, Ok(()));
+    }
+
+    #[fuchsia::test]
+    async fn test_multiple_services_callback() {
+        let (mdns_proxy_host_publisher, _) =
+            fidl::endpoints::create_proxy::<ProxyHostPublisherMarker>();
+        let (mdns_result_sender, _) = mpsc::unbounded();
+
+        let mut inner = AdvertisingProxyInner {
+            srp_domain: "default.service.arpa.".to_string(),
+            hosts: Default::default(),
+            mdns_proxy_host_publisher,
+            outstanding_updates: HashMap::new(),
+            mdns_result_sender,
+        };
+
+        // SAFETY: `SrpServerServiceUpdateId` is a `#[repr(transparent)]` wrapper around `u32`.
+        let update_id: ot::SrpServerServiceUpdateId = unsafe { std::mem::transmute(42u32) };
+        let cstr_hostname = CString::new("my-host").expect("valid CString");
+
+        // Simulate 1 host + 2 services being tracked
+        inner.outstanding_updates.insert(
+            update_id.clone(),
+            OutstandingUpdate {
+                update_id: update_id.clone(),
+                host_name: cstr_hostname,
+                callback_count: 3,
+            },
+        );
+
+        let callback_fires = Rc::new(Cell::new(0));
+        let error_received = Rc::new(Cell::new(None));
+
+        // First resolve: service 1
+        let fires_clone1 = callback_fires.clone();
+        inner.on_mdns_publish_result(update_id.clone(), Ok(()), |_, _| {
+            fires_clone1.set(fires_clone1.get() + 1);
+        });
+        assert_eq!(callback_fires.get(), 0, "Callback should not fire until completely resolved");
+
+        // Second resolve: service 2
+        let fires_clone2 = callback_fires.clone();
+        inner.on_mdns_publish_result(update_id.clone(), Ok(()), |_, _| {
+            fires_clone2.set(fires_clone2.get() + 1);
+        });
+        assert_eq!(callback_fires.get(), 0, "Callback should not fire until completely resolved");
+
+        // Third resolve: host
+        let fires_clone3 = callback_fires.clone();
+        let error_clone = error_received.clone();
+        inner.on_mdns_publish_result(update_id.clone(), Ok(()), |_, err| {
+            fires_clone3.set(fires_clone3.get() + 1);
+            error_clone.set(Some(err));
+        });
+        assert_eq!(callback_fires.get(), 1, "Callback should have fired exactly once now");
+        assert_eq!(error_received.get(), Some(Ok(())), "Expected Ok result");
+    }
+
+    #[fuchsia::test]
+    async fn test_duplicate_error_propagated_immediately() {
+        let (mdns_proxy_host_publisher, _) =
+            fidl::endpoints::create_proxy::<ProxyHostPublisherMarker>();
+        let (mdns_result_sender, _) = mpsc::unbounded();
+
+        let mut inner = AdvertisingProxyInner {
+            srp_domain: "default.service.arpa.".to_string(),
+            hosts: Default::default(),
+            mdns_proxy_host_publisher,
+            outstanding_updates: HashMap::new(),
+            mdns_result_sender,
+        };
+
+        // SAFETY: `SrpServerServiceUpdateId` is a `#[repr(transparent)]` wrapper around `u32`.
+        let update_id: ot::SrpServerServiceUpdateId = unsafe { std::mem::transmute(99u32) };
+        let cstr_hostname = CString::new("conflict-host").expect("valid CString");
+
+        // Simulate 1 host + 1 service being tracked
+        inner.outstanding_updates.insert(
+            update_id.clone(),
+            OutstandingUpdate {
+                update_id: update_id.clone(),
+                host_name: cstr_hostname,
+                callback_count: 2,
+            },
+        );
+
+        let callback_fires = Rc::new(Cell::new(0));
+        let error_received = Rc::new(Cell::new(None));
+
+        let fires_clone = callback_fires.clone();
+        let error_clone = error_received.clone();
+        inner.on_mdns_publish_result(update_id.clone(), Err(ot::Error::Duplicated), |_, err| {
+            fires_clone.set(fires_clone.get() + 1);
+            error_clone.set(Some(err));
+        });
+        assert_eq!(callback_fires.get(), 1, "Callback should fire immediately on error");
+        assert_eq!(
+            error_received.get(),
+            Some(Err(ot::Error::Duplicated)),
+            "Expected Err(ot::Error::Duplicated)"
+        );
+        assert!(
+            !inner.outstanding_updates.contains_key(&update_id),
+            "Outstanding update should be removed after error"
+        );
     }
 }
