@@ -94,4 +94,12 @@ mod tests {
             assert_eq!(ObjectClass::Kernel(KernelClass::Process), variant.class().into());
         }
     }
+
+    #[test]
+    fn kernel_class_from_name() {
+        assert_eq!(KernelClass::from_name("process"), Some(KernelClass::Process));
+        assert_eq!(KernelClass::from_name("file"), Some(KernelClass::File));
+        assert_eq!(KernelClass::from_name("socket"), Some(KernelClass::Socket));
+        assert_eq!(KernelClass::from_name("non_existent_class"), None);
+    }
 }

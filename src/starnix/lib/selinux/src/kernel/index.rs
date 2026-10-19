@@ -60,14 +60,29 @@ impl PolicyIndex {
         let policy_classes = policy.classes();
 
         let mut classes = HashMap::with_capacity(KernelClass::VARIANTS.len());
+        let mut permissions = [KernelPermissionIdsArray::default(); _];
 
-        // Insert elements for each kernel object class. If the policy defines that unknown
-        // kernel classes should cause rejection then return an error describing the missing
-        // element.
+        // Accumulate classes and permissions indexed by kernel class and permission enums. If the
+        // policy defines that unknown classes or permissions should cause rejection then return an
+        // error describing the missing element.
         for known_class in KernelClass::VARIANTS {
             match policy_classes.get_by_name(known_class.name().as_bytes()) {
                 Some(class) => {
                     classes.insert(*known_class, class.id());
+                    let class_permissions = &mut permissions[*known_class as usize];
+                    for permission in known_class.permissions() {
+                        if let Some(permission_id) =
+                            policy.find_permission_id_by_name(class, permission.name())
+                        {
+                            class_permissions[permission.id() as usize] = Some(permission_id);
+                        } else if policy.handle_unknown() == HandleUnknown::Reject {
+                            return Err(anyhow::anyhow!(
+                                "missing permission {:?}:{:?}",
+                                known_class.name(),
+                                permission.name(),
+                            ));
+                        }
+                    }
                 }
                 None => {
                     if policy.handle_unknown() == HandleUnknown::Reject {
@@ -79,29 +94,6 @@ impl PolicyIndex {
 
         // Allow unused space in the classes map to be released.
         classes.shrink_to_fit();
-
-        // Accumulate permissions indexed by kernel permission enum. If the policy defines that
-        // unknown permissions or classes should cause rejection then return an error describing the
-        // missing element.
-        let mut permissions = [KernelPermissionIdsArray::default(); _];
-        for kernel_permission in KernelPermission::all_variants() {
-            let kernel_class_name = kernel_permission.class().name();
-            if let Some(class) = policy_classes.get_by_name(kernel_class_name.as_bytes()) {
-                if let Some(permission_id) =
-                    policy.find_permission_id_by_name(class, kernel_permission.name())
-                {
-                    let kernel_class_id = kernel_permission.class() as usize;
-                    let kernel_permission_id = kernel_permission.id() as usize;
-                    permissions[kernel_class_id][kernel_permission_id] = Some(permission_id);
-                } else if policy.handle_unknown() == HandleUnknown::Reject {
-                    return Err(anyhow::anyhow!(
-                        "missing permission {:?}:{:?}",
-                        kernel_class_name,
-                        kernel_permission.name(),
-                    ));
-                }
-            }
-        }
 
         let mut index = Self { classes, permissions, process_transition_permissions: None, policy };
         index.process_transition_permissions =
