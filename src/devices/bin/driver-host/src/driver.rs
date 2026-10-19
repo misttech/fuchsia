@@ -20,6 +20,7 @@ use fidl_next::ClientDispatcher;
 use fidl_next_fuchsia_driver_framework as fidl_next_fdf;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
+use futures::future::FusedFuture;
 use futures::{FutureExt, TryStreamExt};
 use log::warn;
 use namespace::Namespace;
@@ -673,11 +674,19 @@ impl Driver {
             Ok(Ok(())) => {}
             Ok(Err(status)) => {
                 warn!("Driver failed to start: {status:?}");
+                client.close();
+                if let Err(e) = client_dispatcher_task.await {
+                    log::error!("Client dispatcher failed: {e:?}");
+                }
                 self.shutdown(driver_request);
                 return Err(status);
             }
             Err(e) => {
                 warn!("Driver start FIDL error: {:?}", e);
+                client.close();
+                if let Err(e) = client_dispatcher_task.await {
+                    log::error!("Client dispatcher failed: {e:?}");
+                }
                 self.shutdown(driver_request);
                 return Err(Status::INTERNAL);
             }
@@ -760,7 +769,13 @@ impl Driver {
             resume_receiver.await.ok();
             if let Err(e) = client.stop().await {
                 log::warn!("Failed to send stop request: {e:?}");
+                client.close();
             }
+            if let Err(e) = client_dispatcher_done.await {
+                log::error!("Client dispatcher failed: {e:?}");
+            }
+        } else if !client_dispatcher_done.is_terminated() {
+            client.close();
             if let Err(e) = client_dispatcher_done.await {
                 log::error!("Client dispatcher failed: {e:?}");
             }
@@ -1451,5 +1466,77 @@ mod tests {
         assert!(driver.inner.lock().active_lease.is_some());
 
         shutdown_test_driver(driver, scope).await;
+    }
+
+    unsafe extern "C" fn failing_start_initialize(
+        server_handle: fdf_sys::fdf_handle_t,
+    ) -> *mut std::ffi::c_void {
+        let root_dispatcher = unsafe {
+            fdf::DriverDispatcherRef::from_raw(
+                NonNull::new(fdf_sys::fdf_dispatcher_get_current_dispatcher())
+                    .expect("Non-null current dispatcher"),
+            )
+        };
+        let mut server_channel = unsafe {
+            fdf::Channel::<[u8]>::from_driver_handle(fdf::DriverHandle::new_unchecked(
+                std::num::NonZero::new(server_handle).expect("valid driver handle"),
+            ))
+        };
+        let held_channel: Arc<Mutex<Option<fdf::Channel<[u8]>>>> = Arc::new(Mutex::new(None));
+        let held_channel_clone = held_channel.clone();
+        let always_on = root_dispatcher.always_on_dispatcher();
+        let read_dispatcher = always_on.clone();
+        always_on.spawn(async move {
+            if let Ok(Some(msg)) = server_channel.read_bytes(read_dispatcher).await
+                && let Ok((_, fidl_fdf::DriverRequest::Start { responder, .. })) =
+                    fidl_fdf::DriverRequest::read_from_message(msg)
+            {
+                let _ = responder.send_response(&server_channel, Err(Status::INTERNAL.into_raw()));
+            }
+            // Keep the server channel open until `failing_start_destroy` runs, matching C++
+            // `DriverServer2` where the server binding outlives a failed `Start` reply.
+            *held_channel_clone.lock() = Some(server_channel);
+        });
+        Arc::into_raw(held_channel).cast_mut().cast()
+    }
+
+    unsafe extern "C" fn failing_start_destroy(token: *mut std::ffi::c_void) {
+        if !token.is_null() {
+            let held_channel: Arc<Mutex<Option<fdf::Channel<[u8]>>>> =
+                unsafe { Arc::from_raw(token.cast()) };
+            drop(held_channel);
+        }
+    }
+
+    static FAILING_START_REGISTRATION: fdf_sys::DriverRegistration = fdf_sys::DriverRegistration {
+        version: fdf_sys::DRIVER_REGISTRATION_VERSION_MAX,
+        v1: fdf_sys::DriverRegistration_driver_registration_v1 {
+            initialize: Some(failing_start_initialize),
+            destroy: Some(failing_start_destroy),
+        },
+    };
+
+    #[fuchsia::test]
+    async fn start_failure_closes_client_before_shutdown() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let scope = fuchsia_async::Scope::new();
+        for _ in 0..20 {
+            let (driver, _power_broker) = create_test_driver(&env);
+            driver.inner.lock().hooks =
+                Hooks::new(std::ptr::addr_of!(FAILING_START_REGISTRATION).cast_mut()).unwrap();
+            let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+            let (_driver_client, driver_server) =
+                fidl::endpoints::create_endpoints::<fdh::DriverMarker>();
+            let status = driver
+                .start(fidl_fdf::DriverStartArgs::default(), driver_server, shutdown_sender, &scope)
+                .await
+                .expect_err("expected Driver::start to fail");
+            assert_eq!(status, Status::INTERNAL);
+            shutdown_receiver.await.expect("driver shutdown did not complete");
+            while Arc::strong_count(&driver) > 1 {
+                fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(1)).await;
+            }
+        }
+        scope.abort().await;
     }
 }
