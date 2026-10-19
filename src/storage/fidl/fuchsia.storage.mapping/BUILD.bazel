@@ -21,6 +21,7 @@ fidl_library(
         "//src/sys/pkg/tests/pkg-cache-as-base-resolver/using-realm-builder:__pkg__",
     ],
     deps = [
+        "//sdk/fidl/fuchsia.storage.block",
         "//zircon/vdso/zx",
     ],
 )

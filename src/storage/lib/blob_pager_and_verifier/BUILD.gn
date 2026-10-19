@@ -10,6 +10,7 @@ rustc_library("blob_pager_and_verifier") {
   with_unit_tests = true
 
   deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
@@ -19,6 +20,8 @@ rustc_library("blob_pager_and_verifier") {
     "//src/storage/lib/mapping",
     "//src/storage/lib/profile",
     "//src/storage/lib/ptr_slice",
+    "//src/storage/lib/vfs/rust:vfs",
+    "//src/storage/lib/vmo-blob",
     "//src/storage/lib/vmo-fifo",
     "//src/sys/pkg/lib/fuchsia-hash",
     "//src/sys/pkg/lib/fuchsia-merkle",

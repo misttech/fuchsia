@@ -31,6 +31,10 @@ impl VmoBlob {
     pub fn new(vmo: zx::Vmo, root_hash: [u8; 32]) -> Arc<Self> {
         Arc::new(Self { vmo, root_hash })
     }
+
+    pub fn root_hash(&self) -> &[u8; 32] {
+        &self.root_hash
+    }
 }
 
 impl GetVmo for VmoBlob {

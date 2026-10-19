@@ -1262,6 +1262,56 @@ impl BlobPagerAndVerifier {
 
         Ok(())
     }
+
+    /// Returns a VFS [`vfs::service::Service`] that serves `fuchsia.storage.mapping/FileMapper`
+    /// by resolving [`vmo_blob::VmoBlob`] tokens in `scope` and opening child mapper sessions on
+    /// `self`.
+    pub fn get_file_mapper_handler(
+        self: &Arc<Self>,
+        scope: vfs::execution_scope::ExecutionScope,
+    ) -> Arc<vfs::service::Service> {
+        let verifier = self.clone();
+        vfs::service::host(move |mut stream: fmapping::FileMapperRequestStream| {
+            use futures::TryStreamExt as _;
+            let verifier = verifier.clone();
+            let scope = scope.clone();
+            async move {
+                while let Some(request) = stream.try_next().await.unwrap_or_else(|error| {
+                    log::error!(error:?; "error reading FileMapper request");
+                    None
+                }) {
+                    match request {
+                        fmapping::FileMapperRequest::OpenSession {
+                            file_token,
+                            mapping_vmo,
+                            session,
+                            responder,
+                        } => {
+                            let res = async {
+                                let (node, rights) = scope
+                                    .token_registry()
+                                    .get_owner_and_rights(file_token.into())?
+                                    .ok_or(zx::Status::NOT_FOUND)?;
+                                if !rights.contains(fidl_fuchsia_io::Rights::READ_BYTES) {
+                                    return Err(zx::Status::ACCESS_DENIED);
+                                }
+                                let vmo_blob = node
+                                    .into_any()
+                                    .downcast::<vmo_blob::VmoBlob>()
+                                    .map_err(|_| zx::Status::INVALID_ARGS)?;
+                                verifier
+                                    .open_child_session(vmo_blob.root_hash(), mapping_vmo, session)
+                                    .await
+                            }
+                            .await;
+                            let _ = responder.send(res.map_err(zx::Status::into_raw));
+                        }
+                        fmapping::FileMapperRequest::_UnknownMethod { .. } => {}
+                    }
+                }
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -2860,5 +2910,187 @@ mod tests {
         assert_eq!(&buf[100..], &[0u8; 3996]);
 
         env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_get_file_mapper_handler() {
+        use vfs::ToObjectRequest as _;
+        use vfs::file::StreamIoConnection;
+
+        let (mapping_proxy, mut mapping_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fmapping::MappingProviderMarker>();
+        let (mapper_proxy, mut mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+
+        let _mapping_task = fasync::Task::spawn(async move {
+            if let Some(fmapping::MappingProviderRequest::OpenSession { session, responder }) =
+                mapping_stream.try_next().await.expect("try_next failed")
+            {
+                let mapping_vmo = zx::Vmo::create(zx::system_get_page_size().into())
+                    .expect("zx::Vmo::create failed");
+                responder.send(Ok(mapping_vmo)).expect("send failed");
+
+                let mut session_stream = session.into_stream();
+                while let Some(request) = session_stream.try_next().await.expect("try_next failed")
+                {
+                    match request {
+                        fmapping::MappingSessionRequest::Open { responder, .. } => {
+                            responder.send(Ok(8192)).expect("send failed");
+                        }
+                        fmapping::MappingSessionRequest::Close { responder, .. } => {
+                            responder.send(Ok(())).expect("send failed");
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+
+        let (child_key_tx, child_key_rx) = oneshot::channel();
+        let _mapper_task = fasync::Task::spawn(async move {
+            if let Some(fblock::MapperRequest::OpenSession { session, responder, .. }) =
+                mapper_stream.try_next().await.expect("try_next failed")
+            {
+                responder.send(Ok(())).expect("send failed");
+                let mut session_stream = session.into_stream();
+                if let Some(fblock::MapperSessionRequest::OpenChildSession {
+                    parent_key,
+                    responder,
+                    ..
+                }) = session_stream.try_next().await.expect("try_next failed")
+                {
+                    child_key_tx.send(parent_key).expect("send failed");
+                    responder.send(Ok(())).expect("send failed");
+                }
+            }
+        });
+
+        let pager_and_verifier = Arc::new(
+            BlobPagerAndVerifier::new(&mapping_proxy, &mapper_proxy)
+                .await
+                .expect("BlobPagerAndVerifier::new failed"),
+        );
+
+        let hash: [u8; 32] = [0x66; 32];
+        let vmo = pager_and_verifier.create_vmo(&hash).await.expect("create_vmo failed");
+
+        let scope = vfs::execution_scope::ExecutionScope::new();
+        let (file_mapper, file_mapper_server) =
+            fidl::endpoints::create_proxy::<fmapping::FileMapperMarker>();
+        fidl_fuchsia_io::Flags::PROTOCOL_SERVICE
+            .to_object_request(file_mapper_server.into_channel())
+            .handle(|object_request| {
+                vfs::service::serve(
+                    pager_and_verifier.get_file_mapper_handler(scope.clone()),
+                    scope.clone(),
+                    &fidl_fuchsia_io::Flags::PROTOCOL_SERVICE,
+                    object_request,
+                )
+            });
+
+        // 1. Unregistered token returns NOT_FOUND.
+        let unregistered_token = zx::Event::create();
+        let (_client, server) = fidl::endpoints::create_endpoints::<fblock::MapperSessionMarker>();
+        assert_eq!(
+            file_mapper
+                .open_session(unregistered_token, zx::Vmo::create(4096).unwrap(), server)
+                .await
+                .unwrap(),
+            Err(zx::Status::NOT_FOUND.into_raw())
+        );
+
+        // 2. Non-readable VmoBlob connection returns ACCESS_DENIED.
+        let vmo_blob =
+            vmo_blob::VmoBlob::new(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(), hash);
+        let (no_read_proxy, no_read_server) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_io::FileMarker>();
+        let no_read_flags = fidl_fuchsia_io::Flags::PROTOCOL_FILE;
+        let scope_clone = scope.clone();
+        let vmo_blob_clone = vmo_blob.clone();
+        scope.spawn(no_read_flags.to_object_request(no_read_server).handle_async(
+            async move |object_request| {
+                object_request
+                    .create_connection::<StreamIoConnection<_>, _>(
+                        scope_clone,
+                        vmo_blob_clone,
+                        no_read_flags,
+                    )
+                    .await
+            },
+        ));
+        let no_read_token = zx::Event::from(
+            no_read_proxy.get_token().await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
+        );
+        let (_client, server) = fidl::endpoints::create_endpoints::<fblock::MapperSessionMarker>();
+        assert_eq!(
+            file_mapper
+                .open_session(no_read_token, zx::Vmo::create(4096).unwrap(), server)
+                .await
+                .unwrap(),
+            Err(zx::Status::ACCESS_DENIED.into_raw())
+        );
+
+        // 3. Non-VmoBlob file connection returns INVALID_ARGS.
+        let other_file = vfs::file::vmo::read_only(b"not a vmo blob");
+        let (other_proxy, other_server) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_io::FileMarker>();
+        fidl_fuchsia_io::PERM_READABLE.to_object_request(other_server).handle(|object_request| {
+            vfs::file::serve(
+                other_file,
+                scope.clone(),
+                &fidl_fuchsia_io::PERM_READABLE,
+                object_request,
+            )
+        });
+        let other_token = zx::Event::from(
+            other_proxy.get_token().await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
+        );
+        let (_client, server) = fidl::endpoints::create_endpoints::<fblock::MapperSessionMarker>();
+        assert_eq!(
+            file_mapper
+                .open_session(other_token, zx::Vmo::create(4096).unwrap(), server)
+                .await
+                .unwrap(),
+            Err(zx::Status::INVALID_ARGS.into_raw())
+        );
+
+        // 4. Readable VmoBlob connection succeeds and opens a child mapper session.
+        let (read_proxy, read_server) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_io::FileMarker>();
+        let read_flags = fidl_fuchsia_io::PERM_READABLE;
+        let scope_clone = scope.clone();
+        scope.spawn(read_flags.to_object_request(read_server).handle_async(
+            async move |object_request| {
+                object_request
+                    .create_connection::<StreamIoConnection<_>, _>(
+                        scope_clone,
+                        vmo_blob,
+                        read_flags,
+                    )
+                    .await
+            },
+        ));
+        let valid_token = zx::Event::from(
+            read_proxy.get_token().await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
+        );
+        let (client_proxy, server) = fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        file_mapper
+            .open_session(valid_token, zx::Vmo::create(4096).unwrap(), server)
+            .await
+            .unwrap()
+            .map_err(zx::Status::err_from_raw)
+            .expect("open_session should succeed");
+
+        let parent_key = child_key_rx.await.expect("failed to receive parent_key");
+        assert_eq!(parent_key, TEST_VMO_KEY);
+
+        let _child_vmo = client_proxy
+            .create_vmo(7, 4096, fblock::CreateVmoOptions::empty())
+            .await
+            .expect("create_vmo fidl failed")
+            .expect("create_vmo returned error");
+        assert!(pager_and_verifier.cache.get_child_vmo(TEST_VMO_KEY, 7).is_some());
+
+        drop(vmo);
     }
 }

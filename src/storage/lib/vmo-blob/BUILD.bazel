@@ -12,7 +12,10 @@ rustc_library(
     srcs = ["src/lib.rs"],
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    visibility = ["//src/sys/pkg/lib/blobfs:__pkg__"],
+    visibility = [
+        "//src/storage/lib/blob_pager_and_verifier:__pkg__",
+        "//src/sys/pkg/lib/blobfs:__pkg__",
+    ],
     deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//sdk/rust/zx",

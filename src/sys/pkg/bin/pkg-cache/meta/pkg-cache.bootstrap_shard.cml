@@ -169,6 +169,7 @@
                 "fuchsia.pkg.PackageResolver-base",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
+                "fuchsia.storage.mapping.FileMapper",
             ],
             from: "#pkg-cache",
         },

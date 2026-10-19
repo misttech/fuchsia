@@ -4,7 +4,19 @@
 @available(added=HEAD)
 library fuchsia.storage.mapping;
 
+using fuchsia.storage.block;
 using zx;
+
+@discoverable
+open protocol FileMapper {
+    /// Opens a child `MapperSession` backed by the file identified by `file_token`
+    /// (obtained from `fuchsia.io/Node.GetToken`).
+    flexible OpenSession(resource struct {
+        file_token zx.Handle:EVENT;
+        mapping_vmo zx.Handle:VMO;
+        session server_end:fuchsia.storage.block.MapperSession;
+    }) -> () error zx.Status;
+};
 
 @discoverable
 open protocol MappingProvider {

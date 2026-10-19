@@ -39,5 +39,8 @@ fidl("fuchsia.storage.mapping") {
     "//src/sys/pkg/tests/pkg-cache:*",
     "//src/sys/pkg/tests/pkg-cache-as-base-resolver/using-realm-builder:*",
   ]
-  public_deps = [ "//zircon/vdso/zx" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.storage.block",
+    "//zircon/vdso/zx",
+  ]
 }

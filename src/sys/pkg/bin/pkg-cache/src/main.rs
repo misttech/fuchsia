@@ -123,7 +123,7 @@ pub fn main() -> Result<(), Error> {
     })
 }
 
-struct DriverBlobReader(blob_pager_and_verifier::BlobPagerAndVerifier);
+struct DriverBlobReader(Arc<blob_pager_and_verifier::BlobPagerAndVerifier>);
 
 impl std::fmt::Debug for DriverBlobReader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -178,7 +178,7 @@ async fn main_inner() -> Result<(), Error> {
         use_driver_blob_paging,
     } = config;
     let mut blobfs_builder = blobfs::Client::builder().readable().writable().executable();
-    let mut driver_blob_paging_active = false;
+    let mut blob_verifier = None;
     if use_driver_blob_paging {
         let verifier_result: Result<blob_pager_and_verifier::BlobPagerAndVerifier, Error> = async {
             let mapping_provider = connect_to_protocol::<fstorage_mapping::MappingProviderMarker>()
@@ -202,8 +202,9 @@ async fn main_inner() -> Result<(), Error> {
                     .record_and_replay_profile(".boot", zx::MonotonicDuration::from_seconds(60))
                     .await;
                 // LINT.ThenChange(/src/storage/fshost/src/environment.rs:startup_profiling)
-                blobfs_builder = blobfs_builder.reader(DriverBlobReader(verifier));
-                driver_blob_paging_active = true;
+                let verifier = Arc::new(verifier);
+                blobfs_builder = blobfs_builder.reader(DriverBlobReader(verifier.clone()));
+                blob_verifier = Some(verifier);
             }
             Err(error) => {
                 error!(
@@ -216,6 +217,7 @@ async fn main_inner() -> Result<(), Error> {
     } else {
         inspector.root().record_string("driver_blob_paging_status", "disabled");
     }
+    let driver_blob_paging_active = blob_verifier.is_some();
     let blobfs = blobfs_builder.build().await.context("error opening blobfs")?;
 
     let authenticator = context_authenticator::ContextAuthenticator::new();
@@ -346,6 +348,14 @@ async fn main_inner() -> Result<(), Error> {
             get_blob_reader_handler(driver_blob_paging_active, &blobfs),
         )
         .context("adding fuchsia.fxfs/BlobReader to /svc")?;
+    if let Some(blob_verifier) = blob_verifier {
+        let () = svc_dir
+            .add_entry(
+                fstorage_mapping::FileMapperMarker::PROTOCOL_NAME,
+                blob_verifier.get_file_mapper_handler(scope.clone()),
+            )
+            .context("adding fuchsia.storage.mapping/FileMapper to /svc")?;
+    }
     {
         let package_index = Arc::clone(&package_index);
         let blobfs = blobfs.clone();
