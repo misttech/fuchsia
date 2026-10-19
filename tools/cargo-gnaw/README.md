@@ -159,7 +159,7 @@ configs = [ "//some:unix_specific_config" ]
 ### Global configuration
 Global configuration affecting all packages can be specified in `[gn.config]`:
 
-* `min_publish_age` - Minimum age (in days) of published crates (e.g. `14`), passing `-Zmin-publish-age` and
+* `min_publish_age` - Minimum age (in days) of published crates (e.g. `14`), passing
   `--config=registry.global-min-publish-age="<days> days"` to Cargo resolution.
 * `require_licenses` - Whether crates must have license files.
 * `add_cfgs` - Global GN configs to add to all generated targets.

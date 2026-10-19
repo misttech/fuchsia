@@ -139,10 +139,12 @@ fx-config-read
 fx-standard-switches "$@"
 set -- "${FX_ARGV[@]}"
 
+min_publish_age_override=""
 extra_gnaw_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-min-publish-age|--skip-min-publish-age)
+      min_publish_age_override="0"
       extra_gnaw_args+=("--min-publish-age" "0")
       shift
       ;;
@@ -151,6 +153,7 @@ while [[ $# -gt 0 ]]; do
         fx-error "Missing value for --min-publish-age"
         exit 1
       fi
+      min_publish_age_override="$2"
       extra_gnaw_args+=("--min-publish-age" "$2")
       shift 2
       ;;
@@ -213,10 +216,17 @@ trap "rm -rf ${TMP}" EXIT
   --output "${FUCHSIA_DIR}/build/bazel/update-rustc-third-party/crate_annotations.bzl" \
   --buildifier "${FUCHSIA_DIR}/prebuilt/third_party/buildifier/linux-x64/buildifier"
 
+if [[ -z "${min_publish_age_override}" ]]; then
+  min_publish_age_override=$(sed -n 's/^min_publish_age *= *\([0-9]*\).*/\1/p' "${FUCHSIA_DIR}/third_party/rust_crates/Cargo.toml")
+fi
+
 bazel_workspace="${TMP}/bazel_workspace"
 mkdir "${bazel_workspace}"
 prepare_bazel_workspace "${bazel_workspace}"
 (
+  if [[ -n "${min_publish_age_override}" && "${min_publish_age_override}" -gt 0 ]]; then
+    export CARGO_REGISTRY_GLOBAL_MIN_PUBLISH_AGE="${min_publish_age_override} days"
+  fi
   cd "${bazel_workspace}" &&
     ./bazel run \
       --enable_bzlmod=true \

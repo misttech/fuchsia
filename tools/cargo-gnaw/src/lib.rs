@@ -417,14 +417,20 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
             .arg("--dry-run")
             .arg("--manifest-path")
             .arg(manifest_path)
-            .arg("-Zmin-publish-age")
             .arg(format!("--config=registry.global-min-publish-age=\"{} days\"", min_age_days));
         let output = check_cmd
             .output()
             .with_context(|| "running cargo update --dry-run for min-publish-age verification")?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("Minimum publish age policy violation:\n{}", stderr.trim());
+        }
+        let age_downgrades: Vec<&str> = stderr
+            .lines()
+            .filter(|l| l.trim_start().starts_with("Downgrading ") && l.contains("published "))
+            .collect();
+        if !age_downgrades.is_empty() {
+            anyhow::bail!("Minimum publish age policy violation:\n{}", age_downgrades.join("\n"));
         }
     }
 
