@@ -2,11 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
-cc_library(
+fx_cc_library(
     name = "far",
     srcs = [
         "archive_entry.cc",
@@ -34,4 +46,64 @@ cc_library(
     visibility = ["//src/sys/pkg/bin/far:__pkg__"],
     deps = ["@com_google_googletest//:gtest_prod"],
     alwayslink = True,
+)
+
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "validate-fars",
+    testonly = True,
+    srcs = ["archive_reader_test.cc"],
+    tags = ["manual"],
+    deps = [
+        ":far",
+        "//src/lib/files",
+        "//src/lib/fxl/test:gtest_main",
+        "//zircon/system/ulib/fbl",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "validate-fars_packaged_bin",
+    testonly = True,
+    binary = ":validate-fars",
+    binary_name = "validate-fars",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "cpp-fars-tests-manifest",
+    testonly = True,
+    component_name = "cpp-fars-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/gtest:default.shard.cml",
+    ],
+    manifest = "meta/validate-fars.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "cpp-fars-tests-component",
+    compiled_manifest = ":cpp-fars-tests-manifest",
+    component_name = "cpp-fars-tests",
+    deps = [":validate-fars_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "cpp-fars-tests-package",
+    package_name = "cpp-fars-tests",
+    resources = ["//src/sys/pkg/testing/invalid-fars:resource"],
+    test_components = [":cpp-fars-tests-component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "cpp-fars-tests",
+    package = ":cpp-fars-tests-package",
 )

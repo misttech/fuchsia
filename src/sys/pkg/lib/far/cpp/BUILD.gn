@@ -2,28 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-executable("validate-fars") {
-  sources = [ "archive_reader_test.cc" ]
-  output_name = "validate-fars"
-  include_dirs = [ "." ]
-  deps = [
-    ":far",
-    "//src/lib/files",
-    "//src/lib/fxl/test:gtest_main",
-    "//third_party/googletest:gtest",
-    "//zircon/system/ulib/fbl",
-  ]
-  testonly = true
-}
-
-fuchsia_unittest_package("cpp-fars-tests") {
-  manifest = "meta/validate-fars.cml"
-  deps = [
-    ":validate-fars",
-    "//src/sys/pkg/testing/invalid-fars:resource",
-  ]
+bazel_test_suite("cpp-fars-tests") {
+  target_tests = [ "//src/sys/pkg/lib/far/cpp:cpp-fars-tests" ]
 }
 
 group("tests") {

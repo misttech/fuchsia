@@ -9,6 +9,7 @@ exports_files(
     visibility = [
         "//src/lib/files:__pkg__",
         "//src/sys/pkg/lib/eager-package-config:__pkg__",
+        "//src/sys/pkg/lib/far/cpp:__pkg__",
         "//src/sys/pkg/lib/forced-fdr:__pkg__",
         "//src/sys/pkg/lib/fuchsia-pkg:__pkg__",
         "//src/sys/pkg/testing/mock-resolver:__pkg__",
