@@ -31,7 +31,7 @@ load(
     "to_clang_target_tuple",
 )
 load("//common:toolchains/clang/providers.bzl", "ClangInfo", "FuchsiaApiLevelInfo")
-load("//common:toolchains/clang/sanitizer.bzl", "sanitizer_features")
+load("//common:toolchains/clang/sanitizer.bzl", "get_sanitizer_features")
 load("//common/platforms:utils.bzl", "to_fuchsia_cpu_name", "to_fuchsia_os_name")
 
 # buildifier: disable=unused-variable
@@ -319,7 +319,7 @@ def compute_clang_features(
         opt_feature,
         clang_driver_mode_cxx_feature,
         static_cpp_standard_library_feature,
-    ] + sanitizer_features
+    ] + get_sanitizer_features(target_os)
 
     # This feature adds an RPATH entry into the final binary. We do not want this
     # because it is not valid for fuchsia since we install all of our libraries

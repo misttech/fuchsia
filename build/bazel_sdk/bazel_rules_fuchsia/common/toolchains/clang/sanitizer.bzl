@@ -22,23 +22,34 @@ load(
 
 # This feature should only be enabled by one of the features below
 # and will drop the optimization level and raise the debug info detail.
-_clang_sanitizer_feature = feature(
-    name = "clang_sanitizer",
-    flag_sets = [
-        flag_set(
-            actions = ALL_CC_COMPILE_ACTION_NAMES,
-            flag_groups = [
-                flag_group(
-                    flags = [
-                        "-fno-omit-frame-pointer",
-                        "-g3",
-                        "-O1",
-                    ],
-                ),
-            ],
-        ),
-    ],
-)
+def _get_clang_sanitizer_feature():
+    """Define the common clang_sanitizer feature implied by all sanitizer features."""
+    frame_pointer_flags = [
+        "-fno-omit-frame-pointer",
+    ]
+
+    # NOTE: Neither //build/config:default_debuginfo (-g3) nor
+    # //build/config:default_optimize (-O1) is ported to
+    # @fuchsia_build_info//default_build_flags yet, so both flags must still be
+    # passed here in both modes.
+    in_tree_remaining_compile_flags = [
+        "-g3",
+        "-O1",
+    ]
+
+    return feature(
+        name = "clang_sanitizer",
+        flag_sets = [
+            flag_set(
+                actions = ALL_CC_COMPILE_ACTION_NAMES,
+                flag_groups = [
+                    flag_group(
+                        flags = frame_pointer_flags + in_tree_remaining_compile_flags,
+                    ),
+                ],
+            ),
+        ],
+    )
 
 def _sanitizer_mode_feature(name, mode):
     """Define a feature that corresponds to Clang -fsanitize=<mode>.
@@ -131,19 +142,33 @@ _ubsan_feature = feature(
     implies = ["clang_sanitizer"],
 )
 
-# LINT.IfChange(sanitizer_features)
-# Note: _INSTRUMENTATION_FEATURES in fx_cc_binary.bzl includes these sanitizer
-# features plus "coverage" (defined in toolchain_utils.bzl).
-sanitizer_features = [
-    _clang_sanitizer_feature,
-    _asan_feature,
-    _hwasan_feature,
-    _msan_feature,
-    _tsan_feature,
-    _lsan_feature,
-    _ubsan_feature,
-]
-# LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:instrumentation_features)
+# buildifier: disable=unused-variable
+def get_sanitizer_features(target_os):
+    """Return the list of Clang sanitizer feature() definitions for target_os.
+
+    Args:
+      target_os: Target OS, following Fuchsia conventions ("fuchsia", "linux").
+
+    Returns:
+      A list of feature() objects.
+    """
+    clang_sanitizer_feature = _get_clang_sanitizer_feature()
+
+    # LINT.IfChange(sanitizer_features)
+    # Note: _INSTRUMENTATION_FEATURES in fx_cc_binary.bzl includes these sanitizer
+    # features plus "coverage" (defined in toolchain_utils.bzl).
+    return [
+        clang_sanitizer_feature,
+        _asan_feature,
+        _hwasan_feature,
+        _msan_feature,
+        _tsan_feature,
+        _lsan_feature,
+        _ubsan_feature,
+    ]
+    # LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:instrumentation_features)
+
+sanitizer_features = get_sanitizer_features("fuchsia")
 
 # buildifier: disable=unnamed-macro
 def define_clang_sanitizer_config_settings():

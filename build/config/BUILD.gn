@@ -844,7 +844,7 @@ config("default_warnings") {
   ]
 }
 
-# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl:default_warnings)
+# LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/default_flag_values.bzl:default_warnings)
 
 # Code that goes into the SDK or otherwise contributes to the SDK surface area
 # in source form will be compiled in many different environments. As such, we
@@ -1378,6 +1378,7 @@ config("auto_var_init") {
   }
 }
 
+# LINT.IfChange(thread_safety_annotations)
 config("thread_safety_annotations") {
   if (!is_gcc) {
     cflags = [
@@ -1392,6 +1393,8 @@ config("thread_safety_annotations") {
     defines = [ "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS=1" ]
   }
 }
+
+# LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/default_flag_values.bzl:thread_safety_annotations)
 
 # Generally, we don't want to opt out of thread safety annotations, but
 # occasionally, we get false positives, and need to work around them when
