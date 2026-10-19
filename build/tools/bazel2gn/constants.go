@@ -153,12 +153,13 @@ var bazelRuleToGNTemplate = map[string]string{
 
 	// Bazel host test rules. Migrated host tests are only defined in Bazel and
 	// reach GN through `bazel_test_suite()`, so they should never get a GN twin.
-	"host_cc_test":    noGNEquivalent,
-	"host_go_test":    noGNEquivalent,
-	"host_py_test":    noGNEquivalent,
-	"host_rustc_test": noGNEquivalent,
-	"host_shac_test":  noGNEquivalent,
-	"host_test":       noGNEquivalent,
+	"host_cc_test":        noGNEquivalent,
+	"host_go_test":        noGNEquivalent,
+	"host_py_test":        noGNEquivalent,
+	"host_rustc_test":     noGNEquivalent,
+	"host_shac_test":      noGNEquivalent,
+	"host_test":           noGNEquivalent,
+	"wrap_host_rust_test": noGNEquivalent,
 
 	// Runtime data for Bazel host tests, so it's only consumed by the rules
 	// above.
@@ -281,7 +282,7 @@ var rustCommonAttrMap = map[string]string{
 	"build_flags": "configs",
 }
 
-// rustBinAttrMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
+// rustBinAttrMap maps from attribute name in Bazel Rust binary and test rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var rustBinAttrMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
 	"binary_name": "output_name",
@@ -419,7 +420,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"rustc_dylib":      rustCommonAttrMap,
 	"rustc_library":    rustCommonAttrMap,
 	"rustc_proc_macro": rustCommonAttrMap,
-	"rustc_test":       rustCommonAttrMap,
+	"rustc_test":       rustBinAttrMap,
 
 	// FIDL
 	"fidl_library":        idkFIDLAttrMap,

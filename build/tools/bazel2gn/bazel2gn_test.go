@@ -329,6 +329,11 @@ host_rustc_test(
 	srcs = ["src/lib.rs"],
 )
 
+wrap_host_rust_test(
+	name = "foo_wrapped_rust_test",
+	binary_name = "foo_rust_test",
+)
+
 host_cc_test(
 	name = "foo_cc_test",
 	srcs = ["foo_test.cc"],
@@ -868,6 +873,7 @@ rustc_proc_macro(
 rustc_test(
 	name = "foo_test",
 	srcs = ["src/main.rs"],
+	crate_name = "foo_test_bin",
 	disable_clippy = True,
 )`,
 			wantGN: `rustc_library("foo_lib") {
@@ -898,6 +904,7 @@ rustc_test("foo_test") {
 	sources = [
 		"src/main.rs",
 	]
+	output_name = "foo_test_bin"
 	disable_clippy = true
 }`,
 		}, {
