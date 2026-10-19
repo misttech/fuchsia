@@ -12,9 +12,15 @@ def _doc_checker(ctx):
 
     affected_files = set(ctx.scm.affected_files())
 
-    # If a Markdown change is present (including a deletion of a markdown file),
-    # check the entire project.
-    if not ctx.scm.affected_files(glob = "*.md"):
+    # doc-checker validates more than Markdown prose: it also checks YAML such
+    # as _toc.yaml and the glossary, and in-tree links to images and other
+    # static assets under //docs. Trigger on any change beneath //docs so all
+    # of those are covered. Deletions must be included: removing a file is
+    # precisely what invalidates links elsewhere in the tree.
+    if not ctx.scm.affected_files(
+        glob = ["*.md", "/docs/**"],
+        include_deleted = True,
+    ):
         return
 
     exe = compiled_tool_path(ctx, "doc-checker")
