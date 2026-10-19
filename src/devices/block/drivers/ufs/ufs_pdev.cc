@@ -18,6 +18,8 @@ namespace ufs {
 
 namespace {
 
+using fuchsia_hardware_ufs_phy::wire::PowerState;
+
 constexpr uint64_t kOperationalBandwidthBps = 1'000'000'000;  // 1 GB/s
 constexpr uint64_t kInactiveBandwidthBps = 0;
 constexpr uint32_t kInterconnectTagUfs = 'UFS ';
@@ -151,13 +153,14 @@ zx::result<> UfsPdev::SetBandwidthVote(bool enable) {
 
 zx::result<> UfsPdev::PostSuspend() {
   if (ufs_phy_.is_valid()) {
-    auto res = ufs_phy_->Suspend();
+    auto res = ufs_phy_->SetPowerState(PowerState::kPowerDown);
     if (!res.ok()) {
-      fdf::error("Failed to call Suspend: {}", res.status_string());
+      fdf::error("Failed to call SetPowerState(POWER_DOWN): {}", res.status_string());
       return zx::error(res.status());
     }
     if (res->is_error()) {
-      fdf::error("Suspend returned error status: {}", zx_status_get_string(res->error_value()));
+      fdf::error("SetPowerState(POWER_DOWN) returned error status: {}",
+                 zx_status_get_string(res->error_value()));
       return zx::error(res->error_value());
     }
   }
@@ -165,9 +168,9 @@ zx::result<> UfsPdev::PostSuspend() {
 }
 
 bool UfsPdev::QueryPowerDownSuspendSupport() {
-  // This has to be known up front: SuspendPower() only calls Suspend() after the device has been
-  // put in PowerDown and the host controller has been stopped, and discovering there that the PHY
-  // cannot power-cycle would leave storage unusable until reboot. A PHY driver that predates
+  // This has to be known up front: SuspendPower() only powers down the PHY after the device has
+  // been put in PowerDown and the host controller has been stopped, and discovering there that the
+  // PHY cannot power-cycle would leave storage unusable until reboot. A PHY driver that predates
   // GetProperties() answers with an unknown-method error and is treated as unsupported.
   auto res = ufs_phy_->GetProperties();
   if (!res.ok()) {
@@ -180,7 +183,7 @@ bool UfsPdev::QueryPowerDownSuspendSupport() {
     return false;
   }
   if (!res->has_supports_suspend_resume() || !res->supports_suspend_resume()) {
-    fdf::info("UFS PHY does not support Suspend/Resume; PowerDown suspend disabled");
+    fdf::info("UFS PHY does not support PowerDown suspend; PowerDown suspend disabled");
     return false;
   }
   return true;
@@ -191,13 +194,14 @@ zx::result<> UfsPdev::PreResume() {
     return bw_res.take_error();
   }
   if (ufs_phy_.is_valid()) {
-    auto res = ufs_phy_->Resume();
+    auto res = ufs_phy_->SetPowerState(PowerState::kActive);
     if (!res.ok()) {
-      fdf::error("Failed to call Resume: {}", res.status_string());
+      fdf::error("Failed to call SetPowerState(ACTIVE): {}", res.status_string());
       return zx::error(res.status());
     }
     if (res->is_error()) {
-      fdf::error("Resume returned error status: {}", zx_status_get_string(res->error_value()));
+      fdf::error("SetPowerState(ACTIVE) returned error status: {}",
+                 zx_status_get_string(res->error_value()));
       return zx::error(res->error_value());
     }
   }

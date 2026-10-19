@@ -7,6 +7,45 @@ library fuchsia.hardware.ufs.phy;
 using fuchsia.hardware.inlineencryption;
 using zx;
 
+/// Operating power states of the UFS PHY, ordered from highest to lowest power consumption.
+type PowerState = flexible enum : uint8 {
+    /// All PHY power domains, regulators, and auxiliary clocks are enabled; UFSHCI registers and
+    /// the UniPro link are accessible.
+    ///
+    /// Can be entered from any state with no hardware preconditions. When waking from
+    /// `POWER_DOWN`, the caller must subsequently re-enable the host controller (`HCE = 1`) and
+    /// call `Init` to re-initialize the M-PHY before starting the link.
+    ACTIVE = 1;
+
+    /// The UniPro link is idle in Autonomous Hibernate (AH8) with no in-flight UFSHCI commands or
+    /// register accesses. Auxiliary clocks may be gated while all power rails and domains remain
+    /// enabled.
+    ///
+    /// Preconditions: Can only be entered from `ACTIVE` after `Init` has succeeded. The UniPro
+    /// link must be in Autonomous Hibernate (AH8) with no in-flight UFSHCI commands or concurrent
+    /// register accesses. While in `LINK_IDLE`, UFSHCI registers must not be accessed.
+    LINK_IDLE = 2;
+
+    /// The UFS device is in Sleep (`START STOP UNIT`) and the UniPro link is in software Hibern8
+    /// (`DME_HIBERNATE_ENTER`). Low-voltage M-PHY analog supplies and auxiliary clocks may be
+    /// disabled while device `VCC` and core power domains remain powered so wake to `ACTIVE` does
+    /// not require link re-startup.
+    ///
+    /// Preconditions: Can only be entered from `ACTIVE` or `LINK_IDLE` after `Init` has succeeded.
+    /// The UFS device must be in Sleep (`START STOP UNIT`) and the UniPro link must be in software
+    /// Hibern8 (`DME_HIBERNATE_ENTER`). While in `HIBERNATE_SLEEP`, UFSHCI registers must not be
+    /// accessed and `DME_HIBERNATE_EXIT` must not be issued.
+    HIBERNATE_SLEEP = 3;
+
+    /// The host controller is stopped (`HCE = 0`) and all UFS device rails, PHY resets,
+    /// regulators, clocks, and power domains are powered down.
+    ///
+    /// Preconditions: Can be entered from any state after the caller has stopped the host
+    /// controller (`HCE = 0`). While in `POWER_DOWN`, UFSHCI registers must not be accessed and
+    /// `Ufshci` calls fail with `ZX_ERR_BAD_STATE`.
+    POWER_DOWN = 4;
+};
+
 /// Interface provided by the UFS MAC (controller driver) to the PHY driver,
 /// allowing the PHY driver to send UIC commands (like DME_SET) or access
 /// MAC-level registers required for PHY initialization.
@@ -44,30 +83,47 @@ open protocol UfsPhy {
     /// initialization to decide which power-management features it may use. A PHY driver that
     /// does not implement this method is treated as supporting none of the optional features.
     flexible GetProperties() -> (table {
-        /// Whether `Suspend` and `Resume` are implemented, i.e. the PHY can power down the UFS
-        /// device, PHY and host controller power domains and bring them back up. When unset or
-        /// false the controller driver only uses link hibernation for system suspend.
+        /// Whether `POWER_DOWN` suspend and resume are implemented, i.e. the PHY can power down
+        /// the UFS device, PHY, and host controller power domains and bring them back up. When
+        /// unset or false the controller driver only uses link hibernation for system suspend.
         1: supports_suspend_resume bool;
     });
 
-    /// Powers down the UFS device rails, PHY reset, regulators, clocks, and power domains.
+    /// Transitions the PHY to `state`. See [`PowerState`] for the hardware preconditions of each
+    /// target state.
     ///
-    /// The caller must have stopped the host controller (HCE = 0) before calling this; after it
-    /// returns the UFSHCI register space must not be accessed until `Resume` has succeeded.
-    /// Calling `Suspend` while already suspended is a no-op. On failure the PHY is still
-    /// considered suspended (every step is attempted and the first error reported), so the caller
-    /// must go through `Resume` to bring it back. Only resources that are actually held are
-    /// released, so `Suspend` is also safe to call after a failed `Resume` (which has already
-    /// released what it acquired). The host controller is stopped for the whole duration of
-    /// `Suspend` and `Resume`, so `Ufshci` calls made from within them fail with ZX_ERR_BAD_STATE.
-    flexible Suspend() -> () error zx.Status;
-
-    /// Powers up the UFS power domains and clocks prior to host controller enable and link startup.
+    /// ## Power States and Held Resources
     ///
-    /// Calling `Resume` while not suspended is a no-op that returns success. On failure the PHY
-    /// must release anything it acquired during the attempt and remain suspended, so that the
-    /// caller may either call `Suspend` or retry `Resume`.
-    flexible Resume() -> () error zx.Status;
+    /// Each lower power state holds a strict subset of the resources held by the state above it:
+    ///
+    /// | State             | Power Domains | Core Clocks & Rails | M-PHY Low-V Rail | Aux Clock |
+    /// |-------------------|---------------|---------------------|------------------|-----------|
+    /// | `ACTIVE`          | ON            | ON                  | ON               | ON        |
+    /// | `LINK_IDLE`       | ON            | ON                  | ON               | OFF       |
+    /// | `HIBERNATE_SLEEP` | ON            | ON                  | OFF              | OFF       |
+    /// | `POWER_DOWN`      | OFF           | OFF                 | OFF              | OFF       |
+    ///
+    /// ## Allowed Transitions
+    ///
+    /// - **Same state (`S -> S`)**: Always idempotent; returns `ZX_OK` without modifying hardware.
+    /// - **Higher power to lower power (`ACTIVE -> LINK_IDLE`, `ACTIVE/LINK_IDLE ->
+    ///   HIBERNATE_SLEEP`, or `ACTIVE/LINK_IDLE/HIBERNATE_SLEEP -> POWER_DOWN`)**: Allowed.
+    ///   Releases the additional resources not required in the target state.
+    /// - **Any lower power state to `ACTIVE` (`LINK_IDLE/HIBERNATE_SLEEP/POWER_DOWN -> ACTIVE`)**:
+    ///   Allowed. Restores all resources required for `ACTIVE`.
+    /// - **Lower power to a higher non-`ACTIVE` state (`POWER_DOWN -> LINK_IDLE`, `POWER_DOWN ->
+    ///   HIBERNATE_SLEEP`, or `HIBERNATE_SLEEP -> LINK_IDLE`)**: Rejected with `ZX_ERR_BAD_STATE`.
+    ///   The caller must transition to `ACTIVE` first.
+    ///
+    /// ## Error Semantics
+    ///
+    /// - **Transitions to `ACTIVE`, `LINK_IDLE`, or `HIBERNATE_SLEEP`**: On failure, the PHY rolls
+    ///   back any partial changes (best-effort) and remains in its previous state.
+    /// - **Transitions to `POWER_DOWN`**: Every power-down step is attempted even if an earlier
+    ///   step fails, the first error is returned, and the PHY transitions to `POWER_DOWN`.
+    flexible SetPowerState(struct {
+        state PowerState;
+    }) -> () error zx.Status;
 };
 
 service Service {

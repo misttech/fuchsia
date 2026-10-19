@@ -33,7 +33,7 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
   zx::result<> PreResume();
   zx::result<> SetBandwidthVote(bool enable);
 
-  // Asks the connected PHY driver (UfsPhy.GetProperties) whether it implements Suspend()/Resume().
+  // Asks the connected PHY driver (UfsPhy.GetProperties) whether it supports POWER_DOWN suspend.
   bool QueryPowerDownSuspendSupport();
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> StartUfshciServer();
