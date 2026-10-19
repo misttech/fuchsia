@@ -12,7 +12,6 @@ exports_files(
         "//src/sys/pkg/lib/far/cpp:__pkg__",
         "//src/sys/pkg/lib/forced-fdr:__pkg__",
         "//src/sys/pkg/lib/fuchsia-pkg:__pkg__",
-        "//src/sys/pkg/lib/update-package:__pkg__",
         "//src/sys/pkg/testing/mock-resolver:__pkg__",
         "//src/sys/pkg/tests/far:__pkg__",
     ],
