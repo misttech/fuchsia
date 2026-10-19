@@ -1,0 +1,68 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "encoding-bin",
+    srcs = [
+        "src/common.rs",
+        "src/encoding.rs",
+    ],
+    crate_name = "diagnostics_log_encoding_bench",
+    crate_root = "src/encoding.rs",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+        "//sdk/rust/zx",
+        "//src/developer/fuchsia-criterion",
+        "//src/lib/diagnostics/log/encoding/rust",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_binary(
+    name = "core-bin",
+    srcs = ["src/core.rs"],
+    crate_name = "diagnostics_log_bench",
+    crate_root = "src/core.rs",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+        "//src/developer/fuchsia-criterion",
+        "//src/diagnostics/lib/ring-buffer",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_binary(
+    name = "decoding-bin",
+    srcs = [
+        "src/common.rs",
+        "src/decoding.rs",
+    ],
+    crate_name = "diagnostics_log_decoding_bench",
+    crate_root = "src/decoding.rs",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+        "//sdk/rust/zx",
+        "//src/developer/fuchsia-criterion",
+        "//src/lib/diagnostics/log/encoding/rust",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)

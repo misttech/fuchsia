@@ -1,0 +1,80 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ring-buffer",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    # @bazel2gn:skip
+    test_deps = ["//src/lib/fuchsia"],
+    visibility = [
+        "//src/diagnostics/archivist:__pkg__",
+        "//src/diagnostics/validator/logs/sink:__pkg__",
+        "//src/lib/diagnostics/fake-log-sink/rust:__pkg__",
+        "//src/lib/diagnostics/log/bench:__pkg__",
+        "//src/lib/diagnostics/log/rust:__pkg__",
+    ],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+fx_packaged_binary(
+    name = "ring-buffer_test_packaged_bin",
+    testonly = True,
+    binary = ":ring-buffer_test",
+    binary_name = "ring_buffer_lib_test",
+)
+
+fx_component_manifest(
+    name = "ring-buffer-tests-manifest",
+    testonly = True,
+    component_name = "ring-buffer-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:next-vdso.shard.cml",
+    ],
+    # NOTE: We need a custom manifest because we have to use the next-vdso runner.
+    manifest = "meta/ring_buffer_tests.cml",
+)
+
+fx_test_component(
+    name = "ring-buffer-tests-component",
+    compiled_manifest = ":ring-buffer-tests-manifest",
+    component_name = "ring-buffer-tests",
+    deps = [":ring-buffer_test_packaged_bin"],
+)
+
+fx_package(
+    name = "ring-buffer-tests-package",
+    package_name = "ring-buffer-tests",
+    test_components = [":ring-buffer-tests-component"],
+)
+
+fx_test(
+    name = "ring-buffer-tests",
+    package = ":ring-buffer-tests-package",
+    visibility = ["//src/diagnostics:__pkg__"],
+)
