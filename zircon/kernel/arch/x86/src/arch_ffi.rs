@@ -5,8 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 use super::Iframe;
+#[cfg(console_enabled)]
 use super::arch::{Backtrace, CpuContext};
 use crate::kernel::types::cpu_num_t;
+#[cfg(console_enabled)]
 use zx_types::{zx_duration_mono_t, zx_status_t};
 
 unsafe extern "C" {
@@ -16,6 +18,7 @@ unsafe extern "C" {
     ///
     /// Interrupts must be disabled on the calling CPU, `target_cpu` must be a valid CPU number,
     /// and `context` must point to a valid, mutable `CpuContext`.
+    #[cfg(console_enabled)]
     pub(super) fn cpp_x86_request_context(
         target_cpu: cpu_num_t,
         timeout: zx_duration_mono_t,
@@ -27,6 +30,7 @@ unsafe extern "C" {
     /// # Safety
     ///
     /// `bt` must point to a valid, initialized `Backtrace`.
+    #[cfg(console_enabled)]
     pub(super) fn cpp_x86_backtrace_print(bt: *const Backtrace);
 
     /// Prints `frame` to the kernel console.

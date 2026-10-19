@@ -7,7 +7,7 @@
 pub mod apic;
 #[cfg(console_enabled)]
 pub mod arch;
-#[cfg(console_enabled)]
+#[cfg(any(console_enabled, ktest))]
 mod arch_ffi;
 pub mod cache;
 pub mod fake_msr_access;
@@ -589,5 +589,190 @@ mod x86_hwp_tests {
             expect_false!(cpp_x86_intel_hwp_parse_policy(c"invalid".as_ptr(), &mut policy));
             expect_false!(cpp_x86_intel_hwp_parse_policy(c"\n".as_ptr(), &mut policy));
         }
+    }
+}
+
+#[cfg(ktest)]
+/// x64 platform tests.
+#[unittest::suite(name = "x64_platform_tests_rust")]
+mod x64_platform_tests {
+    use super::apic::ApicInterruptDeliveryMode;
+    use super::arch_ffi::{cpp_x86_read_msr_on_cpu, cpp_x86_write_msr_on_cpu};
+    use super::feature::{
+        X86_FEATURE_RDTSCP, X86HypervisorList, x86_feature_test, x86_get_hypervisor,
+    };
+    use super::hwp_ffi::{cpp_x86_intel_hwp_init, cpp_x86_intel_hwp_supported};
+    use super::interrupts::X86_INT_NMI;
+    use super::lapic::apic_send_mask_ipi;
+    use super::registers::{X86_MSR_IA32_FMASK, X86_MSR_IA32_LSTAR, X86_MSR_IA32_TSC_AUX};
+    use super::x86::{read_msr, write_msr};
+    use crate::console::console_run_script_locked;
+    use crate::kernel::deadline::{Deadline, TimerSlack};
+    use crate::kernel::mp::{MpIpiTarget, is_cpu_online, sync_exec_raw};
+    use crate::kernel::scheduler::peek_active_mask;
+    use crate::kernel::types::cpu_num_to_mask;
+    use crate::platform_rs::timer::{DurationMono, current_mono_time};
+    use boot_options::BootOptions;
+    use kprint::kprintln;
+    use unittest::{expect_eq, expect_ne};
+    use zx_status::sys::ZX_OK;
+
+    unsafe extern "C" fn rdtscp_aux(context: *mut core::ffi::c_void) {
+        // SAFETY: `context` points to a valid `u32` on the caller's stack.
+        let aux = unsafe { &mut *(context as *mut u32) };
+        let aux_msr: u32;
+        // SAFETY: `rdtscp` reads the timestamp counter and IA32_TSC_AUX into eax, edx, ecx.
+        unsafe {
+            core::arch::asm!(
+                "rdtscp",
+                out("eax") _,
+                out("edx") _,
+                out("ecx") aux_msr,
+                options(nostack, preserves_flags),
+            );
+        }
+        *aux = aux_msr;
+    }
+
+    /// basic test of read/write MSR variants
+    #[test]
+    fn test_x64_msrs() {
+        let int_state = crate::arch_rs::arch_interrupt_save();
+        // Test read_msr for an MSR that is known to always exist on x64.
+        // SAFETY: `X86_MSR_IA32_LSTAR` is an architectural MSR that always exists on x86_64.
+        let val = unsafe { read_msr(X86_MSR_IA32_LSTAR) };
+        expect_ne!(val, 0u64);
+
+        // Test write_msr to write that value back.
+        // SAFETY: Writing back the current value of `X86_MSR_IA32_LSTAR` with interrupts disabled.
+        unsafe { write_msr(X86_MSR_IA32_LSTAR, val) };
+        crate::arch_rs::arch_interrupt_restore(int_state);
+
+        // Test read_msr_safe for an MSR that is known to not exist.
+        // If read_msr_safe is busted, then this will #GP (panic).
+        // TODO: Enable when the QEMU TCG issue is sorted (TCG never
+        // generates a #GP on MSR access).
+
+        // Test read_msr_on_cpu.
+        // SAFETY: `X86_MSR_IA32_FMASK` is an architectural MSR that always exists on x86_64.
+        let initial_fmask = unsafe { read_msr(X86_MSR_IA32_FMASK) };
+        for i in 0..crate::arch_rs::max_num_cpus() {
+            if !is_cpu_online(i) {
+                continue;
+            }
+            // SAFETY: CPU `i` is online and `X86_MSR_IA32_FMASK` is a valid MSR.
+            let fmask = unsafe { cpp_x86_read_msr_on_cpu(i, X86_MSR_IA32_FMASK) };
+            expect_eq!(initial_fmask, fmask);
+        }
+
+        // Test write_msr_on_cpu
+        for i in 0..crate::arch_rs::max_num_cpus() {
+            if !is_cpu_online(i) {
+                continue;
+            }
+            // SAFETY: CPU `i` is online and writing back `initial_fmask` preserves state.
+            unsafe { cpp_x86_write_msr_on_cpu(i, X86_MSR_IA32_FMASK, initial_fmask) };
+        }
+
+        // If RDTSCP is supported, check that the TSC_AUX MSR is correctly programmed.
+        if x86_feature_test(X86_FEATURE_RDTSCP) {
+            for i in 0..crate::arch_rs::max_num_cpus() {
+                if !is_cpu_online(i) {
+                    continue;
+                }
+                // SAFETY: CPU `i` is online and `X86_MSR_IA32_TSC_AUX` is supported when RDTSCP is
+                // present.
+                let cpuid = unsafe { cpp_x86_read_msr_on_cpu(i, X86_MSR_IA32_TSC_AUX) };
+                expect_eq!(cpuid, i as u64);
+
+                let mut aux: u32 = 0;
+                let mut mask = 0;
+                mask |= cpu_num_to_mask(i);
+                // SAFETY: `rdtscp_aux` is a valid callback and `&raw mut aux` is valid for the
+                // duration of the synchronous call.
+                unsafe {
+                    sync_exec_raw(MpIpiTarget::Mask, mask, rdtscp_aux, (&raw mut aux).cast());
+                }
+                expect_eq!(cpuid, aux as u64);
+            }
+        }
+    }
+
+    /// test k cpu rdmsr commands
+    #[test]
+    fn test_x64_msrs_k_commands() {
+        console_run_script_locked("cpu rdmsr 0 0x10");
+    }
+
+    /// test k hwp commands
+    #[test]
+    fn test_x64_hwp_k_commands() {
+        // Don't test at all if HWP disabled on the command line.
+        if !BootOptions::get().x86_hwp {
+            return true;
+        }
+
+        // If we don't support HWP, expect every command to just return "not supported".
+        // SAFETY: `cpp_x86_intel_hwp_supported` queries CPUID without side effects.
+        if !unsafe { cpp_x86_intel_hwp_supported() } {
+            expect_eq!(Status::NOT_SUPPORTED.into_raw(), console_run_script_locked("hwp"));
+            return true;
+        }
+
+        // Test top-level parsing.
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp"));
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp invalid"));
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp 3"));
+
+        // Set policy.
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp set-policy"));
+        expect_eq!(
+            Status::INVALID_ARGS.into_raw(),
+            console_run_script_locked("hwp set-policy invalid-policy")
+        );
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp set-policy 3"));
+        expect_eq!(
+            Status::INVALID_ARGS.into_raw(),
+            console_run_script_locked("hwp set-policy performance 42")
+        );
+        expect_eq!(ZX_OK, console_run_script_locked("hwp set-policy performance"));
+        expect_eq!(ZX_OK, console_run_script_locked("hwp set-policy power-save"));
+
+        // Set Freq
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp set-freq"));
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp set-freq 0"));
+        expect_eq!(Status::INVALID_ARGS.into_raw(), console_run_script_locked("hwp set-freq 256"));
+        expect_eq!(
+            Status::INVALID_ARGS.into_raw(),
+            console_run_script_locked("hwp set-freq 10 10")
+        );
+        expect_eq!(ZX_OK, console_run_script_locked("hwp set-freq 100"));
+        expect_eq!(ZX_OK, console_run_script_locked("hwp set-freq 255"));
+
+        // Restore the policy to default.
+        // SAFETY: `cpp_x86_intel_hwp_init` reinitializes HWP policy using the boot option value.
+        unsafe {
+            cpp_x86_intel_hwp_init(BootOptions::get().x86_hwp_policy as u8);
+        }
+    }
+
+    // TODO(https://fxbug.dev/42169592): Unconditionally re-enable this test when
+    // https://fxbug.dev/42169592 has been resolved.
+    //
+    // Spam all the CPUs with NMIs, see that nothing bad happens.
+    /// test nmi spam
+    #[test]
+    fn test_nmi_spam() {
+        if x86_get_hypervisor() == X86HypervisorList::Kvm {
+            kprintln!("skipping test, see https://fxbug.dev/42169592");
+            return true;
+        }
+
+        const DURATION: DurationMono = DurationMono::from_millis(100);
+        let deadline = Deadline::after_mono(DURATION, TimerSlack::none());
+        while {
+            apic_send_mask_ipi(X86_INT_NMI.0, peek_active_mask(), ApicInterruptDeliveryMode::NMI);
+            current_mono_time().0 < deadline.when().0
+        } {}
     }
 }
