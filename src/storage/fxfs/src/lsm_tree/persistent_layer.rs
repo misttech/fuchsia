@@ -43,7 +43,7 @@
 //
 // BloomFilter blocks contain a bitmap which is used to probabilistically determine if a given key
 // might exist in the layer file.   See `BloomFilter` for details on this structure.  Note that this
-// can be absent from the file for small layer files.
+// can be absent from the file if the layer is empty.
 //
 // Seek/LayerInfo blocks contain both the seek table, and a single LayerInfo struct at the tail of
 // the last block, with the LayerInfo's length written as a little-endian u64 at the very end.  The
@@ -231,9 +231,6 @@ impl LayerBuffer for SliceBuffer<'_> {
         self.handle.has_io_error()
     }
 }
-
-// For small layer files, don't bother with the bloom filter.  Arbitrarily chosen.
-const MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER: usize = 4;
 
 // How many blocks we reserve for the header.  Data blocks start at this offset.
 const NUM_HEADER_BLOCKS: u64 = 1;
@@ -1470,7 +1467,7 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
     // Assumes the writer is positioned to a new block.
     // Returns the size of the bloom filter, in bytes.
     async fn write_bloom_filter(&mut self) -> Result<usize, Error> {
-        if self.data_blocks() < MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER {
+        if self.data_blocks() == 0 || self.bloom_filter.serialized_size() == 0 {
             return Ok(0);
         }
         // TODO(https://fxbug.dev/323571978): Avoid bounce-buffering.
@@ -1595,7 +1592,6 @@ mod tests {
     };
     use crate::filesystem::MAX_BLOCK_SIZE;
     use crate::lsm_tree::LayerIterator;
-    use crate::lsm_tree::persistent_layer::MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER;
     use crate::lsm_tree::testing::TestKey;
     use crate::lsm_tree::types::{
         Existence, Item, ItemRef, Layer, LayerWriter, MaybeContainsKey, OrdUpperBound,
@@ -2178,9 +2174,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_ignore_bloom_filter_on_older_versions() {
         const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
-        const ITEMS_PER_PHASE: u64 = 50;
-        // Add enough items to create enough blocks for a bloom filter to be necessary.
-        const ITEM_COUNT: u64 = (1 + MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER as u64) * ITEMS_PER_PHASE;
+        const ITEM_COUNT: u64 = 250;
 
         let old_version_handle =
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
@@ -2333,10 +2327,9 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_key_exists_no_bloom_filter() {
+    async fn test_small_layer_has_bloom_filter() {
         const BLOCK_SIZE: BlockSize = BlockSize::SIZE_8KIB;
-        // Not enough items to trigger a bloom filter.
-        const ITEM_COUNT: i32 = 100;
+        const ITEM_COUNT: i32 = 10;
 
         let handle = FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         {
@@ -2347,32 +2340,33 @@ mod tests {
             )
             .await
             .expect("writer new");
-            for i in 1..ITEM_COUNT {
+            for i in 0..ITEM_COUNT {
                 writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
             }
             writer.complete().await.expect("flush failed");
         }
-        let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
-        assert!(!layer.has_bloom_filter());
-
-        assert_eq!(layer.key_exists(&0).await.expect("key_exists failed"), Existence::Missing);
-        assert_eq!(layer.key_exists(&1).await.expect("key_exists failed"), Existence::Missing);
-        for i in 1..ITEM_COUNT {
+        let layer =
+            PersistentLayer::<i32, i32>::open_async(Arc::new(handle)).await.expect("new failed");
+        assert_eq!(layer.data.data_size, BLOCK_SIZE.get());
+        assert!(layer.has_bloom_filter());
+        let mut missing_count = 0;
+        for i in 0..ITEM_COUNT {
             assert_eq!(
                 layer.key_exists(&(i * 2)).await.expect("key_exists failed"),
-                Existence::Exists
+                Existence::MaybeExists
             );
-            assert_eq!(
-                layer.key_exists(&(i * 2 + 1)).await.expect("key_exists failed"),
-                Existence::Missing
-            );
+            if layer.key_exists(&(i * 2 + 1)).await.expect("key_exists failed")
+                == Existence::Missing
+            {
+                missing_count += 1;
+            }
         }
+        assert!(missing_count > ITEM_COUNT / 2);
     }
 
     #[fuchsia::test]
     async fn test_key_exists_with_bloom_filter() {
         const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
-        // Enough items to trigger a bloom filter.
         const ITEM_COUNT: i32 = 10000;
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
