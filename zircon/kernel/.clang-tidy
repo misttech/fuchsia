@@ -15,3 +15,7 @@ Checks: >
   -modernize-use-std-numbers,
   -modernize-use-std-print,
   -modernize-use-to-underlying,
+# During the conversion to Rust some C++ member functions make only FFI calls
+# and look like they could be made const. However, we don't want to modify the
+# C++ interface during Rust conversions so disable this check.
+  -readability-make-member-function-const
