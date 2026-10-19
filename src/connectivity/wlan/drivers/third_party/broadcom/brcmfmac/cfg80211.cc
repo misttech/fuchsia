@@ -7301,11 +7301,9 @@ static zx_status_t brcmf_process_auth_event(struct brcmf_if* ifp, const struct b
     const fuchsia_wlan_ieee80211_wire::StatusCode status_code =
         brcmf_status_code_from_event_reason(e);
     if (brcmf_test_bit(brcmf_vif_status_bit_t::ROAMING, &ifp->vif->sme_state)) {
-      brcmf_bss_roam_done(ifp, brcmf_connect_status_t::AUTHENTICATION_FAILED, status_code);
-    } else {
-      brcmf_bss_connect_done(ifp, brcmf_connect_status_t::AUTHENTICATION_FAILED, status_code);
+      return brcmf_bss_roam_done(ifp, brcmf_connect_status_t::AUTHENTICATION_FAILED, status_code);
     }
-    return ZX_OK;
+    return brcmf_bss_connect_done(ifp, brcmf_connect_status_t::AUTHENTICATION_FAILED, status_code);
   }
 
   // Only care about the authentication frames during SAE process.
