@@ -36,6 +36,13 @@
             to: "#cpu_manager",
         },
         {
+            protocol: [ "fuchsia.power.broker.Topology" ],
+            from: "#power-broker",
+            to: "#cpu_manager",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             protocol: [
                 "fuchsia.kernel.CpuResource",
                 "fuchsia.kernel.Stats",

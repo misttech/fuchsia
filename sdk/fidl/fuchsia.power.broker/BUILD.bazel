@@ -52,6 +52,7 @@ fidl_library(
         "//src/graphics/magma/lib/magma_service/sys_driver:__subpackages__",
         "//src/power/bench:__subpackages__",
         "//src/power/broker:__subpackages__",
+        "//src/power/cpu-manager:__subpackages__",
         "//src/power/shutdown-shim:__subpackages__",
         "//src/power/system-activity-governor:__subpackages__",
         "//src/power/system-activity-governor-controller:__subpackages__",
@@ -65,6 +66,7 @@ fidl_library(
         "//src/sys/time/testing:__subpackages__",
         "//src/sys/time/timekeeper:__subpackages__",
         "//vendor:__subpackages__",
+        "//visibility:private",
     ],
     deps = [
         "//zircon/vdso/zx",

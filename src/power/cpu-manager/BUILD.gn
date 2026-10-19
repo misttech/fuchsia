@@ -26,6 +26,7 @@ cpu_manager_deps = [
   "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
   "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
   "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
+  "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
   "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
   "//sdk/fidl/fuchsia.power.cpu.manager:fuchsia.power.cpu.manager_rust",
   "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",

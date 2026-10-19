@@ -70,6 +70,7 @@ fidl("fuchsia.power.broker") {
     "//src/graphics/magma/lib/magma_service/sys_driver/*",
     "//src/power/bench/*",
     "//src/power/broker/*",
+    "//src/power/cpu-manager/*",
     "//src/power/shutdown-shim/*",
     "//src/power/system-activity-governor-controller/*",
     "//src/power/system-activity-governor/*",

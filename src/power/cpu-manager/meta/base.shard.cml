@@ -21,6 +21,8 @@
         },
         {
             protocol: [
+                "fuchsia.power.broker.Topology",
+
                 // Trace manager may be excluded from builds where tracing is not expected to be
                 // used for observability, such as in the bringup product and non-eng builds of any
                 // product.
