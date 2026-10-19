@@ -10,7 +10,7 @@
 //!   front (`4x` their journal byte size) and transfer that reservation into `M_total` on commit.
 //! - **Borrowing transactions**: Operations that free space (such as unlinking files, purging
 //!   graveyard tombstones, or trimming extents) must succeed even when the disk is full, so they
-//!   borrow from `M_total` (`BorrowedMetadata` / `BorrowedMetadataAndData`) instead of reserving
+//!   borrow from `M_total` (`Borrowed`) instead of reserving
 //!   from the allocator.
 //! - **Minor vs. Major Compaction**: Flushing an object store normally performs a *minor
 //!   compaction*, writing recent journal mutations (including deletion tombstones) into a new small
@@ -97,7 +97,7 @@
 //!
 //! - **Transaction Commit**: Non-borrowing transactions (`New` / `Hold`) transfer `4 * txn_size`
 //!   into `M_total` and record `usage` in `journal_checkpoints[S]`. Borrowing transactions
-//!   (`BorrowedMetadata`) transfer nothing into `M_total` and record both `usage` and
+//!   (`Borrowed`) transfer nothing into `M_total` and record both `usage` and
 //!   `borrowed_usage` in `journal_checkpoints[S]` for each mutated child store `S`.
 //! - **Tree Compaction (`BeginFlush` & `EndFlush`)**: When `BeginFlush` is applied to child store
 //!   `S`, `journal_checkpoints[S]` moves `Current` into `Old` so any concurrent transactions
@@ -973,14 +973,13 @@ impl ObjectManager {
         let txn_space = reserved_space_from_journal_usage(journal_usage);
         let is_borrowed = transaction.metadata_reservation.is_borrowed();
         match &mut transaction.metadata_reservation {
-            MetadataReservation::BorrowedMetadata
-            | MetadataReservation::BorrowedMetadataAndData => {}
+            MetadataReservation::Borrowed => {}
             MetadataReservation::Hold(hold) => {
                 // Transfer reserved space into the metadata reservation.
                 let txn_reservation = *hold.owner();
                 assert_ne!(
                     txn_reservation as *const _, reservation as *const _,
-                    "MetadataReservation::BorrowedMetadataAndData should be used."
+                    "MetadataReservation::Borrowed should be used."
                 );
                 txn_reservation.commit(txn_space);
                 if txn_reservation.owner_object_id() != reservation.owner_object_id() {
@@ -1860,7 +1859,7 @@ mod tests {
                             handle
                                 .truncate_with_options(
                                     Options {
-                                        reservation: ReservationOptions::BorrowedMetadata,
+                                        reservation: ReservationOptions::Borrowed,
                                         ..Default::default()
                                     },
                                     0,
@@ -1891,7 +1890,7 @@ mod tests {
                     let immediate = rng.random_bool(0.7);
                     unlink_and_tombstone_file(&fs, &store, fname, oid, immediate).await;
                 } else if op < 54 {
-                    // 4) Insert or delete (via BorrowedMetadata) extended attributes on root_dir.
+                    // 4) Insert or delete (via Borrowed) extended attributes on root_dir.
                     let store = pick_unlocked_volume(&fs, &vols, &mut rng);
                     let store_id = store.store_object_id();
                     let root_dir_id = store.root_directory_object_id();
@@ -1920,7 +1919,7 @@ mod tests {
                                 lock_keys![LockKey::object(store_id, root_dir_id)],
                                 Options {
                                     skip_journal_checks: true,
-                                    reservation: ReservationOptions::BorrowedMetadata,
+                                    reservation: ReservationOptions::Borrowed,
                                     ..Default::default()
                                 },
                             )
@@ -1938,7 +1937,7 @@ mod tests {
                 } else if op < 74 {
                     // 5) Base-layer delete + create churn on a volume with a > 512 KiB base layer
                     // (`vol_2` is permanent and unencrypted, so `candidates` is never empty):
-                    // delete a batch of existing entries (using `BorrowedMetadata`) and insert an
+                    // delete a batch of existing entries (using `Borrowed`) and insert an
                     // equal number of new-generation entries (using a funded transaction). Because
                     // the live entry count stays constant while dead records accumulate, major
                     // compaction must trigger automatically to reclaim space.
@@ -1969,7 +1968,7 @@ mod tests {
                                 lock_keys![LockKey::object(store_id, root_dir_id)],
                                 Options {
                                     skip_journal_checks: true,
-                                    reservation: ReservationOptions::BorrowedMetadata,
+                                    reservation: ReservationOptions::Borrowed,
                                     ..Default::default()
                                 },
                             )
@@ -2134,7 +2133,7 @@ mod tests {
                                 [],
                                 true,
                                 Options {
-                                    reservation: ReservationOptions::BorrowedMetadata,
+                                    reservation: ReservationOptions::Borrowed,
                                     ..Default::default()
                                 },
                             )

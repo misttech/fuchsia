@@ -1175,9 +1175,7 @@ impl Allocator {
     }
 
     fn is_system_store(&self, owner_object_id: u64) -> bool {
-        let fs = self.filesystem.upgrade().unwrap();
-        owner_object_id == fs.object_manager().root_store_object_id()
-            || owner_object_id == fs.object_manager().root_parent_store_object_id()
+        self.filesystem.upgrade().unwrap().object_manager().is_system_store(owner_object_id)
     }
 
     /// Updates the accounting to track that a byte reservation has been moved out of an owner to
@@ -1369,7 +1367,9 @@ impl Allocator {
         let requested_len = len;
 
         // Make sure we have space reserved before we try and find the space.
-        let reservation = if let Some(reservation) = transaction.allocator_reservation() {
+        let reservation = if let Some(reservation) =
+            transaction.allocator_reservation(owner_object_id)
+        {
             match reservation.owner_object_id {
                 // If there is no owner, this must be a system store that we're allocating for.
                 None => assert!(self.is_system_store(owner_object_id)),
@@ -1382,6 +1382,11 @@ impl Allocator {
             len = r.amount();
             Left(r)
         } else {
+            assert!(
+                !transaction.metadata_reservation.is_borrowed()
+                    || self.filesystem.upgrade().unwrap().options().image_builder_mode.is_some(),
+                "Allocations for non-system stores are not allowed in Borrowed transactions"
+            );
             let mut inner = self.inner.lock();
             assert!(inner.opened);
             // Do not exceed the limit for the owner or the device.
@@ -1397,7 +1402,7 @@ impl Allocator {
         };
 
         if len == 0 {
-            if let Some(reservation) = transaction.allocator_reservation() {
+            if let Some(reservation) = transaction.allocator_reservation(owner_object_id) {
                 bail!(anyhow!(FxfsError::NoSpace).context(format!(
                     "Failed to allocate {} bytes for owner {} from {}",
                     requested_len,
@@ -1593,6 +1598,7 @@ impl Allocator {
         debug_assert_ne!(owner_object_id, INVALID_OBJECT_ID);
         {
             let len = device_range.length().map_err(|_| FxfsError::InvalidArgs)?;
+            let reservation = transaction.allocator_reservation(owner_object_id);
 
             let mut inner = self.inner.lock();
             let device_used = inner.used_bytes();
@@ -1613,7 +1619,7 @@ impl Allocator {
                     self.device_size
                 ))
             );
-            if let Some(reservation) = transaction.allocator_reservation() {
+            if let Some(reservation) = reservation {
                 // The transaction takes ownership of this hold.
                 reservation
                     .reserve(len)
@@ -1626,6 +1632,18 @@ impl Allocator {
                         ))
                     })?
                     .forget();
+            } else {
+                assert!(
+                    !transaction.metadata_reservation.is_borrowed()
+                        || self
+                            .filesystem
+                            .upgrade()
+                            .unwrap()
+                            .options()
+                            .image_builder_mode
+                            .is_some(),
+                    "Allocations for non-system stores are not allowed in Borrowed transactions"
+                );
             }
             owner_entry.uncommitted_allocated_bytes += len;
             inner.strategy.remove(device_range.clone());
@@ -1914,17 +1932,22 @@ impl JournalingObject for Allocator {
                 let len = item.key.device_range.length().unwrap();
                 let lower_bound = item.key.lower_bound_for_merge_into();
                 self.tree.merge_into(item, &lower_bound);
+                let reservation = if let ApplyMode::Live(transaction) = context.mode {
+                    transaction.allocator_reservation(owner_object_id)
+                } else {
+                    None
+                };
                 let mut inner = self.inner.lock();
                 let entry = inner.owner_bytes.entry(owner_object_id).or_default();
                 entry.allocated_bytes += len;
-                if let ApplyMode::Live(transaction) = context.mode {
+                if context.mode.is_live() {
                     entry.uncommitted_allocated_bytes -= len;
                     // Note that we cannot drop entries from temporary_allocations without holding
                     // the allocation_mutex as it may introduce races. We instead add the range to
                     // a Vec that can be applied later when we hold the lock (See comment on
                     // `dropped_temporary_allocations` above).
                     inner.dropped_temporary_allocations.push(device_range.0);
-                    if let Some(reservation) = transaction.allocator_reservation() {
+                    if let Some(reservation) = reservation {
                         reservation.commit(len);
                     }
                 }
@@ -1938,6 +1961,11 @@ impl JournalingObject for Allocator {
                     value: AllocatorValue::None,
                 };
                 let len = item.key.device_range.length().unwrap();
+                let reservation = if let ApplyMode::Live(transaction) = context.mode {
+                    transaction.allocator_reservation(owner_object_id)
+                } else {
+                    None
+                };
 
                 {
                     let mut inner = self.inner.lock();
@@ -1955,9 +1983,7 @@ impl JournalingObject for Allocator {
                             owner_object_id,
                         });
                     }
-                    if let ApplyMode::Live(transaction) = context.mode
-                        && let Some(reservation) = transaction.allocator_reservation()
-                    {
+                    if let Some(reservation) = reservation {
                         inner.add_reservation(reservation.owner_object_id(), len);
                         reservation.add(len);
                     }
@@ -1991,13 +2017,14 @@ impl JournalingObject for Allocator {
         match mutation {
             Mutation::Allocator(AllocatorMutation::Allocate { device_range, owner_object_id }) => {
                 let len = device_range.length().unwrap();
+                let reservation = transaction.allocator_reservation(owner_object_id);
                 let mut inner = self.inner.lock();
                 inner
                     .owner_bytes
                     .entry(owner_object_id)
                     .or_default()
                     .uncommitted_allocated_bytes -= len;
-                if let Some(reservation) = transaction.allocator_reservation() {
+                if let Some(reservation) = reservation {
                     let res_owner = reservation.owner_object_id();
                     inner.add_reservation(res_owner, len);
                     reservation.release_reservation(res_owner, len);
@@ -2099,7 +2126,7 @@ impl<'a> Flusher<'a> {
     fn txn_options() -> Options<'static> {
         Options {
             skip_journal_checks: true,
-            reservation: ReservationOptions::BorrowedMetadataAndData,
+            reservation: ReservationOptions::Borrowed,
             ..Default::default()
         }
     }
@@ -2847,10 +2874,7 @@ mod tests {
                             ),
                             LockKey::flush(store_id)
                         ],
-                        Options {
-                            reservation: ReservationOptions::BorrowedMetadata,
-                            ..Default::default()
-                        },
+                        Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                     )
                     .await
                     .expect("new_transaction failed");
@@ -2923,10 +2947,7 @@ mod tests {
                         ),
                         LockKey::flush(store.store_object_id())
                     ],
-                    Options {
-                        reservation: ReservationOptions::BorrowedMetadata,
-                        ..Default::default()
-                    },
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                 )
                 .await
                 .expect("new_transaction failed");
@@ -2970,10 +2991,7 @@ mod tests {
                             ),
                             LockKey::flush(store.store_object_id())
                         ],
-                        Options {
-                            reservation: ReservationOptions::BorrowedMetadata,
-                            ..Default::default()
-                        },
+                        Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                     )
                     .await
                     .expect("new_transaction failed");

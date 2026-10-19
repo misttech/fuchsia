@@ -552,10 +552,7 @@ mod tests {
                         ),
                         LockKey::flush(store_id)
                     ],
-                    Options {
-                        reservation: ReservationOptions::BorrowedMetadata,
-                        ..Default::default()
-                    },
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                 )
                 .await
                 .expect("new_transaction failed");
@@ -654,10 +651,7 @@ mod tests {
                     "vol",
                     [],
                     false,
-                    Options {
-                        reservation: ReservationOptions::BorrowedMetadata,
-                        ..Default::default()
-                    },
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                 )
                 .await
                 .unwrap()
@@ -741,7 +735,7 @@ mod tests {
             let parent_store = store.parent_store().unwrap();
             let txn_options = Options {
                 skip_journal_checks: true,
-                reservation: ReservationOptions::BorrowedMetadataAndData,
+                reservation: ReservationOptions::Borrowed,
                 ..Default::default()
             };
             let mut transaction = parent_store
@@ -907,7 +901,7 @@ mod tests {
                 "vol",
                 [],
                 false,
-                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
+                Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
             )
             .await
             .expect("acquire_transaction_for_remove_volume failed");

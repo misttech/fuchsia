@@ -144,7 +144,7 @@ impl ObjectStore {
         let filesystem = self.filesystem();
         let txn_options = Options {
             skip_journal_checks: true,
-            reservation: ReservationOptions::BorrowedMetadataAndData,
+            reservation: ReservationOptions::Borrowed,
             ..Default::default()
         };
 
@@ -386,7 +386,7 @@ impl ObjectStore {
         let filesystem = self.filesystem();
         let txn_options = Options {
             skip_journal_checks: true,
-            reservation: ReservationOptions::BorrowedMetadataAndData,
+            reservation: ReservationOptions::Borrowed,
             ..Default::default()
         };
 
@@ -1107,8 +1107,7 @@ mod tests {
         for _ in 0..450 {
             file.truncate_with_options(
                 Options {
-                    reservation:
-                        crate::object_store::transaction::ReservationOptions::BorrowedMetadata,
+                    reservation: crate::object_store::transaction::ReservationOptions::Borrowed,
                     ..Default::default()
                 },
                 0,

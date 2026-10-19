@@ -640,7 +640,7 @@ impl<S: HandleOwner> SuperBlockWriter<S> {
                 .handle
                 .new_transaction_with_options(Options {
                     skip_journal_checks: true,
-                    reservation: ReservationOptions::BorrowedMetadataAndData,
+                    reservation: ReservationOptions::Borrowed,
                     ..Default::default()
                 })
                 .await?;
@@ -674,13 +674,13 @@ impl<S: HandleOwner> SuperBlockWriter<S> {
                 + SUPER_BLOCK_CHUNK_SIZE;
 
         // The super-block handle lives in `root_store` (a system store) and its extents are
-        // allocated using `BorrowedMetadataAndData`, so truncating excess extents must also use
-        // `BorrowedMetadataAndData` to return freed space to `metadata_reservation`.
+        // allocated using `Borrowed`, so truncating excess extents also uses `Borrowed` to return
+        // freed space to `metadata_reservation`.
         self.handle
             .truncate_with_options(
                 Options {
                     skip_journal_checks: true,
-                    reservation: ReservationOptions::BorrowedMetadataAndData,
+                    reservation: ReservationOptions::Borrowed,
                     ..Default::default()
                 },
                 len,

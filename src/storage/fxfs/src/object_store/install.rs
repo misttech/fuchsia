@@ -162,7 +162,7 @@ impl ObjectStore {
 
         let txn_options = Options {
             skip_journal_checks: true,
-            reservation: ReservationOptions::BorrowedMetadataAndData,
+            reservation: ReservationOptions::Borrowed,
             ..Default::default()
         };
 
@@ -287,6 +287,8 @@ impl ObjectStore {
         }
 
         // Delete objects from the destination volume we replaced, if any.
+        // NOTE: The transactions here must skip journal checks since we hold flush locks, which
+        // journal compaction (needed to free journal space) would need to acquire.
         if let Some(replaced_objects) = replaced_objects {
             for object_id in replaced_objects {
                 fs.ensure_local()
@@ -296,18 +298,8 @@ impl ObjectStore {
             }
         }
 
-        // Delete the metadata ownership file in `self` (a child volume, so deallocated extents
-        // return to the global allocator via `BorrowedMetadata`).
-        self.tombstone_object(
-            metadata_object_id,
-            Options {
-                skip_journal_checks: true,
-                reservation: ReservationOptions::BorrowedMetadata,
-                ..Default::default()
-            },
-            None,
-        )
-        .await?;
+        // Delete the metadata ownership file.
+        self.tombstone_object(metadata_object_id, txn_options, None).await?;
 
         Ok(())
     }
@@ -653,8 +645,8 @@ mod tests {
 
         // Verify that replaying the `install_volume` transactions produces the exact same metadata
         // reservation state as live mode (which would diverge if child-store `metadata_object_id`
-        // deallocations used `BorrowedMetadataAndData` or system-store `replaced_objects`
-        // deallocations used `Options::default()`).
+        // deallocations were returned to the metadata reservation or system-store
+        // `replaced_objects` deallocations were not).
         fs.sync(SyncOptions { flush_device: true, ..Default::default() }).await.unwrap();
         let expected_reservation = fs.object_manager().metadata_reservation().amount();
         let expected_map = fs.object_manager().reserved_metadata_space();

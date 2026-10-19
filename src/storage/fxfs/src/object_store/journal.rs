@@ -1181,7 +1181,7 @@ impl Journal {
                         });
                     }
                     JournalRecord::Commit | JournalRecord::CommitBorrowed(_) => {
-                        // `pre_commit` can emit an empty `BorrowedMetadataAndData` transaction
+                        // `pre_commit` can emit an empty `Borrowed` transaction
                         // (`CommitBorrowed` with no mutations) when `needs_borrow_for_journal`
                         // is true after a journal reset or discard. Recording it during full
                         // journal replay advances `last_end_offset` so that a subsequent funded
@@ -1613,7 +1613,7 @@ impl Journal {
         let mut transaction = handle
             .new_transaction_with_options(Options {
                 skip_journal_checks: true,
-                reservation: ReservationOptions::BorrowedMetadataAndData,
+                reservation: ReservationOptions::Borrowed,
                 ..Default::default()
             })
             .await?;
@@ -3393,10 +3393,7 @@ mod tests {
                         LockKey::object(store_id, store.root_directory_object_id()),
                         LockKey::object(store_id, object_id),
                     ],
-                    Options {
-                        reservation: ReservationOptions::BorrowedMetadata,
-                        ..Default::default()
-                    },
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                 )
                 .await
                 .expect("new_transaction failed");
@@ -3547,10 +3544,7 @@ mod tests {
                         LockKey::object(store_a_id, store_a.root_directory_object_id()),
                         LockKey::object(store_a_id, file_ids[0]),
                     ],
-                    Options {
-                        reservation: ReservationOptions::BorrowedMetadata,
-                        ..Default::default()
-                    },
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                 )
                 .await
                 .expect("new_transaction failed");
@@ -3596,10 +3590,7 @@ mod tests {
                         LockKey::object(store_a_id, store_a.root_directory_object_id()),
                         LockKey::object(store_a_id, file_ids[1]),
                     ],
-                    Options {
-                        reservation: ReservationOptions::BorrowedMetadata,
-                        ..Default::default()
-                    },
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                 )
                 .await
                 .expect("new_transaction failed");
@@ -3788,14 +3779,14 @@ mod tests {
         let (b_b_before, req_b_before) = fs.object_manager().store_borrowed(store_b_id).unwrap();
         assert_eq!(b_b_before, 0);
 
-        // Delete extended attributes in `store_a` using `BorrowedMetadata` until `B_A >= R_A / 2`.
+        // Delete extended attributes in `store_a` using `Borrowed` until `B_A >= R_A / 2`.
         for batch in 0..28 {
             let mut transaction = store_a
                 .new_transaction(
                     lock_keys![LockKey::object(store_a_id, root_dir_a)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4000,7 +3991,7 @@ mod tests {
                     lock_keys![LockKey::object(store_b_id, root_dir_b)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4174,7 +4165,7 @@ mod tests {
                     lock_keys![LockKey::object(store_b_id, root_dir_b)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4339,7 +4330,7 @@ mod tests {
                     lock_keys![LockKey::object(store_a_id, root_dir_a)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4365,7 +4356,7 @@ mod tests {
                     lock_keys![],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4379,7 +4370,7 @@ mod tests {
                     lock_keys![LockKey::object(store_a_id, root_dir_a)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4418,7 +4409,7 @@ mod tests {
                     lock_keys![LockKey::object(store_a_id, root_dir_a)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4647,7 +4638,7 @@ mod tests {
                     lock_keys![LockKey::object(store_a_id, root_dir_a)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4696,7 +4687,7 @@ mod tests {
                     lock_keys![LockKey::object(store_a_id, root_dir_a)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )
@@ -4726,7 +4717,7 @@ mod tests {
                     lock_keys![LockKey::object(store_a_id, root_dir_a)],
                     Options {
                         skip_journal_checks: true,
-                        reservation: ReservationOptions::BorrowedMetadata,
+                        reservation: ReservationOptions::Borrowed,
                         ..Default::default()
                     },
                 )

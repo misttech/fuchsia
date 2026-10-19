@@ -860,7 +860,7 @@ impl MutableDirectory for FxDirectory {
                     self.store().store_object_id(),
                     self.directory.object_id()
                 )],
-                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
+                Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
             )
             .await
             .map_err(map_to_status)?;

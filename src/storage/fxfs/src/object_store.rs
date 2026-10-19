@@ -1523,14 +1523,13 @@ impl ObjectStore {
         object_id: u64,
         truncate_guard: &TruncateGuard<'_>,
     ) -> Result<(), Error> {
-        // For the root and root parent store, we would need to use the metadata reservation which
-        // we don't currently support, so assert that we're not those stores.
+        // `trim` is only used for objects in child stores (not the root or root parent store).
         assert!(self.parent_store.as_ref().unwrap().parent_store.is_some());
 
         self.trim_or_tombstone(
             object_id,
             false,
-            Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
+            Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
             truncate_guard,
         )
         .await
@@ -2907,10 +2906,7 @@ impl ObjectStore {
             let mut transaction = self
                 .new_transaction(
                     lock_keys![LockKey::object(self.store_object_id, object_id,)],
-                    Options {
-                        reservation: ReservationOptions::BorrowedMetadata,
-                        ..Default::default()
-                    },
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
                 )
                 .await?;
             if precondition() {

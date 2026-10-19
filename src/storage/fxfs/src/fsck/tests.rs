@@ -235,7 +235,7 @@ async fn test_missing_graveyard() {
                 lock_keys![],
                 transaction::Options {
                     skip_journal_checks: true,
-                    reservation: ReservationOptions::BorrowedMetadata,
+                    reservation: ReservationOptions::Borrowed,
                 },
             )
             .await
@@ -4120,7 +4120,7 @@ async fn test_delete_volume() {
                     ),
                     LockKey::flush(store_id)
                 ],
-                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
+                Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
             )
             .await
             .expect("new_transaction failed");

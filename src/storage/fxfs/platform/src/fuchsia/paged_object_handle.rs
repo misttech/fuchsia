@@ -552,7 +552,7 @@ impl PagedObjectHandle {
                 Options {
                     skip_journal_checks: false,
                     reservation: reservation
-                        .map_or(ReservationOptions::BorrowedMetadata, ReservationOptions::Hold),
+                        .map_or(ReservationOptions::Borrowed, ReservationOptions::Hold),
                     ..Default::default()
                 },
             )

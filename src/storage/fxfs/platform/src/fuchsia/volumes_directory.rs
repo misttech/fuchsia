@@ -299,7 +299,7 @@ impl MountedVolumesGuard<'_> {
                 name,
                 [],
                 false,
-                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
+                Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
             )
             .await?;
 

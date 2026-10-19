@@ -465,7 +465,7 @@ impl<S: HandleOwner> Directory<S> {
                     lock_keys.clone(),
                     Options {
                         reservation: if borrow_metadata_space {
-                            ReservationOptions::BorrowedMetadata
+                            ReservationOptions::Borrowed
                         } else {
                             ReservationOptions::New
                         },

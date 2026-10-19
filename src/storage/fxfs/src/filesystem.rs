@@ -1203,23 +1203,16 @@ impl FxFilesystem {
             .objects
             .store(store_id)
             .with_context(|| format!("Failed to get store {}", store_id))?;
-        // For now, it's safe to assume that all objects in the root parent and root store should
-        // return space to the metadata reservation, but we might have to revisit that if we end up
-        // with objects that are in other stores.
-        let options = if store_id == self.objects.root_parent_store_object_id()
-            || store_id == self.objects.root_store_object_id()
-        {
-            transaction::Options {
-                reservation: transaction::ReservationOptions::BorrowedMetadataAndData,
-                ..Default::default()
-            }
-        } else {
-            transaction::Options {
-                reservation: transaction::ReservationOptions::BorrowedMetadata,
-                ..Default::default()
-            }
-        };
-        store.tombstone_object(object_id, options, truncate_guard).await
+        store
+            .tombstone_object(
+                object_id,
+                transaction::Options {
+                    reservation: transaction::ReservationOptions::Borrowed,
+                    ..Default::default()
+                },
+                truncate_guard,
+            )
+            .await
     }
 
     /// Immediately tombstones (purges) an attribute in the graveyard, deallocating its extents,
@@ -1238,23 +1231,16 @@ impl FxFilesystem {
             .objects
             .store(store_id)
             .with_context(|| format!("Failed to get store {}", store_id))?;
-        // For now, it's safe to assume that all objects in the root parent and root store should
-        // return space to the metadata reservation, but we might have to revisit that if we end up
-        // with objects that are in other stores.
-        let options = if store_id == self.objects.root_parent_store_object_id()
-            || store_id == self.objects.root_store_object_id()
-        {
-            transaction::Options {
-                reservation: transaction::ReservationOptions::BorrowedMetadataAndData,
-                ..Default::default()
-            }
-        } else {
-            transaction::Options {
-                reservation: transaction::ReservationOptions::BorrowedMetadata,
-                ..Default::default()
-            }
-        };
-        store.tombstone_attribute(object_id, attribute_id, options).await
+        store
+            .tombstone_attribute(
+                object_id,
+                attribute_id,
+                transaction::Options {
+                    reservation: transaction::ReservationOptions::Borrowed,
+                    ..Default::default()
+                },
+            )
+            .await
     }
 
     async fn populate_stores_node(&self) -> Result<Inspector, Error> {

@@ -55,11 +55,9 @@ use std::{fmt, mem};
 ///   - YES: Use [`ReservationOptions::Hold`]
 ///   -  NO: Is the transaction allocating or deallocating extents for internal filesystem metadata
 ///          (e.g. LSM tree compaction, journal/superblock growth, or graveyard tombstoning in the
-///          root/root-parent stores)?
-///          - YES: Use [`ReservationOptions::BorrowedMetadataAndData`]
-///          -  NO: Is the transaction expected to be space-neutral or space-saving?
-///                 - YES: Use [`ReservationOptions::BorrowedMetadata`]
-///                 -  NO: Use [`ReservationOptions::New`]
+///          root/root-parent stores) or expected to be space-neutral or space-saving?
+///          - YES: Use [`ReservationOptions::Borrowed`]
+///          -  NO: Use [`ReservationOptions::New`]
 #[derive(Clone, Copy, Default)]
 pub enum ReservationOptions<'a> {
     /// A new reservation is created to accommodate the metadata of a maximally-sized transaction,
@@ -73,35 +71,20 @@ pub enum ReservationOptions<'a> {
     New,
 
     /// Metadata space is borrowed directly from the global reservation held by the ObjectManager.
-    /// Deallocations in the transaction will be returned to the allocator, rather than to the
-    /// global reservation.
     ///
-    /// This must be used for transactions which will either not affect net space usage after
-    /// compaction (e.g. setting attributes on an object), or will reduce space (e.g. unlinking a
-    /// file or deleting a range of extents).  By extension, this should not be used for
-    /// transactions which include allocations.
+    /// For system stores (`root_parent_store` and `root_store`), extent allocations and
+    /// deallocations in the transaction also draw from and return space to the global metadata
+    /// reservation (e.g. journal and super-block growth/shrink, LSM tree compaction, and graveyard
+    /// tombstoning of layer files).
+    ///
+    /// For child stores, extent allocations are not permitted, and extent deallocations are
+    /// returned to the global allocator pool.  This must only be used for child-store transactions
+    /// that will either not affect net space usage after compaction (e.g. setting attributes on an
+    /// object) or will reduce space (e.g. unlinking a file or deleting a range of extents).
     ///
     /// When this is used appropriately, it is guaranteed that transactions will not fail due to
-    /// lack of space.
-    ///
-    /// When choosing between this and BorrowedMetadataAndData, the main consideration is whether
-    /// the freed space from a deallocation must go back to the global reservation, or whether it
-    /// can go back to the global pool.  An example of where it must go back to the global
-    /// reservation would be when purging a layer file during compaction; that space was borrowed
-    /// from the metadata reservation, so it needs to go back there as well (and in that case
-    /// BorrowedMetadataAndData should be used instead).
-    BorrowedMetadata,
-
-    /// Metadata space is borrowed directly from the global reservation held by the ObjectManager.
-    /// Allocations and deallocations in the transaction will be from the global reservation as
-    /// well.
-    ///
-    /// This must be used for transactions that allocate or deallocate extents for internal
-    /// filesystem metadata, such as journal and superblock growth, LSM tree compaction, and
-    /// graveyard tombstoning of objects in the root and root-parent stores.  These transactions
-    /// will never fail due to running out of space (barring any bugs resulting in a deficit in the
-    /// global reservation).
-    BorrowedMetadataAndData,
+    /// lack of space (barring any bugs resulting in a deficit in the global reservation).
+    Borrowed,
 
     /// Use the specified reservation for the transaction's metadata (placing a hold on it) as well
     /// as any allocations or deallocations in the transaction.
@@ -376,7 +359,7 @@ impl Mutation {
     ///
     /// Lifecycle control records (`BeginFlush`, `EndFlush`, and `DeleteVolume`) are not written
     /// into an object store's layer files, and `BeginFlush`/`EndFlush` are committed in
-    /// `BorrowedMetadataAndData` transactions where `apply_mutation` transitions
+    /// `Borrowed` transactions where `apply_mutation` transitions
     /// `journal_checkpoints` and `store_borrowed` before post-transaction usage accounting runs.
     /// Accounting their bytes in `J_sys` ensures they do not re-dirty `journal_checkpoints` or add
     /// post-flush borrowed debt to `store_borrowed`.
@@ -870,15 +853,11 @@ impl Drop for ObjectMutationIterator<'_, '_> {
     }
 }
 
+#[derive(Debug)]
 pub enum MetadataReservation<'a> {
     /// Metadata space for this transaction is being borrowed from ObjectManager's metadata
-    /// reservation, but allocations/deallocations in the transaction do not use it.
-    BorrowedMetadata,
-
-    /// Metadata space for this transaction is being borrowed from ObjectManager's metadata
-    /// reservation, and allocations/deallocations in the transaction also use ObjectManager's
-    /// metadata reservation.
-    BorrowedMetadataAndData,
+    /// reservation (and for system stores, extent allocations/deallocations also use it).
+    Borrowed,
 
     /// A metadata reservation was made when the transaction was created.
     Reservation(Reservation),
@@ -889,12 +868,9 @@ pub enum MetadataReservation<'a> {
 
 impl MetadataReservation<'_> {
     /// Returns true if this transaction borrows metadata space from `ObjectManager`'s metadata
-    /// reservation (`BorrowedMetadata` or `BorrowedMetadataAndData`).
+    /// reservation (`MetadataReservation::Borrowed`).
     pub fn is_borrowed(&self) -> bool {
-        matches!(
-            self,
-            MetadataReservation::BorrowedMetadata | MetadataReservation::BorrowedMetadataAndData
-        )
+        matches!(self, Self::Borrowed)
     }
 }
 
@@ -954,16 +930,13 @@ impl<'a> Transaction<'a> {
         //   3. No reservation is supplied, so we try and reserve space with the allocator now,
         //      and will return NoSpace if that fails.
         let metadata_reservation = if sink.image_builder_mode() {
-            MetadataReservation::BorrowedMetadata
+            MetadataReservation::Borrowed
         } else {
             match options.reservation {
                 ReservationOptions::New => {
                     MetadataReservation::Reservation(sink.reserve(None, 0).unwrap())
                 }
-                ReservationOptions::BorrowedMetadata => MetadataReservation::BorrowedMetadata,
-                ReservationOptions::BorrowedMetadataAndData => {
-                    MetadataReservation::BorrowedMetadataAndData
-                }
+                ReservationOptions::Borrowed => MetadataReservation::Borrowed,
                 ReservationOptions::Hold(reservation) => {
                     MetadataReservation::Hold(reservation.reserve(0).unwrap())
                 }
@@ -1007,8 +980,7 @@ impl<'a> Transaction<'a> {
         }
 
         match &mut self.metadata_reservation {
-            MetadataReservation::BorrowedMetadata
-            | MetadataReservation::BorrowedMetadataAndData => {}
+            MetadataReservation::Borrowed => {}
             MetadataReservation::Hold(hold) => {
                 let amount = TRANSACTION_METADATA_MAX_AMOUNT.saturating_sub(hold.amount());
                 hold.add(hold.owner().reserve(amount).ok_or(FxfsError::NoSpace)?.forget());
@@ -1029,13 +1001,16 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
-    /// Returns the allocator reservation to be used for allocations and deallocations in this
-    /// transaction, if any.
-    pub fn allocator_reservation(&self) -> Option<&Reservation> {
+    /// Returns the allocator reservation to be used for allocations and deallocations for
+    /// `owner_object_id` in this transaction, if any.
+    pub fn allocator_reservation(&self, owner_object_id: u64) -> Option<&Reservation> {
         match &self.metadata_reservation {
-            MetadataReservation::BorrowedMetadataAndData => self.sink.metadata_reservation(),
+            MetadataReservation::Borrowed => (!self.sink.image_builder_mode()
+                && self.sink.is_system_store(owner_object_id))
+            .then(|| self.sink.metadata_reservation())
+            .flatten(),
             MetadataReservation::Hold(hold) => Some(hold.owner()),
-            MetadataReservation::BorrowedMetadata | MetadataReservation::Reservation(_) => None,
+            MetadataReservation::Reservation(_) => None,
         }
     }
 
@@ -1149,34 +1124,12 @@ impl<'a> Transaction<'a> {
             }) => {
                 self.includes_write = true;
             }
-            Mutation::Allocator(AllocatorMutation::Allocate { .. }) => {
+            Mutation::Allocator(AllocatorMutation::Allocate { owner_object_id, .. }) => {
                 assert!(
-                    !matches!(self.metadata_reservation, MetadataReservation::BorrowedMetadata)
-                        || self.sink.image_builder_mode(),
-                    "Allocations are not allowed in BorrowedMetadata transactions"
-                );
-            }
-            Mutation::Allocator(AllocatorMutation::Deallocate { owner_object_id, .. }) => {
-                // System store extents (layer files, journal, super-blocks) are allocated from
-                // `metadata_reservation` (`M_total`), so deallocating them in a borrowing
-                // transaction must use `BorrowedMetadataAndData` to return the freed space to
-                // `M_total` (matching `ObjectManager::replay_mutations`). Conversely, child store
-                // extents are allocated from user space and must use `BorrowedMetadata` so their
-                // deallocation returns space to the global allocator rather than inflating
-                // `M_total`.
-                debug_assert!(
-                    !matches!(self.metadata_reservation, MetadataReservation::BorrowedMetadata)
+                    !self.metadata_reservation.is_borrowed()
                         || self.sink.image_builder_mode()
-                        || !self.sink.is_system_store(*owner_object_id),
-                    "System store deallocations in borrowing transactions must use \
-                     BorrowedMetadataAndData"
-                );
-                debug_assert!(
-                    !matches!(
-                        self.metadata_reservation,
-                        MetadataReservation::BorrowedMetadataAndData
-                    ) || self.sink.is_system_store(*owner_object_id),
-                    "Child store deallocations in borrowing transactions must use BorrowedMetadata"
+                        || self.sink.is_system_store(*owner_object_id),
+                    "Allocations for non-system stores are not allowed in Borrowed transactions"
                 );
             }
             _ => {}
@@ -1433,7 +1386,7 @@ impl std::fmt::Debug for Transaction<'_> {
         f.debug_struct("Transaction")
             .field("mutations", &self.mutations)
             .field("txn_locks", &self.txn_locks)
-            .field("reservation", &self.allocator_reservation())
+            .field("reservation", &self.metadata_reservation)
             .finish()
     }
 }
@@ -2735,7 +2688,7 @@ mod tests {
         let mut transaction = store
             .new_transaction(
                 lock_keys![LockKey::object(store.store_object_id(), 1000)],
-                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
+                Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
             )
             .await
             .expect("new_transaction failed");
