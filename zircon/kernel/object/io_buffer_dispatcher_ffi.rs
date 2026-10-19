@@ -6,12 +6,11 @@
 
 use crate::object::handle::KernelHandle;
 use crate::object::io_buffer_dispatcher::{IoBufferDispatcher, IoBufferDispatcherState};
-use crate::vm::vm_object::{VmObject, VmObjectChildObserver};
+use crate::vm::vm_object::VmObjectChildObserver;
 use core::ffi::c_char;
 use core::mem::MaybeUninit;
-use fbl::RefPtr;
 use zx_status::Status;
-use zx_types::{ZX_MAX_NAME_LEN, zx_info_iob_t, zx_iob_region_info_t, zx_rights_t, zx_status_t};
+use zx_types::{ZX_MAX_NAME_LEN, zx_status_t};
 
 unsafe extern "C" {
     pub(super) fn cpp_io_buffer_dispatcher_create(
@@ -63,39 +62,4 @@ pub unsafe extern "C" fn rust_io_buffer_dispatcher_region_count(
     disp: &IoBufferDispatcher,
 ) -> usize {
     disp.region_count()
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_map_rights(
-    disp: &IoBufferDispatcher,
-    iob_rights: zx_rights_t,
-    region_index: usize,
-) -> zx_rights_t {
-    disp.get_map_rights(iob_rights, region_index)
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_vmo(
-    disp: &IoBufferDispatcher,
-    region_index: usize,
-) -> *mut VmObject {
-    match disp.get_vmo(region_index) {
-        Ok(vmo) => RefPtr::into_raw(vmo).cast_mut(),
-        Err(_) => core::ptr::null_mut(),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_info(
-    disp: &IoBufferDispatcher,
-) -> zx_info_iob_t {
-    disp.get_info()
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_region_info(
-    disp: &IoBufferDispatcher,
-    index: usize,
-) -> zx_iob_region_info_t {
-    disp.get_region_info(index)
 }

@@ -314,20 +314,12 @@ impl IobRegionVariant {
         self.base_region().get_map_rights(id)
     }
 
-    fn get_mediated_rights(&self, id: IobEndpointId) -> zx_rights_t {
-        self.base_region().get_mediated_rights(id)
-    }
-
     fn get_vmo(&self, id: IobEndpointId) -> &RefPtr<VmObject> {
         self.base_region().get_vmo(id)
     }
 
     fn get_region_info(&self, swap_endpoints: bool) -> zx_iob_region_info_t {
         self.base_region().get_region_info(swap_endpoints)
-    }
-
-    fn region(&self) -> zx_iob_region_t {
-        self.base_region().region
     }
 
     fn allocate_id(
@@ -488,7 +480,7 @@ impl IoBufferDispatcher {
 
     /// Performs the C++ multiple-inheritance upcast from `IoBufferDispatcher*` to
     /// `VmObjectChildObserver*`.
-    pub fn as_child_observer(&self) -> *mut VmObjectChildObserver {
+    fn as_child_observer(&self) -> *mut VmObjectChildObserver {
         unsafe { cpp_io_buffer_dispatcher_as_child_observer(self) }
     }
 
@@ -784,12 +776,6 @@ impl IoBufferDispatcher {
             .get_region_info(self.state().endpoint_id == IobEndpointId::Ep1)
     }
 
-    /// Returns the region configuration at the given index.
-    pub fn get_region(&self, region_index: usize) -> Result<zx_iob_region_t, Status> {
-        self.state().canary.assert();
-        self.state().shared_state.get_region(region_index).map(|r| r.region())
-    }
-
     /// Returns the child VMO reference for the specified region and this endpoint.
     pub fn get_vmo(&self, region_index: usize) -> Result<RefPtr<VmObject>, Status> {
         self.state().canary.assert();
@@ -807,15 +793,6 @@ impl IoBufferDispatcher {
             .shared_state
             .get_region(region_index)
             .map_or(0, |r| iob_rights & r.get_map_rights(self.state().endpoint_id))
-    }
-
-    /// Returns the mediated access rights for the given region and this endpoint.
-    pub fn get_mediated_rights(&self, region_index: usize) -> zx_rights_t {
-        self.state().canary.assert();
-        self.state()
-            .shared_state
-            .get_region(region_index)
-            .map_or(0, |r| r.get_mediated_rights(self.state().endpoint_id))
     }
 
     /// Creates a child reference to the region's VMO that can be mapped by userspace.
@@ -1312,11 +1289,6 @@ mod tests {
         let info0 = d0.get_info();
         expect_eq!(info0.region_count, 2);
         expect_eq!(info0.options, 0);
-
-        // Query regions
-        expect_ok!(d0.get_region(0).map(|_| ()));
-        expect_ok!(d0.get_region(1).map(|_| ()));
-        expect_true!(d0.get_region(2).map(|_| ()) == Err(Status::OUT_OF_RANGE));
 
         // Query VMOs
         let vmo0 = d0.get_vmo(0).expect("get_vmo 0");

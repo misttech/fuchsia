@@ -8,11 +8,8 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_IO_BUFFER_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <zircon/rights.h>
-#include <zircon/syscalls/iob.h>
 #include <zircon/types.h>
 
-#include <fbl/ref_ptr.h>
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
@@ -41,12 +38,6 @@ zx_status_t rust_io_buffer_dispatcher_get_name(const IoBufferDispatcher* disp,
 zx_status_t rust_io_buffer_dispatcher_set_name(IoBufferDispatcher* disp, const char* name,
                                                size_t len);
 size_t rust_io_buffer_dispatcher_region_count(const IoBufferDispatcher* disp);
-zx_rights_t rust_io_buffer_dispatcher_get_map_rights(const IoBufferDispatcher* disp,
-                                                     zx_rights_t iob_rights, size_t region_index);
-VmObject* rust_io_buffer_dispatcher_get_vmo(const IoBufferDispatcher* disp, size_t region_index);
-zx_info_iob_t rust_io_buffer_dispatcher_get_info(const IoBufferDispatcher* disp);
-zx_iob_region_info_t rust_io_buffer_dispatcher_get_region_info(const IoBufferDispatcher* disp,
-                                                               size_t index);
 }  // extern "C"
 
 class IoBufferDispatcher final : public Dispatcher, public VmObjectChildObserver {
@@ -66,16 +57,6 @@ class IoBufferDispatcher final : public Dispatcher, public VmObjectChildObserver
   }
 
   size_t RegionCount() const { return rust_io_buffer_dispatcher_region_count(this); }
-  zx_rights_t GetMapRights(zx_rights_t iob_rights, size_t region_index) const {
-    return rust_io_buffer_dispatcher_get_map_rights(this, iob_rights, region_index);
-  }
-  fbl::RefPtr<VmObject> GetVmo(size_t region_index) const {
-    return fbl::ImportFromRawPtr(rust_io_buffer_dispatcher_get_vmo(this, region_index));
-  }
-  zx_info_iob_t GetInfo() const { return rust_io_buffer_dispatcher_get_info(this); }
-  zx_iob_region_info_t GetRegionInfo(size_t index) const {
-    return rust_io_buffer_dispatcher_get_region_info(this, index);
-  }
 
  protected:
   Lock<CriticalMutex>* get_lock() const final;
