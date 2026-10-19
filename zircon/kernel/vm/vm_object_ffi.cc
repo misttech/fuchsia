@@ -13,6 +13,7 @@
 
 #include "vm/page_source.h"
 #include "vm/stream_size_manager.h"
+#include "vm/vm_address_region.h"
 #include "vm/vm_object.h"
 #include "vm/vm_object_paged.h"
 
@@ -101,9 +102,24 @@ FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy(const 
   return vmo->GetMappingCachePolicy();
 }
 
+FFI_ALWAYS_INLINE arch_mmu_flags_t
+cpp_vm_object_get_mapping_cache_policy_locked(const VmObject* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->GetMappingCachePolicyLocked();
+}
+
 FFI_ALWAYS_INLINE zx_status_t
 cpp_vm_object_set_mapping_cache_policy(VmObject* vmo, arch_mmu_flags_t cache_policy) {
   return vmo->SetMappingCachePolicy(cache_policy);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_add_mapping_locked(VmObject* vmo, VmMapping* mapping)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->AddMappingLocked(mapping);
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_object_remove_mapping_locked(VmObject* vmo, VmMapping* mapping)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  vmo->RemoveMappingLocked(mapping);
 }
 
 FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,

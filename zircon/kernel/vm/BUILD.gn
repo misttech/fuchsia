@@ -686,6 +686,7 @@ kernel_bindgen_crate("vm-aspace-bindings") {
     "cpp_vm_aspace_attach_to_thread",
     "cpp_vm_aspace_base",
     "cpp_vm_aspace_change_high_priority_count_locked",
+    "cpp_vm_aspace_clear_last_fault_locked",
     "cpp_vm_aspace_create",
     "cpp_vm_aspace_create_unified",
     "cpp_vm_aspace_create_with_opts",
@@ -701,9 +702,11 @@ kernel_bindgen_crate("vm-aspace-bindings") {
     "cpp_vm_aspace_harvest_all_user_accessed_bits",
     "cpp_vm_aspace_is_aslr_enabled",
     "cpp_vm_aspace_is_destroyed",
+    "cpp_vm_aspace_enlarge_arch_unmap",
     "cpp_vm_aspace_is_high_memory_priority",
     "cpp_vm_aspace_is_user",
     "cpp_vm_aspace_kernel_aspace",
+    "cpp_vm_aspace_last_fault_locked",
     "cpp_vm_aspace_lock",
     "cpp_vm_aspace_map_object_internal",
     "cpp_vm_aspace_name",
@@ -717,6 +720,7 @@ kernel_bindgen_crate("vm-aspace-bindings") {
     "cpp_vm_aspace_soft_fault_in_range",
     "cpp_vm_aspace_vdso_base_address",
     "cpp_vm_aspace_vdso_code_address",
+    "cpp_vm_aspace_vdso_code_mapping_locked",
     "cpp_vmm_page_fault_handler",
     "cpp_vmm_set_active_aspace",
     "cpp_vmm_set_active_aspace_normal",
@@ -815,6 +819,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_address_region_subregions_for_each",
     "cpp_vm_address_region_subregions_include_or_higher",
     "cpp_vm_address_region_subregions_insert_region",
+    "cpp_vm_address_region_subregions_remove_region",
     "cpp_vm_address_region_subregions_size_slow",
     "cpp_vm_address_region_unmap",
     "cpp_vm_mapping_arch_mmu_flags_locked",
@@ -828,6 +833,8 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_mapping_map_range",
     "cpp_vm_mapping_mark_mergeable",
     "cpp_vm_mapping_page_fault_locked",
+    "cpp_vm_mapping_rest_protection_ranges_clear",
+    "cpp_vm_mapping_rest_protection_ranges_is_empty",
     "cpp_vm_mapping_state",
   ]
   type_allowlist = [
@@ -1071,6 +1078,7 @@ kernel_bindgen_crate("vm-object-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_object_add_mapping_locked",
     "cpp_vm_object_commit_high_priority_pages",
     "cpp_vm_object_commit_range",
     "cpp_vm_object_decommit_range",
@@ -1093,6 +1101,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_write",
     "cpp_vm_object_hint_range",
     "cpp_vm_object_get_mapping_cache_policy",
+    "cpp_vm_object_get_mapping_cache_policy_locked",
     "cpp_vm_object_set_mapping_cache_policy",
     "cpp_vm_object_create_clone",
     "cpp_vm_object_create_child_slice",
@@ -1109,6 +1118,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_get_attributed_memory_in_reference_owner",
     "cpp_vm_object_get_attributed_memory_in_range",
     "cpp_vm_object_read",
+    "cpp_vm_object_remove_mapping_locked",
     "cpp_vm_object_zero_range",
     "cpp_vm_object_fail_page_requests",
     "cpp_vm_object_dirty_pages",
@@ -1154,6 +1164,7 @@ kernel_bindgen_crate("vm-object-bindings") {
   type_blocklist = [
     "AttributionCounts",
     "MultiPageRequest",
+    "VmMapping",
     "VmPageSpliceList",
     "paddr_t",
     "vm_page_t",
@@ -1205,6 +1216,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "use vm_page_list_bindings::VmPageSpliceList;",
     "use zx_types::zx_paddr_t as paddr_t;",
     "use zx_types::{zx_koid_t, zx_pager_vmo_stats_t, zx_status_t};",
+    "pub type VmMapping = core::ffi::c_void;",
     "pub use zx_types::zx_vmo_lock_state_t;",
   ]
   expect_lints = [

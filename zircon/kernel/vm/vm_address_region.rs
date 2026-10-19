@@ -156,21 +156,6 @@ impl From<VmAddressRegionOpChildren> for bindings::VmAddressRegionOpChildren {
 pub type RangeOpType = bindings::VmAddressRegion_RangeOpType;
 pub type UnmapOptions = bindings::VmMapping_UnmapOptions;
 
-/// Internal fully locked version of Destroy. Has controls to both skip the arch aspace unmapping
-/// as well as removal from the parent subregions list. These controls facilitate the fine grained
-/// control needed when splitting, merging and replacing mappings.
-///
-/// If unmap is `No` then this method is defined to never fail. `remove_region` does not impact
-/// success or failure of the operation.
-pub type DestroyUnmap = bindings::VmMapping_DestroyUnmap;
-pub type DestroyRemoveFromParent = bindings::VmMapping_DestroyRemoveFromParent;
-
-/// Fully locked version of Activate that can additionally control whether the region is installed
-/// into the parent subregion list and vmo mapping list or not. This control exists to facilitate
-/// the fine grained control needed for splitting, merging and replacing of mappings as when set to
-/// `No` this method is defined as never failing.
-pub type ActivateInsertRegions = bindings::VmMapping_ActivateInsertRegions;
-
 /// Result of calling [`VmAddressRegion::create_vm_mapping`].
 pub struct MapResult {
     /// The newly created mapping.
@@ -433,7 +418,7 @@ impl VmAddressRegionOrMapping {
     }
 
     #[inline]
-    fn set_state_locked(
+    pub(super) fn set_state_locked(
         &self,
         _region_token: &LockToken<'_, VmAspaceRegionLockClass>,
         _aspace_token: &LockToken<'_, VmAspaceLockClass>,
@@ -470,7 +455,7 @@ impl VmAddressRegionOrMapping {
     }
 
     #[inline]
-    fn set_parent_locked(
+    pub(super) fn set_parent_locked(
         &self,
         token: &mut LockToken<'_, VmAspaceLockClass>,
         parent: *mut VmAddressRegion,

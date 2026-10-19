@@ -4,7 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
+use super::arch_vm_aspace::{
+    ArchMmuFlags, ArchUnmapOptions, ArchVmAspace, NonTerminalAction, TerminalAction,
+};
 use super::name::name_to_c_buf;
 use super::vm_address_region::VmAddressRegion;
 use super::vm_mapping::VmMapping;
@@ -282,6 +284,42 @@ impl VmAspace {
     pub fn is_user(&self) -> bool {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`.
         unsafe { bindings::cpp_vm_aspace_is_user(self.as_ffi_ptr()) }
+    }
+
+    /// Encodes the idea that we can always unmap from user aspaces.
+    pub(super) fn enlarge_arch_unmap(&self) -> ArchUnmapOptions {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`.
+        unsafe { bindings::cpp_vm_aspace_enlarge_arch_unmap(self.as_ffi_ptr()) }
+    }
+
+    /// Keep a cache of the `VmMapping` of the last page fault that occurred. On a page fault this
+    /// can be checked to see if it matches more quickly than walking the full vmar tree. Mappings
+    /// that are stored here must be in the `Alive` state, implying that they are in the VMAR tree.
+    /// It is then the responsibility of the `VmMapping` to remove itself from here should it
+    /// transition out of `Alive`, and remove itself from the VMAR tree. A raw pointer is stored
+    /// here since the `VmMapping` must be alive and in tree anyway and if it were a `RefPtr` we
+    /// would not be able to handle being the one to drop the last ref and perform destruction.
+    pub(super) fn last_fault_locked(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> *const VmMapping {
+        // SAFETY: The aspace lock is held, proven by `_token`.
+        unsafe { bindings::cpp_vm_aspace_last_fault_locked(self.as_ffi_ptr()).cast() }
+    }
+
+    pub(super) fn clear_last_fault_locked(&self, _token: &mut LockToken<'_, VmAspaceLockClass>) {
+        // SAFETY: The aspace lock is held, proven by `_token`.
+        unsafe {
+            bindings::cpp_vm_aspace_clear_last_fault_locked(self.as_ffi_ptr());
+        }
+    }
+
+    pub(super) fn vdso_code_mapping_locked(
+        &self,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> *const VmMapping {
+        // SAFETY: The aspace lock is held, proven by `_token`.
+        unsafe { bindings::cpp_vm_aspace_vdso_code_mapping_locked(self.as_ffi_ptr()).cast() }
     }
 
     pub fn is_aslr_enabled(&self) -> bool {

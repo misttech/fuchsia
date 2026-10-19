@@ -86,6 +86,18 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_subregions_insert_region(
     VmAddressRegion* vmar, VmAddressRegionOrMapping* region) TA_NO_THREAD_SAFETY_ANALYSIS {
   return vmar->subregions_.InsertRegion(fbl::RefPtr(region));
 }
+FFI_ALWAYS_INLINE void cpp_vm_address_region_subregions_remove_region(
+    VmAddressRegion* vmar, VmAddressRegionOrMapping* region) TA_NO_THREAD_SAFETY_ANALYSIS {
+  vmar->subregions_.RemoveRegion(region);
+}
+FFI_ALWAYS_INLINE bool cpp_vm_mapping_rest_protection_ranges_is_empty(const VmMapping* mapping)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return mapping->rest_protection_ranges_.is_empty();
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_rest_protection_ranges_clear(VmMapping* mapping)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  mapping->rest_protection_ranges_.clear();
+}
 FFI_ALWAYS_INLINE size_t cpp_vm_address_region_subregions_size_slow(const VmAddressRegion* vmar)
     TA_NO_THREAD_SAFETY_ANALYSIS {
   return vmar->subregions_.size_slow();

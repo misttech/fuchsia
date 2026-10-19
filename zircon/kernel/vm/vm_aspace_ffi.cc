@@ -53,6 +53,25 @@ FFI_ALWAYS_INLINE const char* cpp_vm_aspace_name(VmAspace* aspace) { return aspa
 
 FFI_ALWAYS_INLINE bool cpp_vm_aspace_is_user(VmAspace* aspace) { return aspace->is_user(); }
 
+FFI_ALWAYS_INLINE uint8_t cpp_vm_aspace_enlarge_arch_unmap(const VmAspace* aspace) {
+  return static_cast<uint8_t>(aspace->EnlargeArchUnmap());
+}
+
+FFI_ALWAYS_INLINE const VmMapping* cpp_vm_aspace_last_fault_locked(const VmAspace* aspace)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return aspace->last_fault_;
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_aspace_clear_last_fault_locked(VmAspace* aspace)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  aspace->last_fault_ = nullptr;
+}
+
+FFI_ALWAYS_INLINE const VmMapping* cpp_vm_aspace_vdso_code_mapping_locked(const VmAspace* aspace)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return aspace->vdso_code_mapping_.get();
+}
+
 FFI_ALWAYS_INLINE bool cpp_vm_aspace_is_aslr_enabled(VmAspace* aspace) {
   return aspace->is_aslr_enabled();
 }

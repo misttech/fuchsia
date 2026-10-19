@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::arch_vm_aspace::ArchMmuFlags;
+use super::arch_vm_aspace::{ARCH_MMU_FLAG_CACHE_MASK, ArchMmuFlags};
 use super::page_source::MultiPageRequest;
 use super::vm_address_region::{LifeCycleState, MemoryPriority, VmAddressRegionOrMapping, flag};
 use super::vm_aspace::{VmAspaceLockClass, VmAspaceRegionLockClass};
@@ -18,7 +18,7 @@ use core::ops::Deref;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
-use debug::ltracef;
+use debug::{ltracef, tracef};
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
 use ksync::{KCell, LockToken};
 use vm_address_region_bindings as bindings;
@@ -26,6 +26,8 @@ use vm_constants_rs as constants;
 use zr::Opaque;
 use zx_status::Status;
 use zx_types::zx_status_t;
+
+crate::counters::define_kcounter!(VM_MAPPINGS_STATE_DEAD, "vm.aspace.mapping.state.dead", Sum);
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -43,6 +45,14 @@ zr::static_assert!(Mergeable::No as u8 == bindings::VmMapping_Mergeable::NO as u
 zr::static_assert!(Mergeable::Yes as u8 == bindings::VmMapping_Mergeable::YES as u8);
 
 pub type FlagsRange = bindings::VmMapping_FlagsRange;
+
+/// Whether `VmMapping::destroy_locked_object` unmaps the mapping from the arch aspace.
+pub type DestroyUnmap = bindings::VmMapping_DestroyUnmap;
+/// Whether `VmMapping::destroy_locked_object` removes the mapping from its parent's subregions.
+pub type DestroyRemoveFromParent = bindings::VmMapping_DestroyRemoveFromParent;
+/// Whether `VmMapping::activate_locked` inserts the mapping into its parent's subregions and the
+/// VMO's mapping list.
+pub type ActivateInsertRegions = bindings::VmMapping_ActivateInsertRegions;
 
 /// A representation of the mapping of a VMO into the address space
 #[repr(transparent)]
@@ -176,6 +186,26 @@ impl VmMapping {
         self.state().object_offset
     }
 
+    fn first_region_arch_mmu_flags_locked(
+        &self,
+        _aspace_token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> ArchMmuFlags {
+        // SAFETY: The aspace lock is held.
+        unsafe { *self.state().first_region_arch_mmu_flags.get() }
+    }
+
+    fn set_first_region_arch_mmu_flags_locked(
+        &self,
+        _aspace_token: &LockToken<'_, VmAspaceLockClass>,
+        _object_token: &mut LockToken<'_, VmObjectLockClass>,
+        flags: ArchMmuFlags,
+    ) {
+        // SAFETY: Both guarding locks are held.
+        unsafe {
+            *self.state().first_region_arch_mmu_flags.get() = flags;
+        }
+    }
+
     fn mergeable_locked(&self, token: &LockToken<'_, VmAspaceLockClass>) -> Mergeable {
         // SAFETY: The aspace lock is held.
         *unsafe { self.state().mergeable.get(token) }
@@ -190,12 +220,22 @@ impl VmMapping {
         *unsafe { self.state().mergeable.get_mut(token) } = mergeable;
     }
 
-    fn object_locked(
-        &self,
-        _token: &LockToken<'_, VmAspaceLockClass>,
-    ) -> &Option<RefPtr<VmObject>> {
+    fn object_locked<'a>(
+        &'a self,
+        _token: &'a LockToken<'_, VmAspaceLockClass>,
+    ) -> &'a Option<RefPtr<VmObject>> {
         // SAFETY: The aspace lock is held.
         unsafe { &*self.state().object.get() }
+    }
+
+    fn reset_object_locked(
+        &self,
+        _aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        _object_token: &mut LockToken<'_, VmObjectLockClass>,
+    ) {
+        // SAFETY: Both the aspace lock and the object lock are held.
+        unsafe { *self.state().object.get() = None };
+        self.state().object_reset.store(true, Ordering::Relaxed);
     }
 
     fn currently_faulting(&self, token: &LockToken<'_, VmObjectLockClass>) -> *mut c_void {
@@ -433,6 +473,227 @@ impl VmMapping {
         if verbose {
             object.dump(depth + 1, false);
         }
+    }
+
+    fn activate(
+        &self,
+        region_token: &LockToken<'_, VmAspaceRegionLockClass>,
+        aspace_token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> Result<(), Status> {
+        let object = self.object_locked(aspace_token).as_ref().expect("object must be set");
+        ksync::lock!(let mut guard = object.lock_ref().lock());
+        self.activate_locked(
+            region_token,
+            aspace_token,
+            guard.as_mut().token_mut(),
+            ActivateInsertRegions::Yes,
+        )
+    }
+
+    /// Fully locked version of `activate` that can additionally control whether the region is
+    /// installed into the parent subregion list and vmo mapping list or not. This control exists
+    /// to facilitate the fine grained control needed for splitting, merging and replacing of
+    /// mappings as when set to `No` this method is defined as never failing.
+    fn activate_locked(
+        &self,
+        region_token: &LockToken<'_, VmAspaceRegionLockClass>,
+        aspace_token: &LockToken<'_, VmAspaceLockClass>,
+        object_token: &mut LockToken<'_, VmObjectLockClass>,
+        insert_region: ActivateInsertRegions,
+    ) -> Result<(), Status> {
+        debug_assert!(self.state_locked(aspace_token) == LifeCycleState::NotReady);
+        let parent_ptr = self.parent_locked(aspace_token);
+        debug_assert!(!parent_ptr.is_null());
+
+        // SAFETY: `parent_ptr` is valid for reads.
+        let parent = unsafe { &*parent_ptr };
+        debug_assert!(parent.lock_is_held());
+        debug_assert!(parent.region_lock_is_held());
+        // If inserting into the regions attempt that first before modifying any state, as it can
+        // fail.
+        if insert_region == ActivateInsertRegions::Yes {
+            // SAFETY: The aspace lock and region lock are held.
+            let status = unsafe {
+                bindings::cpp_vm_address_region_subregions_insert_region(
+                    parent_ptr.cast(),
+                    self.as_ffi_ptr().cast(),
+                )
+            };
+            Status::ok(status)?;
+
+            let object = self.object_locked(aspace_token).as_ref().unwrap();
+            if let Err(status) = object.add_mapping_locked(object_token, self) {
+                // SAFETY: The aspace lock and region lock are held.
+                unsafe {
+                    bindings::cpp_vm_address_region_subregions_remove_region(
+                        parent_ptr.cast(),
+                        self.as_ffi_ptr().cast(),
+                    );
+                }
+                return Err(status);
+            }
+        }
+
+        self.set_state_locked(region_token, aspace_token, LifeCycleState::Alive);
+
+        // Now that we have added a mapping to the VMO it's cache policy becomes fixed, and we can
+        // read it and augment our `arch_mmu_flags`.
+        let object = self.object_locked(aspace_token).as_ref().unwrap();
+        let cache_policy = object.get_mapping_cache_policy_locked(object_token);
+        let mut arch_mmu_flags = self.first_region_arch_mmu_flags_locked(aspace_token);
+        if (arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) != cache_policy {
+            // Warn in the event that we somehow receive a VMO that has a cache
+            // policy set while also holding cache policy flags within the arch
+            // flags. The only path that should be able to achieve this is if
+            // something in the kernel maps into their aspace incorrectly.
+            if (arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) != 0 {
+                tracef!(
+                    "warning: mapping has conflicting cache policies: \
+                     vmo {:#02x} arch_mmu_flags {:#02x}.\n",
+                    cache_policy,
+                    arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK
+                );
+                // Clear the existing cache policy and use the new one.
+                arch_mmu_flags &= !ARCH_MMU_FLAG_CACHE_MASK;
+            }
+            // If we are changing the cache policy then this can only happen if this is a new
+            // mapping region and not a new mapping occurring as a result of an unmap split. In the
+            // case of a new mapping region we know there cannot yet be any protection ranges.
+            // SAFETY: The aspace lock is held, which guards `rest_protection_ranges_`.
+            debug_assert!(unsafe {
+                bindings::cpp_vm_mapping_rest_protection_ranges_is_empty(self.as_ffi_ptr())
+            });
+            arch_mmu_flags |= cache_policy;
+            self.set_first_region_arch_mmu_flags_locked(aspace_token, object_token, arch_mmu_flags);
+        }
+        Ok(())
+    }
+
+    /// Wrapper for `activate_locked` that does not insert into the parent region, and
+    /// therefore cannot fail.
+    fn activate_no_insert_locked(
+        &self,
+        region_token: &LockToken<'_, VmAspaceRegionLockClass>,
+        aspace_token: &LockToken<'_, VmAspaceLockClass>,
+        object_token: &mut LockToken<'_, VmObjectLockClass>,
+    ) {
+        let status = self.activate_locked(
+            region_token,
+            aspace_token,
+            object_token,
+            ActivateInsertRegions::No,
+        );
+        assert!(status.is_ok());
+    }
+
+    fn destroy_locked(
+        this: &RefPtr<Self>,
+        region_token: &LockToken<'_, VmAspaceRegionLockClass>,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+    ) -> Result<(), Status> {
+        this.state().canary.assert();
+        // Keep a `RefPtr` to the `object` so we know our lock remains valid.
+        let object = this.object_locked(aspace_token).clone().expect("object must be set");
+        ksync::lock!(let mut guard = object.lock_ref().lock());
+        Self::destroy_locked_object(
+            this,
+            region_token,
+            aspace_token,
+            guard.as_mut().token_mut(),
+            DestroyUnmap::Yes,
+            DestroyRemoveFromParent::Yes,
+        )
+    }
+
+    /// Internal fully locked version of `destroy`. Has controls to both skip the arch aspace
+    /// unmapping as well as removal from the parent subregions list. These controls facilitate
+    /// the fine grained control needed when splitting, merging and replacing mappings.
+    /// If `unmap` is `No` then this method is defined to never fail. `remove_region` does not
+    /// impact success or failure of the operation.
+    fn destroy_locked_object(
+        this: &RefPtr<Self>,
+        region_token: &LockToken<'_, VmAspaceRegionLockClass>,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        object_token: &mut LockToken<'_, VmObjectLockClass>,
+        unmap: DestroyUnmap,
+        remove_region: DestroyRemoveFromParent,
+    ) -> Result<(), Status> {
+        // The caller's `RefPtr` keeps us alive after we drop our last other reference in this
+        // method (e.g. when removing it from the parent's subregions below).
+        let this: &Self = this;
+
+        // If this is the `last_fault` then clear it before removing from the VMAR tree.
+        // Even if this destroy fails, it's always safe to clear `last_fault`, so we preference
+        // doing it upfront for clarity.
+        if core::ptr::eq(this.aspace().last_fault_locked(aspace_token), this) {
+            this.aspace().clear_last_fault_locked(aspace_token);
+        }
+
+        // The vDSO code mapping can never be unmapped, not even
+        // by VMAR destruction (except for process exit, of course).
+        // TODO(mcgrathr): Turn this into a policy-driven process-fatal case
+        // at some point.  teisenbe@ wants to eventually make `zx_vmar_destroy`
+        // never fail.
+        if core::ptr::eq(this.aspace().vdso_code_mapping_locked(aspace_token), this) {
+            return Err(Status::ACCESS_DENIED);
+        }
+
+        if unmap == DestroyUnmap::Yes {
+            // SAFETY: The virtual range of this mapping is no longer in use.
+            unsafe {
+                this.aspace().arch_aspace().unmap(
+                    this.base().0,
+                    this.size() / kernel_page::SIZE,
+                    this.aspace().enlarge_arch_unmap(),
+                )
+            }?;
+        }
+
+        // Remove any priority.
+        this.set_memory_priority_default_locked_object::<false>(aspace_token, object_token);
+
+        // SAFETY: The aspace lock is held, which guards `rest_protection_ranges_`.
+        unsafe { bindings::cpp_vm_mapping_rest_protection_ranges_clear(this.as_ffi_ptr()) };
+        let object = this.object_locked(aspace_token).as_ref().expect("object must be set");
+        object.remove_mapping_locked(object_token, this);
+
+        // Detach the region from the parent.
+        let parent_ptr = this.parent_locked(aspace_token);
+        if !parent_ptr.is_null() && remove_region == DestroyRemoveFromParent::Yes {
+            // SAFETY: `parent_ptr` is valid for reads.
+            let parent = unsafe { &*parent_ptr };
+            debug_assert!(parent.lock_is_held());
+            debug_assert!(parent.region_lock_is_held());
+            // SAFETY: The aspace lock and region lock are held.
+            unsafe {
+                bindings::cpp_vm_address_region_subregions_remove_region(
+                    parent_ptr.cast(),
+                    this.as_ffi_ptr().cast(),
+                );
+            }
+        }
+
+        // detach from any object we have mapped. Note that we are holding the `aspace.lock()`
+        // so we will not race with other threads calling `vmo()`
+        this.reset_object_locked(aspace_token, object_token);
+
+        // mark ourself as dead
+        this.set_parent_locked(aspace_token, core::ptr::null_mut());
+        this.set_state_locked(region_token, aspace_token, LifeCycleState::Dead);
+        VM_MAPPINGS_STATE_DEAD.add(1);
+        Ok(())
+    }
+
+    fn destruct(&self) {
+        self.state().canary.assert();
+        ltracef!(
+            "{:p} aspace {:p} base {:#x} size {:#x}\n",
+            self as *const _,
+            &**self.aspace(),
+            self.base().0,
+            self.size()
+        );
+        VM_MAPPINGS_STATE_DEAD.add(-1);
     }
 
     /// If `MemoryPriority::High`, then disable dynamic reclamation within this region. If
@@ -708,11 +969,16 @@ pub unsafe extern "C" fn rust_vm_mapping_state_init(
 
 /// # Safety
 ///
-/// `storage` is initialized and is not used afterwards.
+/// `this` is being destroyed and its state is not used afterwards.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_mapping_destruct(storage: &mut MaybeUninit<VmMappingState>) {
-    // SAFETY: `storage` is initialized and valid for drop.
-    unsafe { storage.assume_init_drop() }
+pub unsafe extern "C" fn rust_vm_mapping_destruct(this: &VmMapping) {
+    this.destruct();
+    // SAFETY: The state is initialized and is not used afterwards.
+    unsafe {
+        core::ptr::drop_in_place(
+            bindings::cpp_vm_mapping_state(this.as_ffi_ptr()).cast::<VmMappingState>(),
+        )
+    };
 }
 
 #[unsafe(no_mangle)]
@@ -809,18 +1075,11 @@ pub unsafe extern "C" fn rust_vm_mapping_set_first_region_arch_mmu_flags(
     this: &VmMapping,
     flags: ArchMmuFlags,
 ) {
-    // SAFETY: Both the aspace lock and the object lock are held by the caller.
-    unsafe { *this.state().first_region_arch_mmu_flags.get() = flags };
-}
-
-/// # Safety
-///
-/// The aspace lock and the object lock are held.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_mapping_reset_object_locked(this: &VmMapping) {
-    // SAFETY: Both the aspace lock and the object lock are held by the caller.
-    unsafe { *this.state().object.get() = None };
-    this.state().object_reset.store(true, Ordering::Relaxed);
+    // SAFETY: The aspace lock is held by the caller.
+    let aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let mut object_token = unsafe { LockToken::new() };
+    this.set_first_region_arch_mmu_flags_locked(&aspace_token, &mut object_token, flags);
 }
 
 #[unsafe(no_mangle)]
@@ -980,4 +1239,73 @@ pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_high_already_positive_
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_vm_mapping_commit_high_memory_priority(this: &VmMapping) {
     this.commit_high_memory_priority();
+}
+
+/// # Safety
+///
+/// The region lock and the aspace lock are held and the object lock is not held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_activate(this: &VmMapping) -> zx_status_t {
+    // SAFETY: The region lock is held by the caller.
+    let region_token = unsafe { LockToken::new() };
+    // SAFETY: The aspace lock is held by the caller.
+    let aspace_token = unsafe { LockToken::new() };
+    Status::result_into_raw(this.activate(&region_token, &aspace_token))
+}
+
+/// # Safety
+///
+/// The region lock, the aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_activate_no_insert_locked(this: &VmMapping) {
+    // SAFETY: The region lock is held by the caller.
+    let region_token = unsafe { LockToken::new() };
+    // SAFETY: The aspace lock is held by the caller.
+    let aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let mut object_token = unsafe { LockToken::new() };
+    this.activate_no_insert_locked(&region_token, &aspace_token, &mut object_token);
+}
+
+/// # Safety
+///
+/// `this` points to a live `VmMapping`. The region lock and the aspace lock are held and the
+/// object lock is not held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_destroy_locked(this: *const VmMapping) -> zx_status_t {
+    // SAFETY: `this` points to a live `VmMapping`.
+    let this = RefPtr::from_ref(unsafe { &*this });
+    // SAFETY: The region lock is held by the caller.
+    let region_token = unsafe { LockToken::new() };
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    Status::result_into_raw(VmMapping::destroy_locked(&this, &region_token, &mut aspace_token))
+}
+
+/// # Safety
+///
+/// `this` points to a live `VmMapping`. The region lock, the aspace lock and the object lock are
+/// held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_destroy_locked_object(
+    this: *const VmMapping,
+    unmap: DestroyUnmap,
+    remove_region: DestroyRemoveFromParent,
+) -> zx_status_t {
+    // SAFETY: `this` points to a live `VmMapping`.
+    let this = RefPtr::from_ref(unsafe { &*this });
+    // SAFETY: The region lock is held by the caller.
+    let region_token = unsafe { LockToken::new() };
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let mut object_token = unsafe { LockToken::new() };
+    Status::result_into_raw(VmMapping::destroy_locked_object(
+        &this,
+        &region_token,
+        &mut aspace_token,
+        &mut object_token,
+        unmap,
+        remove_region,
+    ))
 }

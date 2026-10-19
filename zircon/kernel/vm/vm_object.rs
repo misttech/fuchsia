@@ -9,6 +9,7 @@ use super::attribution::AttributionCounts;
 use super::page::VmPagePtr;
 use super::page_source::MultiPageRequest;
 use super::stream_size_manager::StreamSizeManager;
+use super::vm_mapping::VmMapping;
 use super::vm_object_paged::VmObjectPaged;
 use super::vm_page_list::VmPageSpliceList;
 use crate::kernel::types::PAddr;
@@ -272,6 +273,45 @@ impl VmObject {
     pub fn get_mapping_cache_policy(&self) -> ArchMmuFlags {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
         unsafe { bindings::cpp_vm_object_get_mapping_cache_policy(self.as_raw()) }
+    }
+
+    pub(super) fn get_mapping_cache_policy_locked(
+        &self,
+        _token: &LockToken<'_, VmObjectLockClass>,
+    ) -> ArchMmuFlags {
+        // SAFETY: The object lock is held.
+        unsafe { bindings::cpp_vm_object_get_mapping_cache_policy_locked(self.as_raw()) }
+    }
+
+    /// Attempt to add a new mapping to the mapping list of this object. Can fail with
+    /// `Status::NO_MEMORY`.
+    pub(super) fn add_mapping_locked(
+        &self,
+        _token: &mut LockToken<'_, VmObjectLockClass>,
+        mapping: &VmMapping,
+    ) -> Result<(), Status> {
+        // SAFETY: The object lock is held.
+        let status = unsafe {
+            bindings::cpp_vm_object_add_mapping_locked(
+                self.as_raw(),
+                core::ptr::from_ref(mapping).cast_mut().cast(),
+            )
+        };
+        Status::ok(status)
+    }
+
+    pub(super) fn remove_mapping_locked(
+        &self,
+        _token: &mut LockToken<'_, VmObjectLockClass>,
+        mapping: &VmMapping,
+    ) {
+        // SAFETY: The object lock is held.
+        unsafe {
+            bindings::cpp_vm_object_remove_mapping_locked(
+                self.as_raw(),
+                core::ptr::from_ref(mapping).cast_mut().cast(),
+            );
+        }
     }
 
     /// Sets the mapping cache policy of the VMO.
