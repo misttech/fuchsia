@@ -11,6 +11,15 @@
     ],
     offer: [
         {
+            config: [
+                "fuchsia.sys.CacheClearingThreshold",
+                "fuchsia.sys.StorageCheckingFrequency",
+            ],
+            from: "void",
+            to: "#storage_cache_manager",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.sys2.StorageAdmin",
             from: "#cache",
             to: "#storage_cache_manager",

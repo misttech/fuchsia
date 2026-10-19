@@ -582,64 +582,38 @@ where
             .await
             .unwrap();
 
-        if self.tuf_metadata_timeout_seconds.is_some()
-            || self.blob_download_resumption_attempts_limit.is_some()
-            || self.blob_download_concurrency_limit.is_some()
-        {
-            builder.init_mutable_config_from_package(&pkg_resolver).await.unwrap();
-            if let Some(tuf_metadata_timeout_seconds) = self.tuf_metadata_timeout_seconds {
-                builder
-                    .set_config_value(
-                        &pkg_resolver,
-                        "tuf_metadata_timeout_seconds",
-                        tuf_metadata_timeout_seconds.into(),
-                    )
-                    .await
-                    .unwrap();
-            }
-            if let Some(blob_download_resumption_attempts_limit) =
-                self.blob_download_resumption_attempts_limit
-            {
-                builder
-                    .set_config_value(
-                        &pkg_resolver,
-                        "blob_download_resumption_attempts_limit",
-                        blob_download_resumption_attempts_limit.into(),
-                    )
-                    .await
-                    .unwrap();
-            }
-            if let Some(blob_download_concurrency_limit) = self.blob_download_concurrency_limit {
-                builder
-                    .set_config_value(
-                        &pkg_resolver,
-                        "blob_download_concurrency_limit",
-                        blob_download_concurrency_limit.into(),
-                    )
-                    .await
-                    .unwrap();
-            }
-        }
-
         for (key, value) in [
             (
-                "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
-                self.tuf_network_header_timeout_seconds,
+                "fuchsia.pkgresolver.BlobDownloadConcurrencyLimit",
+                self.blob_download_concurrency_limit.map(cm_rust::ConfigValue::from),
             ),
             (
-                "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
-                self.blob_network_header_timeout_seconds,
+                "fuchsia.pkgresolver.BlobDownloadResumptionAttemptsLimit",
+                self.blob_download_resumption_attempts_limit.map(cm_rust::ConfigValue::from),
             ),
             (
                 "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
-                self.blob_network_body_timeout_seconds,
+                self.blob_network_body_timeout_seconds.map(cm_rust::ConfigValue::from),
+            ),
+            (
+                "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                self.blob_network_header_timeout_seconds.map(cm_rust::ConfigValue::from),
+            ),
+            ("fuchsia.pkgresolver.DeliveryBlobType", None),
+            (
+                "fuchsia.pkgresolver.TufMetadataTimeoutSeconds",
+                self.tuf_metadata_timeout_seconds.map(cm_rust::ConfigValue::from),
+            ),
+            (
+                "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+                self.tuf_network_header_timeout_seconds.map(cm_rust::ConfigValue::from),
             ),
         ] {
             if let Some(value) = value {
                 builder
                     .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                         name: key.parse().unwrap(),
-                        value: value.into(),
+                        value,
                     }))
                     .await
                     .unwrap();

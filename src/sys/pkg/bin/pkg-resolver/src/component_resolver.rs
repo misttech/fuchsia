@@ -464,13 +464,23 @@ mod tests {
             .add_route(
                 Route::new()
                     .capability(Capability::configuration(
-                        "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+                        "fuchsia.pkgresolver.BlobDownloadConcurrencyLimit",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgresolver.BlobDownloadResumptionAttemptsLimit",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
                     ))
                     .capability(Capability::configuration(
                         "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
                     ))
+                    .capability(Capability::configuration("fuchsia.pkgresolver.DeliveryBlobType"))
                     .capability(Capability::configuration(
-                        "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                        "fuchsia.pkgresolver.TufMetadataTimeoutSeconds",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
                     ))
                     .from(Ref::void())
                     .to(&pkg_resolver),

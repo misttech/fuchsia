@@ -6,11 +6,27 @@
                 // TODO(https://fxbug.dev/448149624): verify the config capabilities routes.
                 {
                     use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.BlobDownloadConcurrencyLimit",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.BlobDownloadResumptionAttemptsLimit",
+                },
+                {
+                    use_type: "config",
                     use_source_name: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
                 },
                 {
                     use_type: "config",
                     use_source_name: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.DeliveryBlobType",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.TufMetadataTimeoutSeconds",
                 },
                 {
                     use_type: "config",

@@ -59,30 +59,11 @@ fuchsia_component("cache_manager_component") {
   deps = [ ":bin" ]
 }
 
-fuchsia_structured_config_values("cache_manager_config_values") {
-  cm_label = ":cache_manager_component_manifest"
-  values_source = "config.json5"
-}
-
 fuchsia_package("cache_manager") {
-  deps = [
-    ":cache_manager_component",
-    ":cache_manager_config_values",
-  ]
-}
-
-fuchsia_structured_config_values("cache_manager_test_config_values") {
-  cm_label = ":cache_manager_component_manifest"
-  values = {
-    cache_clearing_threshold = 95
-    storage_checking_frequency = 5000
-  }
+  deps = [ ":cache_manager_component" ]
 }
 
 fuchsia_unittest_package("cache_manager_tests") {
   manifest = "meta/cache_manager_tests.cml"
-  deps = [
-    ":bin_test",
-    ":cache_manager_test_config_values",
-  ]
+  deps = [ ":bin_test" ]
 }

@@ -79,6 +79,17 @@
             from: "self",
             to: "#pkg-resolver",
         },
+        {
+            config: [
+                "fuchsia.pkgresolver.BlobDownloadConcurrencyLimit",
+                "fuchsia.pkgresolver.BlobDownloadResumptionAttemptsLimit",
+                "fuchsia.pkgresolver.DeliveryBlobType",
+                "fuchsia.pkgresolver.TufMetadataTimeoutSeconds",
+            ],
+            from: "void",
+            to: "#pkg-resolver",
+            availability: "optional",
+        },
 
         // Routes from the parent to children. All are required if you are a
         // client of this component!

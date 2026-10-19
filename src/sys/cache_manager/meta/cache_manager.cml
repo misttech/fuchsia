@@ -14,13 +14,22 @@
                 "fuchsia.sys2.StorageAdmin",
             ],
         },
+        {
+            // The threshold of storage utilization at which point cache is cleared.
+            // Must not be greater than 100.
+            config: "fuchsia.sys.CacheClearingThreshold",
+            key: "cache_clearing_threshold",
+            type: "uint64",
+            availability: "optional",
+            default: 95,
+        },
+        {
+            // The frequency at which storage capacity is checked, in milliseconds.
+            config: "fuchsia.sys.StorageCheckingFrequency",
+            key: "storage_checking_frequency",
+            type: "uint64",
+            availability: "optional",
+            default: 5000,
+        },
     ],
-    config: {
-        // The threshold of storage utilization at which point cache is cleared.
-        // Must not be greater than 100.
-        cache_clearing_threshold: { type: "uint64" },
-
-        // The frequency at which storage capacity is checked, in milliseconds.
-        storage_checking_frequency: { type: "uint64" },
-    },
 }

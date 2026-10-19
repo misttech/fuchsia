@@ -64,22 +64,61 @@
             path: "/config/data",
         },
         {
+            // The timeout, in seconds, to use when GET'ing a blob HTTP header.
             config: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
             key: "blob_network_header_timeout_seconds",
             type: "uint32",
             availability: "optional",
+            default: 30,
         },
         {
+            // The timeout, in seconds, to use when waiting for a blob's HTTP body bytes.
             config: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
             key: "blob_network_body_timeout_seconds",
             type: "uint32",
             availability: "optional",
+            default: 30,
         },
         {
+            // The timeout, in seconds, to use when waiting for an HTTP response header when requesting
+            // TUF metadata.
             config: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
             key: "tuf_network_header_timeout_seconds",
             type: "uint32",
             availability: "optional",
+            default: 30,
+        },
+        {
+            // The type of delivery blob to fetch.
+            config: "fuchsia.pkgresolver.DeliveryBlobType",
+            key: "delivery_blob_type",
+            type: "uint32",
+            availability: "optional",
+            default: 1,
+        },
+        {
+            // The timeout, in seconds, to use when performing TUF metadata network operations.
+            config: "fuchsia.pkgresolver.TufMetadataTimeoutSeconds",
+            key: "tuf_metadata_timeout_seconds",
+            type: "uint32",
+            availability: "optional",
+            default: 240,
+        },
+        {
+            // The maximum number of times to try resuming a blob download using HTTP range requests.
+            config: "fuchsia.pkgresolver.BlobDownloadResumptionAttemptsLimit",
+            key: "blob_download_resumption_attempts_limit",
+            type: "uint32",
+            availability: "optional",
+            default: 50,
+        },
+        {
+            // The maximum number of blobs to download concurrently.
+            config: "fuchsia.pkgresolver.BlobDownloadConcurrencyLimit",
+            key: "blob_download_concurrency_limit",
+            type: "uint16",
+            availability: "optional",
+            default: 2,
         },
 
         // Note: in an ideal world, we'd declare a storage capability here for
@@ -111,27 +150,4 @@
             from: "self",
         },
     ],
-    config: {
-        // The type of delivery blob to fetch.
-        delivery_blob_type: { type: "uint32" },
-
-        // The timeout, in seconds, to use when performing TUF metadata network operations.
-        tuf_metadata_timeout_seconds: { type: "uint32" },
-
-        // The timeout, in seconds, to use when waiting for an HTTP response header when requesting
-        // TUF metadata.
-        tuf_network_header_timeout_seconds: { type: "uint32" },
-
-        // The timeout, in seconds, to use when GET'ing a blob HTTP header.
-        blob_network_header_timeout_seconds: { type: "uint32" },
-
-        // The timeout, in seconds, to use when waiting for a blob's HTTP body bytes.
-        blob_network_body_timeout_seconds: { type: "uint32" },
-
-        // The maximum number of times to try resuming a blob download using HTTP range requests.
-        blob_download_resumption_attempts_limit: { type: "uint32" },
-
-        // The maximum number of blobs to download concurrently.
-        blob_download_concurrency_limit: { type: "uint16" },
-    },
 }

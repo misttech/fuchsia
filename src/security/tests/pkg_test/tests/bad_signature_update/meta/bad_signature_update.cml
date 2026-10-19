@@ -161,8 +161,12 @@
         },
         {
             config: [
+                "fuchsia.pkgresolver.BlobDownloadConcurrencyLimit",
+                "fuchsia.pkgresolver.BlobDownloadResumptionAttemptsLimit",
                 "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
                 "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                "fuchsia.pkgresolver.DeliveryBlobType",
+                "fuchsia.pkgresolver.TufMetadataTimeoutSeconds",
                 "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
             ],
             from: "void",
