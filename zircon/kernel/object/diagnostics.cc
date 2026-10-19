@@ -253,8 +253,6 @@ void DumpPeerInfo(zx_obj_type_t type, const Dispatcher* disp) {
   }
 }
 
-typedef void (*dump_peer_info)(const Dispatcher*);
-
 void DumpProcessPeerDispatchers(zx_obj_type_t type, fbl::RefPtr<ProcessDispatcher> process,
                                 zx_koid_t koid_filter = ZX_KOID_INVALID) {
   char pname[ZX_MAX_NAME_LEN];
@@ -1009,8 +1007,9 @@ void DumpProcessAddressSpace(zx_koid_t id) {
   pd->DumpAspace(true);
 }
 
-}  // namespace
-
+// Prints (with the supplied prefix) the number of mapped, committed bytes for
+// each process in the system whose committed memory > |min_bytes|. Does not
+// take sharing into account, and does not count unmapped VMOs.
 void DumpProcessMemoryUsage(const char* prefix, size_t min_bytes) {
   auto walker = MakeProcessWalker([&](ProcessDispatcher* process) {
     VmObject::AttributionCounts counts = process->GetAttributedMemory();
@@ -1024,6 +1023,8 @@ void DumpProcessMemoryUsage(const char* prefix, size_t min_bytes) {
   });
   GetRootJobDispatcher()->EnumerateChildrenRecursive(&walker);
 }
+
+}  // namespace
 
 extern "C" {
 

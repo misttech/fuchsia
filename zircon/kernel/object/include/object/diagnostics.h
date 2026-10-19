@@ -9,11 +9,6 @@
 
 #include <zircon/types.h>
 
-// Prints (with the supplied prefix) the number of mapped, committed bytes for
-// each process in the system whose committed memory > |min_bytes|. Does not take
-// sharing into account, and does not count unmapped VMOs.
-void DumpProcessMemoryUsage(const char* prefix, size_t min_bytes);
-
 // Prints all handles and owning processes for the specified koid.
 void DumpHandlesForKoid(zx_koid_t id);
 

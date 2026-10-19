@@ -394,11 +394,6 @@ class ProcessDispatcher final
   // compute the vdso code address and store in vdso_code_address_
   uintptr_t cache_vdso_code_address();
 
-  // The diagnostic code is allow to know about the internals of this code.
-  friend void DumpProcessList();
-  friend void KillProcess(zx_koid_t id);
-  friend void DumpProcessMemoryUsage(const char* prefix, size_t min_bytes);
-
   ProcessDispatcher(fbl::RefPtr<ShareableProcessState> shareable_state,
                     fbl::RefPtr<JobDispatcher> job, ktl::string_view name, uint32_t flags);
 
