@@ -583,6 +583,15 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         Box::new(DefaultDirEntryOps)
     }
 
+    /// Build the [`DirEntryOps`] for a new [`DirEntry`] that will be a child of
+    /// this directory node.
+    ///
+    /// If this returns `None`, the child node's [`FsNodeOps::create_dir_entry_ops`]
+    /// is used.
+    fn create_child_dir_entry_ops(&self) -> Option<Box<dyn DirEntryOps>> {
+        None
+    }
+
     /// Build the `FileOps` for the file associated to this node.
     ///
     /// The returned FileOps will be used to create a FileObject, which might
@@ -1316,6 +1325,10 @@ impl FsNode {
 
     pub fn create_dir_entry_ops(&self) -> Box<dyn DirEntryOps> {
         self.ops().create_dir_entry_ops()
+    }
+
+    pub fn create_child_dir_entry_ops(&self) -> Option<Box<dyn DirEntryOps>> {
+        self.ops().create_child_dir_entry_ops()
     }
 
     pub fn create_file_ops(

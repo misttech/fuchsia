@@ -57,10 +57,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO(https://fxbug.dev/567514429): Removing or replacing a loop device does not
-                // evict its cached sysfs dentry.
-                "LoopTest.SysfsDeviceDirectoryRemovalAndReplacement",
-
                 // TODO(https://fxbug.dev/567514429): `loop` sysfs attribute group is created on
                 // device creation rather than when a backing file is attached, and not removed on
                 // LOOP_CLR_FD.

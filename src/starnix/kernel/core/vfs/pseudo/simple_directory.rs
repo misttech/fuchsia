@@ -4,11 +4,12 @@
 
 use crate::task::CurrentTask;
 use crate::vfs::{
-    CloseFreeSafe, DirEntry, DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystemHandle,
-    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, SymlinkNode, emit_dotdot,
-    fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
+    CloseFreeSafe, DirEntry, DirEntryOps, DirectoryEntryType, DirentSink, FileObject, FileOps,
+    FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, SymlinkNode,
+    emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
     fs_node_impl_dir_readonly,
 };
+use starnix_rcu::RcuReadScope;
 use starnix_sync::{LockDepMutex, SimpleDirectoryEntriesLock, allow_subclass};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
@@ -289,6 +290,10 @@ impl SimpleDirectory {
 impl FsNodeOps for Arc<SimpleDirectory> {
     fs_node_impl_dir_readonly!();
 
+    fn create_child_dir_entry_ops(&self) -> Option<Box<dyn DirEntryOps>> {
+        Some(Box::new(self.clone()))
+    }
+
     fn create_file_ops(
         &self,
         _node: &FsNode,
@@ -314,6 +319,23 @@ impl FsNodeOps for Arc<SimpleDirectory> {
         // Invoke the handler after releasing the directory lock, so that handlers which format
         // paths or log diagnostics do not extend the critical section.
         Err(not_found_handler(entry, name))
+    }
+}
+
+impl DirEntryOps for Arc<SimpleDirectory> {
+    fn revalidate(&self, _: &CurrentTask, child: &DirEntry) -> Result<bool, Errno> {
+        // Entries of a `SimpleDirectory` can be removed or replaced without going through the VFS
+        // (e.g. when a device is removed from sysfs), which would otherwise leave stale
+        // `DirEntry`s in the cache of the file system. Revalidation evicts a cached child
+        // `DirEntry` once its node is no longer present under the same name in its parent
+        // `SimpleDirectory`.
+        let scope = RcuReadScope::new();
+        Ok(self
+            .state
+            .lock()
+            .entries
+            .get(child.local_name(&scope))
+            .is_some_and(|node| Arc::ptr_eq(node, &child.node)))
     }
 }
 
@@ -455,10 +477,54 @@ mod tests {
             let sublink = dir.lookup("subdir/sublink".into()).expect("lookup subdir/sublink");
             assert!(sublink.info().mode.is_lnk());
 
-            // Verify that removing an entry works.
+            // Verify that removing an entry works and evicts any cached DirEntry.
+            let mount = MountInfo::detached();
+            let cached_link = entry
+                .component_lookup(&current_task, &mount, "link".into())
+                .expect("component_lookup link");
+            assert!(Arc::ptr_eq(&cached_link.node, &node1));
+            let cached_link_again = entry
+                .component_lookup(&current_task, &mount, "link".into())
+                .expect("component_lookup link again");
+            assert!(Arc::ptr_eq(&cached_link, &cached_link_again));
+
             mutator.remove("link".into());
             let result = FsNodeOps::lookup(&dir, &entry, &current_task, "link".into());
             assert_eq!(result.unwrap_err(), errno!(ENOENT));
+            assert_eq!(
+                entry.component_lookup(&current_task, &mount, "link".into()).unwrap_err(),
+                errno!(ENOENT)
+            );
+            assert!(cached_link.is_dead());
+
+            let cached_subdir = entry
+                .component_lookup(&current_task, &mount, "subdir".into())
+                .expect("component_lookup subdir");
+            assert!(Arc::ptr_eq(&cached_subdir.node, &subdir1));
+            let cached_subdir_again = entry
+                .component_lookup(&current_task, &mount, "subdir".into())
+                .expect("component_lookup subdir again");
+            assert!(Arc::ptr_eq(&cached_subdir, &cached_subdir_again));
+
+            // Replacing the subdirectory without an intervening lookup should evict the old
+            // cached DirEntry via the `Arc::ptr_eq` check in
+            // `<Arc<SimpleDirectory> as DirEntryOps>::revalidate`.
+            mutator.remove("subdir".into());
+            mutator.subdir("subdir", 0o755, |_| {});
+            let replaced_subdir = entry
+                .component_lookup(&current_task, &mount, "subdir".into())
+                .expect("component_lookup replaced subdir");
+            assert!(cached_subdir.is_dead());
+            assert!(!Arc::ptr_eq(&replaced_subdir, &cached_subdir));
+            assert!(!Arc::ptr_eq(&replaced_subdir.node, &subdir1));
+
+            // Removing the subdirectory should evict the cached DirEntry and return ENOENT.
+            mutator.remove("subdir".into());
+            assert_eq!(
+                entry.component_lookup(&current_task, &mount, "subdir".into()).unwrap_err(),
+                errno!(ENOENT)
+            );
+            assert!(replaced_subdir.is_dead());
         })
         .await;
     }

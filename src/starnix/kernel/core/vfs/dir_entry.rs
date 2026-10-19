@@ -157,7 +157,10 @@ impl DirEntry {
         parent: Option<DirEntryHandle>,
         local_name: FsString,
     ) -> DirEntryHandle {
-        let ops = node.create_dir_entry_ops();
+        let ops = parent
+            .as_ref()
+            .and_then(|parent| parent.node.create_child_dir_entry_ops())
+            .unwrap_or_else(|| node.create_dir_entry_ops());
         let fs_lockdep_type = node.fs().fs_lockdep_type();
         let casefold = node.info().casefold;
         let initial_children = DirEntryChildren::new(casefold);

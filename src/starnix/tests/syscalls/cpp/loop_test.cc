@@ -256,7 +256,7 @@ TEST_F(LoopTest, SysfsDeviceDirectoryRemovalAndReplacement) {
   // Look up the `/sys/block` symlink and target device directory before removal so both dentries
   // are populated in the VFS cache.
   struct stat first_lstat = {};
-  ASSERT_SUCCESS(lstat(sys_block_link.c_str(), &first_lstat));
+  ASSERT_SUCCESS(fstatat(AT_FDCWD, sys_block_link.c_str(), &first_lstat, AT_SYMLINK_NOFOLLOW));
   struct stat first_stat = {};
   ASSERT_SUCCESS(stat(sys_block_link.c_str(), &first_stat));
   struct stat first_dir_stat = {};
@@ -272,7 +272,7 @@ TEST_F(LoopTest, SysfsDeviceDirectoryRemovalAndReplacement) {
   device_registered = true;
 
   struct stat second_lstat = {};
-  ASSERT_SUCCESS(lstat(sys_block_link.c_str(), &second_lstat));
+  ASSERT_SUCCESS(fstatat(AT_FDCWD, sys_block_link.c_str(), &second_lstat, AT_SYMLINK_NOFOLLOW));
   EXPECT_NE(first_lstat.st_ino, second_lstat.st_ino);
   struct stat second_stat = {};
   ASSERT_SUCCESS(stat(sys_block_link.c_str(), &second_stat));
@@ -286,7 +286,8 @@ TEST_F(LoopTest, SysfsDeviceDirectoryRemovalAndReplacement) {
   ASSERT_SUCCESS(RemoveLoopDeviceRetryingOnBusy(test_minor));
   device_registered = false;
   struct stat removed_lstat = {};
-  EXPECT_THAT(lstat(sys_block_link.c_str(), &removed_lstat), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(fstatat(AT_FDCWD, sys_block_link.c_str(), &removed_lstat, AT_SYMLINK_NOFOLLOW),
+              SyscallFailsWithErrno(ENOENT));
   EXPECT_THAT(access(sys_block_link.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
   EXPECT_THAT(access(sys_device_dir.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
 }
