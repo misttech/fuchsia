@@ -1194,7 +1194,7 @@ impl CurrentTask {
         //   execve(). Mutual exclusion locks, condition variables, and other
         //   pthreads objects are not preserved.
         //
-        // TODO(https://fxbug.dev/42082680): Implement thread destruction.
+        // TODO(https://fxbug.dev/297434895): Implement thread destruction.
 
         // Filesystem context sharing (via CLONE_FS with clone(2)) is preserved across
         // execve under Linux, as verified by `CloneAndExecTest.ExecDoesNotUnshareCloneFs`.

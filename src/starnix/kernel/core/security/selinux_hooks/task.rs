@@ -201,10 +201,9 @@ fn maybe_reset_signal_state(
     // for it to be received before the credentials are committed (in which case it should be
     // cleared), or afterward (in which case it need not be cleared).  It's therefore acceptable to
     // take the signal queues' locks here, rather than holding them across the credentials commit.
-    // Fatal signals (notably `SIGKILL`) should not be cleared on domain transitions, since the
-    // process is already doomed and should still terminate rather than returning to userspace once
-    // the `exec()` is complete.
-    // TODO: https://fxbug.dev/509895244 - Preserve queued fatal signals.
+    // Note that `SIGKILL` transitions the thread group to the exiting state immediately on
+    // delivery rather than being queued here, so clearing the signal queues cannot cancel a
+    // pending `SIGKILL`.
     let mut task_mutable_state = current_task.write();
     let mut thread_group_signal_queue = current_task.thread_group().pending_signals.lock();
 
