@@ -43,12 +43,12 @@ wlancfg_tests_for_postsubmit = [
   "//src/connectivity/wlan/tests/wlancfg:ping_test",
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
+  "//src/connectivity/wlan/tests/wlancfg:security_type_test",
   "//src/connectivity/wlan/tests/wlancfg:soft_ap_lifecycle_test",
   "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_wireless_network_management_test",
-  "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_type_test",
 ]
 
 # If you're writing a new test, add it to FYI first until it has a sufficient

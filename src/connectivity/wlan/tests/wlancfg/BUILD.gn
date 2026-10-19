@@ -321,3 +321,18 @@ antlion_host_test("wmm_test") {
     "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
   ]
 }
+
+antlion_host_test("security_type_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/SecurityTypeTest.py"
+
+  environments = wlan_ap_envs
+
+  libraries = [
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/legacy_access_point",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+  ]
+  timeout_secs = 660
+}
