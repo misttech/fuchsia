@@ -14,7 +14,6 @@
 #include <fbl/intrusive_double_list.h>
 #include <fbl/macros.h>
 #include <fbl/ref_ptr.h>
-#include <kernel/event_limiter.h>
 #include <kernel/ffi.h>
 #include <ktl/atomic.h>
 #include <ktl/utility.h>
@@ -26,6 +25,26 @@ constexpr uint32_t kHandleReservedBits = 2;
 
 template <typename T>
 class KernelHandle;
+
+extern "C" {
+zx_status_t cpp_handle_arena_init(const char* name, size_t max_count);
+void* cpp_handle_arena_alloc();
+void cpp_handle_arena_free(void* ptr);
+bool cpp_handle_arena_committed(const void* ptr);
+uintptr_t cpp_handle_arena_confine(uintptr_t addr);
+void* cpp_handle_arena_base();
+size_t cpp_handle_arena_diagnostic_count();
+void cpp_handle_arena_dump();
+
+zx_status_t rust_handle_init();
+Handle* rust_handle_from_u32(uint32_t value);
+Handle* rust_handle_make(Dispatcher* dispatcher, zx_rights_t rights);
+Handle* rust_handle_dup(const Handle* source, zx_rights_t rights);
+void rust_handle_destroy(Handle* handle);
+size_t rust_handle_diagnostic_count();
+void rust_handle_dump_table_info();
+int64_t rust_handle_get_alloc_failed_count();
+}
 
 // Callable object for destroying uniquely owned handles.
 struct HandleDestroyer {
@@ -102,12 +121,8 @@ class Handle final {
   // Called only by Dup.
   Handle(const Handle& rhs, zx_rights_t rights, uint32_t base_value);
 
-  // Handle should never be destroyed by anything other than HandleTableArena::Delete.
+  // Handle should never be destroyed by anything other than rust_handle_destroy.
   ~Handle() = default;
-
-  // NOTE! This can return an invalid address.  It must be checked
-  // against the arena bounds before being cast to a Handle*.
-  static uintptr_t IndexToHandle(uint32_t index);
 
   // handle_table_id_ is atomic because threads from different processes can
   // access it concurrently, while holding different instances of
@@ -118,45 +133,31 @@ class Handle final {
   const uint32_t base_value_;
 
   // Up to here the members need to be preserved when handles are free'd to the arena. The
-  // PreserveSize is an 'approximation' of how large all the previous members are, but we make
-  // 'HandleTableArena' a friend so that it can statically validate that the chosen PreserveSize
-  // is correct. Any incorrect size will result in a compilation error!
+  // PreserveSize is an 'approximation' of how large all the previous members are; HandleLayoutCheck
+  // in handle.cc statically validates that the chosen PreserveSize is correct. Any incorrect size
+  // will result in a compilation error!
   static constexpr size_t PreserveSize = 24;
   friend HandleTableArena;
+
+  // Validates in handle.cc that this C++ view of a Handle matches the Rust definition that
+  // actually constructs them (see handle.rs), and that the preserved members fit within
+  // PreserveSize.
+  friend struct HandleLayoutCheck;
 
   NodeState node_state_;
 };
 
+// Owns the GPArena backing all Handles. Allocation, construction and destruction of Handles is
+// done by Rust (see handle.rs), which reaches the arena through the cpp_handle_arena_* shims.
 class HandleTableArena {
  public:
-  // Alloc returns storage for a handle.
-  void* Alloc(const fbl::RefPtr<Dispatcher>&, const char* what, uint32_t* base_value);
-
-  void Delete(Handle* handle);
-
   static int64_t get_alloc_failed_count();
 
+  using HandleGPArena = fbl::GPArena<Handle::PreserveSize, sizeof(Handle)>;
+  HandleGPArena& arena() { return arena_; }
+
  private:
-  // GetNewBaseValue is a helper needed to actually create a Handle.
-  uint32_t GetNewBaseValue(void* addr);
-
-  // A helper for the GetNewBaseValue computation.
-  uint32_t HandleToIndex(Handle* handle);
-
-  // Validate that all the fields we need to preserve fit within the preservation window.
-  static_assert(offsetof(Handle, handle_table_id_) + sizeof(Handle::handle_table_id_) <=
-                Handle::PreserveSize);
-  static_assert(offsetof(Handle, base_value_) + sizeof(Handle::base_value_) <=
-                Handle::PreserveSize);
-  static_assert(offsetof(Handle, dispatcher_) + sizeof(Handle::dispatcher_) <=
-                Handle::PreserveSize);
-  fbl::GPArena<Handle::PreserveSize, sizeof(Handle)> arena_;
-
-  // Limit logs about handle counts being too high.
-  EventLimiter<ZX_SEC(1)> handle_count_high_log_;
-
-  // Give the Handle access to its arena.
-  friend Handle;
+  HandleGPArena arena_;
 };
 
 extern HandleTableArena gHandleTableArena;
@@ -167,7 +168,7 @@ inline void HandleDestroyer::operator()(Handle* handle) {
   // ktl::unique_ptr only calls its deleter when the pointer is non-null.
   // Still, we double check.
   DEBUG_ASSERT(handle != nullptr);
-  gHandleTableArena.Delete(handle);
+  rust_handle_destroy(handle);
 }
 
 // A minimal wrapper around a Dispatcher which is owned by the kernel.
@@ -229,17 +230,5 @@ class KernelHandle {
 
   fbl::RefPtr<T> dispatcher_;
 };
-
-extern "C" {
-Handle* cpp_handle_make(KernelHandle<Dispatcher>* kernel_handle, zx_rights_t rights);
-Handle* cpp_handle_make_from_ref(Dispatcher* dispatcher, zx_rights_t rights);
-Handle* cpp_handle_dup(const Handle* handle, zx_rights_t rights);
-void cpp_handle_destroy(Handle* handle);
-bool cpp_handle_has_rights(const Handle* handle, zx_rights_t rights);
-void cpp_handle_get_dispatcher(const Handle* handle,
-                               ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_dispatcher);
-Dispatcher* cpp_handle_get_dispatcher_raw(const Handle* handle);
-zx_rights_t cpp_handle_get_rights(const Handle* handle);
-}
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_HANDLE_H_

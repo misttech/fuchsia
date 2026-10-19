@@ -64,7 +64,8 @@ FFI_ALWAYS_INLINE zx_koid_t cpp_dispatcher_get_koid(const Dispatcher* disp) {
   return disp->get_koid();
 }
 
-void cpp_dispatcher_recycle(Dispatcher* disp) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dispatcher_recycle(Dispatcher* disp) {
   fbl::internal::recycler<Dispatcher>::recycle(disp);
 }
 
@@ -106,6 +107,16 @@ FFI_ALWAYS_INLINE uint32_t cpp_dispatcher_current_handle_count(const Dispatcher*
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dispatcher_increment_handle_count(Dispatcher* disp) {
+  disp->increment_handle_count();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_dispatcher_decrement_handle_count(Dispatcher* disp) {
+  return disp->decrement_handle_count();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_dispatcher_is_waitable(const Dispatcher* disp) {
   return disp->is_waitable();
 }
@@ -139,6 +150,11 @@ FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_make_port_observer(Dispatcher* disp
                                                                 zx_signals_t signals, uint64_t key,
                                                                 PortDispatcher* port) {
   return disp->MakePortObserver(options, static_cast<const Handle*>(handle), signals, key, port);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dispatcher_set_owner(Dispatcher* disp, zx_koid_t new_owner) {
+  disp->set_owner(new_owner);
 }
 
 }  // extern "C"

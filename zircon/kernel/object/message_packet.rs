@@ -9,6 +9,7 @@
 
 use super::buffer_chain::{BufferChain, CONTIGUOUS_SIZE};
 use super::handle::HandleOwner;
+use crate::object::Handle;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::ffi::c_void;
 use core::mem::{self, MaybeUninit, align_of, size_of};
@@ -419,7 +420,7 @@ impl MessagePacket {
             // Delete the handle via HandleOwner dtor.
             // SAFETY: Each entry is a valid handle pointer (or null) owned by `self`.
             unsafe {
-                drop(HandleOwner::from_raw(raw));
+                drop(HandleOwner::from_raw(raw.cast::<Handle>()));
             }
         }
     }

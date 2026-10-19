@@ -103,6 +103,7 @@ unsafe extern "C" {
     /// # Safety
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
+    #[allow(improper_ctypes)]
     pub(crate) fn cpp_process_dispatcher_handle_table(
         process: *const ProcessDispatcher,
     ) -> *const HandleTable;

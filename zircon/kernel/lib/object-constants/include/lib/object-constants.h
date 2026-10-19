@@ -232,4 +232,21 @@ constexpr size_t kThreadDispatcherStateOffset = 416 + (3 * kLockClassIdSize);
 constexpr size_t kBacktraceSize = 272;
 constexpr size_t kBacktraceAlign = 8;
 
+// Size and alignment for HandleTableStorage (HandleTable).
+#if defined(__riscv)
+#if defined(WITH_LOCK_DEP)
+constexpr size_t kHandleTableStorageSize = 120;
+#else
+constexpr size_t kHandleTableStorageSize = 112;
+#endif
+constexpr size_t kHandleTableStorageAlign = 8;
+#else  // __x86_64__ or __aarch64__
+#if defined(WITH_LOCK_DEP)
+constexpr size_t kHandleTableStorageSize = 192;
+#else
+constexpr size_t kHandleTableStorageSize = 176;
+#endif
+constexpr size_t kHandleTableStorageAlign = 16;
+#endif
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

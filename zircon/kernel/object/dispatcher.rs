@@ -6,12 +6,14 @@
 
 use super::dispatcher_ffi::{
     cpp_dispatcher_add_observer, cpp_dispatcher_cancel, cpp_dispatcher_cancel_by_key,
-    cpp_dispatcher_clear_signals, cpp_dispatcher_current_handle_count, cpp_dispatcher_get_name,
-    cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type,
-    cpp_dispatcher_is_waitable, cpp_dispatcher_make_port_observer,
-    cpp_dispatcher_notify_observers_locked, cpp_dispatcher_on_zero_handles,
-    cpp_dispatcher_raise_signals_locked, cpp_dispatcher_recycle, cpp_dispatcher_remove_observer,
-    cpp_dispatcher_set_name, cpp_dispatcher_signals_state_locked, cpp_dispatcher_update_state,
+    cpp_dispatcher_clear_signals, cpp_dispatcher_current_handle_count,
+    cpp_dispatcher_decrement_handle_count, cpp_dispatcher_get_name, cpp_dispatcher_get_ref_counted,
+    cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type,
+    cpp_dispatcher_increment_handle_count, cpp_dispatcher_is_waitable,
+    cpp_dispatcher_make_port_observer, cpp_dispatcher_notify_observers_locked,
+    cpp_dispatcher_on_zero_handles, cpp_dispatcher_raise_signals_locked, cpp_dispatcher_recycle,
+    cpp_dispatcher_remove_observer, cpp_dispatcher_set_name, cpp_dispatcher_set_owner,
+    cpp_dispatcher_signals_state_locked, cpp_dispatcher_update_state,
     cpp_dispatcher_update_state_locked, cpp_dispatcher_user_signal_peer,
     cpp_dispatcher_user_signal_self,
 };
@@ -31,6 +33,12 @@ pub trait DispatcherOps {
     const TYPE: zx_types::zx_obj_type_t;
 
     fn dispatcher(&self) -> *const Dispatcher;
+
+    #[inline]
+    fn current_handle_count(&self) -> u32 {
+        // SAFETY: self.dispatcher() returns a valid pointer to an initialized Dispatcher.
+        unsafe { cpp_dispatcher_current_handle_count(self.dispatcher()) }
+    }
 
     #[inline]
     fn on_zero_handles(&self) {
@@ -563,6 +571,18 @@ impl Dispatcher {
         unsafe { cpp_dispatcher_current_handle_count(self) }
     }
 
+    /// Increments the handle count pointing to this dispatcher.
+    pub fn increment_handle_count(&self) {
+        // SAFETY: self is a valid Dispatcher reference.
+        unsafe { cpp_dispatcher_increment_handle_count(self) };
+    }
+
+    /// Decrements the handle count pointing to this dispatcher. Returns true if count reached zero.
+    pub fn decrement_handle_count(&self) -> bool {
+        // SAFETY: self is a valid Dispatcher reference.
+        unsafe { cpp_dispatcher_decrement_handle_count(self) }
+    }
+
     /// Returns whether this dispatcher supports waiting on signals.
     #[inline]
     pub fn is_waitable(&self) -> bool {
@@ -576,7 +596,19 @@ impl Dispatcher {
     #[inline]
     pub fn cancel(&self, handle: HandleRef<'_>) {
         // SAFETY: self is a valid Dispatcher reference and handle is a valid HandleRef.
-        unsafe { cpp_dispatcher_cancel(self, handle.as_ptr()) }
+        unsafe { cpp_dispatcher_cancel(self, handle.as_ptr().cast()) }
+    }
+
+    /// Cancels wait operations on this dispatcher for the given handle pointer.
+    pub fn cancel_raw(&self, handle: *const core::ffi::c_void) {
+        // SAFETY: self is a valid Dispatcher reference.
+        unsafe { cpp_dispatcher_cancel(self, handle) };
+    }
+
+    /// Sets the owner PID for this dispatcher.
+    pub fn set_owner(&self, new_owner: zx_types::zx_koid_t) {
+        // SAFETY: self is a valid Dispatcher reference.
+        unsafe { cpp_dispatcher_set_owner(self, new_owner) };
     }
 
     /// Like [`Self::cancel`], but issued via `zx_port_cancel()`.
@@ -596,7 +628,7 @@ impl Dispatcher {
         assert!(self.is_waitable());
         // SAFETY: `self` is a valid `Dispatcher` reference, `handle` is a valid `HandleRef`, and
         // `port` is a valid `PortDispatcher` reference.
-        unsafe { cpp_dispatcher_cancel_by_key(self, handle.as_ptr(), port, key) }
+        unsafe { cpp_dispatcher_cancel_by_key(self, handle.as_ptr().cast(), port, key) }
     }
 
     /// Signals this dispatcher directly from user space (`zx_object_signal`).
@@ -634,7 +666,14 @@ impl Dispatcher {
         // SAFETY: `self` is a valid `Dispatcher` reference, `handle` is a valid `HandleRef`
         // protected by the handle table lock, and `port` is a valid `PortDispatcher` reference.
         let status = unsafe {
-            cpp_dispatcher_make_port_observer(self, options, handle.as_ptr(), signals, key, port)
+            cpp_dispatcher_make_port_observer(
+                self,
+                options,
+                handle.as_ptr().cast(),
+                signals,
+                key,
+                port,
+            )
         };
         Status::ok(status)
     }

@@ -271,7 +271,7 @@ impl PortDispatcher {
     pub fn cancel_queued(&self, handle: HandleRef<'_>, key: u64) -> bool {
         // SAFETY: `self` is a valid `PortDispatcher` reference and `handle` is a valid `HandleRef`
         // protected by the handle table lock.
-        unsafe { cpp_port_dispatcher_cancel_queued(self.as_ffi_mut(), handle.as_ptr(), key) }
+        unsafe { cpp_port_dispatcher_cancel_queued(self.as_ffi_mut(), handle.as_ptr().cast(), key) }
     }
 
     /// Cancels queued packets matching the opaque `handle` token and `key`.

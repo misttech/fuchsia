@@ -422,7 +422,7 @@ pub fn sys_vmo_replace_as_executable(
 
     *out = ProcessDispatcher::with_current(|up| {
         up.make_and_add_handle_from_ref(
-            orig_handle.dispatcher(),
+            orig_handle.dispatcher().clone(),
             orig_handle.rights() | ZX_RIGHT_EXECUTE,
         )
     })?;

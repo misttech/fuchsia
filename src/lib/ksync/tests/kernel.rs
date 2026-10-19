@@ -78,6 +78,14 @@ mod ksync_tests {
     }
 
     #[ksync::guarded]
+    struct GuardedBrwLockMultiAcquireObj {
+        #[brwlock(flags = lockdep::LOCK_FLAGS_MULTI_ACQUIRE)]
+        lock: ksync::BrwLockPi,
+        #[guarded_by(lock)]
+        value: u32,
+    }
+
+    #[ksync::guarded]
     struct GuardedOnceObj {
         #[mutex]
         mu: ksync::KMutex,
@@ -737,5 +745,17 @@ mod ksync_tests {
             *g2.as_mut().shared_mut(&mut g1) = 30;
             expect_true!(*g1.shared() == 30);
         }
+    }
+
+    /// test brwlock with custom flags attribute (e.g. LOCK_FLAGS_MULTI_ACQUIRE)
+    #[test]
+    fn guarded_brwlock_multi_acquire_test() {
+        stack_pin_init!(let obj = pin_init!(GuardedBrwLockMultiAcquireObj {
+            lock <- ksync::BrwLockPi::init(),
+            value: 42.into(),
+        }));
+
+        ksync::lock!(let guard = obj.read_lock());
+        expect_true!(*guard.value() == 42);
     }
 }

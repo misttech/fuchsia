@@ -232,7 +232,9 @@ impl WaitSignalObserver {
         // Note that `watched_signals` may be 0, in which case we won't receive
         // a callback, but will remain queued until `end` is called.
         // SAFETY: `signal_observer_ptr` and `handle.as_ptr()` point to valid initialized objects.
-        unsafe { dispatcher.add_observer(signal_observer_ptr, handle.as_ptr(), watched_signals) }?;
+        unsafe {
+            dispatcher.add_observer(signal_observer_ptr, handle.as_ptr().cast(), watched_signals)
+        }?;
 
         state.dispatcher = Some(dispatcher);
         Ok(())

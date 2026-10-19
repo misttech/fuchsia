@@ -9,6 +9,7 @@ use super::exceptionate::Exceptionate;
 use super::handle::KernelHandle;
 use zx_types::{zx_rights_t, zx_status_t};
 
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     /// Sets the backing `ChannelDispatcher` endpoint on `exceptionate`.
     ///

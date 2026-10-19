@@ -68,6 +68,8 @@ unsafe extern "C" {
         len: usize,
     ) -> zx_types::zx_status_t;
     pub(crate) fn cpp_dispatcher_current_handle_count(dispatcher: *const Dispatcher) -> u32;
+    pub(crate) fn cpp_dispatcher_increment_handle_count(dispatcher: *const Dispatcher);
+    pub(crate) fn cpp_dispatcher_decrement_handle_count(dispatcher: *const Dispatcher) -> bool;
     pub(crate) fn cpp_dispatcher_is_waitable(dispatcher: *const Dispatcher) -> bool;
     pub(crate) fn cpp_dispatcher_cancel(
         dispatcher: *const Dispatcher,
@@ -97,4 +99,8 @@ unsafe extern "C" {
         key: u64,
         port: *const PortDispatcher,
     ) -> zx_types::zx_status_t;
+    pub(crate) fn cpp_dispatcher_set_owner(
+        dispatcher: *const Dispatcher,
+        new_owner: zx_types::zx_koid_t,
+    );
 }

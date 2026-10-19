@@ -1,17 +1,104 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2016 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+const LOCAL_TRACE: u32 = 0;
+
 use super::DispatcherOps;
 use super::dispatcher::Dispatcher;
 use super::process_dispatcher::ProcessDispatcher;
+use crate::counters::define_kcounter;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
-use fbl::{HasRefCount, Recyclable, RefPtr};
+use fbl::{DoublyLinkedListNode, HasRefCount, Recyclable, RefPtr};
+use relaxed_atomic::RelaxedAtomicU64;
 use zx_status::Status;
-use zx_types::{zx_handle_t, zx_rights_t, zx_status_t};
+use zx_types::{ZX_KOID_INVALID, zx_handle_t, zx_koid_t, zx_rights_t, zx_status_t};
+
+/// Number of bits reserved in handle values for userspace/fixed tags.
+pub(crate) const HANDLE_RESERVED_BITS: u32 = 2;
+
+// The number of outstanding (live) handles in the arena.
+const MAX_HANDLE_COUNT: usize = 256 * 1024;
+
+// Warning level: When the number of handles exceeds this value, we start to emit
+// warnings to the kernel's debug log.
+const HIGH_HANDLE_COUNT: usize = (MAX_HANDLE_COUNT * 7) / 8;
+
+define_kcounter!(HANDLE_COUNT_MADE, "handles.made", Sum);
+define_kcounter!(HANDLE_COUNT_DUPED, "handles.duped", Sum);
+define_kcounter!(HANDLE_COUNT_LIVE, "handles.live", Sum);
+define_kcounter!(HANDLE_COUNT_ALLOC_FAILED, "handles.alloc.failed", Sum);
+
+// Masks for building a Handle's base_value, which ProcessDispatcher
+// uses to create zx_handle_t values.
+//
+// base_value bit fields:
+//   [31..(32 - HANDLE_RESERVED_BITS)]                     : Must be zero
+//   [(31 - HANDLE_RESERVED_BITS)..HANDLE_GENERATION_SHIFT] : Generation number
+//                                                          Masked by HANDLE_GENERATION_MASK
+//   [HANDLE_GENERATION_SHIFT-1..0]                        : Index into handle_arena
+//                                                          Masked by HANDLE_INDEX_MASK
+const HANDLE_INDEX_MASK: u32 = (MAX_HANDLE_COUNT as u32) - 1;
+
+const HANDLE_RESERVED_BITS_MASK: u32 =
+    ((1 << HANDLE_RESERVED_BITS) - 1) << (32 - HANDLE_RESERVED_BITS);
+
+const HANDLE_GENERATION_MASK: u32 = !HANDLE_INDEX_MASK & !HANDLE_RESERVED_BITS_MASK;
+
+const HANDLE_GENERATION_SHIFT: u32 = 18;
+
+pub(crate) const HANDLE_MUST_BE_ONE_MASK: u32 = (1 << HANDLE_RESERVED_BITS) - 1;
+
+pub(crate) const BASE_VALUE_MUST_BE_ZERO_MASK: u32 =
+    HANDLE_MUST_BE_ONE_MASK << (32 - HANDLE_RESERVED_BITS);
+
+// The leading members of `Handle` (`handle_table_id`, `dispatcher`, `rights` and `base_value`)
+// need to be preserved when handles are free'd to the arena. HANDLE_PRESERVE_SIZE is an
+// 'approximation' of how large all those members are; the layout assertions below `Handle`
+// statically validate that the chosen HANDLE_PRESERVE_SIZE is correct. Any incorrect size will
+// result in a compilation error! This must match `Handle::PreserveSize` in handle.h, which
+// parameterizes the C++ `fbl::GPArena` backing the handles.
+const HANDLE_PRESERVE_SIZE: usize = 24;
+
+zr::static_assert!((HANDLE_INDEX_MASK & (MAX_HANDLE_COUNT as u32)) == 0);
+zr::static_assert!(
+    ((3 << (HANDLE_GENERATION_SHIFT - 1)) & HANDLE_GENERATION_MASK)
+        == (1 << HANDLE_GENERATION_SHIFT)
+);
+zr::static_assert!((HANDLE_GENERATION_MASK >> HANDLE_GENERATION_SHIFT) >= 255);
+zr::static_assert!(HANDLE_RESERVED_BITS_MASK & HANDLE_GENERATION_MASK == 0);
+zr::static_assert!(HANDLE_RESERVED_BITS_MASK & HANDLE_INDEX_MASK == 0);
+zr::static_assert!(HANDLE_GENERATION_MASK & HANDLE_INDEX_MASK == 0);
+zr::static_assert!(
+    (HANDLE_RESERVED_BITS_MASK | HANDLE_GENERATION_MASK | HANDLE_INDEX_MASK) == 0xffff_ffff
+);
+
+/// Calculates a new base value for an arena slot given its index and previous base value.
+///
+/// `index` is the literal index into the table. `old_value` is the
+/// index mixed with the per-handle-lifetime state.
+fn new_handle_value(index: u32, old_value: u32) -> u32 {
+    // `index` is the literal index into the table. `old_value` is the index mixed with the
+    // per-handle-lifetime state.
+    debug_assert!((index & !HANDLE_INDEX_MASK) == 0);
+
+    let mut old_gen = 0;
+    if old_value != 0 {
+        // This slot has been used before.
+        debug_assert!((old_value & HANDLE_INDEX_MASK) == index);
+        old_gen = (old_value & HANDLE_GENERATION_MASK) >> HANDLE_GENERATION_SHIFT;
+    }
+    let new_gen = ((old_gen + 1) << HANDLE_GENERATION_SHIFT) & HANDLE_GENERATION_MASK;
+    index | new_gen
+}
+
+/// Converts a base value to its arena slot index.
+fn handle_value_to_index(value: u32) -> u32 {
+    value & HANDLE_INDEX_MASK
+}
 
 /// A wrapper around a handle value received from userspace.
 #[repr(transparent)]
@@ -33,12 +120,557 @@ impl HandleValue {
     }
 }
 
+impl From<zx_handle_t> for HandleValue {
+    #[inline]
+    fn from(value: zx_handle_t) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<HandleValue> for zx_handle_t {
+    #[inline]
+    fn from(val: HandleValue) -> Self {
+        val.raw_value()
+    }
+}
+
+/// A `Handle` is how a specific process refers to a specific `Dispatcher`.
+#[repr(C)]
+#[derive(fbl::DoublyLinkedListContainable)]
+pub struct Handle {
+    // handle_table_id is atomic because threads from different processes can
+    // access it concurrently, while holding different instances of
+    // lock.
+    handle_table_id: RelaxedAtomicU64,
+    dispatcher: RefPtr<Dispatcher>,
+    rights: zx_rights_t,
+    base_value: u32,
+    #[dll_node]
+    node_state: DoublyLinkedListNode<Handle>,
+}
+
+// This layout is mirrored by `HandleLayoutCheck` in handle.cc, which pins the C++ view of the same
+// bytes so the two definitions can never drift apart silently.
+zr::static_assert!(core::mem::size_of::<Handle>() == 40);
+zr::static_assert!(core::mem::align_of::<Handle>() == 8);
+zr::static_assert!(core::mem::offset_of!(Handle, handle_table_id) == 0);
+zr::static_assert!(core::mem::offset_of!(Handle, dispatcher) == 8);
+zr::static_assert!(core::mem::offset_of!(Handle, rights) == 16);
+zr::static_assert!(core::mem::offset_of!(Handle, base_value) == 20);
+zr::static_assert!(core::mem::offset_of!(Handle, node_state) == 24);
+
+// Validate that all the fields we need to preserve fit within the preservation window.
+zr::static_assert!(
+    core::mem::offset_of!(Handle, handle_table_id) + core::mem::size_of::<RelaxedAtomicU64>()
+        <= HANDLE_PRESERVE_SIZE
+);
+zr::static_assert!(
+    core::mem::offset_of!(Handle, base_value) + core::mem::size_of::<u32>() <= HANDLE_PRESERVE_SIZE
+);
+zr::static_assert!(
+    core::mem::offset_of!(Handle, dispatcher) + core::mem::size_of::<RefPtr<Dispatcher>>()
+        <= HANDLE_PRESERVE_SIZE
+);
+
+impl Handle {
+    /// Returns the `Dispatcher` to which this instance points.
+    #[inline]
+    pub fn dispatcher(&self) -> &RefPtr<Dispatcher> {
+        &self.dispatcher
+    }
+
+    /// Returns the KOID of the handle table that owns this handle.
+    #[inline]
+    pub fn handle_table_id(&self) -> zx_koid_t {
+        self.handle_table_id.load()
+    }
+
+    /// Sets the owning handle table KOID and propagates it to the dispatcher.
+    #[inline]
+    pub fn set_handle_table_id(&self, pid: zx_koid_t) {
+        self.handle_table_id.store(pid);
+        self.dispatcher.set_owner(pid);
+    }
+
+    /// Returns the rights mask associated with this handle.
+    #[inline]
+    pub fn rights(&self) -> zx_rights_t {
+        self.rights
+    }
+
+    /// Returns true if this handle possesses all of the desired rights bits.
+    #[inline]
+    pub fn has_rights(&self, desired: zx_rights_t) -> bool {
+        (self.rights & desired) == desired
+    }
+
+    /// Returns the internal base value for this handle.
+    #[inline]
+    pub fn base_value(&self) -> u32 {
+        self.base_value
+    }
+
+    /// Initializes the global handle table arena.
+    pub fn init_global_arena() -> Result<(), Status> {
+        HandleTableArena::init()
+    }
+
+    /// Maps a 32-bit handle base value back to a pointer to a `Handle`.
+    pub fn from_u32(value: u32) -> Option<*mut Handle> {
+        HandleTableArena::from_u32(value)
+    }
+
+    /// Returns the number of outstanding handles pointing to the given dispatcher.
+    pub fn count(dispatcher: &Dispatcher) -> u32 {
+        dispatcher.current_handle_count()
+    }
+
+    /// Creates a newly allocated `Handle` pointing to `dispatcher` with `rights`.
+    pub fn make(dispatcher: RefPtr<Dispatcher>, rights: zx_rights_t) -> Option<HandleOwner> {
+        let (addr, base_value) = HandleTableArena::alloc(&dispatcher, "new")?;
+        HANDLE_COUNT_MADE.add(1);
+        HANDLE_COUNT_LIVE.add(1);
+        let ptr = addr.as_ptr().cast::<Handle>();
+        // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
+        unsafe {
+            ptr.write(Handle {
+                handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
+                dispatcher,
+                rights,
+                base_value,
+                node_state: DoublyLinkedListNode::new(),
+            });
+            Some(HandleOwner::from_non_null(NonNull::new_unchecked(ptr)))
+        }
+    }
+
+    /// Creates a newly allocated `Handle` by taking ownership of a `KernelHandle`.
+    pub fn make_from_kernel_handle(
+        kernel_handle: KernelHandle<Dispatcher>,
+        rights: zx_rights_t,
+    ) -> Option<HandleOwner> {
+        let (addr, base_value) = HandleTableArena::alloc(kernel_handle.dispatcher(), "new")?;
+        let dispatcher = kernel_handle.release();
+        HANDLE_COUNT_MADE.add(1);
+        HANDLE_COUNT_LIVE.add(1);
+        let ptr = addr.as_ptr().cast::<Handle>();
+        // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
+        unsafe {
+            ptr.write(Handle {
+                handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
+                dispatcher,
+                rights,
+                base_value,
+                node_state: DoublyLinkedListNode::new(),
+            });
+            Some(HandleOwner::from_non_null(NonNull::new_unchecked(ptr)))
+        }
+    }
+
+    /// Duplicates an existing handle with specified rights.
+    pub fn dup(source: &Handle, rights: zx_rights_t) -> Option<HandleOwner> {
+        let (addr, base_value) = HandleTableArena::alloc(source.dispatcher(), "duplicate")?;
+        HANDLE_COUNT_DUPED.add(1);
+        HANDLE_COUNT_LIVE.add(1);
+        let ptr = addr.as_ptr().cast::<Handle>();
+        // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
+        unsafe {
+            // Although this handle is intended to become owned by source.handle_table_id at the
+            // point of creation it is stack owned and may be destroyed without actually being
+            // assigned to the handle table. If this happens the assert in Handle::delete would get
+            // triggered.
+            ptr.write(Handle {
+                handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
+                dispatcher: source.dispatcher.clone(),
+                rights,
+                base_value,
+                node_state: DoublyLinkedListNode::new(),
+            });
+            Some(HandleOwner::from_non_null(NonNull::new_unchecked(ptr)))
+        }
+    }
+
+    /// Deletes a handle, running its destructor and returning its memory slot to the arena.
+    fn delete(handle: *mut Handle) {
+        debug_assert!(!handle.is_null());
+
+        // SAFETY: `handle` is a valid, non-null pointer to an allocated `Handle`.
+        let Handle { handle_table_id, dispatcher, rights: _, base_value, node_state } =
+            unsafe { handle.read() };
+
+        // There may be stale pointers to this slot and they will look at handle_table_id. We
+        // expect handle_table_id to already have been cleared by the process dispatcher before
+        // the handle got to this point.
+        debug_assert!(handle_table_id.load() == ZX_KOID_INVALID);
+
+        if dispatcher.is_waitable() {
+            dispatcher.cancel_raw(handle.cast());
+        }
+
+        // The destructor should not do anything interesting but call it for completeness.
+        drop(node_state);
+        // Make sure the base value was not altered by the destructor.
+        // SAFETY: `handle` is non-null and points to the arena slot whose base_value was preserved.
+        debug_assert!(unsafe { core::ptr::addr_of!((*handle).base_value).read() } == base_value);
+
+        // SAFETY: In C++, moving `handle->dispatcher_` sets the pointer to nullptr.
+        // We write null into the slot's dispatcher field so the debug assertion in `alloc()`
+        // verifies that recycled slots have null dispatcher pointers.
+        unsafe {
+            core::ptr::addr_of_mut!((*handle).dispatcher)
+                .cast::<*mut ()>()
+                .write(core::ptr::null_mut());
+        }
+
+        let zero_handles = dispatcher.decrement_handle_count();
+
+        // SAFETY: `handle` was allocated by `cpp_handle_arena_alloc` and its contents have been
+        // destructured.
+        unsafe { cpp_handle_arena_free(handle.cast()) };
+
+        if zero_handles {
+            dispatcher.on_zero_handles();
+        }
+
+        // If this was the last reference to the dispatcher, it gets dropped here
+        // after the handle slot has been returned to the arena.
+        drop(dispatcher);
+        HANDLE_COUNT_LIVE.add(-1);
+    }
+}
+
+// An EventLimiter allows an action to only be taken every K seconds in a thread-safe manner.
+struct EventLimiter<const DURATION: i64> {
+    last_event: core::sync::atomic::AtomicI64,
+}
+
+impl<const DURATION: i64> EventLimiter<DURATION> {
+    const fn new() -> Self {
+        Self { last_event: core::sync::atomic::AtomicI64::new(0) }
+    }
+
+    fn ready(&self) -> bool {
+        let now = crate::platform_rs::timer::current_mono_time().0;
+        let last_event = self.last_event.load(core::sync::atomic::Ordering::Relaxed);
+        if last_event != 0 && now < last_event.saturating_add(DURATION) {
+            return false;
+        }
+        if self
+            .last_event
+            .compare_exchange(
+                last_event,
+                now,
+                core::sync::atomic::Ordering::Relaxed,
+                core::sync::atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            return false;
+        }
+        true
+    }
+}
+
+static HANDLE_COUNT_HIGH_LOG: EventLimiter<1_000_000_000> = EventLimiter::new();
+
+/// Arena allocator managing memory slots for all `Handle` objects in the kernel.
+struct HandleTableArena;
+
+impl HandleTableArena {
+    /// Initializes the handle table arena.
+    fn init() -> Result<(), Status> {
+        // SAFETY: `cpp_handle_arena_init` initializes the C++ backing allocator for the arena.
+        let status = unsafe { cpp_handle_arena_init(c"handles".as_ptr(), MAX_HANDLE_COUNT) };
+        Status::ok(status)
+    }
+
+    /// Allocates space for a `Handle` from the arena, but don't instantiate the
+    /// object. `base_value` gets the value for `Handle::base_value`. `what`
+    /// says whether this is allocation or duplication, for the error message.
+    fn alloc(dispatcher: &Dispatcher, what: &str) -> Option<(NonNull<u8>, u32)> {
+        // Allocate space for a Handle from the arena, but don't instantiate the
+        // object. `base_value` gets the value for `Handle::base_value`. `what`
+        // says whether this is allocation or duplication, for the error message.
+
+        // Attempt to allocate a handle.
+        // SAFETY: `cpp_handle_arena_alloc` allocates a raw slot in the global handle arena.
+        let raw_addr = unsafe { cpp_handle_arena_alloc() };
+        // SAFETY: Retrieves the diagnostic count from the global arena.
+        let outstanding_handles = unsafe { cpp_handle_arena_diagnostic_count() };
+        let Some(addr) = NonNull::new(raw_addr.cast::<u8>()) else {
+            HANDLE_COUNT_ALLOC_FAILED.add(1);
+            kprint::kprintln!(
+                "WARNING: Could not allocate {what:s} handle ({outstanding_handles} outstanding)"
+            );
+            return None;
+        };
+
+        // Emit a warning if too many handles have been created and we haven't recently logged
+        if outstanding_handles > HIGH_HANDLE_COUNT && HANDLE_COUNT_HIGH_LOG.ready() {
+            kprint::kprintln!(
+                "WARNING: High handle count: {outstanding_handles} / {HIGH_HANDLE_COUNT} handles"
+            );
+        }
+
+        dispatcher.increment_handle_count();
+        let handle_ptr = addr.as_ptr().cast::<Handle>();
+        // checking the handle_table_id and dispatcher is really about trying to catch cases
+        // where this Handle might somehow already be in use.
+        // SAFETY: `handle_ptr` points to the newly allocated uninitialized arena slot.
+        unsafe {
+            debug_assert!(
+                (&*core::ptr::addr_of!((*handle_ptr).handle_table_id)).load() == ZX_KOID_INVALID
+            );
+            let disp_ptr = core::ptr::addr_of!((*handle_ptr).dispatcher).cast::<*const ()>().read();
+            debug_assert!(disp_ptr.is_null());
+        }
+        let base_value = Self::get_new_base_value(addr.as_ptr());
+        Some((addr, base_value))
+    }
+
+    // Returns a new base_value based on the value stored in the free arena slot pointed to by addr.
+    // The new value will be different from the last base_value used by this slot.
+    fn get_new_base_value(addr: *mut u8) -> u32 {
+        // Get the index of this slot within the arena.
+        let handle_index = Self::handle_to_index(addr.cast());
+        // Check the free memory for a stashed base_value.
+        // SAFETY: `addr` points to an arena slot whose previous base value is preserved across
+        // allocations.
+        let old_base_value =
+            unsafe { core::ptr::addr_of!((*addr.cast::<Handle>()).base_value).read() };
+        new_handle_value(handle_index, old_base_value)
+    }
+
+    /// Converts a handle pointer to its index in the arena.
+    fn handle_to_index(handle: *const Handle) -> u32 {
+        // SAFETY: Returns the base address of the global handle arena.
+        let base = unsafe { cpp_handle_arena_base() } as usize;
+        ((handle as usize - base) / core::mem::size_of::<Handle>()) as u32
+    }
+
+    /// Converts an index in the arena to a memory address.
+    fn index_to_handle(index: u32) -> usize {
+        // SAFETY: Returns the base address of the global handle arena.
+        let base = unsafe { cpp_handle_arena_base() } as usize;
+        base + (index as usize) * core::mem::size_of::<Handle>()
+    }
+
+    /// Maps a 32-bit handle value back to a pointer to a `Handle`.
+    fn from_u32(value: u32) -> Option<*mut Handle> {
+        let index = handle_value_to_index(value);
+        let handle_addr = Self::index_to_handle(index);
+        // SAFETY: Checks if `handle_addr` is committed in the arena.
+        if unsafe {
+            !cpp_handle_arena_committed(core::ptr::with_exposed_provenance::<core::ffi::c_void>(
+                handle_addr,
+            ))
+        } {
+            return None;
+        }
+        // SAFETY: Confines `handle_addr` to ensure it is within the arena boundary without
+        // speculative bypass.
+        let handle_addr = unsafe { cpp_handle_arena_confine(handle_addr) };
+        let handle = core::ptr::with_exposed_provenance_mut::<Handle>(handle_addr);
+        // SAFETY: `handle` points to committed, confined arena memory.
+        let actual_base = unsafe { core::ptr::addr_of!((*handle).base_value).read() };
+        let safe_addr =
+            fbl::conditional_select_nospec_eq(actual_base as usize, value as usize, handle_addr, 0);
+        if safe_addr == 0 {
+            None
+        } else {
+            Some(core::ptr::with_exposed_provenance_mut::<Handle>(safe_addr))
+        }
+    }
+
+    /// Deletes a handle, running its destructor and returning its memory slot to the arena.
+    fn delete(handle: *mut Handle) {
+        Handle::delete(handle);
+    }
+
+    /// Returns the number of currently allocated handles in the arena.
+    fn diagnostic_count() -> usize {
+        // SAFETY: Safe to query diagnostic handle count from global arena.
+        unsafe { cpp_handle_arena_diagnostic_count() }
+    }
+
+    /// Dumps arena diagnostic information.
+    fn dump() {
+        // SAFETY: Safe to dump arena diagnostic info.
+        unsafe { cpp_handle_arena_dump() };
+    }
+
+    /// Returns the number of handle allocations that have failed since boot.
+    fn get_alloc_failed_count() -> i64 {
+        HANDLE_COUNT_ALLOC_FAILED.sum_across_all_cpus()
+    }
+}
+
+/// Safe RAII wrapper for an uniquely owned `Handle`.
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct HandleOwner {
+    ptr: NonNull<Handle>,
+}
+
+impl HandleOwner {
+    /// Creates a new `HandleOwner` from a non-null `Handle` pointer.
+    pub fn from_non_null(ptr: NonNull<Handle>) -> Self {
+        Self { ptr }
+    }
+
+    /// Creates a new `HandleOwner` from a raw `Handle` pointer if non-null.
+    ///
+    /// # Safety
+    /// Caller must ensure `ptr` is a valid pointer to an allocated `Handle`.
+    #[inline]
+    pub unsafe fn from_raw(ptr: *mut Handle) -> Option<Self> {
+        NonNull::new(ptr).map(|ptr| Self { ptr })
+    }
+
+    /// Releases ownership of the pointer without running its destructor.
+    #[inline]
+    pub fn release(self) -> NonNull<Handle> {
+        let ptr = self.ptr;
+        core::mem::forget(self);
+        ptr
+    }
+
+    /// Releases ownership of an optional `HandleOwner`, returning null if `None`.
+    #[inline]
+    pub fn release_opt(owner: Option<Self>) -> *mut Handle {
+        owner.map_or(core::ptr::null_mut(), |o| o.release().as_ptr())
+    }
+
+    /// Duplicates this handle with the given rights.
+    #[inline]
+    pub fn dup(&self, rights: zx_rights_t) -> Result<Self, Status> {
+        Handle::dup(self, rights).ok_or(Status::NO_MEMORY)
+    }
+
+    /// Returns the raw pointer backing this handle owner.
+    #[inline]
+    pub fn as_raw(&self) -> *mut Handle {
+        self.ptr.as_ptr()
+    }
+
+    /// Returns the non-null pointer backing this handle owner.
+    pub fn as_non_null(&self) -> NonNull<Handle> {
+        self.ptr
+    }
+
+    /// Returns a borrowed `HandleRef` referencing this handle.
+    #[inline]
+    pub fn as_ref(&self) -> HandleRef<'_> {
+        // SAFETY: `self.ptr` is a valid owned handle pointer for the lifetime of `&self`.
+        unsafe { HandleRef::from_raw(self.ptr) }
+    }
+
+    /// Returns a borrowed reference to the handle's dispatcher without incrementing its reference
+    /// count.
+    #[inline]
+    pub fn dispatcher_ref(&self) -> &Dispatcher {
+        self.dispatcher()
+    }
+
+    /// Allocates a new `HandleOwner` wrapping `handle` with `rights`.
+    pub fn make<T>(handle: KernelHandle<T>, rights: zx_rights_t) -> Option<Self>
+    where
+        T: HasRefCount + Recyclable + DispatcherOps,
+    {
+        Handle::make_from_kernel_handle(handle.cast(), rights)
+    }
+
+    /// Allocates a new `HandleOwner` wrapping `dispatcher` with `rights`.
+    pub fn make_from_ref<T>(dispatcher: RefPtr<T>, rights: zx_rights_t) -> Option<Self>
+    where
+        T: HasRefCount + Recyclable + DispatcherOps,
+    {
+        // SAFETY: `T` implements `DispatcherOps` and is layout-compatible with `Dispatcher`.
+        let generic = unsafe { dispatcher.cast::<Dispatcher>() };
+        Handle::make(generic, rights)
+    }
+}
+
+impl core::ops::Deref for HandleOwner {
+    type Target = Handle;
+    fn deref(&self) -> &Handle {
+        // SAFETY: `self.ptr` is non-null and points to a valid `Handle` owned by `HandleOwner`.
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl core::ops::DerefMut for HandleOwner {
+    fn deref_mut(&mut self) -> &mut Handle {
+        // SAFETY: `self.ptr` is non-null and uniquely owned for mutable access.
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl core::borrow::Borrow<Handle> for HandleOwner {
+    #[inline]
+    fn borrow(&self) -> &Handle {
+        self
+    }
+}
+
+impl core::borrow::Borrow<Handle> for &HandleOwner {
+    #[inline]
+    fn borrow(&self) -> &Handle {
+        self
+    }
+}
+
+impl Drop for HandleOwner {
+    #[inline]
+    fn drop(&mut self) {
+        Handle::delete(self.ptr.as_ptr());
+    }
+}
+
+// SAFETY: `HandleOwner` uniquely owns a `Handle`, which is thread-safe.
+unsafe impl Send for HandleOwner {}
+
+/// A minimal wrapper around a `Dispatcher` which is owned by the kernel.
+///
+/// Intended usage when creating a new Dispatcher object is:
+///   1. Create a KernelHandle on the stack (cannot fail)
+///   2. Move the RefPtr<Dispatcher> into the KernelHandle (cannot fail)
+///   3. When ready to give the handle to a process, upgrade the KernelHandle
+///      to a full HandleOwner via Handle::make() / Handle::make_from_kernel_handle() (can fail)
+///
+/// This sequence ensures that the Dispatcher's on_zero_handles() method is
+/// called even if errors occur during or before HandleOwner creation, which
+/// is necessary to break circular references for some Dispatcher types.
+///
+/// This class is thread-unsafe and must be externally synchronized if used
+/// across multiple threads.
 #[repr(transparent)]
 pub struct KernelHandle<T>
 where
     T: HasRefCount + Recyclable + DispatcherOps,
 {
-    ptr: *const T,
+    dispatcher: Option<RefPtr<T>>,
+}
+
+zr::static_assert!(core::mem::size_of::<KernelHandle<Dispatcher>>() == 8);
+zr::static_assert!(core::mem::align_of::<KernelHandle<Dispatcher>>() == 8);
+
+impl<T> Default for KernelHandle<T>
+where
+    T: HasRefCount + Recyclable + DispatcherOps,
+{
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl<T> core::fmt::Debug for KernelHandle<T>
+where
+    T: HasRefCount + Recyclable + DispatcherOps,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("KernelHandle").field("is_valid", &self.is_valid()).finish()
+    }
 }
 
 impl<T> KernelHandle<T>
@@ -80,42 +712,54 @@ where
         unsafe { Ok((handle.assume_init(), rights.assume_init())) }
     }
 
+    /// Creates a new `KernelHandle` owning `dispatcher`.
     pub fn new(dispatcher: RefPtr<T>) -> Self {
-        Self { ptr: RefPtr::into_raw(dispatcher) }
+        debug_assert!(dispatcher.current_handle_count() == 0);
+        Self { dispatcher: Some(dispatcher) }
+    }
+
+    /// Constructs an empty `KernelHandle`.
+    pub const fn empty() -> Self {
+        Self { dispatcher: None }
     }
 
     /// Casts this handle to a generic Dispatcher handle.
     pub fn cast(mut self) -> KernelHandle<Dispatcher> {
-        let ref_ptr = self.take_ref_ptr().expect("KernelHandle was empty");
-        // SAFETY: Dispatcher upcasting is safe across all DispatcherOps types.
-        KernelHandle::new(unsafe { ref_ptr.cast() })
+        let disp = self.dispatcher.take().expect("KernelHandle was empty");
+        // SAFETY: `T` implements `DispatcherOps` and is layout-compatible with `Dispatcher`.
+        let cast_disp = unsafe { disp.cast::<Dispatcher>() };
+        KernelHandle { dispatcher: Some(cast_disp) }
     }
 
+    /// Releases the underlying `RefPtr<T>` without invoking `on_zero_handles`.
     pub fn release(mut self) -> RefPtr<T> {
-        self.take_ref_ptr().expect("KernelHandle was empty")
+        self.dispatcher.take().expect("KernelHandle was empty")
     }
 
     /// Returns a reference to the underlying `RefPtr<T>`.
-    ///
-    /// Callers can invoke methods directly on `T` (via `Deref`) without bumping the
-    /// reference count, or call `.clone()` on the returned reference to acquire a new `RefPtr<T>`.
     pub fn dispatcher(&self) -> &RefPtr<T> {
-        assert!(!self.ptr.is_null());
-        // SAFETY: `self.ptr` is non-null and holds an acquired ref count. `RefPtr<T>` is `#[repr(C)]`
-        // containing `NonNull<T>`, which has the exact same layout and ABI as `*const T`.
-        unsafe { &*(core::ptr::from_ref(&self.ptr).cast::<RefPtr<T>>()) }
+        self.dispatcher.as_ref().expect("KernelHandle was empty")
     }
 
-    fn take_ref_ptr(&mut self) -> Option<RefPtr<T>> {
-        let ptr = core::mem::take(&mut self.ptr);
-        if ptr.is_null() {
-            None
-        } else {
-            // SAFETY: `ptr` came from an active `KernelHandle` owning a reference count.
-            Some(unsafe { RefPtr::from_raw(ptr) })
+    /// Returns true if this `KernelHandle` holds a dispatcher.
+    pub fn is_valid(&self) -> bool {
+        self.dispatcher.is_some()
+    }
+
+    /// Resets the `KernelHandle` to empty, triggering `on_zero_handles` on the previous dispatcher.
+    pub fn reset(&mut self) {
+        self.reset_to(None);
+    }
+
+    /// Resets the `KernelHandle` with a new dispatcher.
+    pub fn reset_to(&mut self, new_disp: Option<RefPtr<T>>) {
+        let prev = core::mem::replace(&mut self.dispatcher, new_disp);
+        if let Some(disp) = prev {
+            disp.on_zero_handles();
         }
     }
 
+    /// Adds this kernel handle to the current process's handle table.
     pub fn make_and_add_handle(self, rights: zx_rights_t) -> Result<HandleValue, Status> {
         ProcessDispatcher::with_current(|up| up.make_and_add_handle(self, rights))
     }
@@ -126,132 +770,18 @@ where
     T: HasRefCount + Recyclable + DispatcherOps,
 {
     fn drop(&mut self) {
-        if let Some(ref_ptr) = self.take_ref_ptr() {
-            ref_ptr.on_zero_handles();
+        if let Some(disp) = self.dispatcher.take() {
+            disp.on_zero_handles();
         }
-    }
-}
-
-/// Safe RAII wrapper for an owned handle (`HandleOwner`).
-#[repr(transparent)]
-pub struct HandleOwner {
-    ptr: NonNull<core::ffi::c_void>,
-}
-
-impl HandleOwner {
-    /// Creates a new `HandleOwner` from a raw handle pointer, returning `None` if null.
-    ///
-    /// # Safety
-    /// `ptr` must be null or a valid, owned `Handle*` created by C++ `Handle::Make` or
-    /// `Handle::Dup`.
-    #[inline]
-    pub unsafe fn from_raw(ptr: *mut core::ffi::c_void) -> Option<Self> {
-        NonNull::new(ptr).map(|ptr| Self { ptr })
-    }
-
-    /// Creates a new `HandleOwner` from a non-null raw handle pointer.
-    ///
-    /// # Safety
-    /// `ptr` must be a valid, non-null owned `Handle*`.
-    #[inline]
-    pub unsafe fn from_raw_non_null(ptr: NonNull<core::ffi::c_void>) -> Self {
-        Self { ptr }
-    }
-
-    /// Releases the raw pointer from `HandleOwner` without running its destructor.
-    #[inline]
-    pub fn release(self) -> *mut core::ffi::c_void {
-        let ptr = self.ptr.as_ptr();
-        core::mem::forget(self);
-        ptr
-    }
-
-    /// Duplicates this handle with the given rights.
-    #[inline]
-    pub fn dup(&self, rights: zx_rights_t) -> Result<Self, Status> {
-        // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
-        let raw = unsafe { cpp_handle_dup(self.ptr.as_ptr(), rights) };
-        // SAFETY: `cpp_handle_dup` returns a valid new raw handle or null.
-        unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
-    }
-
-    /// Returns the raw pointer backing this handle owner.
-    #[inline]
-    pub fn as_raw(&self) -> *mut core::ffi::c_void {
-        self.ptr.as_ptr()
-    }
-
-    /// Returns the rights associated with this handle.
-    #[inline]
-    pub fn rights(&self) -> zx_rights_t {
-        // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
-        unsafe { cpp_handle_get_rights(self.ptr.as_ptr()) }
-    }
-
-    /// Returns a reference-counted pointer to the handle's dispatcher.
-    pub fn dispatcher(&self) -> RefPtr<Dispatcher> {
-        let mut out = MaybeUninit::<RefPtr<Dispatcher>>::uninit();
-        // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
-        unsafe {
-            cpp_handle_get_dispatcher(self.ptr.as_ptr(), &mut out);
-            out.assume_init()
-        }
-    }
-
-    /// Returns a borrowed reference to the handle's dispatcher without incrementing its reference
-    /// count.
-    #[inline]
-    pub fn dispatcher_ref(&self) -> &Dispatcher {
-        // SAFETY: `self.ptr` is a valid non-null handle pointer that owns a reference to its
-        // dispatcher for the duration of `&self`.
-        unsafe { &*cpp_handle_get_dispatcher_raw(self.ptr.as_ptr()) }
-    }
-
-    /// Returns a borrowed `HandleRef` referencing this handle.
-    #[inline]
-    pub fn as_ref(&self) -> HandleRef<'_> {
-        // SAFETY: `self.ptr` is a valid owned handle pointer for the lifetime of `&self`.
-        unsafe { HandleRef::from_raw(self.ptr) }
-    }
-
-    /// Allocates a new `HandleOwner` wrapping `handle` with `rights`.
-    pub fn make<T>(handle: KernelHandle<T>, rights: zx_rights_t) -> Option<Self>
-    where
-        T: HasRefCount + Recyclable + DispatcherOps,
-    {
-        let mut generic = handle.cast();
-        // SAFETY: `generic` is a valid `KernelHandle<Dispatcher>`, and `cpp_handle_make` returns
-        // an owned `Handle*` or null.
-        unsafe { Self::from_raw(cpp_handle_make(&mut generic, rights)) }
-    }
-
-    /// Allocates a new `HandleOwner` wrapping `dispatcher` with `rights`.
-    pub fn make_from_ref<T>(dispatcher: RefPtr<T>, rights: zx_rights_t) -> Option<Self>
-    where
-        T: HasRefCount + Recyclable + DispatcherOps,
-    {
-        // SAFETY: `T` implements `DispatcherOps` and is layout-compatible with `Dispatcher`.
-        let raw_dispatcher = RefPtr::into_raw(unsafe { dispatcher.cast::<Dispatcher>() });
-        // SAFETY: `raw_dispatcher` carries an acquired reference count transferred to
-        // `cpp_handle_make_from_ref`, which returns an owned `Handle*` or null.
-        unsafe { Self::from_raw(cpp_handle_make_from_ref(raw_dispatcher.cast_mut(), rights)) }
-    }
-}
-
-impl Drop for HandleOwner {
-    #[inline]
-    fn drop(&mut self) {
-        // SAFETY: `self.ptr` is valid and owned.
-        unsafe { cpp_handle_destroy(self.ptr.as_ptr()) };
     }
 }
 
 /// A borrowed reference to a Handle stored in a process's handle table.
 ///
 /// Holding this reference guarantees that the handle table lock is held for lifetime `'a`.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct HandleRef<'a> {
-    ptr: NonNull<core::ffi::c_void>,
+    ptr: NonNull<Handle>,
     _marker: core::marker::PhantomData<&'a ()>,
 }
 
@@ -263,132 +793,487 @@ impl<'a> HandleRef<'a> {
     /// The caller must ensure that `ptr` is a valid handle pointer and the handle table lock
     /// is held for the lifetime `'a`.
     #[inline]
-    pub unsafe fn from_raw(ptr: NonNull<core::ffi::c_void>) -> Self {
+    pub unsafe fn from_raw(ptr: NonNull<Handle>) -> Self {
         Self { ptr, _marker: core::marker::PhantomData }
     }
 
-    /// Checks if this handle has the requested rights.
+    /// Returns whether this handle possesses the requested rights.
     #[inline]
     pub fn has_rights(&self, rights: zx_rights_t) -> bool {
-        // SAFETY: `self.ptr` is guaranteed to be a valid handle pointer protected by the handle table lock.
-        unsafe { cpp_handle_has_rights(self.ptr.as_ptr(), rights) }
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
+        unsafe { self.ptr.as_ref().has_rights(rights) }
     }
 
-    /// Returns the rights associated with this handle.
+    /// Returns the rights mask of the handle.
     #[inline]
     pub fn rights(&self) -> zx_rights_t {
-        // SAFETY: `self.ptr` is guaranteed to be a valid handle pointer protected by the handle table lock.
-        unsafe { cpp_handle_get_rights(self.ptr.as_ptr()) }
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
+        unsafe { self.ptr.as_ref().rights() }
     }
 
     /// Duplicates this handle with the given rights.
     #[inline]
     pub fn dup(&self, rights: zx_rights_t) -> Result<HandleOwner, Status> {
-        // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
-        let raw = unsafe { cpp_handle_dup(self.ptr.as_ptr(), rights) };
-        // SAFETY: `cpp_handle_dup` returns a valid new raw handle or null.
-        unsafe { HandleOwner::from_raw(raw).ok_or(Status::NO_MEMORY) }
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
+        Handle::dup(unsafe { self.ptr.as_ref() }, rights).ok_or(Status::NO_MEMORY)
     }
 
-    /// Returns a reference-counted pointer to the handle's dispatcher.
+    /// Returns the base value of the handle.
+    #[inline]
+    pub fn base_value(&self) -> u32 {
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
+        unsafe { self.ptr.as_ref().base_value() }
+    }
+
+    /// Returns the handle table KOID owning this handle.
+    #[inline]
+    pub fn handle_table_id(&self) -> zx_koid_t {
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
+        unsafe { self.ptr.as_ref().handle_table_id() }
+    }
+
+    /// Returns a cloned `RefPtr` to the handle's dispatcher.
+    #[inline]
     pub fn dispatcher(&self) -> RefPtr<Dispatcher> {
-        let mut out = MaybeUninit::<RefPtr<Dispatcher>>::uninit();
-        // SAFETY: `self.ptr` is guaranteed to be a valid handle pointer protected by the handle table lock.
-        unsafe {
-            cpp_handle_get_dispatcher(self.ptr.as_ptr(), &mut out);
-            out.assume_init()
-        }
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
+        unsafe { self.ptr.as_ref().dispatcher().clone() }
     }
 
-    /// Returns a borrowed reference to the handle's dispatcher without incrementing its reference
-    /// count.
+    /// Returns a shared reference to the handle's dispatcher.
     #[inline]
-    pub fn dispatcher_ref(&self) -> &'a Dispatcher {
-        // SAFETY: `self.ptr` is a valid handle pointer for lifetime `'a`, and the handle owns a
-        // reference to its dispatcher for at least `'a`.
-        unsafe { &*cpp_handle_get_dispatcher_raw(self.ptr.as_ptr()) }
+    pub fn dispatcher_ref(&self) -> &Dispatcher {
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
+        unsafe { self.ptr.as_ref().dispatcher() }
     }
 
-    /// Returns the raw pointer to the handle.
+    /// Returns a shared reference to the underlying `Handle`.
     #[inline]
-    pub fn as_ptr(&self) -> *const core::ffi::c_void {
+    pub fn as_handle(&self) -> &'a Handle {
+        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is
+        // held for `'a`.
+        unsafe { self.ptr.as_ref() }
+    }
+
+    /// Returns a raw pointer to the handle.
+    #[inline]
+    pub fn as_ptr(&self) -> *const Handle {
         self.ptr.as_ptr()
     }
 
     /// Returns the non-null pointer to the handle.
     #[inline]
-    pub(crate) fn as_non_null(&self) -> NonNull<core::ffi::c_void> {
+    pub(crate) fn as_non_null(&self) -> NonNull<Handle> {
         self.ptr
     }
 }
 
+impl<'a> core::ops::Deref for HandleRef<'a> {
+    type Target = Handle;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_handle()
+    }
+}
+
+impl<'a> core::borrow::Borrow<Handle> for HandleRef<'a> {
+    #[inline]
+    fn borrow(&self) -> &Handle {
+        self.as_handle()
+    }
+}
+
+impl<'a> core::borrow::Borrow<Handle> for &HandleRef<'a> {
+    #[inline]
+    fn borrow(&self) -> &Handle {
+        self.as_handle()
+    }
+}
+
 unsafe extern "C" {
-    /// Allocates a C++ `Handle` from a `KernelHandle<Dispatcher>` with `rights`.
-    ///
-    /// # Safety
-    ///
-    /// `kernel_handle` must point to a valid `KernelHandle<Dispatcher>`.
-    fn cpp_handle_make(
-        kernel_handle: *mut KernelHandle<Dispatcher>,
-        rights: zx_rights_t,
-    ) -> *mut core::ffi::c_void;
+    fn cpp_handle_arena_init(
+        name: *const core::ffi::c_char,
+        max_count: usize,
+    ) -> zx_types::zx_status_t;
+    fn cpp_handle_arena_alloc() -> *mut core::ffi::c_void;
+    fn cpp_handle_arena_free(ptr: *mut core::ffi::c_void);
+    fn cpp_handle_arena_committed(ptr: *const core::ffi::c_void) -> bool;
+    fn cpp_handle_arena_confine(addr: usize) -> usize;
+    fn cpp_handle_arena_base() -> *mut core::ffi::c_void;
+    fn cpp_handle_arena_diagnostic_count() -> usize;
+    fn cpp_handle_arena_dump();
+}
 
-    /// Allocates a C++ `Handle` from an exported `fbl::RefPtr<Dispatcher>` with `rights`.
-    ///
-    /// # Safety
-    ///
-    /// `dispatcher` must be a valid pointer with an acquired reference count transferred to C++.
-    fn cpp_handle_make_from_ref(
-        dispatcher: *mut Dispatcher,
-        rights: zx_rights_t,
-    ) -> *mut core::ffi::c_void;
+// C-compatible FFI exported symbols.
 
-    /// Duplicates a C++ `Handle` with the specified rights.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must be null or point to a valid live `Handle`.
-    fn cpp_handle_dup(
-        handle: *const core::ffi::c_void,
-        rights: zx_rights_t,
-    ) -> *mut core::ffi::c_void;
+/// Initializes the global handle table arena.
+///
+/// # Safety
+/// Must be called during kernel initialization before handles are allocated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_init() -> zx_types::zx_status_t {
+    Status::result_into_raw(Handle::init_global_arena())
+}
 
-    /// Destroys the C++ `Handle` and decrements reference count on the underlying dispatcher.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must point to an owned, valid `Handle`.
-    fn cpp_handle_destroy(handle: *mut core::ffi::c_void);
+/// Maps a 32-bit handle base value back to a raw `Handle` pointer.
+///
+/// # Safety
+/// Caller must ensure the returned pointer is only accessed if non-null and within appropriate
+/// lifetime and locking constraints.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_from_u32(value: u32) -> *mut Handle {
+    Handle::from_u32(value).unwrap_or_default()
+}
 
-    /// Checks if the handle possesses the required rights.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must point to a valid `Handle`.
-    fn cpp_handle_has_rights(handle: *const core::ffi::c_void, rights: zx_rights_t) -> bool;
+/// Allocates and creates a new `Handle` pointing to `dispatcher` with the specified `rights`.
+///
+/// # Safety
+/// `dispatcher` must be a valid, non-null pointer to an initialized `Dispatcher` or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_make(
+    dispatcher: *const Dispatcher,
+    rights: zx_rights_t,
+) -> *mut Handle {
+    if dispatcher.is_null() {
+        return core::ptr::null_mut();
+    }
+    // SAFETY: dispatcher is a valid non-null raw pointer.
+    let disp_ref = unsafe { &*dispatcher };
+    let Some((addr, base_value)) = HandleTableArena::alloc(disp_ref, "new") else {
+        return core::ptr::null_mut();
+    };
+    HANDLE_COUNT_MADE.add(1);
+    HANDLE_COUNT_LIVE.add(1);
+    // SAFETY: Ownership of the dispatcher reference count is transferred by C++ caller upon
+    // non-null return.
+    let ref_ptr = unsafe { RefPtr::from_raw(dispatcher) };
+    let ptr = addr.as_ptr().cast::<Handle>();
+    // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
+    unsafe {
+        ptr.write(Handle {
+            handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
+            dispatcher: ref_ptr,
+            rights,
+            base_value,
+            node_state: DoublyLinkedListNode::new(),
+        });
+        ptr
+    }
+}
 
-    /// Retrieves a cloned reference-counted pointer to the handle's dispatcher.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must point to a valid `Handle`, and `out_dispatcher` must point to writable uninitialized memory.
-    fn cpp_handle_get_dispatcher(
-        handle: *const core::ffi::c_void,
-        out_dispatcher: *mut MaybeUninit<RefPtr<Dispatcher>>,
-    );
+/// Duplicates an existing handle with the specified rights.
+///
+/// # Safety
+/// `source` must be a valid, non-null pointer to an existing `Handle` or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_dup(
+    source: *const Handle,
+    rights: zx_rights_t,
+) -> *mut Handle {
+    if source.is_null() {
+        return core::ptr::null_mut();
+    }
+    // SAFETY: source is a valid non-null pointer to Handle.
+    HandleOwner::release_opt(Handle::dup(unsafe { &*source }, rights))
+}
 
-    /// Retrieves a borrowed pointer to the handle's dispatcher without incrementing its reference
-    /// count.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must point to a valid `Handle`.
-    fn cpp_handle_get_dispatcher_raw(handle: *const core::ffi::c_void) -> *const Dispatcher;
+/// Destroys a handle and returns its memory to the handle table arena.
+///
+/// # Safety
+/// `handle` must be a valid pointer to an allocated `Handle` or null. Must not be called
+/// more than once for the same handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_destroy(handle: *mut Handle) {
+    // SAFETY: `handle` is either null or a valid pointer to an allocated `Handle`.
+    if let Some(owner) = unsafe { HandleOwner::from_raw(handle) } {
+        drop(owner);
+    }
+}
 
-    /// Returns the rights of the handle.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must point to a valid `Handle`.
-    fn cpp_handle_get_rights(handle: *const core::ffi::c_void) -> zx_rights_t;
+/// Returns the number of currently allocated handles in the arena.
+///
+/// # Safety
+/// Safe to call concurrently from any context.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_diagnostic_count() -> usize {
+    HandleTableArena::diagnostic_count()
+}
+
+/// Dumps diagnostic information about the handle table arena to the debug log.
+///
+/// # Safety
+/// Safe to call from any context.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_dump_table_info() {
+    HandleTableArena::dump();
+}
+
+/// Returns the number of handle allocations that have failed since boot (`handles.alloc.failed`).
+///
+/// # Safety
+/// Safe to call from any context.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_handle_get_alloc_failed_count() -> i64 {
+    HandleTableArena::get_alloc_failed_count()
+}
+
+/// Tests for Handle and KernelHandle.
+#[cfg(ktest)]
+#[unittest::suite(name = "handle_rust")]
+mod tests {
+    use super::{Handle, KernelHandle};
+    use crate::object::{Dispatcher, EventPairDispatcher};
+    use unittest::{expect_eq, expect_err, expect_ok, expect_true};
+    use zx_status::Status;
+
+    /// Tests creating and dropping a KernelHandle.
+    #[test]
+    fn test_kernel_handle_create() {
+        let (ep0, ep1, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        {
+            let disp = ep0.release();
+            let handle = KernelHandle::new(disp);
+            expect_true!(handle.is_valid());
+            expect_eq!(handle.dispatcher().get_koid(), ep1.dispatcher().get_related_koid());
+            expect_ok!(ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+        }
+        expect_err!(
+            ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests upcasting a KernelHandle<EventPairDispatcher> to KernelHandle<Dispatcher>.
+    #[test]
+    fn test_kernel_handle_cast() {
+        let (ep0, ep1, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        {
+            let handle: KernelHandle<Dispatcher> = ep0.cast();
+            expect_true!(handle.is_valid());
+            expect_ok!(ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+            drop(handle);
+        }
+        expect_err!(
+            ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests resetting a KernelHandle to another dispatcher.
+    #[test]
+    fn test_kernel_handle_reset() {
+        let (ep0, ep0_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let (ep1, ep1_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        {
+            let mut handle = ep0;
+            handle.reset_to(Some(ep1.release()));
+            expect_true!(handle.is_valid());
+            // ep0 peer should now be closed.
+            expect_err!(
+                ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+                Status::PEER_CLOSED
+            );
+            // ep1 peer should still be open.
+            expect_ok!(ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+        }
+        // ep1 peer should now be closed when handle drops.
+        expect_err!(
+            ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests resetting a base KernelHandle<Dispatcher> to another derived dispatcher via upcast.
+    #[test]
+    fn test_kernel_handle_reset_upcast() {
+        let (ep0, ep0_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let (ep1, ep1_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        {
+            let mut handle: KernelHandle<Dispatcher> = ep0.cast();
+            handle.reset_to(Some(ep1.cast().release()));
+            expect_true!(handle.is_valid());
+            // ep0 peer should now be closed.
+            expect_err!(
+                ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+                Status::PEER_CLOSED
+            );
+            // ep1 peer should still be open.
+            expect_ok!(ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+        }
+        // ep1 peer should now be closed when handle drops.
+        expect_err!(
+            ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests resetting a KernelHandle to null.
+    #[test]
+    fn test_kernel_handle_reset_to_null() {
+        let (ep0, ep0_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let mut handle = ep0;
+        handle.reset();
+        expect_true!(!handle.is_valid());
+        expect_err!(
+            ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests releasing the dispatcher from a KernelHandle.
+    #[test]
+    fn test_kernel_handle_release() {
+        let (ep0, ep1, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let koid = ep0.dispatcher().get_koid();
+        let disp = ep0.release();
+        // ep0 is consumed and dropped without its dispatcher; peer should still be open.
+        expect_ok!(ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+        expect_eq!(disp.get_koid(), koid);
+        expect_eq!(disp.get_koid(), ep1.dispatcher().get_related_koid());
+        // Putting it in a new KernelHandle and dropping it triggers on_zero_handles.
+        let handle = KernelHandle::new(disp);
+        drop(handle);
+        expect_err!(
+            ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests moving a KernelHandle between variables.
+    #[test]
+    fn test_kernel_handle_move() {
+        let (ep0, ep0_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let handle = ep0;
+        {
+            let new_handle = handle;
+            expect_true!(new_handle.is_valid());
+            expect_ok!(ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+            drop(new_handle);
+        }
+        expect_err!(
+            ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests move assignment over an existing, active KernelHandle.
+    #[test]
+    fn test_kernel_handle_move_assignment() {
+        let (ep0, ep0_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let (ep1, ep1_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        {
+            let mut handle = ep0;
+            expect_true!(handle.is_valid());
+            expect_ok!(ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+            // Move assigning ep1 over handle drops ep0, immediately closing ep0_peer.
+            handle = ep1;
+            expect_true!(handle.is_valid());
+            expect_err!(
+                ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+                Status::PEER_CLOSED
+            );
+            // ep1_peer should still be open while handle is alive.
+            expect_ok!(ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+        }
+        // ep1_peer should now be closed when handle drops.
+        expect_err!(
+            ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests move assignment of an upcasted derived KernelHandle.
+    #[test]
+    fn test_kernel_handle_move_assignment_upcast() {
+        let (ep0, ep0_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let (ep1, ep1_peer, _rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        {
+            let mut handle: KernelHandle<Dispatcher> = ep0.cast();
+            expect_true!(handle.is_valid());
+            expect_ok!(ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+            // Move assigning ep1.cast() over handle drops ep0, immediately closing ep0_peer.
+            handle = ep1.cast();
+            expect_true!(handle.is_valid());
+            expect_err!(
+                ep0_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+                Status::PEER_CLOSED
+            );
+            // ep1_peer should still be open while handle is alive.
+            expect_ok!(ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+        }
+        // ep1_peer should now be closed when handle drops.
+        expect_err!(
+            ep1_peer.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests upgrading a KernelHandle to a HandleOwner.
+    #[test]
+    fn test_kernel_handle_upgrade() {
+        let (ep0, ep1, rights) = EventPairDispatcher::create().expect("failed to create eventpair");
+        {
+            let handle_owner = Handle::make_from_kernel_handle(ep0.cast(), rights);
+            expect_true!(handle_owner.is_some());
+            let handle_owner = handle_owner.unwrap();
+            expect_eq!(handle_owner.rights(), rights);
+            expect_ok!(ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0));
+            drop(handle_owner);
+        }
+        expect_err!(
+            ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests duplicating a HandleOwner with same and reduced rights.
+    #[test]
+    fn test_handle_dup() {
+        let (ep0, ep1, rights) = EventPairDispatcher::create().expect("failed to create eventpair");
+        let ho = Handle::make_from_kernel_handle(ep0.cast(), rights).unwrap();
+
+        let ho_dup = ho.dup(rights).expect("dup");
+        expect_eq!(ho_dup.rights(), rights);
+
+        let reduced = rights & !zx_types::ZX_RIGHT_SIGNAL;
+        let ho_dup2 = ho.dup(reduced).expect("dup reduced");
+        expect_eq!(ho_dup2.rights(), reduced);
+
+        drop(ho_dup);
+        drop(ho_dup2);
+        drop(ho);
+        expect_err!(
+            ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests looking up a Handle from its 32-bit base value.
+    #[test]
+    fn test_handle_from_u32() {
+        let (ep0, _ep1, rights) =
+            EventPairDispatcher::create().expect("failed to create eventpair");
+        let ho = Handle::make_from_kernel_handle(ep0.cast(), rights).unwrap();
+        let base_val = ho.base_value();
+
+        let ptr = Handle::from_u32(base_val);
+        expect_true!(ptr.is_some());
+        expect_eq!(ptr.unwrap() as *const Handle, ho.as_raw());
+
+        expect_true!(Handle::from_u32(base_val ^ 0x1234_5678).is_none());
+        drop(ho);
+    }
 }

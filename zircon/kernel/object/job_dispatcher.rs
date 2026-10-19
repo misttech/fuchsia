@@ -254,7 +254,7 @@ pub fn get_root_job_handle() -> HandleRef<'static> {
     // root job handle.
     unsafe {
         HandleRef::from_raw(NonNull::new_unchecked(
-            cpp_job_dispatcher_get_root_job_handle().cast_mut(),
+            cpp_job_dispatcher_get_root_job_handle().cast_mut().cast(),
         ))
     }
 }

@@ -150,7 +150,10 @@ pub use kmutex::{
     guard_multiple_policy, guard_multiple_policy_with, guard_multiple_with,
 };
 pub use lock_token::{ExclusiveLockToken, LockToken, LockTokenRead, LockTokenWrite};
-pub use lockdep::{LOCK_FLAGS_SINGLETON_LOCK, LockClass, LockClassRegistration, LockFlags};
+pub use lockdep::{
+    LOCK_FLAGS_MULTI_ACQUIRE, LOCK_FLAGS_SINGLETON_LOCK, LockClass, LockClassRegistration,
+    LockFlags,
+};
 pub use phantom_mutex::PhantomMutex;
 pub use raw_lock::{LockPolicy, RawLock};
 pub use singleton::SingletonMutex;

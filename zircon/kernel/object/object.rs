@@ -7,21 +7,26 @@
 mod bti;
 pub mod buffer_chain;
 mod bus_transaction_initiator_dispatcher;
+#[allow(improper_ctypes)]
 mod bus_transaction_initiator_dispatcher_ffi;
 mod channel_dispatcher;
 mod channel_dispatcher_ffi;
 mod clock_dispatcher;
 mod clock_dispatcher_ffi;
 mod counter_dispatcher;
+#[allow(improper_ctypes)]
 mod counter_dispatcher_ffi;
 pub mod diagnostics;
 #[cfg(console_enabled)]
 mod diagnostics_ffi;
 mod dispatcher;
+#[allow(improper_ctypes)]
 mod dispatcher_ffi;
 mod event_dispatcher;
+#[allow(improper_ctypes)]
 mod event_dispatcher_ffi;
 mod event_pair_dispatcher;
+#[allow(improper_ctypes)]
 mod event_pair_dispatcher_ffi;
 mod exception_dispatcher;
 mod exception_dispatcher_ffi;
@@ -29,74 +34,95 @@ mod exceptionate;
 mod exceptionate_ffi;
 mod executor;
 mod fifo_dispatcher;
+#[allow(improper_ctypes)]
 mod fifo_dispatcher_ffi;
 mod futex_context;
 mod futex_context_ffi;
 mod guest;
 mod guest_dispatcher;
+#[allow(improper_ctypes)]
 mod guest_dispatcher_ffi;
 mod handle;
 mod handle_table;
-mod handle_table_ffi;
 mod interrupt_dispatcher;
 mod interrupt_dispatcher_ffi;
 mod interrupt_event_dispatcher;
 mod io_buffer_dispatcher;
+#[allow(improper_ctypes)]
 mod io_buffer_dispatcher_ffi;
 mod io_buffer_shared_region_dispatcher;
 mod iommu;
 mod iommu_dispatcher;
+#[allow(improper_ctypes)]
 mod iommu_dispatcher_ffi;
 mod job_dispatcher;
+#[allow(improper_ctypes)]
 mod job_dispatcher_ffi;
 mod job_policy;
 mod job_policy_ffi;
 mod log_dispatcher;
+#[allow(improper_ctypes)]
 mod log_dispatcher_ffi;
 mod mbuf;
 mod memory_watchdog;
 pub mod message_packet;
 mod msi_allocation;
 mod msi_dispatcher;
+#[allow(improper_ctypes)]
 mod msi_dispatcher_ffi;
 mod msi_interrupt_dispatcher;
 mod pager_dispatcher;
+#[allow(improper_ctypes)]
 mod pager_dispatcher_ffi;
 mod pinned_memory_token_dispatcher;
+#[allow(improper_ctypes)]
 mod pinned_memory_token_dispatcher_ffi;
 mod pmt;
+#[allow(improper_ctypes)]
 mod port_dispatcher;
 mod process_dispatcher;
+#[allow(improper_ctypes)]
 pub(crate) mod process_dispatcher_ffi;
 mod profile_dispatcher;
+#[allow(improper_ctypes)]
 mod profile_dispatcher_ffi;
 mod resource;
 mod resource_dispatcher;
 mod resource_dispatcher_ffi;
+#[allow(improper_ctypes)]
 mod resource_ffi;
 mod root_job_observer;
 mod root_job_observer_ffi;
 mod sampler_dispatcher;
+#[allow(improper_ctypes)]
 mod sampler_dispatcher_ffi;
 mod socket_dispatcher;
+#[allow(improper_ctypes)]
 mod socket_dispatcher_ffi;
 mod stream_dispatcher;
+#[allow(improper_ctypes)]
 mod stream_dispatcher_ffi;
 mod suspend_token_dispatcher;
+#[allow(improper_ctypes)]
 mod suspend_token_dispatcher_ffi;
 mod thread_dispatcher;
+#[allow(improper_ctypes)]
 mod thread_dispatcher_ffi;
 mod thread_state;
 mod timer_dispatcher;
+#[allow(improper_ctypes)]
 mod timer_dispatcher_ffi;
 mod user_handles;
 mod vcpu;
 mod vcpu_dispatcher;
+#[allow(improper_ctypes)]
 mod vcpu_dispatcher_ffi;
 mod virtual_interrupt_dispatcher;
 mod vm_address_region_dispatcher;
+#[allow(improper_ctypes)]
 mod vm_address_region_dispatcher_ffi;
 mod vm_object_dispatcher;
+#[allow(improper_ctypes)]
 mod vm_object_dispatcher_ffi;
 mod wait_signal_observer;
 
@@ -120,8 +146,10 @@ pub use fifo_dispatcher::FifoDispatcher;
 pub use futex_context::{FutexContext, FutexId, OwnerAction, ProcessType};
 pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
-pub use handle::{HandleOwner, HandleRef, HandleValue, KernelHandle};
-pub use handle_table::{HandleEntry, HandleTable, HandleTableLockClass};
+pub use handle::{Handle, HandleOwner, HandleRef, HandleValue, KernelHandle};
+pub use handle_table::{
+    HandleEntry, HandleTable, HandleTableLockClass, HandleTableReadGuard, HandleTableWriteGuard,
+};
 pub use interrupt_dispatcher::InterruptDispatcher;
 pub use interrupt_event_dispatcher::InterruptEventDispatcher;
 pub use io_buffer_dispatcher::IoBufferDispatcher;

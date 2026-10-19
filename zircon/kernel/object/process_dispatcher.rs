@@ -142,8 +142,10 @@ impl ProcessDispatcher {
     /// Returns a reference to this process's [`HandleTable`].
     #[inline]
     pub fn handle_table(&self) -> &HandleTable {
-        // SAFETY: `self` is a valid `ProcessDispatcher`, and its handle table is valid for the
-        // lifetime of `self`.
+        // SAFETY: `self` is a valid `ProcessDispatcher`. In C++, the `HandleTable` is owned by
+        // `shareable_state_` which is held by `ProcessDispatcher` for its entire lifetime.
+        // Therefore, the returned `&HandleTable` reference tied to `&self` is guaranteed to
+        // remain valid for the lifetime of `self`.
         unsafe { &*cpp_process_dispatcher_handle_table(self.as_ffi()) }
     }
 
@@ -170,10 +172,7 @@ impl ProcessDispatcher {
         arg_handle: Option<HandleOwner>,
         arg2: usize,
     ) -> Result<(), Status> {
-        let arg_handle_ptr = match arg_handle {
-            Some(h) => h.release(),
-            None => core::ptr::null_mut(),
-        };
+        let arg_handle_ptr = HandleOwner::release_opt(arg_handle);
         let raw_thread = fbl::RefPtr::into_raw(thread) as *mut _;
         // SAFETY: `self` is a valid reference, `raw_thread` transfers an acquired refcount,
         // and `arg_handle_ptr` ownership is transferred to C++.
@@ -183,13 +182,17 @@ impl ProcessDispatcher {
                 raw_thread,
                 pc,
                 sp,
-                arg_handle_ptr,
+                arg_handle_ptr.cast::<core::ffi::c_void>(),
                 arg2,
             )
         };
         Status::ok(status)
     }
 
+    /// Removes a handle from this process's handle table and returns the owned handle if found.
+    pub fn remove_handle(&self, handle: HandleValue) -> Option<HandleOwner> {
+        self.handle_table().remove_handle(self, handle)
+    }
     /// Kills this process with the given return code.
     pub fn kill(&self, retcode: i64) {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
@@ -291,6 +294,25 @@ impl ProcessDispatcher {
         slack
     }
 
+    /// Returns the KOID of this process's handle table.
+    #[inline]
+    pub fn handle_table_koid(&self) -> zx_types::zx_koid_t {
+        self.handle_table().koid()
+    }
+
+    /// Resolves a handle to a dispatcher of type `T` with the required `rights` in this process's
+    /// handle table.
+    #[inline]
+    pub fn get_dispatcher_with_rights<T>(
+        &self,
+        handle_value: HandleValue,
+        rights: zx_rights_t,
+    ) -> Result<fbl::RefPtr<T>, Status>
+    where
+        T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
+    {
+        self.handle_table().get_dispatcher_with_rights::<T>(self, handle_value, rights)
+    }
     /// Returns information about this process.
     pub fn get_info(&self) -> zx_info_process_t {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
@@ -700,6 +722,20 @@ impl ProcessDispatcher {
         let ptr = unsafe { cpp_process_dispatcher_lookup_thread_by_id(self.as_ffi_mut(), koid) };
         // SAFETY: `ptr` is exported via `fbl::ExportToRawPtr` with an acquired refcount, or null.
         unsafe { fbl::RefPtr::try_from_raw(ptr) }
+    }
+
+    /// Maps a handle to its user-visible `HandleValue` for this process.
+    #[inline]
+    pub fn map_handle_to_value(&self, handle: super::handle::HandleRef<'_>) -> HandleValue {
+        self.handle_table().map_handle_to_value(handle)
+    }
+
+    /// Removes a slice of raw handle values from this process's handle table.
+    ///
+    /// `ZX_HANDLE_INVALID` entries are skipped, and if any non-zero handle is missing, returns
+    /// `ZX_ERR_BAD_HANDLE` after processing the remaining handles.
+    pub fn remove_handles(&self, handles: &[zx_types::zx_handle_t]) -> Result<(), Status> {
+        self.handle_table().remove_handles(self, handles)
     }
 }
 

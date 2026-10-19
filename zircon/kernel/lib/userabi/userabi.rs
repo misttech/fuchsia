@@ -422,7 +422,7 @@ impl BootstrapChannel {
         let msg_handles = msg.mutable_handles();
         debug_assert!(msg_handles.len() == count);
         for (slot, handle) in msg_handles.iter_mut().zip(handles.iter_mut()) {
-            *slot = handle.take().ok_or(Status::BAD_HANDLE)?.release();
+            *slot = handle.take().ok_or(Status::BAD_HANDLE)?.release().as_ptr().cast();
         }
         self.send.write(ZX_KOID_INVALID, msg)
     }

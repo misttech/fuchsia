@@ -5,17 +5,18 @@
 // https://opensource.org/licenses/MIT
 
 use super::channel_dispatcher::ChannelDispatcher;
-use super::handle::{HandleOwner, HandleRef, HandleValue};
-use super::handle_table::HandleTableLockClass;
+use super::handle::{Handle, HandleOwner, HandleRef, HandleValue};
+use super::handle_table::HandleTableWriteGuard;
 use super::message_packet::MessagePacket;
 use super::process_dispatcher::ProcessDispatcher;
 use crate::kernel::thread::AutoExpiringPreemptDisabler;
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
+use core::ffi::c_void;
 use core::mem::{MaybeUninit, align_of, size_of};
 use core::ops::Deref;
+use core::pin::Pin;
 use core::ptr::{self, NonNull};
 use core::{cmp, slice};
-use ksync::LockToken;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx_status::Status;
 use zx_types::{
@@ -63,7 +64,9 @@ pub(super) fn msg_handle_refs(msg: &MessagePacket) -> impl Iterator<Item = Handl
     (0..msg.num_handles()).map(move |i| {
         // SAFETY: `i < msg.num_handles()`, and a `MessagePacket` queued in or read from a channel
         // holds `num_handles` valid, non-null `Handle*` pointers whose lifetime is tied to `msg`.
-        unsafe { HandleRef::from_raw(NonNull::new_unchecked(*handles_ptr.add(i))) }
+        unsafe {
+            HandleRef::from_raw(NonNull::new_unchecked((*handles_ptr.add(i)).cast::<Handle>()))
+        }
     })
 }
 
@@ -93,8 +96,9 @@ fn finish_get_handles(proc: &ProcessDispatcher, msg: &mut MessagePacket) {
         for i in 0..num_handles {
             // SAFETY: `i < num_handles`, and ownership of each `Handle*` is transferred from `msg`
             // to `proc`'s handle table (`msg.set_owns_handles(false)` is called below).
-            let handle_owner = unsafe { HandleOwner::from_raw(*handles_ptr.add(i)).unwrap() };
-            handle_table.add_handle_locked(guard.as_mut().token_mut(), handle_owner);
+            let handle_owner =
+                unsafe { HandleOwner::from_raw((*handles_ptr.add(i)).cast::<Handle>()).unwrap() };
+            guard.as_mut().add_handle(handle_owner);
         }
     }
 
@@ -225,15 +229,13 @@ fn duplicate_handle_for_transfer(
 // This helper is used by zx_channel_write.
 #[inline]
 fn get_handle_for_message_locked(
-    token: &mut LockToken<'_, HandleTableLockClass>,
+    guard: Pin<&mut HandleTableWriteGuard<'_>>,
     proc: &ProcessDispatcher,
     channel: &ChannelDispatcher,
     handle_val: zx_handle_t,
 ) -> Result<HandleOwner, Status> {
-    let source = proc
-        .handle_table()
-        .remove_handle_locked(token, proc, HandleValue::new(handle_val))
-        .ok_or(Status::BAD_HANDLE)?;
+    let source =
+        guard.remove_handle(proc, HandleValue::new(handle_val)).ok_or(Status::BAD_HANDLE)?;
     move_handle_for_transfer(source, channel, ZX_OBJ_TYPE_NONE, ZX_RIGHT_SAME_RIGHTS)
 }
 
@@ -242,7 +244,7 @@ fn get_handle_for_message_locked(
 // This helper is used by zx_channel_write_etc.
 #[inline]
 fn get_handle_disposition_for_message_locked(
-    token: &mut LockToken<'_, HandleTableLockClass>,
+    mut guard: Pin<&mut HandleTableWriteGuard<'_>>,
     proc: &ProcessDispatcher,
     channel: &ChannelDispatcher,
     handle_disposition: &mut RawHandleDisposition,
@@ -260,13 +262,10 @@ fn get_handle_disposition_for_message_locked(
     // So when duplicating a handle, we leave the source handle in the handle table. For all
     // other operations (including invalid operations) we immediately remove the source handle
     // from the handle table and then attempt to move it.
-    let handle_table = proc.handle_table();
     let handle_val = HandleValue::new(handle_disposition.handle);
     let res = (|| match handle_disposition.operation {
         ZX_HANDLE_OP_DUPLICATE => {
-            let source = handle_table
-                .get_handle_locked(token, proc, handle_val)
-                .ok_or(Status::BAD_HANDLE)?;
+            let source = guard.get_handle(proc, handle_val).ok_or(Status::BAD_HANDLE)?;
             duplicate_handle_for_transfer(
                 source,
                 channel,
@@ -275,9 +274,8 @@ fn get_handle_disposition_for_message_locked(
             )
         }
         ZX_HANDLE_OP_MOVE => {
-            let source = handle_table
-                .remove_handle_locked(token, proc, handle_val)
-                .ok_or(Status::BAD_HANDLE)?;
+            let source =
+                guard.as_mut().remove_handle(proc, handle_val).ok_or(Status::BAD_HANDLE)?;
             move_handle_for_transfer(
                 source,
                 channel,
@@ -286,9 +284,7 @@ fn get_handle_disposition_for_message_locked(
             )
         }
         _ => {
-            let _ = handle_table
-                .remove_handle_locked(token, proc, handle_val)
-                .ok_or(Status::BAD_HANDLE)?;
+            let _ = guard.as_mut().remove_handle(proc, handle_val).ok_or(Status::BAD_HANDLE)?;
             Err(Status::INVALID_ARGS)
         }
     })();
@@ -303,7 +299,7 @@ fn put_handles_from_user<'a, T: FromBytes>(
     proc: &ProcessDispatcher,
     msg: &mut MessagePacket,
     mut get_handle: impl FnMut(
-        &mut LockToken<'_, HandleTableLockClass>,
+        Pin<&mut HandleTableWriteGuard<'_>>,
         &mut T,
     ) -> Result<HandleOwner, Status>,
 ) -> Result<(&'a mut [T], Result<(), Status>), Status> {
@@ -320,14 +316,14 @@ fn put_handles_from_user<'a, T: FromBytes>(
         let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
         ksync::lock!(let mut guard = proc.handle_table().write_lock());
         for (ix, item) in items.iter_mut().enumerate() {
-            let handle = get_handle(guard.as_mut().token_mut(), item);
+            let handle = get_handle(guard.as_mut(), item);
             if let Err(err) = handle
                 && result.is_ok()
             {
                 // Latch the first error encountered. It will be what the function returns.
                 result = Err(err);
             }
-            let raw_ptr = handle.map_or(ptr::null_mut(), HandleOwner::release);
+            let raw_ptr = handle.map_or(ptr::null_mut(), |h| h.release().as_ptr().cast::<c_void>());
             // SAFETY: `ix < num_handles`, and `handles_ptr` points to `num_handles` writable
             // entries in `msg`.
             unsafe {
@@ -374,16 +370,9 @@ pub fn remove_user_handles(
         // We process `num_handles` in chunks of `ZX_CHANNEL_MAX_MSG_HANDLES` because we don't have
         // a limit on how large `num_handles` can be.
         let chunk_size = cmp::min(num_handles - offset, ZX_CHANNEL_MAX_MSG_HANDLES as usize);
-        let chunk = match user_handles
-            .element_offset(offset)
-            .copy_slice_from_user(&mut handles[..chunk_size])
-        {
-            Ok(chunk) => chunk,
-            Err(consume_status) => {
-                status = Err(consume_status);
-                break;
-            }
-        };
+        // A copy failure wins over any earlier remove failure, matching the C++ `break`.
+        let chunk =
+            user_handles.element_offset(offset).copy_slice_from_user(&mut handles[..chunk_size])?;
 
         if let Err(remove_status) = process.handle_table().remove_handles(process, chunk) {
             status = Err(remove_status);
@@ -480,5 +469,123 @@ impl WriteHandles for UserInOutPtr<zx_handle_disposition_t> {
             user_dispositions.copy_slice_to_user(dispositions)?;
         }
         result
+    }
+}
+
+/// Tests for user handles copying and removal.
+#[cfg(ktest)]
+#[unittest::suite(name = "user_handles_rust")]
+mod tests {
+    use super::remove_user_handles;
+    use crate::object::{EventPairDispatcher, Handle, JobDispatcher, ProcessDispatcher};
+    use crate::user_copy::UserInPtr;
+    use crate::user_memory::UserMemory;
+    use core::ptr::with_exposed_provenance;
+    use unittest::{expect_eq, expect_err, expect_ok};
+    use zx_status::Status;
+    use zx_types::{ZX_HANDLE_INVALID, zx_handle_t};
+
+    /// Tests removing a single user handle.
+    #[test]
+    fn test_remove_single_user_handle() {
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+                .expect("failed to create process");
+        let process = proc_handle.dispatcher();
+
+        let (ep0, ep1, rights) = EventPairDispatcher::create().expect("failed to create eventpair");
+        let ho = Handle::make_from_kernel_handle(ep0.cast(), rights).unwrap();
+        let val0 = process.handle_table().map_handle_to_value_owner(&ho);
+        process.handle_table().add_handle(ho);
+        expect_eq!(process.handle_table().handle_count(), 1);
+
+        let mem = UserMemory::create(4096).expect("UserMemory create");
+        mem.commit_and_map(0..4096).expect("commit_and_map");
+        mem.vmo_write(&val0.to_ne_bytes(), 0).expect("vmo_write");
+
+        let user_ptr = UserInPtr::<zx_handle_t>::new(with_exposed_provenance(mem.base()));
+        expect_ok!(remove_user_handles(user_ptr, 1, process));
+        expect_eq!(process.handle_table().handle_count(), 0);
+
+        expect_err!(
+            ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+            Status::PEER_CLOSED
+        );
+    }
+
+    /// Tests removing zero user handles succeeds without touching user memory.
+    #[test]
+    fn test_remove_zero_user_handles() {
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+                .expect("failed to create process");
+        let process = proc_handle.dispatcher();
+
+        expect_ok!(remove_user_handles(UserInPtr::new(core::ptr::null()), 0, process));
+        expect_eq!(process.handle_table().handle_count(), 0);
+    }
+
+    /// Tests removing invalid user handles.
+    #[test]
+    fn test_remove_invalid_user_handles() {
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+                .expect("failed to create process");
+        let process = proc_handle.dispatcher();
+
+        let mem = UserMemory::create(4096).expect("UserMemory create");
+        mem.commit_and_map(0..4096).expect("commit_and_map");
+
+        // ZX_HANDLE_INVALID is allowed and succeeds like free(NULL)
+        mem.vmo_write(&ZX_HANDLE_INVALID.to_ne_bytes(), 0).expect("vmo_write");
+        let user_ptr = UserInPtr::<zx_handle_t>::new(with_exposed_provenance(mem.base()));
+        expect_ok!(remove_user_handles(user_ptr, 1, process));
+
+        // An invalid, nonexistent handle returns BAD_HANDLE
+        let bad_handle: zx_handle_t = 0x1234_5678;
+        mem.vmo_write(&bad_handle.to_ne_bytes(), 0).expect("vmo_write");
+        expect_err!(remove_user_handles(user_ptr, 1, process), Status::BAD_HANDLE);
+    }
+
+    /// Tests removing batched user handles (> 64 handles).
+    #[test]
+    fn test_remove_batched_user_handles() {
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(JobDispatcher::get_root_job(), b"test-user-handles", 0)
+                .expect("failed to create process");
+        let process = proc_handle.dispatcher();
+
+        const COUNT: usize = 70;
+        let mut handle_vals = [0u32; COUNT];
+        let mut peers = [const { None }; COUNT];
+
+        for i in 0..COUNT {
+            let (ep0, ep1, rights) =
+                EventPairDispatcher::create().expect("failed to create eventpair");
+            let ho = Handle::make_from_kernel_handle(ep0.cast(), rights).unwrap();
+            let val = process.handle_table().map_handle_to_value_owner(&ho);
+            process.handle_table().add_handle(ho);
+            handle_vals[i] = val;
+            peers[i] = Some(ep1);
+        }
+        expect_eq!(process.handle_table().handle_count(), COUNT as u32);
+
+        let mem = UserMemory::create(4096).expect("UserMemory create");
+        mem.commit_and_map(0..4096).expect("commit_and_map");
+
+        let byte_slice = zerocopy::IntoBytes::as_bytes(&handle_vals[..]);
+        mem.vmo_write(byte_slice, 0).expect("vmo_write");
+
+        let user_ptr = UserInPtr::<zx_handle_t>::new(with_exposed_provenance(mem.base()));
+        expect_ok!(remove_user_handles(user_ptr, COUNT, process));
+        expect_eq!(process.handle_table().handle_count(), 0);
+
+        for peer in &peers {
+            let ep1 = peer.as_ref().unwrap();
+            expect_err!(
+                ep1.dispatcher().user_signal_peer(0, zx_types::ZX_USER_SIGNAL_0),
+                Status::PEER_CLOSED
+            );
+        }
     }
 }

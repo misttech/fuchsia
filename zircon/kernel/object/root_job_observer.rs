@@ -116,7 +116,7 @@ impl RootJobObserver {
         unsafe {
             cpp_root_job_signal_observer_init(signal_observer_ptr, core::ptr::null_mut());
         }
-        let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr());
+        let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr().cast());
         // Observer registration on the root job object will always succeed.
         // SAFETY: `signal_observer` is a valid `SignalObserver` and `handle_ptr` is a valid handle
         // pointer or null.
@@ -180,7 +180,7 @@ impl RootJobObserver {
         unsafe {
             cpp_root_job_signal_observer_init(signal_observer_ptr, ctx);
         }
-        let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr());
+        let handle_ptr = root_job_handle.map_or(core::ptr::null(), |h| h.as_ptr().cast());
         // SAFETY: `signal_observer` is a valid `SignalObserver` and `handle_ptr` is a valid handle
         // pointer or null.
         let _ = unsafe {

@@ -47,10 +47,13 @@ bool cpp_dispatcher_remove_observer(Dispatcher* dispatcher, SignalObserver* obse
 zx_status_t cpp_dispatcher_get_name(const Dispatcher* disp, char out_name[ZX_MAX_NAME_LEN]);
 zx_status_t cpp_dispatcher_set_name(Dispatcher* disp, const char* name, size_t len);
 uint32_t cpp_dispatcher_current_handle_count(const Dispatcher* disp);
+void cpp_dispatcher_increment_handle_count(Dispatcher* disp);
+bool cpp_dispatcher_decrement_handle_count(Dispatcher* disp);
 bool cpp_dispatcher_is_waitable(const Dispatcher* disp);
 void cpp_dispatcher_cancel(Dispatcher* disp, const void* handle);
 bool cpp_dispatcher_cancel_by_key(Dispatcher* disp, const void* handle, const void* port,
                                   uint64_t key);
+void cpp_dispatcher_set_owner(Dispatcher* disp, zx_koid_t new_owner);
 }
 
 template <typename T>
