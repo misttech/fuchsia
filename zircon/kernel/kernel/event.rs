@@ -317,3 +317,120 @@ zr::static_assert!(core::mem::size_of::<Event>() == 72);
 zr::static_assert!(core::mem::align_of::<Event>() == 8);
 zr::static_assert!(core::mem::size_of::<AutounsignalEvent>() == 72);
 zr::static_assert!(core::mem::align_of::<AutounsignalEvent>() == 8);
+
+/// Event unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "event_rust")]
+mod tests {
+    use crate::kernel::owned_wait_queue::OwnedWaitQueue;
+    use crate::kernel::thread::{self, DEFAULT_PRIORITY};
+    use crate::platform_rs::timer::{DurationMono, zx_usec};
+    use core::ffi::c_void;
+    use pin_init::stack_pin_init;
+    use unittest::{assert_eq, assert_true, expect_err, subtest, unwrap_ok};
+
+    // This tests that the result in an event_signal_etc call is propagated to the waiter
+    // when the event is signaled before any thread waits on the event.
+    /// test signaling event with result before waiting
+    #[test]
+    fn signal_result_before_wait_test() {
+        stack_pin_init!(let event = Event::init_unsignaled());
+
+        let signal_result = Status::err_from_raw(42);
+        event.signal_result(signal_result);
+
+        let wake_result = event.wait_infinite();
+
+        expect_err!(wake_result, signal_result, "");
+    }
+
+    struct EventWaiterArgs<'a> {
+        event: &'a Event,
+        wake_result: Result<(), Status>,
+    }
+
+    extern "C" fn event_waiter_thread(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` points to a valid `EventWaiterArgs` that outlives this thread, and no
+        // other thread accesses `wake_result` until after this thread is joined.
+        let event_args = unsafe { &mut *arg.cast::<EventWaiterArgs<'_>>() };
+        event_args.wake_result = event_args.event.wait_infinite();
+        0
+    }
+
+    #[derive(Clone, Copy)]
+    enum Signal {
+        Only,
+        Queue,
+    }
+
+    // This tests that the result in an SignalEtc call is propagated to the waiter
+    // when the waiter enters a blocking state before the event is signaled.
+    fn run_signal_result_after_wait_test(signal: Signal) -> bool {
+        (subtest!(|signal: Signal| {
+            stack_pin_init!(let event = Event::init_unsignaled());
+
+            let signal_result = Status::err_from_raw(42);
+
+            let mut args = EventWaiterArgs { event: &event, wake_result: Ok(()) };
+
+            // SAFETY: `event_waiter_thread` and `&mut args` are valid, and `waiter` is joined
+            // below before `args` or `event` go out of scope.
+            let waiter = unwrap_ok!(unsafe {
+                thread::create_with_priority(
+                    c"event waiter thread".as_ptr(),
+                    event_waiter_thread,
+                    (&raw mut args).cast(),
+                    DEFAULT_PRIORITY,
+                )
+            });
+            // SAFETY: `waiter` was just created and has not been resumed or joined yet.
+            unsafe { waiter.resume() };
+
+            let mut wait_duration = DurationMono(zx_usec(1));
+            loop {
+                // Check if the waiter thread is in the blocked state, indicating that the event
+                // has latched.
+                // SAFETY: `waiter` has not been joined yet.
+                if unsafe { waiter.is_blocked() } {
+                    break;
+                }
+                // Nope - sleep and try again.
+                let _ = thread::sleep_relative(wait_duration);
+                wait_duration = wait_duration * 2;
+            }
+
+            match signal {
+                Signal::Queue => {
+                    stack_pin_init!(let queue = OwnedWaitQueue::init());
+                    // SAFETY: `queue.as_raw()` points to a valid `OwnedWaitQueue`.
+                    unsafe {
+                        event.signal_etc(signal_result, queue.as_raw().cast());
+                    }
+                    queue.reset_owner_if_no_waiters();
+                }
+                Signal::Only => {
+                    event.signal_result(signal_result);
+                }
+            }
+
+            // SAFETY: `waiter` has not been joined yet.
+            let thread_retcode = unwrap_ok!(unsafe { waiter.join(InstantMono::INFINITE) });
+
+            assert_eq!(thread_retcode, 0, "");
+
+            expect_err!(args.wake_result, signal_result, "");
+        }))(signal)
+    }
+
+    /// test signaling event with result after waiting
+    #[test]
+    fn signal_result_after_wait_test() {
+        assert_true!(run_signal_result_after_wait_test(Signal::Only));
+    }
+
+    /// test signaling event with result after waiting (using OwnedWaitQueue)
+    #[test]
+    fn signal_etc_after_wait_test() {
+        assert_true!(run_signal_result_after_wait_test(Signal::Queue));
+    }
+}
