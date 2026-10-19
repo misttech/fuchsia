@@ -9,7 +9,8 @@ set -euo pipefail
 # 1. Package-level default_visibility in package(...)
 # 2. Missing target-level visibility when a target has external callers
 # 3. Overly narrow sprawling visibility lists (> 15 entries) on widely-used libraries/utilities (should use 2-3 level subsystem/top-level area rollups or ["//:__subpackages__"] for foundational tree-wide libraries)
-# 4. Disallowed target-level '//visibility:public' when migrating GN targets to Bazel (per determining_bazel_visibility/SKILL.md)
+# 4. Disallowed target-level '//visibility:public' when migrating GN targets to Bazel (per determining_bazel_visibility/SKILL.md),
+#    including on test entry points (fx_unittest_package, fx_test, host_*_test), which should be private
 # 5. Redundant ':__pkg__' (or '//<current_pkg>:__pkg__') in target visibility lists
 # 6. Overbroad repository-wide visibility ('//:__subpackages__') and top-level roots ('//src:__subpackages__', '//sdk:__subpackages__', etc.) on non-globally-used targets
 # 7. Multi-domain catch-all umbrella wildcards ('//src/lib:__subpackages__', '//sdk/lib:__subpackages__', '//src/testing:__subpackages__', '//src/tests:__subpackages__')
@@ -836,9 +837,32 @@ for rel_path in sorted(candidate_files):
             if val in preexisting_vis:
                 continue
             if val == "//visibility:public":
-                if is_test_rule or rel_path.startswith("build/bazel_sdk/"):
+                if rel_path.startswith("build/bazel_sdk/"):
                     continue
-                if allow_broad_test_vis:
+                if is_test_rule:
+                    # Test entry points (fx_unittest_package, fx_test, host_*_test, ...) are built as
+                    # top-level Bazel targets by the GN bazel_test_suite() bridge and by fx test, and
+                    # Bazel never visibility-checks top-level targets. They only need visibility when
+                    # a Bazel test_suite() in another package aggregates them.
+                    if target_rdeps and narrow_vis:
+                        rem = (
+                            f"Replace '//visibility:public' on test target '{target_name}' with only the "
+                            f"packages whose Bazel test_suite() aggregates it: {json.dumps(narrow_vis)}, and "
+                            f"re-run fx bazel2gn."
+                        )
+                    elif has_macro_injected_rdeps:
+                        rem = (
+                            f"Replace '//visibility:public' on test target '{target_name}' with the specific "
+                            f"packages that aggregate it (e.g. [\"//<parent>:__pkg__\"]), and re-run fx bazel2gn."
+                        )
+                    else:
+                        rem = (
+                            f"Omit 'visibility' on test target '{target_name}' (default private) and re-run fx "
+                            f"bazel2gn. The GN bazel_test_suite() bridge and fx test build it as a top-level "
+                            f"Bazel target, which Bazel does not visibility-check, and no other Bazel package "
+                            f"depends on it."
+                        )
+                elif allow_broad_test_vis:
                     rem = (
                         f"Never use '//visibility:public' when migrating GN targets to Bazel (per "
                         f"determining_bazel_visibility/SKILL.md). Replace '//visibility:public' with "
@@ -882,6 +906,20 @@ for rel_path in sorted(candidate_files):
                     "line": lineno,
                     "message": f"Target '{target_name}' includes redundant '{val}' in visibility. Same-package visibility is implicit in Bazel and added automatically by bazel2gn.",
                     "remediation": f"Remove '{val}' from visibility."
+                })
+            elif val == "//:__subpackages__" and is_test_rule and not target_rdeps and not has_macro_injected_rdeps:
+                findings.append({
+                    "source": "visibility_audit",
+                    "category": "overbroad_test_target_visibility",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": lineno,
+                    "message": (
+                        f"Test target '{target_name}' uses '//:__subpackages__' in visibility, but no Bazel "
+                        f"package depends on it. Test entry points are built as top-level targets by the GN "
+                        f"bazel_test_suite() bridge and fx test, which Bazel does not visibility-check."
+                    ),
+                    "remediation": f"Omit 'visibility' on '{target_name}' (default private) and re-run fx bazel2gn.",
                 })
             elif val == "//:__subpackages__":
                 if not is_globally_used and not has_macro_injected_rdeps and not allow_broad_test_vis:

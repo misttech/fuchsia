@@ -120,6 +120,12 @@ translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only thro
       unit_tests = [":foo_test"],
   )
   ```
+- **Test entry points are package-private.** Omit `visibility` on `fx_unittest_package`,
+  `fx_test`, `fx_test_package` and `host_*_test` targets. The GN `bazel_test_suite()` bridge and
+  `fx test` build them as top-level Bazel targets, which Bazel never visibility-checks, so they
+  need no visibility. Never use `"//visibility:public"` or `"//:__subpackages__"` on them. Only
+  when a Bazel `test_suite()` in another package aggregates the test, list that package
+  (`["//<parent>:__pkg__"]`). Don't copy `"//visibility:public"` from already-migrated siblings.
 - **Only unwrap into `fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` when a custom `.cml` is required.**
   If a test already had a hand-written `.cml` in git or requires capability shards beyond the
   standard runner + `syslog/client.shard.cml` (e.g. `tmp_storage.shard.cml`, `death_test.shard.cml`,
