@@ -2360,12 +2360,6 @@ pub struct RustSchedulerState {
     /// CPU, clamped to the current rate limits, for the CPU this scheduler is
     /// associated with.
     pub exported_clamped_deadline_utilization: RelaxedAtomicI64,
-    /// The lock-free value of the processing rate for the CPU this
-    /// scheduler is associated with.
-    pub exported_processing_rate: RelaxedAtomicI64,
-    /// The lock-free value of the max processing rate for the CPU this
-    /// scheduler is associated with.
-    pub exported_max_processing_rate: RelaxedAtomicI64,
     /// The lock-free value of the estimated fair utilization for the
     /// CPU this scheduler is associated with.
     pub exported_fair_utilization: RelaxedAtomicI64,
@@ -2377,6 +2371,12 @@ pub struct RustSchedulerState {
     /// for the CPU, clamped to the current rate limits, for the CPU this scheduler
     /// is associated with.
     pub exported_clamped_total_utilization: RelaxedAtomicI64,
+    /// The lock-free value of the processing rate for the CPU this
+    /// scheduler is associated with.
+    pub exported_processing_rate: RelaxedAtomicI64,
+    /// The lock-free value of the max processing rate for the CPU this
+    /// scheduler is associated with.
+    pub exported_max_processing_rate: RelaxedAtomicI64,
 
     /// The thread which ran just before this thread was scheduled. Used by
     /// `lock_handoff_internal` to release the previous thread's lock after a
@@ -2478,15 +2478,15 @@ zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_deadline_u
 zr::static_assert!(
     core::mem::offset_of!(RustSchedulerState, exported_clamped_deadline_utilization) == 216
 );
-zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_processing_rate) == 224);
-zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_max_processing_rate) == 232);
-zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_fair_utilization) == 240);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_fair_utilization) == 224);
 zr::static_assert!(
-    core::mem::offset_of!(RustSchedulerState, exported_clamped_fair_utilization) == 248
+    core::mem::offset_of!(RustSchedulerState, exported_clamped_fair_utilization) == 232
 );
 zr::static_assert!(
-    core::mem::offset_of!(RustSchedulerState, exported_clamped_total_utilization) == 256
+    core::mem::offset_of!(RustSchedulerState, exported_clamped_total_utilization) == 240
 );
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_processing_rate) == 248);
+zr::static_assert!(core::mem::offset_of!(RustSchedulerState, exported_max_processing_rate) == 256);
 zr::static_assert!(core::mem::offset_of!(RustSchedulerState, previous_thread) == 264);
 zr::static_assert!(core::mem::offset_of!(RustSchedulerState, critical_deadline_utilization) == 272);
 zr::static_assert!(core::mem::offset_of!(RustSchedulerState, active_thread_weight) == 280);
