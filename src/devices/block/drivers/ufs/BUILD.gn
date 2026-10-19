@@ -73,6 +73,7 @@ _common_deps = [
   "//src/devices/block/lib/scsi",
   "//src/devices/lib/dma-buffer",
   "//src/devices/lib/driver:driver_runtime",
+  "//src/lib/ddk:ddk-hw-headers",
   "//zircon/system/ulib/fzl",
   "//zircon/system/ulib/hwreg",
   "//zircon/system/ulib/inspect",

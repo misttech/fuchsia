@@ -26,6 +26,11 @@ TEST_F(TaskManagementRequestProcessorTest, RingRequestDoorbell) {
     auto &slot =
         dut_->GetTaskManagementRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
     ASSERT_EQ(slot.state, SlotState::kReserved);
+    auto descriptor = dut_->GetTaskManagementRequestProcessor()
+                          .GetRequestListLocked()
+                          .GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num.value());
+    descriptor->GetRequestData()->header.function =
+        static_cast<uint8_t>(TaskManagementFunction::kQueryTask);
   }
 
   RingRequestDoorbell<ufs::TaskManagementRequestProcessor>(slot_num.value());
@@ -253,6 +258,16 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {
       });
 
   dut_->GetTaskManagementRequestProcessor().SetTimeout(kCommandTimeout);
+  response = dut_->GetTaskManagementRequestProcessor().SendTaskManagementRequest(request);
+  ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
+
+  // Hook the query request handler so that OCS remains kInvalid even though the response header
+  // reads back as kTargetSuccess (0x00).
+  mock_device_.GetTaskManagementRequestProcessor().SetHook(
+      TaskManagementFunction::kQueryTask,
+      [](UfsMockDevice &mock_device, TaskManagementRequestDescriptor &descriptor) {
+        return ZX_ERR_INTERNAL;
+      });
   response = dut_->GetTaskManagementRequestProcessor().SendTaskManagementRequest(request);
   ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
 }

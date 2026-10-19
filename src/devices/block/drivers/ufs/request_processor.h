@@ -16,6 +16,12 @@ namespace ufs {
 
 constexpr zx::duration kCommandTimeout = zx::sec(10);
 
+// Maximum tight spin-wait retries when waiting for descriptor OCS update after doorbell clearance.
+// Descriptors are allocated in uncached memory; this spin-wait loop handles interconnect
+// write-posting latency on physical hardware where MMIO doorbell clearance can be observed before
+// DMA writes updating OCS reach DRAM.
+constexpr uint32_t kOverallCompletionRetries = 100;
+
 class Ufs;
 
 class RequestProcessor {

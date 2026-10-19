@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_TRANSFER_REQUEST_PROCESSOR_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_TRANSFER_REQUEST_PROCESSOR_H_
 
+#include <lib/ddk/hw/arch_ops.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/function.h>
 #include <lib/trace/event.h>
@@ -25,12 +26,6 @@ constexpr uint8_t kMaxTransferRequestListSize = kMaxRequestListSize;
 // ~ 30 are used by the I/O thread, and slot 31 is used for the Admin command.
 constexpr uint8_t kAdminCommandSlotCount = 1;
 constexpr uint8_t kAdminCommandSlotNumber = kMaxTransferRequestListSize - kAdminCommandSlotCount;
-
-// Maximum tight spin-wait retries when waiting for descriptor OCS update after doorbell clearance.
-// Descriptors are allocated in uncached memory; this spin-wait loop handles interconnect
-// write-posting latency on physical hardware where MMIO doorbell clearance can be observed before
-// DMA writes updating OCS reach DRAM.
-constexpr uint32_t kOverallCompletionRetries = 100;
 
 // Owns and processes the UTP transfer request list.
 class TransferRequestProcessor : public RequestProcessor {
@@ -153,10 +148,18 @@ class TransferRequestProcessor : public RequestProcessor {
   }
 
   void SetDoorBellRegister(uint8_t slot_num) override {
+    // Order the UTRD, Command UPIU, and PRDT stores in uncached Normal memory before the MMIO
+    // doorbell store in Device memory (the equivalent of the leading barrier in Linux's writel()).
+    hw_wmb();
     UtrListDoorBellReg::Get().FromValue(1u << slot_num).WriteTo(&register_);
   }
   uint32_t ReadDoorBellRegister() override {
-    return UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+    const uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+    // A cleared doorbell bit publishes the UTRD and RESPONSE UPIU the controller wrote to DMA
+    // memory. Order the register load before the descriptor loads that follow (the equivalent of
+    // the trailing barrier in Linux's readl()); the MMIO read itself carries no hardware barrier.
+    hw_rmb();
+    return doorbell;
   }
   // Checks if the request at |slot_num| has completed (either via hardware completion or timeout).
   // If the request completed, returns true, sets |cb| to the completion callback that was stored in

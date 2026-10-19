@@ -33,6 +33,7 @@ zx::result<> TaskManagementRequestProcessor::Init() {
   }
 
   // Start UTP task management request list.
+  hw_wmb();
   UtmrListRunStopReg::Get().FromValue(1).WriteTo(&register_);
 
   return zx::ok();
@@ -66,9 +67,18 @@ uint32_t TaskManagementRequestProcessor::ProcessCompletionOfIoRequests() {
         zx::result<> result = zx::ok();
         // Check task management response.
         auto descriptor = slots_.GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
+        for (uint32_t retry = 0;
+             retry < kOverallCompletionRetries &&
+             descriptor->overall_command_status() == OverallCommandStatus::kInvalid;
+             ++retry) {
+          hw_rmb();
+        }
+        hw_rmb();
         TaskManagementResponseUpiu response(descriptor->GetResponseData());
-        if (response.GetHeader().response != UpiuHeaderResponseCode::kTargetSuccess) {
-          fdf::error("UTP task management request command failure: response={}",
+        if (descriptor->overall_command_status() != OverallCommandStatus::kSuccess ||
+            response.GetHeader().response != UpiuHeaderResponseCode::kTargetSuccess) {
+          fdf::error("UTP task management request command failure: ocs=0x{:x}, response={}",
+                     static_cast<uint32_t>(descriptor->overall_command_status()),
                      response.GetHeader().response);
           result = zx::error(ZX_ERR_BAD_STATE);
         }
@@ -134,6 +144,7 @@ zx::result<TaskManagementResponseUpiu> TaskManagementRequestProcessor::SendTaskM
   }
 
   // Get the UTP task management response UPIU before releasing the slot.
+  hw_rmb();
   auto descriptor = slots_.GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
   TaskManagementResponseUpiu response(descriptor->GetResponseData());
 

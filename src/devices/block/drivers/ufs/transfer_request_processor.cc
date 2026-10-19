@@ -4,6 +4,7 @@
 
 #include "transfer_request_processor.h"
 
+#include <lib/ddk/hw/arch_ops.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/trace/event.h>
@@ -106,6 +107,7 @@ zx::result<> TransferRequestProcessor::Init() {
   }
 
   // Start Utp Transfer Request list.
+  hw_wmb();
   UtrListRunStopReg::Get().FromValue(0).set_value(true).WriteTo(&register_);
 
   return zx::ok();
@@ -191,9 +193,7 @@ zx::result<std::unique_ptr<ResponseType>> TransferRequestProcessor::SendRequestU
     request_slot.completion_cb = nullptr;
     // admin_slot_lock_ is held for the whole wait and StopHostControllerForPowerDown() runs under
     // it, so the controller cannot have lost power here; the check is purely defensive.
-    uint32_t doorbell = controller_.IsHardwarePoweredOff()
-                            ? 0
-                            : UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+    uint32_t doorbell = controller_.IsHardwarePoweredOff() ? 0 : ReadDoorBellRegister();
     if (doorbell & (1u << slot_num)) {
       SetSlotStateLocked(slot_num, SlotState::kTimeout);
     } else {
@@ -415,7 +415,7 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
     request_result = controller_.ScsiComplete(status_message, sense_data);
   }
 
-  uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+  uint32_t doorbell = ReadDoorBellRegister();
   if (completion_status == ZX_ERR_TIMED_OUT && (doorbell & (1u << slot_num))) {
     // Hardware still owns the slot; do not unpin PMT memory until hardware doorbell clears
     // or controller reset / task abort finishes.
@@ -506,11 +506,13 @@ bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num, uint32_t 
     if (!(doorbell & (1u << slot_num))) {
       // Hardware cleared doorbell; ensure descriptor DMA writes are visible before checking status.
       // Tight spin-wait for DMA write-posting interconnect buffer settling (typically < 100ns).
+      // hw_rmb() is a hardware load barrier (std::atomic_thread_fence only orders accesses within
+      // the C++ memory model, not against the controller's DMA writes).
       for (uint32_t retry = 0;
            retry < kOverallCompletionRetries &&
            descriptor->overall_command_status() == OverallCommandStatus::kInvalid;
            ++retry) {
-        std::atomic_thread_fence(std::memory_order_acquire);
+        hw_rmb();
       }
       if (descriptor->overall_command_status() == OverallCommandStatus::kInvalid) {
         if (zx_clock_get_monotonic() >= request_slot.deadline) {
@@ -521,6 +523,7 @@ bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num, uint32_t 
         }
         return false;
       }
+      hw_rmb();
       RequestCompletion(slot_num, request_slot, /*is_timeout=*/false, cb, status);
       is_completed = true;
     } else if (request_slot.deadline < zx_clock_get_monotonic()) {
