@@ -169,7 +169,6 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
         status = mapper.Map(*request.vmo, vmo_offset, op_bytes,
                             ZX_VM_FLAG_PERM_READ | ZX_VM_FLAG_PERM_WRITE | ZX_VM_MAP_RANGE);
         if (status != ZX_OK) {
-          op_bytes = 0;
           break;
         }
         if (request.operation.tag == block_server::Operation::Tag::Write) {
@@ -204,8 +203,10 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
     TRACE_DURATION_END("block:ftl", "Operation", "nand_ops", nand_counters_.GetSum());
 
     if (op_stats != nullptr) {
-      op_stats->count.Add(1);
-      op_stats->bytes.Add(op_bytes);
+      if (status == ZX_OK) {
+        op_stats->count.Add(1);
+        op_stats->bytes.Add(op_bytes);
+      }
       op_stats->all.count.Add(nand_counters_.GetSum());
       op_stats->all.rate.Add(nand_counters_.GetSum());
       op_stats->block_erase.count.Add(nand_counters_.block_erase);
@@ -247,7 +248,6 @@ void BlockDevice::DoBackgroundFlush() {
     }
     pending_flush_ = false;
     auto& op_stats = metrics_->flush();
-    op_stats.count.Add(1);
     op_stats.all.count.Add(nand_counters_.GetSum());
     op_stats.all.rate.Add(nand_counters_.GetSum());
     op_stats.block_erase.count.Add(nand_counters_.block_erase);

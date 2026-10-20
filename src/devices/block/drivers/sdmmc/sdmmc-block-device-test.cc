@@ -2677,11 +2677,11 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
 
   write_ops = root->node().get_property<inspect::UintPropertyValue>("block.write.count");
   ASSERT_NOT_NULL(write_ops);
-  EXPECT_EQ(write_ops->value(), 2);
+  EXPECT_EQ(write_ops->value(), 1);
 
   write_bytes = root->node().get_property<inspect::UintPropertyValue>("block.write.bytes");
   ASSERT_NOT_NULL(write_bytes);
-  EXPECT_EQ(write_bytes->value(), 10 * FakeSdmmcDevice::kBlockSize);
+  EXPECT_EQ(write_bytes->value(), 5 * FakeSdmmcDevice::kBlockSize);
 }
 
 TEST_P(SdmmcBlockDeviceTest, InspectExtCsd) {

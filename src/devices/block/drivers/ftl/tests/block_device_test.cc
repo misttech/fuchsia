@@ -649,6 +649,25 @@ TEST_F(BlockDeviceTest, InspectFlushMetricsUpdatedCorrectly) {
       [&]() { Flush(); });
 }
 
+TEST_F(BlockDeviceTest, InspectFailedOpsNotCounted) {
+  BlockFifoRequest requests[1] = {};
+  requests[0].command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
+  requests[0].length = 2;
+  requests[0].dev_offset = kNumPages;
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, client_->FifoTransaction(requests, 1));
+
+  zx::vmo vmo;
+  driver_test_.RunInDriverContext([&vmo](TestFtlBlockDevice& driver) {
+    vmo = static_cast<ftl::BlockDevice&>(driver).DuplicateInspectVmo();
+  });
+
+  std::map<std::string, uint64_t> counters;
+  std::map<std::string, double> rates;
+  ReadProperties(vmo, counters, rates);
+  EXPECT_EQ(counters["block.trim.count"], 0);
+  EXPECT_EQ(counters["block.trim.bytes"], 0);
+}
+
 TEST_F(BlockDeviceTest, InspectBadBlockMetricsPopulation) {
   zx::vmo vmo;
   driver_test_.RunInDriverContext([&vmo](TestFtlBlockDevice& driver) {

@@ -1412,17 +1412,38 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
     zx::result<> Flush(bool split_last = false) TA_NO_THREAD_SAFETY_ANALYSIS {
       if (requests_.empty())
         return zx::ok();
-      TRACE_DURATION(
-          "sdmmc",
-          requests_[0].operation.tag == block_server::Operation::Tag::Read ? "read" : "write",
-          "count", requests_.size(),
-          // The total number of bytes that will be read or written excluding the packed command
-          // header.
-          "size", total_bytes_ - zx_system_get_page_size());
+      const bool is_read = requests_[0].operation.tag == block_server::Operation::Tag::Read;
+      TRACE_DURATION("sdmmc", is_read ? "read" : "write", "count", requests_.size(),
+                     // The total number of bytes that will be read or written excluding the packed
+                     // command header.
+                     "size", total_bytes_ - zx_system_get_page_size());
       zx::result<> result =
           zx::make_result(device_.ReadWriteWithRetries(requests_, partition_.partition()));
-      if (split_last && result.is_ok())
-        requests_.pop_back();
+      if (result.is_ok()) {
+        uint64_t new_split_bytes = 0;
+        if (split_last) {
+          new_split_bytes = uint64_t{requests_.back().operation.read.block_count} * block_size_;
+          requests_.pop_back();
+        }
+        if (requests_.empty()) {
+          pending_split_bytes_ += new_split_bytes;
+        } else {
+          uint64_t completed_bytes = pending_split_bytes_;
+          for (const block_server::Request& request : requests_) {
+            completed_bytes += uint64_t{request.operation.read.block_count} * block_size_;
+          }
+          pending_split_bytes_ = new_split_bytes;
+          if (is_read) {
+            device_.properties_.read_ops_.Add(requests_.size());
+            device_.properties_.read_bytes_.Add(completed_bytes);
+          } else {
+            device_.properties_.write_ops_.Add(requests_.size());
+            device_.properties_.write_bytes_.Add(completed_bytes);
+          }
+        }
+      } else {
+        pending_split_bytes_ = 0;
+      }
       for (const block_server::Request& request : requests_) {
         partition_.SendReply(request.request_id, result);
       }
@@ -1439,6 +1460,7 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
     const uint32_t block_size_;
     std::vector<block_server::Request> requests_;
     uint64_t total_bytes_ = 0;
+    uint64_t pending_split_bytes_ = 0;
   };
 
   zx_status_t status;
@@ -1477,15 +1499,9 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
     }
     switch (request.operation.tag) {
       case block_server::Operation::Tag::Read:
-        properties_.read_ops_.Add(1);
-        properties_.read_bytes_.Add(uint64_t{request.operation.read.block_count} *
-                                    block_info_.block_size);
         read_packer.Push(request);
         break;
       case block_server::Operation::Tag::Write:
-        properties_.write_ops_.Add(1);
-        properties_.write_bytes_.Add(uint64_t{request.operation.write.block_count} *
-                                     block_info_.block_size);
         if (request.operation.write.options.flags.is_pre_barrier()) {
           TRACE_DURATION_BEGIN("sdmmc", "barrier");
 
@@ -1504,7 +1520,6 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
 
       case block_server::Operation::Tag::Flush:
         TRACE_DURATION_BEGIN("sdmmc", "flush");
-        properties_.flush_ops_.Add(1);
 
         // Technically, we might not need to do this, because there's no guarantee regarding the
         // ordering of requests, but it's arguably safer for us to flush preceding write requests
@@ -1512,6 +1527,9 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
         unused_result = write_packer.Flush();
 
         status = Flush();
+        if (status == ZX_OK) {
+          properties_.flush_ops_.Add(1);
+        }
 
         partition.SendReply(request.request_id, zx::make_result(status));
 
@@ -1522,12 +1540,14 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
 
       case block_server::Operation::Tag::Trim:
         TRACE_DURATION_BEGIN("sdmmc", "trim");
-        properties_.trim_ops_.Add(1);
-        properties_.trim_bytes_.Add(uint64_t{request.operation.trim.block_count} *
-                                    block_info_.block_size);
 
         status = Trim(request.operation.trim.device_block_offset,
                       request.operation.trim.block_count, partition.partition());
+        if (status == ZX_OK) {
+          properties_.trim_ops_.Add(1);
+          properties_.trim_bytes_.Add(uint64_t{request.operation.trim.block_count} *
+                                      block_info_.block_size);
+        }
         partition.SendReply(request.request_id, zx::make_result(status));
 
         TRACE_DURATION_END(
