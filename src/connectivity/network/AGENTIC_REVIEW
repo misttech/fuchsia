@@ -2,11 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Netstack3 architecture, Core/Bindings split, and static typing principles.
+# Netstack3 code review rubric: Core/Bindings split, lock ordering, panics,
+# and Netstack Rust patterns. Shared with the Gerrit CL review agent.
+conditional_capability_groups {
+  path_expression: "netstack3/..."
+  path_expression: "lib/..."
+  path_expression: "tests/..."
+  review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-review/SKILL.md"
+}
+
+# Netstack3 unit and core functional test patterns.
 conditional_capability_groups {
   path_expression: "netstack3/....rs"
-  path_expression: "netstack3/....md"
-  review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-docs/SKILL.md"
   review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-unit-tests/SKILL.md"
 }
 

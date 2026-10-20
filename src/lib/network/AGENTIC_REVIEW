@@ -1,0 +1,9 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Netstack3 code review rubric for shared networking libraries.
+conditional_capability_groups {
+  path_expression: "..."
+  review_capability_skills: "src/connectivity/network/.agents/skills/netstack3-review/SKILL.md"
+}

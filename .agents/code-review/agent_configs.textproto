@@ -8,8 +8,10 @@
 # Skills referenced without a "/" resolve under .agents/skills/<name>/SKILL.md.
 # Skills containing a "/" resolve relative to the fuchsia repository root.
 #
-# All entries must carry the "code-review-agent" tag and are currently scoped
-# to the vendor/google project while hosted agentic reviews are being evaluated.
+# All entries must carry the "code-review-agent" tag. Most entries are
+# currently scoped to the vendor/google project while hosted agentic reviews
+# are being evaluated; subsystem-owned entries may be scoped to the fuchsia
+# project for their own paths.
 
 configs: {
   id: "fuchsia-rust-best-practices"
@@ -172,15 +174,27 @@ configs: {
 }
 
 configs: {
-  id: "fuchsia-netstack3-core-and-unit-tests"
-  display_name: "Fuchsia Netstack3 Core & Unit Tests"
-  description: "Netstack3 architecture, Core/Bindings split, static typing, and unit testing principles."
+  id: "fuchsia-netstack3-review"
+  display_name: "Netstack3 Review"
+  description: "Netstack3 review rubric: Core/Bindings separation, lock ordering, panics, and Netstack Rust patterns."
   tags: "code-review-agent"
-  skills: "src/connectivity/network/.agents/skills/netstack3-docs"
+  skills: "src/connectivity/network/.agents/skills/netstack3-review"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "src/connectivity/network/(netstack3|lib|tests)/.*"
+    path_regex: "src/lib/network/.*"
+  }
+}
+
+configs: {
+  id: "fuchsia-netstack3-unit-tests"
+  display_name: "Fuchsia Netstack3 Unit Tests"
+  description: "Netstack3 unit and core functional test patterns."
+  tags: "code-review-agent"
   skills: "src/connectivity/network/.agents/skills/netstack3-unit-tests"
   include_filters: {
     project: "fuchsia"
-    path_regex: "src/connectivity/network/netstack3/.*\\.(rs|md)"
+    path_regex: "src/connectivity/network/netstack3/.*\\.rs"
   }
 }
 
