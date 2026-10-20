@@ -49,6 +49,7 @@ impl PortableSidTable {
 /// [`SidTable::sids_to_security_contexts`], and [`SidTable::security_context_to_existing_sid`]
 /// lock-free within an [`RcuReadScope`]. Mutations via [`SidTable::security_context_to_sid`] are
 /// serialized by the caller's writer lock without blocking concurrent RCU readers.
+#[derive(RcuDroppable)]
 pub(super) struct SidTable {
     /// Lock-free forward mapping from [`SecurityId`] (`sid.0.get() as usize`) to its effective
     /// [`SecurityContext`] under the owning policy.

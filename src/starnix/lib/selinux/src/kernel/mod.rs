@@ -17,7 +17,7 @@ pub(crate) use avc::{AccessVectorCache, Query};
 pub(crate) use index::PolicyIndex;
 pub use permissions::*;
 
-use crate::policy::{AccessDecision, AccessVector, ClassId, XpermsBitmap};
+use crate::policy::{AccessVector, ClassId, XpermsBitmap};
 use std::num::NonZeroU32;
 
 /// Identifies a specific class by its policy-defined Id, or as a kernel object class enum Id.
@@ -62,22 +62,6 @@ pub(crate) struct KernelXpermsAccessDecision {
     pub permissive: bool,
     /// Whether the entry has an associated todo.
     pub has_todo: bool,
-}
-
-/// Owner of policy information that can translate [`KernelPermission`] values into
-/// [`AccessVector`] values that are consistent with the owned policy.
-pub(crate) trait AccessVectorComputer {
-    /// Translates the given [`AccessDecision`] to a [`KernelAccessDecision`].
-    ///
-    /// The loaded policy's "handle unknown" configuration determines how `permissions`
-    /// entries not explicitly defined by the policy are handled. Allow-unknown will
-    /// result in unknown `permissions` being allowed, while they are denied (and audited)
-    /// if the policy uses deny-unknown.
-    fn access_decision_to_kernel_access_decision(
-        &self,
-        class: KernelClass,
-        access_decision: AccessDecision,
-    ) -> KernelAccessDecision;
 }
 
 #[cfg(test)]

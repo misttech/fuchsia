@@ -7,6 +7,7 @@ use crate::permission_check::PermissionCheckResult;
 use crate::policy::{AccessVector, XpermsKind};
 use crate::{PolicySeqNo, SecurityId};
 use std::cell::Cell;
+use std::sync::atomic::{Ordering, fence};
 
 /// Simple allow decision (allowed, not audited, not permissive, no TODO bug).
 const SIMPLE_ALLOW: PermissionCheckResult =
@@ -165,6 +166,11 @@ impl PerThreadCache {
     /// resets the cache in this case.
     fn check_policy_version(&self, policy_seqno: PolicySeqNo) {
         if self.policy_seqno.get() != policy_seqno {
+            assert!(policy_seqno > self.policy_seqno.get());
+            // Synchronize with the `Ordering::Release` increment of `policy_change_count` in
+            // `SecurityServer` so that subsequent RCU reads of `active_policy` observe the new
+            // policy without requiring an acquire barrier on the hot cache-hit path.
+            fence(Ordering::Acquire);
             self.reset();
             self.policy_seqno.set(policy_seqno);
         }

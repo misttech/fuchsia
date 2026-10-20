@@ -5,7 +5,7 @@
 use super::permissions::{
     ClassPermission as _, FileClass, KernelClass, KernelPermission, ProcessPermission,
 };
-use super::{AccessVectorComputer, KernelAccessDecision, ObjectClass};
+use super::{KernelAccessDecision, ObjectClass};
 use crate::NullessByteStr;
 use crate::policy::{
     AccessDecision, AccessVector, Class, ClassId, HandleUnknown, HasPolicyId as _, PermissionId,
@@ -13,6 +13,7 @@ use crate::policy::{
     XpermsKind,
 };
 
+use fuchsia_rcu::RcuDroppable;
 use std::collections::HashMap;
 use std::ops::Deref;
 use strum::VariantArray as _;
@@ -48,6 +49,10 @@ pub(crate) struct PolicyIndex {
     /// Parsed binary policy.
     policy: Policy,
 }
+
+// SAFETY: `PolicyIndex` contains only plain data, arrays, a `HashMap`, and a parsed `Policy` with
+// no custom `Drop` logic, so it is safe to drop asynchronously on the RCU reclamation thread.
+unsafe impl RcuDroppable for PolicyIndex {}
 
 impl PolicyIndex {
     /// Constructs a [`PolicyIndex`] that indexes over well-known policy elements.
@@ -239,10 +244,14 @@ impl PolicyIndex {
         let class_id = class.and_then(|class| self.class(class.into())).map(|class| class.id());
         self.policy.genfscon_label_for_fs_and_path(fs_type, node_path, class_id)
     }
-}
 
-impl AccessVectorComputer for PolicyIndex {
-    fn access_decision_to_kernel_access_decision(
+    /// Translates the given [`AccessDecision`] to a [`KernelAccessDecision`].
+    ///
+    /// The loaded policy's "handle unknown" configuration determines how `permissions`
+    /// entries not explicitly defined by the policy are handled. Allow-unknown will
+    /// result in unknown `permissions` being allowed, while they are denied (and audited)
+    /// if the policy uses deny-unknown.
+    pub fn access_decision_to_kernel_access_decision(
         &self,
         class: KernelClass,
         access_decision: AccessDecision,

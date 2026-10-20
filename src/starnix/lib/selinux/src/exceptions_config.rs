@@ -6,6 +6,7 @@ use crate::policy::{HasPolicyId as _, Policy, TypeId};
 use crate::{KernelClass, ObjectClass};
 
 use anyhow::{anyhow, bail};
+use fuchsia_rcu::RcuDroppable;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use strum::VariantArray as _;
@@ -15,6 +16,10 @@ pub(super) struct ExceptionsConfig {
     todo_deny_entries: HashMap<ExceptionsEntry, NonZeroU32>,
     permissive_entries: HashMap<TypeId, NonZeroU32>,
 }
+
+// SAFETY: `ExceptionsConfig` contains only `HashMap`s of plain ID/integer values with no custom
+// `Drop` logic, so it is safe to drop asynchronously on the RCU reclamation thread.
+unsafe impl RcuDroppable for ExceptionsConfig {}
 
 impl ExceptionsConfig {
     /// Parses the supplied `exceptions` lines and returns an `ExceptionsConfig` with an entry for

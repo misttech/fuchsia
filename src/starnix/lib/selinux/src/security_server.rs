@@ -4,8 +4,8 @@
 
 use crate::exceptions_config::ExceptionsConfig;
 use crate::kernel::{
-    AccessVectorCache, AccessVectorComputer, CacheStats, KernelAccessDecision,
-    KernelXpermsAccessDecision, PolicyIndex, Query,
+    AccessVectorCache, CacheStats, KernelAccessDecision, KernelXpermsAccessDecision, PolicyIndex,
+    Query,
 };
 use crate::permission_check::{PerThreadCache, PermissionCheck};
 use crate::policy::{
@@ -14,14 +14,14 @@ use crate::policy::{
     SecurityContext, XpermsBitmap, XpermsKind,
 };
 use crate::sid_table::{PortableSidTable, SidTable};
-use crate::sync::{LockDepRwLock, SeLinuxSecurityServerStateLock};
+use crate::sync::{LockDepMutex, SeLinuxSecurityServerStateLock, SeLinuxStatusLock};
 use crate::{
     ClassPermission, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions,
     FileSystemMountSids, InitialSid, KernelClass, KernelPermission, NullessByteStr, ObjectClass,
     PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
 };
 use anyhow::Context as _;
-use fuchsia_rcu::RcuReadScope;
+use fuchsia_rcu::{RcuDroppable, RcuOptionArc, RcuReadScope};
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -29,6 +29,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 const ROOT_PATH: &'static str = "/";
 
+#[derive(RcuDroppable)]
 struct ActivePolicy {
     /// Parsed policy structure.
     parsed: PolicyIndex,
@@ -38,6 +39,35 @@ struct ActivePolicy {
 
     /// Describes access checks that should be granted, with associated bug Ids.
     exceptions: ExceptionsConfig,
+}
+
+impl ActivePolicy {
+    fn compute_access_decision_raw(
+        &self,
+        scope: &RcuReadScope,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+        target_class: ObjectClass,
+    ) -> AccessDecision {
+        let (source_context, target_context) =
+            self.sid_table.sids_to_security_contexts(scope, source_sid, target_sid);
+        self.compute_access_decision_for_contexts(source_context, target_context, target_class)
+    }
+
+    fn compute_access_decision_for_contexts(
+        &self,
+        source_context: &SecurityContext,
+        target_context: &SecurityContext,
+        target_class: ObjectClass,
+    ) -> AccessDecision {
+        let mut decision =
+            self.parsed.compute_access_decision(source_context, target_context, target_class);
+
+        decision.todo_bug =
+            self.exceptions.lookup(source_context.type_(), target_context.type_(), target_class);
+
+        decision
+    }
 }
 
 #[derive(Default)]
@@ -76,12 +106,6 @@ impl SeLinuxBooleans {
 
 #[derive(Default)]
 struct SecurityServerState {
-    /// Describes the currently active policy.
-    active_policy: Option<ActivePolicy>,
-
-    /// Canonical strings for all dynamic SIDs allocated across policy loads.
-    portable_sids: PortableSidTable,
-
     /// Holds active and pending states for each boolean defined by policy.
     booleans: SeLinuxBooleans,
 
@@ -89,70 +113,18 @@ struct SecurityServerState {
     status_publisher: Option<Box<dyn SeLinuxStatusPublisher>>,
 }
 
-impl SecurityServerState {
-    fn deny_unknown(&self) -> bool {
-        self.active_policy
-            .as_ref()
-            .map_or(true, |p| p.parsed.handle_unknown() != HandleUnknown::Allow)
-    }
-    fn reject_unknown(&self) -> bool {
-        self.active_policy
-            .as_ref()
-            .map_or(false, |p| p.parsed.handle_unknown() == HandleUnknown::Reject)
-    }
-
-    fn expect_active_policy(&self) -> &ActivePolicy {
-        &self.active_policy.as_ref().expect("policy should be loaded")
-    }
-
-    fn compute_access_decision_raw(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision {
-        let Some(active_policy) = self.active_policy.as_ref() else {
-            // All permissions are allowed when no policy is loaded, regardless of enforcing state.
-            return AccessDecision::allow(AccessVector::ALL);
-        };
-
-        let scope = RcuReadScope::new();
-        let (source_context, target_context) =
-            active_policy.sid_table.sids_to_security_contexts(&scope, source_sid, target_sid);
-
-        let mut decision = active_policy.parsed.compute_access_decision(
-            source_context,
-            target_context,
-            target_class,
-        );
-
-        decision.todo_bug = active_policy.exceptions.lookup(
-            source_context.type_(),
-            target_context.type_(),
-            target_class,
-        );
-
-        decision
-    }
-}
-
 pub(crate) struct SecurityServerBackend {
-    /// The mutable state of the security server.
-    state: LockDepRwLock<SecurityServerState, SeLinuxSecurityServerStateLock>,
+    /// Currently active policy and its per-policy SID table, read lock-free via RCU.
+    active_policy: RcuOptionArc<ActivePolicy>,
 
-    /// True if the security server is enforcing, rather than permissive.
-    /// Only modified with the `state` lock taken.
-    is_enforcing: AtomicBool,
-
-    /// Count of changes to the active policy.  Changes include both loads
-    /// of complete new policies, and modifications to a previously loaded
-    /// policy, e.g. by committing new values to conditional booleans in it.
-    /// Only modified with the `state` lock taken.
-    policy_change_count: AtomicU32,
+    /// Canonical strings for all dynamic SIDs allocated across policy loads.
+    ///
+    /// Locked when minting new SIDs into `active_policy.sid_table` or replacing `active_policy`.
+    portable_sids: LockDepMutex<PortableSidTable, SeLinuxSecurityServerStateLock>,
 }
 
 /// An opaque identifier for the policy version, which can be used to detect if the policy has changed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PolicySeqNo(u32);
 
 impl PolicySeqNo {
@@ -163,12 +135,26 @@ impl PolicySeqNo {
 }
 
 pub struct SecurityServer {
+    /// Serializes policy loads, boolean changes, enforcing mode changes, AVC resets, and status
+    /// publication.
+    state: LockDepMutex<SecurityServerState, SeLinuxStatusLock>,
+
     /// The access vector cache that is shared between threads subject to access control by this
     /// security server.
     access_vector_cache: AccessVectorCache,
 
-    /// A shared reference to the security server's state.
+    /// A shared reference to the security server's policy and SID state.
     backend: Arc<SecurityServerBackend>,
+
+    /// True if the security server is enforcing, rather than permissive.
+    /// Only modified with the `state` lock taken.
+    is_enforcing: AtomicBool,
+
+    /// Count of changes to the active policy.  Changes include both loads
+    /// of complete new policies, and modifications to a previously loaded
+    /// policy, e.g. by committing new values to conditional booleans in it.
+    /// Only modified with the `state` lock taken.
+    policy_change_count: AtomicU32,
 
     /// Optional set of exceptions to apply to access checks, via `ExceptionsConfig`.
     exceptions: Vec<String>,
@@ -194,14 +180,21 @@ impl SecurityServer {
         }
 
         let backend = Arc::new(SecurityServerBackend {
-            state: LockDepRwLock::new(SecurityServerState::default()),
-            is_enforcing: AtomicBool::new(false),
-            policy_change_count: AtomicU32::new(0),
+            active_policy: RcuOptionArc::default(),
+            portable_sids: LockDepMutex::new(PortableSidTable::default()),
         });
 
         let access_vector_cache = AccessVectorCache::new(backend.clone());
 
-        Arc::new(Self { access_vector_cache, backend, exceptions, allow_unimplemented })
+        Arc::new(Self {
+            state: LockDepMutex::new(SecurityServerState::default()),
+            access_vector_cache,
+            backend,
+            is_enforcing: AtomicBool::new(false),
+            policy_change_count: AtomicU32::new(0),
+            exceptions,
+            allow_unimplemented,
+        })
     }
 
     /// Converts a shared pointer to [`SecurityServer`] to a [`PermissionCheck`] without consuming
@@ -220,7 +213,7 @@ impl SecurityServer {
         &self,
         security_context: NullessByteStr<'_>,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.backend.compute_sid(|active_policy| {
+        self.backend.compute_sid(|_scope, active_policy| {
             active_policy
                 .parsed
                 .parse_security_context(security_context)
@@ -235,9 +228,8 @@ impl SecurityServer {
     /// attribute values, and for audit logging. If `sid` was invalidated by a policy
     /// reload then the "unlabeled" context is returned instead.
     pub fn sid_to_security_context(&self, sid: SecurityId) -> Option<Vec<u8>> {
-        let locked_state = self.backend.state.read();
-        let active_policy = locked_state.active_policy.as_ref()?;
         let scope = RcuReadScope::new();
+        let active_policy = self.backend.active_policy.as_ref(&scope)?;
         let context = active_policy.sid_table.sid_to_security_context(&scope, sid);
         Some(active_policy.parsed.serialize_security_context(context))
     }
@@ -265,9 +257,7 @@ impl SecurityServer {
         let parsed = PolicyIndex::new(policy)?;
 
         // Replace any existing policy and push update to `state.status_publisher`.
-        self.with_mut_state_and_update_status(|state| {
-            let sid_table = SidTable::new(&parsed, &state.portable_sids);
-
+        self.with_mut_state_and_reset_cache(|state| {
             // TODO(b/324265752): Determine whether SELinux booleans need to be retained across
             // policy (re)loads.
             state.booleans.reset(
@@ -281,8 +271,13 @@ impl SecurityServer {
                     .collect(),
             );
 
-            state.active_policy = Some(ActivePolicy { parsed, sid_table, exceptions });
-            self.backend.policy_change_count.fetch_add(1, Ordering::Relaxed);
+            let portable_sids = self.backend.portable_sids.lock();
+            let sid_table = SidTable::new(&parsed, &portable_sids);
+            self.backend.active_policy.update(Some(Arc::new(ActivePolicy {
+                parsed,
+                sid_table,
+                exceptions,
+            })));
         });
 
         Ok(())
@@ -290,13 +285,14 @@ impl SecurityServer {
 
     /// Returns true if a policy has been loaded.
     pub fn has_policy(&self) -> bool {
-        self.backend.state.read().active_policy.is_some()
+        let scope = RcuReadScope::new();
+        self.backend.active_policy.as_ref(&scope).is_some()
     }
 
     /// Returns the active policy in binary form, or `None` if no policy has yet been loaded.
     pub fn get_binary_policy(&self) -> Option<PolicyData> {
-        let state = self.backend.state.read();
-        let active_policy = state.active_policy.as_ref()?;
+        let scope = RcuReadScope::new();
+        let active_policy = self.backend.active_policy.as_ref(&scope)?;
         let mut bytes = Vec::new();
         active_policy
             .parsed
@@ -308,55 +304,62 @@ impl SecurityServer {
     /// Set to enforcing mode if `enforce` is true, permissive mode otherwise.
     pub fn set_enforcing(&self, enforcing: bool) {
         self.with_mut_state_and_update_status(|_| {
-            self.backend.is_enforcing.store(enforcing, Ordering::Release);
+            self.is_enforcing.store(enforcing, Ordering::Release);
         });
     }
 
     pub fn is_enforcing(&self) -> bool {
-        self.backend.is_enforcing.load(Ordering::Acquire)
+        self.is_enforcing.load(Ordering::Acquire)
     }
 
     /// Returns true if the policy requires unknown class / permissions to be
     /// denied. Defaults to true until a policy is loaded.
     pub fn deny_unknown(&self) -> bool {
-        self.backend.state.read().deny_unknown()
+        let scope = RcuReadScope::new();
+        self.backend
+            .active_policy
+            .as_ref(&scope)
+            .is_none_or(|p| p.parsed.handle_unknown() != HandleUnknown::Allow)
     }
 
     /// Returns true if the policy requires unknown class / permissions to be
     /// rejected. Defaults to false until a policy is loaded.
     pub fn reject_unknown(&self) -> bool {
-        self.backend.state.read().reject_unknown()
+        let scope = RcuReadScope::new();
+        self.backend
+            .active_policy
+            .as_ref(&scope)
+            .is_some_and(|p| p.parsed.handle_unknown() == HandleUnknown::Reject)
     }
 
     /// Returns the list of names of boolean conditionals defined by the
     /// loaded policy.
     pub fn conditional_booleans(&self) -> Vec<String> {
-        self.backend.state.read().booleans.names()
+        self.state.lock().booleans.names()
     }
 
     /// Returns the active and pending values of a policy boolean, if it exists.
     pub fn get_boolean(&self, name: &str) -> Result<(bool, bool), ()> {
-        self.backend.state.read().booleans.get(name)
+        self.state.lock().booleans.get(name)
     }
 
     /// Sets the pending value of a boolean, if it is defined in the policy.
     pub fn set_pending_boolean(&self, name: &str, value: bool) -> Result<(), ()> {
-        self.backend.state.write().booleans.set_pending(name, value)
+        self.state.lock().booleans.set_pending(name, value)
     }
 
     /// Commits all pending changes to conditional booleans.
     pub fn commit_pending_booleans(&self) {
         // TODO(b/324264149): Commit values into the stored policy itself.
-        self.with_mut_state_and_update_status(|state| {
+        self.with_mut_state_and_reset_cache(|state| {
             state.booleans.commit_pending();
-            self.backend.policy_change_count.fetch_add(1, Ordering::Relaxed);
         });
     }
 
     /// Returns whether a standard policy capability is enabled in the loaded policy.
     pub fn is_policycap_enabled(&self, policy_cap: PolicyCap) -> bool {
-        let locked_state = self.backend.state.read();
-        let Some(policy) = &locked_state.active_policy else {
+        let scope = RcuReadScope::new();
+        let Some(policy) = self.backend.active_policy.as_ref(&scope) else {
             return false;
         };
         policy.parsed.has_policycap(policy_cap)
@@ -368,15 +371,20 @@ impl SecurityServer {
     }
 
     /// Returns the current policy version.
+    ///
+    /// Uses `Ordering::Relaxed` to avoid an acquire barrier on every [`PerThreadCache`] hit;
+    /// callers that reset cached state upon observing a changed [`PolicySeqNo`] execute an
+    /// `Ordering::Acquire` fence before querying [`SecurityServerBackend`].
     pub fn policy_seqno(&self) -> PolicySeqNo {
-        PolicySeqNo(self.backend.policy_change_count.load(Ordering::Relaxed))
+        PolicySeqNo(self.policy_change_count.load(Ordering::Relaxed))
     }
 
     /// Returns the list of all class names.
     pub fn class_names(&self) -> Result<Vec<Vec<u8>>, ()> {
-        let locked_state = self.backend.state.read();
-        let names = locked_state
-            .expect_active_policy()
+        let scope = RcuReadScope::new();
+        let names = self
+            .backend
+            .expect_active_policy(&scope)
             .parsed
             .classes()
             .iter()
@@ -387,9 +395,10 @@ impl SecurityServer {
 
     /// Returns the class identifier of a class, if it exists.
     pub fn class_id_by_name(&self, name: &str) -> Result<ClassId, ()> {
-        let locked_state = self.backend.state.read();
-        Ok(locked_state
-            .expect_active_policy()
+        let scope = RcuReadScope::new();
+        Ok(self
+            .backend
+            .expect_active_policy(&scope)
             .parsed
             .classes()
             .get_by_name(name.as_bytes())
@@ -404,8 +413,8 @@ impl SecurityServer {
         &self,
         name: &str,
     ) -> Result<Vec<(PermissionId, Vec<u8>)>, ()> {
-        let locked_state = self.backend.state.read();
-        locked_state.expect_active_policy().parsed.find_class_permissions_by_name(name)
+        let scope = RcuReadScope::new();
+        self.backend.expect_active_policy(&scope).parsed.find_class_permissions_by_name(name)
     }
 
     /// Determines the appropriate [`FileSystemLabel`] for a mounted filesystem given this security
@@ -416,37 +425,43 @@ impl SecurityServer {
         fs_type: NullessByteStr<'_>,
         mount_options: &FileSystemMountOptions,
     ) -> Result<FileSystemLabel, anyhow::Error> {
-        let mut locked_state = self.backend.state.write();
-        let SecurityServerState { active_policy, portable_sids, .. } = &mut *locked_state;
-        let active_policy = active_policy.as_mut().expect("policy should be loaded");
+        // Lock `portable_sids` upfront so that any new SIDs allocated for mount options or
+        // filesystem labels are resolved against a single consistent `active_policy`.
+        let mut portable_sids = self.backend.portable_sids.lock();
         let scope = RcuReadScope::new();
+        let active_policy = self.backend.expect_active_policy(&scope);
+
+        let mut resolve_sid = |context: &SecurityContext| -> Result<SecurityId, anyhow::Error> {
+            // SAFETY: `self.backend.portable_sids` is locked, ensuring exclusive writer access.
+            unsafe {
+                active_policy
+                    .sid_table
+                    .security_context_to_sid(
+                        &scope,
+                        &active_policy.parsed,
+                        &mut portable_sids,
+                        context,
+                    )
+                    .map_err(anyhow::Error::from)
+            }
+        };
+
+        let mut sid_from_mount_option =
+            |mount_option: &Option<Vec<u8>>| -> Result<Option<SecurityId>, anyhow::Error> {
+                let Some(label) = mount_option else {
+                    return Ok(None);
+                };
+                let context = active_policy.parsed.parse_security_context(label.into())?;
+                resolve_sid(&context).map(Some)
+            };
 
         let mount_sids = FileSystemMountSids {
-            context: sid_from_mount_option(
-                &scope,
-                active_policy,
-                portable_sids,
-                &mount_options.context,
-            )?,
-            fs_context: sid_from_mount_option(
-                &scope,
-                active_policy,
-                portable_sids,
-                &mount_options.fs_context,
-            )?,
-            def_context: sid_from_mount_option(
-                &scope,
-                active_policy,
-                portable_sids,
-                &mount_options.def_context,
-            )?,
-            root_context: sid_from_mount_option(
-                &scope,
-                active_policy,
-                portable_sids,
-                &mount_options.root_context,
-            )?,
+            context: sid_from_mount_option(&mount_options.context)?,
+            fs_context: sid_from_mount_option(&mount_options.fs_context)?,
+            def_context: sid_from_mount_option(&mount_options.def_context)?,
+            root_context: sid_from_mount_option(&mount_options.root_context)?,
         };
+
         let label = if let Some(mountpoint_sid) = mount_sids.context {
             // `mount_options` has `context` set, so the file-system and the nodes it contains are
             // labeled with that value, which is not modifiable. The `fs_context` option, if set,
@@ -460,13 +475,7 @@ impl SecurityServer {
             active_policy.parsed.fs_use_label_and_type(fs_type)
         {
             // There is an `fs_use` statement for this file-system type in the policy.
-            // SAFETY: `self.backend.state` is write-locked, ensuring exclusive writer access.
-            let fs_sid_from_policy = unsafe {
-                active_policy
-                    .sid_table
-                    .security_context_to_sid(&scope, &active_policy.parsed, portable_sids, &context)
-                    .unwrap()
-            };
+            let fs_sid_from_policy = resolve_sid(&context)?;
             let fs_sid = mount_sids.fs_context.unwrap_or(fs_sid_from_policy);
             FileSystemLabel {
                 sid: fs_sid,
@@ -480,13 +489,7 @@ impl SecurityServer {
             active_policy.parsed.genfscon_label_for_fs_and_path(fs_type, ROOT_PATH.into(), None)
         {
             // There is a `genfscon` statement for this file-system type in the policy.
-            // SAFETY: `self.backend.state` is write-locked, ensuring exclusive writer access.
-            let genfscon_sid = unsafe {
-                active_policy
-                    .sid_table
-                    .security_context_to_sid(&scope, &active_policy.parsed, portable_sids, &context)
-                    .unwrap()
-            };
+            let genfscon_sid = resolve_sid(&context)?;
             let fs_sid = mount_sids.fs_context.unwrap_or(genfscon_sid);
 
             // For relabeling to make sense with `genfscon` labeling they must ensure to persist the
@@ -529,7 +532,7 @@ impl SecurityServer {
         node_path: NullessByteStr<'_>,
         class_id: Option<KernelClass>,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.backend.compute_sid(|active_policy| {
+        self.backend.compute_sid(|_scope, active_policy| {
             active_policy
                 .parsed
                 .genfscon_label_for_fs_and_path(fs_type, node_path.into(), class_id)
@@ -544,9 +547,8 @@ impl SecurityServer {
     /// that the policy entry for the `TypeId` of `bounded_sid` has the `TypeId` of `parent_sid`
     /// specified in its `bounds`.
     pub fn is_bounded_by(&self, bounded_sid: SecurityId, parent_sid: SecurityId) -> bool {
-        let locked_state = self.backend.state.read();
-        let active_policy = locked_state.expect_active_policy();
         let scope = RcuReadScope::new();
+        let active_policy = self.backend.expect_active_policy(&scope);
         let (bounded_context, parent_context) =
             active_policy.sid_table.sids_to_security_contexts(&scope, bounded_sid, parent_sid);
         active_policy.parsed.is_bounded_by(bounded_context.type_(), parent_context.type_())
@@ -566,24 +568,41 @@ impl SecurityServer {
     }
 
     /// Locks the security server state for modification and calls the supplied function to update
-    /// it.  Once the update is complete, the configured `SeLinuxStatusPublisher` (if any) is called
+    /// it. Once the update is complete, the configured `SeLinuxStatusPublisher` (if any) is called
     /// to update the userspace-facing "status" file to reflect the new state.
     fn with_mut_state_and_update_status(&self, f: impl FnOnce(&mut SecurityServerState)) {
-        let mut locked_state = self.backend.state.write();
+        let mut locked_state = self.state.lock();
         f(locked_state.deref_mut());
+        self.update_status(&mut locked_state);
+    }
+
+    /// Locks the security server state to apply a policy change via `f`, then resets the shared
+    /// access vector cache before incrementing `policy_change_count` and updating the
+    /// userspace-facing "status" file.
+    fn with_mut_state_and_reset_cache(&self, f: impl FnOnce(&mut SecurityServerState)) {
+        let mut locked_state = self.state.lock();
+        f(locked_state.deref_mut());
+
+        // Reset the shared AVC before incrementing `policy_change_count` or updating the
+        // userspace-facing status file.
+        self.access_vector_cache.reset();
+
+        // Use `Ordering::Release` so that any reader observing the incremented sequence number
+        // (and executing an `Ordering::Acquire` fence on `PerThreadCache` reset) is guaranteed
+        // to observe both the updated `active_policy` and the reset `access_vector_cache`.
+        self.policy_change_count.fetch_add(1, Ordering::Release);
+        self.update_status(&mut locked_state);
+    }
+
+    fn update_status(&self, state: &mut SecurityServerState) {
         let new_value = SeLinuxStatus {
             is_enforcing: self.is_enforcing(),
-            change_count: self.backend.policy_change_count.load(Ordering::Relaxed),
-            deny_unknown: locked_state.deny_unknown(),
+            change_count: self.policy_change_count.load(Ordering::Relaxed),
+            deny_unknown: self.deny_unknown(),
         };
-        if let Some(status_publisher) = &mut locked_state.status_publisher {
+        if let Some(status_publisher) = &mut state.status_publisher {
             status_publisher.set_status(new_value);
         }
-
-        // TODO: https://fxbug.dev/367585803 - reset the cache after running `f` and before updating
-        // the userspace-facing "status", once that is possible.
-        std::mem::drop(locked_state);
-        self.access_vector_cache.reset();
     }
 
     /// Returns the security identifier ([`SecurityId`]) with which to label a new object of `target_class`,
@@ -614,6 +633,10 @@ impl SecurityServer {
 }
 
 impl SecurityServerBackend {
+    fn expect_active_policy<'a>(&self, scope: &'a RcuReadScope) -> &'a ActivePolicy {
+        self.active_policy.as_ref(scope).expect("policy should be loaded")
+    }
+
     fn compute_create_sid_raw(
         &self,
         source_sid: SecurityId,
@@ -621,10 +644,9 @@ impl SecurityServerBackend {
         target_class: ObjectClass,
         name: &[u8],
     ) -> Result<SecurityId, anyhow::Error> {
-        self.compute_sid(|active_policy| {
-            let scope = RcuReadScope::new();
+        self.compute_sid(|scope, active_policy| {
             let (source_context, target_context) =
-                active_policy.sid_table.sids_to_security_contexts(&scope, source_sid, target_sid);
+                active_policy.sid_table.sids_to_security_contexts(scope, source_sid, target_sid);
 
             Ok(active_policy.parsed.compute_create_context(
                 source_context,
@@ -639,39 +661,42 @@ impl SecurityServerBackend {
     /// Helper for call-sites that need to compute a `SecurityContext` and assign a SID to it.
     fn compute_sid(
         &self,
-        compute_context: impl Fn(&ActivePolicy) -> Result<SecurityContext, anyhow::Error>,
+        compute_context: impl Fn(&RcuReadScope, &ActivePolicy) -> Result<SecurityContext, anyhow::Error>,
     ) -> Result<SecurityId, anyhow::Error> {
         // Initially assume that the computed context will most likely already have a SID assigned,
-        // so that the operation can be completed without any modification of the SID table.
+        // so that the operation can be completed via RCU without taking any lock.
         let scope = RcuReadScope::new();
-        let readable_state = self.state.read();
-        let policy_change_count = self.policy_change_count.load(Ordering::Relaxed);
-        let policy_state = readable_state
-            .active_policy
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("no policy loaded"))?;
-        let context = compute_context(policy_state)?;
-        if let Some(sid) = policy_state.sid_table.security_context_to_existing_sid(&scope, &context)
+        let active_policy =
+            self.active_policy.as_ref(&scope).ok_or_else(|| anyhow::anyhow!("no policy loaded"))?;
+        let context = compute_context(&scope, active_policy)?;
+        if let Some(sid) =
+            active_policy.sid_table.security_context_to_existing_sid(&scope, &context)
         {
             return Ok(sid);
         }
-        std::mem::drop(readable_state);
 
-        // Since the computed context was not found in the table, re-try the operation with the
-        // policy state write-locked to allow for the SID table to be updated. In the rare case of
-        // a new policy having been loaded in-between the read- and write-locked stages, the
-        // `context` is re-computed using the new policy state.
-        let mut writable_state = self.state.write();
-        let needs_recompute =
-            policy_change_count != self.policy_change_count.load(Ordering::Relaxed);
-        let SecurityServerState { active_policy, portable_sids, .. } = &mut *writable_state;
-        let policy_state = active_policy.as_mut().unwrap();
-        let context = if needs_recompute { compute_context(policy_state)? } else { context };
-        // SAFETY: `self.state` is write-locked, ensuring exclusive writer access to `sid_table`.
+        // Since the computed context was not found in the table, acquire the writer lock to
+        // update the SID table without blocking concurrent RCU readers. In the rare case of a
+        // new policy having been loaded before the writer lock was acquired, recompute `context`
+        // against the new policy state.
+        let mut portable_sids = self.portable_sids.lock();
+        let current_policy =
+            self.active_policy.as_ref(&scope).expect("policy cannot be unloaded once loaded");
+        let context = if !std::ptr::eq(active_policy, current_policy) {
+            compute_context(&scope, current_policy)?
+        } else {
+            context
+        };
+        // SAFETY: `self.portable_sids` is locked, ensuring exclusive writer access to `sid_table`.
         unsafe {
-            policy_state
+            current_policy
                 .sid_table
-                .security_context_to_sid(&scope, &policy_state.parsed, portable_sids, &context)
+                .security_context_to_sid(
+                    &scope,
+                    &current_policy.parsed,
+                    &mut portable_sids,
+                    &context,
+                )
                 .map_err(anyhow::Error::from)
         }
     }
@@ -682,9 +707,12 @@ impl SecurityServerBackend {
         target_sid: SecurityId,
         target_class: ObjectClass,
     ) -> AccessDecision {
-        let locked_state = self.state.read();
-
-        locked_state.compute_access_decision_raw(source_sid, target_sid, target_class)
+        let scope = RcuReadScope::new();
+        let Some(active_policy) = self.active_policy.as_ref(&scope) else {
+            // All permissions are allowed when no policy is loaded, regardless of enforcing state.
+            return AccessDecision::allow(AccessVector::ALL);
+        };
+        active_policy.compute_access_decision_raw(&scope, source_sid, target_sid, target_class)
     }
 }
 
@@ -695,10 +723,22 @@ impl Query for SecurityServerBackend {
         target_sid: SecurityId,
         target_class: KernelClass,
     ) -> KernelAccessDecision {
-        let locked_state = self.state.read();
-        let decision =
-            locked_state.compute_access_decision_raw(source_sid, target_sid, target_class.into());
-        locked_state.access_decision_to_kernel_access_decision(target_class, decision)
+        let scope = RcuReadScope::new();
+        let Some(active_policy) = self.active_policy.as_ref(&scope) else {
+            return KernelAccessDecision {
+                allow: AccessVector::ALL,
+                audit: AccessVector::NONE,
+                flags: 0,
+                todo_bug: None,
+            };
+        };
+        let decision = active_policy.compute_access_decision_raw(
+            &scope,
+            source_sid,
+            target_sid,
+            target_class.into(),
+        );
+        active_policy.parsed.access_decision_to_kernel_access_decision(target_class, decision)
     }
 
     fn compute_create_sid(
@@ -719,29 +759,28 @@ impl Query for SecurityServerBackend {
         permission: KernelPermission,
         xperms_prefix: u8,
     ) -> KernelXpermsAccessDecision {
-        let locked_state = self.state.read();
-
-        let active_policy = match &locked_state.active_policy {
-            Some(active_policy) => active_policy,
+        let scope = RcuReadScope::new();
+        let Some(active_policy) = self.active_policy.as_ref(&scope) else {
             // All permissions are allowed when no policy is loaded, regardless of enforcing state.
-            None => {
-                return KernelXpermsAccessDecision {
-                    allow: XpermsBitmap::ALL,
-                    audit: XpermsBitmap::NONE,
-                    permissive: false,
-                    has_todo: false,
-                };
-            }
+            return KernelXpermsAccessDecision {
+                allow: XpermsBitmap::ALL,
+                audit: XpermsBitmap::NONE,
+                permissive: false,
+                has_todo: false,
+            };
         };
 
+        let (source_context, target_context) =
+            active_policy.sid_table.sids_to_security_contexts(&scope, source_sid, target_sid);
+
         // Look up the decision for the base permission.
-        // TODO(b/493591579): avoid multiple lookups in the SID table
-        let base_decision_raw = locked_state.compute_access_decision_raw(
-            source_sid,
-            target_sid,
+        let base_decision_raw = active_policy.compute_access_decision_for_contexts(
+            source_context,
+            target_context,
             permission.class().into(),
         );
-        let base_decision = locked_state
+        let base_decision = active_policy
+            .parsed
             .access_decision_to_kernel_access_decision(permission.class(), base_decision_raw);
         let permission_access_vector = permission.as_access_vector();
         let base_permit =
@@ -749,9 +788,6 @@ impl Query for SecurityServerBackend {
         let base_audit = base_decision.audit & permission_access_vector == permission_access_vector;
 
         // Look up the extended permission decision.
-        let scope = RcuReadScope::new();
-        let (source_context, target_context) =
-            active_policy.sid_table.sids_to_security_contexts(&scope, source_sid, target_sid);
         let xperms_decision = active_policy.parsed.compute_xperms_access_decision(
             xperms_kind,
             source_context,
@@ -772,60 +808,6 @@ impl Query for SecurityServerBackend {
         let has_todo = base_decision.todo_bug.is_some();
         KernelXpermsAccessDecision { allow, audit, permissive, has_todo }
     }
-}
-
-impl AccessVectorComputer for SecurityServerBackend {
-    fn access_decision_to_kernel_access_decision(
-        &self,
-        class: KernelClass,
-        access_decision: AccessDecision,
-    ) -> KernelAccessDecision {
-        self.state.read().access_decision_to_kernel_access_decision(class, access_decision)
-    }
-}
-
-impl AccessVectorComputer for SecurityServerState {
-    fn access_decision_to_kernel_access_decision(
-        &self,
-        class: KernelClass,
-        access_decision: AccessDecision,
-    ) -> KernelAccessDecision {
-        match &self.active_policy {
-            Some(policy) => {
-                policy.parsed.access_decision_to_kernel_access_decision(class, access_decision)
-            }
-            None => KernelAccessDecision {
-                allow: AccessVector::ALL,
-                audit: AccessVector::NONE,
-                flags: 0,
-                todo_bug: None,
-            },
-        }
-    }
-}
-
-/// Computes a [`SecurityId`] given a non-[`None`] value for one of the four
-/// "context" mount options (https://man7.org/linux/man-pages/man8/mount.8.html).
-fn sid_from_mount_option(
-    scope: &RcuReadScope,
-    active_policy: &mut ActivePolicy,
-    portable_sids: &mut PortableSidTable,
-    mount_option: &Option<Vec<u8>>,
-) -> Result<Option<SecurityId>, anyhow::Error> {
-    let Some(label) = mount_option else {
-        return Ok(None);
-    };
-    let context = active_policy.parsed.parse_security_context(label.into())?;
-    // SAFETY: Caller holds exclusive writer access to `active_policy.sid_table`.
-    let sid = unsafe {
-        active_policy.sid_table.security_context_to_sid(
-            scope,
-            &active_policy.parsed,
-            portable_sids,
-            &context,
-        )?
-    };
-    Ok(Some(sid))
 }
 
 fn check_policy_feature_is_empty<T>(name: &'static str, items: &[T]) -> Result<(), anyhow::Error> {
@@ -980,6 +962,38 @@ mod tests {
             .expect_err("expected error");
         let error_string = format!("{:?}", error);
         assert!(error_string.contains("no policy"));
+    }
+
+    #[test]
+    fn compute_sid_recomputes_when_policy_reloaded() {
+        let security_server = security_server_with_tests_policy();
+        let compute_calls = std::cell::Cell::new(0usize);
+
+        let sid = security_server
+            .backend
+            .compute_sid(|_scope, active_policy| {
+                let call_index = compute_calls.get();
+                compute_calls.set(call_index + 1);
+                let context = active_policy
+                    .parsed
+                    .parse_security_context(b"user0:object_r:type0:s0".into())
+                    .map_err(anyhow::Error::from)?;
+                if call_index == 0 {
+                    // Simulate a concurrent policy reload completing before the writer lock is
+                    // acquired on the slow path.
+                    security_server
+                        .load_policy(TESTS_BINARY_POLICY.to_vec())
+                        .expect("policy reload succeeds");
+                }
+                Ok(context)
+            })
+            .expect("compute_sid succeeds across policy reload");
+
+        assert_eq!(compute_calls.get(), 2);
+        assert_eq!(
+            security_server.sid_to_security_context(sid),
+            Some(b"user0:object_r:type0:s0".to_vec())
+        );
     }
 
     #[test]
