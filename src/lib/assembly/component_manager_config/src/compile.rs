@@ -82,8 +82,12 @@ const SESSION_MONIKER: &str = "/core/session-manager/session:session";
 /// indicating their options if they choose an invalid capability.
 #[derive(Deserialize, Debug, Eq, PartialEq, Hash, Clone)]
 enum PlatformCapability {
+    #[serde(rename = "fuchsia.lowpan.device.DeviceConnector")]
+    LowpanDeviceConnector,
     #[serde(rename = "fuchsia.lowpan.device.DeviceExtraConnector")]
     Lowpan,
+    #[serde(rename = "fuchsia.lowpan.thread.DatasetConnector")]
+    LowpanDatasetConnector,
     #[serde(rename = "fuchsia.kernel.VmexResource")]
     VmexResource,
     #[serde(rename = "fuchsia.pkg.PackageCache")]
@@ -94,7 +98,9 @@ impl PlatformCapability {
     /// Convert the capability back to a string.
     fn source_name(&self) -> &str {
         match self {
+            &PlatformCapability::LowpanDeviceConnector => "fuchsia.lowpan.device.DeviceConnector",
             &PlatformCapability::Lowpan => "fuchsia.lowpan.device.DeviceExtraConnector",
+            &PlatformCapability::LowpanDatasetConnector => "fuchsia.lowpan.thread.DatasetConnector",
             &PlatformCapability::VmexResource => "fuchsia.kernel.VmexResource",
             &PlatformCapability::PackageCache => "fuchsia.pkg.PackageCache",
         }
@@ -103,7 +109,9 @@ impl PlatformCapability {
     /// Map the capability to the moniker of the source.
     fn source_moniker(&self) -> &str {
         match self {
-            &PlatformCapability::Lowpan => "/core/lowpanservice",
+            &PlatformCapability::LowpanDeviceConnector
+            | &PlatformCapability::Lowpan
+            | &PlatformCapability::LowpanDatasetConnector => "/core/lowpanservice",
             &PlatformCapability::VmexResource => "<component_manager>",
             &PlatformCapability::PackageCache => "/bootstrap/pkg-cache",
         }
