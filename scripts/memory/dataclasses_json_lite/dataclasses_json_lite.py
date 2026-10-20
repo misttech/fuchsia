@@ -22,20 +22,11 @@ Members can be renamed with `field` metadata:
 The configuration also makes possible to override the conversion from json to the field.
 """
 import dataclasses
-import sys
 import types
+import typing
 from collections import abc
 from enum import Enum
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    ForwardRef,
-    Optional,
-    Union,
-    get_args,
-    get_origin,
-)
+from typing import Any, Callable, ForwardRef, Mapping
 
 
 class Undefined(Enum):
@@ -45,9 +36,9 @@ class Undefined(Enum):
 
 
 def config(
-    field_name: Optional[str] = None,
-    decoder: Optional[Callable[[Any], Any]] = None,
-) -> Dict[str, Any]:
+    field_name: str | None = None,
+    decoder: Callable[[Any], Any] | None = None,
+) -> Mapping[str, Any]:
     """Returns a field metadata dictionary that override the default field name and deserialization.
 
     Args:
@@ -66,14 +57,17 @@ def _identity(x: Any) -> Any:
 
 
 def _default_decoder(cls: type, field_type: Any) -> Callable[[Any], Any]:
-    origin = get_origin(field_type)
+    origin = typing.get_origin(field_type)
     if origin is list or origin is abc.Sequence:
-        inner_types = get_args(field_type)
+        inner_types = typing.get_args(field_type)
         assert len(inner_types) == 1, f"Supports only list with one type"
         inner_decoder = _default_decoder(cls, inner_types[0])
         return lambda json_data: [inner_decoder(e) for e in json_data]
-    elif origin is Union or origin is types.UnionType:
-        inner_type, likely_null = get_args(field_type)
+    # TODO(https://github.com/python/mypy/issues/21588): Use typing.Union
+    # instead of types.UnionType once typeshed (python/typeshed#13740) and
+    # mypy support it in isinstance().
+    elif isinstance(field_type, types.UnionType):
+        inner_type, likely_null = typing.get_args(field_type)
         assert likely_null is type(None), "Supports only Optional"
         return _default_decoder(cls, inner_type)
     elif dataclasses.is_dataclass(field_type):
@@ -83,19 +77,14 @@ def _default_decoder(cls: type, field_type: Any) -> Callable[[Any], Any]:
         )
         return field_type.from_dict
     elif isinstance(field_type, ForwardRef):
-        resolved_decoder: Optional[Callable[[Any], Any]] = None
+        resolved_decoder: Callable[[Any], Any] | None = None
 
         def decode_forward_ref(x: Any) -> Any:
             nonlocal resolved_decoder
-            if resolved_decoder:
-                return resolved_decoder(x)
-            module = sys.modules.get(cls.__module__)
-            resolved_decoder = eval(
-                field_type.__forward_code__,
-                module.__dict__ if module else None,
-                vars(cls),
-            ).from_dict
-            assert resolved_decoder is not None
+            if resolved_decoder is None:
+                resolved_decoder = _default_decoder(
+                    cls, field_type.evaluate(owner=cls)
+                )
             return resolved_decoder(x)
 
         return decode_forward_ref
@@ -104,7 +93,7 @@ def _default_decoder(cls: type, field_type: Any) -> Callable[[Any], Any]:
 
 
 def dataclass_json(
-    undefined: Optional[Undefined] = None,
+    undefined: Undefined | None = None,
 ) -> Callable[[type], type]:
     """Annotates a dataclass, adding a `from_dict` method that deserialises a json value."""
     del undefined
@@ -119,7 +108,7 @@ def dataclass_json(
             )
             json_to_py[json_key or field.name] = (field.name, decoder)
 
-        def from_dict(data_dict: Dict[str, Any]) -> Any:
+        def from_dict(data_dict: Mapping[str, Any]) -> Any:
             kws = dict()
             for key, value in data_dict.items():
                 try:

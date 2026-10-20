@@ -135,6 +135,12 @@ class DataclassesJsonLite(unittest.TestCase):
         )
 
     def test_composition(self) -> None:
+        @dataclass_json()
+        @dataclass
+        class MyComposedClass:
+            list_sub: list[MyComposedClass]
+            opt_sub: MyComposedClass | None = None
+
         self.assertEqual(
             MyComposedClass.from_dict(  # type: ignore[attr-defined]
                 dict(opt_sub=dict(list_sub=[]), list_sub=[dict(list_sub=[])])
@@ -146,15 +152,6 @@ class DataclassesJsonLite(unittest.TestCase):
                 list_sub=[MyComposedClass(list_sub=[])],
             ),
         )
-
-
-@dataclass_json()
-@dataclass
-class MyComposedClass:
-    """This class needs to be in the module scope so that it can be resolved."""
-
-    list_sub: List["MyComposedClass"]
-    opt_sub: Optional["MyComposedClass"] = None
 
 
 if __name__ == "__main__":
