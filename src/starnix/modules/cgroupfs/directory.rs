@@ -108,13 +108,13 @@ impl CgroupDirectory {
                 );
             }
             CgroupVersion::V1(key) => {
-                // TODO(https://fxbug.dev/401298305): "tasks" should contain task IDs (TIDs)
-                // of all threads in the cgroup, and allow migrating individual threads. Currently
-                // it uses `ControlGroupNode` which only supports process IDs (PIDs).
+                // TODO(https://fxbug.dev/401298305): Reading "tasks" should list task IDs (TIDs)
+                // of all threads in the cgroup and track cgroup membership per thread rather than
+                // per process.
                 interface_files.insert(
                     TASKS_FILE.into(),
                     fs.create_node_and_allocate_node_id(
-                        ControlGroupNode::new(self.cgroup.clone()),
+                        ControlGroupNode::new_tasks(self.cgroup.clone()),
                         FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
                     ),
                 );
@@ -208,13 +208,13 @@ impl CgroupDirectory {
                 ]);
             }
             CgroupVersion::V1(key) => {
-                // TODO(https://fxbug.dev/401298305): "tasks" should contain task IDs (TIDs)
-                // of all threads in the cgroup, and allow migrating individual threads. Currently
-                // it uses `ControlGroupNode` which only supports process IDs (PIDs).
+                // TODO(https://fxbug.dev/401298305): Reading "tasks" should list task IDs (TIDs)
+                // of all threads in the cgroup and track cgroup membership per thread rather than
+                // per process.
                 interface_files.insert(
                     TASKS_FILE.into(),
                     fs.create_node_and_allocate_node_id(
-                        ControlGroupNode::new(cgroup.clone()),
+                        ControlGroupNode::new_tasks(cgroup.clone()),
                         FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
                     ),
                 );

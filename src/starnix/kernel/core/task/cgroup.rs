@@ -8,7 +8,7 @@
 //! to a control group (for the duration of their lifetime).
 
 use crate::signals::{SignalInfo, send_freeze_signal};
-use crate::task::{Kernel, Pid, ThreadGroup, WaitQueue, Waiter};
+use crate::task::{Kernel, Pid, Task, ThreadGroup, WaitQueue, Waiter};
 use crate::vfs::{FsStr, FsString, PathBuilder};
 use starnix_logging::{CATEGORY_STARNIX, log_warn, track_stub};
 use starnix_sync::{
@@ -20,11 +20,14 @@ use starnix_uapi::signals::SIGKILL;
 use starnix_uapi::{errno, error, pid_t};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, btree_map, hash_map};
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crate::signals::KernelSignal;
 use zx;
+
+/// Hierarchy ID reserved for the unified cgroup v2 hierarchy.
+const CGROUP2_HIERARCHY_ID: u32 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ControllerType {
@@ -147,6 +150,9 @@ impl KernelCgroups {
         for c in controllers {
             cgroup1.controllers.insert(*c, root.clone());
         }
+        if controllers.contains(&ControllerType::Cpuset) {
+            self.cgroup2.v1_cpuset_mounted.store(true, Ordering::Relaxed);
+        }
         if let Some(n) = name {
             cgroup1.named.insert(n.to_string(), root.clone());
         }
@@ -164,7 +170,10 @@ impl KernelCgroups {
 impl Default for KernelCgroups {
     fn default() -> Self {
         Self {
-            cgroup2: CgroupRoot::new(0, ControllerType::ALL.iter().copied().collect()),
+            cgroup2: CgroupRoot::new(
+                CGROUP2_HIERARCHY_ID,
+                ControllerType::ALL.iter().copied().collect(),
+            ),
             cgroup1: Default::default(),
         }
     }
@@ -244,6 +253,21 @@ pub trait CgroupOps: Send + Sync + 'static {
 
     /// Add a process to a cgroup. Errors if the cgroup has been deleted.
     fn add_process(&self, thread_group: &ThreadGroup) -> Result<(), Errno>;
+
+    /// Add a single task (thread) to a cgroup via the cgroup v1 `tasks` interface.
+    ///
+    /// Current semantics and limitations (see https://fxbug.dev/401298305):
+    /// - Cgroup membership (`CgroupPidTable` and `CgroupState::processes`) is currently tracked per
+    ///   `ThreadGroup` (keyed by the thread-group leader) rather than per thread.
+    /// - In hierarchies with active `cpuset` tracking, `add_task` updates `Task::cpuset_path` and
+    ///   the scheduler role only for `task` (preserving per-thread `cpuset_path` placements of
+    ///   other threads in the group). If `task` is the thread-group leader, it also updates the
+    ///   thread group's membership entry in the hierarchy.
+    /// - In hierarchies without `cpuset` tracking (e.g. freezer or named hierarchies), `add_task`
+    ///   falls back to `add_process(task.thread_group())`, migrating the entire thread group.
+    fn add_task(&self, task: &Task) -> Result<(), Errno> {
+        self.add_process(task.thread_group())
+    }
 
     /// Create a new sub-cgroup as a child of this cgroup. Errors if the cgroup is deleted, or a
     /// child with `name` already exists.
@@ -336,6 +360,24 @@ impl CgroupPidTable {
     }
 }
 
+/// Updates `cpuset_path` on `task` and returns `true` if `sync_scheduler_state_to_role()`
+/// should be called (because `cpuset_path` changed or no role has been applied yet).
+fn set_task_cpuset_path(task: &Task, cpuset_path: &str) -> bool {
+    let mut state = task.write();
+    if state.cpuset_path != cpuset_path {
+        state.cpuset_path = cpuset_path.to_string();
+        true
+    } else {
+        state.scheduler_state.applied_role_name.is_none()
+    }
+}
+
+fn sync_task_scheduler_role(task: &Task) {
+    if let Err(e) = task.sync_scheduler_state_to_role() {
+        log_warn!("Failed to set thread role for task {}: {:?}", task.tid, e);
+    }
+}
+
 /// `CgroupRoot` is the root of the cgroup hierarchy. The root cgroup is different from the rest of
 /// the cgroups in a cgroup hierarchy (sub-cgroups of the root) in a few ways:
 ///
@@ -349,11 +391,14 @@ impl CgroupPidTable {
 /// - The root does not own a `FsNode` as it is created and owned by the `FileSystem` instead.
 #[derive(Debug)]
 pub struct CgroupRoot {
-    /// The ID of this hierarchy. 0 is reserved for cgroup v2.
+    /// The ID of this hierarchy. `CGROUP2_HIERARCHY_ID` (0) is reserved for cgroup v2.
     pub hierarchy_id: u32,
 
     /// Controllers supported by this hierarchy.
     pub controllers: BTreeSet<ControllerType>,
+
+    /// Set on the cgroup v2 root once a cgroup v1 `cpuset` hierarchy is mounted.
+    v1_cpuset_mounted: AtomicBool,
 
     /// Look up cgroup by pid. Must be locked before child states.
     pid_table: LockDepMutex<CgroupPidTable, CgroupPidTableLock>,
@@ -373,6 +418,7 @@ impl CgroupRoot {
         Arc::new_cyclic(|weak_self| Self {
             hierarchy_id,
             controllers,
+            v1_cpuset_mounted: AtomicBool::new(false),
             pid_table: Default::default(),
             children: Default::default(),
             weak_self: weak_self.clone(),
@@ -380,8 +426,38 @@ impl CgroupRoot {
         })
     }
 
+    pub fn is_cgroup2(&self) -> bool {
+        self.hierarchy_id == CGROUP2_HIERARCHY_ID
+    }
+
     pub fn has_controller(&self, controller: ControllerType) -> bool {
         self.controllers.contains(&controller)
+    }
+
+    /// Whether this hierarchy tracks `Task::cpuset_path` for scheduler role overrides.
+    ///
+    /// If a cgroup v1 `cpuset` hierarchy is mounted, it takes precedence over the cgroup v2
+    /// unified hierarchy so that cgroup v2 process management does not overwrite v1 cpuset
+    /// placements.
+    fn tracks_cpuset(&self) -> bool {
+        self.has_controller(ControllerType::Cpuset)
+            && !(self.is_cgroup2() && self.v1_cpuset_mounted.load(Ordering::Relaxed))
+    }
+
+    fn remove_process_from_child(
+        &self,
+        thread_group: &ThreadGroup,
+    ) -> Result<LockDepGuard<'_, CgroupPidTable>, Errno> {
+        let mut pid_table = self.pid_table.lock();
+        // If the process is currently in a child cgroup, we must remove it from that cgroup's
+        // tracking. If it's not in the pid table, it is already implicitly in the root cgroup,
+        // so adding it to root is a no-op.
+        if let Some(entry) = pid_table.remove(&thread_group.leader) {
+            if let Some(cgroup) = entry.upgrade() {
+                cgroup.state.lock().remove_process(thread_group)?;
+            }
+        }
+        Ok(pid_table)
     }
 
     fn get_next_id(&self) -> u64 {
@@ -407,31 +483,40 @@ impl CgroupOps for CgroupRoot {
     }
 
     fn add_process(&self, thread_group: &ThreadGroup) -> Result<(), Errno> {
-        let mut pid_table = self.pid_table.lock();
-        // If the process is currently in a child cgroup, we must remove it from that cgroup's
-        // tracking. If it's not in the pid table, it is already implicitly in the root cgroup,
-        // so adding it to root is a no-op.
-        if let Some(entry) = pid_table.remove(&thread_group.leader) {
-            if let Some(cgroup) = entry.upgrade() {
-                cgroup.state.lock().remove_process(thread_group)?;
-            }
-        }
+        // Update `pid_table` and each task's `cpuset_path` under the `pid_table` lock so
+        // concurrent migrations cannot leave `pid_table` and `cpuset_path` out of sync, then
+        // drop `pid_table` before making synchronous FIDL calls in `sync_task_scheduler_role`.
+        let pid_table = self.remove_process_from_child(thread_group)?;
 
-        let tasks = thread_group.read().tasks();
-        if self.has_controller(ControllerType::Cpuset) {
-            for task in &tasks {
-                task.write().cpuset_path = "/".to_string();
-            }
-        }
-
-        // Re-evaluate roles for all threads in the thread group.
-        for task in tasks {
-            if let Err(e) = task.sync_scheduler_state_to_role() {
-                log_warn!("Failed to set thread role for task {}: {:?}", task.tid, e);
+        if self.tracks_cpuset() {
+            let tasks = thread_group.read().tasks();
+            let tasks_to_sync: Vec<_> =
+                tasks.into_iter().filter(|task| set_task_cpuset_path(task, "/")).collect();
+            drop(pid_table);
+            for task in tasks_to_sync {
+                sync_task_scheduler_role(&task);
             }
         }
 
         Ok(())
+    }
+
+    fn add_task(&self, task: &Task) -> Result<(), Errno> {
+        // TODO(https://fxbug.dev/401298305): Track cgroup membership per thread rather than per
+        // thread group.
+        if self.tracks_cpuset() {
+            let changed = if task.is_leader() {
+                let _pid_table = self.remove_process_from_child(task.thread_group())?;
+                set_task_cpuset_path(task, "/")
+            } else {
+                set_task_cpuset_path(task, "/")
+            };
+            if changed {
+                sync_task_scheduler_role(task);
+            }
+            return Ok(());
+        }
+        self.add_process(task.thread_group())
     }
 
     fn new_child(&self, name: &FsStr) -> Result<CgroupHandle, Errno> {
@@ -839,11 +924,40 @@ impl Cgroup {
     }
 
     fn cpuset_path(&self, root: &CgroupRoot) -> Option<String> {
-        if !root.has_controller(ControllerType::Cpuset) {
+        if !root.tracks_cpuset() {
             return None;
         }
         let bytes = path_from_root(Some(self.weak_self.clone())).ok()?;
         std::str::from_utf8(&bytes).ok().map(|s| s.to_string())
+    }
+
+    fn move_process_into_cgroup<'a>(
+        &self,
+        root: &'a CgroupRoot,
+        thread_group: &ThreadGroup,
+    ) -> Result<LockDepGuard<'a, CgroupPidTable>, Errno> {
+        let mut pid_table = root.pid_table.lock();
+        match pid_table.entry(thread_group.leader.clone()) {
+            hash_map::Entry::Occupied(mut entry) => {
+                // Check if thread_group is already in the current cgroup. Linux does not return an
+                // error if it already exists.
+                if !std::ptr::eq(self, entry.get().as_ptr()) {
+                    // If thread_group is in another cgroup, we need to remove it first.
+                    track_stub!(TODO("https://fxbug.dev/383374687"), "check permissions");
+                    if let Some(other_cgroup) = entry.get().upgrade() {
+                        other_cgroup.state.lock().remove_process(thread_group)?;
+                    }
+
+                    self.state.lock().add_process(thread_group)?;
+                    entry.insert(self.weak_self.clone());
+                }
+            }
+            hash_map::Entry::Vacant(entry) => {
+                self.state.lock().add_process(thread_group)?;
+                entry.insert(self.weak_self.clone());
+            }
+        }
+        Ok(pid_table)
     }
 }
 
@@ -854,45 +968,44 @@ impl CgroupOps for Cgroup {
 
     fn add_process(&self, thread_group: &ThreadGroup) -> Result<(), Errno> {
         let root = self.root()?;
-        let mut pid_table = root.pid_table.lock();
-        match pid_table.entry(thread_group.leader.clone()) {
-            hash_map::Entry::Occupied(mut entry) => {
-                // Check if thread_group is already in the current cgroup. Linux does not return an error if
-                // it already exists.
-                if std::ptr::eq(self, entry.get().as_ptr()) {
-                    return Ok(());
-                }
+        // Update `pid_table` and each task's `cpuset_path` under the `pid_table` lock so
+        // concurrent migrations cannot leave `pid_table` and `cpuset_path` out of sync, then
+        // drop `pid_table` before making synchronous FIDL calls in `sync_task_scheduler_role`.
+        let pid_table = self.move_process_into_cgroup(&root, thread_group)?;
 
-                // If thread_group is in another cgroup, we need to remove it first.
-                track_stub!(TODO("https://fxbug.dev/383374687"), "check permissions");
-                if let Some(other_cgroup) = entry.get().upgrade() {
-                    other_cgroup.state.lock().remove_process(thread_group)?;
-                }
-
-                self.state.lock().add_process(thread_group)?;
-                entry.insert(self.weak_self.clone());
-            }
-            hash_map::Entry::Vacant(entry) => {
-                self.state.lock().add_process(thread_group)?;
-                entry.insert(self.weak_self.clone());
-            }
-        }
-
-        let tasks = thread_group.read().tasks();
         if let Some(cpuset_path) = self.cpuset_path(&root) {
-            for task in &tasks {
-                task.write().cpuset_path = cpuset_path.clone();
-            }
-        }
-
-        // Re-evaluate roles for all threads in the thread group.
-        for task in tasks {
-            if let Err(e) = task.sync_scheduler_state_to_role() {
-                log_warn!("Failed to set thread role for task {}: {:?}", task.tid, e);
+            let tasks = thread_group.read().tasks();
+            let tasks_to_sync: Vec<_> =
+                tasks.into_iter().filter(|task| set_task_cpuset_path(task, &cpuset_path)).collect();
+            drop(pid_table);
+            for task in tasks_to_sync {
+                sync_task_scheduler_role(&task);
             }
         }
 
         Ok(())
+    }
+
+    fn add_task(&self, task: &Task) -> Result<(), Errno> {
+        // TODO(https://fxbug.dev/401298305): Track cgroup membership and freezer state per thread
+        // rather than per thread group.
+        let root = self.root()?;
+        if let Some(cpuset_path) = self.cpuset_path(&root) {
+            let changed = if task.is_leader() {
+                let _pid_table = self.move_process_into_cgroup(&root, task.thread_group())?;
+                set_task_cpuset_path(task, &cpuset_path)
+            } else {
+                if self.state.lock().deleted {
+                    return error!(ENOENT);
+                }
+                set_task_cpuset_path(task, &cpuset_path)
+            };
+            if changed {
+                sync_task_scheduler_role(task);
+            }
+            return Ok(());
+        }
+        self.add_process(task.thread_group())
     }
 
     fn new_child(&self, name: &FsStr) -> Result<CgroupHandle, Errno> {
@@ -1100,6 +1213,49 @@ mod test {
 
             // Verify that the process is removed from the cgroup pid table.
             assert!(root.pid_table.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn cgroup_add_task_per_thread_cpuset_and_deleted_check() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let controllers = BTreeSet::from([ControllerType::Cpuset]);
+            let v1_root = kernel
+                .cgroups
+                .get_or_create_cgroup1(&controllers, None)
+                .expect("create cgroup1 cpuset");
+            let top_app = v1_root.new_child("top-app".into()).expect("new_child top-app");
+            let background = v1_root.new_child("background".into()).expect("new_child background");
+
+            let leader = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            let worker = leader.clone_task_for_test(
+                (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM) as u64,
+                Some(SIGCHLD),
+            );
+
+            // Move the worker thread to /background via `add_task`, then move the leader thread
+            // to /top-app via `add_task`. The worker must retain `/background`.
+            background.add_task(&worker).expect("add worker to background");
+            assert_eq!(worker.read().cpuset_path, "/background");
+            assert_eq!(leader.read().cpuset_path, "/");
+
+            top_app.add_task(&leader).expect("add leader to top-app");
+            assert_eq!(leader.read().cpuset_path, "/top-app");
+            assert_eq!(worker.read().cpuset_path, "/background");
+            assert_eq!(v1_root.get_cgroup(&leader.pid).unwrap().as_ptr(), Arc::as_ptr(&top_app));
+
+            // With a v1 cpuset hierarchy mounted, cgroup v2 operations must not overwrite the v1
+            // cpuset_path.
+            let v2_child = kernel.cgroups.cgroup2.new_child("uid_1000".into()).expect("v2 child");
+            v2_child.add_process(leader.thread_group()).expect("add to v2 child");
+            assert_eq!(leader.read().cpuset_path, "/top-app");
+            assert_eq!(worker.read().cpuset_path, "/background");
+
+            // Deleting an empty cgroup makes `add_task` fail with ENOENT even for non-leader TIDs.
+            v1_root.remove_child("background".into()).expect("remove background cgroup");
+            assert_eq!(background.add_task(&worker), error!(ENOENT));
         })
         .await;
     }

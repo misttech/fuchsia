@@ -19,13 +19,26 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, pid_t};
 use std::sync::{Arc, Weak};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlGroupFileKind {
+    /// `cgroup.procs`: writing a PID or TID migrates the entire thread group (process).
+    Procs,
+    /// `tasks` (cgroup v1): writing a TID migrates that task (thread).
+    Tasks,
+}
+
 pub struct ControlGroupNode {
     cgroup: Weak<dyn CgroupOps>,
+    kind: ControlGroupFileKind,
 }
 
 impl ControlGroupNode {
     pub fn new(cgroup: Weak<dyn CgroupOps>) -> Self {
-        ControlGroupNode { cgroup }
+        ControlGroupNode { cgroup, kind: ControlGroupFileKind::Procs }
+    }
+
+    pub fn new_tasks(cgroup: Weak<dyn CgroupOps>) -> Self {
+        ControlGroupNode { cgroup, kind: ControlGroupFileKind::Tasks }
     }
 }
 
@@ -38,7 +51,7 @@ impl FsNodeOps for ControlGroupNode {
         current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(Box::new(ControlGroupFile::new(current_task.kernel(), self.cgroup.clone())))
+        Ok(Box::new(ControlGroupFile::new(current_task.kernel(), self.cgroup.clone(), self.kind)))
     }
 
     fn truncate(
@@ -75,24 +88,51 @@ impl DynamicFileSource for ControlGroupFile {
         let pid_string = std::str::from_utf8(&bytes).map_err(|_| errno!(EINVAL))?;
         let pid = pid_string.trim().parse::<pid_t>().map_err(|_| errno!(EINVAL))?;
 
-        // Check if the pid is a valid process.
-        let thread_group = current_task.kernel().pids.get(pid)?.get_thread_group()?;
-        self.cgroup()?.add_process(&thread_group)?;
+        let cgroup = self.cgroup()?;
+        match self.kind {
+            ControlGroupFileKind::Tasks => match pid {
+                0 => cgroup.add_task(current_task)?,
+                tid => {
+                    let task = current_task.kernel().pids.get(tid)?.get_task()?;
+                    cgroup.add_task(&task)?;
+                }
+            },
+            ControlGroupFileKind::Procs => match pid {
+                0 => cgroup.add_process(current_task.thread_group())?,
+                pid => {
+                    let pid_entry = current_task.kernel().pids.get(pid)?;
+                    let thread_group = match pid_entry.get_thread_group() {
+                        Ok(tg) => tg,
+                        Err(_) => Arc::clone(pid_entry.get_task()?.thread_group()),
+                    };
+                    cgroup.add_process(&thread_group)?;
+                }
+            },
+        }
 
         Ok(bytes.len())
     }
 }
 
-/// A `ControlGroupFile` currently represents the `cgroup.procs` file for the control group. Writing
-/// to this file will add tasks to the control group.
+/// A `ControlGroupFile` represents either the `cgroup.procs` (`ControlGroupFileKind::Procs`) or
+/// cgroup v1 `tasks` (`ControlGroupFileKind::Tasks`) interface file for a control group.
+///
+/// Writing a PID/TID (or `0` for the caller) to `cgroup.procs` moves the entire thread group into
+/// the cgroup, whereas writing a TID (or `0` for the calling thread) to `tasks` invokes
+/// `CgroupOps::add_task` for per-thread migration.
 pub struct ControlGroupFile {
     kernel: Weak<Kernel>,
     cgroup: Weak<dyn CgroupOps>,
+    kind: ControlGroupFileKind,
 }
 
 impl ControlGroupFile {
-    fn new(kernel: &Kernel, cgroup: Weak<dyn CgroupOps>) -> impl FileOps {
-        DynamicFile::new(Self { kernel: kernel.weak_self.clone(), cgroup: cgroup.clone() })
+    fn new(
+        kernel: &Kernel,
+        cgroup: Weak<dyn CgroupOps>,
+        kind: ControlGroupFileKind,
+    ) -> impl FileOps {
+        DynamicFile::new(Self { kernel: kernel.weak_self.clone(), cgroup: cgroup.clone(), kind })
     }
 
     fn kernel(&self) -> Result<Arc<Kernel>, Errno> {
