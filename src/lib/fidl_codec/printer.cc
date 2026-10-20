@@ -228,6 +228,9 @@ void PrettyPrinter::DisplayFeatureKind(uint32_t kind) {
     FeatureKindCase(ZX_FEATURE_KIND_CPU);
     FeatureKindCase(ZX_FEATURE_KIND_HW_BREAKPOINT_COUNT);
     FeatureKindCase(ZX_FEATURE_KIND_HW_WATCHPOINT_COUNT);
+    FeatureKindCase(ZX_FEATURE_KIND_ADDRESS_TAGGING);
+    FeatureKindCase(ZX_FEATURE_KIND_VM);
+    FeatureKindCase(ZX_FEATURE_KIND_CPU_SVE);
     default:
       *this << static_cast<uint32_t>(kind);
       break;
