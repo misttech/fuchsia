@@ -11,6 +11,7 @@ mod vmo_rs {
     use crate::kernel::thread::{self, ThreadPtr};
     use crate::kernel::types::PAddr;
     use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
+    use crate::user_copy::UserInOutPtr;
     use crate::user_memory::UserMemory;
     use crate::vm::arch_vm_aspace::{
         ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
@@ -19,7 +20,6 @@ mod vmo_rs {
     use crate::vm::attribution::{AttributionCounts, FractionalBytes};
     use crate::vm::compressor::VmCompressor;
     use crate::vm::discardable_vmo_tracker::{DiscardablePageCounts, DiscardableVmoTracker};
-    use crate::vm::fault;
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_queues::PageQueues;
     use crate::vm::page_source::MultiPageRequest;
@@ -29,20 +29,23 @@ mod vmo_rs {
     use crate::vm::pmm::{self, ALLOC_FLAG_ANY, paddr_to_vm_page};
     use crate::vm::pmm_node::PmmOptDelayReuse;
     use crate::vm::scanner::AutoVmScannerDisable;
-    use crate::vm::vm_aspace::{VmAspace, vmm_flag};
+    use crate::vm::vm_aspace::{Type, VmAspace, vmm_flag};
     use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowRange, VmCowReclaimFailure};
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, SupplyOptions, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm::vm_page_list::VmPageSpliceList;
+    use crate::vm::{fault, vm_address_region as vmar, vmm};
     use crate::vm_unittests::test_helper::{
-        ARCH_RW_FLAGS, TestRand, fill_and_test, fill_region, make_committed_pager_vmo,
+        ARCH_RW_FLAGS, ARCH_RW_USER_FLAGS, TestRand, change_vmo_high_priority_count, fill_and_test,
+        fill_and_test_user, fill_region, fill_region_user, make_committed_pager_vmo,
         make_partially_committed_pager_vmo, make_private_attribution_counts,
-        make_uncommitted_pager_vmo, supply_pager_vmo_pages, test_region,
+        make_uncommitted_pager_vmo, supply_pager_vmo_pages, test_region, test_region_user,
         verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
     use core::mem::MaybeUninit;
+    use core::num::NonZeroI64;
     use core::{ptr, slice};
     use debug::dprintf;
     use fbl::{RefPtr, Vector};
@@ -134,6 +137,9 @@ mod vmo_rs {
         hint_action: EvictionAction,
         compressor: Option<&VmCompressor>,
     ) -> u64 {
+        // If we've passed a compressor, it's expected we're testing compression.
+        debug_assert!(compressor.is_none() || !cow_pages.can_evict());
+
         // SAFETY: Caller knows it is sound to reclaim `page` at `offset`.
         let reclaimed = unsafe { cow_pages.reclaim_page(page, offset, hint_action, compressor) };
         if let Ok(success) = reclaimed { success.num_pages } else { 0 }
@@ -162,6 +168,25 @@ mod vmo_rs {
         let cow_pages = vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages");
         // SAFETY: Caller knows it is sound to reclaim `page` at `offset`.
         unsafe { reclaim_cow_pages(&cow_pages, page, offset, hint_action, None) }
+    }
+
+    /// Test compression.
+    ///
+    /// # Safety
+    ///
+    /// The caller must know that it is sound to reclaim `page` at `offset`.
+    unsafe fn compress_page(
+        vmo: &VmObjectPaged,
+        page: VmPagePtr,
+        offset: u64,
+        hint_action: EvictionAction,
+        compressor: &VmCompressor,
+    ) -> u64 {
+        let cow_pages = vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages");
+        // Reclamation won't compress if eviction is possible.
+        debug_assert!(!cow_pages.can_evict());
+        // SAFETY: Caller knows it is sound to reclaim `page` at `offset`.
+        unsafe { reclaim_cow_pages(&cow_pages, page, offset, hint_action, Some(compressor)) }
     }
 
     /// Creates a vm object.
@@ -4902,6 +4927,1228 @@ mod vmo_rs {
 
             // VMO size should be unchanged.
             expect_eq!(vmo.size_locked(vmo_guard.token()), 4 * PAGE_SIZE);
+        }
+    }
+
+    /// Tests committing a VMO containing compressed pages.
+    #[test]
+    fn vmo_commit_compressed_pages_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+        // Need a working compressor.
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        // Create a VMO and commit some real pages.
+        const PAGES: u64 = 8;
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGES * PAGE_SIZE));
+        assert_ok!(vmo.commit_range(0, PAGES * PAGE_SIZE));
+
+        // Validate these are committed.
+        expect_true!(
+            make_private_attribution_counts(PAGES * PAGE_SIZE, 0) == vmo.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGES * PAGE_SIZE));
+        // SAFETY: Pages remain attached to `vmo` during assertion.
+        expect_true!(unsafe { pages_in_any_anonymous_queue(&vmo, 0, PAGES * PAGE_SIZE) });
+
+        // Lookup and compress each page;
+        for i in 0..PAGES {
+            // Write some data (possibly zero) to the page.
+            expect_ok!(vmo.write(i * PAGE_SIZE, &i.to_ne_bytes()));
+            let (page, _) = unwrap_ok!(vmo.get_page_blocking(i * PAGE_SIZE, 0));
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            assert_ok!(compressor.as_mut().get().arm());
+
+            // SAFETY: It is sound to reclaim `page` at `i * PAGE_SIZE`.
+            let reclaimed = unsafe {
+                compress_page(
+                    &vmo,
+                    page,
+                    i * PAGE_SIZE,
+                    EvictionAction::FollowHint,
+                    compressor.as_mut().get(),
+                )
+            };
+            expect_eq!(reclaimed, 1);
+        }
+
+        // Should be no real pages, and one of the pages should have been deduped to zero and not
+        // even be compressed.
+        expect_true!(
+            make_private_attribution_counts(0, (PAGES - 1) * PAGE_SIZE)
+                == vmo.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, (PAGES - 1) * PAGE_SIZE));
+
+        // Now use commit again, this should decompress things.
+        assert_ok!(vmo.commit_range(0, PAGES * PAGE_SIZE));
+
+        expect_true!(
+            make_private_attribution_counts(PAGES * PAGE_SIZE, 0) == vmo.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGES * PAGE_SIZE));
+        // SAFETY: Pages remain attached to `vmo` during assertion.
+        expect_true!(unsafe { pages_in_any_anonymous_queue(&vmo, 0, PAGES * PAGE_SIZE) });
+    }
+
+    /// Creates a vm object, maps it, demand paged.
+    #[test]
+    fn vmo_demand_paged_map_test() {
+        let alloc_size = PAGE_SIZE_USIZE * 16;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size as u64),
+            "vmobject creation\n"
+        );
+
+        let aspace =
+            unwrap_some!(VmAspace::create(Type::User, b"test aspace"), "VmAspace::Create pointer");
+
+        // SAFETY: Active aspace reference is not invalidated during test.
+        let old_aspace = unsafe { thread::current_active_aspace() };
+        let _cleanup_aspace = zr::defer(|| {
+            // SAFETY: It is sound to restore the previous address space.
+            unsafe { vmm::set_active_aspace(old_aspace) };
+            assert!(aspace.destroy().is_ok());
+        });
+        // SAFETY: `aspace` remains valid while active.
+        unsafe { vmm::set_active_aspace(Some(&aspace)) };
+
+        let mapping_result = unwrap_ok!(
+            aspace.root_vmar().unwrap().create_vm_mapping(
+                0,
+                alloc_size,
+                0,
+                0,
+                VmObjectPaged::into_vm_object(vmo),
+                0,
+                ARCH_RW_USER_FLAGS,
+                b"test",
+            ),
+            "mapping object"
+        );
+
+        let uptr = UserInOutPtr::new(ptr::with_exposed_provenance_mut(mapping_result.base));
+
+        // fill with known pattern and test
+        expect_true!(fill_and_test_user(uptr, alloc_size));
+
+        // cleanup_aspace destroys the whole space now.
+    }
+
+    /// Tests creating and destroying clones of VMOs with compressed pages.
+    #[test]
+    fn vmo_clones_of_compressed_pages_test() {
+        // Test that when creating or destroying clones that compressed pages, even if forked, do
+        // not need to get unnecessarily uncompressed.
+
+        // Need a compressor.
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a VMO and make one of its pages compressed.
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        // Set ids so that attribution can work correctly.
+        vmo.set_user_id(42);
+
+        expect_ok!(vmo.commit_range(0, PAGE_SIZE));
+
+        // Write non-zero data to the page.
+        let data: u64 = 42;
+        expect_ok!(vmo.write(0, &data.to_ne_bytes()));
+
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            assert_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at offset 0.
+            let reclaimed = unsafe {
+                compress_page(&vmo, page, 0, EvictionAction::FollowHint, compressor.as_mut().get())
+            };
+            expect_eq!(reclaimed, 1);
+        }
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        // Creating a clone should keep the page compressed.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        clone.set_user_id(43);
+        expect_true!(
+            (AttributionCounts {
+                compressed_bytes: PAGE_SIZE as usize,
+                scaled_compressed_bytes: FractionalBytes::from_fraction(PAGE_SIZE, 2),
+                ..AttributionCounts::zero()
+            }) == vmo.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_true!(
+            (AttributionCounts {
+                compressed_bytes: PAGE_SIZE as usize,
+                scaled_compressed_bytes: FractionalBytes::from_fraction(PAGE_SIZE, 2),
+                ..AttributionCounts::zero()
+            }) == clone.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
+
+        // Forking the page into a child will decompress in order to do the copy.
+        expect_ok!(clone.write(0, &data.to_ne_bytes()));
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0) == clone.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
+
+        // Compress the parent page again by reaching into the hidden VMO parent.
+        let hidden_root =
+            unwrap_some!(vmo.debug_get_cow_pages().expect("vmo has cow pages").debug_get_parent());
+        let page = unwrap_some!(hidden_root.debug_get_page(0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            assert_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at offset 0.
+            let reclaimed = unsafe {
+                reclaim_cow_pages(
+                    &hidden_root,
+                    page,
+                    0,
+                    EvictionAction::FollowHint,
+                    Some(compressor.as_mut().get()),
+                )
+            };
+            expect_eq!(reclaimed, 1);
+        }
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0) == clone.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
+
+        // Closing the child VMO should allow the now merged VMO to just have the compressed page
+        // without causing it to be decompressed.
+        drop(clone);
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+    }
+
+    /// Tests that CoW clones mapped into the kernel behave correctly when parent pages compress.
+    #[test]
+    fn vmo_clone_kernel_mapped_compressed_test() {
+        // Test that CoW clones mapped into the kernel behave correctly if a 'parent' page gets
+        // compressed.
+
+        // Need a compressor.
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a VMO and write to its page to commit it.
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+
+        let mut data: u64 = 42;
+        expect_ok!(vmo.write(0, &data.to_ne_bytes()));
+
+        // Now create a child of the VMO and fork the page into it.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        data = 41;
+        expect_ok!(clone.write(0, &data.to_ne_bytes()));
+
+        // Pin and map the clone into the kernel aspace.
+        let _pinned_vmo = unwrap_ok!(PinnedVmObject::create(clone.clone(), 0, PAGE_SIZE, true));
+        let result = unwrap_ok!(VmAspace::kernel_aspace().root_vmar().unwrap().create_vm_mapping(
+            0,
+            PAGE_SIZE_USIZE,
+            0,
+            vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+            clone,
+            0,
+            ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
+            b"pin clone map",
+        ));
+        let mapping = result.mapping;
+        let _cleanup = zr::defer(|| {
+            let _ = mapping.destroy();
+        });
+        assert_ok!(mapping.map_range(0, PAGE_SIZE_USIZE, true, false));
+        let ptr: *const u64 = ptr::with_exposed_provenance(result.base);
+
+        // Should be able to use ptr without a fault.
+        // SAFETY: `ptr` points to a mapped and committed page in the kernel address space.
+        expect_eq!(unsafe { ptr.read_volatile() }, 41);
+
+        // Compress the parent page by reaching into the hidden VMO parent.
+        let hidden_root =
+            unwrap_some!(vmo.debug_get_cow_pages().expect("vmo has cow pages").debug_get_parent());
+        let page = unwrap_some!(hidden_root.debug_get_page(0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            assert_ok!(compressor.as_mut().get().arm());
+            // Attempt to reclaim the page in the hidden parent. As the clone is a fully committed
+            // and mapped VMO this should *not* cause any of its pages to be unmapped. If it did
+            // this violate the requirement that kernel mappings are always pinned and mapped.
+            // SAFETY: It is sound to reclaim `page` at offset 0.
+            let reclaimed = unsafe {
+                reclaim_cow_pages(
+                    &hidden_root,
+                    page,
+                    0,
+                    EvictionAction::FollowHint,
+                    Some(compressor.as_mut().get()),
+                )
+            };
+            expect_eq!(reclaimed, 1);
+        }
+
+        // Should still be able to touch the ptr;
+        // SAFETY: `ptr` points to a mapped and committed page in the kernel address space.
+        expect_eq!(unsafe { ptr.read_volatile() }, 41);
+    }
+
+    /// Tests that compressing and uncompressing pages in a VMO updates attribution counts.
+    #[test]
+    fn vmo_attribution_compression_test() {
+        // Test that compressing and uncompressing pages in a VMO correctly updates memory
+        // attribution counts.
+
+        // Need a compressor.
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
+
+        expect_true!(vmo.get_attributed_memory() == AttributionCounts::zero());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        let mut reclamation_count = vmo.reclamation_event_count();
+
+        // Committing pages should not increment the reclamation count.
+        assert_ok!(vmo.commit_range(0, 2 * PAGE_SIZE));
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+        expect_eq!(reclamation_count, vmo.reclamation_event_count());
+
+        let val: u64 = 42;
+        expect_ok!(vmo.write(0, &val.to_ne_bytes()));
+        expect_eq!(reclamation_count, vmo.reclamation_event_count());
+
+        // Compress the first page.
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            expect_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at offset 0.
+            assert_eq!(
+                unsafe {
+                    compress_page(
+                        &vmo,
+                        page,
+                        0,
+                        EvictionAction::FollowHint,
+                        compressor.as_mut().get(),
+                    )
+                },
+                1
+            );
+        }
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, PAGE_SIZE)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+        {
+            let new_reclamation_count = vmo.reclamation_event_count();
+            expect_gt!(new_reclamation_count, reclamation_count);
+            reclamation_count = new_reclamation_count;
+        }
+        // Compress the second page.
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(PAGE_SIZE, 0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            expect_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at `PAGE_SIZE`.
+            assert_eq!(
+                unsafe {
+                    compress_page(
+                        &vmo,
+                        page,
+                        PAGE_SIZE,
+                        EvictionAction::FollowHint,
+                        compressor.as_mut().get(),
+                    )
+                },
+                1
+            );
+        }
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(0, PAGE_SIZE));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        {
+            let new_reclamation_count = vmo.reclamation_event_count();
+            expect_gt!(new_reclamation_count, reclamation_count);
+            reclamation_count = new_reclamation_count;
+        }
+
+        // Attempting to read the first page will require a decompress.
+        let _ = unwrap_ok!(vmo.get_page_blocking(0, fault::flag::HW_FAULT));
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_eq!(reclamation_count, vmo.reclamation_event_count());
+
+        // Reading the second page will just get the zero page.
+        let _ = unwrap_ok!(vmo.get_page_blocking(PAGE_SIZE, fault::flag::HW_FAULT));
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_eq!(reclamation_count, vmo.reclamation_event_count());
+    }
+
+    /// Test that an unlocked discardable VMO can be discarded as expected.
+    #[test]
+    fn vmo_discard_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a resizable discardable vmo.
+        let size = 3 * PAGE_SIZE;
+        let vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY,
+            VmObjectPaged::DISCARDABLE | VmObjectPaged::RESIZABLE,
+            size,
+        ));
+        expect_eq!(size, vmo.size());
+
+        // Lock and commit all pages. Verify the size.
+        expect_ok!(vmo.try_lock_range(0, size));
+        expect_ok!(vmo.commit_range(0, size));
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        expect_eq!(size, vmo.size());
+        expect_true!(make_private_attribution_counts(size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, size));
+
+        // Cannot discard when locked.
+        let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        expect_true!(reclaimed.is_err());
+        expect_true!(make_private_attribution_counts(size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, size));
+
+        // Unlock.
+        expect_ok!(vmo.unlock_range(0, size));
+        expect_eq!(size, vmo.size());
+
+        // Page should be in reclaimable queue.
+        if pmm::page_queues().reclaim_is_only_pager_backed() {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_anonymous(page) });
+        } else {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        }
+
+        let mut reclamation_count = vmo.reclamation_event_count();
+
+        // Should be able to discard now.
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        assert_true!(reclaimed.is_ok());
+        expect_eq!(size / PAGE_SIZE, reclaimed.unwrap().num_pages);
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_gt!(vmo.reclamation_event_count(), reclamation_count);
+        // Verify that the size is not affected.
+        expect_eq!(size, vmo.size());
+
+        // Resize the discarded vmo.
+        let new_size = 5 * PAGE_SIZE;
+        expect_ok!(vmo.resize(new_size));
+        expect_eq!(new_size, vmo.size());
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Lock the vmo.
+        let _lock_state = unwrap_ok!(vmo.lock_range(0, new_size));
+        expect_eq!(new_size, vmo.size());
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Commit and pin some pages, then unlock.
+        expect_ok!(vmo.commit_range_pinned(0, size, false));
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        expect_true!(make_private_attribution_counts(size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, size));
+        expect_ok!(vmo.unlock_range(0, new_size));
+
+        // Page is pinned, so not in the reclaim queue, but in the wired queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_wired(page) });
+
+        reclamation_count = vmo.reclamation_event_count();
+
+        // Cannot discard a vmo with pinned pages.
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        expect_true!(reclaimed.is_err());
+        expect_eq!(new_size, vmo.size());
+        expect_true!(make_private_attribution_counts(size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, size));
+        expect_eq!(reclamation_count, vmo.reclamation_event_count());
+
+        // Unpin the pages. Should be able to discard now.
+        vmo.unpin(0, size);
+        if pmm::page_queues().reclaim_is_only_pager_backed() {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_anonymous(page) });
+        } else {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        }
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        assert_true!(reclaimed.is_ok());
+        expect_eq!(size / PAGE_SIZE, reclaimed.unwrap().num_pages);
+        expect_eq!(new_size, vmo.size());
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_gt!(vmo.reclamation_event_count(), reclamation_count);
+
+        // Lock and commit pages, this time by writing them through a user mapping.
+        let _lock_state = unwrap_ok!(vmo.lock_range(0, new_size));
+        let user_memory = unwrap_some!(UserMemory::create_from_vmo(
+            VmObjectPaged::into_vm_object(vmo.clone()),
+            0,
+            0,
+        ));
+        for offset in (0..new_size as usize).step_by(PAGE_SIZE_USIZE) {
+            let val: u8 = 42;
+            expect_ok!(user_memory.put(val, offset));
+        }
+        expect_ok!(vmo.unlock_range(0, new_size));
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        if pmm::page_queues().reclaim_is_only_pager_backed() {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_anonymous(page) });
+        } else {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        }
+
+        // Cannot discard a non-discardable vmo.
+        let vmo =
+            unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, VmObjectPaged::RESIZABLE, size,));
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, fault::flag::SW_FAULT));
+        let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        expect_true!(reclaimed.is_err());
+        expect_eq!(0, vmo.reclamation_event_count());
+    }
+
+    /// Test operations on a discarded VMO and verify expected failures.
+    #[test]
+    fn vmo_discard_failure_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let size = 5 * PAGE_SIZE;
+        let size_usize = 5 * PAGE_SIZE_USIZE;
+        let vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY,
+            VmObjectPaged::DISCARDABLE,
+            size,
+        ));
+
+        let mut buf = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(buf.resize_with(size_usize, || MaybeUninit::new(0)).is_ok());
+
+        let mut fill = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(fill.resize_with(size_usize, MaybeUninit::uninit).is_ok());
+        let fill_init = fill_region(0x77, &mut fill[..size_usize]);
+
+        // Lock and commit all pages, write something and read it back to verify.
+        expect_ok!(vmo.try_lock_range(0, size));
+        expect_ok!(vmo.write(0, fill_init));
+        expect_true!(make_private_attribution_counts(size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, size));
+        let buf_init = unwrap_ok!(vmo.read(0, &mut buf[..size_usize]));
+        expect_true!(fill_init == buf_init);
+
+        // Create a test user aspace to map the vmo.
+        let aspace = unwrap_some!(VmAspace::create(Type::User, b"test aspace"));
+
+        // SAFETY: Active aspace reference is not invalidated during test.
+        let old_aspace = unsafe { thread::current_active_aspace() };
+        let _cleanup_aspace = zr::defer(|| {
+            // SAFETY: It is sound to restore the previous address space.
+            unsafe { vmm::set_active_aspace(old_aspace) };
+            assert!(aspace.destroy().is_ok());
+        });
+        // SAFETY: `aspace` remains valid while active.
+        unsafe { vmm::set_active_aspace(Some(&aspace)) };
+
+        // Map the vmo.
+        let map_size = 3 * PAGE_SIZE;
+        let map_size_usize = 3 * PAGE_SIZE_USIZE;
+        let mapping_result = unwrap_ok!(aspace.root_vmar().unwrap().create_vm_mapping(
+            0,
+            map_size_usize,
+            0,
+            0,
+            VmObjectPaged::into_vm_object(vmo.clone()),
+            size - map_size,
+            ARCH_RW_USER_FLAGS,
+            b"test",
+        ));
+
+        // Fill with a known pattern through the mapping, and verify the contents.
+        let mut uptr = UserInOutPtr::new(ptr::with_exposed_provenance_mut(mapping_result.base));
+        fill_region_user(0x88, uptr, map_size_usize);
+        expect_true!(test_region_user(0x88, uptr, map_size_usize));
+
+        // Unlock and discard.
+        expect_ok!(vmo.unlock_range(0, size));
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        assert_true!(reclaimed.is_ok());
+        expect_eq!(size / PAGE_SIZE, reclaimed.unwrap().num_pages);
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_eq!(size, vmo.size());
+
+        // Reads, writes, commits and pins should fail now.
+        expect_eq!(
+            Status::result_into_raw(vmo.read(0, &mut buf[..size_usize]).map(|_| ())),
+            Status::NOT_FOUND.into_raw()
+        );
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        // SAFETY: All elements of `buf` were initialized with `MaybeUninit::new(0)`.
+        let buf_slice = unsafe { buf[..size_usize].assume_init_ref() };
+        expect_eq!(Status::result_into_raw(vmo.write(0, buf_slice)), Status::NOT_FOUND.into_raw());
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_eq!(
+            Status::result_into_raw(vmo.commit_range(0, size)),
+            Status::NOT_FOUND.into_raw()
+        );
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_eq!(
+            Status::result_into_raw(vmo.commit_range_pinned(0, size, false)),
+            Status::NOT_FOUND.into_raw()
+        );
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Decommit and ZeroRange should trivially succeed.
+        expect_ok!(vmo.decommit_range(0, size));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_ok!(vmo.zero_range(0, size));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Creating a mapping succeeds.
+        let mapping2_result = unwrap_ok!(aspace.root_vmar().unwrap().create_vm_mapping(
+            0,
+            map_size_usize,
+            0,
+            0,
+            VmObjectPaged::into_vm_object(vmo.clone()),
+            size - map_size,
+            ARCH_RW_USER_FLAGS,
+            b"test2",
+        ));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Lock the vmo again.
+        let _lock_state = unwrap_ok!(vmo.lock_range(0, size));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_eq!(size, vmo.size());
+
+        // Should be able to read now. Verify that previous contents are lost and zeros are read.
+        let buf_init = unwrap_ok!(vmo.read(0, &mut buf[..size_usize]));
+        fill_init.fill(0);
+        expect_true!(fill_init == buf_init);
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Write should succeed as well.
+        let fill_init = fill_region(0x99, &mut fill[..size_usize]);
+        expect_ok!(vmo.write(0, fill_init));
+        expect_true!(make_private_attribution_counts(size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, size));
+
+        // Verify contents via the mapping.
+        fill_region_user(0xaa, uptr, map_size_usize);
+        expect_true!(test_region_user(0xaa, uptr, map_size_usize));
+
+        // Verify contents via the second mapping created when discarded.
+        uptr = UserInOutPtr::new(ptr::with_exposed_provenance_mut(mapping2_result.base));
+        expect_true!(test_region_user(0xaa, uptr, map_size_usize));
+
+        // The unmapped pages should still be intact after the Write() above.
+        let buf_init = unwrap_ok!(vmo.read(0, &mut buf[..size_usize - map_size_usize]));
+        expect_true!(fill_init[..size_usize - map_size_usize] == *buf_init);
+    }
+
+    /// Tests looking up compressed pages with different fault flags.
+    #[test]
+    fn vmo_lookup_compressed_pages_test() {
+        // using LookupCursor with different kinds of faults reads / writes should correctly
+        // decompress or return an error.
+        let _scanner_disable = AutoVmScannerDisable::new();
+        // Need a working compressor.
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        // Create a VMO and commit a real non-zero page
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        let data: u64 = 42;
+        expect_ok!(vmo.write(0, &data.to_ne_bytes()));
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        // Compress the page.
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            expect_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at offset 0.
+            expect_eq!(
+                unsafe {
+                    compress_page(
+                        &vmo,
+                        page,
+                        0,
+                        EvictionAction::FollowHint,
+                        compressor.as_mut().get(),
+                    )
+                },
+                1
+            );
+        }
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        // Looking up the page for read or write, without it being a fault, should fail and not
+        // cause the page to get decompressed.
+        expect_true!(vmo.get_page_blocking(0, 0).is_err());
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_true!(vmo.get_page_blocking(0, fault::flag::WRITE).is_err());
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        // Read or write faults should decompress.
+        let _ = unwrap_ok!(vmo.get_page_blocking(0, fault::flag::HW_FAULT));
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            expect_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at offset 0.
+            expect_eq!(
+                unsafe {
+                    compress_page(
+                        &vmo,
+                        page,
+                        0,
+                        EvictionAction::FollowHint,
+                        compressor.as_mut().get(),
+                    )
+                },
+                1
+            );
+        }
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        expect_ok!(
+            vmo.get_page_blocking(0, fault::flag::WRITE | fault::flag::SW_FAULT).map(|_| ())
+        );
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+    }
+
+    /// Tests updating dirty state of a high priority VMO.
+    #[test]
+    fn vmo_high_priority_dirty_state_test() {
+        // Disable the page scanner as this test would be flaky if our pages get evicted by someone
+        // else.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with a single page.
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ true, /*resizable=*/ false,
+        ));
+
+        // Page should be in the pager queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        let change_priority = |delta: i64| {
+            change_vmo_high_priority_count(&vmo, NonZeroI64::new(delta).unwrap());
+        };
+
+        // Mark the VMO as high priority. This will move the page to the high priority queue.
+        change_priority(1);
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_high_priority(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // Dirty the page. The page moves to the dirty queue.
+        assert_ok!(vmo.dirty_pages(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Begin writeback. Verify that the page remains in the dirty queue.
+        assert_ok!(vmo.writeback_begin(0, PAGE_SIZE, false));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // End the writeback. Since the VMO is still high priority, the page will go to the high
+        // priority queue.
+        assert_ok!(vmo.writeback_end(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_high_priority(page) });
+
+        // Remove high priority. The page should come back to the reclaim queue.
+        change_priority(-1);
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_high_priority(page) });
+    }
+
+    /// Tests supplying compressed pages to a pager-backed VMO.
+    #[test]
+    fn vmo_supply_compressed_pages_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+        // Need a working compressor.
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        let vmop = unwrap_ok!(make_uncommitted_pager_vmo(1, false, false));
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+
+        // Write non-zero data to the VMO so we can compress it.
+        let data: u64 = 42;
+        expect_ok!(vmo.write(0, &data.to_ne_bytes()));
+
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            expect_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at offset 0.
+            expect_eq!(
+                unsafe {
+                    compress_page(
+                        &vmo,
+                        page,
+                        0,
+                        EvictionAction::FollowHint,
+                        compressor.as_mut().get(),
+                    )
+                },
+                1
+            );
+        }
+        expect_true!(make_private_attribution_counts(0, PAGE_SIZE) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+
+        // Taking the pages should work.
+        stack_pin_init!(let pl = VmPageSpliceList::new());
+        expect_ok!(vmo.take_pages(0, PAGE_SIZE, pl.as_mut()));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // After being supplied the pager backed VMO should not have compressed pages.
+        expect_ok!(vmop.supply_pages(0, PAGE_SIZE, pl.as_mut(), SupplyOptions::PagerSupply));
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmop.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmop, PAGE_SIZE));
+    }
+
+    /// Test that attempting to reclaim pages from a high priority VMO will not work.
+    #[test]
+    fn vmo_high_priority_reclaim_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ false, /*resizable=*/ false,
+        ));
+
+        const ADD_HIGH_PRIORITY: NonZeroI64 = NonZeroI64::new(1).unwrap();
+        const REMOVE_HIGH_PRIORITY: NonZeroI64 = NonZeroI64::new(-1).unwrap();
+
+        // Our page should be in a pager backed page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // Indicate our VMO is high priority.
+        change_vmo_high_priority_count(&vmo, ADD_HIGH_PRIORITY);
+
+        // Our page should now be in a high priority page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_high_priority(page) });
+        expect_gt!(pmm::page_queues().queue_counts().high_priority, 0);
+
+        // Attempting to evict should fail.
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Page should still be in the queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_high_priority(page) });
+
+        // Attempting to reclaim should fail.
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+
+        // Switch to a regular anonymous VMO.
+        change_vmo_high_priority_count(&vmo, REMOVE_HIGH_PRIORITY);
+
+        // Page should be back in the regular pager backed page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        drop(vmo);
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        change_vmo_high_priority_count(&vmo, ADD_HIGH_PRIORITY);
+
+        // Commit a single page.
+        expect_ok!(vmo.commit_range(0, PAGE_SIZE));
+        let page = unwrap_some!(vmo.debug_get_page(0));
+
+        // Deduping as zero should fail.
+        expect_false!(vmo.debug_get_cow_pages().unwrap().dedup_zero_page(page, 0));
+        expect_true!(Some(page) == vmo.debug_get_page(0));
+
+        // If we have a compressor, then compressing should also fail.
+        if let Some(compression) = pmm::node().get_page_compression() {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            expect_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+            expect_eq!(
+                unsafe {
+                    compress_page(
+                        &vmo,
+                        page,
+                        0,
+                        EvictionAction::IgnoreHint,
+                        compressor.as_mut().get(),
+                    )
+                },
+                0
+            );
+            expect_true!(Some(page) == vmo.debug_get_page(0));
+        }
+
+        change_vmo_high_priority_count(&vmo, REMOVE_HIGH_PRIORITY);
+    }
+
+    /// Tests prefetching a range in a VMO containing compressed pages.
+    #[test]
+    fn vmo_prefetch_compressed_pages_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Need a working compressor.
+        let Some(compression) = pmm::node().get_page_compression() else {
+            return true;
+        };
+
+        // Create a VMO and commit some pages to it, ensuring they have non-zero content.
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2));
+        let data: u64 = 42;
+        expect_ok!(vmo.write(0, &data.to_ne_bytes()));
+        expect_ok!(vmo.write(PAGE_SIZE, &data.to_ne_bytes()));
+        expect_true!(
+            make_private_attribution_counts(2 * PAGE_SIZE, 0) == vmo.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+
+        // Compress the second page.
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(PAGE_SIZE, 0));
+        {
+            stack_pin_init!(let compressor = compression.acquire_compressor());
+            expect_ok!(compressor.as_mut().get().arm());
+            // SAFETY: It is sound to reclaim `page` at `PAGE_SIZE`.
+            assert_true!(
+                unsafe {
+                    compress_page(
+                        &vmo,
+                        page,
+                        PAGE_SIZE,
+                        EvictionAction::FollowHint,
+                        compressor.as_mut().get(),
+                    )
+                } != 0
+            );
+        }
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, PAGE_SIZE) == vmo.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+
+        // Prefetch the entire VMO.
+        expect_ok!(vmo.prefetch_range(0, PAGE_SIZE * 2));
+
+        // Both pages should be back to being uncompressed.
+        expect_true!(
+            make_private_attribution_counts(2 * PAGE_SIZE, 0) == vmo.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+    }
+
+    /// Tests that loaned pages in a parent VMO are reclaimed when a child becomes high priority.
+    #[test]
+    fn vmo_loaned_high_priority_parent_test() {
+        // Test that we can't get loaned pages in high priority VMOs by abusing a lack of
+        // visibility into the parent.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let _loaning_guard = ScopedLoaningEnabled::new(true);
+
+        const PARENT_SIZE_PAGES: usize = 2;
+        let parent_size_bytes = PAGE_SIZE * (PARENT_SIZE_PAGES as u64);
+
+        // create a contiguous VMO so that we are guaranteed to have a place to borrow a page from
+        let contiguous_vmo = unwrap_ok!(VmObjectPaged::create_contiguous(
+            pmm::ALLOC_FLAG_ANY,
+            PAGE_SIZE,
+            /*alignment_log2=*/ 0,
+        ));
+        assert_ok!(contiguous_vmo.decommit_range(0, PAGE_SIZE));
+
+        let (parent_vmo, _) = unwrap_ok!(make_committed_pager_vmo::<PARENT_SIZE_PAGES>(
+            /*trap_dirty=*/ false, /*resizable=*/ false,
+        ));
+
+        let parent_cow = parent_vmo.debug_get_cow_pages().expect("parent has cow pages");
+
+        let child_vmo_no_paged = unwrap_ok!(parent_vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            /*offset=*/ 0,
+            parent_size_bytes,
+            /*copy_name=*/ true,
+        ));
+        let child_vmo = unwrap_some!(VmObject::downcast_paged(child_vmo_no_paged));
+
+        // commit the first child page so that the first parent page becomes inaccessible from the
+        // child
+        assert_ok!(child_vmo.commit_range(0, PAGE_SIZE));
+
+        // replace the parent page with a loaned page
+        let parent_page0 = unwrap_some!(parent_cow.debug_get_page(0));
+        assert_ok!(parent_cow.replace_page_with_loaned(parent_page0, 0));
+
+        let change_priority = |delta: i64| {
+            change_vmo_high_priority_count(&child_vmo, NonZeroI64::new(delta).unwrap());
+        };
+
+        change_priority(1);
+
+        let parent_first_page = parent_cow.debug_get_page(0);
+        // SAFETY: If `parent_first_page` is `Some`, it is attached to `parent_vmo` and its loaned
+        // state is not mutated in parallel.
+        expect_true!(parent_first_page.is_none_or(|p| !unsafe { p.is_loaned() }));
+
+        change_priority(-1);
+    }
+
+    /// Tests that loaned pages cannot remain in a high priority VMO when priority count increases.
+    #[test]
+    fn vmo_loaned_page_in_high_priority_test() {
+        // Tests that loaned pages can't appear in a high priority VMO through manipulation of the
+        // priority count.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let _loaning_guard = ScopedLoaningEnabled::new(true);
+
+        let contiguous_vmo = unwrap_ok!(VmObjectPaged::create_contiguous(
+            pmm::ALLOC_FLAG_ANY,
+            PAGE_SIZE,
+            /*alignment_log2=*/ 0,
+        ));
+        assert_ok!(contiguous_vmo.decommit_range(0, PAGE_SIZE));
+
+        let (vmo, [page0]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ false, /*resizable=*/ false,
+        ));
+
+        let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+
+        assert_ok!(cow.replace_page_with_loaned(page0, 0));
+
+        let change_priority = |delta: i64| {
+            change_vmo_high_priority_count(&vmo, NonZeroI64::new(delta).unwrap());
+        };
+        change_priority(1);
+
+        let page = cow.debug_get_page(0);
+        // we have decommitted the page
+        // SAFETY: If `page` is `Some`, it is attached to `vmo` and its loaned state is not mutated
+        // in parallel.
+        expect_true!(page.is_none_or(|p| !unsafe { p.is_loaned() }));
+
+        // Destructor checks that we go back down to high_priority_count_ == 0
+        change_priority(-1);
+    }
+
+    /// Tests leaf VMO operations when a hidden parent page is deduped to the zero page.
+    #[test]
+    fn vmo_dedup_hidden_zero_page_test() {
+        // Test some operations on leaf VMOs, that may have a parent content marker, work correctly
+        // when the hidden node had a page that gets deduped to the zero page.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo_size = PAGE_SIZE * 3;
+
+        // Helper lambda to perform the core test logic with different vmo setups.
+        let test_with_vmo = subtest!(|vmo: RefPtr<VmObjectPaged>| {
+            // Write some zeroes to the middle page to cause it to be committed.
+            let val: u64 = 0;
+            expect_ok!(vmo.write(PAGE_SIZE, &val.to_ne_bytes()));
+            expect_eq!(
+                vmo.get_attributed_memory_in_range(0, vmo_size).private_uncompressed_bytes,
+                PAGE_SIZE_USIZE
+            );
+
+            // Create a clone that sees the parent content.
+            let child = unwrap_ok!(vmo.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                vmo_size,
+                true,
+            ));
+
+            // Expect a hidden hierarchy with both the original vmo and the new child having no
+            // private bytes, but having an uncompressed page shared between them.
+            expect_eq!(
+                vmo.get_attributed_memory_in_range(0, vmo_size).private_uncompressed_bytes,
+                0
+            );
+            expect_eq!(
+                child.get_attributed_memory_in_range(0, vmo_size).private_uncompressed_bytes,
+                0
+            );
+            expect_eq!(
+                vmo.get_attributed_memory_in_range(0, vmo_size).uncompressed_bytes,
+                PAGE_SIZE_USIZE
+            );
+            expect_eq!(
+                child.get_attributed_memory_in_range(0, vmo_size).uncompressed_bytes,
+                PAGE_SIZE_USIZE
+            );
+
+            // Dedupe the page in the hidden parent to the zero page.
+            let hidden_parent = unwrap_some!(
+                vmo.debug_get_cow_pages().expect("vmo has cow pages").debug_get_parent()
+            );
+            let page = unwrap_some!(hidden_parent.debug_get_page(PAGE_SIZE));
+            expect_true!(hidden_parent.dedup_zero_page(page, PAGE_SIZE));
+
+            // If deduped there should be no content attributed to either leaf VMO.
+            expect_eq!(
+                vmo.get_attributed_memory_in_range(0, vmo_size).private_uncompressed_bytes,
+                0
+            );
+            expect_eq!(
+                child.get_attributed_memory_in_range(0, vmo_size).private_uncompressed_bytes,
+                0
+            );
+            expect_eq!(vmo.get_attributed_memory_in_range(0, vmo_size).uncompressed_bytes, 0);
+            expect_eq!(child.get_attributed_memory_in_range(0, vmo_size).uncompressed_bytes, 0);
+
+            // Zero the child range, validating that any ParentContent markers / zero page markers
+            // are handled correctly.
+            expect_ok!(child.zero_range(PAGE_SIZE, PAGE_SIZE));
+            let mut buf = [MaybeUninit::<u8>::uninit(); 8];
+            let read_bytes = unwrap_ok!(child.read(PAGE_SIZE, &mut buf));
+            expect_eq!(u64::from_ne_bytes(read_bytes.try_into().unwrap()), 0);
+
+            // Write to the original VMO, validating that handling of any ParentContent markers.
+            let _ = vmo.write(PAGE_SIZE, &val.to_ne_bytes());
+            expect_eq!(
+                vmo.get_attributed_memory_in_range(0, vmo_size).private_uncompressed_bytes,
+                PAGE_SIZE_USIZE
+            );
+            expect_eq!(
+                vmo.get_attributed_memory_in_range(0, vmo_size).uncompressed_bytes,
+                PAGE_SIZE_USIZE
+            );
+        });
+
+        // Test with a plain anonymous root vmo
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create(0, 0, vmo_size));
+            expect_true!(test_with_vmo(vmo));
+        }
+        // Test with a pager backed root in a snapshot modified hierarchy.
+        {
+            let aux_vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+            let val: u64 = 42;
+            expect_ok!(aux_vmo.write(0, &val.to_ne_bytes()));
+
+            let pager = unwrap_ok!(make_uncommitted_pager_vmo(
+                3, /*trap_dirty=*/ false, /*resizable=*/ false,
+            ));
+
+            stack_pin_init!(let sl = VmPageSpliceList::new());
+            expect_ok!(aux_vmo.take_pages(0, PAGE_SIZE, sl.as_mut()));
+            assert_ok!(pager.supply_pages(
+                PAGE_SIZE,
+                PAGE_SIZE,
+                sl.as_mut(),
+                SupplyOptions::PagerSupply
+            ));
+            debug_assert!(sl.is_processed());
+
+            let vmo = unwrap_ok!(pager.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                vmo_size,
+                true,
+            ));
+            expect_true!(test_with_vmo(unwrap_some!(VmObject::downcast_paged(vmo))));
         }
     }
 }
