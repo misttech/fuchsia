@@ -26,6 +26,7 @@ generate_sampler_config("default-config") {
     "//src/diagnostics/config/sampler/fshost.json5",
     "//src/diagnostics/config/sampler/netstack.json5",
     "//src/diagnostics/config/sampler/netstack3.json5",
+    "//src/diagnostics/config/sampler/odpm.json5",
     "//src/diagnostics/config/sampler/power_metrics_recorder.json5",
     "//src/diagnostics/config/sampler/setui.json5",
     "//src/diagnostics/config/sampler/system-update-committer.json5",

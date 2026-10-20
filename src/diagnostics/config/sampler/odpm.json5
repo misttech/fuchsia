@@ -1,0 +1,3547 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    // Project ID 3 corresponds to the "power" project in third_party/cobalt_config/projects.yaml.
+    // Note: event_codes[0] is (rail_idx + 1) because Cobalt dimension 0 (rail) uses max_event_code
+    // without explicit event_codes names, so Sampler requires raw integers.
+    project_id: 3,
+    data_sets: [
+        {
+            poll_rate_sec: 600,
+            metrics: [
+                // Rail 1 (rail_idx = 0)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/1/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        1,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/1/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        1,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/1/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        1,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/1/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        1,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/1/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        1,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/1/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        1,
+                        "Active",
+                    ],
+                },
+
+                // Rail 2 (rail_idx = 1)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/2/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        2,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/2/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        2,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/2/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        2,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/2/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        2,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/2/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        2,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/2/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        2,
+                        "Active",
+                    ],
+                },
+
+                // Rail 3 (rail_idx = 2)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/3/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        3,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/3/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        3,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/3/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        3,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/3/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        3,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/3/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        3,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/3/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        3,
+                        "Active",
+                    ],
+                },
+
+                // Rail 4 (rail_idx = 3)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/4/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        4,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/4/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        4,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/4/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        4,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/4/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        4,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/4/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        4,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/4/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        4,
+                        "Active",
+                    ],
+                },
+
+                // Rail 5 (rail_idx = 4)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/5/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        5,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/5/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        5,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/5/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        5,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/5/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        5,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/5/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        5,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/5/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        5,
+                        "Active",
+                    ],
+                },
+
+                // Rail 6 (rail_idx = 5)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/6/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        6,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/6/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        6,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/6/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        6,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/6/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        6,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/6/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        6,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/6/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        6,
+                        "Active",
+                    ],
+                },
+
+                // Rail 7 (rail_idx = 6)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/7/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        7,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/7/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        7,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/7/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        7,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/7/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        7,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/7/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        7,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/7/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        7,
+                        "Active",
+                    ],
+                },
+
+                // Rail 8 (rail_idx = 7)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/8/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        8,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/8/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        8,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/8/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        8,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/8/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        8,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/8/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        8,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/8/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        8,
+                        "Active",
+                    ],
+                },
+
+                // Rail 9 (rail_idx = 8)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/9/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        9,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/9/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        9,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/9/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        9,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/9/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        9,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/9/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        9,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/9/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        9,
+                        "Active",
+                    ],
+                },
+
+                // Rail 10 (rail_idx = 9)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/10/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        10,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/10/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        10,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/10/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        10,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/10/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        10,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/10/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        10,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/10/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        10,
+                        "Active",
+                    ],
+                },
+
+                // Rail 11 (rail_idx = 10)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/11/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        11,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/11/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        11,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/11/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        11,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/11/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        11,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/11/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        11,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/11/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        11,
+                        "Active",
+                    ],
+                },
+
+                // Rail 12 (rail_idx = 11)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/12/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        12,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/12/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        12,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/12/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        12,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/12/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        12,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/12/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        12,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/12/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        12,
+                        "Active",
+                    ],
+                },
+
+                // Rail 13 (rail_idx = 12)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/13/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        13,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/13/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        13,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/13/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        13,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/13/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        13,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/13/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        13,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/13/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        13,
+                        "Active",
+                    ],
+                },
+
+                // Rail 14 (rail_idx = 13)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/14/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        14,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/14/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        14,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/14/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        14,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/14/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        14,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/14/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        14,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/14/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        14,
+                        "Active",
+                    ],
+                },
+
+                // Rail 15 (rail_idx = 14)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/15/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        15,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/15/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        15,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/15/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        15,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/15/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        15,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/15/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        15,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/15/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        15,
+                        "Active",
+                    ],
+                },
+
+                // Rail 16 (rail_idx = 15)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/16/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        16,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/16/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        16,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/16/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        16,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/16/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        16,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/16/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        16,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/16/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        16,
+                        "Active",
+                    ],
+                },
+
+                // Rail 17 (rail_idx = 16)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/17/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        17,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/17/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        17,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/17/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        17,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/17/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        17,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/17/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        17,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/17/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        17,
+                        "Active",
+                    ],
+                },
+
+                // Rail 18 (rail_idx = 17)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/18/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        18,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/18/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        18,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/18/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        18,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/18/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        18,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/18/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        18,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/18/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        18,
+                        "Active",
+                    ],
+                },
+
+                // Rail 19 (rail_idx = 18)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/19/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        19,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/19/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        19,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/19/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        19,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/19/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        19,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/19/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        19,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/19/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        19,
+                        "Active",
+                    ],
+                },
+
+                // Rail 20 (rail_idx = 19)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/20/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        20,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/20/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        20,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/20/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        20,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/20/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        20,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/20/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        20,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/20/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        20,
+                        "Active",
+                    ],
+                },
+
+                // Rail 21 (rail_idx = 20)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/21/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        21,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/21/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        21,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/21/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        21,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/21/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        21,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/21/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        21,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/21/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        21,
+                        "Active",
+                    ],
+                },
+
+                // Rail 22 (rail_idx = 21)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/22/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        22,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/22/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        22,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/22/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        22,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/22/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        22,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/22/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        22,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/22/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        22,
+                        "Active",
+                    ],
+                },
+
+                // Rail 23 (rail_idx = 22)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/23/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        23,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/23/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        23,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/23/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        23,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/23/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        23,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/23/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        23,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/23/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        23,
+                        "Active",
+                    ],
+                },
+
+                // Rail 24 (rail_idx = 23)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/24/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        24,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/24/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        24,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/24/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        24,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/24/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        24,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/24/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        24,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/24/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        24,
+                        "Active",
+                    ],
+                },
+
+                // Rail 25 (rail_idx = 24)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/25/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        25,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/25/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        25,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/25/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        25,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/25/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        25,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/25/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        25,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/25/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        25,
+                        "Active",
+                    ],
+                },
+
+                // Rail 26 (rail_idx = 25)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/26/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        26,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/26/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        26,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/26/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        26,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/26/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        26,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/26/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        26,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/26/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        26,
+                        "Active",
+                    ],
+                },
+
+                // Rail 27 (rail_idx = 26)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/27/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        27,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/27/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        27,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/27/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        27,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/27/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        27,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/27/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        27,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/27/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        27,
+                        "Active",
+                    ],
+                },
+
+                // Rail 28 (rail_idx = 27)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/28/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        28,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/28/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        28,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/28/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        28,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/28/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        28,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/28/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        28,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/28/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        28,
+                        "Active",
+                    ],
+                },
+
+                // Rail 29 (rail_idx = 28)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/29/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        29,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/29/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        29,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/29/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        29,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/29/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        29,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/29/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        29,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/29/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        29,
+                        "Active",
+                    ],
+                },
+
+                // Rail 30 (rail_idx = 29)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/30/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        30,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/30/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        30,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/30/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        30,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/30/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        30,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/30/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        30,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/30/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        30,
+                        "Active",
+                    ],
+                },
+
+                // Rail 31 (rail_idx = 30)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/31/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        31,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/31/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        31,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/31/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        31,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/31/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        31,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/31/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        31,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/31/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        31,
+                        "Active",
+                    ],
+                },
+
+                // Rail 32 (rail_idx = 31)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/32/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        32,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/32/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        32,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/32/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        32,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/32/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        32,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/32/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        32,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/32/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        32,
+                        "Active",
+                    ],
+                },
+
+                // Rail 33 (rail_idx = 32)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/33/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        33,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/33/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        33,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/33/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        33,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/33/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        33,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/33/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        33,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/33/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        33,
+                        "Active",
+                    ],
+                },
+
+                // Rail 34 (rail_idx = 33)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/34/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        34,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/34/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        34,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/34/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        34,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/34/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        34,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/34/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        34,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/34/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        34,
+                        "Active",
+                    ],
+                },
+
+                // Rail 35 (rail_idx = 34)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/35/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        35,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/35/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        35,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/35/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        35,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/35/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        35,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/35/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        35,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/35/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        35,
+                        "Active",
+                    ],
+                },
+
+                // Rail 36 (rail_idx = 35)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/36/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        36,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/36/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        36,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/36/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        36,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/36/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        36,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/36/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        36,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/36/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        36,
+                        "Active",
+                    ],
+                },
+
+                // Rail 37 (rail_idx = 36)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/37/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        37,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/37/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        37,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/37/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        37,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/37/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        37,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/37/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        37,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/37/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        37,
+                        "Active",
+                    ],
+                },
+
+                // Rail 38 (rail_idx = 37)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/38/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        38,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/38/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        38,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/38/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        38,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/38/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        38,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/38/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        38,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/38/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        38,
+                        "Active",
+                    ],
+                },
+
+                // Rail 39 (rail_idx = 38)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/39/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        39,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/39/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        39,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/39/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        39,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/39/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        39,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/39/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        39,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/39/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        39,
+                        "Active",
+                    ],
+                },
+
+                // Rail 40 (rail_idx = 39)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/40/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        40,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/40/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        40,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/40/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        40,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/40/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        40,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/40/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        40,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/40/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        40,
+                        "Active",
+                    ],
+                },
+
+                // Rail 41 (rail_idx = 40)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/41/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        41,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/41/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        41,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/41/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        41,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/41/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        41,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/41/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        41,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/41/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        41,
+                        "Active",
+                    ],
+                },
+
+                // Rail 42 (rail_idx = 41)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/42/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        42,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/42/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        42,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/42/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        42,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/42/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        42,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/42/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        42,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/42/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        42,
+                        "Active",
+                    ],
+                },
+
+                // Rail 43 (rail_idx = 42)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/43/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        43,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/43/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        43,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/43/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        43,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/43/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        43,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/43/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        43,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/43/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        43,
+                        "Active",
+                    ],
+                },
+
+                // Rail 44 (rail_idx = 43)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/44/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        44,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/44/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        44,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/44/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        44,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/44/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        44,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/44/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        44,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/44/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        44,
+                        "Active",
+                    ],
+                },
+
+                // Rail 45 (rail_idx = 44)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/45/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        45,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/45/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        45,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/45/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        45,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/45/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        45,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/45/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        45,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/45/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        45,
+                        "Active",
+                    ],
+                },
+
+                // Rail 46 (rail_idx = 45)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/46/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        46,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/46/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        46,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/46/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        46,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/46/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        46,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/46/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        46,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/46/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        46,
+                        "Active",
+                    ],
+                },
+
+                // Rail 47 (rail_idx = 46)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/47/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        47,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/47/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        47,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/47/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        47,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/47/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        47,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/47/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        47,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/47/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        47,
+                        "Active",
+                    ],
+                },
+
+                // Rail 48 (rail_idx = 47)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/48/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        48,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/48/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        48,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/48/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        48,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/48/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        48,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/48/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        48,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/48/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        48,
+                        "Active",
+                    ],
+                },
+
+                // Rail 49 (rail_idx = 48)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/49/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        49,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/49/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        49,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/49/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        49,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/49/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        49,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/49/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        49,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/49/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        49,
+                        "Active",
+                    ],
+                },
+
+                // Rail 50 (rail_idx = 49)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/50/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        50,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/50/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        50,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/50/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        50,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/50/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        50,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/50/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        50,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/50/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        50,
+                        "Active",
+                    ],
+                },
+
+                // Rail 51 (rail_idx = 50)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/51/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        51,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/51/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        51,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/51/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        51,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/51/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        51,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/51/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        51,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/51/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        51,
+                        "Active",
+                    ],
+                },
+
+                // Rail 52 (rail_idx = 51)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/52/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        52,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/52/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        52,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/52/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        52,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/52/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        52,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/52/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        52,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/52/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        52,
+                        "Active",
+                    ],
+                },
+
+                // Rail 53 (rail_idx = 52)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/53/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        53,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/53/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        53,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/53/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        53,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/53/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        53,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/53/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        53,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/53/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        53,
+                        "Active",
+                    ],
+                },
+
+                // Rail 54 (rail_idx = 53)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/54/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        54,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/54/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        54,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/54/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        54,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/54/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        54,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/54/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        54,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/54/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        54,
+                        "Active",
+                    ],
+                },
+
+                // Rail 55 (rail_idx = 54)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/55/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        55,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/55/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        55,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/55/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        55,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/55/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        55,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/55/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        55,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/55/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        55,
+                        "Active",
+                    ],
+                },
+
+                //
+                // Rails 56 to 83 are skipped for now due to the size constraint in fuchsia.diagnostics.sampler.ProjectConfigs.
+                //
+
+                // Rail 84 (rail_idx = 83)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/84/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        84,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/84/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        84,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/84/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        84,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/84/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        84,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/84/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        84,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/84/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        84,
+                        "Active",
+                    ],
+                },
+
+                // Rail 85 (rail_idx = 84)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/85/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        85,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/85/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        85,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/85/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        85,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/85/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        85,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/85/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        85,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/85/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        85,
+                        "Active",
+                    ],
+                },
+
+                // Rail 86 (rail_idx = 85)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/86/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        86,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/86/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        86,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/86/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        86,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/86/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        86,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/86/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        86,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/86/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        86,
+                        "Active",
+                    ],
+                },
+
+                // Rail 87 (rail_idx = 86)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/87/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        87,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/87/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        87,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/87/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        87,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/87/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        87,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/87/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        87,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/87/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        87,
+                        "Active",
+                    ],
+                },
+
+                // Rail 88 (rail_idx = 87)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/88/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        88,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/88/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        88,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/88/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        88,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/88/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        88,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/88/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        88,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/88/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        88,
+                        "Active",
+                    ],
+                },
+
+                // Rail 89 (rail_idx = 88)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/89/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        89,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/89/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        89,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/89/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        89,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/89/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        89,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/89/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        89,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/89/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        89,
+                        "Active",
+                    ],
+                },
+
+                // Rail 90 (rail_idx = 89)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/90/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        90,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/90/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        90,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/90/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        90,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/90/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        90,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/90/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        90,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/90/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        90,
+                        "Active",
+                    ],
+                },
+
+                // Rail 91 (rail_idx = 90)
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/91/suspension:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        91,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/91/suspension:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        91,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/91/suspension:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        91,
+                        "Suspended",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/91/resumption:avg_power_uw",
+                    metric_name: "odpm_suspend_resume_avg_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        91,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/91/resumption:min_power_uw",
+                    metric_name: "odpm_suspend_resume_min_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        91,
+                        "Active",
+                    ],
+                },
+                {
+                    selector: "bootstrap/*-drivers\\:*:[name=odpm]root/power_management/rails/91/resumption:max_power_uw",
+                    metric_name: "odpm_suspend_resume_max_power_uw",
+                    metric_type: "Integer",
+                    event_codes: [
+                        91,
+                        "Active",
+                    ],
+                },
+            ],
+        },
+    ],
+}
