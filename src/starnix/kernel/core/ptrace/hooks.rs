@@ -7,8 +7,8 @@ use std::sync::atomic::Ordering;
 use starnix_logging::CATEGORY_STARNIX;
 use starnix_uapi::signals::SIGTRAP;
 
-use crate::ptrace::{PtraceOptions, StopState};
-use crate::signals::{SignalDetail, SignalInfo};
+use crate::ptrace::{PtraceEventData, PtraceOptions, StopState};
+use crate::signals::{SignalDetail, SignalInfo, send_signal_first};
 use crate::task::CurrentTask;
 
 /// Provides access to ptrace hooks for a [`CurrentTask`].
@@ -43,29 +43,69 @@ impl<'a> CurrentTaskPtrace<'a> {
 
     #[inline(never)]
     fn syscall_stop(self, stop_state: StopState, is_error: Option<bool>) {
-        let block = {
+        {
             let mut state = self.current_task.write();
             self.current_task.trace_syscalls.store(false, Ordering::Relaxed);
-            if let Some(ptrace) = &mut state.ptrace {
-                let mut sig = SignalInfo::with_detail(
-                    SIGTRAP,
-                    (linux_uapi::SIGTRAP | 0x80) as i32,
-                    SignalDetail::None,
-                );
-                if ptrace.has_option(PtraceOptions::TRACESYSGOOD) {
-                    sig.signal.set_ptrace_syscall_bit();
-                }
-                if let Some(is_error) = is_error {
-                    ptrace.last_syscall_was_error = is_error;
-                }
-                state.set_stopped(stop_state, Some(sig), None, None);
-                true
-            } else {
-                false
+            let Some(ptrace) = &mut state.ptrace else {
+                return;
+            };
+
+            let mut sig = SignalInfo::with_detail(
+                SIGTRAP,
+                (linux_uapi::SIGTRAP | 0x80) as i32,
+                SignalDetail::None,
+            );
+            if ptrace.has_option(PtraceOptions::TRACESYSGOOD) {
+                sig.signal.set_ptrace_syscall_bit();
             }
-        };
-        if block {
-            self.current_task.block_if_stopped();
+            if let Some(is_error) = is_error {
+                ptrace.last_syscall_was_error = is_error;
+            }
+            state.set_stopped(stop_state, Some(sig), None, None);
         }
+        self.current_task.block_if_stopped();
+    }
+
+    /// If currently being ptraced with the given option, emit the appropriate
+    /// event.  PTRACE_EVENTMSG will return the given message.  Also emits the
+    /// appropriate event for execve in the absence of TRACEEXEC.
+    ///
+    /// Note that the Linux kernel has a documented bug where, if TRACEEXIT is
+    /// enabled, SIGKILL will trigger an event.  We do not exhibit this
+    /// behavior.
+    pub fn on_event(self, trace_kind: PtraceOptions, msg: u64) {
+        if trace_kind.is_empty() {
+            return;
+        }
+        {
+            let mut state = self.current_task.write();
+            let Some(ptrace) = &mut state.ptrace else {
+                return;
+            };
+
+            if !ptrace.has_option(trace_kind) {
+                // If this would be a TRACEEXEC, but TRACEEXEC is not
+                // turned on, then send a SIGTRAP.
+                if trace_kind == PtraceOptions::TRACEEXEC && !ptrace.is_seized() {
+                    // Send a SIGTRAP so that the parent can gain control.
+                    send_signal_first(self.current_task, state, SignalInfo::kernel(SIGTRAP));
+                }
+
+                return;
+            }
+            let event_data = PtraceEventData::new(trace_kind, msg);
+            let siginfo = SignalInfo::with_detail(
+                SIGTRAP,
+                (((event_data.event as u32) << 8) | SIGTRAP.number()) as i32,
+                SignalDetail::None,
+            );
+            state.set_stopped(
+                StopState::PtraceEventStopping,
+                Some(siginfo),
+                None,
+                Some(event_data),
+            );
+        }
+        self.current_task.block_if_stopped();
     }
 }

@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod event;
 mod hooks;
 mod ptrace;
 mod stop_state;
 
+pub use event::*;
 pub use hooks::*;
 pub use ptrace::*;
 pub use stop_state::*;

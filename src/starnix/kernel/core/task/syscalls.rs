@@ -125,11 +125,11 @@ pub fn do_clone(current_task: &mut CurrentTask, args: &clone_args) -> Result<pid
     let task_ref = Arc::downgrade(&new_task.task);
     execute_task(new_task, |_| Ok(()), |_| {}, ptrace_state)?;
 
-    current_task.ptrace_event(trace_kind, tid as u64);
+    current_task.ptrace().on_event(trace_kind, tid as u64);
 
     if args.flags & (CLONE_VFORK as u64) != 0 {
         current_task.wait_for_execve(task_ref)?;
-        current_task.ptrace_event(PtraceOptions::TRACEVFORKDONE, tid as u64);
+        current_task.ptrace().on_event(PtraceOptions::TRACEVFORKDONE, tid as u64);
     }
 
     Ok(tid)

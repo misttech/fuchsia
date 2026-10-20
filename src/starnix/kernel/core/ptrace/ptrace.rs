@@ -4,7 +4,7 @@
 
 use crate::arch::execution::new_syscall_from_state;
 use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt};
-use crate::ptrace::StopState;
+use crate::ptrace::{PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
 use crate::signals::syscalls::WaitingOptions;
 use crate::signals::{
@@ -14,7 +14,6 @@ use crate::task::{
     CurrentTask, Pid, PidTableGuard, ProcessSelector, Task, TaskMutableState, ThreadGroup,
     ThreadState, WaitQueue, ZombieNotification, ZombieProcess,
 };
-use bitflags::bitflags;
 use starnix_logging::track_stub;
 use starnix_registers::HeapRegs;
 use starnix_syscalls::SyscallResult;
@@ -28,9 +27,7 @@ use starnix_uapi::signals::{SIGKILL, SIGSTOP, SIGTRAP, SigSet, Signal, Unchecked
 use starnix_uapi::user_address::ArchSpecific;
 use starnix_uapi::user_address::{LongPtr, MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::{
-    PTRACE_CONT, PTRACE_DETACH, PTRACE_EVENT_CLONE, PTRACE_EVENT_EXEC, PTRACE_EVENT_EXIT,
-    PTRACE_EVENT_FORK, PTRACE_EVENT_SECCOMP, PTRACE_EVENT_STOP, PTRACE_EVENT_VFORK,
-    PTRACE_EVENT_VFORK_DONE, PTRACE_GET_SYSCALL_INFO, PTRACE_GETEVENTMSG, PTRACE_GETREGSET,
+    PTRACE_CONT, PTRACE_DETACH, PTRACE_GET_SYSCALL_INFO, PTRACE_GETEVENTMSG, PTRACE_GETREGSET,
     PTRACE_GETSIGINFO, PTRACE_GETSIGMASK, PTRACE_INTERRUPT, PTRACE_KILL, PTRACE_LISTEN,
     PTRACE_O_EXITKILL, PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACEEXIT,
     PTRACE_O_TRACEFORK, PTRACE_O_TRACESYSGOOD, PTRACE_O_TRACEVFORK, PTRACE_O_TRACEVFORKDONE,
@@ -117,71 +114,6 @@ pub enum PtraceAttachType {
     Attach,
     /// Attached with PTRACE_SEIZE
     Seize,
-}
-
-bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(transparent)]
-    pub struct PtraceOptions: u32 {
-        const EXITKILL = starnix_uapi::PTRACE_O_EXITKILL;
-        const TRACECLONE = starnix_uapi::PTRACE_O_TRACECLONE;
-        const TRACEEXEC = starnix_uapi::PTRACE_O_TRACEEXEC;
-        const TRACEEXIT = starnix_uapi::PTRACE_O_TRACEEXIT;
-        const TRACEFORK = starnix_uapi::PTRACE_O_TRACEFORK;
-        const TRACESYSGOOD = starnix_uapi::PTRACE_O_TRACESYSGOOD;
-        const TRACEVFORK = starnix_uapi::PTRACE_O_TRACEVFORK;
-        const TRACEVFORKDONE = starnix_uapi::PTRACE_O_TRACEVFORKDONE;
-        const TRACESECCOMP = starnix_uapi::PTRACE_O_TRACESECCOMP;
-        const SUSPEND_SECCOMP = starnix_uapi::PTRACE_O_SUSPEND_SECCOMP;
-    }
-}
-
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum PtraceEvent {
-    #[default]
-    None = 0,
-    Stop = PTRACE_EVENT_STOP,
-    Clone = PTRACE_EVENT_CLONE,
-    Fork = PTRACE_EVENT_FORK,
-    Vfork = PTRACE_EVENT_VFORK,
-    VforkDone = PTRACE_EVENT_VFORK_DONE,
-    Exec = PTRACE_EVENT_EXEC,
-    Exit = PTRACE_EVENT_EXIT,
-    Seccomp = PTRACE_EVENT_SECCOMP,
-}
-
-impl PtraceEvent {
-    pub fn from_option(option: &PtraceOptions) -> Self {
-        match *option {
-            PtraceOptions::TRACECLONE => PtraceEvent::Clone,
-            PtraceOptions::TRACEFORK => PtraceEvent::Fork,
-            PtraceOptions::TRACEVFORK => PtraceEvent::Vfork,
-            PtraceOptions::TRACEVFORKDONE => PtraceEvent::VforkDone,
-            PtraceOptions::TRACEEXEC => PtraceEvent::Exec,
-            PtraceOptions::TRACEEXIT => PtraceEvent::Exit,
-            PtraceOptions::TRACESECCOMP => PtraceEvent::Seccomp,
-            _ => unreachable!("Bad ptrace event specified"),
-        }
-    }
-}
-
-/// Information about what caused a ptrace-event-stop.
-pub struct PtraceEventData {
-    /// The event that caused the task to stop (e.g., PTRACE_EVENT_TRACEFORK or PTRACE_EVENT_EXIT).
-    pub event: PtraceEvent,
-
-    /// The message associated with the event (e.g., tid, exit status)..
-    pub msg: u64,
-}
-
-impl PtraceEventData {
-    pub fn new(option: PtraceOptions, msg: u64) -> Self {
-        Self { event: PtraceEvent::from_option(&option), msg }
-    }
-    pub fn new_from_event(event: PtraceEvent, msg: u64) -> Self {
-        Self { event, msg }
-    }
 }
 
 /// The ptrace state that a new task needs to connect to the same tracer as the

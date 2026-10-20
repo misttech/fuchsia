@@ -7,7 +7,7 @@ use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
-use crate::signals::{SignalDetail, SignalInfo, send_signal_first, send_standard_signal};
+use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::loader::{
     ResolvedProgram, load_executable, resolve_elf_interpreter, resolve_executable,
 };
@@ -1159,7 +1159,8 @@ impl CurrentTask {
             return Err(err);
         }
 
-        self.ptrace_event(PtraceOptions::TRACEEXEC, self.task.tid.id as u64);
+        let tid = self.get_tid() as u64;
+        self.ptrace().on_event(PtraceOptions::TRACEEXEC, tid);
         self.signal_vfork();
         self.task.thread_group.sync_syscall_log_level();
 
@@ -2024,48 +2025,6 @@ impl CurrentTask {
             ptrace.get_core_state_for_clone(clone_args)
         } else {
             (PtraceOptions::empty(), None)
-        }
-    }
-
-    /// If currently being ptraced with the given option, emit the appropriate
-    /// event.  PTRACE_EVENTMSG will return the given message.  Also emits the
-    /// appropriate event for execve in the absence of TRACEEXEC.
-    ///
-    /// Note that the Linux kernel has a documented bug where, if TRACEEXIT is
-    /// enabled, SIGKILL will trigger an event.  We do not exhibit this
-    /// behavior.
-    pub fn ptrace_event(&mut self, trace_kind: PtraceOptions, msg: u64) {
-        if !trace_kind.is_empty() {
-            {
-                let mut state = self.write();
-                if let Some(ptrace) = &mut state.ptrace {
-                    if !ptrace.has_option(trace_kind) {
-                        // If this would be a TRACEEXEC, but TRACEEXEC is not
-                        // turned on, then send a SIGTRAP.
-                        if trace_kind == PtraceOptions::TRACEEXEC && !ptrace.is_seized() {
-                            // Send a SIGTRAP so that the parent can gain control.
-                            send_signal_first(self, state, SignalInfo::kernel(SIGTRAP));
-                        }
-
-                        return;
-                    }
-                    let ptrace_event = PtraceEvent::from_option(&trace_kind) as u32;
-                    let siginfo = SignalInfo::with_detail(
-                        SIGTRAP,
-                        ((ptrace_event << 8) | SIGTRAP.number()) as i32,
-                        SignalDetail::None,
-                    );
-                    state.set_stopped(
-                        StopState::PtraceEventStopping,
-                        Some(siginfo),
-                        None,
-                        Some(PtraceEventData::new(trace_kind, msg)),
-                    );
-                } else {
-                    return;
-                }
-            }
-            self.block_if_stopped();
         }
     }
 

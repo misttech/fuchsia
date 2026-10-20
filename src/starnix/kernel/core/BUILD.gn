@@ -94,6 +94,7 @@ _starnix_core_sources = [
   "power/sync_on_suspend.rs",
   "power/wake_lock.rs",
   "power/wakeup_count.rs",
+  "ptrace/event.rs",
   "ptrace/hooks.rs",
   "ptrace/mod.rs",
   "ptrace/ptrace.rs",

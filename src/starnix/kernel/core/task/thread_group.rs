@@ -694,7 +694,8 @@ impl ThreadGroup {
         // `PTRACE_EVENT_EXIT`.
         if let Some(ref mut current_task) = current_task {
             current_task
-                .ptrace_event(PtraceOptions::TRACEEXIT, exit_status.signal_info_status() as u64);
+                .ptrace()
+                .on_event(PtraceOptions::TRACEEXIT, exit_status.signal_info_status() as u64);
             let mut task_state = current_task.write();
             task_state.set_exit_status(exit_status);
             task_state.force_wake_for_exit();
