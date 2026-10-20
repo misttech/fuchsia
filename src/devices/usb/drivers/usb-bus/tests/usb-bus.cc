@@ -306,4 +306,45 @@ TEST_F(BusTest, BanjoRemoveDevice) {
   ASSERT_EQ(bus_dev->child_count(), 0);
 }
 
+namespace {
+
+TEST_F(BusTest, OperationsWhileUnbindingRejected) {
+  // 1. Add device 1 via Banjo so that devices_ has an active child.
+  auto result = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [this] {
+    [[maybe_unused]] auto status = hci_->bus_intf().AddDevice(1, 0, USB_SPEED_FULL);
+    ASSERT_TRUE(status == ZX_OK);
+  });
+  ASSERT_TRUE(result.is_ok());
+
+  auto* bus_dev = parent_->GetLatestChild();
+  ASSERT_EQ(std::string(bus_dev->name()), "usb-bus");
+  auto* usb_dev = bus_dev->GetLatestChild();
+  ASSERT_TRUE(usb_dev != nullptr);
+
+  // 2. Begin unbinding usb-bus by triggering UnbindOp on bus_dev.
+  // Because devices_[1] is still present, DdkUnbind sets unbind_txn_ and initiates
+  // child removal without immediately replying to unbind_txn_.
+  auto unbind_result =
+      fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&] { bus_dev->UnbindOp(); });
+  ASSERT_TRUE(unbind_result.is_ok());
+
+  // 3. Any subsequent operations (AddDevice, RemoveDevice, ReinitializeDevice) while
+  // unbinding must return ZX_ERR_BAD_STATE.
+  auto ops_result = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&] {
+    EXPECT_TRUE(hci_->bus_intf().AddDevice(2, 0, USB_SPEED_FULL) == ZX_ERR_BAD_STATE);
+    EXPECT_TRUE(hci_->bus_intf().RemoveDevice(1) == ZX_ERR_BAD_STATE);
+    EXPECT_TRUE(hci_->bus_intf().ReinitializeDevice(1) == ZX_ERR_BAD_STATE);
+  });
+  ASSERT_TRUE(ops_result.is_ok());
+
+  // 4. Release children and complete teardown cleanly.
+  runtime()->RunUntilIdle();
+  auto release_result = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(),
+                                                 [&] { mock_ddk::ReleaseFlaggedDevices(bus_dev); });
+  ASSERT_TRUE(release_result.is_ok());
+  runtime()->RunUntilIdle();
+}
+
+}  // namespace
+
 }  // namespace usb_bus

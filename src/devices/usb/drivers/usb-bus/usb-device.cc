@@ -8,8 +8,10 @@
 #include <fidl/fuchsia.hardware.usb.device/cpp/wire.h>
 #include <fuchsia/hardware/usb/bus/c/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
+#include <lib/async/cpp/task.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
+#include <lib/fit/defer.h>
 #include <lib/zx/time.h>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -296,9 +298,22 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
       return status;
     }
   }
+  if (!req.has_value()) {
+    zxlogf(ERROR, "usb-bus: failed to allocate request for control transfer");
+    return ZX_ERR_INTERNAL;
+  }
+  Request& req_ref = *req;
+
+  auto cleanup = fit::defer([&] {
+    if (use_free_list) {
+      free_reqs_.Add(std::move(*req));
+    } else {
+      req_ref.Release();
+    }
+  });
 
   // fill in protocol data
-  usb_setup_t* setup = &req->request()->setup;
+  usb_setup_t* setup = &req_ref.request()->setup;
   setup->bm_request_type = request_type;
   setup->b_request = request;
   setup->w_value = value;
@@ -321,15 +336,28 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
     }
   }
 
-  if (length > 0 && out) {
-    size_t result = req->CopyTo(write_buffer, length, 0);
-    ZX_ASSERT(result == length);
+  if (length > 0) {
+    if (out) {
+      size_t result = req_ref.CopyTo(write_buffer, length, 0);
+      ZX_ASSERT(result == length);
+      zx_status_t status = req_ref.CacheFlush(0, length);
+      if (status != ZX_OK) {
+        zxlogf(ERROR, "usb-bus: CacheFlush failed: %s", zx_status_get_string(status));
+        return status;
+      }
+    } else {
+      zx_status_t status = req_ref.CacheFlushInvalidate(0, length);
+      if (status != ZX_OK) {
+        zxlogf(ERROR, "usb-bus: CacheFlushInvalidate failed: %s", zx_status_get_string(status));
+        return status;
+      }
+    }
   }
 
   sync_completion_t completion;
 
-  req->request()->header.device_id = device_id_;
-  req->request()->header.length = length;
+  req_ref.request()->header.device_id = device_id_;
+  req_ref.request()->header.length = length;
   // We call this directly instead of via hci_queue, as it's safe to call our
   // own completion callback, and prevents clients getting into odd deadlocks.
   usb_request_complete_callback_t complete = {
@@ -337,11 +365,11 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
       .ctx = &completion,
   };
   // Use request() instead of take() since we keep referring to the request below.
-  hci_.RequestQueue(req->request(), &complete);
+  hci_.RequestQueue(req_ref.request(), &complete);
   auto status = waiter_->Wait(&completion, timeout);
 
   if (status == ZX_OK) {
-    status = req->request()->response.status;
+    status = req_ref.request()->response.status;
   } else if (status == ZX_ERR_TIMED_OUT) {
     // cancel transactions and wait for request to be completed
     status = hci_.CancelAll(device_id_, 0);
@@ -360,21 +388,22 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
     }
   }
   if (status == ZX_OK && !out) {
-    auto actual = req->request()->response.actual;
+    size_t actual = req_ref.request()->response.actual;
     if (length > 0) {
-      size_t result = req->CopyFrom(out_read_buffer, actual, 0);
-      ZX_ASSERT(result == actual);
+      zx_status_t cache_status = req_ref.CacheFlushInvalidate(0, actual);
+      if (cache_status != ZX_OK) {
+        zxlogf(ERROR, "usb-bus: CacheFlushInvalidate failed: %s",
+               zx_status_get_string(cache_status));
+        return cache_status;
+      }
+      auto result = req_ref.CachedCopyFrom(out_read_buffer, actual, 0);
+      ZX_ASSERT(result.is_ok() && result.value() == actual);
     }
     if (out_read_actual != nullptr) {
       *out_read_actual = actual;
     }
   }
 
-  if (use_free_list) {
-    free_reqs_.Add(std::move(*req));
-  } else {
-    req->Release();
-  }
   return status;
 }
 

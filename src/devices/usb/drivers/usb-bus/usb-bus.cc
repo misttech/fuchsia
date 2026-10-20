@@ -76,6 +76,9 @@ zx_status_t UsbBus::Init() {
 zx_status_t UsbBus::UsbBusInterfaceAddDevice(uint32_t device_id, uint32_t hub_id,
                                              usb_speed_t speed) {
   if (dispatcher_ == fdf::Dispatcher::GetCurrent()->async_dispatcher()) {
+    if (unbind_txn_.has_value()) {
+      return ZX_ERR_BAD_STATE;
+    }
     if (device_id >= devices_.size()) {
       return ZX_ERR_INVALID_ARGS;
     }
@@ -89,16 +92,22 @@ zx_status_t UsbBus::UsbBusInterfaceAddDevice(uint32_t device_id, uint32_t hub_id
       return client.error_value();
     }
 
-    return UsbDevice::Create(zxdev(), hci_, std::move(*client), device_id, hub_id, speed,
-                             dispatcher_, &devices_[device_id]);
+    zx_status_t status = UsbDevice::Create(zxdev(), hci_, std::move(*client), device_id, hub_id,
+                                           speed, dispatcher_, &devices_[device_id]);
+    zxlogf(INFO, "usb-bus: UsbBusInterfaceAddDevice device_id=%u hub_id=%u speed=%u status=%s",
+           device_id, hub_id, speed, zx_status_get_string(status));
+    return status;
   }
 
   sync_completion_t wait;
   zx_status_t status = ZX_OK;
-  async::PostTask(dispatcher_, [&]() {
+  zx_status_t post_status = async::PostTask(dispatcher_, [&] {
     status = UsbBusInterfaceAddDevice(device_id, hub_id, speed);
     sync_completion_signal(&wait);
   });
+  if (post_status != ZX_OK) {
+    return post_status;
+  }
   sync_completion_wait(&wait, ZX_TIME_INFINITE);
   return status;
 }
@@ -115,6 +124,9 @@ void UsbBus::AddDevice(AddDeviceRequest& request, AddDeviceCompleter::Sync& comp
 
 zx_status_t UsbBus::UsbBusInterfaceRemoveDevice(uint32_t device_id) {
   if (dispatcher_ == fdf::Dispatcher::GetCurrent()->async_dispatcher()) {
+    if (unbind_txn_.has_value()) {
+      return ZX_ERR_BAD_STATE;
+    }
     if (device_id >= devices_.size()) {
       zxlogf(ERROR, "%s: device_id out of range", __func__);
       return ZX_ERR_INVALID_ARGS;
@@ -130,10 +142,13 @@ zx_status_t UsbBus::UsbBusInterfaceRemoveDevice(uint32_t device_id) {
 
   sync_completion_t wait;
   zx_status_t status = ZX_OK;
-  async::PostTask(dispatcher_, [&]() {
+  zx_status_t post_status = async::PostTask(dispatcher_, [&] {
     status = UsbBusInterfaceRemoveDevice(device_id);
     sync_completion_signal(&wait);
   });
+  if (post_status != ZX_OK) {
+    return post_status;
+  }
   sync_completion_wait(&wait, ZX_TIME_INFINITE);
   return status;
 }
@@ -196,6 +211,9 @@ void UsbBus::ResetPort(ResetPortRequest& request, ResetPortCompleter::Sync& comp
 
 zx_status_t UsbBus::UsbBusInterfaceReinitializeDevice(uint32_t device_id) {
   if (dispatcher_ == fdf::Dispatcher::GetCurrent()->async_dispatcher()) {
+    if (unbind_txn_.has_value()) {
+      return ZX_ERR_BAD_STATE;
+    }
     if (device_id >= devices_.size()) {
       zxlogf(ERROR, "%s: device_id out of range", __func__);
       return ZX_ERR_INVALID_ARGS;
@@ -249,10 +267,13 @@ zx_status_t UsbBus::UsbBusInterfaceReinitializeDevice(uint32_t device_id) {
 
   sync_completion_t wait;
   zx_status_t status = ZX_OK;
-  async::PostTask(dispatcher_, [&]() {
+  zx_status_t post_status = async::PostTask(dispatcher_, [&] {
     status = UsbBusInterfaceReinitializeDevice(device_id);
     sync_completion_signal(&wait);
   });
+  if (post_status != ZX_OK) {
+    return post_status;
+  }
   sync_completion_wait(&wait, ZX_TIME_INFINITE);
   return status;
 }
