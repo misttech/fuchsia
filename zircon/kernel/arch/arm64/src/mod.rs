@@ -7,6 +7,7 @@
 pub mod cache;
 mod mp;
 pub mod restricted;
+pub mod smccc;
 mod spinlock;
 #[cfg(console_enabled)]
 mod sysreg;

@@ -240,6 +240,7 @@ if (toolchain_environment == "kernel.phys" ||
       "src/mod.rs",
       "src/mp.rs",
       "src/restricted.rs",
+      "src/smccc.rs",
       "src/spinlock.rs",
       "src/sysreg.rs",
       "src/vm.rs",
