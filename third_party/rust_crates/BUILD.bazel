@@ -71,6 +71,7 @@ package_group(
 package_group(
     name = "regex_visibility",
     packages = [
+        "//src/connectivity/wlan/lib/ieee80211-testutils",
         "//src/developer/ffx/command",
         "//src/developer/ffx/config",
         "//src/developer/ffx/lib/netext",

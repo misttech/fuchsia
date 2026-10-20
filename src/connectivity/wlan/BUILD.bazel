@@ -9,5 +9,6 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/connectivity/wlan/lib/ieee80211:ieee80211-tests",
+        "//src/connectivity/wlan/lib/ieee80211-testutils:ieee80211-testutils-tests",
     ],
 )
