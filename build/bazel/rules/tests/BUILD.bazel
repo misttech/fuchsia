@@ -88,6 +88,8 @@ filegroup(
         "//sdk/lib/zxio",
         # Tests `fx_cc_library_headers()`.
         "//zircon/system/ulib/zircon-internal",
+        # Tests the macros in zx_library.bzl.
+        "//build/bazel/rules/tests/zx_library:build_only_tests",
         # Tests `fx_package()`.
         "//src/security/bin/root_ssl_certificates",
         # Tests `fx_component()`.

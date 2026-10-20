@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Build-only tests of the macros in //build/bazel/rules:zx_library.bzl."""
+
+load(
+    "//build/bazel/rules:zx_library.bzl",
+    "cc_shared_library_zx",
+    "cc_source_library_zx",
+    "cc_static_library_zx",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# Each library uses `deps`, including a ":headers" target that the macros
+# rewrite, and `implementation_deps`.
+
+cc_shared_library_zx(
+    name = "shared",
+    srcs = ["lib.cc"],
+    hdrs = ["include/zx_library_test/lib.h"],
+    implementation_deps = ["//sdk/lib/stdcompat"],
+    includes = ["include"],
+    deps = ["//sdk/lib/fit:headers"],
+)
+
+cc_source_library_zx(
+    name = "source",
+    srcs = ["lib.cc"],
+    hdrs = ["include/zx_library_test/lib.h"],
+    implementation_deps = ["//sdk/lib/stdcompat"],
+    includes = ["include"],
+    deps = ["//sdk/lib/fit:headers"],
+)
+
+cc_static_library_zx(
+    name = "static",
+    srcs = ["lib.cc"],
+    hdrs = ["include/zx_library_test/lib.h"],
+    implementation_deps = ["//sdk/lib/stdcompat"],
+    includes = ["include"],
+    deps = ["//sdk/lib/fit:headers"],
+)
+
+filegroup(
+    name = "build_only_tests",
+    testonly = True,
+    srcs = [
+        ":shared",
+        ":source",
+        ":static",
+    ],
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
+)

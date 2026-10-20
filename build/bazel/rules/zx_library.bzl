@@ -14,6 +14,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 visibility([
     "//build/bazel/rules/idk/private/...",  # Uses helper functions defined here.
+    "//build/bazel/rules/tests/zx_library",
     "//src/devices/...",
     "//src/firmware/lib/...",
     "//src/lib/...",
@@ -160,6 +161,20 @@ def apply_common_zx_library_modifications(kwargs):
 
 # LINT.ThenChange(//build/zircon/zx_library.gni)
 
+# `apply_common_zx_library_modifications()` rewrites the labels in these
+# attributes, which requires plain lists. Inherited attributes of symbolic macros
+# are configurable, which turns even plain lists into `select()`s.
+_NON_CONFIGURABLE_DEPS_ATTRS = {
+    "deps": attr.label_list(
+        doc = "Public dependencies. See `cc_library()`.",
+        configurable = False,
+    ),
+    "implementation_deps": attr.label_list(
+        doc = "Private dependencies. See `cc_library()`.",
+        configurable = False,
+    ),
+}
+
 def _cc_shared_library_zx_impl(
         name,
         includes,
@@ -217,7 +232,7 @@ When not using a Zircon-specific toolchain:
         "aspect_hints": attr.label_list(
             doc = "Hints for aspects.",
         ),
-    },
+    } | _NON_CONFIGURABLE_DEPS_ATTRS,
 )
 
 def _cc_source_library_zx_impl(
@@ -279,13 +294,12 @@ When not using a Zircon-specific toolchain:
         "aspect_hints": attr.label_list(
             doc = "Hints for aspects.",
         ),
-    },
+    } | _NON_CONFIGURABLE_DEPS_ATTRS,
 )
 
 def _cc_static_library_zx_impl(
         name,
         includes,
-        implementation_deps,
         **kwargs):
     """Implementation for the cc_static_library_zx() macro."""
 
@@ -301,7 +315,6 @@ def _cc_static_library_zx_impl(
     cc_library(
         name = name,
         includes = includes,
-        implementation_deps = implementation_deps,
         **kwargs
     )
 
@@ -341,5 +354,5 @@ When not using a Zircon-specific toolchain:
         "aspect_hints": attr.label_list(
             doc = "Hints for aspects.",
         ),
-    },
+    } | _NON_CONFIGURABLE_DEPS_ATTRS,
 )
