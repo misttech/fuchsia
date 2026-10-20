@@ -73,6 +73,23 @@ def parse_semver(
     return (major, minor, patch, is_release, tuple(pre_parts))
 
 
+def is_semver_compatible(
+    current_semver: Tuple[
+        int, int, int, bool, Tuple[Tuple[Tuple[int, int | str], ...], ...]
+    ],
+    candidate_semver: Tuple[
+        int, int, int, bool, Tuple[Tuple[Tuple[int, int | str], ...], ...]
+    ],
+) -> bool:
+    c_major, c_minor, c_patch, _, _ = current_semver
+    v_major, v_minor, v_patch, _, _ = candidate_semver
+    if c_major > 0:
+        return v_major == c_major
+    if c_minor > 0:
+        return v_major == 0 and v_minor == c_minor
+    return v_major == 0 and v_minor == 0 and v_patch == c_patch
+
+
 def fetch_crate_versions(
     crate: str, min_publish_age: timedelta, now: datetime
 ) -> List[Tuple[str, datetime, bool]]:
@@ -117,6 +134,7 @@ def process_crate(
     min_publish_age: timedelta,
     now: datetime,
     raw_versions: List[Tuple[str, datetime, bool]] | None = None,
+    semver_only: bool = False,
 ) -> Tuple[timedelta, int, str, str, Tuple[str, datetime]] | None:
     if raw_versions is None:
         raw_versions = fetch_crate_versions(crate, min_publish_age, now)
@@ -137,6 +155,13 @@ def process_crate(
     if current_is_release:
         # If the current version is a stable release, ignore the previous pre-releases
         versions = [v for v in versions if parse_semver(v[0])[3]]
+
+    if semver_only:
+        versions = [
+            v
+            for v in versions
+            if is_semver_compatible(current_semver, parse_semver(v[0]))
+        ]
 
     if min_publish_age > timedelta(0):
         versions = [
@@ -165,16 +190,29 @@ def process_crate(
 
 def process_crate_versions(
     crate: str,
-    crate_versions: List[str],
+    crate_versions: List[Tuple[str, bool]],
     min_publish_age: timedelta,
     now: datetime,
 ) -> List[Tuple[timedelta, int, str, str, Tuple[str, datetime]]]:
     raw_versions = fetch_crate_versions(crate, min_publish_age, now)
     if not raw_versions:
         return []
+    highest_direct_version = max(
+        (v for v, is_direct in crate_versions if is_direct),
+        key=parse_semver,
+        default=None,
+    )
     results = []
-    for version in crate_versions:
-        res = process_crate(crate, version, min_publish_age, now, raw_versions)
+    for version, is_direct in crate_versions:
+        semver_only = not (is_direct and version == highest_direct_version)
+        res = process_crate(
+            crate,
+            version,
+            min_publish_age,
+            now,
+            raw_versions,
+            semver_only=semver_only,
+        )
         if res is not None:
             results.append(res)
     return results
@@ -228,9 +266,19 @@ if __name__ == "__main__":
         capture_output=True,
     )
     metadata = json.loads(cargo_process.stdout)
-    crates: dict[str, List[str]] = {}
+    resolve = metadata.get("resolve") or {}
+    root_id = resolve.get("root")
+    direct_pkg_ids = {
+        dep["pkg"]
+        for node in resolve.get("nodes", [])
+        if node.get("id") == root_id
+        for dep in node.get("deps", [])
+    }
+    crates: dict[str, List[Tuple[str, bool]]] = {}
     for p in metadata["packages"]:
-        crates.setdefault(p["name"], []).append(p["version"])
+        crates.setdefault(p["name"], []).append(
+            (p["version"], p["id"] in direct_pkg_ids)
+        )
     updates = []
 
     # Limit workers to avoid overwhelming crates.io and hitting rate limits.
