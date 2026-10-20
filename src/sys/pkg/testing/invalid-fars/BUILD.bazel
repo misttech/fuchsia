@@ -66,6 +66,7 @@ compiled_action(
         "$(RULEDIR)",
     ],
     tool = ":generator",
+    visibility = ["//src/sys/pkg/lib/far/go:__pkg__"],  # @bazel2gn:skip
 )
 
 # The GN equivalent is the hand-written `resource("resource")` in BUILD.gn.

@@ -9,7 +9,6 @@ group("tests") {
     "boringssl:boringssl-fuzzers",
     "boringssl:tests",
     "colorama:tests",
-    "go:tests",
     "jellyfish:tests",
     "libc-tests:nacl-libc-tests",
     "pigweed:tests",

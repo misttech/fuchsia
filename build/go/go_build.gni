@@ -503,15 +503,6 @@ template("go_build") {
           },
         ]
         test_component_manifest_program_barrier = []
-
-        if (is_test) {
-          # Used by the fuchsia_test_component_manifest() template.
-          test_component_manifest_cml = [
-            {
-              include = [ "//src/sys/test_runners/gotests/default.shard.cml" ]
-            },
-          ]
-        }
       }
     }
 

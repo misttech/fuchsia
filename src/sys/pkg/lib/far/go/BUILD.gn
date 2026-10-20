@@ -2,19 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-fuchsia_component("test-component") {
-  component_name = "go_far_test"
-  manifest = "meta/go_far_test.cml"
-  testonly = true
-  visibility = [ ":*" ]
-  deps = [ ":go_far_test" ]
-}
-
-fuchsia_test_package("go_far_tests") {
-  test_components = [ ":test-component" ]
-  deps = [ "//src/sys/pkg/testing/invalid-fars:resource" ]
+bazel_test_suite("go_far_tests") {
+  host_tests = [ "//src/sys/pkg/lib/far/go:go_far_test" ]
 }
 
 group("tests") {
@@ -55,11 +46,4 @@ go_library("far") {
     "//src/testing/host-target-testing/build:*",
     "//src/testing/host-target-testing/packages:*",
   ]
-}
-go_test("go_far_test") {
-  sources = [
-    "far_test.go",
-    "reject_invalid_fars_test.go",
-  ]
-  embed = [ ":far" ]
 }

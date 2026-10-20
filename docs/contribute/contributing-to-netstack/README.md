@@ -298,10 +298,10 @@ Run the following command to build all tests and their dependencies:
 fx set core.x64 --with //src/connectivity/network:tests
 ```
 
-If you're working on changes that affect `fdio` and `third_party/go`, add:
+If you're working on changes that affect `fdio`, add:
 
 ```
---with //sdk/lib/fdio:tests --with //third_party/go:tests
+--with //sdk/lib/fdio:tests
 ```
 
 [getting_started]: /docs/get-started

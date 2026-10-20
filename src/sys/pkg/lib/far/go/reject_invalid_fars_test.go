@@ -5,9 +5,13 @@
 package far
 
 import (
+	"flag"
 	"os"
+	"path/filepath"
 	"testing"
 )
+
+var testDataDir = flag.String("test_data_dir", "invalid-fars", "Path to invalid-fars directory")
 
 var (
 	invalidTestFiles = []string{
@@ -50,7 +54,7 @@ var (
 
 func TestInvalidFars(t *testing.T) {
 	for _, fn := range invalidTestFiles {
-		f, err := os.Open("/pkg/data/invalid-fars/" + fn)
+		f, err := os.Open(filepath.Join(*testDataDir, fn))
 		if err != nil {
 			t.Errorf("cannot open test file: %v", err)
 			continue

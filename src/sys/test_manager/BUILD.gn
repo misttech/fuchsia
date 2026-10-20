@@ -225,7 +225,6 @@ fuchsia_package("pkg") {
     "//src/sys/test_runners/elf:elf-test-create-raw-processes-runner",
     "//src/sys/test_runners/elf:elf-test-runner",
     "//src/sys/test_runners/fuzz:fuzz-test-runner",
-    "//src/sys/test_runners/gotests:go-test-runner",
     "//src/sys/test_runners/gtest:gtest-runner",
     "//src/sys/test_runners/gtest:gtest-create-raw-processes-runner",
     "//src/sys/test_runners/gtest:zxtest-runner",

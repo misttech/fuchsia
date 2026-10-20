@@ -16,11 +16,10 @@ enum ComponentManifest {
 // These runners respect `program.binary`. We only validate the `program` section for components
 // using them.
 // TODO(https://fxbug.dev/42146038)
-const RUNNER_VALIDATE_LIST: [&'static str; 6] = [
+const RUNNER_VALIDATE_LIST: [&'static str; 5] = [
     "driver",
     "elf",
     "elf_test_runner",
-    "go_test_runner",
     "gtest_runner",
     "rust_test_runner",
     // TODO(https://fxbug.dev/42147650): Add support for Dart components.

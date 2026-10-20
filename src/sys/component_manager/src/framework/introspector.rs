@@ -98,8 +98,6 @@ fn check_access_permissions(
         LazyLock::new(|| Moniker::parse_str("/core/testing/elf_test_runner").unwrap());
     static FUZZ_TEST_RUNNER: LazyLock<Moniker> =
         LazyLock::new(|| Moniker::parse_str("/core/testing/fuzz_test_runner").unwrap());
-    static GO_TEST_RUNNER: LazyLock<Moniker> =
-        LazyLock::new(|| Moniker::parse_str("/core/testing/go_test_runner").unwrap());
     static GTEST_TEST_RUNNER: LazyLock<Moniker> =
         LazyLock::new(|| Moniker::parse_str("/core/testing/gunit_runner").unwrap());
     static GUNIT_TEST_RUNNER: LazyLock<Moniker> =
@@ -149,7 +147,6 @@ fn check_access_permissions(
         && target.moniker != *RECEIVER
         && target.moniker != *ELF_TEST_RUNNER
         && target.moniker != *FUZZ_TEST_RUNNER
-        && target.moniker != *GO_TEST_RUNNER
         && target.moniker != *GTEST_TEST_RUNNER
         && target.moniker != *GUNIT_TEST_RUNNER
         && target.moniker != *RUST_TEST_RUNNER

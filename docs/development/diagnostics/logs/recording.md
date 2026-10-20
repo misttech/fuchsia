@@ -29,7 +29,6 @@ dropped on the writer-side.
 Different languages use different mechanisms to connect to `LogSink`:
 
 * [C++ logging]
-* [Go logging]
 * [Rust logging]
 
 ## debuglog handles
@@ -88,7 +87,6 @@ the `debuglog` syscalls do not have a way to express the severity of a message.
 [`IOBuffer`]: https://fuchsia.dev/reference/syscalls#io_buffers
 [prints a warning]: /src/diagnostics/log_listener/src/main.rs?l=918&drc=3a02d1922c0519b4c7d639879ec0503de9c79f0c
 [C++ logging]: /docs/development/languages/c-cpp/logging.md
-[Go logging]: /docs/development/languages/go/logging.md
 [Rust logging]: /docs/development/languages/rust/logging.md
 [kernel's shared ring buffer]: /zircon/kernel/lib/debuglog/debuglog.cc?l=37&drc=1bdbf8a4e6f758c3b1782dee352071cc592ca3ab
 [bindable to file descriptors]: /sdk/lib/fdio/include/lib/fdio/fdio.h?l=36&drc=1bdbf8a4e6f758c3b1782dee352071cc592ca3ab

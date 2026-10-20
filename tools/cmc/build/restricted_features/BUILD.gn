@@ -60,7 +60,6 @@ group("allow_non_hermetic_packages") {
     "//src/sys/test_manager/tests/nonhermetic_packaged_tests:*",
     "//src/sys/test_runners/elf/tests:*",
     "//src/sys/test_runners/fuzz/tests:*",
-    "//src/sys/test_runners/gotests/tests:*",
     "//src/sys/test_runners/gtest/tests:*",
     "//src/sys/test_runners/gunit/tests:*",
     "//src/sys/test_runners/rust/tests:*",

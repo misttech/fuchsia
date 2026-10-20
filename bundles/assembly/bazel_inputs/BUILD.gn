@@ -1063,7 +1063,6 @@ group("testing_support") {
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/elf:elf-test-create-raw-processes-runner",
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/elf:elf-test-runner",
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/fuzz:fuzz-test-runner",
-    "//bundles/assembly/bazel_inputs/src/sys/test_runners/gotests:go-test-runner",
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/gtest:gtest-create-raw-processes-runner",
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/gtest:gtest-runner",
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/gtest:zxtest-runner",

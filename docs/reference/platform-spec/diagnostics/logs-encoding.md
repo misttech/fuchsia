@@ -203,9 +203,6 @@ Components that call [`LogSink.Connect`] are expected to pass a socket in "datag
 opposed to "streaming") and to write the ["legacy" wire format] into it. This uses little endian
 integers and a mix of length-prefixed and null-terminated UTF-8 strings.
 
-At the moment, this is only used by the [Go logger] implementation.
-
-[Go logger]: /src/lib/syslog/go/logger.go
 [`zx_clock_get_monotonic`]: /reference/syscalls/clock_get_monotonic.md
 [`LogSink.Connect`]: https://fuchsia.dev/reference/fidl/fuchsia.logger#Connect
 ["legacy" wire format]: /zircon/system/ulib/syslog/include/lib/syslog/wire_format.h

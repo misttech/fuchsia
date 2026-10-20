@@ -184,7 +184,6 @@
                 "elf-test-create-raw-processes-runner",
                 "elf-test-create-raw-processes-ambient-exec-runner",
                 "fuzz-test-runner",
-                "go-test-runner",
                 "gtest-runner",
                 "gtest-create-raw-processes-runner",
                 "gunit-runner",

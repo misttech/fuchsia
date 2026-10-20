@@ -3120,7 +3120,6 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/sys/test_runners/elf:elf-test-create-raw-processes-runner",
         "//bundles/assembly/bazel_inputs/src/sys/test_runners/elf:elf-test-create-raw-processes-ambient-exec-runner",
         "//bundles/assembly/bazel_inputs/src/sys/test_runners/fuzz:fuzz-test-runner",
-        "//bundles/assembly/bazel_inputs/src/sys/test_runners/gotests:go-test-runner",
         "//bundles/assembly/bazel_inputs/src/sys/test_runners/gtest:gtest-runner",
         "//bundles/assembly/bazel_inputs/src/sys/test_runners/gtest:zxtest-runner",
         "//bundles/assembly/bazel_inputs/src/sys/test_runners/gunit:gunit-runner",

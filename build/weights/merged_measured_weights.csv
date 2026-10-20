@@ -2309,10 +2309,6 @@ arm64-hwasan-ubsan-shared/obj/src/devices/bus/drivers/platform/common.platform-b
 x64-asan-ubsan/obj/src/ui/scenic/lib/flatland/renderer/tests/flatland_renderer_unittests.renderer_unittest.cc.o,62091
 host_x64/gen/src/performance/lib/fxt/rust/tests/goldens/goldens.verified,62039
 obj/src/ui/tests/integration_input_tests/virtual-keyboard/virtual-keyboard-test.virtual-keyboard-test.cc.o,61961
-go_runner_integration_test,61959
-exe.unstripped/go_runner_integration_test,61959
-go_runner_integration_test.build-id.stamp,61959
-exe.unstripped/go_runner_integration_test.rmeta,61959
 debug_agent,61955
 exe.unstripped/debug_agent,61955
 debug_agent.build-id.stamp,61955
@@ -2323,10 +2319,6 @@ fvm_rust_test.build-id.stamp,61907
 exe.unstripped/fvm_rust_test.rmeta,61907
 host_x64-asan-ubsan/obj/src/lib/elfldltl/test/elfldltl-unittests.dwarf-tests.cc.o,61702
 x64-shared/obj/BUILD_DIR/fidling/gen/sdk/fidl/fuchsia.posix.socket/fuchsia.posix.socket/cpp/fidl/fuchsia.posix.socket/cpp/fuchsia.posix.socket_cpp.natural_types.cc.o,61701
-go_test_runner_bin_test,61693
-exe.unstripped/go_test_runner_bin_test,61693
-go_test_runner_bin_test.build-id.stamp,61693
-exe.unstripped/go_test_runner_bin_test.rmeta,61693
 arm64-hwasan-ubsan/obj/third_party/gvisor_syscall_tests/gvisor/test/syscalls/linux/tcp_socket_tests.tcp_socket.cc.o,61629
 arm64-hwasan-ubsan/obj/src/starnix/lib/linux_uapi/linux_uapi.actual/liblinux_uapi.rlib,61612
 arm64-hwasan-ubsan/obj/src/starnix/lib/linux_uapi/linux_uapi.actual/liblinux_uapi.rmeta,61612

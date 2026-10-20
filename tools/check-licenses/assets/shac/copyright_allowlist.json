@@ -86,7 +86,6 @@
         "src/graphics/magma/lib/magma/platform/zircon/zircon_platform_device_dfv2.cc",
         "src/graphics/magma/lib/magma_service/util/simple_allocator.cc",
         "src/lib/assembly/config_schema/test_data/maximal_board/scripts/postprocess.sh",
-        "src/lib/component/test.test.fidl",
         "src/lib/containers/cpp/circular_deque.h",
         "src/lib/containers/cpp/circular_deque_unittest.cc",
         "src/lib/containers/cpp/ownership.h",

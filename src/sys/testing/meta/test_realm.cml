@@ -107,10 +107,6 @@
                     from: "#starnix_test_runners",
                 },
                 {
-                    runner: "go_test_runner",
-                    from: "#go_test_runner",
-                },
-                {
                     runner: "stress_test_runner",
                     from: "#stress_test_runner",
                 },

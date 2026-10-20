@@ -126,26 +126,6 @@ In order to use this runner, add the following to your component manifest:
 
 By default Rust test cases run in parallel, at most 10 cases at a time.
 
-#### Go test runner {#gotest-runner}
-
-A runner for tests written in the Go programming language and following Go
-testing idioms.
-Use this for all tests written in Go using `import "testing"`.
-
-Common Go testing features are supported, such as disabling tests, running
-only specified tests, running the same test multiple times, etc'.
-Standard output, standard error, and logs are captured from the test.
-
-In order to use this runner, add the following to your component manifest:
-
-```json5
-{
-    include: [ "//src/sys/test_runners/gotests/default.shard.cml" ]
-}
-```
-
-By default Go test cases run in parallel, at most 10 cases at a time.
-
 #### ELF test runner {#elf-test-runner}
 
 The simplest test runner - it waits for your program to terminate, then reports
@@ -300,29 +280,6 @@ given glob patterns will be executed.
 
 - **--nocapture** - Output is printed by default.
 - **--list** - Listing test cases is not supported.
-
-#### Go test runner {#gotest-runner-custom-arg}
-
-Note the following known behavior change:
-
-**-test.failfast**: As each test case is executed in a different process, this
-flag will only influence sub-tests.
-
-The following flags are restricted and the test fails if any are passed as
-fuchsia.test.Suite provides equivalent functionality that replaces them
-
-- **-test.run** - Instead use:
-
-```posix-terminal
- fx test --test-filter=<glob_pattern> <test_url>
-```
-
-`--test-filter` may be specified multiple times. Tests that match any of the
-given glob patterns will be executed.
-
-- **-test.count** - See [Running test multiple times](#running_test_multiple_times).
-- **-test.v** - Output is printed by default.
-- **-test.parallel** - See [Controlling parallel execution of test cases](#controlling_parallel_execution_of_test_cases).
 
 ### A runtime-agnostic, runtime-inclusive testing framework {#inclusive}
 
@@ -636,7 +593,7 @@ explicitly mark itself to run in the legacy realm as shown below.
 {
     include: [
         // Select the appropriate test runner shard here:
-        // rust, gtest, go, etc.
+        // rust, gtest, etc.
         "//src/sys/test_runners/rust/default.shard.cml",
 
         // This includes the facet which marks the test type as 'starnix'.

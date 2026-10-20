@@ -85,10 +85,6 @@
             url: "starnix-test-runners#meta/starnix_unit_test_runner.cm",
         },
         {
-            name: "go_test_runner",
-            url: "go-test-runner#meta/go-test-runner.cm",
-        },
-        {
             name: "stress_test_runner",
             url: "stress-test-runner#meta/stress-test-runner.cm",
         },
@@ -246,7 +242,6 @@
             to: [
                 "#elf_test_runner",
                 "#fuzz_test_runner",
-                "#go_test_runner",
                 "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
@@ -335,7 +330,6 @@
                 "#elf_test_runner",
                 "#fuzz_starnix_test_runner",
                 "#fuzz_test_runner",
-                "#go_test_runner",
                 "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
@@ -357,7 +351,6 @@
                 "#elf_test_runner",
                 "#fuzz_starnix_test_runner",
                 "#fuzz_test_runner",
-                "#go_test_runner",
                 "#gtest_create_raw_processes_runner",
                 "#gtest_runner",
                 "#gunit_runner",
