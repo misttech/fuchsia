@@ -305,16 +305,11 @@ async fn get_vbmeta_and_zbi_hash_from_environment(
 
 // Compute the SHA256 hash of the buffer with the trailing zeros ignored.
 fn sha256_hash_ignore_trailing_zeros(
-    fmem::Buffer { vmo, size }: fmem::Buffer,
+    buffer: fmem::Buffer,
 ) -> Result<fuchsia_hash::Sha256, anyhow::Error> {
-    let mapping =
-        mapped_vmo::ImmutableMapping::create_from_vmo(&vmo, true).context("mapping the buffer")?;
-    let size: usize = size.try_into().context("buffer size as usize")?;
-    if size > mapping.len() {
-        anyhow::bail!("buffer size {size} larger than vmo size {}", mapping.len());
-    }
-    let n = mapping[..size].iter().rposition(|b| *b != 0).map(|p| p + 1).unwrap_or_else(|| {
-        warn!(size; "entire buffer is 0");
+    let mapping = crate::update::map_buffer(&buffer)?;
+    let n = mapping.iter().rposition(|b| *b != 0).map(|p| p + 1).unwrap_or_else(|| {
+        warn!(size = buffer.size; "entire buffer is 0");
         0
     });
     Ok(From::from(*AsRef::<[u8; 32]>::as_ref(&<sha2::Sha256 as sha2::Digest>::digest(

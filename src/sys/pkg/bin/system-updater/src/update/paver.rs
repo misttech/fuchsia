@@ -77,7 +77,7 @@ pub async fn read_image(
     }
 }
 
-fn clone_buffer(buffer: &fmem::Buffer) -> anyhow::Result<fmem::Buffer> {
+pub fn clone_buffer(buffer: &fmem::Buffer) -> anyhow::Result<fmem::Buffer> {
     Ok(fmem::Buffer {
         vmo: buffer
             .vmo

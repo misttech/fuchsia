@@ -137,7 +137,11 @@ impl UpdateImagePackage {
         Self { proxy }
     }
 
-    /// Opens the image at given `path` as a resizable VMO buffer.
+    /// Opens the image at given `path` as a VMO buffer.
+    ///
+    /// The returned VMO is not resizable. If a resizable VMO is needed (e.g. it will be used with
+    /// some of the `fuchsia.paver/*` protocols), create a child VMO of the returned VMO with
+    /// options `SNAPSHOT_AT_LEAST_ON_WRITE | RESIZABLE`.
     pub async fn open_image(&self, path: &str) -> Result<fmem::Buffer, OpenImageError> {
         image::open_from_path(&self.proxy, path).await
     }

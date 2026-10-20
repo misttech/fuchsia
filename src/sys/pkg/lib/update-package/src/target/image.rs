@@ -28,12 +28,9 @@ pub enum OpenImageError {
 
     #[error("while obtaining vmo of file for {path:?}: {status}")]
     GetBackingMemory { path: String, status: Status },
-
-    #[error("while converting vmo to a resizable vmo for {path:?}: {status}")]
-    CloneBuffer { path: String, status: Status },
 }
 
-/// Opens the given `path` as a resizable VMO buffer and returns the buffer on success.
+/// Opens the given `path` as a VMO buffer and returns the buffer on success.
 pub(crate) async fn open_from_path(
     proxy: &fio::DirectoryProxy,
     path: &str,
@@ -52,16 +49,6 @@ pub(crate) async fn open_from_path(
     let size = vmo
         .get_content_size()
         .map_err(|status| OpenImageError::GetBackingMemory { path: path.to_string(), status })?;
-
-    // The paver service requires VMOs that are resizable, and blobfs does not give out resizable
-    // VMOs. Fortunately, a copy-on-write child clone of the vmo can be made resizable.
-    let vmo = vmo
-        .create_child(
-            zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE | zx::VmoChildOptions::RESIZABLE,
-            0,
-            size,
-        )
-        .map_err(|status| OpenImageError::CloneBuffer { path: path.to_string(), status })?;
 
     Ok(fmem::Buffer { vmo, size })
 }

@@ -120,7 +120,6 @@ rustc_library("update-package") {
     deps += [
       "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
       "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
-      "//sdk/rust/zx",
       "//sdk/rust/zx-status",
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia-fs",

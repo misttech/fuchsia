@@ -1432,22 +1432,11 @@ impl PackagelessAttempt<'_> {
                     // The paver service requires VMOs that are resizable, and blobfs does not give
                     // out resizable VMOs. Fortunately, a copy-on-write child clone of the vmo can
                     // be made resizable.
-                    let vmo = vmo
-                        .create_child(
-                            zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE
-                                | zx::VmoChildOptions::RESIZABLE,
-                            0,
-                            image.blob.uncompressed_size,
-                        )
-                        .map_err(|status| {
-                            StageError::OpenImageError(
-                                update_package::OpenImageError::CloneBuffer {
-                                    path: image.blob.fuchsia_merkle_root.to_string(),
-                                    status,
-                                },
-                            )
-                        })?;
-                    let buffer = fmem::Buffer { vmo, size: image.blob.uncompressed_size };
+                    let buffer = paver::clone_buffer(&fmem::Buffer {
+                        vmo,
+                        size: image.blob.uncompressed_size,
+                    })
+                    .map_err(StageError::Write)?;
 
                     paver::write_image(&self.env.data_sink, buffer, target_config, image_type)
                         .await
@@ -1535,6 +1524,9 @@ async fn write_image_from_package(
     image_type: ImageType<'_>,
 ) -> Result<(), StageError> {
     let buffer = package.open_image(resource).await.map_err(StageError::OpenImageError)?;
+    // The paver service requires VMOs that are resizable, and blobfs does not give out resizable
+    // VMOs. Fortunately, a copy-on-write child clone of the vmo can be made resizable.
+    let buffer = paver::clone_buffer(&buffer).map_err(StageError::Write)?;
     paver::write_image(data_sink, buffer, target_config, image_type)
         .await
         .map_err(StageError::Write)
@@ -1668,7 +1660,7 @@ async fn get_image_buffer_if_hash_and_size_match<T: BufferHasher>(
     if buffer_hash == image_hash { Some(buffer) } else { None }
 }
 
-fn map_buffer(
+pub(super) fn map_buffer(
     fmem::Buffer { vmo, size }: &fmem::Buffer,
 ) -> anyhow::Result<mapped_vmo::TruncatedImmutableMapping> {
     let size: usize = (*size).try_into().context("buffer size as usize")?;
