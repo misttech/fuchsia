@@ -12,6 +12,8 @@ use nom::number::streaming::{le_u8, le_u16};
 use nom::sequence::terminated;
 use nom::{IResult, Parser};
 use wlan_common::append::{BufferTooSmall, TrackedAppend, VecCursor};
+#[cfg(test)]
+use wlan_common::ie::{RsnxeOctet1, write_rsnxe};
 use wlan_common::ie::{wpa, write_wpa1_ie};
 use wlan_common::organization::Oui;
 
@@ -226,6 +228,13 @@ impl<A: TrackedAppend> Writer<A> {
             ProtectionInfo::Rsne(rsne) => rsne.write_into(&mut self.buf),
             ProtectionInfo::LegacyWpa(wpa) => write_wpa1_ie(&mut self.buf, wpa),
         }
+    }
+
+    // TODO(https://fxbug.dev/510921630): Remove `#[cfg(test)]` once RSNXE is written in EAPOL
+    // Message 2.
+    #[cfg(test)]
+    pub fn write_rsnxe(&mut self, octet_1: RsnxeOctet1) -> Result<(), BufferTooSmall> {
+        write_rsnxe(&mut self.buf, octet_1).map_err(|_| BufferTooSmall)
     }
 
     fn write_kde_hdr(&mut self, hdr: Header) -> Result<(), BufferTooSmall> {
@@ -451,5 +460,28 @@ mod tests {
 
         let gtk_kde = Gtk { info: GtkInfo(0), gtk: Box::new([0; 32]) };
         assert_eq!(gtk_kde.len(), 34);
+    }
+
+    #[test]
+    fn test_write_read_rsnxe() {
+        let mut octet_1 = RsnxeOctet1(0);
+        octet_1.set_sae_hash_to_element(true);
+
+        let mut w = Writer::new();
+        w.write_rsnxe(octet_1).expect("failure writing RSNXE");
+        let buf = w.finalize_for_plaintext().expect("failure finalizing key data");
+        assert_eq!(&buf[..], &[244, 1, 0x20][..]);
+
+        let elements = extract_elements(&buf[..]).expect("Error extracting elements");
+        assert_eq!(elements, vec![Element::Rsnxe(octet_1)]);
+    }
+
+    #[test]
+    fn test_write_rsnxe_too_small_buffer() {
+        let mut octet_1 = RsnxeOctet1(0);
+        octet_1.set_sae_hash_to_element(true);
+        Writer::new_with(FixedSizedTestBuffer::new(2))
+            .write_rsnxe(octet_1)
+            .expect_err("expected failure writing RSNXE");
     }
 }

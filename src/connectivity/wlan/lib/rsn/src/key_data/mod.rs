@@ -12,13 +12,14 @@ use nom::multi::many0;
 use nom::{IResult, Needed, Parser};
 use std::num::NonZero;
 use wlan_common::ie::rsn::rsne;
-use wlan_common::ie::{wpa, Id};
+use wlan_common::ie::{Id, RsnxeOctet1, parse_rsnxe, wpa};
 
 #[derive(Debug, PartialEq)]
 pub enum Element {
     Gtk(kde::Header, kde::Gtk),
     Igtk(kde::Header, kde::Igtk),
     Rsne(rsne::Rsne),
+    Rsnxe(RsnxeOctet1),
     LegacyWpa1(wpa::WpaIe),
     Padding,
     UnsupportedKde(kde::Header),
@@ -43,6 +44,14 @@ fn parse_ie(i0: &[u8]) -> IResult<&[u8], Element> {
         Id::RSNE => {
             let (_, rsne) = rsne::from_bytes(bytes)?;
             Ok((out, Element::Rsne(rsne)))
+        }
+        Id::RSNXE => {
+            // IEEE Std 802.11-2020 Section 9.4.2.241 only defines the first octet of RSNXE.
+            if let Some(octet_1) = parse_rsnxe(&bytes[2..]).rsnxe_octet_1 {
+                Ok((out, Element::Rsnxe(*octet_1)))
+            } else {
+                Ok((out, Element::UnsupportedIe(id, len)))
+            }
         }
         _ => Ok((out, Element::UnsupportedIe(id, len))),
     }
@@ -324,5 +333,21 @@ mod tests {
                 );
             });
         }
+    }
+
+    #[test]
+    fn test_parse_rsnxe() {
+        let buf = [244, 1, 0x20];
+        let elements = extract_elements(&buf[..]).expect("Error extracting elements");
+        let mut expected_octet_1 = RsnxeOctet1(0);
+        expected_octet_1.set_sae_hash_to_element(true);
+        assert_eq!(elements, vec![Element::Rsnxe(expected_octet_1)]);
+    }
+
+    #[test]
+    fn test_parse_empty_rsnxe() {
+        let buf = [244, 0];
+        let elements = extract_elements(&buf[..]).expect("Error extracting elements");
+        assert_eq!(elements, vec![Element::UnsupportedIe(244, 0)]);
     }
 }
