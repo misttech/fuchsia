@@ -28,11 +28,6 @@ if (is_host) {
           implementation = "fuchsia-controller"
         }
       }
-      transports = {
-        adb = {
-          enabled = false
-        }
-      }
     }
   }
 
@@ -56,11 +51,6 @@ if (is_host) {
       affordances = {
         tracing = {
           implementation = "ffx"
-        }
-      }
-      transports = {
-        adb = {
-          enabled = false
         }
       }
     }
