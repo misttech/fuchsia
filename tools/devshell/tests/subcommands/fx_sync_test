@@ -1,0 +1,126 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+### Test expected behavior of fx sync
+
+BT_FILE_DEPS=(
+  "scripts/fx"
+  "scripts/fx-env.sh"
+  "tools/devshell/sync"
+  "tools/devshell/lib/agents.txt"
+  "tools/devshell/lib/fx-cmd-locator.sh"
+  "tools/devshell/lib/fx-optional-features.sh"
+  "tools/devshell/lib/generate-ssh-config.sh"
+  "tools/devshell/lib/is_invoked_by_agent.sh"
+  "tools/devshell/lib/platform.sh"
+  "tools/devshell/lib/vars.sh"
+)
+
+declare fx
+
+BT_SET_UP() {
+  source "${BT_TEMP_DIR}/tools/devshell/tests/lib/fuchsia-mock.sh"
+  fx="$(btf::setup_fx)"
+}
+
+TEST_sync_help() {
+  local out="${BT_TEMP_DIR}/sync_help.out"
+  BT_EXPECT _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync --help > "${out}"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "usage: fx sync"
+}
+
+TEST_sync_short_help() {
+  local out="${BT_TEMP_DIR}/sync_short_help.out"
+  BT_EXPECT _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync -h > "${out}"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "usage: fx sync"
+}
+
+TEST_sync_unknown_argument() {
+  local out="${BT_TEMP_DIR}/sync_unknown_arg.out"
+  BT_EXPECT_FAIL _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync --unknown-arg > "${out}" 2>&1
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "Unknown argument: --unknown-arg"
+}
+
+TEST_sync_skips_existing_jiri_root() {
+  mkdir -p "${BT_TEMP_DIR}/.git" "${BT_TEMP_DIR}/manifests"
+  touch "${BT_TEMP_DIR}/manifests/platform"
+
+  # btf::setup_fx creates a real .jiri_root directory by default.
+  BT_EXPECT _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync
+  BT_EXPECT_FILE_DOES_NOT_EXIST "${BT_TEMP_DIR}/.fxsync/manifest_state"
+}
+
+TEST_sync_fails_without_git_checkout() {
+  rm -rf "${BT_TEMP_DIR}/.jiri_root"
+  local out="${BT_TEMP_DIR}/sync_no_git.out"
+  BT_EXPECT_FAIL _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync > "${out}" 2>&1
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${out}" "is not a fuchsia.git checkout"
+}
+
+TEST_sync_bootstraps_and_updates_fxsync() {
+  rm -rf "${BT_TEMP_DIR}/.jiri_root"
+  mkdir -p "${BT_TEMP_DIR}/.git" "${BT_TEMP_DIR}/manifests"
+  touch "${BT_TEMP_DIR}/manifests/platform"
+
+  local curl_mock
+  curl_mock="$(btf::make_mock_binary curl)"
+  cat >"${curl_mock}.mock_side_effects" <<EOF
+cat <<'EOS' | base64
+mkdir -p "\$1/.jiri_root/bin"
+cat >"\$1/.jiri_root/bin/jiri" <<'EOJ'
+#!/bin/bash
+echo "\$@" >> "${BT_TEMP_DIR}/jiri_calls.txt"
+if [[ "\$1" == "update" ]]; then
+  mkdir -p "${BT_TEMP_DIR}/.jiri_root/update_history"
+  touch "${BT_TEMP_DIR}/.jiri_root/update_history/latest"
+fi
+EOJ
+chmod +x "\$1/.jiri_root/bin/jiri"
+EOS
+EOF
+  btf::add_binary_to_path "${curl_mock}"
+
+  local git_mock
+  git_mock="$(btf::make_mock_binary git)"
+  cat >"${git_mock}.mock_side_effects" <<'EOF'
+if [[ "$*" == *"HEAD:manifests"* ]]; then
+  printf "%s\ncobalt_rev_123\ncobalt_config_rev_456\n" "${MOCK_MANIFEST_TREE:-manifests_tree_1}"
+elif [[ "$*" == *"HEAD:third_party/cobalt_config"* ]]; then
+  echo "cobalt_config_rev_456"
+elif [[ "$*" == *"HEAD:third_party/cobalt"* ]]; then
+  echo "cobalt_rev_123"
+elif [[ "$*" == *"rev-parse HEAD"* ]]; then
+  echo "${MOCK_HEAD_REV:-head_rev_789}"
+fi
+EOF
+  btf::add_binary_to_path "${git_mock}"
+
+  # First invocation: initializes stub integration and .fxsync, and runs jiri init + jiri update.
+  BT_EXPECT _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync
+  BT_EXPECT_FILE_EXISTS "${BT_TEMP_DIR}/integration/MILESTONE"
+  BT_EXPECT_FILE_EXISTS "${BT_TEMP_DIR}/integration/ctf/all"
+  BT_EXPECT_FILE_EXISTS "${BT_TEMP_DIR}/.fxsync/manifest_state"
+  BT_EXPECT_FILE_EXISTS "${BT_TEMP_DIR}/.jiri_manifest"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/.jiri_manifest" "cobalt_rev_123"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/.jiri_manifest" "cobalt_config_rev_456"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/.git/jiri/metadata.v2" "head_rev_789"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/.git/JIRI_HEAD" "head_rev_789"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/jiri_calls.txt" "init -analytics-opt=false -rewrite-sso-to-https=true -keep-git-hooks=true"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/jiri_calls.txt" "project-config -no-update=true"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/jiri_calls.txt" "update"
+
+  # Second invocation (same manifest state): does not re-run jiri update.
+  rm -f "${BT_TEMP_DIR}/jiri_calls.txt"
+  BT_EXPECT _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync
+  BT_EXPECT_FILE_DOES_NOT_EXIST "${BT_TEMP_DIR}/jiri_calls.txt"
+
+  # Third invocation (new commit with changed manifests tree): re-syncs jiri to new HEAD.
+  BT_EXPECT MOCK_MANIFEST_TREE=manifests_tree_2 MOCK_HEAD_REV=head_rev_new _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" sync
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/.git/jiri/metadata.v2" "head_rev_new"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/.git/JIRI_HEAD" "head_rev_new"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/jiri_calls.txt" "update"
+}
+
+BT_RUN_TESTS "$@"

@@ -80,6 +80,7 @@ tables_generator_tests_*.txt
 .idea/
 
 ### Top-level directories
+/.fxsync/
 /.jiri/
 /.jiri_root/
 /integration/

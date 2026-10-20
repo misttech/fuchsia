@@ -1,0 +1,134 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+#### CATEGORY=Source tree
+### Bootstrap and synchronize local dependencies for a Fuchsia git checkout
+
+## usage: fx sync
+##
+## If run in a plain OSS fuchsia.git clone without an existing Jiri checkout,
+## initializes an untracked stub integration directory and synchronizes Jiri
+## projects and prebuilt packages to match the current HEAD.
+##
+## A standard Jiri checkout is detected when .jiri_root or integration already
+## exists without a .fxsync directory; in that case, fx sync exits without
+## modifying the checkout.
+
+# shellcheck disable=SC1090
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
+fx-standard-switches "$@"
+set -- "${FX_ARGV[@]}"
+set -o pipefail
+
+if [[ $# -gt 0 ]]; then
+  fx-error "Unknown argument: $1"
+  fx-command-help
+  exit 1
+fi
+
+declare -r fxsync_dir="${FUCHSIA_DIR}/.fxsync"
+
+# Distinguish between three checkout states:
+# 1. Standard Jiri checkout: .jiri_root or integration exists, but .fxsync does
+#    not. Bail out so we never touch a normal Jiri workspace.
+# 2. Existing fx sync checkout: .fxsync exists (alongside the .jiri_root and
+#    integration directories created by an earlier fx sync run). Proceed.
+# 3. Fresh git clone: none of .fxsync, .jiri_root, or integration exist yet.
+#    Proceed with initial bootstrap.
+if [[ ! -d "${fxsync_dir}" && ( -e "${FUCHSIA_DIR}/.jiri_root" || -e "${FUCHSIA_DIR}/integration" ) ]]; then
+  exit 0
+fi
+
+if [[ ! -e "${FUCHSIA_DIR}/.git" || ! -f "${FUCHSIA_DIR}/manifests/platform" ]]; then
+  fx-error "Cannot sync: ${FUCHSIA_DIR} is not a fuchsia.git checkout."
+  exit 1
+fi
+
+# Ensure commands run from the root of the Fuchsia checkout (in case fx was
+# invoked from a subdirectory/subproject or from the fx self-test harness).
+cd "${FUCHSIA_DIR}" || exit $?
+
+# Detect whether the repo state is clean: the manifest_state_file should have
+# the current values of all pinned repos.
+declare -r manifest_state_file="${fxsync_dir}/manifest_state"
+manifest_state="$(
+  git rev-parse \
+    HEAD:manifests \
+    HEAD:third_party/cobalt \
+    HEAD:third_party/cobalt_config
+)" || exit $?
+if [[ -f "${manifest_state_file}" && "$(<"${manifest_state_file}")" == "${manifest_state}" ]]; then
+  exit 0
+fi
+
+# Create the .fxsync marker directory and a minimal stub integration/ directory
+# for Jiri hooks and GN/Bazel build files that read //integration/MILESTONE and
+# //integration/ctf/all. Use "0" as a placeholder milestone for local
+# non-release checkouts.
+mkdir -p \
+  "${fxsync_dir}" \
+  "${FUCHSIA_DIR}/integration/ctf"
+touch "${FUCHSIA_DIR}/integration/ctf/all"
+echo "0" > "${FUCHSIA_DIR}/integration/MILESTONE"
+
+# Bootstrap the Jiri binary into .jiri_root/bin/jiri if not already present,
+# and initialize the Jiri root in FUCHSIA_DIR.
+declare -r jiri_bin="${FUCHSIA_DIR}/.jiri_root/bin/jiri"
+if [[ ! -x "${jiri_bin}" ]]; then
+  curl -sf "https://fuchsia.googlesource.com/jiri/+/HEAD/scripts/bootstrap_jiri?format=TEXT" \
+    | base64 --decode \
+    | bash -s "${FUCHSIA_DIR}" || exit $?
+fi
+"${jiri_bin}" init \
+  -analytics-opt=false \
+  -rewrite-sso-to-https=true \
+  -keep-git-hooks=true \
+  "${FUCHSIA_DIR}" || exit $?
+
+head_rev="$(git rev-parse HEAD)" || exit $?
+cobalt_rev="$(git rev-parse HEAD:third_party/cobalt)" || exit $?
+cobalt_config_rev="$(git rev-parse HEAD:third_party/cobalt_config)" || exit $?
+
+# Write Jiri's per-repository project metadata (.git/jiri/metadata.v2) so Jiri
+# recognizes the existing root git clone as the "fuchsia" project declared in
+# manifests/platform instead of attempting to clone it into FUCHSIA_DIR, and
+# write .git/JIRI_HEAD (which `jiri update` skips when `no-update` is true) for
+# hooks and tools that reference JIRI_HEAD.
+mkdir -p "${FUCHSIA_DIR}/.git/jiri"
+cat > "${FUCHSIA_DIR}/.git/jiri/metadata.v2" <<EOF
+<project name="fuchsia" path="." remote="https://fuchsia.googlesource.com/fuchsia" revision="${head_rev}"/>
+EOF
+echo "${head_rev}" > "${FUCHSIA_DIR}/.git/JIRI_HEAD"
+
+# Configure Jiri not to fetch or reset the root "fuchsia" git repository during
+# `jiri update`, since the developer manages the root repository directly with
+# git (e.g. local branches or `git checkout`).
+"${jiri_bin}" project-config -no-update=true || exit $?
+
+# Generate the top-level .jiri_manifest importing manifests/platform and
+# pinning third_party/cobalt and third_party/cobalt_config to the revisions
+# recorded in the current fuchsia.git commit's gitlinks.
+cat > "${FUCHSIA_DIR}/.jiri_manifest" <<EOF
+<manifest>
+  <imports>
+    <localimport file="manifests/platform"/>
+  </imports>
+  <projects>
+    <project name="cobalt"
+             path="third_party/cobalt"
+             remote="https://fuchsia.googlesource.com/cobalt"
+             revision="${cobalt_rev}"
+             gerrithost="https://fuchsia-review.googlesource.com"/>
+    <project name="cobalt-registry"
+             path="third_party/cobalt_config"
+             remote="https://fuchsia.googlesource.com/cobalt-registry"
+             revision="${cobalt_config_rev}"
+             gerrithost="https://fuchsia-review.googlesource.com"/>
+  </projects>
+</manifest>
+EOF
+
+"${jiri_bin}" update || exit $?
+echo "${manifest_state}" > "${manifest_state_file}"
