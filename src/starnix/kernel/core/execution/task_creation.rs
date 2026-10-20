@@ -331,12 +331,9 @@ where
                 .set(*resource, rlimit { rlim_cur: *limit, rlim_max: *limit });
         }
 
-        let (pgid, sid) = {
-            let tg_state = builder.thread_group().read();
-            (tg_state.process_group.clone(), tg_state.session.clone())
-        };
+        let sid = builder.thread_group().read().session.clone();
         pids.add_task(Arc::clone(&builder.task));
-        pids.attach_pgid(&pgid, builder.thread_group());
+        pids.attach_pgid(&builder.thread_group().pgid(), builder.thread_group());
         pids.attach_sid(&sid, builder.thread_group());
         Ok(())
     });

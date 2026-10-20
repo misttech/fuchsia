@@ -1304,22 +1304,23 @@ impl DynamicFileSource for StatFile {
         nice = task.read().scheduler_state.normal_priority().as_nice() as i64;
 
         {
-            let thread_group = task.thread_group().read();
-            ppid = thread_group.get_ppid();
-            pgrp = thread_group.process_group.id;
-            session = thread_group.session.id;
+            let thread_group = task.thread_group();
+            let tg_state = thread_group.read();
+            ppid = tg_state.get_ppid();
+            pgrp = thread_group.pgid().id;
+            session = tg_state.session.id;
 
             // TTY device ID.
-            tty_nr = thread_group
+            tty_nr = tg_state
                 .controlling_terminal
                 .as_ref()
                 .map(|t| t.terminal.device().bits())
                 .unwrap_or(0) as i32;
 
-            cutime = duration_to_scheduler_clock(thread_group.children_time_stats.user_time);
-            cstime = duration_to_scheduler_clock(thread_group.children_time_stats.system_time);
+            cutime = duration_to_scheduler_clock(tg_state.children_time_stats.user_time);
+            cstime = duration_to_scheduler_clock(tg_state.children_time_stats.system_time);
 
-            num_threads = std::cmp::max(1, thread_group.tasks_count()) as i64;
+            num_threads = std::cmp::max(1, tg_state.tasks_count()) as i64;
         }
 
         let time_stats = match self.target.scope {

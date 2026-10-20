@@ -1769,10 +1769,7 @@ impl CurrentTask {
             abstract_vsock_namespace = running_state.abstract_vsock_namespace.clone();
         }
 
-        let (pgid_pid, sid_pid) = {
-            let tg_state = thread_group.read();
-            (tg_state.process_group.clone(), tg_state.session.clone())
-        };
+        let sid_pid = thread_group.read().session.clone();
 
         let mut child = TaskBuilder::new(Task::new(
             pid,
@@ -1826,7 +1823,7 @@ impl CurrentTask {
                 std::mem::drop(pids);
             } else {
                 child.thread_group().add(Arc::clone(&child.task))?;
-                pids.attach_pgid(&pgid_pid, child.thread_group());
+                pids.attach_pgid(&child.thread_group().pgid(), child.thread_group());
                 pids.attach_sid(&sid_pid, child.thread_group());
                 std::mem::drop(pids);
 

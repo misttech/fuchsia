@@ -57,7 +57,7 @@ impl ZombieProcess {
         let time_stats = thread_group.base.time_stats() + thread_group.children_time_stats;
         OwnedRef::new(ZombieProcess {
             task,
-            pgid: thread_group.process_group.clone(),
+            pgid: thread_group.base.pgid(),
             state: ZombieState { exit_status, time_stats },
             exit_signal,
             is_canonical: true,

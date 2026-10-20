@@ -1027,10 +1027,8 @@ impl Task {
             return;
         }
 
-        let (pgid, exit_signal) = {
-            let tg = self.thread_group().read();
-            (tg.process_group.clone(), tg.exit_signal.clone())
-        };
+        let pgid = self.thread_group().pgid();
+        let exit_signal = self.thread_group().read().exit_signal.clone();
         let mut state = self.write();
         state.set_stopped(StopState::ForceAwake, None, None, None);
         if let Some(ptrace) = &mut state.ptrace {

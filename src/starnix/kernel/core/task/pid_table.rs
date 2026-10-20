@@ -193,7 +193,7 @@ impl PidEntry {
                 if !parent_state.is_running() {
                     continue;
                 }
-                (parent_state.process_group.id, parent_state.session.id)
+                (parent_tg.pgid().id, parent_state.session.id)
             };
 
             // If a member has a parent in the same session but outside this process group,

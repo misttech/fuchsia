@@ -339,8 +339,7 @@ pub fn sys_getpgid(current_task: &CurrentTask, pid: pid_t) -> Result<pid_t, Errn
     let task = get_task_or_current(current_task, pid)?;
 
     security::check_getpgid_access(current_task, &task)?;
-    let pgid = task.thread_group().read().process_group.id;
-    Ok(pgid)
+    Ok(task.thread_group().pgid().id)
 }
 
 pub fn sys_setpgid(current_task: &CurrentTask, pid: pid_t, pgid: pid_t) -> Result<(), Errno> {

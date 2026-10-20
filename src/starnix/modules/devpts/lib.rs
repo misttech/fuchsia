@@ -1240,7 +1240,7 @@ mod tests {
             set_controlling_terminal(task1, &opened_main, false).unwrap();
             assert_eq!(
                 ioctl::<i32>(task1, &opened_main, TIOCGPGRP, &0),
-                Ok(task1.thread_group().read().process_group.id)
+                Ok(task1.thread_group().pgid().id)
             );
             assert_eq!(ioctl::<i32>(&task2, &opened_replica, TIOCGPGRP, &0), error!(ENOTTY));
 
@@ -1382,13 +1382,13 @@ mod tests {
             let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
             task2.running_state().mm.update(Some(init.mm().unwrap().clone()));
             task2.thread_group().setpgid(&task2, &task2, &task2.pid).expect("setpgid");
-            let task2_pgid = task2.thread_group().read().process_group.clone();
-            assert_ne!(task2_pgid, task1.thread_group().read().process_group);
+            let task2_pgid = task2.thread_group().pgid();
+            assert_ne!(task2_pgid, task1.thread_group().pgid());
 
             // The foreground process group should be the one of task1
             assert_eq!(
                 ioctl::<i32>(&task1, &opened_replica, TIOCGPGRP, &0),
-                Ok(task1.thread_group().read().process_group.id)
+                Ok(task1.thread_group().pgid().id)
             );
 
             // Cannot change the foreground process group to a negative pid.
@@ -1398,7 +1398,7 @@ mod tests {
             assert_eq!(ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &255), error!(ESRCH));
 
             // Cannot change the foreground process group to a process group in another session.
-            let init_pgid = init.thread_group().read().process_group.clone();
+            let init_pgid = init.thread_group().pgid();
             assert_eq!(
                 ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &init_pgid.id),
                 error!(EPERM)
@@ -1528,7 +1528,7 @@ mod tests {
             let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
             task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
             task1.thread_group().setsid().expect("setsid");
-            let task1_pgid = task1.thread_group().read().process_group.clone();
+            let task1_pgid = task1.thread_group().pgid();
 
             let fs = new_pts_fs(kernel);
             let _opened_main = open_ptmx_and_unlock(init, &fs).expect("ptmx");
@@ -1543,7 +1543,7 @@ mod tests {
             let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
             task2.running_state().mm.update(Some(init.mm().unwrap().clone()));
             task2.thread_group().setpgid(&task2, &task2, &task2.pid).expect("setpgid task2");
-            let task2_pgid = task2.thread_group().read().process_group.clone();
+            let task2_pgid = task2.thread_group().pgid();
             let task2_pgid_id = task2_pgid.id;
 
             let task3 = task1.clone_task_for_test(0, Some(SIGCHLD));
@@ -1633,7 +1633,7 @@ mod tests {
             task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
             task1.thread_group().setsid().expect("setsid task1");
             task1.write().set_signal_mask(SigSet::from(SIGTTOU));
-            let task1_pgid = task1.thread_group().read().process_group.clone();
+            let task1_pgid = task1.thread_group().pgid();
 
             let child_a = task1.clone_task_for_test(0, Some(SIGCHLD));
             child_a.running_state().mm.update(Some(init.mm().unwrap().clone()));
