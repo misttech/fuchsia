@@ -4,7 +4,6 @@
 
 visibility = [
   ":*",
-  "e2e_test:*",
   "test:*",
   "//src/bringup/bin/netvsc:*",
   "//src/bringup/bin/paver:*",
