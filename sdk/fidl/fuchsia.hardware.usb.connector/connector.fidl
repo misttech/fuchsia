@@ -1,0 +1,100 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+/// State of a physical USB connector (receptacle), as reported by the port controller that
+/// manages it, such as a USB Type-C port controller (TCPC).
+///
+/// The port controller decides how the USB data side should behave from what is attached (for
+/// example, Type-C CC state and BC1.2 charger detection), and USB drivers such as the PHY and
+/// controller follow it. Power-related state (presence, current limits) is reported separately
+/// through `fuchsia.hardware.power.usb`.
+@available(added=HEAD)
+library fuchsia.hardware.usb.connector;
+
+using fuchsia.power.system;
+using zx;
+
+/// The USB data role the controller behind a connector should operate in.
+type DataRole = flexible enum {
+    /// No USB data: nothing is attached, the partner provides no USB data (for example a
+    /// dedicated charger), or data is not yet allowed (for example charger detection is still
+    /// running on the port controller's own data switch; platforms whose charger detector
+    /// borrows the SoC PHY require a future `DETECTING` role or side channel rather than `NONE`).
+    NONE = 0;
+    /// Peripheral: the data lines are connected to a USB host.
+    DEVICE = 1;
+    /// Host: the data lines are connected to a USB device.
+    HOST = 2;
+};
+
+/// Orientation of the plug in a USB Type-C receptacle, indicating which CC pin the partner is
+/// attached on so a Type-C mux can route lanes according to the active mode.
+type Orientation = flexible enum {
+    /// The partner is attached on CC1.
+    NORMAL = 1;
+    /// The partner is attached on CC2 (the plug is flipped).
+    REVERSE = 2;
+};
+
+/// Dynamic state of a USB connector.
+type ConnectorState = table {
+    /// The data role the USB controller should operate in. Always set by the server.
+    1: data_role DataRole;
+    /// The Type-C plug orientation, set whenever a partner's CC orientation is resolved
+    /// (independently of `data_role`) and omitted when unattached, unknown, or non-Type-C.
+    2: orientation Orientation;
+};
+
+/// Static hardware characteristics and driver capabilities of a physical USB connector.
+type Spec = table {
+    /// Data roles supported by this connector (for example `[DEVICE]` or `[DEVICE, HOST]`).
+    1: supported_data_roles vector<DataRole>:MAX;
+    /// `ConnectorState` fields whose changes actively wake the system from suspend and return a
+    /// `wake_lease` on `Watch` (must include `data_role`). Only field presence (set vs. unset) is
+    /// significant; the actual values in the table are ignored.
+    2: wake_on ConnectorState;
+};
+
+/// Protocol for querying static capabilities and watching dynamic state changes of a physical USB
+/// connector.
+@discoverable
+open protocol Connector {
+    /// Returns static hardware characteristics of the USB connector that do not change during
+    /// operation.
+    flexible GetSpec() -> (struct {
+        spec Spec;
+    }) error zx.Status;
+
+    /// Hanging get for the connector state. Returns immediately on the first call, then when the
+    /// state has changed since the last returned value. State transitions are delivered in order
+    /// and not coalesced across calls (for example, `DEVICE -> NONE -> DEVICE` delivers `NONE` on
+    /// the next call and `DEVICE` on the following call).
+    ///
+    /// If present, `setup_wake_lease` keeps the system awake while the server processes the call.
+    /// If the call is answered immediately, as the first call always is, the server hands it back
+    /// as `wake_lease` unless it returns a wake lease of its own. If the call is parked, the server
+    /// drops it.
+    ///
+    /// If present, `wake_lease` is a wake lease that the client should hold while it handles the
+    /// returned state. On a suspend-capable system, the server must return a wake lease on every
+    /// transition of a field in `Spec.wake_on` (which must include `data_role`, including
+    /// transitions to `NONE` so downstream drivers can drain transfers and power down before
+    /// suspend), or hand back `setup_wake_lease` on an immediate reply when no server lease is
+    /// attached.
+    ///
+    /// Returns:
+    ///   - `ZX_ERR_BAD_STATE`: A `Watch` call is already pending on this channel; the existing
+    ///     pending call remains intact.
+    flexible Watch(resource struct {
+        setup_wake_lease fuchsia.power.system.LeaseToken:optional;
+    }) -> (resource struct {
+        state ConnectorState;
+        wake_lease fuchsia.power.system.LeaseToken:optional;
+    }) error zx.Status;
+};
+
+/// Service published by a USB connector provider.
+service Service {
+    connector client_end:Connector;
+};

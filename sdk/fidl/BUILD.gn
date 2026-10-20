@@ -303,6 +303,7 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi",
   "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint",
   "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy",
+  "//sdk/fidl/fuchsia.hardware.usb.connector:fuchsia.hardware.usb.connector",
   "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci",
   "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor",
   "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint",
