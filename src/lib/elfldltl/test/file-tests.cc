@@ -193,7 +193,7 @@ TYPED_TEST(ElfldltlFileTests, ReadArrayFromFile) {
   auto diag = elfldltl::testing::ExpectOkDiagnostics();
   typename TestFixture::OkFileT file{this->GetHandle(), diag};
 
-  elfldltl::FixedArrayFromFile<int, 3> allocator;
+  elfldltl::BufferArrayFromFile<int, 3> allocator;
   auto got = file.template ReadArrayFromFile<int>(0, allocator, 3);
 
   ASSERT_TRUE(got);

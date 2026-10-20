@@ -124,7 +124,7 @@ struct StartupLoadModule : public StartupLoadModuleBase,
     // and phdrs fields.  Note that module().phdrs might remain empty if the
     // phdrs aren't in the load image, so DecodeFromMemory will keep using the
     // stack copy read from the file instead.
-    constexpr ld::DecodedModuleInMemory<>::FixedPhdrAllocator phdr_allocator;
+    ld::DecodedModuleInMemory<>::FixedPhdrAllocator phdr_allocator;
     auto headers = decoded().LoadFromFile(diag, loader_, std::forward<File>(file), phdr_allocator,
                                           std::forward<PhdrObservers>(phdr_observers)...);
     if (!headers) [[unlikely]] {

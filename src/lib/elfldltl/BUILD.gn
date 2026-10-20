@@ -11,8 +11,9 @@ has_fd = !is_kernel && toolchain_variant.tags + [ "standalone" ] -
 
 library_headers("headers") {
   # These APIs are close to being universally portable.  They depend only on
-  # standard C++20, <lib/fit/result.h>, <lib/stdcompat/bit.h> and rely only on
-  # library features available in all environments.  This may include
+  # standard C++20, <lib/fit/result.h>, <lib/stdcompat/bit.h>,
+  # <lib/stdcompat/inplace_vector.h> and rely only on library features
+  # available in all environments.  This may include
   # references to container and allocation APIs that cannot actually be used in
   # special environments (without infallible allocation), but using the headers
   # should be compatible as long as the specific functions and classes relying

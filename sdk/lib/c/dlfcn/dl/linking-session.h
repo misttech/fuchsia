@@ -303,7 +303,8 @@ class LinkingSession<Loader>::SessionModule
     // the image.  This fills in load_info() as well as the module vaddr bounds
     // and phdrs fields.
     Loader loader;
-    auto headers = decoded().LoadFromFile(diag, loader, std::forward<File>(file));
+    ld::DecodedModuleInMemory<>::FixedPhdrAllocator phdr_allocator;
+    auto headers = decoded().LoadFromFile(diag, loader, std::forward<File>(file), phdr_allocator);
     if (!headers) [[unlikely]] {
       return {};
     }

@@ -54,7 +54,11 @@ class DecodedModuleInMemory : public DecodedModule<ElfLayout, SegmentContainer, 
     std::optional<size_type> stack_size;
   };
 
-  using FixedPhdrAllocator = elfldltl::FixedArrayFromFile<Phdr, kMaxPhdrs>;
+  // This PhdrAllocator for LoadFromFile (below) reads the phdrs into a buffer
+  // inside the allocator object, so the allocator object must outlive the
+  // headers that LoadFromFile returns.  That buffer only has room for
+  // kMaxPhdrs in total, so use a separate one for each LoadFromFile call.
+  using FixedPhdrAllocator = elfldltl::BufferArrayFromFile<Phdr, kMaxPhdrs>;
 
   // Set when the PT_GNU_RELRO phdr is seen by set_relro or DecodeFromMemory.
   // If no such phdr is seen, this will be empty.  It can be passed directly to
@@ -77,11 +81,13 @@ class DecodedModuleInMemory : public DecodedModule<ElfLayout, SegmentContainer, 
   // be used for further decoding.)  The File object should no longer be needed
   // after this, so it can be passed as an rvalue and consumed if convenient.
   // As long as the PhdrAllocator object does not own the allocations it
-  // returns, then it can be a consumed rvalue too.
-  template <class Diagnostics, class Loader, class File,
-            typename PhdrAllocator = FixedPhdrAllocator, class... PhdrObservers>
+  // returns, then it can be a consumed rvalue too.  There is no default
+  // PhdrAllocator: the caller decides where the phdrs are stored, e.g. in a
+  // FixedPhdrAllocator object that outlives the return value.
+  template <class Diagnostics, class Loader, class File, typename PhdrAllocator,
+            class... PhdrObservers>
   constexpr auto LoadFromFile(Diagnostics& diag, Loader& loader, File&& file,
-                              PhdrAllocator&& phdr_allocator = PhdrAllocator{},
+                              PhdrAllocator&& phdr_allocator,
                               PhdrObservers&&... phdr_observers)
       -> decltype(elfldltl::LoadHeadersFromFile<Elf>(  //
           diag, file, std::forward<PhdrAllocator>(phdr_allocator))) {

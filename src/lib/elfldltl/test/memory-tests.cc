@@ -10,6 +10,7 @@
 #include <lib/trivial-allocator/single-heap-allocator.h>
 
 #include <algorithm>
+#include <concepts>
 #include <span>
 #include <string_view>
 
@@ -122,21 +123,42 @@ TEST(ElfldltlMemoryTests, ContainerArrayFromFile) {
   EXPECT_EQ(kFoobar, std::string_view(chars.data(), chars.size()));
 }
 
-TEST(ElfldltlMemoryTests, FixedArrayFromFile) {
-  constexpr std::string_view kFoobar = "foobar";
-  auto result = elfldltl::FixedArrayFromFile<char, 32>()(kFoobar.size());
-  static_assert(std::is_convertible_v<decltype(result.value()), std::span<char>>);
+TEST(ElfldltlMemoryTests, BufferArrayFromFile) {
+  using Allocator = elfldltl::BufferArrayFromFile<char, 32>;
+
+  // It can only be used as an lvalue, since the results point into it.
+  static_assert(std::invocable<Allocator&, size_t>);
+  static_assert(!std::invocable<Allocator, size_t>);
+  static_assert(!std::copyable<Allocator>);
+  static_assert(!std::movable<Allocator>);
+  static_assert(!std::assignable_from<Allocator&, const Allocator&>);
+
+  Allocator allocator;
+  auto result = allocator(kFoobar.size());
+  static_assert(std::same_as<decltype(result), std::optional<std::span<char>>>);
   ASSERT_TRUE(result.has_value());
-  auto owner = std::move(result).value();
-  std::span<char> chars = owner;
-  std::copy(kFoobar.begin(), kFoobar.end(), chars.begin());
+  std::span<char> chars = *result;
+  std::ranges::copy(kFoobar, chars.begin());
+  EXPECT_EQ(kFoobar, std::string_view(chars.data(), chars.size()));
+
+  // A second result gets different memory, so it doesn't clobber the first.
+  auto second = allocator(kFoobar.size());
+  ASSERT_TRUE(second.has_value());
+  std::span<char> more_chars = *second;
+  std::ranges::fill(more_chars, 'x');
+  EXPECT_EQ(std::string_view(more_chars.data(), more_chars.size()), "xxxxxx");
   EXPECT_EQ(kFoobar, std::string_view(chars.data(), chars.size()));
 }
 
-TEST(ElfldltlMemoryTests, FixedArrayFromFileTooSmall) {
-  auto result = elfldltl::FixedArrayFromFile<char, 5>()(6);
-  static_assert(std::is_convertible_v<decltype(result.value()), std::span<char>>);
-  EXPECT_FALSE(result.has_value());
+TEST(ElfldltlMemoryTests, BufferArrayFromFileTooSmall) {
+  elfldltl::BufferArrayFromFile<char, 5> allocator;
+  EXPECT_FALSE(allocator(6).has_value());
+
+  // The capacity is shared by all the results, and failures don't use any.
+  EXPECT_TRUE(allocator(3).has_value());
+  EXPECT_FALSE(allocator(3).has_value());
+  EXPECT_TRUE(allocator(2).has_value());
+  EXPECT_FALSE(allocator(1).has_value());
 }
 
 }  // namespace

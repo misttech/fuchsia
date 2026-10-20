@@ -5,6 +5,8 @@
 #ifndef SRC_LIB_ELFLDLTL_INCLUDE_LIB_ELFLDLTL_MEMORY_H_
 #define SRC_LIB_ELFLDLTL_INCLUDE_LIB_ELFLDLTL_MEMORY_H_
 
+#include <lib/stdcompat/inplace_vector.h>
+
 #include <cassert>
 #include <concepts>
 #include <cstddef>
@@ -242,43 +244,38 @@ constexpr ReadArrayFromFileAllocator<typename Container::value_type> auto Contai
 }
 
 // This is an implementation of the Allocator API for File::ReadArrayFromFile
-// that uses a fixed buffer inside the object (i.e. on the stack).  It simply
-// fails if more than MaxCount elements need to be read.
+// that uses a fixed-capacity cpp26::inplace_vector inside the allocator object
+// itself.  Each call takes the next unused elements of that storage, so no two
+// results share memory.  Each result is a std::span pointing into the
+// allocator object, so returning results by value is cheap no matter how large
+// MaxCount is.  The results are valid only as long as the allocator object.
+// So the allocator object must be used as an lvalue that outlives the results:
+// it cannot be copied, and calling it as an rvalue (e.g. on a temporary) is a
+// compile-time error.  It simply fails if more than MaxCount elements in total
+// would be needed.
 template <typename T, size_t MaxCount>
-class FixedArrayFromFile {
+class BufferArrayFromFile {
  public:
-  class Result {
-   public:
-    // For consistency with the minimal API requirement, this is move-only.
-    constexpr Result() = default;
-    Result(const Result&) = delete;
-    constexpr Result(Result&&) noexcept = default;
+  BufferArrayFromFile() = default;
 
-    constexpr explicit Result(size_t size) : size_(size) {
-      // Note the data_ elements are left uninitialized.
-      assert(size_ <= std::size(data_));
-    }
+  // The results point into this object, so it can't be copied or moved.
+  BufferArrayFromFile(const BufferArrayFromFile&) = delete;
+  BufferArrayFromFile& operator=(const BufferArrayFromFile&) = delete;
 
-    Result& operator=(const Result&) noexcept = delete;
-    constexpr Result& operator=(Result&&) noexcept = default;
-
-    constexpr operator std::span<T>() { return std::span(data_).subspan(0, size_); }
-
-    constexpr operator std::span<const T>() const { return std::span(data_).subspan(0, size_); }
-
-    constexpr operator bool() const { return size_ > 0; }
-
-   private:
-    std::array<T, MaxCount> data_;
-    size_t size_ = 0;
-  };
-
-  std::optional<Result> operator()(size_t size) const {
-    if (size > MaxCount) {
+  std::optional<std::span<T>> operator()(size_t size) & [[clang::lifetimebound]] {
+    const size_t used = storage_.size();
+    if (size > storage_.capacity() - used) {
       return std::nullopt;
     }
-    return Result{size};
+    storage_.resize(used + size);
+    return std::span<T>{storage_}.subspan(used, size);
   }
+
+  // The results would point into an object about to be destroyed.
+  std::optional<std::span<T>> operator()(size_t size) && = delete;
+
+ private:
+  cpp26::inplace_vector<T, MaxCount> storage_;
 };
 
 // This does direct memory access to an ELF load image already mapped in.
