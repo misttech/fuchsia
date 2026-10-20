@@ -2155,3 +2155,192 @@ mod tests {
         expect_true!(owq_ref.lock().is_unlocked());
     }
 }
+
+/// OwnedWaitQueue topology unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "owq_rust")]
+mod owq_tests {
+    use crate::kconcurrent::{IRQ_SAVE_OPTION, clt_tag, single_chain_lock_guard_owned};
+    use crate::kernel::event::Event;
+    use crate::kernel::mp;
+    use crate::kernel::thread::{self, DEFAULT_PRIORITY};
+    use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time, zx_msec};
+    use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+    use kprint::kprintln;
+    use pin_init::stack_pin_init;
+    use unittest::{expect_ok, unwrap_ok};
+
+    /// bug 502179440 regression test
+    #[test]
+    fn b502179440_regression_test() {
+        // We need to have at least 2 online CPUs to run this test.  Skip it if we
+        // don't have at least that.
+        if mp::get_online_mask().count_ones() < 2 {
+            kprintln!("Need at least 2 online CPUs to run test. Skipping.");
+            return true;
+        }
+
+        // Force the test thread to run on CPU 0 for the duration of the test.  Be
+        // sure to restore the affinity after the test.
+        // SAFETY: Called from a running kernel thread.
+        let current = unsafe { ThreadPtr::current() };
+        // SAFETY: `current` is the valid running thread.
+        let old_affinity = unsafe { current.get_cpu_affinity() };
+        // SAFETY: `current` is the valid running thread.
+        unsafe { current.set_cpu_affinity(0x1) };
+        let _restore_affinity = zr::defer(|| {
+            // SAFETY: `current` is the valid running thread.
+            unsafe { current.set_cpu_affinity(old_affinity) };
+        });
+
+        stack_pin_init!(let q0 = OwnedWaitQueue::init());
+        stack_pin_init!(let q1 = OwnedWaitQueue::init());
+        let queues: [&OwnedWaitQueue; 2] = [&q0, &q1];
+        let mut threads: [Option<ThreadPtr>; 2] = [None, None];
+        stack_pin_init!(let quit_event = Event::init_unsignaled());
+
+        struct Args<'a> {
+            thread0: AtomicPtr<Thread>,
+            ready_threads: AtomicUsize,
+            quit_event: &'a Event,
+        }
+
+        extern "C" fn worker_thread_entry(arg: *mut c_void) -> i32 {
+            // SAFETY: `arg` points to a valid `Args` that outlives this thread.
+            let args = unsafe { &*arg.cast::<Args<'_>>() };
+            args.ready_threads.fetch_add(1, Ordering::SeqCst);
+            let _ = args.quit_event.wait_infinite();
+            0
+        }
+
+        extern "C" fn contesting_thread_entry(arg: *mut c_void) -> i32 {
+            // SAFETY: `arg` points to a valid `Args` that outlives this thread.
+            let args = unsafe { &*arg.cast::<Args<'_>>() };
+            {
+                // SAFETY: `thread0` was initialized before `contesting_thread` was created and
+                // remains alive until after `contesting_thread` is joined.
+                let t0 = unsafe { &*args.thread0.load(Ordering::Acquire) };
+                single_chain_lock_guard_owned!(
+                    _guard,
+                    t0,
+                    IRQ_SAVE_OPTION,
+                    clt_tag!("owq_topology_bug_502179440_regression_test")
+                );
+                args.ready_threads.fetch_add(1, Ordering::SeqCst);
+
+                let deadline = current_mono_time() + DurationMono(zx_msec(200));
+                while current_mono_time() < deadline {
+                    core::hint::spin_loop();
+                }
+            }
+            let _ = args.quit_event.wait_infinite();
+            0
+        }
+
+        let args = Args {
+            thread0: AtomicPtr::new(core::ptr::null_mut()),
+            ready_threads: AtomicUsize::new(0),
+            quit_event: &quit_event,
+        };
+        let args_ptr = (&raw const args).cast_mut().cast::<c_void>();
+
+        // Create two threads and wait for them to start.
+        for slot in &mut threads {
+            // SAFETY: `worker_thread_entry` and `args_ptr` are valid, and the thread is joined
+            // below before `args` or `quit_event` go out of scope.
+            let t = unwrap_ok!(unsafe {
+                thread::create_with_priority(
+                    c"owq_test_thread".as_ptr(),
+                    worker_thread_entry,
+                    args_ptr,
+                    DEFAULT_PRIORITY,
+                )
+            });
+            // SAFETY: `t` was just created and has not been resumed or joined yet.
+            unsafe { t.resume() };
+            *slot = Some(t);
+        }
+
+        while args.ready_threads.load(Ordering::SeqCst) != threads.len() {
+            let _ = thread::sleep_relative(DurationMono(zx_msec(1)));
+        }
+
+        // Assign thread N as the owner of queue N, forall N.
+        assert_eq!(queues.len(), threads.len());
+        for i in 0..threads.len() {
+            // SAFETY: `threads[i]` is alive until joined below.
+            let thread_ref = unsafe { threads[i].unwrap().as_ref() };
+            expect_ok!(queues[i].assign_owner(Some(thread_ref)));
+        }
+
+        args.thread0.store(threads[0].unwrap().as_raw(), Ordering::Release);
+
+        // Start another thread and have it hold T0's lock.  We need to be told to
+        // Backoff on locking when we attempt to obtain the wake_futex's OWQ's current
+        // owner lock to set up the original conditions of the bug.
+        //
+        // Sadly, it is very difficult to make this fully deterministic.  Once the
+        // requeue operation starts, it will continue to try until it finally
+        // completes.  We need to have T0's lock contested, but we also need to drop
+        // the lock after a certain period of time, or we will be deadlocked.
+        //
+        // Right now, we are hardcoding a timeout of 200mSec for holding the lock.
+        // There is a small chance of a false negative if the lock is dropped before
+        // the requeue operation starts, but automated tests should not be able to
+        // miss a regression forever.
+        //
+        // Also, use hard affinity make sure that the main test thread is not running
+        // on the same CPU as the contesting thread.  If the contesting thread makes
+        // it into the lock, disabling interrupts in the process, and the primary test
+        // thread ends up being scheduled on the same CPU as the contesting thread, it
+        // is possible that it will end up stuck there if there is so little activity
+        // in the system that the main thread does not get stolen by another scheduler
+        // when an unrelated thread goes idle.
+        // SAFETY: `contesting_thread_entry` and `args_ptr` are valid, and `contesting_thread` is
+        // joined below before `args` or `quit_event` go out of scope.
+        let contesting_thread = unwrap_ok!(unsafe {
+            thread::create_with_priority(
+                c"owq_test_thread".as_ptr(),
+                contesting_thread_entry,
+                args_ptr,
+                DEFAULT_PRIORITY,
+            )
+        });
+        // SAFETY: `contesting_thread` was just created and has not been joined yet.
+        unsafe {
+            contesting_thread.set_cpu_affinity(0x2);
+            contesting_thread.resume();
+        }
+
+        while args.ready_threads.load(Ordering::SeqCst) != threads.len() + 1 {
+            let _ = thread::sleep_relative(DurationMono(zx_msec(1)));
+        }
+
+        // Requeue from Q0 -> Q1, specifying T1 (who owns Q1 right now) as the new
+        // owner of Q1.
+        let mut wake_hook = DefaultWakeHooks;
+        let mut requeue_hook = DefaultWakeHooks;
+        // SAFETY: `threads[1]` is alive until joined below.
+        let t1_ref = unsafe { threads[1].unwrap().as_ref() };
+        queues[0].wake_and_requeue(
+            queues[1],
+            Some(t1_ref),
+            1,
+            0xFFFF_FFFF,
+            &mut wake_hook,
+            &mut requeue_hook,
+            WakeOption::None,
+        );
+
+        // If we didn't fail any asserts, then we passed!  Shutdown the threads and we are done.
+        args.quit_event.signal();
+        for slot in &mut threads {
+            if let Some(t) = slot.take() {
+                // SAFETY: `t` has not been joined yet.
+                let _ = unsafe { t.join(InstantMono::INFINITE) };
+            }
+        }
+        // SAFETY: `contesting_thread` has not been joined yet.
+        let _ = unsafe { contesting_thread.join(InstantMono::INFINITE) };
+    }
+}
