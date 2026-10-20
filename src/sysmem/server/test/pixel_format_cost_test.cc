@@ -63,6 +63,12 @@ std::vector<fuchsia_sysmem2::FormatCostEntry> LoadGenericCostEntries() {
   });
 }
 
+std::vector<fuchsia_sysmem2::FormatCostEntry> LoadPowerVrCostEntries() {
+  return LoadCostEntries(std::vector{
+      "/pkg/data/format_costs/powervr.format_costs_persistent_fidl",
+  });
+}
+
 TEST(PixelFormatCost, Afbc) {
   UsagePixelFormatCost arm_costs(LoadArmCostEntries());
   UsagePixelFormatCost generic_costs(LoadGenericCostEntries());
@@ -265,6 +271,62 @@ TEST(PixelFormatCost, AfbcWithFlags) {
       EXPECT_GT(0, arm_costs.Compare(constraints, i, i - 1)) << "i=%d" << i;
       EXPECT_EQ(0, generic_costs.Compare(constraints, i - 1, i));
       EXPECT_EQ(0, generic_costs.Compare(constraints, i, i - 1));
+    }
+  }
+}
+
+TEST(PixelFormatCost, PowerVrPvric) {
+  auto powervr_costs = UsagePixelFormatCost(LoadPowerVrCostEntries());
+  auto generic_costs = UsagePixelFormatCost(LoadGenericCostEntries());
+
+  constexpr std::array kPixelFormats = {
+      fuchsia_images2::PixelFormat::kB8G8R8A8,    fuchsia_images2::PixelFormat::kR8G8B8A8,
+      fuchsia_images2::PixelFormat::kR8G8B8X8,    fuchsia_images2::PixelFormat::kB8G8R8X8,
+      fuchsia_images2::PixelFormat::kA2R10G10B10, fuchsia_images2::PixelFormat::kA2B10G10R10,
+      fuchsia_images2::PixelFormat::kR5G6B5,
+  };
+
+  // Formats are in ascending preference order (descending cost order):
+  // kLinear (DBL_MAX) -> kPvrFbcdc16X4V14 (200.0) -> kPvrFbcdc8X8V14 (100.0).
+  constexpr std::array kModifierList = {
+      fuchsia_images2::PixelFormatModifier::kLinear,
+      fuchsia_images2::PixelFormatModifier::kPvrFbcdc16X4V14,
+      fuchsia_images2::PixelFormatModifier::kPvrFbcdc8X8V14,
+  };
+
+  for (auto pixel_format : kPixelFormats) {
+    const uint32_t max_is_x = (pixel_format == fuchsia_images2::PixelFormat::kB8G8R8A8 ||
+                               pixel_format == fuchsia_images2::PixelFormat::kR8G8B8A8)
+                                  ? 2
+                                  : 1;
+    for (uint32_t is_x = 0; is_x < max_is_x; ++is_x) {
+      fuchsia_sysmem2::BufferCollectionConstraints constraints;
+      constraints.image_format_constraints().emplace(kModifierList.size());
+
+      for (uint32_t i = 0; i < kModifierList.size(); ++i) {
+        fuchsia_sysmem2::ImageFormatConstraints image_format_constraints;
+        image_format_constraints.pixel_format() = pixel_format;
+        image_format_constraints.pixel_format_modifier() = kModifierList[i];
+        if (is_x) {
+          image_format_constraints.is_alpha_present() = false;
+        }
+        constraints.image_format_constraints()->at(i) = std::move(image_format_constraints);
+      }
+
+      for (uint32_t i = 1; i < kModifierList.size(); ++i) {
+        EXPECT_LT(0, powervr_costs.Compare(constraints, i - 1, i))
+            << "pixel_format=" << static_cast<uint32_t>(pixel_format) << " is_x=" << is_x
+            << " i=" << i;
+        EXPECT_GT(0, powervr_costs.Compare(constraints, i, i - 1))
+            << "pixel_format=" << static_cast<uint32_t>(pixel_format) << " is_x=" << is_x
+            << " i=" << i;
+        EXPECT_EQ(0, generic_costs.Compare(constraints, i - 1, i))
+            << "pixel_format=" << static_cast<uint32_t>(pixel_format) << " is_x=" << is_x
+            << " i=" << i;
+        EXPECT_EQ(0, generic_costs.Compare(constraints, i, i - 1))
+            << "pixel_format=" << static_cast<uint32_t>(pixel_format) << " is_x=" << is_x
+            << " i=" << i;
+      }
     }
   }
 }

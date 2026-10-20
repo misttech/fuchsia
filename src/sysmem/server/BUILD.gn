@@ -230,6 +230,10 @@ test_format_costs_file("test_format_costs_intel") {
   format_costs = "//src/sysmem/format_costs/intel"
 }
 
+test_format_costs_file("test_format_costs_powervr") {
+  format_costs = "//src/sysmem/format_costs/powervr"
+}
+
 test_format_costs_file("test_format_costs_video_decoder_nv12") {
   format_costs = "//src/sysmem/format_costs/video_decoder_nv12"
 }
@@ -239,6 +243,7 @@ fuchsia_unittest_package("sysmem-unittest") {
     ":sysmem-unittest-bin",
     ":test_format_costs_arm_mali",
     ":test_format_costs_intel",
+    ":test_format_costs_powervr",
     ":test_format_costs_video_decoder_nv12",
   ]
   test_specs = {
