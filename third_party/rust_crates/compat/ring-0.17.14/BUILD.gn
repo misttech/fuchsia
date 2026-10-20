@@ -138,6 +138,7 @@ HEADERS = [
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/fipsmodule/ec/p256-nistz.h",
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/fipsmodule/ec/p256-nistz-table.h",
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/fipsmodule/ec/p256_shared.h",
+  "//third_party/rust_crates/vendor/ring-0.17.14/crypto/fipsmodule/ec/p256_table.h",
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/fipsmodule/ec/util.h",
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/internal.h",
   "//third_party/rust_crates/vendor/ring-0.17.14/crypto/limbs/limbs.h",
