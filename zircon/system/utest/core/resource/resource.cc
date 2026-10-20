@@ -132,6 +132,20 @@ TEST(Resource, InvalidArgs) {
   EXPECT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO | 0xFF0000, mmio_test_base,
                                  mmio_test_size, NULL, 0, &temp),
             ZX_ERR_INVALID_ARGS);
+  // MMIO resources must have page-aligned base and size.
+  const size_t page_size = zx_system_get_page_size();
+  EXPECT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base + (page_size / 2),
+                                 page_size, NULL, 0, &temp),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base,
+                                 page_size + (page_size / 2), NULL, 0, &temp),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base + (page_size / 2),
+                                 page_size + (page_size / 2), NULL, 0, &temp),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(
+      zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, 128, NULL, 0, &temp),
+      ZX_ERR_INVALID_ARGS);
 }
 
 TEST(Resource, ExclusiveShared) {
@@ -176,32 +190,6 @@ TEST(Resource, VmoCreation) {
                                  NULL, 0, &mmio),
             ZX_OK);
   EXPECT_EQ(zx_vmo_create_physical(mmio.get(), mmio_test_base, zx_system_get_page_size(),
-                                   vmo.reset_and_get_address()),
-            ZX_OK);
-}
-
-TEST(Resource, VmoCreationSmaller) {
-  // Attempt to create a resource smaller than a page and ensure it still expands access to the
-  // entire page.
-  zx::resource mmio;
-  zx::vmo vmo;
-  ASSERT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base,
-                                 zx_system_get_page_size() / 2, NULL, 0, &mmio),
-            ZX_OK);
-  EXPECT_EQ(zx_vmo_create_physical(mmio.get(), mmio_test_base, zx_system_get_page_size(),
-                                   vmo.reset_and_get_address()),
-            ZX_OK);
-}
-
-TEST(Resource, VmoCreationUnaligned) {
-  // Attempt to create an unaligned resource and ensure that the bounds are rounded appropriately
-  // to the proper zx_system_get_page_size().
-  zx::resource mmio;
-  zx::vmo vmo;
-  ASSERT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base + 0x7800, 0x2000,
-                                 NULL, 0, &mmio),
-            ZX_OK);
-  EXPECT_EQ(zx_vmo_create_physical(mmio.get(), mmio_test_base + 0x7000, 0x2000,
                                    vmo.reset_and_get_address()),
             ZX_OK);
 }
@@ -263,7 +251,7 @@ TEST(Resource, CreateResourceSlice) {
     // Creating a resource with the same base and a different size should fail.
     EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
               zx::resource::create(mmio, ZX_RSRC_KIND_MMIO, mmio_test_base,
-                                   zx_system_get_page_size() + 34u, NULL, 0, &smaller_mmio));
+                                   zx_system_get_page_size() * 2u, NULL, 0, &smaller_mmio));
   }
   {
     // Try to make a slice going from exclusive -> shared. This should fail.
@@ -722,18 +710,12 @@ TEST(Resource, HierarchySlicingBoundaries) {
 
   // Multi-tier hierarchy: Parent -> Child -> Grandchild -> Great-Grandchild.
   zx::resource tier1_child, tier2_grandchild, tier3_great_grandchild;
-  ASSERT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
-                                 page_size * 2, nullptr, 0, &tier1_child));
+  ASSERT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base, page_size * 3, nullptr,
+                                 0, &tier1_child));
 
-  // Slice starting 1 byte before tier1_child -> ZX_ERR_ACCESS_DENIED.
-  // Using (mmio_test_base + page_size - 1) avoids uint64 underflow when mmio_test_base is 0.
-  EXPECT_STATUS(zx::resource::create(tier1_child, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size - 1,
-                                     page_size, nullptr, 0, &child),
-                ZX_ERR_ACCESS_DENIED);
-
-  // Slice extending 1 byte past parent end -> ZX_ERR_ACCESS_DENIED.
+  // Slice extending past parent end -> ZX_ERR_ACCESS_DENIED.
   EXPECT_STATUS(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size * 3,
-                                     page_size + 1, nullptr, 0, &child),
+                                     page_size * 2, nullptr, 0, &child),
                 ZX_ERR_ACCESS_DENIED);
 
   // Slice completely outside parent -> ZX_ERR_ACCESS_DENIED.
@@ -742,42 +724,19 @@ TEST(Resource, HierarchySlicingBoundaries) {
                 ZX_ERR_ACCESS_DENIED);
 
   ASSERT_OK(zx::resource::create(tier1_child, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
-                                 page_size, nullptr, 0, &tier2_grandchild));
-  ASSERT_OK(zx::resource::create(tier2_grandchild, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
-                                 page_size / 2, nullptr, 0, &tier3_great_grandchild));
+                                 page_size * 2, nullptr, 0, &tier2_grandchild));
+  ASSERT_OK(zx::resource::create(tier2_grandchild, ZX_RSRC_KIND_MMIO,
+                                 mmio_test_base + page_size * 2, page_size, nullptr, 0,
+                                 &tier3_great_grandchild));
 
-  // Great-grandchild attempting to slice beyond grandchild bounds (even if within tier1_child)
-  // must fail.
+  // Slicing must be validated against the immediate parent's range, not any ancestor's.
+  // [base + page_size, base + page_size * 2) is within tier2_grandchild and tier1_child, but
+  // outside tier3_great_grandchild, so slicing it from tier3_great_grandchild should fail.
   zx::resource out_of_bounds;
   EXPECT_STATUS(
       zx::resource::create(tier3_great_grandchild, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
                            page_size, nullptr, 0, &out_of_bounds),
       ZX_ERR_ACCESS_DENIED);
-}
-
-TEST(Resource, StrictMmioRangeValidation) {
-  const size_t page_size = zx_system_get_page_size();
-  // Create an unaligned parent MMIO slice covering [mmio_test_base + 0x200, mmio_test_base +
-  // 0x600).
-  zx::resource parent;
-  ASSERT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base + 0x200, 0x400,
-                                 nullptr, 0, &parent));
-
-  // Strict validation on sys_resource_create rejects child outside [base, base + size) even if on
-  // the same page.
-  zx::resource child;
-  EXPECT_STATUS(
-      zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base, 0x200, nullptr, 0, &child),
-      ZX_ERR_ACCESS_DENIED);
-
-  // Child strictly contained inside [mmio_test_base + 0x200, mmio_test_base + 0x600) succeeds.
-  EXPECT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + 0x200, 0x200, nullptr,
-                                 0, &child));
-
-  // Non-strict validation in zx_vmo_create_physical allows mapping the page.
-  zx::vmo vmo;
-  EXPECT_OK(
-      zx_vmo_create_physical(parent.get(), mmio_test_base, page_size, vmo.reset_and_get_address()));
 }
 
 TEST(Resource, ExclusiveRegionReleaseLifecycle) {

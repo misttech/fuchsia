@@ -169,8 +169,8 @@ pub use port_dispatcher::{PortDispatcher, PortPacket, RawPortPacket};
 pub use process_dispatcher::{CurrentProcessDispatcher, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource::{
-    StrictValidation, validate_ranged_resource, validate_ranged_resource_dispatcher,
-    validate_resource_irq, validate_resource_kind_base, validate_system_resource,
+    validate_ranged_resource, validate_ranged_resource_dispatcher, validate_resource_irq,
+    validate_resource_kind_base, validate_system_resource,
 };
 pub use resource_dispatcher::{ResourceDispatcher, is_valid_kind};
 pub use root_job_observer::RootJobObserver;

@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::handle::HandleValue;
-use super::resource::{StrictValidation, validate_ranged_resource_with_strict};
+use super::resource::validate_ranged_resource;
 use zx_status::Status;
 use zx_types::{zx_handle_t, zx_rsrc_kind_t, zx_status_t};
 
@@ -21,14 +21,6 @@ pub unsafe extern "C" fn rust_resource_validate_ranged_resource(
     kind: zx_rsrc_kind_t,
     base: u64,
     size: usize,
-    strict: bool,
 ) -> zx_status_t {
-    let strict_validation = if strict { StrictValidation::Yes } else { StrictValidation::No };
-    Status::result_into_raw(validate_ranged_resource_with_strict(
-        HandleValue::new(handle),
-        kind,
-        base,
-        size,
-        strict_validation,
-    ))
+    Status::result_into_raw(validate_ranged_resource(HandleValue::new(handle), kind, base, size))
 }

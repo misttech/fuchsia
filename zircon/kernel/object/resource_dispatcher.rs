@@ -23,6 +23,7 @@ use ksync::{
 use object_constants_rs::{
     kResourceDispatcherStateAlign, kResourceDispatcherStateOffset, kResourceDispatcherStateSize,
 };
+use page;
 use pin_init::{
     InPlaceWrite as _, PinInit, pin_data, pin_init, pin_init_array_from_fn, pinned_drop,
 };
@@ -354,6 +355,12 @@ impl ResourceDispatcher {
         if !is_valid_kind(kind) || (flags & !ZX_RSRC_FLAGS_MASK) != 0 {
             return Err(Status::INVALID_ARGS);
         }
+
+        debug_assert!(
+            kind != ZX_RSRC_KIND_MMIO
+                || (page::is_aligned(base as usize) && page::is_aligned(size)),
+            "MMIO resource should be page aligned: base={base:#x}, size={size:#x}",
+        );
 
         let req_range = from_offset_len(base, size as u64).ok_or(Status::INVALID_ARGS)?;
 
@@ -886,7 +893,7 @@ mod tests {
     fn test_out_of_allocator_range() {
         stack_pin_init!(let storage = ResourceStorage::init());
 
-        let size = 0xFFFF;
+        let size = page::SIZE * 16;
         unittest::expect_ok!(ResourceDispatcher::initialize_allocator_with_storage(
             ZX_RSRC_KIND_MMIO,
             0,
@@ -897,8 +904,8 @@ mod tests {
         // Overlap near the end
         let res1 = ResourceDispatcher::create_with_storage(
             ZX_RSRC_KIND_MMIO,
-            size as u64 - 0xFF,
-            0xFFF,
+            (size - page::SIZE) as u64,
+            page::SIZE * 2,
             0,
             b"ooar-disp1",
             &storage,

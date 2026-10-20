@@ -29,7 +29,8 @@ closed protocol Resource {
     /// syscalls. Resources are typically handed out to bus drivers and rarely need to
     /// be interacted with directly by drivers using driver protocols. Resource objects
     /// grant access to an address space range starting at *base* up to but not
-    /// including *base* + *size*. A special value for *kind* exists:
+    /// including *base* + *size*. If *kind* is `ZX_RSRC_KIND_MMIO`, then *base*
+    /// and *size* must be multiples of `zx_system_get_page_size()`. A special value for *kind* exists:
     /// `ZX_RSRC_KIND_SYSTEM`. The system resource is a ranged resource which is the parent
     /// of a number of resources, all of *size* 1, which are used as privileged checks
     /// for syscalls.
@@ -93,7 +94,8 @@ closed protocol Resource {
     /// `ZX_ERR_ACCESS_DENIED` The *parent_rsrc* handle is not a resource of *kind*.
     ///
     /// `ZX_ERR_INVALID_ARGS` *options* contains an invalid kind or flag combination,
-    /// or *name* is an invalid pointer.
+    /// *name* is an invalid pointer, or *options* has `ZX_RSRC_KIND_MMIO` and *base*
+    /// or *size* is not a multiple of `zx_system_get_page_size()`.
     ///
     /// `ZX_ERR_NOT_FOUND` A suitable resource allocation was not found. This happens
     /// if the address range is not valid, if the range is already owned by an exclusive

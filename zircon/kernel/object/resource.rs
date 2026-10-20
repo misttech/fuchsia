@@ -4,29 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-// When validating MMIO resource ranges against a non-root parent MMIO resource, we need to verify
-// that the requested range is completely contained by its parent's range. There are two different
-// ways that we can do this: a strict validation or a non-strict validation.
-//
-// A strict validation means any time we validate a range against an MMIO resource object, the MMIO
-// resource's range *must* completely contain *all* of the requested range, without exception.
-//
-// A non-strict validation means that we check to make sure that the requested range is completely
-// contained by the parent's _page aligned_ range. Because of some legacy behavior, when creating a
-// physical VMO using an MMIO resource as a token, user-mode drivers (PCIe in particular) depend
-// on the kernel allowing the operation provided that the MMIO resource's range simply touches all
-// of the pages covered by the MMIO resource. IOW - if an MMIO resource covers the range
-// `[X + 0x80, X + 0x100)`, user-mode expects this resource to allow it to create a physical VMO
-// covering `[X, X + page::SIZE)`.
-//
-// By default, we use non-strict validation. However, when we attempt to create an MMIO resource as
-// a child of another MMIO resource, we demand strict validation. Failure to do this means that
-// someone could create an MMIO resource whose range is larger than that of its parents, which is
-// more than a little bit confusing.
-//
-// TODO(b/506251014): Remove this when we get to the point where we can expect user-mode to always
-// page-align all of its MMIO resource ranges.
-
 use range_check::get_intersect_offset_len;
 use zx_status::Status;
 use zx_types::{
@@ -40,13 +17,6 @@ use crate::root_resource_filter::root_resource_filter_can_access_region;
 
 // TODO(https://fxbug.dev/42107339): Take another look at validation and consider returning
 // dispatchers or move validation into the parent dispatcher itself.
-
-/// Strictness policy for validating MMIO resource ranges against parents.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum StrictValidation {
-    No,
-    Yes,
-}
 
 /// Check if the resource referenced by `handle` is of kind `kind` AND base `base`.
 ///
@@ -71,9 +41,6 @@ pub fn validate_resource_kind_base(
 
 /// Validates that `resource` grants access to the requested range for `kind`.
 ///
-/// If `strict_validation` is `StrictValidation::No`, MMIO resources allow operations
-/// within their page-aligned bounds.
-///
 /// # Errors
 ///
 /// - `ZX_ERR_ACCESS_DENIED` if access to the region is denied by the root resource filter.
@@ -84,7 +51,6 @@ pub fn validate_ranged_resource_dispatcher(
     kind: zx_rsrc_kind_t,
     base: u64,
     size: usize,
-    strict_validation: StrictValidation,
 ) -> Result<(), Status> {
     // Resources get access to almost everything, but there are still resource ranges they are not
     // permitted to mint. For example:
@@ -128,22 +94,11 @@ pub fn validate_ranged_resource_dispatcher(
     // with a debug assert here.
     debug_assert!(root_resource_filter_can_access_region(rbase as usize, rsize, kind));
 
-    // In the specific case of MMIO, everything is rounded to page::SIZE units because it's the
-    // smallest unit we can operate at with the MMU.
-    let (check_base, check_size) =
-        if strict_validation == StrictValidation::No && resource.get_kind() == ZX_RSRC_KIND_MMIO {
-            let rbase = rbase as usize;
-            let aligned_base = page::round_down(rbase);
-            (aligned_base as u64, page::round_up(rbase - aligned_base + rsize) as u64)
-        } else {
-            (rbase, rsize as u64)
-        };
-
     let size = size as u64;
 
     // Check for intersection and make sure the requested base+size fits within the resource's
     // address space allocation.
-    match get_intersect_offset_len(base, size, check_base, check_size) {
+    match get_intersect_offset_len(base, size, rbase, rsize as u64) {
         Some((ibase, isize)) if ibase == base && isize == size => Ok(()),
         _ => Err(Status::OUT_OF_RANGE),
     }
@@ -151,7 +106,7 @@ pub fn validate_ranged_resource_dispatcher(
 
 /// Check if the resource referenced by `handle` is of kind `kind`. If `kind` matches the
 /// resource's kind, then range validation between `base` and `size` will be made against the
-/// resource's backing address space allocation (defaults to non-strict MMIO validation).
+/// resource's backing address space allocation.
 ///
 /// # Errors
 ///
@@ -166,29 +121,10 @@ pub fn validate_ranged_resource(
     base: u64,
     size: usize,
 ) -> Result<(), Status> {
-    validate_ranged_resource_with_strict(handle, kind, base, size, StrictValidation::No)
-}
-
-/// Validates a resource handle against a requested range with explicit strictness.
-///
-/// # Errors
-///
-/// - `ZX_ERR_BAD_HANDLE` if `handle` is not a valid handle.
-/// - `ZX_ERR_WRONG_TYPE` if `handle` is not a valid resource handle, or `kind` is invalid for the
-///   request.
-/// - `ZX_ERR_OUT_OF_RANGE` if the range specified by `base` and `size` is not granted by this
-///   resource.
-pub fn validate_ranged_resource_with_strict(
-    handle: HandleValue,
-    kind: zx_rsrc_kind_t,
-    base: u64,
-    size: usize,
-    strict_validation: StrictValidation,
-) -> Result<(), Status> {
     let resource = ProcessDispatcher::with_current(|up| {
         up.handle_table().get_dispatcher::<ResourceDispatcher>(up, handle)
     })?;
-    validate_ranged_resource_dispatcher(&resource, kind, base, size, strict_validation)
+    validate_ranged_resource_dispatcher(&resource, kind, base, size)
 }
 
 /// Validates access to a single system resource indexed by `base`.
@@ -210,7 +146,7 @@ mod tests {
     use zx_status::Status;
     use zx_types::{ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_SYSTEM};
 
-    use super::{StrictValidation, validate_ranged_resource_dispatcher};
+    use super::validate_ranged_resource_dispatcher;
 
     /// Tests validate_ranged_resource_dispatcher with ranged root and child MMIO resources.
     #[test]
@@ -257,7 +193,6 @@ mod tests {
             ZX_RSRC_KIND_MMIO,
             test_base + 0x2000,
             0x1000,
-            StrictValidation::Yes,
         ));
         unittest::expect_err!(
             validate_ranged_resource_dispatcher(
@@ -265,48 +200,63 @@ mod tests {
                 ZX_RSRC_KIND_SYSTEM,
                 1,
                 1,
-                StrictValidation::No,
             ),
             Status::WRONG_TYPE
         );
 
-        // Create a concrete MMIO resource covering [test_base + 0x10080, test_base + 0x10100)
-        // (unaligned).
+        // Create a concrete MMIO resource covering [child_base, child_base + child_size).
+        let child_base = test_base + page::SIZE as u64 * 16;
+        let child_size = page::SIZE * 2;
         let (child_handle, _) = ResourceDispatcher::create_with_storage(
             ZX_RSRC_KIND_MMIO,
-            test_base + 0x10080,
-            0x80,
+            child_base,
+            child_size,
             0,
             b"mmio-child",
             &storage,
         )
         .expect("create child MMIO failed");
 
-        // Exactly contained in [test_base + 0x10080, test_base + 0x10100)
+        // Exactly contained in [child_base, child_base + child_size)
         unittest::expect_ok!(validate_ranged_resource_dispatcher(
             child_handle.dispatcher(),
             ZX_RSRC_KIND_MMIO,
-            test_base + 0x10080,
-            0x80,
-            StrictValidation::Yes,
+            child_base,
+            child_size,
         ));
 
-        // In page-aligned range [test_base + 0x10000, test_base + 0x11000), strict=false passes,
-        // strict=true fails.
+        // Valid sub-ranges
         unittest::expect_ok!(validate_ranged_resource_dispatcher(
             child_handle.dispatcher(),
             ZX_RSRC_KIND_MMIO,
-            test_base + 0x10000,
+            child_base,
             page::SIZE,
-            StrictValidation::No,
         ));
+        unittest::expect_ok!(validate_ranged_resource_dispatcher(
+            child_handle.dispatcher(),
+            ZX_RSRC_KIND_MMIO,
+            child_base + page::SIZE as u64,
+            page::SIZE,
+        ));
+
+        // Out of range (starts before parent)
         unittest::expect_err!(
             validate_ranged_resource_dispatcher(
                 child_handle.dispatcher(),
                 ZX_RSRC_KIND_MMIO,
-                test_base + 0x10000,
-                page::SIZE,
-                StrictValidation::Yes,
+                child_base - page::SIZE as u64,
+                child_size,
+            ),
+            Status::OUT_OF_RANGE
+        );
+
+        // Out of range (extends past parent)
+        unittest::expect_err!(
+            validate_ranged_resource_dispatcher(
+                child_handle.dispatcher(),
+                ZX_RSRC_KIND_MMIO,
+                child_base,
+                child_size + page::SIZE,
             ),
             Status::OUT_OF_RANGE
         );
@@ -318,7 +268,26 @@ mod tests {
                 ZX_RSRC_KIND_MMIO,
                 test_base + 0x20000,
                 0x1000,
-                StrictValidation::No,
+            ),
+            Status::OUT_OF_RANGE
+        );
+
+        // Overflow boundaries (u64::MAX, usize::MAX)
+        unittest::expect_err!(
+            validate_ranged_resource_dispatcher(
+                child_handle.dispatcher(),
+                ZX_RSRC_KIND_MMIO,
+                u64::MAX,
+                page::SIZE,
+            ),
+            Status::OUT_OF_RANGE
+        );
+        unittest::expect_err!(
+            validate_ranged_resource_dispatcher(
+                child_handle.dispatcher(),
+                ZX_RSRC_KIND_MMIO,
+                child_base,
+                usize::MAX,
             ),
             Status::OUT_OF_RANGE
         );

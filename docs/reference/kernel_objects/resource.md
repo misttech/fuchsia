@@ -21,6 +21,8 @@ is granted access to. The range covers *base* up to but not including *base* +
 *len*.  These objects are immutable after creation. Valid *kind* values are
 **ZX_RSRC_KIND_MMIO**, **ZX_RSRC_KIND_IOPORT**, **ZX_RSRC_KIND_IRQ**,
 **ZX_RSRC_KIND_SMC**, and **ZX_RSRC_KIND_SYSTEM**.
+If *kind* is **ZX_RSRC_KIND_MMIO**, then *base* and *len* must be multiples of
+`zx_system_get_page_size()`.
 
 The system resource is a special case that contains other resources, all of which have *len*
 one. These resources each have their own base within the system resource. Valid *base*

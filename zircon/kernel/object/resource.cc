@@ -11,11 +11,10 @@
 
 extern "C" {
 zx_status_t rust_resource_validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind,
-                                                   uint64_t base, size_t size, bool strict);
+                                                   uint64_t base, size_t size);
 }
 
 zx_status_t validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind, uintptr_t base,
-                                     size_t size, StrictMmioRangeValidation strict_validation) {
-  return rust_resource_validate_ranged_resource(
-      handle, kind, base, size, strict_validation == StrictMmioRangeValidation::Yes);
+                                     size_t size) {
+  return rust_resource_validate_ranged_resource(handle, kind, base, size);
 }
