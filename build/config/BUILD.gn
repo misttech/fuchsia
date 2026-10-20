@@ -1194,7 +1194,10 @@ config("Wno-unused-but-set-variable") {
 # that doesn't comply with.
 config("Wno-unused-but-set-global") {
   cflags = [ "-Wno-unused-but-set-global" ]
-  visibility = [ "//vendor/*" ]
+  visibility = [
+    "//third_party/sbase:*",
+    "//vendor/*",
+  ]
 }
 
 # Config to suppress Wbitwise-instead-of-logical warning in the third party code

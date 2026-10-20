@@ -457,7 +457,7 @@
     <project name="third_party/sbase"
              path="third_party/sbase"
              remote="https://fuchsia.googlesource.com/third_party/sbase"
-             revision="072df49d23ae6febf0d7386dee40fd2e70eb4378"
+             revision="d694f731bc860baebea48aa2efb590231dcfcdf9"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="scudo"
              path="third_party/scudo/src"
