@@ -28,13 +28,21 @@ mod aspace_rs {
     use crate::user_copy::internal::validate_user_accessible_range;
     use crate::user_memory::UserMemory;
     use crate::vm::arch_vm_aspace::{
-        ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ArchMmuFlags, NonTerminalAction,
-        TerminalAction,
+        ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
+        NonTerminalAction, TerminalAction,
     };
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm::vaddr_to_paddr;
-    use crate::vm::vm_address_region::{self as vmar, MemoryPriority, VmAddressRegionOpChildren};
-    use crate::vm::vm_aspace::{ShareOpt, Type, VmAspace, vmm_flag};
+    use crate::vm::vm_address_region::{
+        self as vmar, MemoryPriority, VmAddressRegion, VmAddressRegionOpChildren,
+    };
+    use crate::vm::vm_address_region_enumerator::{
+        VmAddressRegionEnumerator, VmAddressRegionEnumeratorType,
+    };
+    use crate::vm::vm_aspace::{
+        ShareOpt, Type, VmAspace, VmAspaceLockClass, VmAspaceMutex, vmm_flag,
+    };
+    use crate::vm::vm_mapping::VmMapping;
     use crate::vm::vm_object::{Resizability, SnapshotType, VmObject, VmObjectReadWriteOptions};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::{pmm, vmm};
@@ -44,12 +52,14 @@ mod aspace_rs {
     };
     use core::ffi::c_void;
     use core::mem::{MaybeUninit, size_of, size_of_val};
+    use core::pin::Pin;
     use core::ptr::from_ref;
     use core::sync::atomic::{AtomicBool, Ordering};
     use fbl::RefPtr;
     use kprint::kprintln;
+    use ksync::LockToken;
     use page::SIZE as PAGE_SIZE_USIZE;
-    use pin_init::stack_pin_init;
+    use pin_init::{PinInit, stack_pin_init};
     use unittest::{
         assert_eq, assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_err,
         expect_false, expect_ne, expect_ok, expect_true, subtest, unwrap_ok, unwrap_some,
@@ -749,6 +759,458 @@ mod aspace_rs {
         expect_ok!(restricted_mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE));
     }
 
+    /// Tests that VmMappings that are marked mergeable behave correctly.
+    #[test]
+    fn vmaspace_merge_mapping_test() {
+        let aspace = unwrap_some!(VmAspace::create(Type::User, b"test aspace"));
+
+        // Create a sub VMAR we'll use for all our testing.
+        let vmar = unwrap_ok!(aspace.root_vmar().unwrap().create_sub_vmar(
+            0,
+            PAGE_SIZE_USIZE * 64,
+            0,
+            vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+            b"test vmar",
+        ));
+
+        // Create two different vmos to make mappings into.
+        let vmo1 = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 4));
+        let vmo2 = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 4));
+
+        // Declare some enums to make writing test cases more readable instead of having lots of
+        // bools.
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum MmuFlags {
+            FlagType1,
+            FlagType2,
+        }
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        #[allow(dead_code)]
+        enum MarkMerge {
+            Merge,
+            NoMerge,
+        }
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum MergeResult {
+            MergesLeft,
+            DoesNotMerge,
+        }
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum BeyondStreamSize {
+            Ok,
+            Fault,
+        }
+
+        // To avoid boilerplate declare some tests in a data driven way.
+        #[derive(Clone)]
+        struct MappingDesc {
+            vmar_offset: usize,
+            vmo: Option<RefPtr<VmObjectPaged>>,
+            vmo_offset: u64,
+            flags: MmuFlags,
+            beyond_stream_size: BeyondStreamSize,
+            merge_result: MergeResult,
+        }
+
+        impl Default for MappingDesc {
+            fn default() -> Self {
+                Self {
+                    vmar_offset: 0,
+                    vmo: None,
+                    vmo_offset: 0,
+                    flags: MmuFlags::FlagType1,
+                    beyond_stream_size: BeyondStreamSize::Ok,
+                    merge_result: MergeResult::DoesNotMerge,
+                }
+            }
+        }
+
+        struct TestCase {
+            mappings: [MappingDesc; 3],
+        }
+
+        let cases = [
+            // Simple two mapping merge
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::MergesLeft,
+                    },
+                    MappingDesc::default(),
+                ],
+            },
+            // Simple three mapping merge
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::MergesLeft,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE * 2,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE * 2,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::MergesLeft,
+                    },
+                ],
+            },
+            // Different mapping flags should block merge
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType2,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE * 2,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE * 2,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::MergesLeft,
+                    },
+                ],
+            },
+            // Discontiguous aspace, but contiguous vmo should not work.
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE * 2,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc::default(),
+                ],
+            },
+            // Similar discontiguous vmo, but contiguous aspace should not work.
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE * 2,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc::default(),
+                ],
+            },
+            // Leaving a contiguous hole also does not work, mapping needs to actually join.
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE * 2,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE * 2,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc::default(),
+                ],
+            },
+            // Different vmo should not work.
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo2.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE * 2,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE * 2,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::MergesLeft,
+                    },
+                ],
+            },
+            // Two fault-beyond-stream-size mapping merge
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Fault,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Fault,
+                        merge_result: MergeResult::MergesLeft,
+                    },
+                    MappingDesc::default(),
+                ],
+            },
+            // Can't merge adjacent mappings if only one has fault-beyond-stream-size.
+            TestCase {
+                mappings: [
+                    MappingDesc {
+                        vmar_offset: 0,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: 0,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Fault,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc {
+                        vmar_offset: PAGE_SIZE_USIZE,
+                        vmo: Some(vmo1.clone()),
+                        vmo_offset: PAGE_SIZE,
+                        flags: MmuFlags::FlagType1,
+                        beyond_stream_size: BeyondStreamSize::Ok,
+                        merge_result: MergeResult::DoesNotMerge,
+                    },
+                    MappingDesc::default(),
+                ],
+            },
+        ];
+
+        for test in &cases {
+            // Want to test all combinations of placing the mappings in subvmars, we just choose
+            // this by iterating all the binary representations of 3 digits.
+            for sub_vmar_combination in 0..0b1000 {
+                let use_subvmar = [
+                    (sub_vmar_combination & (1 << 0)) != 0,
+                    (sub_vmar_combination & (1 << 1)) != 0,
+                    (sub_vmar_combination & (1 << 2)) != 0,
+                ];
+                // Iterate all orders of marking mergeable. For 3 mappings there are 6
+                // possibilities.
+                for merge_order_combination in 0..6 {
+                    let even_merge = (merge_order_combination % 2) == 0;
+                    let first_merge = merge_order_combination / 2;
+                    let merge_order = [
+                        first_merge,
+                        (first_merge + if even_merge { 1 } else { 2 }) % 3,
+                        (first_merge + if even_merge { 2 } else { 1 }) % 3,
+                    ];
+
+                    // Instantiate the requested mappings.
+                    let mut vmars: [Option<RefPtr<VmAddressRegion>>; 3] = [None, None, None];
+                    let mut mappings: [Option<RefPtr<VmMapping>>; 3] = [None, None, None];
+                    let mut merge_result = [
+                        MergeResult::DoesNotMerge,
+                        MergeResult::DoesNotMerge,
+                        MergeResult::DoesNotMerge,
+                    ];
+                    for i in 0..3 {
+                        if let Some(ref vmo) = test.mappings[i].vmo {
+                            let mmu_flags = ARCH_MMU_FLAG_PERM_READ
+                                | if test.mappings[i].flags == MmuFlags::FlagType1 {
+                                    ARCH_MMU_FLAG_PERM_WRITE
+                                } else {
+                                    0
+                                };
+                            let vmar_flags = vmar::flag::SPECIFIC
+                                | if test.mappings[i].beyond_stream_size == BeyondStreamSize::Fault
+                                {
+                                    vmar::flag::FAULT_BEYOND_STREAM_SIZE
+                                } else {
+                                    0
+                                };
+                            if use_subvmar[i] {
+                                let sub = unwrap_ok!(vmar.create_sub_vmar(
+                                    test.mappings[i].vmar_offset,
+                                    PAGE_SIZE_USIZE,
+                                    0,
+                                    vmar::flag::SPECIFIC
+                                        | vmar::flag::CAN_MAP_SPECIFIC
+                                        | vmar::flag::CAN_MAP_READ
+                                        | vmar::flag::CAN_MAP_WRITE,
+                                    b"sub vmar",
+                                ));
+                                let map_result = unwrap_ok!(sub.create_vm_mapping(
+                                    0,
+                                    PAGE_SIZE_USIZE,
+                                    0,
+                                    vmar_flags,
+                                    VmObjectPaged::into_vm_object(vmo.clone()),
+                                    test.mappings[i].vmo_offset,
+                                    mmu_flags,
+                                    b"test mapping",
+                                ));
+                                vmars[i] = Some(sub);
+                                mappings[i] = Some(map_result.mapping);
+                            } else {
+                                let map_result = unwrap_ok!(vmar.create_vm_mapping(
+                                    test.mappings[i].vmar_offset,
+                                    PAGE_SIZE_USIZE,
+                                    0,
+                                    vmar_flags,
+                                    VmObjectPaged::into_vm_object(vmo.clone()),
+                                    test.mappings[i].vmo_offset,
+                                    mmu_flags,
+                                    b"test mapping",
+                                ));
+                                mappings[i] = Some(map_result.mapping);
+                            }
+                        }
+                        // By default we assume merging happens as declared in the test, unless
+                        // either this or our immediate left is in a subvmar, in which case merging
+                        // is blocked.
+                        if use_subvmar[i] || (i > 0 && use_subvmar[i - 1]) {
+                            merge_result[i] = MergeResult::DoesNotMerge;
+                        } else {
+                            merge_result[i] = test.mappings[i].merge_result;
+                        }
+                    }
+
+                    // As we merge track expected mapping sizes and what we have merged
+                    let mut merged = [false, false, false];
+                    let mut expected_size = [PAGE_SIZE_USIZE, PAGE_SIZE_USIZE, PAGE_SIZE_USIZE];
+                    // Mark each mapping as mergeable based on merge_order
+                    for &mapping in &merge_order {
+                        if test.mappings[mapping].vmo.is_some() {
+                            VmMapping::mark_mergeable(mappings[mapping].take().unwrap());
+                            merged[mapping] = true;
+                            // See if we have anything pending from the right
+                            if mapping < 2
+                                && merged[mapping + 1]
+                                && merge_result[mapping + 1] == MergeResult::MergesLeft
+                            {
+                                expected_size[mapping] += expected_size[mapping + 1];
+                                expected_size[mapping + 1] = 0;
+                            }
+                            // See if we should merge to the left.
+                            if merge_result[mapping] == MergeResult::MergesLeft
+                                && mapping > 0
+                                && merged[mapping - 1]
+                            {
+                                if expected_size[mapping - 1] == 0 {
+                                    expected_size[mapping - 2] += expected_size[mapping];
+                                } else {
+                                    expected_size[mapping - 1] += expected_size[mapping];
+                                }
+                                expected_size[mapping] = 0;
+                            }
+                        }
+                        // Validate sizes to ensure any expected merging happened.
+                        for j in 0..3 {
+                            if test.mappings[j].vmo.is_some() {
+                                stack_pin_init!(let guard = vmar.lock().lock());
+                                let map = unwrap_some!(vmar.find_mapping_locked(
+                                    guard.token(),
+                                    VAddr(test.mappings[j].vmar_offset + vmar.base().0),
+                                ));
+                                if expected_size[j] != 0 {
+                                    expect_eq!(map.size(), expected_size[j]);
+                                    expect_eq!(
+                                        map.base().0,
+                                        vmar.base().0 + test.mappings[j].vmar_offset
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Destroy any mappings and VMARs.
+                    for mapping in &test.mappings {
+                        if mapping.vmo.is_some() {
+                            // SAFETY: Unmapping test mappings in our test VMAR.
+                            expect_ok!(unsafe {
+                                vmar.unmap(
+                                    VAddr(vmar.base().0 + mapping.vmar_offset),
+                                    PAGE_SIZE_USIZE,
+                                    VmAddressRegionOpChildren::Yes,
+                                )
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cleanup the address space.
+        expect_ok!(vmar.destroy());
+        expect_ok!(aspace.destroy());
+    }
+
     /// Tests sparse VM mappings with an empty backing VMO.
     #[test]
     fn vm_mapping_sparse_mapping_test() {
@@ -1149,6 +1611,71 @@ mod aspace_rs {
         expect_ok!(aspace.destroy());
     }
 
+    /// Tests memory priority with merged mappings.
+    #[test]
+    fn vmaspace_priority_merged_mapping_test() {
+        let aspace = VmAspace::create(Type::User, b"test-aspace");
+        assert_true!(aspace.is_some());
+        let aspace = aspace.unwrap();
+
+        let vmar = unwrap_ok!(aspace.root_vmar().unwrap().create_sub_vmar(
+            0,
+            PAGE_SIZE_USIZE * 64,
+            0,
+            vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+            b"test vmar",
+        ));
+
+        let status = vmar.set_memory_priority(MemoryPriority::High);
+        expect_ok!(status);
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2));
+
+        // Create a mapping for the first page of the VMO, and mark it mergeable
+        let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+            PAGE_SIZE_USIZE,
+            PAGE_SIZE_USIZE,
+            0,
+            vmar::flag::SPECIFIC_OVERWRITE,
+            VmObjectPaged::into_vm_object(vmo.clone()),
+            0,
+            ARCH_RW_USER_FLAGS,
+            b"test-mapping",
+        ));
+
+        expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        expect_true!(aspace.is_high_memory_priority());
+
+        VmMapping::mark_mergeable(mapping_result.mapping);
+
+        // Map in the second page.
+        let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+            PAGE_SIZE_USIZE * 2,
+            PAGE_SIZE_USIZE,
+            0,
+            vmar::flag::SPECIFIC_OVERWRITE,
+            VmObjectPaged::into_vm_object(vmo.clone()),
+            PAGE_SIZE,
+            ARCH_RW_USER_FLAGS,
+            b"test-mapping",
+        ));
+
+        VmMapping::mark_mergeable(mapping_result.mapping);
+
+        // Query the vmar, should have a single mapping of the combined size.
+        let region = unwrap_some!(vmar.find_region(VAddr(vmar.base().0 + PAGE_SIZE_USIZE)));
+        let map = unwrap_some!(region.as_vm_mapping());
+        expect_eq!(PAGE_SIZE_USIZE * 2, map.size());
+
+        // Now destroy the mapping and check the VMO loses priority.
+        expect_ok!(map.destroy());
+
+        expect_false!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
+        expect_true!(aspace.is_high_memory_priority());
+
+        expect_ok!(aspace.destroy());
+    }
+
     /// Tests memory priority propagation with bidirectional clones.
     #[test]
     fn vmaspace_priority_bidir_clone_test() {
@@ -1345,6 +1872,579 @@ mod aspace_rs {
 
         let force_result = mapping_result.mapping.force_writable();
         expect_ok!(force_result.map(|_| ()));
+    }
+
+    #[derive(Clone, Copy)]
+    struct ChildRegion {
+        mapping: bool,
+        page_offset_begin: usize,
+        page_offset_end: usize,
+    }
+
+    // Helper class for writing tests against the pausable VmAddressRegionEnumerator
+    struct EnumeratorTestHelper {
+        enumerator_type: VmAddressRegionEnumeratorType,
+        vmo: Option<RefPtr<VmObjectPaged>>,
+        test_vmar: Option<RefPtr<VmAddressRegion>>,
+    }
+
+    impl EnumeratorTestHelper {
+        fn new(enumerator_type: VmAddressRegionEnumeratorType) -> Self {
+            Self { enumerator_type, vmo: None, test_vmar: None }
+        }
+
+        fn init(&mut self, aspace: &RefPtr<VmAspace>) -> Result<(), Status> {
+            self.destroy();
+            let vmo = VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, GB as u64)?;
+            let test_vmar = aspace.root_vmar().unwrap().create_sub_vmar(
+                0,
+                GB,
+                0,
+                vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ,
+                b"test vmar",
+            )?;
+            self.vmo = Some(vmo);
+            self.test_vmar = Some(test_vmar);
+            Ok(())
+        }
+
+        fn add_regions(&self, regions: &[ChildRegion]) -> Result<(), Status> {
+            let test_vmar = self.test_vmar.as_ref().unwrap();
+            let vmo = self.vmo.as_ref().unwrap();
+            for region in regions {
+                assert!(region.page_offset_end > region.page_offset_begin);
+                let offset = region.page_offset_begin * PAGE_SIZE_USIZE;
+                let vaddr = VAddr(test_vmar.base().0 + offset);
+                // See if there's a child VMAR that we should be making this in instead of our test
+                // root.
+                let mut vmar = test_vmar.clone();
+                while let Some(next) =
+                    vmar.find_region(vaddr).and_then(|r| r.as_vm_address_region())
+                {
+                    vmar = next;
+                }
+                // Create either a mapping or vmar as requested.
+                let size = (region.page_offset_end - region.page_offset_begin) * PAGE_SIZE_USIZE;
+                let relative_offset = vaddr.0 - vmar.base().0;
+                if region.mapping {
+                    vmar.create_vm_mapping(
+                        relative_offset,
+                        size,
+                        0,
+                        vmar::flag::CAN_MAP_READ | vmar::flag::SPECIFIC,
+                        VmObjectPaged::into_vm_object(vmo.clone()),
+                        0,
+                        ARCH_MMU_FLAG_PERM_READ,
+                        b"mapping",
+                    )?;
+                } else {
+                    vmar.create_sub_vmar(
+                        relative_offset,
+                        size,
+                        0,
+                        vmar::flag::CAN_MAP_READ
+                            | vmar::flag::SPECIFIC
+                            | vmar::flag::CAN_MAP_SPECIFIC,
+                        b"vmar",
+                    )?;
+                }
+            }
+            Ok(())
+        }
+
+        fn enumerator<'a>(
+            &'a self,
+            page_offset_begin: usize,
+            page_offset_end: usize,
+            token: &LockToken<'_, VmAspaceLockClass>,
+        ) -> impl PinInit<VmAddressRegionEnumerator<'a>> {
+            let test_vmar = self.test_vmar.as_ref().unwrap();
+            let min_addr = test_vmar.base().0 + page_offset_begin * PAGE_SIZE_USIZE;
+            let max_addr = test_vmar.base().0 + page_offset_end * PAGE_SIZE_USIZE;
+            VmAddressRegionEnumerator::new(
+                self.enumerator_type,
+                test_vmar,
+                min_addr,
+                max_addr,
+                token,
+            )
+        }
+
+        fn resume(
+            &self,
+            enumerator: Pin<&mut VmAddressRegionEnumerator<'_>>,
+            token: &LockToken<'_, VmAspaceLockClass>,
+        ) {
+            enumerator.resume(token);
+        }
+
+        fn expect_regions(
+            &self,
+            mut enumerator: Pin<&mut VmAddressRegionEnumerator<'_>>,
+            token: &LockToken<'_, VmAspaceLockClass>,
+            regions: &[ChildRegion],
+        ) -> bool {
+            let test_vmar = self.test_vmar.as_ref().unwrap();
+            for region in regions {
+                assert!(region.page_offset_end > region.page_offset_begin);
+                let Some((region_or_mapping, _depth)) = enumerator.as_mut().next(token) else {
+                    return false;
+                };
+                if region.mapping != region_or_mapping.is_mapping() {
+                    return false;
+                }
+                if region_or_mapping.base().0
+                    != test_vmar.base().0 + region.page_offset_begin * PAGE_SIZE_USIZE
+                {
+                    return false;
+                }
+                if region_or_mapping.size()
+                    != (region.page_offset_end - region.page_offset_begin) * PAGE_SIZE_USIZE
+                {
+                    return false;
+                }
+            }
+            true
+        }
+
+        fn unmap(&self, page_offset_begin: usize, page_offset_end: usize) -> Result<(), Status> {
+            assert!(page_offset_end > page_offset_begin);
+            let test_vmar = self.test_vmar.as_ref().unwrap();
+            let vaddr = VAddr(test_vmar.base().0 + page_offset_begin * PAGE_SIZE_USIZE);
+            let size = (page_offset_end - page_offset_begin) * PAGE_SIZE_USIZE;
+            // Attempt to unmap, walking down into child vmars if the unmap fails due to it causing
+            // a subvmar to be partially unmapped.
+            let mut vmar = Some(test_vmar.clone());
+            while let Some(cur_vmar) = vmar {
+                // SAFETY: Unmapping test regions within our test VMAR.
+                let res = unsafe { cur_vmar.unmap(vaddr, size, VmAddressRegionOpChildren::Yes) };
+                if res != Err(Status::INVALID_ARGS) {
+                    return res;
+                }
+                let Some(next) = cur_vmar.find_region(vaddr) else {
+                    return res;
+                };
+                vmar = next.as_vm_address_region();
+            }
+            Err(Status::NOT_FOUND)
+        }
+
+        fn lock(&self) -> &VmAspaceMutex {
+            self.test_vmar.as_ref().unwrap().lock()
+        }
+
+        fn destroy(&mut self) {
+            if let Some(test_vmar) = self.test_vmar.take() {
+                let _ = test_vmar.destroy();
+            }
+            self.vmo = None;
+        }
+    }
+
+    impl Drop for EnumeratorTestHelper {
+        fn drop(&mut self) {
+            self.destroy();
+        }
+    }
+
+    /// Tests pausable VmAddressRegionEnumerator across VMAR and mapping mutations.
+    #[test]
+    fn address_region_enumerator_test() {
+        let aspace = unwrap_some!(VmAspace::create(Type::User, b"test aspace"));
+
+        // Smoke test of a single region.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[ChildRegion {
+                mapping: true,
+                page_offset_begin: 0,
+                page_offset_end: 1,
+            }]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 1, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 1 }],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Unmap while iterating a subvmar and resume in the parent.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 7 },
+                ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+                ChildRegion { mapping: true, page_offset_begin: 3, page_offset_end: 4 },
+                ChildRegion { mapping: true, page_offset_begin: 5, page_offset_end: 6 },
+                ChildRegion { mapping: true, page_offset_begin: 7, page_offset_end: 8 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 10, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 7 },
+                    ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+                ],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            // Unmap the entire subvmar we created
+            guard.as_mut().call_unlocked(|| {
+                let _ = test.unmap(0, 7);
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            // Last mapping should still be there.
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 7, page_offset_end: 8 }],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Pause immediately without enumerating when the start is a subvmar.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 2 },
+                ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 2, guard.token()));
+            enumerator.as_mut().pause(guard.token());
+            test.resume(enumerator.as_mut(), guard.token());
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 2 },
+                    ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+                ],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Add future mapping.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 1 },
+                ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 3, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 1 }],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            guard.as_mut().call_unlocked(|| {
+                let _ = test.add_regions(&[ChildRegion {
+                    mapping: true,
+                    page_offset_begin: 2,
+                    page_offset_end: 3,
+                }]);
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[
+                    ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+                    ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 3 },
+                ],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Replace the next mapping.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 1 },
+                ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 3, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 1 }],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            guard.as_mut().call_unlocked(|| {
+                let _ = test.unmap(1, 2);
+                let _ = test.add_regions(&[ChildRegion {
+                    mapping: true,
+                    page_offset_begin: 1,
+                    page_offset_end: 3,
+                }]);
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 3 }],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Add earlier regions.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 3 },
+                ChildRegion { mapping: true, page_offset_begin: 3, page_offset_end: 4 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 4, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 3 }],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            guard.as_mut().call_unlocked(|| {
+                let _ = test.add_regions(&[
+                    ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 1 },
+                    ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 32 },
+                ]);
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 3, page_offset_end: 4 }],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Replace current.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+                ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 3 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 3, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 }],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            guard.as_mut().call_unlocked(|| {
+                let _ = test.unmap(1, 2);
+                let _ = test.add_regions(&[ChildRegion {
+                    mapping: true,
+                    page_offset_begin: 0,
+                    page_offset_end: 2,
+                }]);
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 3 }],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Replace current and next with a single mapping.
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 },
+                ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 3 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 3, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 1, page_offset_end: 2 }],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            guard.as_mut().call_unlocked(|| {
+                let _ = test.unmap(1, 3);
+                let _ = test.add_regions(&[ChildRegion {
+                    mapping: true,
+                    page_offset_begin: 0,
+                    page_offset_end: 3,
+                }]);
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            expect_false!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 3 }],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Start enumerating part way into a mapping.
+        {
+            let mut test = EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::MappingsOnly);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 6 },
+                ChildRegion { mapping: true, page_offset_begin: 0, page_offset_end: 2 },
+                ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 4 },
+                ChildRegion { mapping: true, page_offset_begin: 6, page_offset_end: 7 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(3, 7, guard.token()));
+            enumerator.as_mut().pause(guard.token());
+            test.resume(enumerator.as_mut(), guard.token());
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[
+                    ChildRegion { mapping: true, page_offset_begin: 2, page_offset_end: 4 },
+                    ChildRegion { mapping: true, page_offset_begin: 6, page_offset_end: 7 },
+                ],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Delete depth that was just yielded
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 10 },
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 9 },
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 8 },
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 7 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 10, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 10 },
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 9 },
+                ],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            guard.as_mut().call_unlocked(|| {
+                test.unmap(0, 9).unwrap();
+                test.add_regions(&[
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 8 },
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 7 },
+                ])
+                .unwrap();
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            // Subtree was deleted and the new one will not be yielded.
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Delete next depth to be yielded
+        {
+            let mut test =
+                EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::VmarsAndMappings);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 10 },
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 9 },
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 8 },
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 7 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            stack_pin_init!(let enumerator = test.enumerator(0, 10, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 10 },
+                    ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 9 },
+                ],
+            ));
+            enumerator.as_mut().pause(guard.token());
+            guard.as_mut().call_unlocked(|| {
+                test.unmap(0, 8).unwrap();
+                test.add_regions(&[ChildRegion {
+                    mapping: false,
+                    page_offset_begin: 0,
+                    page_offset_end: 7,
+                }])
+                .unwrap();
+            });
+            test.resume(enumerator.as_mut(), guard.token());
+            // Subtree was deleted and the new one will not be yielded.
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+        // Nested mapping enumeration.
+        {
+            let mut test = EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::MappingsOnly);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 1000 },
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 100 },
+                ChildRegion { mapping: false, page_offset_begin: 100, page_offset_end: 200 },
+                ChildRegion { mapping: false, page_offset_begin: 200, page_offset_end: 300 },
+                ChildRegion { mapping: true, page_offset_begin: 10, page_offset_end: 20 },
+                ChildRegion { mapping: true, page_offset_begin: 110, page_offset_end: 120 },
+                ChildRegion { mapping: true, page_offset_begin: 210, page_offset_end: 220 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            // Attempt to query for each mapping using its exact location.
+            for probe in [10usize, 110, 210] {
+                stack_pin_init!(let enumerator = test.enumerator(probe, probe + 5, guard.token()));
+                // The enumerator will accurately yield only this mapping.
+                // Furthermore, because mappings and VMARs are sorted, the enumerator naturally
+                // short-circuits as soon as `itr_->base() >= max_addr_` without iterating the rest
+                // of the tree.
+                expect_true!(test.expect_regions(
+                    enumerator.as_mut(),
+                    guard.token(),
+                    &[ChildRegion {
+                        mapping: true,
+                        page_offset_begin: probe,
+                        page_offset_end: probe + 10,
+                    }],
+                ));
+                expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+            }
+        }
+        // Sub-VMAR entirely below min_addr_ is skipped.
+        {
+            let mut test = EnumeratorTestHelper::new(VmAddressRegionEnumeratorType::MappingsOnly);
+            assert_ok!(test.init(&aspace));
+            expect_ok!(test.add_regions(&[
+                ChildRegion { mapping: false, page_offset_begin: 0, page_offset_end: 100 },
+                ChildRegion { mapping: true, page_offset_begin: 10, page_offset_end: 20 },
+                ChildRegion { mapping: false, page_offset_begin: 100, page_offset_end: 200 },
+                ChildRegion { mapping: true, page_offset_begin: 110, page_offset_end: 120 },
+            ]));
+            stack_pin_init!(let guard = test.lock().lock());
+            // Querying starting at 105. This should skip descending into the first sub-VMAR
+            // (0..100) because all its children are < min_addr_, and correctly fall through to
+            // traverse the next sibling VMAR.
+            stack_pin_init!(let enumerator = test.enumerator(105, 120, guard.token()));
+            expect_true!(test.expect_regions(
+                enumerator.as_mut(),
+                guard.token(),
+                &[ChildRegion { mapping: true, page_offset_begin: 110, page_offset_end: 120 }],
+            ));
+            expect_false!(enumerator.as_mut().next(guard.token()).is_some());
+        }
+
+        expect_ok!(aspace.destroy());
     }
 
     /// Check if a range of addresses is accessible to the user. If `spectre_validation` is true, this is
