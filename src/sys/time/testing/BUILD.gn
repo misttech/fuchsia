@@ -88,25 +88,9 @@ fuchsia_component("timekeeper_with_fake_time") {
   deps = [ "//src/sys/time/timekeeper:bin_with_fake_time" ]
 }
 
-fuchsia_structured_config_values("config-values-faketime") {
-  testonly = true
-  cm_label = ":timekeeper_with_fake_time"
-  values_source = "config/values.json5"
-}
-
-fuchsia_structured_config_values("config-values-integration") {
-  testonly = true
-  cm_label = ":timekeeper_for_integration"
-  values_source = "config/values.json5"
-}
-
-# A Timekeeper package that includes structured configuration values.
+# A Timekeeper package for integration tests.
 fuchsia_package("timekeeper-with-config") {
   testonly = true
   package_name = "timekeeper_for_integration"
-  validate_structured_config = true
-  deps = [
-    ":config-values-integration",
-    ":timekeeper_for_integration",
-  ]
+  deps = [ ":timekeeper_for_integration" ]
 }

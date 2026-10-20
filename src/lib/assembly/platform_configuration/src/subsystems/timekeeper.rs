@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use assembly_constants::BoardFeature;
 
 use assembly_config_capabilities::{Config, ConfigValueType};
@@ -95,47 +95,99 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
             Config::new(ConfigValueType::Bool, config.serve_fuchsia_time_external_adjust.into()),
         )?;
 
-        let mut config_builder = builder
-            .package("timekeeper")
-            .component("meta/timekeeper.cm")
-            .context("while finding the timekeeper component")?;
-
         // Refer to //src/sys/time/timekeeper/config.shard.cml for details.
-        config_builder
-            .field("disable_delays", false)?
-            .field("oscillator_error_std_dev_ppm", 15)?
-            .field("max_frequency_error_ppm", 30)?
-            .field(
-                "primary_time_source_url",
-                "fuchsia-pkg://fuchsia.com/httpsdate-time-source-pull#meta/httpsdate_time_source.cm",
-            )?
-            .field("monitor_time_source_url", "")?
-            .field("initial_frequency_ppm", 1_000_000)?
-            .field("primary_uses_pull", true)?
-            .field("monitor_uses_pull", false)?
-            .field("back_off_time_between_pull_samples_sec",
-                config.back_off_time_between_pull_samples_sec)?
-            .field("first_sampling_delay_sec", config.first_sampling_delay_sec)?
-            .field("utc_start_at_startup", utc_start_at_startup)?
-            .field("early_exit", early_exit)?
-            .field("power_topology_integration_enabled", config.power_topology_integration_enabled)?
-            .field("serve_test_protocols", serve_test_protocols)?
-            // Should this now be removed in favor of WritableUTCTime above?
-            .field("serve_fuchsia_time_external_adjust", config.serve_fuchsia_time_external_adjust)?
-            .field("has_real_time_clock", has_real_time_clock)?
-            .field("has_always_on_counter", use_always_on_counter)?
-            .field("utc_start_at_startup_when_invalid_rtc", config.utc_start_at_startup_when_invalid_rtc)?
-            .field("utc_max_allowed_delta_past_sec", config.utc_max_allowed_delta_past_sec)?
-            .field("utc_max_allowed_delta_future_sec", config.utc_max_allowed_delta_future_sec)?
-            .field("use_connectivity", config.use_connectivity)?
-            .field("min_utc_reference_to_backstop_diff_minutes", config.min_utc_reference_to_backstop_diff_minutes)?
-            .field(
-                "min_acceptable_boot_time_for_utc_update_minutes",
-                config.min_acceptable_boot_time_for_utc_update_minutes,
-            )?
-            .field("periodic_rtc_update_interval_minutes", config.periodic_rtc_update.into_structured_config_value())?
-            .field("rtc_allow_setting_past_utc", String::from(config.rtc_allow_setting_past_utc))?
-            .field("serve_fuchsia_time_alarms", serve_fuchsia_time_alarms)?;
+        // Non-configurable fields (disable_delays, oscillator_error_std_dev_ppm,
+        // max_frequency_error_ppm, primary_time_source_url, monitor_time_source_url,
+        // initial_frequency_ppm, primary_uses_pull, monitor_uses_pull) use their .cml defaults.
+        builder.set_config_capability(
+            "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+            Config::new(
+                ConfigValueType::Int64,
+                config.back_off_time_between_pull_samples_sec.into(),
+            ),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.FirstSamplingDelaySec",
+            Config::new(ConfigValueType::Int64, config.first_sampling_delay_sec.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.UtcStartAtStartup",
+            Config::new(ConfigValueType::Bool, utc_start_at_startup.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.EarlyExit",
+            Config::new(ConfigValueType::Bool, early_exit.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.PowerTopologyIntegrationEnabled",
+            Config::new(ConfigValueType::Bool, config.power_topology_integration_enabled.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.ServeTestProtocols",
+            Config::new(ConfigValueType::Bool, serve_test_protocols.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.HasRealTimeClock",
+            Config::new(ConfigValueType::Bool, has_real_time_clock.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.HasAlwaysOnCounter",
+            Config::new(ConfigValueType::Bool, use_always_on_counter.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.UtcStartAtStartupWhenInvalidRtc",
+            Config::new(ConfigValueType::Bool, config.utc_start_at_startup_when_invalid_rtc.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.UtcMaxAllowedDeltaPastSec",
+            Config::new(
+                ConfigValueType::Int64,
+                (config.utc_max_allowed_delta_past_sec as i64).into(),
+            ),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.UtcMaxAllowedDeltaFutureSec",
+            Config::new(
+                ConfigValueType::Int64,
+                (config.utc_max_allowed_delta_future_sec as i64).into(),
+            ),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.UseConnectivity",
+            Config::new(ConfigValueType::Bool, config.use_connectivity.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+            Config::new(
+                ConfigValueType::Uint64,
+                config.min_utc_reference_to_backstop_diff_minutes.into(),
+            ),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+            Config::new(
+                ConfigValueType::Uint64,
+                config.min_acceptable_boot_time_for_utc_update_minutes.into(),
+            ),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.PeriodicRtcUpdateIntervalMinutes",
+            Config::new(
+                ConfigValueType::Uint32,
+                config.periodic_rtc_update.into_structured_config_value().into(),
+            ),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.RtcAllowSettingPastUtc",
+            Config::new(
+                ConfigValueType::String { max_size: 64 },
+                String::from(config.rtc_allow_setting_past_utc).into(),
+            ),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.time.config.ServeFuchsiaTimeAlarms",
+            Config::new(ConfigValueType::Bool, serve_fuchsia_time_alarms.into()),
+        )?;
 
         // Refer to //src/sys/time/httpsdate_time_source/meta/service.cml
         // for details. Other httpsdate_time_source config fields use their

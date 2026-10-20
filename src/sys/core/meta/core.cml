@@ -798,18 +798,43 @@
             availability: "optional",
         },
         {
-            // If set, Timekeeper should serve the FIDL protocol that allows external
-            // time adjustment, `fuchsia.time.external/Adjust`.
-            //
-            // This is a security sensitive protocol, and very few assemblies are
-            // expected to have it turned on.
-            config: "fuchsia.time.config.WritableUTCTime",
+            config: [
+                "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+                "fuchsia.time.config.EarlyExit",
+                "fuchsia.time.config.FirstSamplingDelaySec",
+                "fuchsia.time.config.HasAlwaysOnCounter",
+                "fuchsia.time.config.HasRealTimeClock",
+                "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+                "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+                "fuchsia.time.config.PeriodicRtcUpdateIntervalMinutes",
+                "fuchsia.time.config.PowerTopologyIntegrationEnabled",
+                "fuchsia.time.config.RtcAllowSettingPastUtc",
+                "fuchsia.time.config.ServeFuchsiaTimeAlarms",
+                "fuchsia.time.config.ServeTestProtocols",
+                "fuchsia.time.config.TimeSourceEndpointUrl",
+                "fuchsia.time.config.UseConnectivity",
+                "fuchsia.time.config.UtcMaxAllowedDeltaFutureSec",
+                "fuchsia.time.config.UtcMaxAllowedDeltaPastSec",
+                "fuchsia.time.config.UtcStartAtStartup",
+                "fuchsia.time.config.UtcStartAtStartupWhenInvalidRtc",
+                "fuchsia.time.config.WritableUTCTime",
+            ],
             from: "parent",
             to: "#timekeeper",
+            availability: "optional",
         },
         {
-            config: "fuchsia.time.config.TimeSourceEndpointUrl",
-            from: "parent",
+            config: [
+                "fuchsia.time.config.DisableDelays",
+                "fuchsia.time.config.InitialFrequencyPpm",
+                "fuchsia.time.config.MaxFrequencyErrorPpm",
+                "fuchsia.time.config.MonitorTimeSourceUrl",
+                "fuchsia.time.config.MonitorUsesPull",
+                "fuchsia.time.config.OscillatorErrorStdDevPpm",
+                "fuchsia.time.config.PrimaryTimeSourceUrl",
+                "fuchsia.time.config.PrimaryUsesPull",
+            ],
+            from: "void",
             to: "#timekeeper",
             availability: "optional",
         },

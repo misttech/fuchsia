@@ -2,127 +2,280 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        // The structured configuration properties that are also offered as
-        // config capabilities.
-        "//src/sys/time/timekeeper/config.use.shard.cml",
-    ],
-    config: {
-        // The primary time source URL represents a component to be installed to receive time
-        // updates. There is no maximum URL length defined by RFC 3986, but this length should
-        // be long enough to accommodate most non-data: URLs.
-        // See https://fxbug.dev/42130991 for additional context on this value.
-        primary_time_source_url: {
+    use: [
+        {
+            /// If set, Timekeeper should serve the FIDL protocol that allows external
+            /// time adjustment, `fuchsia.time.external/Adjust`.
+            ///
+            /// This is a security sensitive protocol, and very few assemblies are
+            /// expected to have it turned on.
+            config: "fuchsia.time.config.WritableUTCTime",
+            from: "parent",
+            key: "serve_fuchsia_time_external_adjust",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // The primary time source URL represents a component to be installed to receive time
+            // updates. There is no maximum URL length defined by RFC 3986, but this length should
+            // be long enough to accommodate most non-data: URLs.
+            // See https://fxbug.dev/42130991 for additional context on this value.
+            config: "fuchsia.time.config.PrimaryTimeSourceUrl",
+            from: "parent",
+            key: "primary_time_source_url",
             type: "string",
             max_size: 4096,
+            availability: "optional",
+            default: "fuchsia-pkg://fuchsia.com/httpsdate-time-source-pull#meta/httpsdate_time_source.cm",
         },
-
-        // If set, causes the monitor time source to start this component as a
-        // monitor mode time source.
-        monitor_time_source_url: {
+        {
+            // If set, causes the monitor time source to start this component as a
+            // monitor mode time source.
+            config: "fuchsia.time.config.MonitorTimeSourceUrl",
+            from: "parent",
+            key: "monitor_time_source_url",
             type: "string",
             max_size: 4096,
+            availability: "optional",
+            default: "",
         },
-
-        // The standard deviation of the system oscillator frequency error in parts per million,
-        // used to control the growth in error bound and bound the allowed frequency estimates.
-        oscillator_error_std_dev_ppm: { type: "uint32" },
-
-        // The maximum allowed frequency error in parts per million away from the nominal 1ns
-        // UTC == 1ns monotonic.
-        max_frequency_error_ppm: { type: "uint32" },
-
-        // Flag for disabling delays, allowing a test to push samples frequently.
-        disable_delays: { type: "bool" },
-
-        // Initial frequency in parts per million, at which UTC time moves with respect to
-        // monotonic time on the device. Value greater than 1*10^6 means that the device oscillator
-        // is slower than the real time.
-        initial_frequency_ppm: { type: "uint32" },
-
-        // Flag for enabling usage of `PullSource` API for the monitor track.
-        // If set to false, monitor track is not used.
-        monitor_uses_pull: { type: "bool" },
-
-        // The time to wait until retrying to sample the pull
-        // time source, expressed in seconds.
-        back_off_time_between_pull_samples_sec: { type: "int64" },
-
-        // The time to wait before sampling the time source for the first time,
-        // expressed in seconds.
-        first_sampling_delay_sec: { type: "int64" },
-
-        // Flag for enabling usage of `PullSource` API for the primary track.
-        // If set to false, `PullSource` is not used.
-        primary_uses_pull: { type: "bool" },
-
-        // If set, the UTC clock is started at timekeeper startup, even if
-        // no reliable UTC estimate is available.
-        //
-        // This helps buggy programs which assume UTC clock is monotonic, and
-        // use it to measure time durations.
-        utc_start_at_startup: { type: "bool" },
-
-        // Similar to the above, except the clock is started even if there is
-        // a RTC reading that is known to be invalid.
-        utc_start_at_startup_when_invalid_rtc: { type: "bool" },
-
-        // If set, timekeeper will exit early without managing the clock.
-        early_exit: { type: "bool" },
-
-        // If set, timekeeper will attempt to contact the System Activity
-        // Governor, and/or Power Broker to take part in the system's power
-        // topology.
-        power_topology_integration_enabled: { type: "bool" },
-
-        // If set, Timekeeper will serve test-only protocols such as
-        // `fuchsia.time.test/RTC`.
-        serve_test_protocols: { type: "bool" },
-
-        // Set if the underlying board has a real time clock (RTC) device.
-        has_real_time_clock: { type: "bool" },
-
-        // If set, Timekeeper will serve `fuchsia.time.alarms` and will connect
-        // to the appropriate hardware device to do so.
-        serve_fuchsia_time_alarms: { type: "bool" },
-
-        // If set, the hardware has a counter that is always on and operates even
-        // if the rest of the hardware system is in a low power state.
-        has_always_on_counter: { type: "bool" },
-
-        /// Maximum absolute difference between proposed UTC reference and actual UTC
-        /// reference, expressed in seconds, when the proposed UTC reference is
-        /// in the "past" with respect of actual UTC reference.
-        utc_max_allowed_delta_past_sec: { type: "int64" },
-
-        /// Maximum absolute difference between proposed UTC reference and actual UTC
-        /// reference, expressed in seconds, when the proposed UTC reference is
-        /// in the "future" with respect of actual UTC reference.
-        utc_max_allowed_delta_future_sec: { type: "int64" },
-
-        /// If set, connectivity information is used to direct whether to sample
-        /// external time sources. Specifically, if we know that we do not have
-        /// network access, we don't sample time sources at all.
-        use_connectivity: { type: "bool" },
-
-        /// If we receive a UTC reference timestamp that is
-        /// less than this amount of time away from backstop, we reject it.
-        min_utc_reference_to_backstop_diff_minutes: { type: "uint64" },
-
-        /// If we receive a UTC reference timestamp when boot time is less than
-        /// this threshold in minutes, we reject it.
-        min_acceptable_boot_time_for_utc_update_minutes: { type: "uint64" },
-
-        /// The interval at which the RTC is updated from the UTC clock,
-        /// expressed in minutes. If set to 0, periodic updates are disabled.
-        periodic_rtc_update_interval_minutes: { type: "uint32" },
-
-        /// The policy for how to handle RTC readings that are in the past with respect
-        /// to the current boot clock. Recovery from battery drain with a reset boot
-        /// counter requires `"apply_maybe_stale"`.
-        rtc_allow_setting_past_utc: {
+        {
+            // The standard deviation of the system oscillator frequency error in parts per million,
+            // used to control the growth in error bound and bound the allowed frequency estimates.
+            config: "fuchsia.time.config.OscillatorErrorStdDevPpm",
+            from: "parent",
+            key: "oscillator_error_std_dev_ppm",
+            type: "uint32",
+            availability: "optional",
+            default: 15,
+        },
+        {
+            // The maximum allowed frequency error in parts per million away from the nominal 1ns
+            // UTC == 1ns monotonic.
+            config: "fuchsia.time.config.MaxFrequencyErrorPpm",
+            from: "parent",
+            key: "max_frequency_error_ppm",
+            type: "uint32",
+            availability: "optional",
+            default: 30,
+        },
+        {
+            // Flag for disabling delays, allowing a test to push samples frequently.
+            config: "fuchsia.time.config.DisableDelays",
+            from: "parent",
+            key: "disable_delays",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // Initial frequency in parts per million, at which UTC time moves with respect to
+            // monotonic time on the device. Value greater than 1*10^6 means that the device oscillator
+            // is slower than the real time.
+            config: "fuchsia.time.config.InitialFrequencyPpm",
+            from: "parent",
+            key: "initial_frequency_ppm",
+            type: "uint32",
+            availability: "optional",
+            default: 1000000,
+        },
+        {
+            // Flag for enabling usage of `PullSource` API for the monitor track.
+            // If set to false, monitor track is not used.
+            config: "fuchsia.time.config.MonitorUsesPull",
+            from: "parent",
+            key: "monitor_uses_pull",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // The time to wait until retrying to sample the pull
+            // time source, expressed in seconds.
+            config: "fuchsia.time.config.BackOffTimeBetweenPullSamplesSec",
+            from: "parent",
+            key: "back_off_time_between_pull_samples_sec",
+            type: "int64",
+            availability: "optional",
+            default: 300,
+        },
+        {
+            // The time to wait before sampling the time source for the first time,
+            // expressed in seconds.
+            config: "fuchsia.time.config.FirstSamplingDelaySec",
+            from: "parent",
+            key: "first_sampling_delay_sec",
+            type: "int64",
+            availability: "optional",
+            default: 0,
+        },
+        {
+            // Flag for enabling usage of `PullSource` API for the primary track.
+            // If set to false, `PullSource` is not used.
+            config: "fuchsia.time.config.PrimaryUsesPull",
+            from: "parent",
+            key: "primary_uses_pull",
+            type: "bool",
+            availability: "optional",
+            default: true,
+        },
+        {
+            // If set, the UTC clock is started at timekeeper startup, even if
+            // no reliable UTC estimate is available.
+            //
+            // This helps buggy programs which assume UTC clock is monotonic, and
+            // use it to measure time durations.
+            config: "fuchsia.time.config.UtcStartAtStartup",
+            from: "parent",
+            key: "utc_start_at_startup",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // Similar to the above, except the clock is started even if there is
+            // a RTC reading that is known to be invalid.
+            config: "fuchsia.time.config.UtcStartAtStartupWhenInvalidRtc",
+            from: "parent",
+            key: "utc_start_at_startup_when_invalid_rtc",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // If set, timekeeper will exit early without managing the clock.
+            config: "fuchsia.time.config.EarlyExit",
+            from: "parent",
+            key: "early_exit",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // If set, timekeeper will attempt to contact the System Activity
+            // Governor, and/or Power Broker to take part in the system's power
+            // topology.
+            config: "fuchsia.time.config.PowerTopologyIntegrationEnabled",
+            from: "parent",
+            key: "power_topology_integration_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // If set, Timekeeper will serve test-only protocols such as
+            // `fuchsia.time.test/RTC`.
+            config: "fuchsia.time.config.ServeTestProtocols",
+            from: "parent",
+            key: "serve_test_protocols",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // Set if the underlying board has a real time clock (RTC) device.
+            config: "fuchsia.time.config.HasRealTimeClock",
+            from: "parent",
+            key: "has_real_time_clock",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // If set, Timekeeper will serve `fuchsia.time.alarms` and will connect
+            // to the appropriate hardware device to do so.
+            config: "fuchsia.time.config.ServeFuchsiaTimeAlarms",
+            from: "parent",
+            key: "serve_fuchsia_time_alarms",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // If set, the hardware has a counter that is always on and operates even
+            // if the rest of the hardware system is in a low power state.
+            config: "fuchsia.time.config.HasAlwaysOnCounter",
+            from: "parent",
+            key: "has_always_on_counter",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            /// Maximum absolute difference between proposed UTC reference and actual UTC
+            /// reference, expressed in seconds, when the proposed UTC reference is
+            /// in the "past" with respect of actual UTC reference.
+            config: "fuchsia.time.config.UtcMaxAllowedDeltaPastSec",
+            from: "parent",
+            key: "utc_max_allowed_delta_past_sec",
+            type: "int64",
+            availability: "optional",
+            default: 0,
+        },
+        {
+            /// Maximum absolute difference between proposed UTC reference and actual UTC
+            /// reference, expressed in seconds, when the proposed UTC reference is
+            /// in the "future" with respect of actual UTC reference.
+            config: "fuchsia.time.config.UtcMaxAllowedDeltaFutureSec",
+            from: "parent",
+            key: "utc_max_allowed_delta_future_sec",
+            type: "int64",
+            availability: "optional",
+            default: 0,
+        },
+        {
+            /// If set, connectivity information is used to direct whether to sample
+            /// external time sources. Specifically, if we know that we do not have
+            /// network access, we don't sample time sources at all.
+            config: "fuchsia.time.config.UseConnectivity",
+            from: "parent",
+            key: "use_connectivity",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            /// If we receive a UTC reference timestamp that is
+            /// less than this amount of time away from backstop, we reject it.
+            config: "fuchsia.time.config.MinUtcReferenceToBackstopDiffMinutes",
+            from: "parent",
+            key: "min_utc_reference_to_backstop_diff_minutes",
+            type: "uint64",
+            availability: "optional",
+            default: 20,
+        },
+        {
+            /// If we receive a UTC reference timestamp when boot time is less than
+            /// this threshold in minutes, we reject it.
+            config: "fuchsia.time.config.MinAcceptableBootTimeForUtcUpdateMinutes",
+            from: "parent",
+            key: "min_acceptable_boot_time_for_utc_update_minutes",
+            type: "uint64",
+            availability: "optional",
+            default: 5,
+        },
+        {
+            /// The interval at which the RTC is updated from the UTC clock,
+            /// expressed in minutes. If set to 0, periodic updates are disabled.
+            config: "fuchsia.time.config.PeriodicRtcUpdateIntervalMinutes",
+            from: "parent",
+            key: "periodic_rtc_update_interval_minutes",
+            type: "uint32",
+            availability: "optional",
+            default: 0,
+        },
+        {
+            /// The policy for how to handle RTC readings that are in the past with respect
+            /// to the current boot clock. Recovery from battery drain with a reset boot
+            /// counter requires `"apply_maybe_stale"`.
+            config: "fuchsia.time.config.RtcAllowSettingPastUtc",
+            from: "parent",
+            key: "rtc_allow_setting_past_utc",
             type: "string",
             max_size: 64,
+            availability: "optional",
+            default: "default",
         },
-    },
+    ],
 }

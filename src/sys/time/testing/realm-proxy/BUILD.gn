@@ -61,8 +61,6 @@ fuchsia_package("pkg") {
     "//src/cobalt/bin/testing/fake_cobalt:component_v2",
     "//src/lib/fake-clock/svc",
     "//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component",
-    "//src/sys/time/testing:config-values-faketime",
-    "//src/sys/time/testing:config-values-integration",
     "//src/sys/time/testing:timekeeper_for_integration",
     "//src/sys/time/testing:timekeeper_with_fake_time",
     "//src/sys/time/testing/dev_time_source:component",
