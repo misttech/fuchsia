@@ -153,6 +153,7 @@ struct SessionOpts {
     buffer_size_mb: Option<u64>,
     print_stats: bool,
     pprof_conversion: bool,
+    output_format: args::OutputFormat,
     output: String,
     duration: Option<u64>,
     color_output: bool,
@@ -164,6 +165,7 @@ fn check_background_args(
     print_stats: bool,
     symbolize: bool,
     pprof_conversion: bool,
+    output_format: args::OutputFormat,
     color_output: bool,
 ) -> fho::Result<()> {
     if duration.is_some() {
@@ -175,12 +177,13 @@ fn check_background_args(
         || print_stats
         || !symbolize
         || !pprof_conversion
+        || output_format != args::OutputFormat::Pprof
         || color_output != std::io::stdout().is_terminal()
     {
         let message: &str = "The options --output, --print-stats, --symbolize, --pprof-conversion, \
-            and --color-output should be specified when calling `ffx profiler stop` when using \
-            a background profiling session.";
-        ffx_bail!("{message}");
+            --output-format, and --color-output should be specified when calling `ffx profiler stop` \
+            when using a background profiling session.";
+        return_user_error!("{message}");
     }
     Ok(())
 }
@@ -215,9 +218,18 @@ fn create_session_opts(
     output: Option<String>,
     duration: Option<u64>,
     pprof_conversion: bool,
+    output_format: args::OutputFormat,
     color_output: bool,
 ) -> SessionOpts {
-    let extension = if symbolize { "pb" } else { "fxt" };
+    let extension = if !symbolize {
+        "fxt"
+    } else {
+        match output_format {
+            args::OutputFormat::Pprof => "pb",
+            args::OutputFormat::Perfetto => "pftrace",
+            args::OutputFormat::Fxt => "fxt",
+        }
+    };
     let final_output = match output {
         Some(o) => o,
         None => format!("profile.{}", extension),
@@ -229,8 +241,71 @@ fn create_session_opts(
         output: final_output,
         duration,
         pprof_conversion,
+        output_format,
         color_output,
     }
+}
+
+fn retained_raw_fxt_path(output: &std::path::Path) -> std::path::PathBuf {
+    if let Some(s) = output.to_str() {
+        if let Some(stem) = s.strip_suffix(".perfetto.fxt") {
+            if !stem.is_empty() && !stem.ends_with('/') {
+                return std::path::PathBuf::from(format!("{stem}.raw.fxt"));
+            }
+        }
+    }
+    let candidate = output.with_extension("raw.fxt");
+    if candidate == output {
+        let mut os = output.as_os_str().to_os_string();
+        os.push(".raw.fxt");
+        std::path::PathBuf::from(os)
+    } else {
+        candidate
+    }
+}
+
+/// Symbolizes `unsymbolized_samples` and writes the result to `output` in `output_format`.
+fn write_symbolized_profile(
+    unsymbolized_samples: ffx_profiler::symbolize::UnsymbolizedSamples,
+    output: &std::path::Path,
+    pprof_conversion: bool,
+    output_format: args::OutputFormat,
+    context: &EnvironmentContext,
+) -> Result<()> {
+    let symbolized_records = unsymbolized_samples
+        .process_unsymbolized_samples(output, pprof_conversion, context)
+        .map_err(|e| anyhow::anyhow!("Failed to symbolize profile: {:?}", e))?;
+    match output_format {
+        args::OutputFormat::Pprof => {
+            ffx_profiler::pprof::samples_to_pprof(symbolized_records, output.to_path_buf())
+                .context("Failed to convert to pprof")?;
+        }
+        args::OutputFormat::Perfetto => {
+            let bytes = ffx_profiler::perfetto::encode_perf_samples(&symbolized_records);
+            std::fs::write(output, bytes)?;
+        }
+        args::OutputFormat::Fxt => {
+            let bytes = ffx_profiler::perfetto::encode_perf_samples(&symbolized_records);
+            std::fs::write(
+                output,
+                ffx_profiler::fxt_blob::wrap_perfetto_blobs(&bytes, "ffx_profiler"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn symbolize_file(opts: &args::Symbolize, context: &EnvironmentContext) -> fho::Result<()> {
+    let unsymbolized_samples = ffx_profiler::symbolize::create_unsymbolized_samples(&opts.input)
+        .map_err(|e| bug!("Failed to create unsymbolized samples: {:?}", e))?;
+    write_symbolized_profile(
+        unsymbolized_samples,
+        &opts.output,
+        opts.pprof_conversion,
+        opts.output_format,
+        context,
+    )
+    .map_err(|e| user_error!("{e:?}"))
 }
 
 fn print_stop_stats(
@@ -446,16 +521,27 @@ async fn finalize_profile_session(
         return Ok(());
     }
 
-    if let Ok(symbolized_record) = unsymbolized_samples.process_unsymbolized_samples(
-        &options.output,
-        options.pprof_conversion,
-        context,
-    ) {
-        ffx_profiler::pprof::samples_to_pprof(symbolized_record, options.output.as_str().into())?;
-        return Ok(());
-    } else {
-        anyhow::bail!("Failed to symbolize profile");
+    let output_path = std::path::Path::new(&options.output);
+    if matches!(options.output_format, args::OutputFormat::Perfetto | args::OutputFormat::Fxt) {
+        // Keep the raw capture next to the Perfetto output so the other container can be
+        // produced later with `ffx profiler symbolize`.
+        let raw_fxt_path = retained_raw_fxt_path(output_path);
+        if unsymbolized_path.as_path() != raw_fxt_path.as_path() {
+            std::fs::copy(unsymbolized_path, &raw_fxt_path).with_context(|| {
+                format!(
+                    "Failed to retain raw FXT profile from {:?} to {:?}",
+                    unsymbolized_path, raw_fxt_path
+                )
+            })?;
+        }
     }
+    write_symbolized_profile(
+        unsymbolized_samples,
+        output_path,
+        options.pprof_conversion,
+        options.output_format,
+        context,
+    )
 }
 
 async fn run_session(
@@ -658,6 +744,13 @@ impl ProfilerTool {
     pub async fn profiler(self, mut writer: Writer) -> fho::Result<()> {
         let context = self.context.clone();
         let sub_command = self.cmd.sub_cmd.clone();
+
+        // Symbolizing an existing capture runs entirely on the host, so don't require a
+        // target connection for it.
+        if let ProfilerSubCommand::Symbolize(opts) = &sub_command {
+            return symbolize_file(opts, &context);
+        }
+
         let session_proxy = self.get_session_proxy().await?;
 
         let (targets, config, session_opts, background) = match sub_command {
@@ -703,6 +796,7 @@ impl ProfilerTool {
                         opts.print_stats,
                         opts.symbolize,
                         opts.pprof_conversion,
+                        opts.output_format,
                         opts.color_output,
                     )?;
                 }
@@ -714,6 +808,7 @@ impl ProfilerTool {
                     opts.output,
                     opts.duration,
                     opts.pprof_conversion,
+                    opts.output_format,
                     opts.color_output,
                 );
                 (target, config, session_opts, opts.background)
@@ -726,6 +821,7 @@ impl ProfilerTool {
                         opts.print_stats,
                         opts.symbolize,
                         opts.pprof_conversion,
+                        opts.output_format,
                         opts.color_output,
                     )?;
                 }
@@ -754,28 +850,13 @@ impl ProfilerTool {
                     opts.output,
                     opts.duration,
                     opts.pprof_conversion,
+                    opts.output_format,
                     opts.color_output,
                 );
                 (target, config, session_opts, opts.background)
             }
-            ProfilerSubCommand::Symbolize(opts) => {
-                let unsymbolized_samples =
-                    ffx_profiler::symbolize::create_unsymbolized_samples(&opts.input)
-                        .map_err(|e| bug!("Failed to create unsymbolized samples: {:?}", e))?;
-                match unsymbolized_samples.process_unsymbolized_samples(
-                    &opts.output,
-                    opts.pprof_conversion,
-                    &context,
-                ) {
-                    Ok(symbolized_record) => {
-                        return ffx_profiler::pprof::samples_to_pprof(
-                            symbolized_record,
-                            opts.output.into(),
-                        )
-                        .map_err(|e| user_error!("Failed to convert to pprof: {:?}", e));
-                    }
-                    Err(e) => return_user_error!("Failed to symbolize profile: {:?}", e),
-                }
+            ProfilerSubCommand::Symbolize(_) => {
+                unreachable!("handled above without a target connection")
             }
             ProfilerSubCommand::DownloadAndroidSymbols(opts) => {
                 return download_android_symbols(opts)
@@ -799,21 +880,16 @@ impl ProfilerTool {
                         return Ok(());
                     }
 
-                    let extension = if stop_options.symbolize { "pb" } else { "fxt" };
-                    let final_output = match stop_options.output {
-                        Some(o) => o,
-                        None => format!("profile.{}", extension),
-                    };
-
-                    let session_opts = SessionOpts {
-                        symbolize: stop_options.symbolize,
-                        buffer_size_mb: None,
-                        print_stats: stop_options.print_stats,
-                        pprof_conversion: stop_options.pprof_conversion,
-                        output: final_output,
-                        duration: None,
-                        color_output: stop_options.color_output,
-                    };
+                    let session_opts = create_session_opts(
+                        stop_options.symbolize,
+                        None,
+                        stop_options.print_stats,
+                        stop_options.output,
+                        None,
+                        stop_options.pprof_conversion,
+                        stop_options.output_format,
+                        stop_options.color_output,
+                    );
 
                     info!("Stopping background session");
 
@@ -1045,8 +1121,15 @@ mod tests {
 
     #[test]
     fn test_check_background_args_valid() {
-        let result =
-            check_background_args(None, None, false, true, true, std::io::stdout().is_terminal());
+        let result = check_background_args(
+            None,
+            None,
+            false,
+            true,
+            true,
+            args::OutputFormat::Pprof,
+            std::io::stdout().is_terminal(),
+        );
         assert!(result.is_ok());
     }
 
@@ -1058,6 +1141,7 @@ mod tests {
             false,
             true,
             true,
+            args::OutputFormat::Pprof,
             std::io::stdout().is_terminal(),
         );
         assert!(result.is_err());
@@ -1071,6 +1155,7 @@ mod tests {
             false,
             true,
             true,
+            args::OutputFormat::Pprof,
             std::io::stdout().is_terminal(),
         );
         assert!(result.is_err());
@@ -1078,56 +1163,490 @@ mod tests {
 
     #[test]
     fn test_check_background_args_print_stats() {
-        let result =
-            check_background_args(None, None, true, true, true, std::io::stdout().is_terminal());
+        let result = check_background_args(
+            None,
+            None,
+            true,
+            true,
+            true,
+            args::OutputFormat::Pprof,
+            std::io::stdout().is_terminal(),
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_check_background_args_no_symbolize() {
-        let result =
-            check_background_args(None, None, false, false, true, std::io::stdout().is_terminal());
+        let result = check_background_args(
+            None,
+            None,
+            false,
+            false,
+            true,
+            args::OutputFormat::Pprof,
+            std::io::stdout().is_terminal(),
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_check_background_args_no_pprof() {
-        let result =
-            check_background_args(None, None, false, true, false, std::io::stdout().is_terminal());
+        let result = check_background_args(
+            None,
+            None,
+            false,
+            true,
+            false,
+            args::OutputFormat::Pprof,
+            std::io::stdout().is_terminal(),
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_check_background_args_invalid_color() {
-        let result =
-            check_background_args(None, None, false, true, true, !std::io::stdout().is_terminal());
+        let result = check_background_args(
+            None,
+            None,
+            false,
+            true,
+            true,
+            args::OutputFormat::Pprof,
+            !std::io::stdout().is_terminal(),
+        );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_background_args_rejects_non_pprof_output_format() {
+        for fmt in [args::OutputFormat::Perfetto, args::OutputFormat::Fxt] {
+            let result = check_background_args(
+                None,
+                None,
+                false,
+                true,
+                true,
+                fmt,
+                std::io::stdout().is_terminal(),
+            );
+            assert!(result.is_err(), "expected error for {fmt:?}");
+            let msg = result.unwrap_err().to_string();
+            assert!(msg.contains("--output-format"), "unexpected error message: {msg}");
+            assert!(msg.contains("ffx profiler stop"), "unexpected error message: {msg}");
+        }
+    }
+
+    #[test]
+    fn test_output_format_from_str() {
+        use std::str::FromStr;
+
+        assert_eq!(args::OutputFormat::default(), args::OutputFormat::Pprof);
+        assert_eq!(args::OutputFormat::from_str("pprof"), Ok(args::OutputFormat::Pprof));
+        assert_eq!(args::OutputFormat::from_str("perfetto"), Ok(args::OutputFormat::Perfetto));
+        assert_eq!(args::OutputFormat::from_str("fxt"), Ok(args::OutputFormat::Fxt));
+
+        for invalid in ["", "json", "perfetto-fxt", "PERFETTO", "perfetto_fxt"] {
+            let err = args::OutputFormat::from_str(invalid).unwrap_err();
+            assert!(
+                err.contains("valid options are 'pprof', 'perfetto', 'fxt'"),
+                "unexpected error for '{invalid}': {err}"
+            );
+        }
     }
 
     #[test]
     fn test_create_session_opts_extension() {
         // Test that default is used if output is None
-        let opts = create_session_opts(true, None, false, None, None, true, true);
+        let opts = create_session_opts(
+            true,
+            None,
+            false,
+            None,
+            None,
+            true,
+            args::OutputFormat::Pprof,
+            true,
+        );
         assert_eq!(opts.output, "profile.pb");
-
-        let opts = create_session_opts(false, None, false, None, None, true, true);
-        assert_eq!(opts.output, "profile.fxt");
-
-        // Test that output is literal if Some is provided
-        let opts =
-            create_session_opts(true, None, false, Some("profile".to_string()), None, true, true);
-        assert_eq!(opts.output, "profile");
+        assert_eq!(opts.output_format, args::OutputFormat::Pprof);
 
         let opts = create_session_opts(
             true,
             None,
             false,
-            Some("profile.pb".to_string()),
+            None,
             None,
             true,
+            args::OutputFormat::Perfetto,
             true,
         );
-        assert_eq!(opts.output, "profile.pb");
+        assert_eq!(opts.output, "profile.pftrace");
+        assert_eq!(opts.output_format, args::OutputFormat::Perfetto);
+
+        let opts =
+            create_session_opts(true, None, false, None, None, true, args::OutputFormat::Fxt, true);
+        assert_eq!(opts.output, "profile.fxt");
+        assert_eq!(opts.output_format, args::OutputFormat::Fxt);
+
+        // When symbolize is false, --output-format is ignored and default is profile.fxt
+        for fmt in
+            [args::OutputFormat::Pprof, args::OutputFormat::Perfetto, args::OutputFormat::Fxt]
+        {
+            let opts = create_session_opts(false, None, false, None, None, true, fmt, true);
+            assert_eq!(opts.output, "profile.fxt");
+        }
+
+        // Test that output is literal if Some is provided
+        for fmt in
+            [args::OutputFormat::Pprof, args::OutputFormat::Perfetto, args::OutputFormat::Fxt]
+        {
+            let opts = create_session_opts(
+                true,
+                None,
+                false,
+                Some("profile".to_string()),
+                None,
+                true,
+                fmt,
+                true,
+            );
+            assert_eq!(opts.output, "profile");
+
+            let opts = create_session_opts(
+                true,
+                None,
+                false,
+                Some("custom/out.file".to_string()),
+                None,
+                true,
+                fmt,
+                true,
+            );
+            assert_eq!(opts.output, "custom/out.file");
+        }
+    }
+
+    #[test]
+    fn test_retained_raw_fxt_path() {
+        use std::path::{Path, PathBuf};
+
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("/tmp/out/profile.fxt")),
+            PathBuf::from("/tmp/out/profile.raw.fxt")
+        );
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("profile.fxt")),
+            PathBuf::from("profile.raw.fxt")
+        );
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("/tmp/out/profile.perfetto.fxt")),
+            PathBuf::from("/tmp/out/profile.raw.fxt")
+        );
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("profile.perfetto.fxt")),
+            PathBuf::from("profile.raw.fxt")
+        );
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("/tmp/out/profile.pftrace")),
+            PathBuf::from("/tmp/out/profile.raw.fxt")
+        );
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("profile.pftrace")),
+            PathBuf::from("profile.raw.fxt")
+        );
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("/tmp/out/custom_name")),
+            PathBuf::from("/tmp/out/custom_name.raw.fxt")
+        );
+        assert_eq!(
+            retained_raw_fxt_path(Path::new("/tmp/out/profile.raw.fxt")),
+            PathBuf::from("/tmp/out/profile.raw.raw.fxt")
+        );
+    }
+
+    /// Builds a minimal raw profiler capture: an init record, one module + mapping for PID 1104
+    /// and two 2-frame backtrace samples for TID 2616.
+    fn build_minimal_profiler_fxt_bytes() -> Vec<u8> {
+        use fxt::fxt_builder::FxtBuilder;
+        use fxt::init::InitHeader;
+        use fxt::profiler::{BacktraceRecordHeader, MmapRecordHeader, ModuleRecordHeader};
+
+        const TICKS_PER_SECOND: u64 = 38_400_000;
+        const SAMPLE_TICKS_1: u64 = 9_903_928_169_907;
+        const SAMPLE_TICKS_2: u64 = 9_903_928_200_000;
+        const PID: u64 = 1104;
+        const TID: u64 = 2616;
+        const MODULE_NAME: &[u8] = b"libtrace-engine.so";
+        const BUILD_ID: [u8; 20] = [
+            0x33, 0x3e, 0x89, 0xf0, 0xc1, 0x75, 0x00, 0x0c, 0xee, 0x9b, 0x7e, 0x20, 0x1f, 0xed,
+            0xcd, 0x6f, 0x9b, 0x4b, 0xa8, 0xae,
+        ];
+        // Profiler record sub-types. `empty()` leaves thread_ref at 0, i.e. inline pid/tid.
+        const MODULE_SUB_TYPE: u8 = 0;
+        const MMAP_SUB_TYPE: u8 = 1;
+        const BACKTRACE_SUB_TYPE: u8 = 2;
+        const READ_EXECUTE: u8 = 5;
+
+        let mut module_header = ModuleRecordHeader::empty();
+        module_header.set_profiler_sub_type(MODULE_SUB_TYPE);
+        module_header.set_module_id(0);
+        module_header.set_name_length(MODULE_NAME.len() as u8);
+        module_header.set_build_id_length(BUILD_ID.len() as u8);
+
+        let mut mmap_header = MmapRecordHeader::empty();
+        mmap_header.set_profiler_sub_type(MMAP_SUB_TYPE);
+        mmap_header.set_module_id(0);
+        mmap_header.set_flags(READ_EXECUTE);
+
+        let mut backtrace_header = BacktraceRecordHeader::empty();
+        backtrace_header.set_profiler_sub_type(BACKTRACE_SUB_TYPE);
+        backtrace_header.set_num_records(2);
+
+        let backtrace = |ticks: u64, frames: [u64; 2]| {
+            FxtBuilder::new(backtrace_header)
+                .atom(ticks.to_le_bytes())
+                .atom(PID.to_le_bytes())
+                .atom(TID.to_le_bytes())
+                .atom(frames[0].to_le_bytes())
+                .atom(frames[1].to_le_bytes())
+                .build()
+        };
+
+        let records = [
+            FxtBuilder::new(InitHeader::empty()).atom(TICKS_PER_SECOND.to_le_bytes()).build(),
+            FxtBuilder::new(module_header)
+                .atom(0u64.to_le_bytes()) // timestamp
+                .atom(PID.to_le_bytes())
+                .atom(0u64.to_le_bytes()) // tid
+                .atom(MODULE_NAME)
+                .atom(BUILD_ID)
+                .build(),
+            FxtBuilder::new(mmap_header)
+                .atom(0u64.to_le_bytes()) // timestamp
+                .atom(PID.to_le_bytes())
+                .atom(0u64.to_le_bytes()) // tid
+                .atom(0xc93639c000u64.to_le_bytes()) // start_addr
+                .atom(0xd000u64.to_le_bytes()) // size
+                .atom(0x6000u64.to_le_bytes()) // vaddr
+                .build(),
+            backtrace(SAMPLE_TICKS_1, [0xc93639c100, 0xc93639c200]),
+            backtrace(SAMPLE_TICKS_2, [0xc93639c150, 0xc93639c200]),
+        ];
+
+        let mut bytes = fxt::FXT_MAGIC_BYTES.to_vec();
+        bytes.extend(records.iter().flatten().flat_map(|word| word.to_le_bytes()));
+        assert_eq!(bytes.len(), 8 + 8 * (2 + 10 + 7 + 6 + 6));
+        bytes
+    }
+
+    #[fuchsia::test]
+    async fn test_symbolize_perfetto_and_perfetto_fxt_offline() {
+        use ffx_writer::TestBuffers;
+        use fxt::TraceRecord;
+        use fxt::blob::BlobType;
+        use fxt::session::parse_full_session;
+        use perfetto_trace_rust_proto::perfetto::protos;
+        use prost::Message;
+
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let input_path = tmp_dir.path().join("input_raw.fxt");
+        let pftrace_path = tmp_dir.path().join("out.pftrace");
+        let fxt_path = tmp_dir.path().join("out.fxt");
+
+        let raw_bytes = build_minimal_profiler_fxt_bytes();
+        std::fs::write(&input_path, &raw_bytes).expect("write raw fxt");
+
+        // 1. Run `ProfilerSubCommand::Symbolize` with `OutputFormat::Perfetto` (no device needed).
+        let tool_pftrace = ProfilerTool {
+            controller: fho::Deferred::from_output(Err(fho::Error::Unexpected(anyhow::anyhow!(
+                "controller should not be accessed for offline symbolize"
+            )))),
+            session_manager: fho::Deferred::from_output(Err(fho::Error::Unexpected(
+                anyhow::anyhow!("session_manager should not be accessed for offline symbolize"),
+            ))),
+            cmd: ProfilerCommand {
+                sub_cmd: ProfilerSubCommand::Symbolize(args::Symbolize {
+                    input: input_path.clone(),
+                    output: pftrace_path.clone(),
+                    pprof_conversion: true,
+                    output_format: args::OutputFormat::Perfetto,
+                }),
+            },
+            context: ffx_config::EnvironmentContext::default(),
+        };
+        let buffers = TestBuffers::default();
+        let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
+        tool_pftrace.profiler(writer).await.expect("symbolize perfetto should succeed");
+
+        let pftrace_bytes = std::fs::read(&pftrace_path).expect("read pftrace");
+        assert!(!pftrace_bytes.is_empty());
+        let decoded = protos::Trace::decode(pftrace_bytes.as_slice()).expect("decode Trace proto");
+        let perf_samples: Vec<_> = decoded
+            .packet
+            .iter()
+            .filter_map(|p| match &p.data {
+                Some(protos::trace_packet::Data::PerfSample(s)) => Some((p.timestamp, s)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(perf_samples.len(), 2);
+        assert_eq!(perf_samples[0].0, Some(257_914_796_091_328));
+        assert_eq!(perf_samples[0].1.pid, Some(1104));
+        assert_eq!(perf_samples[0].1.tid, Some(2616));
+
+        // 2. Run `ProfilerSubCommand::Symbolize` with `OutputFormat::Fxt`.
+        let tool_fxt = ProfilerTool {
+            controller: fho::Deferred::from_output(Err(fho::Error::Unexpected(anyhow::anyhow!(
+                "controller should not be accessed for offline symbolize"
+            )))),
+            session_manager: fho::Deferred::from_output(Err(fho::Error::Unexpected(
+                anyhow::anyhow!("session_manager should not be accessed for offline symbolize"),
+            ))),
+            cmd: ProfilerCommand {
+                sub_cmd: ProfilerSubCommand::Symbolize(args::Symbolize {
+                    input: input_path.clone(),
+                    output: fxt_path.clone(),
+                    pprof_conversion: true,
+                    output_format: args::OutputFormat::Fxt,
+                }),
+            },
+            context: ffx_config::EnvironmentContext::default(),
+        };
+        let buffers = TestBuffers::default();
+        let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
+        tool_fxt.profiler(writer).await.expect("symbolize fxt should succeed");
+
+        let fxt_bytes = std::fs::read(&fxt_path).expect("read out.fxt");
+        let (records, warnings) =
+            parse_full_session(&fxt_bytes).expect("parse_full_session on out.fxt");
+        assert!(warnings.is_empty(), "unexpected FXT warnings: {warnings:?}");
+
+        let mut extracted_blob_bytes = Vec::new();
+        for rec in records {
+            if let TraceRecord::Blob(blob) = rec {
+                assert_eq!(blob.ty, BlobType::Perfetto);
+                assert_eq!(blob.name.as_str(), "ffx_profiler");
+                extracted_blob_bytes.extend_from_slice(&blob.bytes);
+            }
+        }
+        assert_eq!(extracted_blob_bytes, pftrace_bytes);
+    }
+
+    #[fuchsia::test]
+    async fn test_finalize_profile_session_retains_raw_fxt_and_writes_perfetto_containers() {
+        use fdomain_fuchsia_cpu_profiler::{SessionRequest, SessionResult};
+        use ffx_writer::TestBuffers;
+        use fxt::TraceRecord;
+        use fxt::blob::BlobType;
+        use fxt::session::parse_full_session;
+        use perfetto_trace_rust_proto::perfetto::protos;
+        use prost::Message;
+        use target_holders::fake_proxy;
+
+        let client = fdomain_local::local_client_empty();
+        let proxy: profiler::SessionProxy =
+            fake_proxy(std::sync::Arc::clone(&client), move |req| match req {
+                SessionRequest::Stop { responder } => {
+                    responder
+                        .send(&SessionResult { samples_collected: Some(2), ..Default::default() })
+                        .unwrap();
+                }
+                SessionRequest::Reset { responder } => {
+                    responder.send().unwrap();
+                }
+                _ => panic!("Unexpected request: {:?}", req),
+            });
+        let session_proxy: ProfilerSessionManagerProxy = proxy.into();
+
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let raw_bytes = build_minimal_profiler_fxt_bytes();
+        let unsymbolized_path = tmp_dir.path().join("unsymbolized.txt");
+        std::fs::write(&unsymbolized_path, &raw_bytes).expect("write unsymbolized");
+
+        // 1. Test `OutputFormat::Fxt` -> writes `profile.fxt` and retains `profile.raw.fxt`.
+        let out_fxt = tmp_dir.path().join("profile.fxt");
+        let expected_raw_fxt = tmp_dir.path().join("profile.raw.fxt");
+        let opts_fxt = SessionOpts {
+            symbolize: true,
+            buffer_size_mb: None,
+            print_stats: false,
+            pprof_conversion: true,
+            output_format: args::OutputFormat::Fxt,
+            output: out_fxt.to_str().unwrap().to_string(),
+            duration: None,
+            color_output: false,
+        };
+        let buffers = TestBuffers::default();
+        let mut writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
+        let context = ffx_config::EnvironmentContext::default();
+
+        finalize_profile_session(
+            &session_proxy,
+            &mut writer,
+            &opts_fxt,
+            None,
+            &unsymbolized_path,
+            &context,
+            false,
+        )
+        .await
+        .expect("finalize_profile_session Fxt should succeed");
+
+        assert!(expected_raw_fxt.exists(), "retained raw FXT must exist at {expected_raw_fxt:?}");
+        assert_eq!(
+            std::fs::read(&expected_raw_fxt).expect("read retained raw FXT"),
+            raw_bytes,
+            "retained raw FXT must be byte-identical to raw unsymbolized FXT"
+        );
+
+        let fxt_out_bytes = std::fs::read(&out_fxt).expect("read profile.fxt");
+        let (records, warnings) =
+            parse_full_session(&fxt_out_bytes).expect("parse_full_session on profile.fxt");
+        assert!(warnings.is_empty(), "unexpected FXT warnings: {warnings:?}");
+        let blob_payload: Vec<u8> = records
+            .into_iter()
+            .filter_map(|r| match r {
+                TraceRecord::Blob(b) => {
+                    assert_eq!(b.ty, BlobType::Perfetto);
+                    Some(b.bytes)
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(!blob_payload.is_empty());
+
+        // 2. Test `OutputFormat::Perfetto` -> writes `capture.pftrace` and retains `capture.raw.fxt`.
+        let out_pftrace = tmp_dir.path().join("capture.pftrace");
+        let expected_capture_raw = tmp_dir.path().join("capture.raw.fxt");
+        let opts_pf = SessionOpts {
+            symbolize: true,
+            buffer_size_mb: None,
+            print_stats: false,
+            pprof_conversion: true,
+            output_format: args::OutputFormat::Perfetto,
+            output: out_pftrace.to_str().unwrap().to_string(),
+            duration: None,
+            color_output: false,
+        };
+        finalize_profile_session(
+            &session_proxy,
+            &mut writer,
+            &opts_pf,
+            None,
+            &unsymbolized_path,
+            &context,
+            false,
+        )
+        .await
+        .expect("finalize_profile_session Perfetto should succeed");
+
+        assert!(expected_capture_raw.exists());
+        assert_eq!(std::fs::read(&expected_capture_raw).unwrap(), raw_bytes);
+        let pftrace_bytes = std::fs::read(&out_pftrace).expect("read capture.pftrace");
+        assert_eq!(pftrace_bytes, blob_payload);
+        let trace = protos::Trace::decode(pftrace_bytes.as_slice()).expect("decode pftrace");
+        assert!(!trace.packet.is_empty());
     }
 
     #[fuchsia::test]
@@ -1158,6 +1677,7 @@ mod tests {
                     abort: false,
                     symbolize: false,
                     pprof_conversion: false,
+                    output_format: args::OutputFormat::Pprof,
                     color_output: false,
                     print_stats: false,
                 }),
@@ -1174,5 +1694,75 @@ mod tests {
         let err_str = result.unwrap_err().to_string();
         assert!(err_str.contains("Failed to finalize session"));
         assert!(err_str.contains("NoSuchTask"));
+    }
+
+    #[fuchsia::test]
+    async fn test_attach_and_launch_background_rejects_non_pprof_output_format() {
+        use ffx_writer::TestBuffers;
+        use target_holders::fake_proxy;
+
+        let client = fdomain_local::local_client_empty();
+
+        for fmt in [args::OutputFormat::Perfetto, args::OutputFormat::Fxt] {
+            let attach_session_manager: profiler::SessionManagerProxy =
+                fake_proxy(std::sync::Arc::clone(&client), |req| {
+                    panic!("no request expected before argument validation: {req:?}")
+                });
+            let attach_tool = ProfilerTool {
+                controller: fho::Deferred::from_output(Err(fho::Error::Unexpected(
+                    anyhow::anyhow!("controller must not be accessed when background args invalid"),
+                ))),
+                session_manager: fho::Deferred::from_output(Ok(attach_session_manager)),
+                cmd: ProfilerCommand {
+                    sub_cmd: ProfilerSubCommand::Attach(args::Attach {
+                        pids: vec![123],
+                        background: true,
+                        symbolize: true,
+                        pprof_conversion: true,
+                        output_format: fmt,
+                        color_output: std::io::stdout().is_terminal(),
+                        ..Default::default()
+                    }),
+                },
+                context: ffx_config::EnvironmentContext::default(),
+            };
+            let buffers = TestBuffers::default();
+            let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
+            let err = attach_tool.profiler(writer).await.unwrap_err().to_string();
+            assert!(
+                err.contains("--output-format") && err.contains("ffx profiler stop"),
+                "unexpected attach error for {fmt:?}: {err}"
+            );
+
+            let launch_session_manager: profiler::SessionManagerProxy =
+                fake_proxy(std::sync::Arc::clone(&client), |req| {
+                    panic!("no request expected before argument validation: {req:?}")
+                });
+            let launch_tool = ProfilerTool {
+                controller: fho::Deferred::from_output(Err(fho::Error::Unexpected(
+                    anyhow::anyhow!("controller must not be accessed when background args invalid"),
+                ))),
+                session_manager: fho::Deferred::from_output(Ok(launch_session_manager)),
+                cmd: ProfilerCommand {
+                    sub_cmd: ProfilerSubCommand::Launch(args::Launch {
+                        url: "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm".to_string(),
+                        background: true,
+                        symbolize: true,
+                        pprof_conversion: true,
+                        output_format: fmt,
+                        color_output: std::io::stdout().is_terminal(),
+                        ..Default::default()
+                    }),
+                },
+                context: ffx_config::EnvironmentContext::default(),
+            };
+            let buffers = TestBuffers::default();
+            let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
+            let err = launch_tool.profiler(writer).await.unwrap_err().to_string();
+            assert!(
+                err.contains("--output-format") && err.contains("ffx profiler stop"),
+                "unexpected launch error for {fmt:?}: {err}"
+            );
+        }
     }
 }

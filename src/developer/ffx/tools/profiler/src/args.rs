@@ -49,6 +49,35 @@ impl FromStr for UnwindStrategy {
     }
 }
 
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum OutputFormat {
+    #[default]
+    Pprof,
+    Perfetto,
+    /// FXT container wrapping symbolized Perfetto `TracePacket`s (`PerfSample`,
+    /// `InternedData`, and `ProcessTree`) inside FXT type-5 `BlobType::Perfetto`
+    /// records so the output can be concatenated with an `ffx trace` `.fxt` file
+    /// and loaded by Perfetto's FXT tokenizer on a shared timeline (distinct from
+    /// raw unsymbolized FXT type-10 profiler records written when `--symbolize`
+    /// is false).
+    Fxt,
+}
+
+impl FromStr for OutputFormat {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pprof" => Ok(OutputFormat::Pprof),
+            "perfetto" => Ok(OutputFormat::Perfetto),
+            "fxt" => Ok(OutputFormat::Fxt),
+            _ => Err(format!(
+                "invalid output format '{}', valid options are 'pprof', 'perfetto', 'fxt'",
+                s
+            )),
+        }
+    }
+}
+
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Profile a running task or component
 #[argh(subcommand, name = "attach")]
@@ -87,7 +116,8 @@ pub struct Attach {
     #[argh(option)]
     pub duration: Option<u64>,
 
-    /// name of output trace file. Defaults to "profile.pb".
+    /// name of output trace file. Defaults to "profile.pb" ("profile.pftrace" for
+    /// --output-format perfetto, "profile.fxt" for --output-format fxt).
     #[argh(option)]
     pub output: Option<String>,
 
@@ -103,6 +133,16 @@ pub struct Attach {
     /// pprof format. Ignored if --symbolize is false.
     #[argh(option, default = "true")]
     pub pprof_conversion: bool,
+
+    /// output format for the symbolized profile. "pprof" (default) writes a pprof
+    /// protobuf; "perfetto" writes a standalone Perfetto trace (.pftrace) with
+    /// PerfSample packets; "fxt" writes the same packets in FXT BlobType::Perfetto
+    /// records so it can be concatenated with an `ffx trace` .fxt. For "perfetto" and
+    /// "fxt" the raw unsymbolized capture is also kept at <output stem>.raw.fxt
+    /// so the other container can be produced offline with `ffx profiler symbolize`.
+    /// Ignored if --symbolize is false.
+    #[argh(option, default = "OutputFormat::Pprof")]
+    pub output_format: OutputFormat,
 
     /// how frequently to take a sample
     #[argh(option, default = "10000")]
@@ -151,7 +191,8 @@ pub struct Launch {
     #[argh(option)]
     pub duration: Option<u64>,
 
-    /// name of output trace file. Defaults to "profile.pb".
+    /// name of output trace file. Defaults to "profile.pb" ("profile.pftrace" for
+    /// --output-format perfetto, "profile.fxt" for --output-format fxt).
     #[argh(option)]
     pub output: Option<String>,
 
@@ -167,6 +208,16 @@ pub struct Launch {
     /// pprof format. Ignored if --symbolize is false.
     #[argh(option, default = "true")]
     pub pprof_conversion: bool,
+
+    /// output format for the symbolized profile. "pprof" (default) writes a pprof
+    /// protobuf; "perfetto" writes a standalone Perfetto trace (.pftrace) with
+    /// PerfSample packets; "fxt" writes the same packets in FXT BlobType::Perfetto
+    /// records so it can be concatenated with an `ffx trace` .fxt. For "perfetto" and
+    /// "fxt" the raw unsymbolized capture is also kept at <output stem>.raw.fxt
+    /// so the other container can be produced offline with `ffx profiler symbolize`.
+    /// Ignored if --symbolize is false.
+    #[argh(option, default = "OutputFormat::Pprof")]
+    pub output_format: OutputFormat,
 
     /// how frequently to take a sample. This is the time interval between samples, in
     /// microseconds. The default is 10,000 microseconds (10 ms).
@@ -203,11 +254,11 @@ pub struct Launch {
 #[argh(subcommand, name = "symbolize")]
 #[derive(Default)]
 pub struct Symbolize {
-    /// path to the unsymbolized text file
+    /// path to the unsymbolized .fxt profile
     #[argh(positional)]
     pub input: PathBuf,
 
-    /// path to which to write the symbolized pprof file
+    /// path to which to write the symbolized profile
     #[argh(positional)]
     pub output: PathBuf,
 
@@ -215,6 +266,13 @@ pub struct Symbolize {
     /// pprof format.
     #[argh(option, default = "true")]
     pub pprof_conversion: bool,
+
+    /// output format for the symbolized profile. "pprof" (default) writes a pprof
+    /// protobuf; "perfetto" writes a standalone Perfetto trace (.pftrace) with
+    /// PerfSample packets; "fxt" writes the same packets in FXT BlobType::Perfetto
+    /// records so it can be concatenated with an `ffx trace` .fxt.
+    #[argh(option, default = "OutputFormat::Pprof")]
+    pub output_format: OutputFormat,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
@@ -249,9 +307,19 @@ pub struct Stop {
     pub symbolize: bool,
 
     /// if false, output the raw symbolized sample file instead of attempting to convert to the
-    /// pprof format.
+    /// pprof format. Ignored if --symbolize is false.
     #[argh(option, default = "true")]
     pub pprof_conversion: bool,
+
+    /// output format for the symbolized profile. "pprof" (default) writes a pprof
+    /// protobuf; "perfetto" writes a standalone Perfetto trace (.pftrace) with
+    /// PerfSample packets; "fxt" writes the same packets in FXT BlobType::Perfetto
+    /// records so it can be concatenated with an `ffx trace` .fxt. For "perfetto" and
+    /// "fxt" the raw unsymbolized capture is also kept at <output stem>.raw.fxt
+    /// so the other container can be produced offline with `ffx profiler symbolize`.
+    /// Ignored if --symbolize is false.
+    #[argh(option, default = "OutputFormat::Pprof")]
+    pub output_format: OutputFormat,
 
     /// if true, include color codes in output. Defaults to true if terminal output is
     /// detected, else false

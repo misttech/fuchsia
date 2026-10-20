@@ -56,6 +56,7 @@ rustc_library(
     visibility = [
         "//src/developer/ffx/lib/profiler:__pkg__",
         "//src/developer/ffx/plugins/trace:__pkg__",
+        "//src/developer/ffx/tools/profiler:__pkg__",
         "//src/performance/fxtdump:__pkg__",
         "//src/performance/lib/fxt/rust/tests:__subpackages__",
         "//src/starnix/kernel/core:__pkg__",

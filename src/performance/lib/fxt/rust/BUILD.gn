@@ -87,6 +87,7 @@ rustc_library("rust") {
     ":*",
     "//src/developer/ffx/lib/profiler:*",
     "//src/developer/ffx/plugins/trace:*",
+    "//src/developer/ffx/tools/profiler:*",
     "//src/performance/fxtdump:*",
     "//src/performance/lib/fxt/rust/tests/*",
     "//src/starnix/kernel/core:*",
