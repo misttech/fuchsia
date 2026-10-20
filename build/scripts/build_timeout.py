@@ -10,22 +10,28 @@ records structured process tree snapshots (pstree.py) at escalation milestones,
 and presents human-readable diagnostics upon timeout.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import signal
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TextIO
+from typing import Any, Self, TextIO
 
 # Ensure fuchsia root is in sys.path
 _FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
+from build.python.modules.serialization import serialization
 from build.scripts import graceful_timeout, managed_process, pstree
+
+# JSON type aliases
+_JSONPrimitive = str | int | float | bool | None
+JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
+JSONObject = dict[str, JSONValue]
+JSONArray = list[JSONValue]
 
 _SCRIPT: Path = Path(__file__)
 
@@ -41,6 +47,7 @@ EXIT_TIMEOUT: int = graceful_timeout.EXIT_TIMEOUT
 PSTREE_SCRIPT: Path = Path(__file__).parent / "pstree.py"
 MAX_TIMEOUT_LEAVES_DISPLAY: int = 10
 MAX_TIMEOUT_TREE_LINES_DISPLAY: int = 50
+DEFAULT_METADATA_MAX_LEAVES: int = 8
 
 # Default build escalation schedule embedded directly in code.
 DEFAULT_BUILD_TIMEOUT_SCHEDULE = graceful_timeout.Schedule(
@@ -82,6 +89,93 @@ DEFAULT_BUILD_TIMEOUT_SCHEDULE = graceful_timeout.Schedule(
 )
 
 
+@dataclass(frozen=True)
+class TimeoutMetadata:
+    """Structured metadata for build timeout diagnostics."""
+
+    log_dir: str
+    snapshots: list[str] = field(default_factory=list)
+    active_processes: list[str] = field(default_factory=list)
+    total_matching_processes: int = 0
+    total_leaf_processes: int = 0
+
+    def to_dict(self) -> JSONObject:
+        """Serializes timeout metadata to a dictionary using serialization."""
+        return serialization.instance_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: JSONObject) -> Self:
+        """Deserializes a TimeoutMetadata instance from a dictionary using serialization."""
+        return serialization.instance_from_dict(cls, data)
+
+    @classmethod
+    def collect(
+        cls,
+        timeout_dir: Path,
+        filter_fn: Callable[[pstree.ProcessNode], bool] | None = None,
+        max_leaves: int = DEFAULT_METADATA_MAX_LEAVES,
+    ) -> Self | None:
+        """Discovers snapshots and extracts active leaf processes from a timeout directory."""
+        if not timeout_dir.exists():
+            return None
+        snapshots = sorted(f.name for f in timeout_dir.iterdir() if f.is_file())
+        if not snapshots:
+            return None
+
+        active_procs: list[str] = []
+        total_matching = 0
+        total_leaves = 0
+
+        stop_snapshot_path = timeout_dir / "pstree_stop.json"
+        if stop_snapshot_path.exists():
+            try:
+                content = stop_snapshot_path.read_text(encoding="utf-8")
+                data = json.loads(content)
+            except OSError as e:
+                msg(f"Failed to read {stop_snapshot_path.name}: {e}")
+                return cls(
+                    log_dir=str(timeout_dir.resolve()), snapshots=snapshots
+                )
+            except json.JSONDecodeError as e:
+                msg(f"Failed to parse JSON from {stop_snapshot_path.name}: {e}")
+                return cls(
+                    log_dir=str(timeout_dir.resolve()), snapshots=snapshots
+                )
+
+            if not isinstance(data, dict):
+                msg(
+                    f"Expected JSON object in {stop_snapshot_path.name}, got {type(data).__name__}"
+                )
+                return cls(
+                    log_dir=str(timeout_dir.resolve()), snapshots=snapshots
+                )
+
+            try:
+                root_node = pstree.ProcessNode.from_dict(data)
+            except (KeyError, TypeError, ValueError) as e:
+                msg(
+                    f"Invalid process tree schema in {stop_snapshot_path.name}: {e}"
+                )
+                return cls(
+                    log_dir=str(timeout_dir.resolve()), snapshots=snapshots
+                )
+
+            summary = root_node.summarize_active_leaves(
+                max_count=max_leaves, filter_fn=filter_fn
+            )
+            active_procs = summary.processes
+            total_matching = summary.total_matching_leaves
+            total_leaves = summary.total_leaves
+
+        return cls(
+            log_dir=str(timeout_dir.resolve()),
+            snapshots=snapshots,
+            active_processes=active_procs,
+            total_matching_processes=total_matching,
+            total_leaf_processes=total_leaves,
+        )
+
+
 def load_timeout_snapshots(
     timeout_dir: Path,
 ) -> dict[str, tuple[Path, pstree.ProcessNode]]:
@@ -108,16 +202,22 @@ def format_leaf_processes(
     snapshot_file: Path,
     root_node: pstree.ProcessNode,
     max_leaves: int = MAX_TIMEOUT_LEAVES_DISPLAY,
+    filter_fn: Callable[[pstree.ProcessNode], bool] | None = None,
 ) -> Iterable[str]:
     """Yields formatted summary lines of active leaf processes in a snapshot."""
     label = snapshot_file.stem.removeprefix("pstree_")
-    leaves = list(pstree.find_leaves(root_node))
-    count = len(leaves)
-    yield f"=== {header} [{label}] ({count} active) ==="
-    for leaf in leaves[:max_leaves]:
-        yield f"  * {pstree.format_process_line(leaf)}"
-    if count > max_leaves:
-        yield f"  ... and {count - max_leaves} more (see {snapshot_file.name})"
+    summary = root_node.summarize_active_leaves(
+        max_count=max_leaves,
+        filter_fn=filter_fn,
+    )
+    yield f"=== {header} [{label}] ({summary.total_matching_leaves} active) ==="
+    for line in summary.processes:
+        yield f"  * {line}"
+    if summary.total_matching_leaves > len(summary.processes):
+        yield (
+            f"  ... and {summary.total_matching_leaves - len(summary.processes)} "
+            f"more (see {snapshot_file.name})"
+        )
 
 
 def format_process_tree(
@@ -128,7 +228,7 @@ def format_process_tree(
 ) -> Iterable[str]:
     """Yields formatted ASCII process tree lines capped to max_tree_lines."""
     yield f"--- Process Tree [{label}] ---"
-    tree_lines = list(pstree.format_tree(root_node))
+    tree_lines = list(root_node.format_tree())
     for line in tree_lines[:max_tree_lines]:
         yield f"  {line}"
     if len(tree_lines) > max_tree_lines:
@@ -141,6 +241,7 @@ def format_timeout_diagnostics(
     timeout_dir: Path | None,
     max_leaves: int = MAX_TIMEOUT_LEAVES_DISPLAY,
     max_tree_lines: int = MAX_TIMEOUT_TREE_LINES_DISPLAY,
+    filter_fn: Callable[[pstree.ProcessNode], bool] | None = None,
 ) -> Iterable[str]:
     """Yields formatted timeout and cancellation diagnostic lines."""
     if timeout_dir is None or not timeout_dir.exists():
@@ -159,6 +260,7 @@ def format_timeout_diagnostics(
             snap_file,
             node,
             max_leaves=max_leaves,
+            filter_fn=filter_fn,
         )
 
     if "kill" in snapshots:
@@ -168,6 +270,7 @@ def format_timeout_diagnostics(
             snap_file,
             node,
             max_leaves=max_leaves,
+            filter_fn=filter_fn,
         )
 
     # Display process trees in chronological order
@@ -188,6 +291,7 @@ def present_timeout_diagnostics(
     timeout_str: str | None = None,
     max_leaves: int = MAX_TIMEOUT_LEAVES_DISPLAY,
     max_tree_lines: int = MAX_TIMEOUT_TREE_LINES_DISPLAY,
+    filter_fn: Callable[[pstree.ProcessNode], bool] | None = None,
 ) -> None:
     """Presents process snapshots and diagnostics to stderr.
 
@@ -210,6 +314,7 @@ def present_timeout_diagnostics(
         timeout_dir,
         max_leaves=max_leaves,
         max_tree_lines=max_tree_lines,
+        filter_fn=filter_fn,
     ):
         print(line, file=sys.stderr)
 
@@ -282,6 +387,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Explicit total grace period budget to allocate across escalation "
         "steps (e.g. '60s', '60'). When omitted, the grace period is calculated "
         "dynamically from the schedule steps.",
+    )
+    parser.add_argument(
+        "--exclude-process-from-summary",
+        action="append",
+        default=[],
+        help="Process name to exclude from active leaf summaries (can be repeated). "
+        "Does not affect full process tree snapshots.",
     )
     parser.add_argument(
         "command",
@@ -360,12 +472,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = runner.run()
 
     if result.timed_out or result.interrupted_signal is not None:
+        exclude_set = set(args.exclude_process_from_summary)
+        filter_fn = (
+            (lambda n: n.comm not in exclude_set) if exclude_set else None
+        )
         present_timeout_diagnostics(
             args.log_dir,
             result=result,
             timeout_str=args.timeout,
             max_leaves=args.max_leaves,
             max_tree_lines=args.max_tree_lines,
+            filter_fn=filter_fn,
         )
 
     return result.returncode

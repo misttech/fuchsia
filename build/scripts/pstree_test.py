@@ -7,13 +7,20 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-import pstree
+# Ensure fuchsia root is in sys.path
+_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_FUCHSIA_ROOT) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_ROOT))
+
+from build.profile import procfs
+from build.scripts import pstree
 
 
 class PstreeTest(unittest.TestCase):
@@ -128,7 +135,7 @@ class PstreeTest(unittest.TestCase):
             )
 
             # Check leaves
-            leaves = list(pstree.find_leaves(tree))
+            leaves = list(tree.find_leaves())
             leaf_pids = [leaf.pid for leaf in leaves]
             self.assertEqual(leaf_pids, [300, 301, 201])
 
@@ -273,7 +280,7 @@ class PstreeTest(unittest.TestCase):
                 ),
             ],
         )
-        lines = list(pstree.format_tree(root))
+        lines = list(root.format_tree())
         self.assertEqual(
             lines,
             [
@@ -456,6 +463,112 @@ class PstreeTest(unittest.TestCase):
             # Node 40 should not be attached directly to root since its ancestor 20 is in pgrp 10
             root_child_pids = [c.pid for c in tree.children]
             self.assertNotIn(40, root_child_pids)
+
+
+class ActiveLeafSummarizationTest(unittest.TestCase):
+    def _make_node(
+        self,
+        pid: int,
+        comm: str,
+        state: str,
+        cmdline: list[str],
+        utime: int = 0,
+        stime: int = 0,
+    ) -> pstree.ProcessNode:
+        info = procfs.ProcessInfo(
+            pid=pid,
+            ppid=1,
+            comm=comm,
+            state=state,
+            cmdline=cmdline,
+            utime=utime,
+            stime=stime,
+        )
+        return pstree.ProcessNode(info=info)
+
+    def test_format_active_line(self) -> None:
+        node_cpu = self._make_node(
+            100, "rustc", "R", ["rustc", "--crate-type=rlib", "main.rs"]
+        )
+        line = node_cpu.format_active_line()
+        self.assertEqual(
+            line, "[CPU] rustc --crate-type=rlib main.rs (pid 100)"
+        )
+
+        node_disk = self._make_node(101, "ld.lld", "D", ["ld.lld", "-o", "bin"])
+        line = node_disk.format_active_line()
+        self.assertEqual(line, "[DISK-WAIT] ld.lld -o bin (pid 101)")
+
+        node_wait = self._make_node(102, "sh", "S", ["sh", "-c", "sleep 1"])
+        line = node_wait.format_active_line()
+        self.assertEqual(line, "[WAITING] sh -c sleep 1 (pid 102)")
+
+        node_other = self._make_node(103, "test", "X", ["test"])
+        line = node_other.format_active_line()
+        self.assertEqual(line, "[X] test (pid 103)")
+
+    def test_format_active_line_truncation(self) -> None:
+        long_args = ["echo", "A" * 150]
+        node = self._make_node(200, "echo", "R", long_args)
+        line = node.format_active_line(max_cmd_len=30)
+        self.assertEqual(
+            line,
+            "[CPU] echo AAAAAAAAAAAAAAAAAAAAAA... (pid 200)",
+        )
+        self.assertIn("...", line)
+
+    def test_rank_active_leaf_processes_priority_and_cpu_time(self) -> None:
+        p_waiting_high_cpu = self._make_node(
+            1, "waiting_high", "S", ["w_high"], utime=1000
+        )
+        p_disk = self._make_node(2, "disk", "D", ["disk"], utime=50)
+        p_cpu_low = self._make_node(3, "cpu_low", "R", ["c_low"], utime=10)
+        p_cpu_high = self._make_node(4, "cpu_high", "R", ["c_high"], utime=200)
+
+        leaves = [p_waiting_high_cpu, p_disk, p_cpu_low, p_cpu_high]
+        ranked = pstree.rank_active_leaf_processes(leaves)
+        # Expected order:
+        # 1. p_cpu_high (R, utime=200)
+        # 2. p_cpu_low (R, utime=10)
+        # 3. p_disk (D, utime=50)
+        # 4. p_waiting_high_cpu (S, utime=1000)
+        self.assertEqual([n.pid for n in ranked], [4, 3, 2, 1])
+
+    def test_rank_active_leaf_processes_with_filter_fn(self) -> None:
+        p_daemon = self._make_node(10, "fake_daemon", "S", ["fake_daemon"])
+        p_action = self._make_node(20, "rustc", "R", ["rustc"])
+
+        leaves = [p_daemon, p_action]
+        # Filter excludes fake_daemon
+        ranked = pstree.rank_active_leaf_processes(
+            leaves, filter_fn=lambda n: n.comm != "fake_daemon"
+        )
+        self.assertEqual([n.pid for n in ranked], [20])
+
+        # If filter excludes everything, falls back to all leaves
+        ranked_fallback = pstree.rank_active_leaf_processes(
+            [p_daemon], filter_fn=lambda n: False
+        )
+        self.assertEqual([n.pid for n in ranked_fallback], [10])
+
+    def test_summarize_active_leaves(self) -> None:
+        root = self._make_node(1, "ninja", "S", ["ninja"])
+        child1 = self._make_node(2, "rustc", "R", ["rustc", "foo.rs"])
+        child2 = self._make_node(3, "clang++", "D", ["clang++", "bar.cc"])
+        child3 = self._make_node(4, "fake_daemon", "S", ["fake_daemon"])
+        root.children = [child1, child2, child3]
+
+        summary = root.summarize_active_leaves(
+            max_count=2,
+            filter_fn=lambda n: n.comm != "fake_daemon",
+        )
+        self.assertEqual(summary.total_matching_leaves, 2)
+        self.assertEqual(summary.total_leaves, 3)
+        self.assertEqual(len(summary.processes), 2)
+        self.assertIn("[CPU] rustc foo.rs (pid 2)", summary.processes[0])
+        self.assertIn(
+            "[DISK-WAIT] clang++ bar.cc (pid 3)", summary.processes[1]
+        )
 
 
 if __name__ == "__main__":

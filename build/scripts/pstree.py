@@ -28,13 +28,104 @@ if str(_FUCHSIA_DIR) not in sys.path:
 from build.profile import procfs
 
 # JSON type aliases
-JSONPrimitive = str | int | float | bool | None
-JSONValue = JSONPrimitive | dict[str, Any] | list[Any]
+_JSONPrimitive = str | int | float | bool | None
+JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
 JSONObject = dict[str, JSONValue]
 JSONArray = list[JSONValue]
 
 # Formatter closure type alias
 Formatter = Callable[["ProcessNode"], Iterable[str]]
+
+
+@dataclass(frozen=True)
+class ActiveLeafSummary:
+    """Summary of active leaf processes extracted from a process tree."""
+
+    processes: list[str] = field(default_factory=list)
+    total_matching_leaves: int = 0
+    total_leaves: int = 0
+
+
+# Maps procfs.ProcessInfo.state codes to execution state sorting priority.
+# Active states (CPU, DISK-WAIT) come first, followed by sleeping/stopped.
+_STATE_PRIORITIES_MAP: dict[str, int] = {
+    "R": 0,  # [CPU]
+    "D": 1,  # [DISK-WAIT]
+    "S": 2,  # [WAITING]
+    "T": 3,  # [STOPPED]
+    "Z": 4,  # [ZOMBIE]
+}
+_DEFAULT_STATE_PRIORITY: int = 5
+
+# Maps procfs.ProcessInfo.state codes to human-readable display tags.
+_STATE_TAGS_MAP: dict[str, str] = {
+    "R": "[CPU]",
+    "D": "[DISK-WAIT]",
+    "S": "[WAITING]",
+    "T": "[STOPPED]",
+    "Z": "[ZOMBIE]",
+}
+
+
+def proc_state_to_priority(state: str) -> int:
+    """Returns the sorting priority for a procfs.ProcessInfo.state code."""
+    return _STATE_PRIORITIES_MAP.get(state, _DEFAULT_STATE_PRIORITY)
+
+
+def proc_state_to_display_tag(state: str) -> str:
+    """Returns the human-readable display tag for a procfs.ProcessInfo.state code."""
+    return _STATE_TAGS_MAP.get(state, f"[{state}]")
+
+
+DEFAULT_ACTIVE_CMD_MAX_LEN: int = 120
+
+
+def rank_active_leaf_processes(
+    leaves: Iterable[ProcessNode],
+    filter_fn: Callable[[ProcessNode], bool] | None = None,
+) -> list[ProcessNode]:
+    """Filters and ranks leaf processes by activity.
+
+    Args:
+        leaves: Iterable of ProcessNode leaf nodes.
+        filter_fn: Optional predicate returning True for nodes to include.
+
+    Sort order:
+      1. Execution state priority ([CPU] -> [DISK-WAIT] -> [WAITING] -> other).
+      2. CPU time consumed (utime + stime descending).
+      3. PID ascending.
+    """
+    all_leaves = list(leaves)
+    candidates = (
+        all_leaves
+        if not filter_fn
+        else [node for node in all_leaves if filter_fn(node)]
+    )
+    # If custom filter excluded everything (e.g. all leaf processes were
+    # daemons because all compilers had already terminated or failed to spawn),
+    # fall back to returning unfiltered leaves so the diagnostic summary is
+    # never completely empty when processes are alive in the process group.
+    if not candidates and all_leaves:
+        candidates = all_leaves
+
+    def sort_key(n: ProcessNode) -> tuple[int, int, int]:
+        cpu_time = n.utime + n.stime
+        return (proc_state_to_priority(n.state), -cpu_time, n.pid)
+
+    return sorted(candidates, key=sort_key)
+
+
+def _int_val(val: JSONValue, default: int = 0) -> int:
+    """Safely converts a JSONValue to int, raising ValueError if invalid."""
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        return int(val)
+    if val is None:
+        return default
+    raise ValueError(
+        f"Expected int or int-convertible value, got {type(val).__name__}"
+    )
 
 
 @dataclass
@@ -96,20 +187,39 @@ class ProcessNode:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ProcessNode:
+    def from_dict(cls, data: JSONObject) -> ProcessNode:
         """Deserializes a ProcessNode and all its descendants from a dictionary."""
-        info = procfs.ProcessInfo(
-            pid=int(data["pid"]),
-            ppid=int(data["ppid"]),
-            comm=str(data["comm"]),
-            state=str(data["state"]),
-            cmdline=list(data.get("cmdline") or []),
-            pgrp=data.get("pgrp"),
-            wchan=data.get("wchan"),
-            utime=int(data.get("utime", 0)),
-            stime=int(data.get("stime", 0)),
+        if "pid" not in data or "ppid" not in data:
+            raise KeyError("ProcessNode dict missing required 'pid' or 'ppid'")
+        raw_cmdline = data.get("cmdline")
+        cmdline = (
+            [str(arg) for arg in raw_cmdline]
+            if isinstance(raw_cmdline, list)
+            else []
         )
-        children = [cls.from_dict(child) for child in data.get("children", [])]
+        pgrp_val = data.get("pgrp")
+        wchan_val = data.get("wchan")
+        info = procfs.ProcessInfo(
+            pid=_int_val(data["pid"]),
+            ppid=_int_val(data["ppid"]),
+            comm=str(data.get("comm", "")),
+            state=str(data.get("state", "")),
+            cmdline=cmdline,
+            pgrp=_int_val(pgrp_val) if pgrp_val is not None else None,
+            wchan=str(wchan_val) if isinstance(wchan_val, str) else None,
+            utime=_int_val(data.get("utime", 0)),
+            stime=_int_val(data.get("stime", 0)),
+        )
+        raw_children = data.get("children")
+        children = (
+            [
+                cls.from_dict(child)
+                for child in raw_children
+                if isinstance(child, dict)
+            ]
+            if isinstance(raw_children, list)
+            else []
+        )
         return cls(info=info, children=children)
 
     def cmdline_str(self) -> str:
@@ -153,6 +263,90 @@ class ProcessNode:
                 stime=stime,
             ),
             children=children or [],
+        )
+
+    def format_line(self) -> str:
+        """Formats a single process summary line."""
+        wchan_str = f" [{self.wchan}]" if self.wchan else ""
+        return (
+            f"{self.pid} {self.comm} (state: {self.state}{wchan_str}): "
+            f"{self.cmdline_str()}"
+        )
+
+    def format_active_line(
+        self, max_cmd_len: int = DEFAULT_ACTIVE_CMD_MAX_LEN
+    ) -> str:
+        """Formats an active process line with human-readable state tag and deemphasized PID.
+
+        Format:
+            [{STATE_TAG}] {cmd_preview} (pid {pid})
+        """
+        tag = proc_state_to_display_tag(self.state)
+        cmd = self.cmdline_str()
+        if len(cmd) > max_cmd_len:
+            cmd = cmd[: max_cmd_len - 3] + "..."
+        return f"{tag} {cmd} (pid {self.pid})"
+
+    def format_tree(
+        self,
+        prefix: str = "",
+        is_last: bool = True,
+        is_root: bool = True,
+    ) -> Iterator[str]:
+        """Yields formatted lines for the process tree rooted at self using ASCII branch graphics."""
+        if is_root:
+            yield self.format_line()
+            next_prefix = ""
+        else:
+            branch = "+-- "
+            yield f"{prefix}{branch}{self.format_line()}"
+            next_prefix = prefix + ("    " if is_last else "|   ")
+
+        num_children = len(self.children)
+        for i, child in enumerate(self.children):
+            child_is_last = i == num_children - 1
+            yield from child.format_tree(
+                prefix=next_prefix,
+                is_last=child_is_last,
+                is_root=False,
+            )
+
+    def find_leaves(self) -> Iterator[ProcessNode]:
+        """Yields all descendant leaf processes (nodes with no children)."""
+        if not self.children:
+            yield self
+            return
+        for child in self.children:
+            yield from child.find_leaves()
+
+    def summarize_active_leaves(
+        self,
+        max_count: int = 5,
+        filter_fn: Callable[[ProcessNode], bool] | None = None,
+        max_cmd_len: int = DEFAULT_ACTIVE_CMD_MAX_LEN,
+    ) -> ActiveLeafSummary:
+        """Extracts, ranks, and formats the top active leaf processes from the subtree.
+
+        Args:
+            max_count: Maximum number of formatted process lines to return.
+            filter_fn: Optional predicate returning True to include a leaf node.
+            max_cmd_len: Maximum length of the command preview string.
+
+        Returns:
+            ActiveLeafSummary containing formatted lines, matching count, and total count.
+        """
+        all_leaves = list(self.find_leaves())
+        total_leaves = len(all_leaves)
+        ranked = rank_active_leaf_processes(all_leaves, filter_fn=filter_fn)
+        total_matching = len(ranked)
+        formatted = [
+            node.format_active_line(max_cmd_len=max_cmd_len)
+            for node in ranked[:max_count]
+        ]
+        return ActiveLeafSummary(
+            processes=formatted,
+            total_matching_leaves=total_matching,
+            total_leaves=total_leaves,
         )
 
 
@@ -252,56 +446,6 @@ def build_process_tree(
     return root_node
 
 
-def find_leaves(root: ProcessNode) -> Iterator[ProcessNode]:
-    """Yields all leaf nodes (processes with no children) in the subtree."""
-    if not root.children:
-        yield root
-        return
-    for child in root.children:
-        yield from find_leaves(child)
-
-
-def format_process_line(node: ProcessNode) -> str:
-    """Formats a single process summary line."""
-    wchan_str = f" [{node.wchan}]" if node.wchan else ""
-    return (
-        f"{node.pid} {node.comm} (state: {node.state}{wchan_str}): "
-        f"{node.cmdline_str()}"
-    )
-
-
-def format_tree(
-    root: ProcessNode,
-    prefix: str = "",
-    is_last: bool = True,
-    is_root: bool = True,
-) -> Iterator[str]:
-    """Yields formatted lines for the process tree using ASCII branch graphics."""
-    if is_root:
-        yield format_process_line(root)
-        next_prefix = ""
-    else:
-        branch = "+-- "
-        yield f"{prefix}{branch}{format_process_line(root)}"
-        next_prefix = prefix + ("    " if is_last else "|   ")
-
-    num_children = len(root.children)
-    for i, child in enumerate(root.children):
-        child_is_last = i == num_children - 1
-        yield from format_tree(
-            child,
-            prefix=next_prefix,
-            is_last=child_is_last,
-            is_root=False,
-        )
-
-
-def format_leaves(leaves: Iterable[ProcessNode]) -> Iterator[str]:
-    """Yields formatted lines for leaf processes."""
-    for leaf in leaves:
-        yield format_process_line(leaf)
-
-
 def dump_tree_json(root: ProcessNode, indent: int = 2) -> str:
     """Serializes the process tree rooted at root to a JSON string."""
     return json.dumps(root.to_dict(), indent=indent)
@@ -309,8 +453,8 @@ def dump_tree_json(root: ProcessNode, indent: int = 2) -> str:
 
 # Map of format names to formatter closures
 FORMATTERS: dict[str, Formatter] = {
-    "tree": lambda root: format_tree(root),
-    "leaves": lambda root: format_leaves(find_leaves(root)),
+    "tree": lambda root: root.format_tree(),
+    "leaves": lambda root: (leaf.format_line() for leaf in root.find_leaves()),
     "json": lambda root: (dump_tree_json(root),),
 }
 
