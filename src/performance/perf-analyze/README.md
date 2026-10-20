@@ -134,6 +134,73 @@ to identify specific performance anomalies.
 
 ## Available Plugins
 
+### `app-launch` (App Launch Critical Path Breakdown)
+
+Decomposes the critical path of Android/Starnix application launches into
+contiguous chronological phase segments, intra-segment sub-operations, per-segment
+kernel thread states, and Fuchsia subsystem bottlenecks.
+
+The plugin executes 5 diagnostic sections in order:
+1. **Critical Path Phase Breakdown (Sequential Segments)**: Reports
+   `total_launch_ms` (the `launchingActivity` slice) and `displayed_ms` (from
+   ActivityTaskManager's START to the launch end, which matches logcat
+   `Displayed` and AtmDisplayTime), and divides each launch into `pre_start_ms`
+   (intent receipt to START, e.g. intent resolution or lock waits; 0 when the
+   trace has no START marker, as for some hot launches), `pre_fork_ms`
+   (START to `Start proc`), `process_fork_ms`
+   (Zygote fork & specialization), `attach_app_ms` (ART post-fork init &
+   `attachApplication` IPC), `bind_app_ms` (`bindApplication`),
+   `activity_lifecycle_ms` (`activityStart` + `activityResume`),
+   `first_frame_ui_ms` (first `Choreographer#doFrame` UI traversal),
+   `first_frame_render_ms` (first `RenderThread` `DrawFrame` to TTID), and
+   `display_present_tail_ms` (post-TTID Fuchsia `Display::Client::CommitConfig`).
+   Warm and hot launches have no fork or `bindApplication`, so those columns are
+   empty and `pre_activity_ms` covers the launch start to the first
+   `activityStart`/`activityResume`. `unattributed_ms` is launch time that no
+   segment covers because a milestone is missing, so the segments up to
+   `first_frame_render_ms` plus `unattributed_ms` sum to `total_launch_ms`.
+2. **CUJ Sub-Stage Breakdown**: Quantifies the CUJ sub-stage slices (`init`,
+   `draw`, `render`, `traversal`, `animation`, and `scenic`). Nested slices
+   (e.g. `traversal` > `draw-VRI[...]` > `Record View#draw()`) count only their
+   self time, so no time on a thread is counted twice. Sub-stages on different
+   threads can overlap in time. Reported as raw milliseconds (`--scaling raw`)
+   or as each sub-stage's share of the attributed work, scaled to
+   `total_launch_ms` (`--scaling proportional`).
+3. **Intra-Segment Sub-Operation Breakdown**: Quantifies `open_dex_ms`,
+   `dlopen_ms`, `verify_class_ms`, `class_init_ms`, `get_resources_ms`,
+   `inflate_ms`, `relayout_window_ms`, `dequeue_buffer_ms`,
+   `shader_compile_ms`, and `queue_present_ms`.
+4. **Critical Path Thread State Breakdown**: Breaks down each critical-path
+   segment into `running_cpu_ms` (`Running`), `runnable_starved_ms`
+   (`R`/`R+`/`W`), and `sleeping_blocked_ms` (`S`/`D`).
+5. **Cross-Layer Contention & Fuchsia Subsystem Attribution**: Quantifies main
+   thread Binder calls (`BinderIoctl` on Starnix), and Java monitor and native
+   lock contention on the main thread and RenderThread. These count only
+   outermost slices, clipped to the launch. It also reports system-wide Fxfs
+   storage page-ins (`page_in_chunk`), time sysmem was busy (`sysmem_busy_ms`,
+   not necessarily on the app's critical path), and Starnix SELinux hook
+   overhead in the app process.
+
+#### Plugin-Specific Arguments
+
+*   **`--package <str>`**: Optional substring filter for package or process name.
+*   **`--limit <int>`**: Maximum number of rows returned per section (default:
+    `20`).
+*   **`--scaling <raw|proportional>`**: Report CUJ sub-stage durations as raw
+    milliseconds (`raw`, default) or as each sub-stage's share of the attributed
+    work, scaled to `total_launch_ms` (`proportional`).
+
+#### Example
+
+```shell
+fx perf-analyze --format markdown analyze \
+  --trace out/e2e-testout/trace.fxt \
+  --plugin app-launch \
+  --package settings
+```
+
+---
+
 ### `binder` (Starnix Binder Analysis)
 
 Analyzes Starnix binder delays, missed wakeups (scheduling delays),
@@ -227,5 +294,5 @@ Unit tests are written using standard Python `unittest`. To build and run all
 unit tests, execute:
 
 ```shell
-fx test perf_analyze_test binder_test result_formatter_test cpu_test plugins_test
+fx test perf_analyze_test app_launch_test binder_test result_formatter_test cpu_test plugins_test
 ```

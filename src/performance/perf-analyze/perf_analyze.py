@@ -14,6 +14,7 @@ import sys
 from typing import Sequence
 
 import result_formatter
+from app_launch import AppLaunchPlugin
 from binder import BinderPlugin
 from cpu import CpuPlugin
 from plugins import AnalyzePlugin, PluginArgumentError
@@ -143,7 +144,7 @@ def main(
 
     elif args.command == "analyze":
         if plugins is None:
-            plugins = [BinderPlugin(), CpuPlugin()]
+            plugins = [AppLaunchPlugin(), BinderPlugin(), CpuPlugin()]
 
         if args.list_plugins:
             plugin_data = [

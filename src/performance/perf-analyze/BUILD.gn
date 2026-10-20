@@ -7,6 +7,7 @@ import("//build/python/python_binary.gni")
 import("//build/python/python_host_test.gni")
 
 perf_analyze_sources = [
+  "app_launch.py",
   "binder.py",
   "cpu.py",
   "plugins.py",
@@ -76,7 +77,20 @@ if (is_host) {
     main_source = "plugins_test.py"
     sources = [ "plugins.py" ]
   }
+
+  python_host_test("app_launch_test") {
+    main_source = "app_launch_test.py"
+    sources = [
+      "app_launch.py",
+      "plugins.py",
+    ]
+    deps = [ "//src/performance/lib/tp_shell" ]
+  }
 } else {
+  group("app_launch_test") {
+    testonly = true
+    public_deps = [ ":app_launch_test($host_toolchain)" ]
+  }
   group("binder_test") {
     testonly = true
     public_deps = [ ":binder_test($host_toolchain)" ]
@@ -106,6 +120,7 @@ if (is_host) {
 group("tests") {
   testonly = true
   deps = [
+    ":app_launch_test",
     ":binder_test",
     ":cpu_test",
     ":perf_analyze_test",
