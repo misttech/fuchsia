@@ -6,6 +6,7 @@
 
 #include <lib/media/codec_impl/codec_buffer.h>
 #include <lib/trace/event.h>
+#include <zircon/assert.h>
 
 #include <iomanip>
 #include <limits>
@@ -302,7 +303,9 @@ CodecAdapterSbcDecoder::InputLoopStatus CodecAdapterSbcDecoder::DecodeInput(
   FX_DCHECK(input_packet);
 
   uint32_t bytes_left = input_packet->valid_length_bytes();
-  uint8_t* input_data = input_packet->buffer()->base() + input_packet->start_offset();
+  const uint8_t* input_data = input_packet->buffer()->base() + input_packet->start_offset();
+  const uint8_t* const input_start = input_data;
+  const uint8_t* const input_end = input_data + bytes_left;
 
   while (bytes_left > 0) {
     uint8_t* output = CurrentOutputBlock();
@@ -322,12 +325,32 @@ CodecAdapterSbcDecoder::InputLoopStatus CodecAdapterSbcDecoder::DecodeInput(
 
     uint32_t output_bytes = static_cast<uint32_t>(output_buffer_->size() - output_offset_);
 
-    OI_STATUS status =
-        OI_CODEC_SBC_DecodeFrame(&context_->context, const_cast<const OI_BYTE**>(&input_data),
-                                 &bytes_left, reinterpret_cast<int16_t*>(output), &output_bytes);
+    OI_STATUS status = OI_CODEC_SBC_DecodeFrame(&context_->context, &input_data, &bytes_left,
+                                                reinterpret_cast<int16_t*>(output), &output_bytes);
+    // TODO(https://fxbug.dev/521639788): Fix the underlying mSBC `*frameBytes` decrement in
+    // third_party `OI_CODEC_SBC_DecodeFrame()`.
+    //
+    // In mSBC mode, `OI_CODEC_SBC_DecodeFrame()` advances `input_data` by the 57-byte frame
+    // length, but unconditionally subtracts an extra 1 from `bytes_left` (even if `DecodeBody()`
+    // fails) for Bluetooth HFP SCO padding without checking `bytes_left > 0` or advancing
+    // `input_data`. Recompute `bytes_left` from `input_end - input_data` to prevent
+    // `0 -> UINT32_MAX` underflow on unpadded 57-byte frames, keep `input_data` and `bytes_left`
+    // synchronized across multi-frame packets, and log exact `bytes_left` on decode failure.
+    ZX_ASSERT(input_data >= input_start && input_data <= input_end);
+    bytes_left = static_cast<uint32_t>(input_end - input_data);
     if (!OI_SUCCESS(status)) {
       FX_LOGS(WARNING) << "decode failure " << status << " bytes left " << bytes_left;
       break;
+    }
+
+    // While `FindSyncword()` skips non-syncword bytes between frames on the next iteration,
+    // consuming a trailing SCO padding byte here brings `bytes_left` to 0 when a packet ends on
+    // the padding byte. Otherwise, the loop would run an extra iteration that may block in
+    // `CurrentOutputBlock()` waiting for a free output packet before failing with
+    // `OI_CODEC_SBC_NO_SYNCWORD` and logging a warning.
+    if (context_->context.mSbcEnabled && bytes_left > 0 && *input_data != OI_SBC_MSBC_SYNCWORD) {
+      ++input_data;
+      --bytes_left;
     }
 
     // Must be called for each frame to send when output_buffer is low

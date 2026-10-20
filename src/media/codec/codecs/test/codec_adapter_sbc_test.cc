@@ -291,6 +291,95 @@ TEST(CodecAdapterSbcDecoderTest, MsbcEmptyStreamEndOfStreamDecodeAndPostStopOutp
   decoder.CoreCodecStopStream();
 }
 
+TEST(CodecAdapterSbcDecoderTest, MsbcDecodeKeepsBytesLeftInSyncAcrossPaddedAndUnpaddedFrames) {
+  std::vector<uint8_t> msbc_frame = EncodeSingleMsbcFrame();
+  ASSERT_EQ(msbc_frame.size(), kUnpaddedMsbcFrameBytes);
+  ASSERT_EQ(msbc_frame[0], kMsbcSyncword);
+
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  CodecAdapterSbcDecoder decoder(lock, &events);
+
+  auto format_details = MakeValidMsbcDecoderFormatDetails();
+  decoder.CoreCodecInit(format_details);
+  ASSERT_EQ(events.fail_codec_count(), 0u);
+
+  auto output_buffers = Buffers({512, 512, 512});
+  auto output_packets = Packets(3);
+  for (size_t i = 0; i < 3; ++i) {
+    decoder.CoreCodecAddBuffer(kOutputPort, output_buffers.ptr(i));
+    output_packets.ptr(i)->SetIsNew(false);
+    decoder.CoreCodecRecycleOutputPacket(output_packets.ptr(i));
+  }
+
+  decoder.CoreCodecStartStream();
+  decoder.CoreCodecQueueInputFormatDetails(format_details);
+  events.WaitForOutputConstraintsChangeCount(1);
+  decoder.CoreCodecMidStreamOutputBufferReConfigFinish();
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+
+  auto input_buffers = Buffers({
+      2 * kUnpaddedMsbcFrameBytes,
+      kUnpaddedMsbcFrameBytes,
+      2 * kScoPaddedMsbcFrameBytes,
+  });
+
+  // Input packet 0: two back-to-back unpadded 57-byte mSBC frames (114 bytes). Without
+  // recomputing `bytes_left`, `OI_CODEC_SBC_DecodeFrame()` subtracts 58 after the first frame,
+  // leaving `bytes_left == 56 < 57` and dropping the second frame cleanly without an OOB read.
+  for (size_t i = 0; i < 2; ++i) {
+    std::memcpy(input_buffers.ptr(0)->base() + (i * kUnpaddedMsbcFrameBytes), msbc_frame.data(),
+                msbc_frame.size());
+  }
+
+  // Input packet 1: single unpadded 57-byte mSBC frame. Without recomputing `bytes_left`,
+  // `bytes_left` underflows from 0 to `UINT32_MAX`.
+  std::memcpy(input_buffers.ptr(1)->base(), msbc_frame.data(), msbc_frame.size());
+
+  // Input packet 2: two 58-byte SCO-padded mSBC frames in one packet (116 bytes).
+  for (size_t i = 0; i < 2; ++i) {
+    uint8_t* dst = input_buffers.ptr(2)->base() + (i * kScoPaddedMsbcFrameBytes);
+    std::memcpy(dst, msbc_frame.data(), msbc_frame.size());
+    // 1-byte SCO padding.
+    dst[msbc_frame.size()] = 0;
+  }
+
+  auto input_packets = Packets(3);
+  CodecPacket* input_packet_0 = input_packets.ptr(0);
+  input_packet_0->SetBuffer(input_buffers.ptr(0));
+  input_packet_0->SetStartOffset(0);
+  input_packet_0->SetValidLengthBytes(2 * kUnpaddedMsbcFrameBytes);
+
+  CodecPacket* input_packet_1 = input_packets.ptr(1);
+  input_packet_1->SetBuffer(input_buffers.ptr(1));
+  input_packet_1->SetStartOffset(0);
+  input_packet_1->SetValidLengthBytes(kUnpaddedMsbcFrameBytes);
+
+  CodecPacket* input_packet_2 = input_packets.ptr(2);
+  input_packet_2->SetBuffer(input_buffers.ptr(2));
+  input_packet_2->SetStartOffset(0);
+  input_packet_2->SetValidLengthBytes(2 * kScoPaddedMsbcFrameBytes);
+
+  decoder.CoreCodecQueueInputPacket(input_packet_0);
+  decoder.CoreCodecQueueInputPacket(input_packet_1);
+  decoder.CoreCodecQueueInputPacket(input_packet_2);
+  decoder.CoreCodecQueueInputEndOfStream();
+  events.WaitForOutputEosCount(1);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+  ASSERT_EQ(events.output_packet_count(), 3u);
+  // Input packet 0 (2 unpadded frames): 2 * 240 = 480 bytes.
+  EXPECT_EQ(output_packets.ptr(0)->valid_length_bytes(), 2 * kMsbcPcmBatchBytes);
+  // Input packet 1 (1 unpadded frame): 15 blocks * 8 subbands * 1 channel * 2 bytes/sample = 240.
+  EXPECT_EQ(output_packets.ptr(1)->valid_length_bytes(), kMsbcPcmBatchBytes);
+  // Input packet 2 (2 SCO-padded frames): 2 * 240 = 480 bytes.
+  EXPECT_EQ(output_packets.ptr(2)->valid_length_bytes(), 2 * kMsbcPcmBatchBytes);
+
+  for (size_t i = 0; i < 3; ++i) {
+    decoder.CoreCodecRecycleOutputPacket(output_packets.ptr(i));
+  }
+  decoder.CoreCodecStopStream();
+}
+
 TEST(CodecAdapterSbcEncoderTest, EmptyStreamEndOfStreamAndPostStopOutputConstraints) {
   std::mutex lock;
   FakeCodecAdapterEvents events;
