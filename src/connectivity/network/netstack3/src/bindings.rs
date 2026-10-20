@@ -54,7 +54,6 @@ mod waker;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use assert_matches::assert_matches;
 use fidl::endpoints::DiscoverableProtocolMarker;
@@ -703,13 +702,7 @@ fn send_netdevice_frame(
     }
 
     let tx_buffer = match frame {
-        packet::Either::A(netdev_tx_buffer) => {
-            let tx_buffer = netdev_tx_buffer.into_inner();
-            if let Some(TxTaskState { alloc_state, .. }) = dequeue_context {
-                let _ = alloc_state.device_buffers_in_queue.fetch_sub(1, Ordering::Relaxed);
-            }
-            tx_buffer
-        }
+        packet::Either::A(netdev_tx_buffer) => netdev_tx_buffer.into_inner().into_inner(),
         packet::Either::B(buf_vec) => {
             let mut tx_buffer =
                 match dequeue_context.and_then(|TxTaskState { tx_buffers, .. }| tx_buffers.pop()) {

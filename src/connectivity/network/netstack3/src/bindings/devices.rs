@@ -443,8 +443,55 @@ impl NetdeviceAllocator {
     }
 }
 
-pub(crate) type TxBuffer =
-    packet::Either<netdevice_client::SinglePartTxBuffer, packet::Buf<Vec<u8>>>;
+pub(crate) struct TrackedTxBuffer<B = netdevice_client::SinglePartTxBuffer> {
+    // Always `Some` until `into_inner` is called.
+    buffer: Option<B>,
+    alloc_state: Arc<TxAllocatorState>,
+}
+
+impl<B> TrackedTxBuffer<B> {
+    fn new(buffer: B, alloc_state: Arc<TxAllocatorState>) -> Self {
+        let _ = alloc_state.device_buffers_in_queue.fetch_add(1, Ordering::Relaxed);
+        Self { buffer: Some(buffer), alloc_state }
+    }
+
+    pub(crate) fn into_inner(mut self) -> B {
+        self.buffer.take().expect("buffer must be present")
+    }
+}
+
+impl<B> Drop for TrackedTxBuffer<B> {
+    fn drop(&mut self) {
+        let _ = self.alloc_state.device_buffers_in_queue.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl<B: AsRef<[u8]>> AsRef<[u8]> for TrackedTxBuffer<B> {
+    fn as_ref(&self) -> &[u8] {
+        self.buffer.as_ref().expect("buffer must be present").as_ref()
+    }
+}
+
+impl<B: AsMut<[u8]>> AsMut<[u8]> for TrackedTxBuffer<B> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.buffer.as_mut().expect("buffer must be present").as_mut()
+    }
+}
+
+impl<B: packet::FragmentedBuffer> packet::FragmentedBuffer for TrackedTxBuffer<B> {
+    fn len(&self) -> usize {
+        self.buffer.as_ref().expect("buffer must be present").len()
+    }
+
+    fn with_bytes<'a, R, F>(&'a self, f: F) -> R
+    where
+        F: for<'b> FnOnce(packet::FragmentedBytes<'b, 'a>) -> R,
+    {
+        self.buffer.as_ref().expect("buffer must be present").with_bytes(f)
+    }
+}
+
+pub(crate) type TxBuffer = packet::Either<TrackedTxBuffer, packet::Buf<Vec<u8>>>;
 
 impl TxBufferAllocator<TxBuffer> for NetdeviceAllocator {
     type Error = netdevice_client::Error;
@@ -456,8 +503,10 @@ impl TxBufferAllocator<TxBuffer> for NetdeviceAllocator {
 
         if self.use_device_buffer {
             if let Some(buffer) = self.session.try_alloc_single_part_tx_buffer(len)? {
-                let _ = self.alloc_state.device_buffers_in_queue.fetch_add(1, Ordering::Relaxed);
-                return Ok(packet::Either::A(buffer));
+                return Ok(packet::Either::A(TrackedTxBuffer::new(
+                    buffer,
+                    self.alloc_state.clone(),
+                )));
             }
         }
         self.use_device_buffer = false;
@@ -1187,5 +1236,27 @@ mod test {
 
         // Need to do this to avoid BindingIdAllocation's panic on drop.
         let _ = allocation.into_inner();
+    }
+
+    #[test]
+    fn tracked_tx_buffer_updates_count_on_drop_and_into_inner() {
+        let alloc_state = Arc::new(TxAllocatorState::default());
+        assert_eq!(alloc_state.device_buffers_in_queue.load(Ordering::Relaxed), 0);
+
+        let buf1 = TrackedTxBuffer::new([1u8, 2, 3], alloc_state.clone());
+        assert_eq!(alloc_state.device_buffers_in_queue.load(Ordering::Relaxed), 1);
+
+        let buf2 = TrackedTxBuffer::new([4u8, 5, 6], alloc_state.clone());
+        assert_eq!(alloc_state.device_buffers_in_queue.load(Ordering::Relaxed), 2);
+
+        // Dropping a TrackedTxBuffer without calling `into_inner` (e.g., when
+        // dropped because the device is offline) must decrement the counter.
+        drop(buf1);
+        assert_eq!(alloc_state.device_buffers_in_queue.load(Ordering::Relaxed), 1);
+
+        // Consuming via `into_inner` must also decrement the counter exactly once.
+        let inner = buf2.into_inner();
+        assert_eq!(inner, [4u8, 5, 6]);
+        assert_eq!(alloc_state.device_buffers_in_queue.load(Ordering::Relaxed), 0);
     }
 }
