@@ -312,11 +312,18 @@ unsafe extern "C" fn cmd_graceful_shutdown(
     );
 }
 
-pub fn boot_test_success(success_str: &CStr) -> c_int {
+// Needed to fail serial checks fast on failure.
+// LINT.IfChange(boot_test_failure_string)
+const BOOT_TEST_FAILURE_STRING: &CStr = c"FAILED TEST";
+// LINT.ThenChange(//build/testing/boot_tests/boot_test.gni:boot_test_failure_string)
+
+pub fn boot_test_success(success_str: &CStr, failure_str: &CStr) -> c_int {
     let last = LAST_RESULT.load(Ordering::Relaxed);
     kprintln!("*** Last script command result: {} ***", last);
     if last == 0 {
         kprintln!("{:s}", success_str);
+    } else {
+        kprintln!("{:s}", failure_str);
     }
     last
 }
@@ -326,7 +333,7 @@ unsafe extern "C" fn cmd_boot_test_success(
     _argv: *const CmdArgs,
     _flags: u32,
 ) -> c_int {
-    boot_test_success(BOOT_TEST_SUCCESS_STRING)
+    boot_test_success(BOOT_TEST_SUCCESS_STRING, BOOT_TEST_FAILURE_STRING)
 }
 
 unsafe fn get_commands() -> &'static [Cmd] {

@@ -82,8 +82,13 @@ template("_boot_test") {
       rebase_path(inputs[0], root_build_dir),
       "-success-str",
       boot_test_success_string,
+
+      # Needed to fail serial checks fast on failure.
+      # LINT.IfChange(boot_test_failure_string)
       "-failure-str",
       "FAILED TEST",
+
+      # LINT.ThenChange(//zircon/kernel/lib/console/mod.rs:boot_test_failure_string)
       "-timeout",
       "${timeout_secs}s",
     ]

@@ -304,16 +304,25 @@ mod console_tests {
     #[test]
     fn command_boot_test_success_test() {
         const MOCK_SUCCESS_STRING: &CStr = c"***Mock-boot-test-successful!***";
+        const MOCK_FAILURE_STRING: &CStr = c"***Mock-boot-test-failed!***";
 
         // Test success.
         console_run_script_locked("mock_success");
-        let res = boot_test_success(MOCK_SUCCESS_STRING);
+        let (res, output) =
+            capture_output_helper(|| boot_test_success(MOCK_SUCCESS_STRING, MOCK_FAILURE_STRING));
         expect_eq!(res, zx_status::sys::ZX_OK);
+        expect_true!(
+            output == c"*** Last script command result: 0 ***\n***Mock-boot-test-successful!***\n"
+        );
 
         // Test failure.
         let some_failure = console_run_script_locked("mock_failure");
-        let res = boot_test_success(MOCK_SUCCESS_STRING);
+        let (res, output) =
+            capture_output_helper(|| boot_test_success(MOCK_SUCCESS_STRING, MOCK_FAILURE_STRING));
         expect_eq!(res, some_failure);
+        expect_true!(
+            output == c"*** Last script command result: -10 ***\n***Mock-boot-test-failed!***\n"
+        );
 
         // Restore to success state.
         console_run_script_locked("mock_success");
