@@ -187,6 +187,7 @@ config("compiler") {
   asmflags = cflags
 }
 
+# LINT.IfChange(libcxx_include)
 # This is separate from :compiler so it can be removed from configs when also
 # adding :no-libc++-include.
 config("libc++-include") {
@@ -210,6 +211,8 @@ config("no-libc++-include") {
     cflags_cc = [ "-nostdinc++" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:libcxx_include)
 
 compiler_config("cpu_baseline") {
   if (current_cpu != "wasm32") {
@@ -303,6 +306,7 @@ config("toolchain_version_stamp") {
   rustflags = [ "--cfg=__rust_toolchain=\"${rustc_version_string}\"" ]
 }
 
+# LINT.IfChange(relative_paths)
 compiler_config("relative_paths") {
   if (is_gcc) {
     # Relativize paths without leaking the build output directory in debug info.
@@ -360,6 +364,8 @@ compiler_config("relative_paths") {
   # Available since: https://github.com/rust-lang/rust/pull/87320
   rustflags = [ "-Zremap-cwd-prefix=." ]
 }
+
+# LINT.ThenChange(BUILD.bazel:relative_paths)
 
 # LINT.IfChange(debug)
 config("debug") {
@@ -1382,12 +1388,15 @@ config("all_source") {
   defines = [ "_ALL_SOURCE" ]
 }
 
+# LINT.IfChange(auto_var_init)
 config("auto_var_init") {
   if (!is_gcc) {
     # Automatically initialize variables with a pattern.
     cflags = [ "-ftrivial-auto-var-init=pattern" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:auto_var_init)
 
 # LINT.IfChange(thread_safety_annotations)
 config("thread_safety_annotations") {
