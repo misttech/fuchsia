@@ -1489,13 +1489,17 @@ impl Task {
             return;
         };
 
+        let is_leader = self.is_leader();
+
         // If we're going to update the process name, see if we can get a longer one than normally
         // provided in the Linux uapi. Only choose the argv0-based name if it's a superset of the
         // uapi-provided name to avoid clobbering the name provided by the user.
-        if let Ok(argv0) = self.read_argv0() {
-            let argv0 = TaskCommand::from_path_bytes(&argv0);
-            if let Some(embedded_name) = argv0.try_embed(&new_name) {
-                new_name = embedded_name;
+        if is_leader {
+            if let Ok(argv0) = self.read_argv0() {
+                let argv0 = TaskCommand::from_path_bytes(&argv0);
+                if let Some(embedded_name) = argv0.try_embed(&new_name) {
+                    new_name = embedded_name;
+                }
             }
         }
 
@@ -1511,7 +1515,7 @@ impl Task {
         }
 
         // If this is the thread group leader, use this name for the process too.
-        if self.is_leader() {
+        if is_leader {
             set_zx_name(&*self.thread_group().process, new_name.as_bytes());
             let _ = zx::Thread::raise_user_exception(
                 zx::RaiseExceptionOptions::TARGET_JOB_DEBUGGER,
@@ -1525,7 +1529,7 @@ impl Task {
         *command_guard = new_name;
         drop(command_guard);
 
-        if self.is_leader() {
+        if is_leader {
             if let Some(notifier) = &self.thread_group().read().notifier {
                 let _ = notifier.send(MemoryAttributionLifecycleEvent::name_change(self.tid.id));
             }
@@ -1694,6 +1698,7 @@ impl cmp::Eq for Task {}
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::mm::PAGE_SIZE;
     use crate::security;
     use crate::testing::*;
     use starnix_uapi::auth::{CAP_SYS_ADMIN, Capabilities};
@@ -1851,6 +1856,40 @@ mod test {
 
             let renamed_role = scheduler.role_name(&child).unwrap();
             assert_ne!(renamed_role, "test-role");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_set_command_name_only_embeds_argv0_on_leader() {
+        spawn_kernel_and_run(async |current_task| {
+            let argv0_bytes = b"/bin/my_long_command_name\0";
+            let addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(addr, argv0_bytes).expect("write argv0");
+            {
+                let mm = current_task.mm().expect("mm");
+                let mut mm_state = mm.state.write();
+                mm_state.argv_start = addr;
+                mm_state.argv_end = (addr + argv0_bytes.len()).expect("argv_end");
+            }
+
+            // Updating the leader task's command name embeds argv[0] when the truncated name is a
+            // substring of argv[0].
+            current_task.set_command_name(TaskCommand::new(b"my_long_command"));
+            let cmd = current_task.command();
+            assert_eq!(cmd.as_bytes(), b"my_long_command_name");
+            assert_eq!(cmd.comm_name(), b"my_long_command");
+
+            // Updating a non-leader thread's command name does not embed the process-wide argv[0].
+            let thread = current_task.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+            assert!(!thread.is_leader());
+            thread.set_command_name(TaskCommand::new(b"my_long_command"));
+            let cmd = thread.command();
+            assert_eq!(cmd.as_bytes(), b"my_long_command");
+            assert_eq!(cmd.comm_name(), b"my_long_command");
         })
         .await;
     }
