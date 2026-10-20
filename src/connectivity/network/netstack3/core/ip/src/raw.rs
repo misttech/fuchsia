@@ -17,10 +17,10 @@ use netstack3_base::socket::{
 };
 use netstack3_base::sync::{PrimaryRc, StrongRc, WeakRc};
 use netstack3_base::{
-    AnyDevice, ContextPair, DeviceIdContext, Inspector, InspectorDeviceExt, InspectorExt,
-    IpDeviceAddr, IpExt, Mark, MarkDomain, Marks, ReferenceNotifiers, ReferenceNotifiersExt as _,
-    RemoveResourceResultWithContext, ResourceCounterContext, StrongDeviceIdentifier,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
+    AnyDevice, BindingsSyncTypes, ContextPair, DeviceIdContext, Inspector, InspectorDeviceExt,
+    InspectorExt, IpDeviceAddr, IpExt, Mark, MarkDomain, Marks, ReferenceNotifiers,
+    ReferenceNotifiersExt as _, RemoveResourceResultWithContext, ResourceCounterContext,
+    StrongDeviceIdentifier, TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_filter::{FilterIpExt, RawIpBody};
 use netstack3_hashmap::HashMap;
@@ -47,7 +47,7 @@ pub(crate) mod protocol;
 pub(crate) mod state;
 
 /// Types provided by bindings used in the raw IP socket implementation.
-pub trait RawIpSocketsBindingsTypes: TxMetadataBindingsTypes {
+pub trait RawIpSocketsBindingsTypes: TxMetadataBindingsTypes + BindingsSyncTypes {
     /// The bindings state (opaque to core) associated with a socket.
     type RawIpSocketState<I: Ip>: Send + Sync + Debug;
 }
@@ -900,7 +900,7 @@ mod test {
     #[derivative(Default(bound = ""))]
     struct FakeExternalSocketState<D> {
         /// The collection of IP packets received on this socket.
-        received_packets: Mutex<RxQueue<D>>,
+        received_packets: Mutex<RxQueue<D>, netstack3_base::sync::lock_impl::RawMutex>,
     }
 
     #[derive(Derivative, Debug)]
@@ -952,6 +952,12 @@ mod test {
 
     impl<D: FakeStrongDeviceId> TxMetadataBindingsTypes for FakeBindingsCtx<D> {
         type TxMetadata = FakeTxMetadata;
+    }
+
+    impl<D> BindingsSyncTypes for FakeBindingsCtx<D> {
+        type Mutex = netstack3_base::sync::lock_impl::RawMutex;
+        type RwLock = netstack3_base::sync::lock_impl::RawRwLock;
+        type Once = netstack3_base::sync::lock_impl::Once;
     }
 
     impl<D: FakeStrongDeviceId> RawIpSocketsBindingsTypes for FakeBindingsCtx<D> {

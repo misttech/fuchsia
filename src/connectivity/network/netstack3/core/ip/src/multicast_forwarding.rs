@@ -23,9 +23,9 @@ use core::sync::atomic::Ordering;
 
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_base::{
-    AnyDevice, AtomicInstant, CounterContext, DeviceIdContext, EventContext, HandleableTimer,
-    InstantBindingsTypes, InstantContext, LocalFrameDestination, Marks, TimerBindingsTypes,
-    TimerContext, WeakDeviceIdentifier,
+    AnyDevice, AtomicInstant, BindingsSyncTypes, CounterContext, DeviceIdContext, EventContext,
+    HandleableTimer, InstantBindingsTypes, InstantContext, LocalFrameDestination, Marks,
+    TimerBindingsTypes, TimerContext, WeakDeviceIdentifier,
 };
 use packet_formats::ip::IpPacket;
 use zerocopy::SplitByteSlice;
@@ -43,8 +43,14 @@ use crate::multicast_forwarding::{
 use crate::{IpLayerEvent, IpLayerIpExt};
 
 /// Required types for multicast forwarding provided by Bindings.
-pub trait MulticastForwardingBindingsTypes: InstantBindingsTypes + TimerBindingsTypes {}
-impl<BT: InstantBindingsTypes + TimerBindingsTypes> MulticastForwardingBindingsTypes for BT {}
+pub trait MulticastForwardingBindingsTypes:
+    InstantBindingsTypes + TimerBindingsTypes + BindingsSyncTypes
+{
+}
+impl<BT: InstantBindingsTypes + TimerBindingsTypes + BindingsSyncTypes>
+    MulticastForwardingBindingsTypes for BT
+{
+}
 
 /// Required functionality for multicast forwarding provided by Bindings.
 pub trait MulticastForwardingBindingsContext<I: IpLayerIpExt, D>:

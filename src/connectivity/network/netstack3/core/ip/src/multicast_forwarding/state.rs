@@ -61,11 +61,11 @@ pub struct MulticastForwardingEnabledState<
     /// The stack's multicast route table.
     ///
     /// Keys here must not be present in `pending_table`.
-    route_table: RwLock<MulticastRouteTable<I, D, BT>>,
+    route_table: RwLock<MulticastRouteTable<I, D, BT>, BT::RwLock>,
     /// The stack's table of pending multicast packets.
     ///
     /// Keys here must not be present in `route_table`.
-    pending_table: Mutex<MulticastForwardingPendingPackets<I, D::Weak, BT>>,
+    pending_table: Mutex<MulticastForwardingPendingPackets<I, D::Weak, BT>, BT::Mutex>,
 }
 
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BC: MulticastForwardingBindingsContext<I, D>>
@@ -83,14 +83,14 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BC: MulticastForwardingBindings
 
     // Helper function to circumvent lock ordering, for tests.
     #[cfg(test)]
-    pub(super) fn route_table(&self) -> &RwLock<MulticastRouteTable<I, D, BC>> {
+    pub(super) fn route_table(&self) -> &RwLock<MulticastRouteTable<I, D, BC>, BC::RwLock> {
         &self.route_table
     }
     // Helper function to circumvent lock ordering, for tests.
     #[cfg(test)]
     pub(super) fn pending_table(
         &self,
-    ) -> &Mutex<MulticastForwardingPendingPackets<I, D::Weak, BC>> {
+    ) -> &Mutex<MulticastForwardingPendingPackets<I, D::Weak, BC>, BC::Mutex> {
         &self.pending_table
     }
 }
@@ -101,7 +101,7 @@ pub type MulticastRouteTable<I, D, BT> = BTreeMap<MulticastRouteKey<I>, Multicas
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: MulticastForwardingBindingsTypes>
     OrderedLockAccess<MulticastRouteTable<I, D, BT>> for MulticastForwardingEnabledState<I, D, BT>
 {
-    type Lock = RwLock<MulticastRouteTable<I, D, BT>>;
+    type Lock = RwLock<MulticastRouteTable<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.route_table)
     }
@@ -111,7 +111,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: MulticastForwardingBindings
     OrderedLockAccess<MulticastForwardingPendingPackets<I, D::Weak, BT>>
     for MulticastForwardingEnabledState<I, D, BT>
 {
-    type Lock = Mutex<MulticastForwardingPendingPackets<I, D::Weak, BT>>;
+    type Lock = Mutex<MulticastForwardingPendingPackets<I, D::Weak, BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.pending_table)
     }

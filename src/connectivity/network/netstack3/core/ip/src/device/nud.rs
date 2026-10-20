@@ -1648,12 +1648,21 @@ pub(crate) mod testutil {
     /// A fake implementation of [`LinkResolutionNotifier`].
     #[derive(Debug)]
     pub struct FakeLinkResolutionNotifier<D: LinkDevice>(
-        Arc<Mutex<Option<Result<UnicastAddr<D::Address>, AddressResolutionFailed>>>>,
+        Arc<
+            Mutex<
+                Option<Result<UnicastAddr<D::Address>, AddressResolutionFailed>>,
+                netstack3_base::sync::lock_impl::RawMutex,
+            >,
+        >,
     );
 
     impl<D: LinkDevice> LinkResolutionNotifier<D> for FakeLinkResolutionNotifier<D> {
-        type Observer =
-            Arc<Mutex<Option<Result<UnicastAddr<D::Address>, AddressResolutionFailed>>>>;
+        type Observer = Arc<
+            Mutex<
+                Option<Result<UnicastAddr<D::Address>, AddressResolutionFailed>>,
+                netstack3_base::sync::lock_impl::RawMutex,
+            >,
+        >;
 
         fn new() -> (Self, Self::Observer) {
             let inner = Arc::new(Mutex::new(None));

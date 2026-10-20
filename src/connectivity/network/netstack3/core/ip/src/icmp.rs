@@ -23,10 +23,10 @@ use net_types::{
 use netstack3_base::socket::{AddrIsMappedError, SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::sync::Mutex;
 use netstack3_base::{
-    AnyDevice, Counter, CounterContext, DeviceIdContext, EitherDeviceId, FrameDestination,
-    IcmpIpExt, Icmpv4ErrorCode, Icmpv6ErrorCode, InstantBindingsTypes, InstantContext,
-    IpDeviceAddr, IpExt, LocalFrameDestination, Marks, NetworkPartialSerializer, NetworkSerializer,
-    RngContext, TokenBucket, TxMetadataBindingsTypes,
+    AnyDevice, BindingsSyncTypes, Counter, CounterContext, DeviceIdContext, EitherDeviceId,
+    FrameDestination, IcmpIpExt, Icmpv4ErrorCode, Icmpv6ErrorCode, InstantBindingsTypes,
+    InstantContext, IpDeviceAddr, IpExt, LocalFrameDestination, Marks, NetworkPartialSerializer,
+    NetworkSerializer, RngContext, TokenBucket, TxMetadataBindingsTypes,
 };
 use netstack3_filter::{DynTransportSerializer, DynamicTransportSerializer, FilterIpExt};
 use packet::{
@@ -98,7 +98,7 @@ pub const DEFAULT_ERRORS_PER_SECOND: u64 = 1000;
 #[derive(GenericOverIp)]
 #[generic_over_ip(I, Ip)]
 pub struct IcmpState<I: IpExt + IcmpCountersIpExt, BT: IcmpBindingsTypes> {
-    error_send_bucket: Mutex<IpMarked<I, TokenBucket<BT::Instant>>>,
+    error_send_bucket: Mutex<IpMarked<I, TokenBucket<BT::Instant>>, BT::Mutex>,
     /// ICMP transmit counters.
     pub tx_counters: IcmpTxCounters<I>,
     /// ICMP receive counters.
@@ -110,7 +110,7 @@ where
     I: IpExt + IcmpCountersIpExt,
     BT: IcmpBindingsTypes,
 {
-    type Lock = Mutex<IpMarked<I, TokenBucket<BT::Instant>>>;
+    type Lock = Mutex<IpMarked<I, TokenBucket<BT::Instant>>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.error_send_bucket)
     }
@@ -752,8 +752,14 @@ impl<BC> IcmpBindingsContext for BC where
 }
 
 /// A marker trait for all bindings types required by the ICMP module.
-pub trait IcmpBindingsTypes: InstantBindingsTypes + TxMetadataBindingsTypes {}
-impl<BT: InstantBindingsTypes + TxMetadataBindingsTypes> IcmpBindingsTypes for BT {}
+pub trait IcmpBindingsTypes:
+    InstantBindingsTypes + TxMetadataBindingsTypes + BindingsSyncTypes
+{
+}
+impl<BT: InstantBindingsTypes + TxMetadataBindingsTypes + BindingsSyncTypes> IcmpBindingsTypes
+    for BT
+{
+}
 
 /// Empty trait to work around coherence issues.
 ///

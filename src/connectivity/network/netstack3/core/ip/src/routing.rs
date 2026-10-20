@@ -11,7 +11,7 @@ use core::fmt::Debug;
 use log::debug;
 use net_types::ip::{GenericOverIp, Ip, IpAddress as _, Ipv4, Ipv4Addr, Subnet};
 use net_types::{SpecifiedAddr, Witness as _};
-use netstack3_base::{AnyDevice, BroadcastIpExt, DeviceIdContext, ExistsError};
+use netstack3_base::{AnyDevice, BindingsSyncTypes, BroadcastIpExt, DeviceIdContext, ExistsError};
 use thiserror::Error;
 
 use crate::internal::base::{IpLayerBindingsContext, IpLayerEvent, IpLayerIpExt};
@@ -29,7 +29,7 @@ pub trait IpRoutingDeviceContext<I: Ip>: DeviceIdContext<AnyDevice> {
 }
 
 /// Bindings types for IP routing.
-pub trait IpRoutingBindingsTypes {
+pub trait IpRoutingBindingsTypes: BindingsSyncTypes {
     /// An opaque type that represents a routing table ID from the Bindings. The Bindings
     /// implementation is responsible for providing a unique ID for each routing table.
     type RoutingTableId: Send + Sync + Debug + 'static;

@@ -52,7 +52,7 @@ pub struct RawIpSocketState<I: IpExt, D: WeakDeviceIdentifier, BT: RawIpSocketsB
     /// This field is specified at creation time and never changes.
     protocol: RawIpSocketProtocol<I>,
     /// The locked socket state, accessible via the [`RawIpSocketStateContext`].
-    locked_state: RwLock<RawIpSocketLockedState<I, D>>,
+    locked_state: RwLock<RawIpSocketLockedState<I, D>, BT::RwLock>,
     /// The counters for this socket.
     counters: RawIpSocketCounters<I>,
 }
@@ -87,7 +87,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: RawIpSocketsBindingsTypes> RawIpSock
 
     /// Helper function to circumvent lock ordering, for tests.
     #[cfg(test)]
-    pub(super) fn locked_state(&self) -> &RwLock<RawIpSocketLockedState<I, D>> {
+    pub(super) fn locked_state(&self) -> &RwLock<RawIpSocketLockedState<I, D>, BT::RwLock> {
         &self.locked_state
     }
 }
@@ -95,7 +95,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: RawIpSocketsBindingsTypes> RawIpSock
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: RawIpSocketsBindingsTypes>
     OrderedLockAccess<RawIpSocketLockedState<I, D>> for RawIpSocketState<I, D, BT>
 {
-    type Lock = RwLock<RawIpSocketLockedState<I, D>>;
+    type Lock = RwLock<RawIpSocketLockedState<I, D>, BT::RwLock>;
 
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.locked_state)

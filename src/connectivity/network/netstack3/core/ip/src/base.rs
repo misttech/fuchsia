@@ -2156,7 +2156,7 @@ impl<StrongDeviceId: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
     OrderedLockAccess<IpPacketFragmentCache<I, BT>> for IpStateInner<I, D, BT>
 {
-    type Lock = Mutex<IpPacketFragmentCache<I, BT>>;
+    type Lock = Mutex<IpPacketFragmentCache<I, BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.fragment_cache)
     }
@@ -2165,7 +2165,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
     OrderedLockAccess<PmtuCache<I, BT>> for IpStateInner<I, D, BT>
 {
-    type Lock = Mutex<PmtuCache<I, BT>>;
+    type Lock = Mutex<PmtuCache<I, BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.pmtu_cache)
     }
@@ -2174,7 +2174,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
     OrderedLockAccess<RulesTable<I, D, BT>> for IpStateInner<I, D, BT>
 {
-    type Lock = RwLock<RulesTable<I, D, BT>>;
+    type Lock = RwLock<RulesTable<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.rules_table)
     }
@@ -2184,8 +2184,10 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
     OrderedLockAccess<HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>>
     for IpStateInner<I, D, BT>
 {
-    type Lock =
-        Mutex<HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>>;
+    type Lock = Mutex<
+        HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>,
+        BT::Mutex,
+    >;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.tables)
     }
@@ -2194,7 +2196,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpRoutingBindingsTypes>
     OrderedLockAccess<RoutingTable<I, D>> for RoutingTableId<I, D, BT>
 {
-    type Lock = RwLock<RoutingTable<I, D>>;
+    type Lock = RwLock<RoutingTable<I, D>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         let Self(inner) = self;
         OrderedLockRef::new(&inner.routing_table)
@@ -2204,7 +2206,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpRoutingBindingsTypes>
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
     OrderedLockAccess<MulticastForwardingState<I, D, BT>> for IpStateInner<I, D, BT>
 {
-    type Lock = RwLock<MulticastForwardingState<I, D, BT>>;
+    type Lock = RwLock<MulticastForwardingState<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.multicast_forwarding)
     }
@@ -2213,7 +2215,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
     OrderedLockAccess<RawIpSocketMap<I, D::Weak, BT>> for IpStateInner<I, D, BT>
 {
-    type Lock = RwLock<RawIpSocketMap<I, D::Weak, BT>>;
+    type Lock = RwLock<RawIpSocketMap<I, D::Weak, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.raw_sockets)
     }
@@ -2222,7 +2224,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
     OrderedLockAccess<filter::State<I, WeakAddressId<I, BT>, BT>> for IpStateInner<I, D, BT>
 {
-    type Lock = RwLock<filter::State<I, WeakAddressId<I, BT>, BT>>;
+    type Lock = RwLock<filter::State<I, WeakAddressId<I, BT>, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.filter)
     }
@@ -2265,7 +2267,7 @@ pub enum RoutingTableCookie<BT: IpRoutingBindingsTypes> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = "D: Debug"))]
 pub struct BaseRoutingTableState<I: Ip, D, BT: IpRoutingBindingsTypes> {
-    routing_table: RwLock<RoutingTable<I, D>>,
+    routing_table: RwLock<RoutingTable<I, D>, BT::RwLock>,
     bindings_id: RoutingTableCookie<BT>,
 }
 
@@ -2300,7 +2302,7 @@ impl<I: Ip, D, BT: IpRoutingBindingsTypes> RoutingTableId<I, D, BT> {
 
     /// Provides direct access to the forwarding table.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn table(&self) -> &RwLock<RoutingTable<I, D>> {
+    pub fn table(&self) -> &RwLock<RoutingTable<I, D>, BT::RwLock> {
         let Self(inner) = self;
         &inner.routing_table
     }
@@ -2349,23 +2351,26 @@ impl<I: Ip, D, BT: IpRoutingBindingsTypes> Debug for WeakRoutingTableId<I, D, BT
 #[derive(GenericOverIp)]
 #[generic_over_ip(I, Ip)]
 pub struct IpStateInner<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateBindingsTypes> {
-    rules_table: RwLock<RulesTable<I, D, BT>>,
+    rules_table: RwLock<RulesTable<I, D, BT>, BT::RwLock>,
     // TODO(https://fxbug.dev/355059838): Explore the option to let Bindings create the main table.
     main_table_id: RoutingTableId<I, D, BT>,
-    multicast_forwarding: RwLock<MulticastForwardingState<I, D, BT>>,
+    multicast_forwarding: RwLock<MulticastForwardingState<I, D, BT>, BT::RwLock>,
     multicast_forwarding_counters: MulticastForwardingCounters<I>,
-    fragment_cache: Mutex<IpPacketFragmentCache<I, BT>>,
-    pmtu_cache: Mutex<PmtuCache<I, BT>>,
+    fragment_cache: Mutex<IpPacketFragmentCache<I, BT>, BT::Mutex>,
+    pmtu_cache: Mutex<PmtuCache<I, BT>, BT::Mutex>,
     counters: IpCounters<I>,
-    raw_sockets: RwLock<RawIpSocketMap<I, D::Weak, BT>>,
+    raw_sockets: RwLock<RawIpSocketMap<I, D::Weak, BT>, BT::RwLock>,
     raw_socket_counters: RawIpSocketCounters<I>,
-    filter: RwLock<filter::State<I, WeakAddressId<I, BT>, BT>>,
+    filter: RwLock<filter::State<I, WeakAddressId<I, BT>, BT>, BT::RwLock>,
     // Make sure the primary IDs are dropped last. Also note that the following hash map also stores
     // the primary ID to the main table, and if the user (Bindings) attempts to remove the main
     // table without dropping `main_table_id` first, it will panic. This serves as an assertion
     // that the main table cannot be removed and Bindings must never attempt to remove the main
     // routing table.
-    tables: Mutex<HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>>,
+    tables: Mutex<
+        HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>,
+        BT::Mutex,
+    >,
     igmp_counters: IgmpCounters,
     mld_counters: MldCounters,
 }
@@ -2393,13 +2398,13 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateBindingsTypes> IpSta
 
     /// Provides direct access to the path MTU cache.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn pmtu_cache(&self) -> &Mutex<PmtuCache<I, BT>> {
+    pub fn pmtu_cache(&self) -> &Mutex<PmtuCache<I, BT>, BT::Mutex> {
         &self.pmtu_cache
     }
 
     /// Provides direct access to the filtering state.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn filter(&self) -> &RwLock<filter::State<I, WeakAddressId<I, BT>, BT>> {
+    pub fn filter(&self) -> &RwLock<filter::State<I, WeakAddressId<I, BT>, BT>, BT::RwLock> {
         &self.filter
     }
 

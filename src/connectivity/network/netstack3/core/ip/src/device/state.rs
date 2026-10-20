@@ -17,8 +17,8 @@ use net_types::Witness as _;
 use net_types::ip::{AddrSubnet, GenericOverIp, Ip, IpMarked, IpVersionMarker, Ipv4, Ipv6};
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
-    AssignedAddrIpExt, BroadcastIpExt, CoreTimerContext, ExistsError, Inspectable,
-    InspectableValue, Inspector, Instant, InstantBindingsTypes, IpAddressId,
+    AssignedAddrIpExt, BindingsSyncTypes, BroadcastIpExt, CoreTimerContext, ExistsError,
+    Inspectable, InspectableValue, Inspector, Instant, InstantBindingsTypes, IpAddressId,
     NestedIntoCoreTimerCtx, NotFoundError, ReferenceNotifiers, TimerBindingsTypes, TimerContext,
     WeakDeviceIdentifier,
 };
@@ -268,17 +268,17 @@ pub struct IpDeviceState<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> 
     /// Detection).
     ///
     /// Does not contain any duplicates.
-    addrs: RwLock<IpDeviceAddresses<I, BT>>,
+    addrs: RwLock<IpDeviceAddresses<I, BT>, BT::RwLock>,
 
     /// Multicast groups and GMP handling state.
-    multicast_groups: RwLock<IpDeviceMulticastGroups<I, BT>>,
+    multicast_groups: RwLock<IpDeviceMulticastGroups<I, BT>, BT::RwLock>,
 
     /// The default TTL (IPv4) or hop limit (IPv6) for outbound packets sent
     /// over this device.
-    default_hop_limit: RwLock<DefaultHopLimit<I>>,
+    default_hop_limit: RwLock<DefaultHopLimit<I>, BT::RwLock>,
 
     /// The flags for this device.
-    flags: Mutex<IpMarked<I, IpDeviceFlags>>,
+    flags: Mutex<IpMarked<I, IpDeviceFlags>, BT::Mutex>,
 
     /// The IP counters for this device.
     ip_counters: IpCounters<I>,
@@ -287,7 +287,7 @@ pub struct IpDeviceState<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> 
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes>
     OrderedLockAccess<IpDeviceAddresses<I, BT>> for DualStackIpDeviceState<BT>
 {
-    type Lock = RwLock<IpDeviceAddresses<I, BT>>;
+    type Lock = RwLock<IpDeviceAddresses<I, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ip_state::<I>().addrs)
     }
@@ -296,7 +296,7 @@ impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes>
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes>
     OrderedLockAccess<IpDeviceMulticastGroups<I, BT>> for DualStackIpDeviceState<BT>
 {
-    type Lock = RwLock<IpDeviceMulticastGroups<I, BT>>;
+    type Lock = RwLock<IpDeviceMulticastGroups<I, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ip_state::<I>().multicast_groups)
     }
@@ -305,7 +305,7 @@ impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes>
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> OrderedLockAccess<DefaultHopLimit<I>>
     for DualStackIpDeviceState<BT>
 {
-    type Lock = RwLock<DefaultHopLimit<I>>;
+    type Lock = RwLock<DefaultHopLimit<I>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ip_state::<I>().default_hop_limit)
     }
@@ -314,7 +314,7 @@ impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> OrderedLockAccess<De
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes>
     OrderedLockAccess<IpMarked<I, IpDeviceFlags>> for DualStackIpDeviceState<BT>
 {
-    type Lock = Mutex<IpMarked<I, IpDeviceFlags>>;
+    type Lock = Mutex<IpMarked<I, IpDeviceFlags>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ip_state::<I>().flags)
     }
@@ -323,7 +323,7 @@ impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes>
 impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<SlaacState<BT>>
     for DualStackIpDeviceState<BT>
 {
-    type Lock = Mutex<SlaacState<BT>>;
+    type Lock = Mutex<SlaacState<BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ipv6.slaac_state)
     }
@@ -332,7 +332,7 @@ impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<SlaacState<BT>>
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> IpDeviceState<I, BT> {
     /// A direct accessor to `IpDeviceAddresses` available in tests.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn addrs(&self) -> &RwLock<IpDeviceAddresses<I, BT>> {
+    pub fn addrs(&self) -> &RwLock<IpDeviceAddresses<I, BT>, BT::RwLock> {
         &self.addrs
     }
 }
@@ -421,14 +421,14 @@ impl<'a, I: Ip + IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> Iterator
 /// The state common to all IPv4 devices.
 pub struct Ipv4DeviceState<BT: IpDeviceStateBindingsTypes> {
     ip_state: IpDeviceState<Ipv4, BT>,
-    config: RwLock<Ipv4DeviceConfiguration>,
+    config: RwLock<Ipv4DeviceConfiguration, BT::RwLock>,
     igmp_counters: IgmpCounters,
 }
 
 impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<Ipv4DeviceConfiguration>
     for DualStackIpDeviceState<BT>
 {
-    type Lock = RwLock<Ipv4DeviceConfiguration>;
+    type Lock = RwLock<Ipv4DeviceConfiguration, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ipv4.config)
     }
@@ -594,7 +594,7 @@ impl AsMut<IpDeviceConfiguration> for Ipv6DeviceConfiguration {
 impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<Ipv6NetworkLearnedParameters>
     for DualStackIpDeviceState<BT>
 {
-    type Lock = RwLock<Ipv6NetworkLearnedParameters>;
+    type Lock = RwLock<Ipv6NetworkLearnedParameters, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ipv6.learned_params)
     }
@@ -603,14 +603,14 @@ impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<Ipv6NetworkLearnedParamet
 impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<Ipv6RouteDiscoveryState<BT>>
     for DualStackIpDeviceState<BT>
 {
-    type Lock = Mutex<Ipv6RouteDiscoveryState<BT>>;
+    type Lock = Mutex<Ipv6RouteDiscoveryState<BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ipv6.route_discovery)
     }
 }
 
 impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<RsState<BT>> for DualStackIpDeviceState<BT> {
-    type Lock = Mutex<RsState<BT>>;
+    type Lock = Mutex<RsState<BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ipv6.router_solicitations)
     }
@@ -619,7 +619,7 @@ impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<RsState<BT>> for DualStac
 impl<BT: IpDeviceStateBindingsTypes> OrderedLockAccess<Ipv6DeviceConfiguration>
     for DualStackIpDeviceState<BT>
 {
-    type Lock = RwLock<Ipv6DeviceConfiguration>;
+    type Lock = RwLock<Ipv6DeviceConfiguration, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.ipv6.config)
     }
@@ -654,12 +654,12 @@ impl Ipv6NetworkLearnedParameters {
 
 /// The state common to all IPv6 devices.
 pub struct Ipv6DeviceState<BT: IpDeviceStateBindingsTypes> {
-    learned_params: RwLock<Ipv6NetworkLearnedParameters>,
-    route_discovery: Mutex<Ipv6RouteDiscoveryState<BT>>,
-    router_solicitations: Mutex<RsState<BT>>,
+    learned_params: RwLock<Ipv6NetworkLearnedParameters, BT::RwLock>,
+    route_discovery: Mutex<Ipv6RouteDiscoveryState<BT>, BT::Mutex>,
+    router_solicitations: Mutex<RsState<BT>, BT::Mutex>,
     ip_state: IpDeviceState<Ipv6, BT>,
-    config: RwLock<Ipv6DeviceConfiguration>,
-    slaac_state: Mutex<SlaacState<BT>>,
+    config: RwLock<Ipv6DeviceConfiguration, BT::RwLock>,
+    slaac_state: Mutex<SlaacState<BT>, BT::Mutex>,
     mld_counters: MldCounters,
 }
 
@@ -709,11 +709,15 @@ impl<BT: IpDeviceStateBindingsTypes> AsMut<IpDeviceState<Ipv6, BT>> for Ipv6Devi
 
 /// Bindings types required for IP device state.
 pub trait IpDeviceStateBindingsTypes:
-    InstantBindingsTypes + TimerBindingsTypes + ReferenceNotifiers + 'static
+    InstantBindingsTypes + BindingsSyncTypes + TimerBindingsTypes + ReferenceNotifiers + 'static
 {
 }
 impl<BT> IpDeviceStateBindingsTypes for BT where
-    BT: InstantBindingsTypes + TimerBindingsTypes + ReferenceNotifiers + 'static
+    BT: InstantBindingsTypes
+        + BindingsSyncTypes
+        + TimerBindingsTypes
+        + ReferenceNotifiers
+        + 'static
 {
 }
 
@@ -1220,8 +1224,8 @@ impl<I: IpDeviceStateIpExt, Inst: Instant> Inspectable for IpAddressData<I, Inst
 #[derivative(Debug(bound = ""))]
 pub struct IpAddressEntry<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> {
     addr_sub: AddrSubnet<I::Addr, I::AssignedWitness>,
-    dad_state: Mutex<DadState<I, BT>>,
-    state: RwLock<IpAddressData<I, BT::Instant>>,
+    dad_state: Mutex<DadState<I, BT>, BT::Mutex>,
+    state: RwLock<IpAddressData<I, BT::Instant>, BT::RwLock>,
 }
 
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> IpAddressEntry<I, BT> {
@@ -1251,7 +1255,7 @@ impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> IpAddressEntry<I, BT
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> OrderedLockAccess<DadState<I, BT>>
     for IpAddressEntry<I, BT>
 {
-    type Lock = Mutex<DadState<I, BT>>;
+    type Lock = Mutex<DadState<I, BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.dad_state)
     }
@@ -1260,7 +1264,7 @@ impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes> OrderedLockAccess<Da
 impl<I: IpDeviceStateIpExt, BT: IpDeviceStateBindingsTypes>
     OrderedLockAccess<IpAddressData<I, BT::Instant>> for IpAddressEntry<I, BT>
 {
-    type Lock = RwLock<IpAddressData<I, BT::Instant>>;
+    type Lock = RwLock<IpAddressData<I, BT::Instant>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.state)
     }
