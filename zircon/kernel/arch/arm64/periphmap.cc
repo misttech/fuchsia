@@ -285,6 +285,11 @@ int cmd_peripheral_map(int argc, const cmd_args* argv, uint32_t flags) {
         return usage();
     }
 
+    // A dump or modify needs an address.
+    if (argc < 3) {
+      return usage(true);
+    }
+
     paddr_t phys_addr = argv[2].u;
     if (argv[1].str[0] == 'd') {
       // Dump commands have a default count of 1
