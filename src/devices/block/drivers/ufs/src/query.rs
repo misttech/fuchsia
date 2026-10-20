@@ -73,6 +73,8 @@ pub enum Attributes {
     CurrentPowerMode = 0x02,
     /// Active ICC level (`bActiveICCLevel`).
     ActiveIccLevel = 0x03,
+    /// Background operations status (`bBackgroundOpStatus`).
+    BackgroundOpStatus = 0x05,
     /// Reference clock frequency (`bRefClkFreq`), see [`RefClkFreq`].
     RefClkFreq = 0x0A,
     /// Available WriteBooster buffer capacity (`bAvailableWBBufferSize`).

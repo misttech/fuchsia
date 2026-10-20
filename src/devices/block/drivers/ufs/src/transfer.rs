@@ -12,6 +12,10 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// UCD buffer size allocated per transfer slot (8 KiB).
 pub const UTP_COMMAND_DESCRIPTOR_SIZE: usize = 8192;
+/// Maximum inline HostToDevice payload stored at the tail of the UCD (64 bytes).
+pub const INLINE_DATA_SIZE: usize = 64;
+/// Byte offset within the UCD of the inline HostToDevice payload region.
+pub const INLINE_DATA_OFFSET: usize = UTP_COMMAND_DESCRIPTOR_SIZE - INLINE_DATA_SIZE;
 /// Maximum PRDT entries per UCD (one per page, so 1 MiB with 4 KiB pages).
 pub const MAX_PRDT_ENTRIES: usize = 256;
 /// Maximum bytes described by one PRDT entry (`DBC` is 18 bits, 0-based).
@@ -180,7 +184,10 @@ impl CommandDescriptorLayout {
     const fn new(request_length: usize, response_length: usize) -> Self {
         assert!(request_length % 8 == 0 && response_length % 8 == 0);
         assert!(
-            request_length + response_length + MAX_PRDT_ENTRIES * std::mem::size_of::<PrdtEntry>()
+            request_length
+                + response_length
+                + MAX_PRDT_ENTRIES * std::mem::size_of::<PrdtEntry>()
+                + INLINE_DATA_SIZE
                 <= UTP_COMMAND_DESCRIPTOR_SIZE
         );
         Self { request_length: request_length as u16, response_length: response_length as u16 }

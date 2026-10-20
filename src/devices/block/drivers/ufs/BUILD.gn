@@ -259,23 +259,39 @@ rustc_library("ufs_rust") {
   with_unit_tests = true
   edition = "2024"
   sources = [
+    "src/controller.rs",
     "src/descriptors.rs",
+    "src/dma_buffer.rs",
     "src/lib.rs",
     "src/query.rs",
     "src/registers.rs",
+    "src/request_list.rs",
     "src/scsi.rs",
+    "src/testing.rs",
+    "src/testing/fake_ufs.rs",
     "src/transfer.rs",
+    "src/transfer_request_processor.rs",
+    "src/uic.rs",
     "src/upiu.rs",
   ]
   deps = [
     "//sdk/lib/driver/mmio/rust:mmio",
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
+    "//src/storage/lib/block_server",
     "//third_party/rust_crates:bitfield",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//sdk/lib/driver/fake-bti/rust",
+    "//src/lib/fuchsia",
+  ]
 }
 
 fuchsia_unittest_package("ufs_rust_tests") {

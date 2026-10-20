@@ -2,13 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! Universal Flash Storage (UFS 3.1/4.0) wire protocol, register, and SCSI definitions.
+//! Universal Flash Storage (UFS 3.1/4.0) wire protocol, DMA queues, UIC, and transfer engine.
 
+pub mod controller;
 pub mod descriptors;
+pub mod dma_buffer;
 pub mod query;
 pub mod registers;
+pub mod request_list;
 pub mod scsi;
 pub mod transfer;
+pub mod transfer_request_processor;
+pub mod uic;
 pub mod upiu;
 
 /// Standard UFS driver error representation mapping to Zircon `zx::Status`.
@@ -55,6 +60,9 @@ impl From<UfsError> for zx::Status {
         }
     }
 }
+
+#[cfg(test)]
+mod testing;
 
 #[cfg(test)]
 mod tests {
