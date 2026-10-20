@@ -36,20 +36,6 @@ PYTHONPATH=third_party/pyyaml/src/lib python3 \
     scripts/skill_linter/skill_linter.py --suggest-fix-in-json /path/to/skill/dir
 ```
 
-To run with an explicit blocked words policy:
-
-```bash
-PYTHONPATH=third_party/pyyaml/src/lib python3 \
-    scripts/skill_linter/skill_linter.py --blocked-words-file path/to/policy.json /path/to/skill/dir
-```
-
-To disable blocked words scanning:
-
-```bash
-PYTHONPATH=third_party/pyyaml/src/lib python3 \
-    scripts/skill_linter/skill_linter.py --no-blocked-words /path/to/skill/dir
-```
-
 ### Running Unit Tests
 
 Unit tests for the linter are written using the standard Python `unittest`
@@ -156,29 +142,6 @@ ensure consistency across all skills:
 - **Code Block Spacing**: Fenced code blocks must be preceded and followed by an
   empty line. Missing empty lines around code blocks are automatically detected
   and fixed.
-
-### Restricted Terms & Policy Validation
-
-The linter optionally scans skills for restricted or blocked terminology (e.g.,
-unannounced project codenames, experimental board identifiers, or sensitive terms):
-
-- **Policy Discovery**: When available, the linter automatically loads terms
-  from the canonical Google3 Gerrit Code Review banned words configuration
-  (`/google/src/files/head/depot/google3/devtools/gerritcodereview/banned_words/fuchsia/common.gcl`)
-  or local vendor policy files. An explicit policy file (`.gcl`, `.json`, or
-  `.yaml`) can also be specified using `--blocked-words-file <path>`, or the
-  check can be bypassed with `--no-blocked-words`. In open-source environments
-  where Google3 and vendor policy files are absent, the check is silently skipped.
-
-- **Scope & Exclusions**: Policy rules can specify scoping (e.g. `public_only`,
-  enforcing checks on open-source files while permitting internal references in
-  vendor checkouts) and path allowlists.
-
-- **Diagnostics**: Violations identify the exact term, location (frontmatter
-  field or Markdown body line number and context), reason, and suggested
-  replacements. Because terminology replacements require developer judgment,
-  blocked terms cannot be resolved automatically via `--fixit` and are
-  reported as blocking errors.
 
 ## Execution Modes
 

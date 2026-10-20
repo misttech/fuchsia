@@ -5,14 +5,12 @@
 """
 
 import argparse
-import fnmatch
 import json
 import logging
 import os
 import re
 import sys
 import textwrap
-from dataclasses import dataclass, field
 from typing import Any, TypedDict
 
 import yaml
@@ -22,656 +20,8 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 LINE_LENGTH = 80
 
-
-@dataclass
-class BlockedWordRule:
-    """Represents a rule for restricted or blocked terminology."""
-
-    term: str
-    pattern: re.Pattern[str]
-    raw_pattern: str | None = None
-    reason: str = "Prohibited internal or unannounced term."
-    suggestion: str | None = None
-    scope: str = "public_only"  # "public_only" or "all"
-    severity: str = "error"  # "error" or "warning"
-    case_sensitive: bool = False
-    check_code_blocks: bool = True
-    allowed_paths: list[str] = field(default_factory=list)
-    exemptions: list[str] = field(default_factory=list)
-
-
-DEFAULT_GOOGLE3_HEAD_GCL_PATH = "/google/src/files/head/depot/google3/devtools/gerritcodereview/banned_words/fuchsia/common.gcl"
-
 _LINK_REFERENCE_RE = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*")
 _LIST_ITEM_RE = re.compile(r"^\s*([-*+]|\d+\.)\s+")
-
-DEFAULT_POLICY_REL_PATHS = [
-    os.path.join("vendor", "google", ".agents", "blocked_words.json"),
-    os.path.join("vendor", "google", ".agents", "blocked_words.yaml"),
-    os.path.join(
-        "vendor", "google", "scripts", "skill_linter", "blocked_words.json"
-    ),
-    os.path.join(
-        "vendor", "google", "scripts", "skill_linter", "blocked_words.yaml"
-    ),
-]
-
-
-def find_fuchsia_root() -> str | None:
-    """Discovers the root of the Fuchsia repository or checkout.
-
-    Returns:
-      Absolute path to the root directory, or None if not found.
-    """
-    if "FUCHSIA_DIR" in os.environ and os.path.isdir(os.environ["FUCHSIA_DIR"]):
-        return os.path.abspath(os.environ["FUCHSIA_DIR"])
-
-    curr = os.path.abspath(__file__)
-    while True:
-        parent = os.path.dirname(curr)
-        if parent == curr:
-            break
-        if os.path.exists(os.path.join(parent, ".jiri_root")) or os.path.exists(
-            os.path.join(parent, ".fx-root")
-        ):
-            return parent
-        curr = parent
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    candidate = os.path.abspath(os.path.join(script_dir, "..", ".."))
-    if os.path.isdir(candidate):
-        return candidate
-    return None
-
-
-def find_blocked_words_policy_path(
-    custom_path: str | None = None,
-) -> str | None:
-    """Locates the blocked words policy file if available.
-
-    Checks:
-    1. custom_path (if provided)
-    2. FUCHSIA_SKILL_LINTER_BLOCKED_WORDS environment variable
-    3. Canonical Google3 HEAD GCL path (/google/src/files/head/depot/google3/...)
-    4. Auto-detected vendor policy paths relative to Fuchsia root.
-
-    Args:
-      custom_path: Optional explicit file path.
-
-    Returns:
-      Absolute path to the policy file, or None if not found.
-    """
-    if custom_path:
-        if os.path.isfile(custom_path):
-            return os.path.abspath(custom_path)
-        logging.warning(
-            "Specified blocked words policy '%s' not found.", custom_path
-        )
-        return None
-
-    env_path = os.environ.get("FUCHSIA_SKILL_LINTER_BLOCKED_WORDS")
-    if env_path and os.path.isfile(env_path):
-        return os.path.abspath(env_path)
-
-    # Directly check canonical Google3 HEAD GCL path
-    if os.path.isfile(DEFAULT_GOOGLE3_HEAD_GCL_PATH):
-        return DEFAULT_GOOGLE3_HEAD_GCL_PATH
-
-    fuchsia_root = find_fuchsia_root()
-    if fuchsia_root:
-        for rel_path in DEFAULT_POLICY_REL_PATHS:
-            candidate = os.path.join(fuchsia_root, rel_path)
-            if os.path.isfile(candidate):
-                return candidate
-
-    return None
-
-
-def _compile_blocked_word_rule(
-    term: str,
-    pattern: str | None = None,
-    reason: str = "Prohibited internal or unannounced term.",
-    suggestion: str | None = None,
-    scope: str = "public_only",
-    severity: str = "error",
-    case_sensitive: bool = False,
-    check_code_blocks: bool = True,
-    allowed_paths: list[str] | None = None,
-    exemptions: list[str] | None = None,
-) -> BlockedWordRule | None:
-    """Constructs and compiles a BlockedWordRule."""
-    flags = 0 if case_sensitive else re.IGNORECASE
-    if pattern:
-        raw_pat = pattern
-        if not (
-            raw_pat.startswith(r"(_|\b)")
-            or raw_pat.startswith(r"(?<!")
-            or raw_pat.startswith(r"\b")
-        ):
-            raw_pat = rf"(?:_|\b)(?:{raw_pat})(?:_|\b)"
-        try:
-            compiled_pattern = re.compile(raw_pat, flags)
-        except re.error as e:
-            logging.error(
-                "Invalid regex pattern '%s' for term '%s': %s", pattern, term, e
-            )
-            return None
-    else:
-        escaped = re.escape(term)
-        try:
-            compiled_pattern = re.compile(
-                rf"(?<![a-zA-Z0-9]){escaped}(?![a-zA-Z0-9])", flags
-            )
-        except re.error as e:
-            logging.error(
-                "Failed to compile pattern for term '%s': %s", term, e
-            )
-            return None
-    return BlockedWordRule(
-        term=term,
-        pattern=compiled_pattern,
-        raw_pattern=pattern,
-        reason=reason,
-        suggestion=suggestion,
-        scope=scope,
-        severity=severity,
-        case_sensitive=case_sensitive,
-        check_code_blocks=check_code_blocks,
-        allowed_paths=allowed_paths or [],
-        exemptions=exemptions or [],
-    )
-
-
-def _parse_gcl_policy(fuchsia_gcl_path: str) -> list[BlockedWordRule]:
-    """Parses Gerrit banned words directly from a Fuchsia common.gcl file.
-
-    Args:
-      fuchsia_gcl_path: Path to the Fuchsia common.gcl file.
-
-    Returns:
-      A list of compiled BlockedWordRule instances.
-    """
-    if not os.path.isfile(fuchsia_gcl_path):
-        return []
-
-    try:
-        with open(fuchsia_gcl_path, "r", encoding="utf-8") as f:
-            fuchsia_content = f.read()
-    except OSError as e:
-        logging.error("Failed to read GCL policy '%s': %s", fuchsia_gcl_path, e)
-        return []
-
-    rules: list[BlockedWordRule] = []
-
-    # 1. Exemptions block (e.g., keyword exemptions)
-    for match_exemptions in re.finditer(
-        r"blocked_keyword_pattern\s*=\s*['\"]([^'\"]+)['\"][^}]*?allowed_keyword_pattern\s*=\s*\[(.*?)\]",
-        fuchsia_content,
-        re.DOTALL,
-    ):
-        pat = match_exemptions.group(1).strip()
-        exemptions = []
-        for line in match_exemptions.group(2).splitlines():
-            line = re.sub(r"//.*", "", line).strip()
-            item = line.strip("',\" ").strip()
-            if item:
-                exemptions.append(item)
-        clean_pat = re.sub(r"\(_\|\\b\)|\(\?:_\|\\b\)|\\[bB]", "", pat)
-        m_label = re.search(r"[a-zA-Z0-9_-]+", clean_pat)
-        term_label = m_label.group(0).rstrip("?") if m_label else pat
-        rule = _compile_blocked_word_rule(
-            term=term_label,
-            pattern=pat,
-            reason="Official Fuchsia banned keyword with exemptions from Gerrit common.gcl.",
-            suggestion="Use generic terms or allowlisted identifiers.",
-            scope="public_only",
-            exemptions=sorted(list(set(exemptions))),
-        )
-        if rule:
-            rules.append(rule)
-
-    # 2. Fuchsia only common banned words
-    m_fuchsia = re.search(
-        r"fuchsia_only_common_banned_words\s*=\s*.*?\[(.*?)\]\)",
-        fuchsia_content,
-        re.DOTALL,
-    )
-    if m_fuchsia:
-        for line in m_fuchsia.group(1).splitlines():
-            line = re.sub(r"//.*", "", line).strip()
-            word = line.strip("',\" ").strip()
-            if not word:
-                continue
-            has_regex = any(
-                c in word
-                for c in ["?", "(", ")", "|", "\\", "[", "]", "<", ">"]
-            )
-            if has_regex:
-                rule = _compile_blocked_word_rule(
-                    term=word,
-                    pattern=f"(_|\\b){word}(_|\\b)",
-                    reason="Official Fuchsia banned word from Gerrit common.gcl.",
-                    scope="public_only",
-                )
-            else:
-                rule = _compile_blocked_word_rule(
-                    term=word,
-                    reason="Official Fuchsia banned word from Gerrit common.gcl.",
-                    scope="public_only",
-                )
-            if rule:
-                rules.append(rule)
-
-    # 3. Android shared common banned words (if android/common.gcl exists in peer directory)
-    android_path = os.path.normpath(
-        os.path.join(
-            os.path.dirname(fuchsia_gcl_path), "..", "android", "common.gcl"
-        )
-    )
-    if os.path.isfile(android_path):
-        try:
-            with open(android_path, "r", encoding="utf-8") as f:
-                android_content = f.read()
-            m_android = re.search(
-                r"android_shared_common_banned_words\s*=\s*\[(.*?)\]",
-                android_content,
-                re.DOTALL,
-            )
-            if m_android:
-                for line in m_android.group(1).splitlines():
-                    line = re.sub(r"//.*", "", line).strip()
-                    word = line.strip("',\" ").strip()
-                    if not word:
-                        continue
-                    clean_word = re.sub(r"\\+b", "", word).strip()
-                    has_regex = any(
-                        c in clean_word
-                        for c in [
-                            "?",
-                            "(",
-                            ")",
-                            "|",
-                            "\\",
-                            "[",
-                            "]",
-                            "<",
-                            ">",
-                            "*",
-                            "+",
-                        ]
-                    )
-                    if has_regex:
-                        rule = _compile_blocked_word_rule(
-                            term=clean_word,
-                            pattern=f"(_|\\b){clean_word}(_|\\b)",
-                            reason="Shared Android/Chromium/Fuchsia banned word from Gerrit common.gcl.",
-                            scope="public_only",
-                        )
-                    else:
-                        rule = _compile_blocked_word_rule(
-                            term=clean_word,
-                            reason="Shared Android/Chromium/Fuchsia banned word from Gerrit common.gcl.",
-                            scope="public_only",
-                        )
-                    if rule:
-                        rules.append(rule)
-        except OSError:
-            pass
-
-    return rules
-
-
-def load_blocked_words_policy(policy_path: str) -> list[BlockedWordRule]:
-    """Loads blocked word rules from a GCL, JSON, or YAML policy file.
-
-    Args:
-      policy_path: Path to the GCL, JSON, or YAML policy file.
-
-    Returns:
-      A list of compiled BlockedWordRule instances.
-    """
-    if not os.path.isfile(policy_path):
-        logging.warning(
-            "Blocked words policy file '%s' not found.", policy_path
-        )
-        return []
-
-    if policy_path.endswith(".gcl"):
-        return _parse_gcl_policy(policy_path)
-
-    try:
-        with open(policy_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except Exception as e:
-        logging.error(
-            "Failed to parse blocked words policy '%s': %s", policy_path, e
-        )
-        return []
-
-    if not data:
-        return []
-
-    rules: list[BlockedWordRule] = []
-    default_scope = "public_only"
-
-    raw_items: list[Any] = []
-    if isinstance(data, list):
-        raw_items = data
-    elif isinstance(data, dict):
-        default_scope = str(data.get("default_scope") or "public_only")
-        if "blocked_words" in data and isinstance(data["blocked_words"], list):
-            raw_items = data["blocked_words"]
-        elif "terms" in data and isinstance(data["terms"], list):
-            raw_items = data["terms"]
-        elif "rules" in data and isinstance(data["rules"], list):
-            raw_items = data["rules"]
-
-    for item in raw_items:
-        if isinstance(item, str):
-            term = item.strip()
-            if term:
-                rule = _compile_blocked_word_rule(
-                    term=term, scope=default_scope
-                )
-                if rule:
-                    rules.append(rule)
-        elif isinstance(item, dict):
-            raw_term = (
-                item.get("term")
-                if item.get("term") is not None
-                else item.get("word")
-            )
-            term = str(raw_term).strip() if raw_term is not None else ""
-            raw_pattern = item.get("pattern")
-            pattern = (
-                str(raw_pattern).strip() if raw_pattern is not None else None
-            )
-            if not pattern:
-                pattern = None
-            if not term and not pattern:
-                continue
-            if not term:
-                term = str(pattern)
-            raw_exemptions = (
-                item.get("exemptions")
-                or item.get("allowed_keyword_pattern")
-                or []
-            )
-            if isinstance(raw_exemptions, str):
-                exemptions = [raw_exemptions]
-            elif isinstance(raw_exemptions, (list, tuple, set)):
-                exemptions = [str(x) for x in raw_exemptions if x is not None]
-            else:
-                exemptions = []
-
-            raw_allowed_paths = item.get("allowed_paths") or []
-            if isinstance(raw_allowed_paths, str):
-                allowed_paths = [raw_allowed_paths]
-            elif isinstance(raw_allowed_paths, (list, tuple, set)):
-                allowed_paths = [
-                    str(x) for x in raw_allowed_paths if x is not None
-                ]
-            else:
-                allowed_paths = []
-
-            rule = _compile_blocked_word_rule(
-                term=term,
-                pattern=pattern,
-                reason=str(
-                    item.get("reason")
-                    or "Prohibited internal or unannounced term."
-                ),
-                suggestion=item.get("suggestion") or item.get("replacement"),
-                scope=str(item.get("scope") or default_scope),
-                severity=str(item.get("severity") or "error"),
-                case_sensitive=bool(item.get("case_sensitive", False)),
-                check_code_blocks=bool(item.get("check_code_blocks", True)),
-                allowed_paths=allowed_paths,
-                exemptions=exemptions,
-            )
-            if rule:
-                rules.append(rule)
-
-    return rules
-
-
-def is_vendor_path(path: str) -> bool:
-    """Checks whether a file path is within a vendor repository.
-
-    Args:
-      path: Path to check.
-
-    Returns:
-      True if the path resides inside a 'vendor' directory.
-    """
-    abs_path = os.path.abspath(path)
-    parts = abs_path.split(os.sep)
-    return "vendor" in parts
-
-
-def is_path_allowed(path: str, allowed_patterns: list[str]) -> bool:
-    """Checks whether a file path matches any pattern in allowed_paths.
-
-    Args:
-      path: The file path.
-      allowed_patterns: List of glob patterns.
-
-    Returns:
-      True if the path matches an allowed pattern.
-    """
-    if not allowed_patterns:
-        return False
-    normalized = os.path.normpath(path)
-    basename = os.path.basename(normalized)
-    for pattern in allowed_patterns:
-        if not pattern or not pattern.strip():
-            continue
-        norm_pat = os.path.normpath(pattern)
-        if norm_pat.endswith(f"{os.sep}**"):
-            prefix = norm_pat[: -len(f"{os.sep}**")]
-            if (
-                normalized == prefix
-                or normalized.startswith(f"{prefix}{os.sep}")
-                or fnmatch.fnmatch(normalized, f"*{os.sep}{prefix}{os.sep}*")
-                or fnmatch.fnmatch(normalized, f"*{os.sep}{prefix}")
-            ):
-                return True
-        if fnmatch.fnmatch(normalized, norm_pat) or fnmatch.fnmatch(
-            basename, norm_pat
-        ):
-            return True
-        if (
-            fnmatch.fnmatch(normalized, f"*{os.sep}{norm_pat}")
-            or fnmatch.fnmatch(normalized, f"{norm_pat}{os.sep}*")
-            or fnmatch.fnmatch(normalized, f"*{os.sep}{norm_pat}{os.sep}*")
-        ):
-            return True
-    return False
-
-
-def is_match_exempt(matched_text: str, exemptions: list[str]) -> bool:
-    """Checks if a matched string is permitted under an exemption list.
-
-    Args:
-      matched_text: The substring matched by the rule.
-      exemptions: List of allowed keyword patterns or strings.
-
-    Returns:
-      True if the matched text is permitted.
-    """
-    clean_matched = matched_text.strip("_ ")
-    for ex in exemptions:
-        if ex.lower() == clean_matched.lower():
-            return True
-        try:
-            if re.fullmatch(ex, clean_matched, re.IGNORECASE):
-                return True
-        except re.error:
-            pass
-    return False
-
-
-def _format_rule_finding(
-    matched_term: str,
-    location: str,
-    rule: BlockedWordRule,
-    snippet: str | None = None,
-) -> str:
-    """Formats a diagnostic message for a blocked word violation."""
-    msg = f'Prohibited term "{matched_term}" found in {location}.'
-    if snippet:
-        clean_snippet = snippet.strip()
-        if len(clean_snippet) > 80:
-            clean_snippet = clean_snippet[:77] + "..."
-        msg += f"\n  Context: {clean_snippet}"
-    if rule.reason:
-        msg += f"\n  Reason: {rule.reason}"
-    if rule.suggestion:
-        msg += f"\n  Suggestion: {rule.suggestion}"
-    return msg
-
-
-def _validate_blocked_words(
-    skill_file: str,
-    meta: dict[str, Any],
-    raw_content: str,
-    rules: list[BlockedWordRule],
-) -> tuple[list[str], list[str]]:
-    """Validates that skill metadata and body do not contain blocked terms.
-
-    Args:
-      skill_file: Path to the skill file being linted.
-      meta: Frontmatter metadata dictionary.
-      raw_content: Complete original file content.
-      rules: List of BlockedWordRule instances.
-
-    Returns:
-      A tuple of (errors, warnings).
-    """
-    errors: list[str] = []
-    warnings: list[str] = []
-
-    is_vendor = is_vendor_path(skill_file)
-
-    for rule in rules:
-        if rule.scope == "public_only" and is_vendor:
-            continue
-        if rule.scope == "vendor_only" and not is_vendor:
-            continue
-        if is_path_allowed(skill_file, rule.allowed_paths):
-            continue
-
-        def add_violation(
-            location: str,
-            snippet: str | None = None,
-            matched_term: str | None = None,
-        ) -> None:
-            formatted = _format_rule_finding(
-                matched_term=matched_term
-                if matched_term is not None
-                else rule.term,
-                location=location,
-                rule=rule,
-                snippet=snippet,
-            )
-            if rule.severity == "warning":
-                warnings.append(formatted)
-            else:
-                errors.append(formatted)
-
-        # 1. Frontmatter fields
-        def check_field_value(field_name: str, val: Any) -> bool:
-            if isinstance(val, str):
-                for match in rule.pattern.finditer(val):
-                    if rule.exemptions and is_match_exempt(
-                        match.group(0), rule.exemptions
-                    ):
-                        continue
-                    matched_token = match.group(0).strip("_ ")
-                    add_violation(
-                        f'frontmatter field "{field_name}"',
-                        val,
-                        matched_term=matched_token,
-                    )
-                    return True
-            elif isinstance(val, list):
-                for item in val:
-                    if check_field_value(field_name, item):
-                        return True
-            elif isinstance(val, dict):
-                matched = False
-                for sub_k, sub_v in val.items():
-                    if isinstance(sub_k, str) and check_field_value(
-                        field_name, sub_k
-                    ):
-                        matched = True
-                    if check_field_value(f"{field_name}.{sub_k}", sub_v):
-                        matched = True
-                return matched
-            return False
-
-        if "name" in meta:
-            check_field_value("name", meta["name"])
-
-        if "description" in meta:
-            check_field_value("description", meta["description"])
-
-        for k, v in meta.items():
-            if k not in ("name", "description"):
-                if isinstance(k, str):
-                    check_field_value(k, k)
-                check_field_value(str(k), v)
-
-        # 2. Markdown Body lines
-        lines = raw_content.split("\n")
-        dash_count = 0
-        in_code_block = False
-        occurrence_count = 0
-        max_occurrences_to_report = 5
-
-        for idx, line in enumerate(lines, start=1):
-            stripped = line.strip()
-            if stripped == "---":
-                dash_count += 1
-                continue
-            if dash_count < 2:
-                continue
-
-            if stripped.startswith("```"):
-                in_code_block = not in_code_block
-                if not rule.check_code_blocks:
-                    continue
-
-            if in_code_block and not rule.check_code_blocks:
-                continue
-
-            for match in rule.pattern.finditer(line):
-                if rule.exemptions and is_match_exempt(
-                    match.group(0), rule.exemptions
-                ):
-                    continue
-                occurrence_count += 1
-                if occurrence_count <= max_occurrences_to_report:
-                    matched_token = match.group(0).strip("_ ")
-                    add_violation(
-                        f"markdown body (line {idx})",
-                        line,
-                        matched_term=matched_token,
-                    )
-                break
-
-        if occurrence_count > max_occurrences_to_report:
-            extra = occurrence_count - max_occurrences_to_report
-            msg = (
-                f'Prohibited term "{rule.term}" also appeared {extra} more'
-                " times in the file."
-            )
-            if rule.severity == "warning":
-                warnings.append(msg)
-            else:
-                errors.append(msg)
-
-    return errors, warnings
 
 
 class Finding(TypedDict, total=False):
@@ -1504,7 +854,6 @@ def lint_single_skill(
     fixit: bool,
     stdout_mode: bool,
     suggest_fix_in_json_mode: bool = False,
-    blocked_word_rules: list[BlockedWordRule] | None = None,
 ) -> tuple[int, list[Finding]]:
     """Lints a single SKILL.md file.
 
@@ -1516,7 +865,6 @@ def lint_single_skill(
       fixit: Whether to apply fixes in-place.
       stdout_mode: Whether to output fixed content to stdout.
       suggest_fix_in_json_mode: Whether to return findings as JSON.
-      blocked_word_rules: Optional list of BlockedWordRule instances to enforce.
 
     Returns:
       A tuple of (exit_code, findings).
@@ -1555,16 +903,6 @@ def lint_single_skill(
     errors = []
     warnings = []
     fixes_applied: list[str] = []
-
-    if blocked_word_rules:
-        bw_errors, bw_warnings = _validate_blocked_words(
-            skill_file=skill_file,
-            meta=meta,
-            raw_content=original_content,
-            rules=blocked_word_rules,
-        )
-        errors.extend(bw_errors)
-        warnings.extend(bw_warnings)
 
     name_errors, name_fixes = _validate_name(
         meta, fixit or suggest_fix_in_json_mode
@@ -1659,7 +997,6 @@ def do_lint(
     fixit: bool,
     stdout_mode: bool,
     suggest_fix_in_json_mode: bool = False,
-    blocked_word_rules: list[BlockedWordRule] | None = None,
 ) -> tuple[int, list[Finding]]:
     """Orchestrates the linting process for a file or directory.
 
@@ -1668,18 +1005,13 @@ def do_lint(
       fixit: Whether to apply fixes in-place.
       stdout_mode: Whether to output fixed content to stdout.
       suggest_fix_in_json_mode: Whether to return findings as JSON.
-      blocked_word_rules: Optional list of BlockedWordRule instances to enforce.
 
     Returns:
       A tuple of (max_exit_code, all_findings).
     """
     if os.path.isfile(root_path):
         return lint_single_skill(
-            root_path,
-            fixit,
-            stdout_mode,
-            suggest_fix_in_json_mode,
-            blocked_word_rules=blocked_word_rules,
+            root_path, fixit, stdout_mode, suggest_fix_in_json_mode
         )
     elif os.path.exists(os.path.join(root_path, "SKILL.md")):
         return lint_single_skill(
@@ -1687,7 +1019,6 @@ def do_lint(
             fixit,
             stdout_mode,
             suggest_fix_in_json_mode,
-            blocked_word_rules=blocked_word_rules,
         )
     else:
         all_findings: list[Finding] = []
@@ -1719,7 +1050,6 @@ def do_lint(
                     fixit,
                     stdout_mode,
                     suggest_fix_in_json_mode,
-                    blocked_word_rules=blocked_word_rules,
                 )
                 all_findings.extend(findings)
                 max_code = max(max_code, code)
@@ -1750,17 +1080,6 @@ def main() -> None:
         help="Output findings as a JSON array.",
     )
     parser.add_argument(
-        "--blocked-words-file",
-        type=str,
-        default=None,
-        help="Path to a blocked words policy file (JSON or YAML).",
-    )
-    parser.add_argument(
-        "--no-blocked-words",
-        action="store_true",
-        help="Disable blocked words scanning.",
-    )
-    parser.add_argument(
         "paths",
         nargs="+",
         help="Paths to SKILL.md files or directories containing them.",
@@ -1774,35 +1093,6 @@ def main() -> None:
         stream=sys.stderr,
     )
 
-    blocked_word_rules: list[BlockedWordRule] = []
-    if not args.no_blocked_words:
-        if args.blocked_words_file:
-            if not os.path.isfile(args.blocked_words_file):
-                msg = f"Specified blocked words policy '{args.blocked_words_file}' not found."
-                logging.error(msg)
-                if args.suggest_fix_in_json:
-                    print(
-                        json.dumps(
-                            [
-                                {
-                                    "filepath": args.blocked_words_file,
-                                    "message": msg,
-                                    "level": "error",
-                                }
-                            ],
-                            indent=2,
-                        )
-                    )
-                    sys.exit(0)
-                sys.exit(1)
-            blocked_word_rules = load_blocked_words_policy(
-                args.blocked_words_file
-            )
-        else:
-            policy_path = find_blocked_words_policy_path()
-            if policy_path:
-                blocked_word_rules = load_blocked_words_policy(policy_path)
-
     all_findings = []
     any_error = False
     for path in args.paths:
@@ -1811,7 +1101,6 @@ def main() -> None:
             args.fixit or args.suggest_fix,
             args.suggest_fix,
             args.suggest_fix_in_json,
-            blocked_word_rules=blocked_word_rules,
         )
         all_findings.extend(findings)
         if code != 0:
