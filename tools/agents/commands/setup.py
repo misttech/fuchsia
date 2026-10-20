@@ -231,32 +231,17 @@ def run(args: argparse.Namespace) -> int:
 
     journal = state.load_state(state_dir / "state.json")
 
-    selected_profile = args.profile
-    has_explicit_rules = bool(
-        args.allow
-        or args.deny
-        or args.ask
-        or args.allow_list
-        or args.deny_list
-        or args.ask_list
-    )
-
-    if not selected_profile:
-        if journal.active_profile:
-            selected_profile = journal.active_profile
-        elif not has_explicit_rules:
-            selected_profile = DEFAULT_PROFILE
+    selected_profile = args.profile or journal.active_profile or DEFAULT_PROFILE
 
     allow_grants: list[str] = []
     deny_grants: list[str] = []
     ask_grants: list[str] = []
 
-    if selected_profile:
-        print(f"\nApplying permission profile: [{selected_profile}]")
-        grants = permissions.load_profile_grants(fuchsia_dir, selected_profile)
-        allow_grants.extend(grants.allow)
-        deny_grants.extend(grants.deny)
-        ask_grants.extend(grants.ask)
+    print(f"\nApplying permission profile: [{selected_profile}]")
+    grants = permissions.load_profile_grants(fuchsia_dir, selected_profile)
+    allow_grants.extend(grants.allow)
+    deny_grants.extend(grants.deny)
+    ask_grants.extend(grants.ask)
 
     for raw_cmds, list_files, grants_target in (
         (args.allow, args.allow_list, allow_grants),
@@ -275,7 +260,7 @@ def run(args: argparse.Namespace) -> int:
         ask=ask_grants,
         dry_run=args.dry_run,
         state_dir=state_dir,
-        selected_profile=selected_profile or "",
+        selected_profile=selected_profile,
     )
     if not success:
         return 1
