@@ -14,9 +14,7 @@ unsafe extern "C" {
     fn mmio_read32(buffer: *const u32) -> u32;
     fn mmio_write32(data: u32, buffer: *mut u32);
 
-    #[cfg(target_pointer_width = "64")]
     fn mmio_read64(buffer: *const u64) -> u64;
-    #[cfg(target_pointer_width = "64")]
     fn mmio_write64(data: u64, buffer: *mut u64);
 }
 
@@ -92,7 +90,6 @@ pub unsafe fn write32(data: u32, buffer: *mut u32) {
 ///
 /// `buffer` must be a valid pointer to MMIO memory.
 #[inline(always)]
-#[cfg(target_pointer_width = "64")]
 pub unsafe fn read64(buffer: *const u64) -> u64 {
     // Safety: Justification deferred to caller.
     unsafe { mmio_read64(buffer) }
@@ -104,7 +101,6 @@ pub unsafe fn read64(buffer: *const u64) -> u64 {
 ///
 /// `buffer` must be a valid pointer to MMIO memory.
 #[inline(always)]
-#[cfg(target_pointer_width = "64")]
 pub unsafe fn write64(data: u64, buffer: *mut u64) {
     // Safety: Justification deferred to caller.
     unsafe { mmio_write64(data, buffer) }
