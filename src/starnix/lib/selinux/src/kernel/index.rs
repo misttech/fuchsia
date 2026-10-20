@@ -149,7 +149,7 @@ impl PolicyIndex {
         object_class: impl Into<ObjectClass>,
         name: &[u8],
     ) -> SecurityContext {
-        // TODO: https://fxbug.dev/361552580 - For `KernelClass`es, apply the kernel's notion
+        // TODO: https://fxbug.dev/574857992 - For `KernelClass`es, apply the kernel's notion
         // of whether the class is "process", or socket-like when `target_class` is `None`?
         let target_class = self.class(object_class.into());
         self.policy.compute_create_context(source_context, target_context, target_class, name)

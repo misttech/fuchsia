@@ -143,6 +143,39 @@ TEST(SeLinuxFsContext, OneRequestPerInstance) {
   EXPECT_EQ(errno, EBUSY);
 }
 
+TEST(SeLinuxFsContext, OneRequestPerInstanceFailedWrite) {
+  fbl::unique_fd api_fd(open("/sys/fs/selinux/context", O_RDWR));
+  ASSERT_TRUE(api_fd.is_valid()) << strerror(errno);
+
+  constexpr char kInvalidContext[] = "invalid_context";
+  ASSERT_THAT(write(api_fd.get(), kInvalidContext, sizeof(kInvalidContext)),
+              SyscallFailsWithErrno(EINVAL));
+
+  constexpr char kMinimumValidContext[] = "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0";
+  EXPECT_THAT(write(api_fd.get(), kMinimumValidContext, sizeof(kMinimumValidContext)),
+              SyscallFailsWithErrno(EBUSY));
+}
+
+TEST(SeLinuxFsContext, ReadBeforeWrite) {
+  fbl::unique_fd api_fd(open("/sys/fs/selinux/context", O_RDWR));
+  ASSERT_TRUE(api_fd.is_valid()) << strerror(errno);
+
+  char buf[1];
+  EXPECT_THAT(read(api_fd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(0));
+}
+
+TEST(SeLinuxFsContext, ReadAfterFailedWrite) {
+  fbl::unique_fd api_fd(open("/sys/fs/selinux/context", O_RDWR));
+  ASSERT_TRUE(api_fd.is_valid()) << strerror(errno);
+
+  constexpr char kInvalidContext[] = "invalid_context";
+  ASSERT_THAT(write(api_fd.get(), kInvalidContext, sizeof(kInvalidContext)),
+              SyscallFailsWithErrno(EINVAL));
+
+  char buf[1];
+  EXPECT_THAT(read(api_fd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(0));
+}
+
 TEST(SeLinuxFsContext, ReadUpdatesSeekPosition) {
   fbl::unique_fd api_fd(open("/sys/fs/selinux/context", O_RDWR));
   ASSERT_TRUE(api_fd.is_valid()) << strerror(errno);

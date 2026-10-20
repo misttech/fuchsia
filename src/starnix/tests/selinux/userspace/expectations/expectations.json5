@@ -12,12 +12,12 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO(https://fxbug.dev/521343708) - Support SELinux context= and rootcontext=
+                // TODO: https://fxbug.dev/398662840 - Support SELinux context= and rootcontext=
                 // mount options on cgroupfs v2.
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/Context",
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/RootContext",
 
-                // TODO: https://fxbug.dev/505326546 - Implement the security_uring_cmd hook once
+                // TODO: https://fxbug.dev/505317859 - Implement the security_uring_cmd hook once
                 // the IORING_OP_URING_CMD flag is supported by Fuchsia.
                 "IoUringTest/IoUringCmdTest.Cmd/Allowed",
                 "IoUringTest/IoUringCmdTest.Cmd/Denied",
@@ -33,7 +33,7 @@
                 "IoUringTest.IoUringSetupMemlockLimitCumulative",
                 "IoUringTest.IoUringSetupMemlockLimit",
 
-                // TODO: https://fxbug.dev/505326546 - Implement the uring_sqpoll hook once
+                // TODO: https://fxbug.dev/505317859 - Implement the uring_sqpoll hook once
                 // the IORING_SETUP_SQPOLL flag is supported by Fuchsia.
                 "IoUringTest.IoUringSqpollAllowed",
                 "IoUringTest.IoUringSqpollDenied",
@@ -58,11 +58,15 @@
                 "PtraceTest.PtraceExecVanillaCapCheckUsesCachedCreds",
                 "PtraceTest.PtraceExecSelinuxCapCheckUsesCachedCreds",
 
-                // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API handling of unknown policy class Ids.
+                // TODO: https://fxbug.dev/574857992 - Reject subsequent writes with EBUSY even if
+                // the initial write failed.
+                "SeLinuxFsContext.OneRequestPerInstanceFailedWrite",
+
+                // TODO: https://fxbug.dev/574857992 - Fix SELinuxFS API handling of unknown policy class Ids.
                 "SeLinuxFsCreate.InvalidComputeCreateClassId",
                 "SeLinuxFsAccess.UnknownClassIdIsAccepted",
 
-                // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API validation of fields.
+                // TODO: https://fxbug.dev/574857992 - Fix SELinuxFS API validation of fields.
                 "SeLinuxFsAccess.ClassIdMayHaveTrailingNonNumericData",
                 "SeLinuxFsAccess.FourthArgumentIsNotValidated",
 
@@ -79,7 +83,7 @@
         {
             type: "skip",
             matchers: [
-                // TODO: https://fxbug.dev/451606455 - Wait on `PTRACE_ATTACH` to finish.
+                // TODO: https://fxbug.dev/439799293 - Wait on `PTRACE_ATTACH` to finish.
                 "PtraceTest.PtraceAttachAllowed",
                 "PtraceTest.PtraceAttachThenExecDenied",
                 "PtraceTest.PtraceAttachThenExecAllowed",

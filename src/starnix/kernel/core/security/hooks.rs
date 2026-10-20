@@ -391,8 +391,6 @@ pub fn file_system_init_security(
 
 /// Gives the hooks subsystem an opportunity to note that the new `file_system` needs labeling, if
 /// SELinux is enabled, but no policy has yet been loaded.
-// TODO: https://fxbug.dev/366405587 - Merge this logic into `file_system_resolve_security()` and
-// remove this extra hook.
 pub fn file_system_post_init_security(kernel: &Kernel, file_system: &FileSystemHandle) {
     track_hook_duration!("security.hooks.file_system_post_init_security");
     if let Some(state) = &kernel.security_state.state {
@@ -982,8 +980,6 @@ pub fn check_file_ioctl_access(
 ///
 /// - fs_node: The "lower" filesystem node that is to be copied-up.
 /// - fs: The OverlayFS instance performing the copy-up operation.
-// TODO: https://fxbug.dev/398696739 - Revise this API to accept the overlay FsNode for which
-// copy-up is being performed, rather than separate "lower" `fs_node` and overlay `fs`.
 ///
 /// Corresponds to the `security_inode_copy_up()` LSM hook.
 pub fn fs_node_copy_up(

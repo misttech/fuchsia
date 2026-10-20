@@ -202,7 +202,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     // Ephemeral nodes are then labeled by applying SID computation between their
                     // SID of the task that created them, and their parent file node's label (or
                     // the filesystem sid if they don't have a parent node).
-                    // TODO: https://fxbug.dev/381275592 - Use the SID from the creating task,
+                    // TODO: https://fxbug.dev/393086830 - Use the SID from the creating task,
                     // rather than current_task!
                     let scope = RcuReadScope::new();
                     let parent_node = parent
@@ -300,8 +300,8 @@ fn compute_new_socket_sid(
         return Ok(sid);
     }
 
-    // TODO: https://fxbug.dev/377915452 - is EPERM right here? What does it mean
-    // for compute_new_fs_node_sid to have failed?
+    // `compute_create_sid` fails if the computed security context is invalid under the policy
+    // (for example, an unauthorized role/type combination or a non-overlapping `glblub` range).
     let permission_check = build_permission_check(current_task, security_server);
     permission_check
         .compute_create_sid(current_sid, current_sid, new_socket_class.into(), name.as_ref())
@@ -373,8 +373,8 @@ fn compute_new_file_sid(
         fs_label.sid
     };
 
-    // TODO: https://fxbug.dev/377915452 - is EPERM right here? What does it mean
-    // for compute_new_fs_node_sid to have failed?
+    // `compute_create_sid` fails if the computed security context is invalid under the policy
+    // (for example, an unauthorized role/type combination or a non-overlapping `glblub` range).
     let permission_check = build_permission_check(current_task, security_server);
     permission_check
         .compute_create_sid(current_sid, target_sid, new_file_class.into(), name.as_ref())
@@ -422,11 +422,6 @@ pub(in crate::security) fn fs_node_init_on_create(
     let label_class = new_node.selinux_state().read();
     let is_uninitialized = matches!(label_class.label, FsNodeLabel::Uninitialized);
     assert!(is_uninitialized, "init_on_create() for {:?} with label {:?}", new_node, *label_class);
-    if new_node.fs().name() == "overlay" {
-        // TODO: https://fxbug.dev/369067922 - Find a cleaner way to skip duplicate labeling of
-        // "overlay" filesystem nodes during creation.
-        return Ok(None);
-    }
 
     // If the `new_node` does not already have a specific security class selected then choose one
     // based on its file mode.
@@ -518,7 +513,6 @@ pub(in crate::security) fn fs_node_init_anon(
         (FileClass::AnonFsNode.into(), node_type)
     };
 
-    // TODO: https://fxbug.dev/405062002 - Fold this into the `fs_node_init_with_dentry*()` logic?
     let sid = if current_task.kernel().security_state.state.as_ref().unwrap().has_policy() {
         let task_sid = current_task_state(current_task).current_sid;
         let new_sid = build_permission_check(current_task, security_server)
@@ -1324,8 +1318,8 @@ pub(in crate::security) fn fs_node_copy_up(
     fs: &FileSystem,
     new_creds: &mut Credentials,
 ) {
-    // TODO: https://fxbug.dev/398696739 - Once this API is updated to accept the `OverlayFsNode`
-    // instead of the lower filesystem node, the `Mountpoint` special-case can be removed.
+    // If the overlay filesystem is mounted with `context=` (`Mountpoint` labeling) then use that
+    // SID; otherwise copy the effective SID of the lower `fs_node`.
     let new_sid = if let Some(FileSystemLabel {
         scheme: FileSystemLabelingScheme::Mountpoint { sid },
         ..

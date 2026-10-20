@@ -493,11 +493,6 @@ impl SecurityServer {
             // `FsNode` security state. That is implicitly the case for filesystems which persist all
             // `FsNode`s in-memory (independent of the `DirEntry` cache), e.g. those whose contents are
             // managed as a `SimpleDirectory` structure.
-            //
-            // TODO: https://fxbug.dev/362898792 - Replace this with a more graceful mechanism for
-            // deciding whether `genfscon` supports relabeling (as indicated by the "seclabel" tag
-            // reported by `mount`).
-            // Also consider storing the "genfs_seclabel_symlinks" setting in the resolved label.
             let fs_type = fs_type.as_bytes();
             let mut supports_seclabel = matches!(fs_type, b"sysfs" | b"tracefs" | b"pstore");
             supports_seclabel |= matches!(fs_type, b"cgroup" | b"cgroup2")

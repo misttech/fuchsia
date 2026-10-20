@@ -161,7 +161,7 @@ pub(in crate::security) fn check_socket_create_access(
             "".into(),
         )?
     } else {
-        // TODO: https://fxbug.dev/364569053 - default to socket-related initial SIDs.
+        // TODO: https://fxbug.dev/409951346 - default to socket-related initial SIDs.
         InitialSid::Unlabeled.into()
     };
 
@@ -219,7 +219,7 @@ pub(in crate::security) fn check_socket_bind_access(
 
     let current_sid = current_task_state(current_task).current_sid;
 
-    // TODO: https://fxbug.dev/364569010 - Add checks for `name_bind` between the socket and the SID
+    // TODO: https://fxbug.dev/407966325 - Add checks for `name_bind` between the socket and the SID
     // of the port number, and for `node_bind` between the socket and the SID of the IP address.
     has_socket_permission(
         &build_permission_check(current_task, security_server),
@@ -241,7 +241,7 @@ pub(in crate::security) fn check_socket_connect_access(
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
 
-    // TODO: https://fxbug.dev/364568577 - Add checks for `name_connect` between the socket and the
+    // TODO: https://fxbug.dev/407966325 - Add checks for `name_connect` between the socket and the
     // SID of the port number for TCP sockets.
     has_socket_permission(
         &build_permission_check(current_task, security_server),

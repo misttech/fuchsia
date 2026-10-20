@@ -1507,6 +1507,12 @@ impl FsNode {
         new_node: &FsNode,
         name: &FsStr,
     ) -> Result<(), Errno> {
+        if new_node.fs().name() == "overlay" {
+            // OverlayFs initializes security labels on the underlying upper filesystem node during
+            // creation (via `dentry_create_files_as()`), and labels the overlay `FsNode` itself via
+            // `fs_node_init_with_dentry()` once its `DirEntry` is instantiated.
+            return Ok(());
+        }
         security::fs_node_init_on_create(current_task, &new_node, self, name)?
             .map(|xattr| {
                 match new_node.ops().set_xattr(

@@ -425,8 +425,6 @@ TEST_P(Impersonation, ImpersonateViaTransition) {
   transactor_fork_helper->OnlyWaitForForkedChildren();
 }
 
-// TODO: https://fxbug.dev/443684136 - add verification that for the "_deny_" test executions, the
-// "denied" lines emitted to the audit log correspond across SELinux and SEStarnix.
 const auto kImpersonatePermissionValues = ::testing::Combine(
     ::testing::Values("test_u:test_r:binder_impersonation_allow_call_pretransition_t:s0",
                       "test_u:test_r:binder_impersonation_deny_call_pretransition_t:s0"),

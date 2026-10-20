@@ -378,7 +378,6 @@ pub(in crate::security) fn bprm_creds_for_exec(
         // Check that ptrace permission is allowed if the process is traced.
         if let Some(ptracer) = current_task.ptracer_task() {
             let tracer_sid = ptracer.real_creds().security_state.current_sid;
-            // TODO: https://fxbug.dev/412581419 - SIGKILL the process on failure.
             check_permission(
                 &permission_check,
                 current_task,
@@ -974,7 +973,6 @@ pub(in crate::security) fn set_procattr(
             // Check that ptrace permission is allowed if the process is traced.
             if let Some(ptracer) = current_task.ptracer_task() {
                 let tracer_sid = ptracer.real_creds().security_state.current_sid;
-                // TODO: https://fxbug.dev/412581419 - SIGKILL the process on failure.
                 check_permission(
                     &permission_check,
                     current_task,
@@ -1210,8 +1208,6 @@ mod tests {
         .await;
     }
 
-    // TODO(http://b/330904217): reenable test once filesystems are labeled and access is denied.
-    #[ignore]
     #[fuchsia::test]
     async fn exec_transition_denied_for_executable_with_no_entrypoint_perm() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
@@ -1275,8 +1271,6 @@ mod tests {
         .await;
     }
 
-    // TODO(http://b/330904217): reenable test once filesystems are labeled and access is denied.
-    #[ignore]
     #[fuchsia::test]
     async fn exec_no_trans_denied_for_executable() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {

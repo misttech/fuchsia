@@ -195,8 +195,6 @@ impl Policy {
         // among those defined.
         //
         // Partial paths are prefix-matched, so that "/abc/default" would also be assigned label3.
-        //
-        // TODO(372212126): Optimize the algorithm.
         let mut result: Option<&GenfsConPath> = None;
         let mut order_type = OrderType::Unknown;
         let mut prev_path_bytes: Option<Vec<u8>> = None;
@@ -372,7 +370,6 @@ impl Policy {
                 },
             };
 
-        // TODO(http://b/334968228): Validate domain & role transitions are allowed?
         SecurityContext::new(user, role, type_, low_level, high_level)
     }
 

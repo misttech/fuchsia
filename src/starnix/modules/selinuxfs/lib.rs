@@ -602,10 +602,8 @@ impl SeLinuxApiOps for ContextApi {
 
     fn api_read(&self) -> Result<Cow<'_, [u8]>, Errno> {
         // Read returns the Security Context the caller previously wrote to the file, normalized
-        // as a consequence of the Context->SID->Context round-trip. If no Context had been written
-        // by the caller, then this API file behaves as though empty.
-        // TODO: https://fxbug.dev/319629153 - If `write()` failed due to an invalid Context then
-        // should `read()` also fail, or return an empty result?
+        // as a consequence of the Context->SID->Context round-trip. If no valid Context had been
+        // written by the caller, then this API file behaves as though empty.
         let maybe_sid = *self.context_sid.lock();
         let result = maybe_sid
             .and_then(|sid| self.security_server.sid_to_security_context_with_nul(sid))
@@ -803,7 +801,7 @@ impl SeLinuxApiOps for AccessApi {
         let auditdeny = decision.auditdeny;
         let flags = decision.flags;
 
-        // TODO: https://fxbug.dev/361551536 - `seqno` should reflect the policy revision from
+        // TODO: https://fxbug.dev/574857992 - `seqno` should reflect the policy revision from
         // which the result was calculated, to allow the client to re-try if the policy changed.
         const SEQNO: u32 = 1;
 

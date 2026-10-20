@@ -12,7 +12,8 @@
         {
             type: "expect_failure",
             matchers: [
-                // See https://fxbug.dev/398662840: Starnix doesn't support cgroup-seclabel.
+                // TODO: https://fxbug.dev/398662840 - Support SELinux context= and rootcontext=
+                // mount options on cgroupfs v2.
                 "cgroupfs_label/001",
                 "cgroupfs_label/002",
 
@@ -169,18 +170,20 @@
                 "mac_admin/005",
                 "mac_admin/006",
 
-                // TODO: https://fxbug.dev/448793897
+                // See https://fxbug.dev/448793897: The Debian test image policy does not define
+                // memfd_file.
                 "memfd/001",
                 "memfd/003",
 
-                // TODO: https://fxbug.dev/398707795
+                // See https://fxbug.dev/398707795: Zircon prohibits mapping at 0x0 (001) and
+                // Starnix does not support SysV shm (038).
                 "mmap/001",
                 "mmap/038",
 
                 // See https://fxbug.dev/319480589: Starnix does not support dynamic kernel module loading.
                 "module_load/*",
 
-                // TODO: https://fxbug.dev/398663319
+                // See https://fxbug.dev/398663319: Starnix doesn't support SysV message queues.
                 "msg/001",
                 "msg/002",
                 "msg/003",
@@ -200,10 +203,11 @@
                 "notify/016",
                 "notify/018",
 
-                // TODO: https://fxbug.dev/494562003
+                // See https://fxbug.dev/501038871: Starnix does not check perf_event { tracepoint }
+                // to match GKI 6.12 behavior.
                 "perf_event/006",
 
-                // TODO: https://fxbug.dev/398696740
+                // See https://fxbug.dev/398696740: Starnix doesn't support SysV semaphores.
                 "sem/001",
                 "sem/002",
                 "sem/004",
@@ -212,7 +216,7 @@
                 "sem/008",
                 "sem/010",
 
-                // TODO: https://fxbug.dev/398696741
+                // See https://fxbug.dev/398696741: Starnix doesn't support SysV shared memory.
                 "shm/001",
                 "shm/002",
                 "shm/003",

@@ -157,8 +157,8 @@ impl Policy {
             return Err(ValidateError::MissingObjectRRole);
         }
 
-        // TODO(https://fxbug.dev/356569876): Determine which "bounds" should be verified for
-        // correctness here.
+        // TODO: https://fxbug.dev/575728936 - Validate that `typebounds` hierarchies do not
+        // contain cycles, exceed maximum depth, or reference attributes.
 
         Ok(())
     }

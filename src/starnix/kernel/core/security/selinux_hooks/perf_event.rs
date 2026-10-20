@@ -22,7 +22,7 @@ pub(in crate::security) fn check_perf_event_open_access(
         PerfEventOpenType::Open => PerfEventPermission::Open,
         PerfEventOpenType::Cpu => PerfEventPermission::Cpu,
         PerfEventOpenType::Kernel => PerfEventPermission::Kernel,
-        // TODO(https://fxbug.dev/494562003): Check `PerfEventPermission::Tracepoint`. It is
+        // TODO(https://fxbug.dev/501038871): Check `PerfEventPermission::Tracepoint`. It is
         // currently not checked, to match the observed behaviour for tracepoint events, which
         // only require it when sampling raw tracepoint data or the ftrace function event.
         PerfEventOpenType::Tracepoint => return Ok(()),

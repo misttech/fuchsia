@@ -19,7 +19,8 @@ class NetlinkSocketXpermsTest
     : public ::testing::TestWithParam<netlink_util::NetlinkSocketTestCase> {
   void SetUp() override {
     constexpr char kNetlinkXpermPolicyCap[] = "netlink_xperm";
-    // TODO(498907493): Remove once the tests always run on a kernel that supports netlink xperms.
+    // TODO(https://fxbug.dev/515346567): Remove once the tests always run on a kernel that supports
+    // netlink xperms.
     if (!IsPolicyCapSupported(kNetlinkXpermPolicyCap)) {
       GTEST_SKIP() << "netlink_xperm policy capability not supported by kernel";
       return;
