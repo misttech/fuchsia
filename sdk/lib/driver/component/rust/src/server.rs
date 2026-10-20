@@ -350,7 +350,16 @@ mod tests {
 
     #[derive(Debug)]
     struct DriverClient;
-    impl DriverClientHandler for DriverClient {}
+    impl DriverClientHandler for DriverClient {
+        async fn on_health_alert(
+            &mut self,
+            _request: fidl_next::Request<
+                fidl_next_fuchsia_driver_framework::driver::OnHealthAlert,
+                fdf_fidl::DriverChannel,
+            >,
+        ) {
+        }
+    }
 
     #[test]
     fn register_driver() {

@@ -110,6 +110,28 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
   }
 #endif
 
+  void HealthCheck(HealthCheckRequestView request, fdf::Arena& arena,
+                   HealthCheckCompleter::Sync& completer) override {
+    ZX_ASSERT(driver_);
+
+    fuchsia_driver_framework::HealthCheckRequest level = request->request;
+
+    fdf::DriverBase2::HealthCheckCompleter hc_completer(
+        [guard = HealthCheckReplyGuard(std::move(arena), completer.ToAsync())](
+            fit::result<fuchsia_driver_framework::HealthCheckError,
+                        fuchsia_driver_framework::HealthCheckResponse>
+                result) mutable {
+          if (result.is_ok()) {
+            guard.completer.buffer(guard.arena)
+                .ReplySuccess(fidl::ToWire(guard.arena, result.value()));
+          } else {
+            guard.completer.buffer(guard.arena).ReplyError(result.error_value());
+          }
+        });
+
+    driver_->HealthCheck(level, std::move(hc_completer));
+  }
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Driver> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
     if (driver_) {
@@ -126,6 +148,25 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
   }
 
  private:
+  // Ensures that if a custom `HealthCheck` implementation drops its `HealthCheckCompleter`
+  // without invoking it (e.g., due to an early return or cancelled async task), the FIDL server
+  // replies with `HealthCheckError::kInternalError` instead of closing the driver channel.
+  struct HealthCheckReplyGuard {
+    fdf::Arena arena;
+    HealthCheckCompleter::Async completer;
+
+    HealthCheckReplyGuard(fdf::Arena a, HealthCheckCompleter::Async c)
+        : arena(std::move(a)), completer(std::move(c)) {}
+    HealthCheckReplyGuard(HealthCheckReplyGuard&&) noexcept = default;
+    HealthCheckReplyGuard& operator=(HealthCheckReplyGuard&&) = delete;
+    ~HealthCheckReplyGuard() {
+      if (completer.is_reply_needed()) {
+        completer.buffer(arena).ReplyError(
+            fuchsia_driver_framework::wire::HealthCheckError::kInternalError);
+      }
+    }
+  };
+
   void StopBinding() {
     if (fdf_dispatcher_get_current_dispatcher() == dispatcher_) {
       binding_.reset();
@@ -143,8 +184,11 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
 
   fdf_dispatcher_t* dispatcher_;
 
-  std::optional<fdf::ServerBinding<fuchsia_driver_framework::Driver>> binding_;
+  // `driver_` is declared before `binding_` so that it is destroyed after it: tearing down the
+  // binding first guarantees that no in-flight request (or a HealthCheckReplyGuard held by the
+  // driver) can reach a partially destroyed driver.
   std::unique_ptr<fdf::DriverBase2> driver_;
+  std::optional<fdf::ServerBinding<fuchsia_driver_framework::Driver>> binding_;
 };
 
 }  // namespace fdf_internal

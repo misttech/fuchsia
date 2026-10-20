@@ -39,6 +39,9 @@ class CompatDriverServer : public fdf::WireServer<fuchsia_driver_framework::Driv
   void Resume(ResumeRequestView request, fdf::Arena& arena,
               ResumeCompleter::Sync& completer) override;
 
+  void HealthCheck(HealthCheckRequestView request, fdf::Arena& arena,
+                   HealthCheckCompleter::Sync& completer) override;
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Driver> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 

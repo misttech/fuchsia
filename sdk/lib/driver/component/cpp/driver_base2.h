@@ -287,6 +287,27 @@ class DriverBase2 {
   }
 #endif
 
+  // Unlike the other fdf::*Completer types, this is a bare fit::callback whose drop is tolerated: a
+  // diagnostic hook must never close the Driver channel, so DriverServer2 converts a dropped
+  // completer into HealthCheckError::kInternalError. Invoke it at most once, on the driver
+  // dispatcher, and invoke or drop it before the driver object is destroyed.
+  using HealthCheckCompleter =
+      fit::callback<void(fit::result<fuchsia_driver_framework::HealthCheckError,
+                                     fuchsia_driver_framework::HealthCheckResponse>)>;
+
+  // Optional active health check hook. By default, replies with an empty HealthCheckResponse (OK)
+  // for HealthCheckRequest::kPing and HealthCheckError::kNotSupported for deeper levels. Drivers
+  // may override this method to inspect hardware state (synchronously or asynchronously) and pass
+  // structured diagnostics to `completer`.
+  virtual void HealthCheck(fuchsia_driver_framework::HealthCheckRequest request,
+                           HealthCheckCompleter completer) {
+    if (request == fuchsia_driver_framework::HealthCheckRequest::kPing) {
+      completer(fit::ok(fuchsia_driver_framework::HealthCheckResponse{}));
+    } else {
+      completer(fit::error(fuchsia_driver_framework::HealthCheckError::kNotSupported));
+    }
+  }
+
   // This can be used to log in driver factories:
   // `driver->logger().log(fdf::INFO, "...");`
   Logger& logger() { return *logger_; }

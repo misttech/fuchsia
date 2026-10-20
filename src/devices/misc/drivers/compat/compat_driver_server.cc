@@ -99,4 +99,19 @@ void CompatDriverServer::Resume(ResumeRequestView request, fdf::Arena& arena,
   completer.buffer(arena).Reply(zx::ok());
 }
 
+void CompatDriverServer::HealthCheck(HealthCheckRequestView request, fdf::Arena& arena,
+                                     HealthCheckCompleter::Sync& completer) {
+  // A PING only asks whether the driver can answer at all; replying proves the shim's dispatcher
+  // is alive, which the framework relies on when it sweeps parents after a `self_fault` alert.
+  // Legacy DFv1 drivers wrapped by the compat shim have no health hook, so FAST and DEEP checks
+  // are not supported.
+  if (request->request == fuchsia_driver_framework::wire::HealthCheckRequest::kPing) {
+    completer.buffer(arena).ReplySuccess(
+        fuchsia_driver_framework::wire::HealthCheckResponse::Builder(arena).Build());
+    return;
+  }
+  completer.buffer(arena).ReplyError(
+      fuchsia_driver_framework::wire::HealthCheckError::kNotSupported);
+}
+
 }  // namespace compat

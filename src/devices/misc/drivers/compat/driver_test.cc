@@ -1095,3 +1095,46 @@ TEST_F(GlobalLoggerListTest, TestWithNodeNames) {
   log(zx_driver_3, FUCHSIA_LOG_INFO, nullptr, __FILE__, __LINE__, "Done with test: %s",
       "TestWithNodeNames");
 }
+
+TEST_F(DriverTest, CompatDriverServerHealthCheckByLevel) {
+  auto [client_end, server_end] = fdf::Endpoints<fuchsia_driver_framework::Driver>::Create();
+  void* token = compat::CompatDriverServer::initialize(server_end.TakeChannel().release());
+  ASSERT_NE(nullptr, token);
+
+  fdf::WireClient<fuchsia_driver_framework::Driver> client(std::move(client_end),
+                                                           fdf::Dispatcher::GetCurrent()->get());
+  fdf::Arena arena('TEST');
+
+  // PING replies OK: the reply itself proves the shim's dispatcher is alive.
+  bool ping_called = false;
+  client.buffer(arena)
+      ->HealthCheck(fuchsia_driver_framework::wire::HealthCheckRequest::kPing)
+      .Then([&ping_called](
+                fdf::WireUnownedResult<fuchsia_driver_framework::Driver::HealthCheck>& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_TRUE(result->is_ok());
+        EXPECT_FALSE(result->value()->has_conditions());
+        ping_called = true;
+      });
+  fdf_testing_run_until_idle();
+  EXPECT_TRUE(ping_called);
+
+  // FAST (and DEEP) are not supported by legacy DFv1 drivers.
+  bool called = false;
+  client.buffer(arena)
+      ->HealthCheck(fuchsia_driver_framework::wire::HealthCheckRequest::kFast)
+      .Then(
+          [&called](fdf::WireUnownedResult<fuchsia_driver_framework::Driver::HealthCheck>& result) {
+            ASSERT_TRUE(result.ok());
+            ASSERT_TRUE(result->is_error());
+            EXPECT_EQ(fuchsia_driver_framework::wire::HealthCheckError::kNotSupported,
+                      result->error_value());
+            called = true;
+          });
+  fdf_testing_run_until_idle();
+  EXPECT_TRUE(called);
+
+  client = {};
+  fdf_testing_run_until_idle();
+  compat::CompatDriverServer::destroy(token);
+}
