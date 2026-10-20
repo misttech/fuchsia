@@ -159,10 +159,6 @@ pub mod generic32;
 pub mod plic;
 
 #[cfg(target_arch = "aarch64")]
-#[path = "dev/pdev/clocks_and_pmic/clocks_and_pmic.rs"]
-pub mod pdev_clocks_and_pmic;
-
-#[cfg(target_arch = "aarch64")]
 #[path = "dev/power/iris/iris.rs"]
 pub mod power_iris;
 

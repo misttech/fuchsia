@@ -316,46 +316,6 @@ ktl::optional<IrqConfig> GetIrqConfigFromFlags(uint32_t uart_flags) {
 
 bool platform_serial_enabled(void) { return !!gUart; }
 
-void platform_serial_prepare_for_suspend() {
-  if (!platform_serial_enabled()) {
-    return;
-  }
-
-  if (BootOptions::Get()->allow_debug_uart_suspend) {
-    // If usermode has suspended the UART, the hardware has already been
-    // prepared for suspend (and may be powered off).  Do not touch it.
-    if (!gUartGate.TryEnterUnlessSuspended()) {
-      return;
-    }
-    gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.PrepareForSuspend(); });
-    // Called by the idle/power thread as it suspends the CPU, which must not
-    // pend a preemption (see IdlePowerThread::Run), so do not signal.  The
-    // bounded wait in UartGate::WaitForNoActiveUsers covers any suspending
-    // thread.
-    gUartGate.ExitWithoutWaking();
-  }
-}
-
-void platform_serial_wakeup_from_suspend() {
-  if (!platform_serial_enabled()) {
-    return;
-  }
-
-  if (BootOptions::Get()->allow_debug_uart_suspend) {
-    // If usermode has suspended the UART, leave the hardware alone.  It will be
-    // woken up when usermode calls zx_debug_resume.
-    if (!gUartGate.TryEnterUnlessSuspended()) {
-      return;
-    }
-    gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.WakeupFromSuspend(); });
-    // Called by the idle/power thread as it resumes the CPU, which must not
-    // pend a preemption (see IdlePowerThread::Run), so do not signal.  The
-    // bounded wait in UartGate::WaitForNoActiveUsers covers any suspending
-    // thread.
-    gUartGate.ExitWithoutWaking();
-  }
-}
-
 namespace {
 
 // Waits, interruptibly, until all output previously handed to the UART has been

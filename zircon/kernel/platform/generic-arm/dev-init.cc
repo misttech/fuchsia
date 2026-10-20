@@ -8,7 +8,6 @@
 
 #include <dev/arm_smmu/smmu.h>
 #include <dev/arm_smmu/smmu_mode.h>
-#include <dev/clocks_and_pmic/moonflower/init.h>
 #include <dev/hdcp/amlogic_s912/init.h>
 #include <dev/hw_rng/amlogic_rng/init.h>
 #include <dev/hw_rng/qcom_rng/init.h>
@@ -68,12 +67,6 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
 
   if (!arch_handoff.iris_power_driver.empty()) {
     iris_power_init_early();
-  }
-
-  if (BootOptions::Get()->allow_debug_uart_suspend) {
-    // TODO(johngro): make this more generic.  IOW - make sure to do the right
-    // thing for non-moonflower HW as well.
-    moonflower_clocks_and_pmic_init_early();
   }
 }
 

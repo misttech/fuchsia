@@ -161,43 +161,6 @@ zx_status_t platform_suspend_system();
 // Returns true if this system has a debug serial port that is enabled
 bool platform_serial_enabled();
 
-// Prepare the kernel debug UART for a suspend operation which might result in
-// de-clocking, or de-clocking+power-gating, the UART hardware.
-//
-// This function should only be called by the BOOT_CPU idle/power thread, with
-// interrupts off, after the secondaries have all suspended, just before it
-// transfers control to a higher authority (Secure Monitor, ACPI call, etc) to
-// enter into its low power state.
-//
-// This method is *not* idempotent.  `platform_serial_prepare_for_suspend`
-// should not be called again until a matching call to
-// `platform_serial_wakeup_from_suspend` has been made.
-//
-// That said, it is safe to call this method when `platform_serial_enabled`
-// returns false, as well as when the underlying serial driver does not
-// support/require suspension.  The operation will simply be a no-op.
-//
-// TODO(https://fxbug.dev/568786401): Remove this function.
-void platform_serial_prepare_for_suspend();
-
-// Wake the kernel debug UART up after bringing the BOOT_CPU out of a low power
-// state where the UART hardware may have been de-clocked or power gated.
-//
-// This function should only be called by the BOOT_CPU idle/power thread, with
-// interrupts off, immediately after control is returned to it by its higher
-// authority.  See `platform_serial_prepare_for_suspend`.
-//
-// This method is *not* idempotent. `platform_serial_wakeup_from_suspend` should
-// not be called again until a matching call to
-// `platform_serial_prepare_for_suspend` has been made.
-//
-// That said, it is safe to call this method when `platform_serial_enabled`
-// returns false, as well as when the underlying serial driver does not
-// support/require suspension.  The operation will simply be a no-op.
-//
-// TODO(https://fxbug.dev/568786401): Remove this function.
-void platform_serial_wakeup_from_suspend();
-
 // Suspend all kernel access to the debug UART hardware, on behalf of
 // `zx_debug_suspend`.
 //
@@ -210,8 +173,6 @@ void platform_serial_wakeup_from_suspend();
 //  - Non-blocking writes (`platform_dputs_irq`, `platform_pputc`) are dropped.
 //  - Polling reads (`platform_pgetc`) report no data.
 //  - The UART interrupt is masked.
-//  - `platform_serial_prepare_for_suspend` and
-//    `platform_serial_wakeup_from_suspend` become no-ops.
 //
 // Must be called from thread context.  Blocks, interruptibly, until any
 // in-progress UART operations have completed and any output they queued in the

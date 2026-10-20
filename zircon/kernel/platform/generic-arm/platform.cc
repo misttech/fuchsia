@@ -32,7 +32,6 @@
 #include <arch/arm64/mp.h>
 #include <arch/arm64/periphmap.h>
 #include <arch/mp.h>
-#include <dev/clocks_and_pmic.h>
 #include <dev/hw_rng.h>
 #include <dev/interrupt.h>
 #include <dev/power.h>
@@ -195,10 +194,6 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
   {
     const bool last_to_enter = !gControlRegion.TryEnter();
     if (last_to_enter) {
-      if (allow_domain == PlatformAllowDomainPowerDown::Yes) {
-        platform_serial_prepare_for_suspend();
-        clocks_and_pmic_prepare_for_suspend();
-      }
       gControlRegion.CloseEnter();
     }
 
@@ -214,12 +209,6 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
 
     const bool first_to_leave = !gControlRegion.TryLeave();
     if (first_to_leave) {
-      // Serial wakeup is an idempotent operation so it's OK to call this even in the case where the
-      // last to enter did not prepare serial for suspend (e.g. because it was called with
-      // |PsciCpuSuspendMaxScope::CpuOnly|).
-      clocks_and_pmic_wakeup_from_suspend();
-      platform_serial_wakeup_from_suspend();
-
       // TODO(https://fxbug.dev/458140022): Once we have figured out the cause of "negative time" we
       // can remove this assert.
       [[maybe_unused]] const zx_instant_boot_ticks_t boot_ticks_after = current_boot_ticks();
@@ -287,10 +276,6 @@ zx_status_t platform_suspend_system() {
     }
   }
 
-  // Note that unlike platform_suspend_cpu, this does not call platform_serial_prepare_for_suspend
-  // or clocks_and_pmic_prepare_for_suspend (or their wakeup counterparts).  Suspending the debug
-  // UART is usermode's responsibility (see zx_debug_suspend), and the only platform which
-  // implements the clocks and PMIC hooks (moonflower) does not support PSCI SYSTEM_SUSPEND.
   lockup_percpu_shutdown();
   platform_suspend_timer_curr_cpu();
   suspend_interrupts_curr_cpu();

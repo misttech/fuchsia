@@ -32,11 +32,11 @@
 //  - kRunning: Normal operation.  Anyone may enter.
 //  - kDraining: A suspend operation is in progress.  New operations are
 //    refused, but operations which are required to allow in-flight operations
-//    to complete (the UART IRQ handler, the system suspend/resume hooks) may
-//    still enter.  The suspending thread waits (see `WaitForNoActiveUsers`) for
-//    the active count to drop to zero, and then moves the gate to kSuspended.
-//    Alternatively, the suspending thread may abandon the suspend operation
-//    (e.g. because it was interrupted), moving the gate back to kRunning.
+//    to complete (e.g. the UART IRQ handler) may still enter.  The suspending
+//    thread waits (see `WaitForNoActiveUsers`) for the active count to drop to
+//    zero, and then moves the gate to kSuspended.  Alternatively, the
+//    suspending thread may abandon the suspend operation (e.g. because it was
+//    interrupted), moving the gate back to kRunning.
 //  - kSuspended: No one may enter.  Only the thread performing a suspend or
 //    resume operation (serialized by UartSuspendResumeLock) may touch the
 //    hardware.

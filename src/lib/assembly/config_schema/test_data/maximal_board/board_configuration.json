@@ -106,8 +106,7 @@
         "arm64_event_stream_enable": true,
         "serial": "serial_port",
         "scheduler_prefer_little_cpus": true,
-        "halt_on_panic": true,
-        "allow_debug_uart_suspend": true
+        "halt_on_panic": true
     },
     "platform": {
         "connectivity": {

@@ -339,10 +339,6 @@ pub struct BoardKernelConfig {
     /// The system will halt on a kernel panic instead of rebooting.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub halt_on_panic: bool,
-
-    /// Allow debug UART to be suspended.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub allow_debug_uart_suspend: bool,
 }
 
 impl Default for BoardKernelConfig {
@@ -355,7 +351,6 @@ impl Default for BoardKernelConfig {
             serial: None,
             scheduler_prefer_little_cpus: false,
             halt_on_panic: false,
-            allow_debug_uart_suspend: false,
         }
     }
 }
@@ -586,7 +581,6 @@ mod test {
                 scheduler_prefer_little_cpus: true,
                 halt_on_panic: false,
                 arm64_event_stream_enable: false,
-                allow_debug_uart_suspend: false,
             },
             platform: PlatformSettings {
                 connectivity: ConnectivityConfig::default(),

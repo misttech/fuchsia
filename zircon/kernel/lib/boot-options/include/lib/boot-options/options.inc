@@ -970,19 +970,6 @@ loader and early boot code with the debugger attached and then interrupt the
 spin interactively in the debugger to set breakpoints or step through boot code.
 )""")
 
-// TODO(https://fxbug.dev/568786401): Remove this option along with
-// platform_serial_prepare_for_suspend and platform_serial_wakeup_from_suspend.
-DEFINE_OPTION("kernel.allow_debug_uart_suspend", bool,
-              allow_debug_uart_suspend, {false},
-              R"""(
-This option enables feature which manages suspending and resuming the UART
-hardware and its clocks when entering deeper suspend states on HW which needs
-assistance from the kernel to suspend and resume the debug UART.  By default, it
-is disabled, but may be enabled in the build configuration for hardware which
-both needs the behavior, and for which the feature is sufficiently stable to
-enable it.
-)""")
-
 DEFINE_OPTION("kernel.oom.experimental_expand_memory_stall", bool, experimental_expand_memory_stall, {false}, R"""(
 When true, expands memory stall measurements to include decompression time and
 time spent waiting for user pagers. This brings Zircon's stall metrics closer to
