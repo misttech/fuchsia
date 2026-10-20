@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wlan-bitfield-wrapper",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/connectivity/wlan/lib/bitfield:wlan-bitfield",
+    ],
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "wlan-bitfield-wrapper_test",
+    crate = ":wlan-bitfield-wrapper",
+)
+
+fx_unittest_package(
+    name = "wlan-bitfield-tests",
+    unit_tests = [":wlan-bitfield-wrapper_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
