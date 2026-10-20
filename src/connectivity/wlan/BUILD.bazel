@@ -14,5 +14,6 @@ test_suite(
         "//src/connectivity/wlan/lib/power_manager:wlan-power-manager-tests",
         "//src/connectivity/wlan/lib/statemachine:wlan-statemachine-tests",
         "//src/connectivity/wlan/lib/trace:wlan-trace-tests",
+        "//src/connectivity/wlan/wlancfg/tool/policy:donut-lib-tests",
     ],
 )

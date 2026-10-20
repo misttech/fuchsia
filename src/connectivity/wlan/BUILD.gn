@@ -72,7 +72,6 @@ group("tests") {
     "tests",
     "tools/wlantool:wlantool-tests",
     "wlancfg:tests",
-    "wlancfg/tool:donut-tests",
     "wlandevicemonitor:tests",
     "wlanix:wlanix-tests",
   ]

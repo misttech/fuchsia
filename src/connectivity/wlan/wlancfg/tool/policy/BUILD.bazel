@@ -1,0 +1,91 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "donut-lib",
+    srcs = [
+        "src/lib.rs",
+        "src/opts.rs",
+        "src/serialize.rs",
+    ],
+    edition = "2024",
+    visibility = ["//src/connectivity/wlan/wlancfg/tool/cli:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex",
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust_flex",
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_flex",
+        "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_rust_flex",
+        "//src/lib/fdomain/client:flex_fidl",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
+        "//third_party/rust_crates/vendor:eui48",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:percent-encoding",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+rustc_library(
+    name = "donut-lib-fdomain",
+    srcs = [
+        "src/lib.rs",
+        "src/opts.rs",
+        "src/serialize.rs",
+    ],
+    crate_features = ["fdomain"],
+    edition = "2024",
+    visibility = ["//src/developer/ffx/plugins/wlan:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_rust_fdomain_flex",
+        "//src/lib/fdomain/client:flex_fdomain",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
+        "//third_party/rust_crates/vendor:eui48",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:percent-encoding",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+# Most of the functionality in this library can be shared between the host
+# tools and the Fuchsia platform. However, the unit tests make use of
+# TestExecutor::run_single_threaded which does not appear to be supported
+# for the host. The wlan_common library is used only for assisting in these
+# tests and itself includes many Fuchsia-specific libraries. As such, there
+# attributes should only be included when the build targets Fuchsia.
+# @bazel2gn:skip
+rustc_test(
+    name = "donut-lib_test",
+    crate = ":donut-lib",
+    deps = [
+        "//sdk/rust/zx-status",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "donut-lib-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":donut-lib_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
