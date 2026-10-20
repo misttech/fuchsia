@@ -43,18 +43,17 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 
 // The driver's internal state machine. Begins in kAwaitingUsbConnection.
 enum class State : uint8_t {
-  // In kAwaitingUsbConnection, we have called function_.SetInterface(this), and
-  // are waiting for the function driver to call SetConfigured(true). Calls to
-  // SetConfigured(false) are ignored.
+  // In kAwaitingUsbConnection, we have called function_.Configure(), and
+  // are waiting for usb-peripheral to call SetConfigured(true). Calls to
+  // SetConfigured(false) complete immediately with ZX_OK.
   //
   // Once SetConfigured(true) has been called, we:
-  // - Send USB "receive" requests to the endpoint,
+  // - Configure and enable the bulk endpoints,
+  // - Queue USB receive requests to the bulk OUT endpoint,
   // - Tell any connected UsbAdbImpl clients that the device is online, and
   // - Move to kOnline.
   //
-  // If a fadb::Device client requests shutdown by calling StopAdb() or closing
-  // a UsbAdbImpl connection, we call function_.Deconfigure(), and move
-  // to kStoppingForReconnect. If Stop is called, we move to kStoppingForUnbind.
+  // If Stop is called, we move to kStoppingForUnbind.
   kAwaitingUsbConnection,
 
   // In kOnline, the USB connection is live, and we respond to any
@@ -63,33 +62,29 @@ enum class State : uint8_t {
   // If any of the following happen:
   // - A fadb::Device client calls StopAdb().
   // - A UsbAdbImpl client closes their channel.
-  // - The USB function driver calls SetConfigured(false)
+  // - usb-peripheral calls SetConfigured(false).
   // - Stop gets called.
   //
-  // ... we call function_.Deconfigure() and move to kStoppingForReconnect or
-  // kStoppingForUnbind. (We hold onto the responder for any calls to StopAdb()).
+  // ... we disable endpoints, cancel in-flight requests, and move to
+  // kStoppingForReconnect or kStoppingForUnbind.
   kOnline,
 
   // In kStoppingForUnbind, we wait for all outstanding USB requests to be completed.
-  // Once they have been, we:
-  // - Return OK to any pending StopAdb() calls (e.g. if Stop() was called while
-  //   a reconnect was pending),
-  // - Tell any connected UsbAdbImpl clients that the device is offline,
-  // - Close all UsbAdbImpl connections.
-  //
-  // At that point, since the stoppage was caused by a call to Stop (or
-  // Stop called while shutting down), we respond that the driver has
-  // shutdown successfully.
+  // Once they have been, we close any UsbAdbImpl connection, reply to any pending
+  // StopAdb()/SetConfigured(false) completers, deconfigure the USB function, and
+  // complete the driver Stop callback.
   kStoppingForUnbind,
 
   // In kStoppingForReconnect, we wait for all outstanding USB requests to be completed.
-  // Once they have been, we:
-  // - Return OK to any StopAdb() calls that triggered the stoppage,
-  // - Tell any connected UsbAdbImpl clients that the device is offline,
-  // - Close all UsbAdbImpl connections.
-  //
-  // At that point, we restart the USB connection by calling
-  // function_.Configure(), and move back to kAwaitingUsbConnection.
+  // Once they have been:
+  // - If the stop was initiated by ADB while online (reset_usb_on_stop_ is true),
+  //   we call function_.Deconfigure() and StartUsb() (function_.Configure()) to
+  //   bounce the USB connection for adbd re-enumeration, then move to
+  //   kAwaitingUsbConnection.
+  // - If the stop was initiated by SetConfigured(false) (host reset or physical unplug),
+  //   we keep usb_function_binding_ and adb_binding_ bound, notify adb_binding_
+  //   that the device is offline, reply to set_configured_completers_, and move
+  //   back to kAwaitingUsbConnection.
   kStoppingForReconnect,
 };
 
@@ -140,6 +135,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
   void SetState(State new_state);
   zx::result<> StartUsb();
   zx::result<> EnableEndpoints();
+  void PurgeOfflineQueues();
   void ResetOrStopUsb(State stop_state);
   void CheckUsbStopComplete();
 
@@ -173,6 +169,8 @@ class UsbAdbDevice : public fdf::DriverBase2,
   // Callbacks to call when the USB stack has been brought down and it's safe to
   // call AdbStart().
   std::vector<StopAdbCompleter::Async> stop_completers_;
+  // Completers for SetConfigured(false) held until CancelAll and in-flight requests finish.
+  std::vector<SetConfiguredCompleter::Async> set_configured_completers_;
   // Holds Stop callback to be invoked once shutdown is complete.
   std::optional<fdf::StopCompleter> shutdown_callback_;
 
@@ -236,6 +234,9 @@ class UsbAdbDevice : public fdf::DriverBase2,
   bool bulk_in_cancelled_ = false;
   bool bulk_out_cancelled_ = false;
   bool pending_reconfigure_ = false;
+  bool reset_usb_on_stop_ = false;
+  bool usb_disconnect_observed_ = false;
+  bool adb_connected_during_stop_ = false;
 
   bool CancelAllCompleted() const { return bulk_in_cancelled_ && bulk_out_cancelled_; }
   bool AllRequestsReturned() {
