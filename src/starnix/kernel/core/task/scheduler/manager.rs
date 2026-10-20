@@ -104,7 +104,7 @@ impl SchedulerManager {
         Ok(scheduler_state.role_name())
     }
 
-    pub(crate) fn resolve_role_name(
+    fn resolve_role_name(
         &self,
         process_name: &TaskCommand,
         thread_name: &TaskCommand,
@@ -124,11 +124,29 @@ impl SchedulerManager {
         scheduler_state.role_name()
     }
 
-    /// Give the provided `task`'s Zircon thread a role.
-    pub(crate) fn set_thread_role(&self, task: &Task, role_name: &str) -> Result<(), Errno> {
+    /// Resolves the target scheduler role for [`Task`] and commits the corresponding profile to its
+    /// Zircon thread if it differs from the previously committed role.
+    pub(crate) fn commit_thread_role(&self, task: &Task) -> Result<(), Errno> {
         let Some(role_manager) = self.role_manager.as_ref() else {
             log_debug!("no role manager for setting role");
             return Ok(());
+        };
+
+        let process_name = task.thread_group().read().leader_command();
+        let thread_name = task.command();
+        let role_name = {
+            let state = task.read();
+            let role_name = self.resolve_role_name(
+                &process_name,
+                &thread_name,
+                &state.cpuset_path,
+                task.is_leader(),
+                &state.scheduler_state,
+            );
+            if state.scheduler_state.committed_role_name.as_deref() == Some(role_name) {
+                return Ok(());
+            }
+            role_name
         };
 
         let zircon_thread = {
@@ -153,6 +171,10 @@ impl SchedulerManager {
             role_name,
             &self.profile_handle_cache,
         )?;
+        // Acquiring `task.write()` only after `set_zx_thread_role` avoids holding a `Task`
+        // lock across synchronous RoleManager FIDL RPCs, at the cost of a minor race if concurrent
+        // `commit_thread_role` calls interleave their updates and `committed_role_name` writes.
+        task.write().scheduler_state.committed_role_name = Some(role_name.to_string());
 
         Ok(())
     }
@@ -233,7 +255,7 @@ impl SchedulerManager {
             Ok(()) => Ok(()),
             // A task's underlying Zircon thread can transition to DYING or DEAD concurrently
             // after we snapshot its handle from `task.running_state()`. Ignore `BAD_STATE` just
-            // as `set_thread_role` ignores tasks whose live state has already been cleared.
+            // as `commit_thread_role` ignores tasks whose live state has already been cleared.
             Err(zx::Status::BAD_STATE) => {
                 log_debug!(
                     role_name;
@@ -406,8 +428,8 @@ pub struct SchedulerState {
     /// sched_setparam(). Only used for Fifo and Round-Robin.
     pub(crate) realtime_priority: RealtimePriority,
     pub(crate) reset_on_fork: bool,
-    /// The last applied scheduler role name.
-    pub(crate) applied_role_name: Option<String>,
+    /// The last committed scheduler role name.
+    committed_role_name: Option<String>,
 }
 
 impl SchedulerState {
@@ -417,7 +439,7 @@ impl SchedulerState {
             && self.normal_priority == default.normal_priority
             && self.realtime_priority == default.realtime_priority
             && self.reset_on_fork == default.reset_on_fork
-            && self.applied_role_name.as_deref().is_none_or(|role| role == default.role_name())
+            && self.committed_role_name.as_deref().is_none_or(|role| role == default.role_name())
     }
 
     pub(crate) fn fork(&self) -> Self {
@@ -450,10 +472,10 @@ impl SchedulerState {
                 realtime_priority,
                 // This flag is disabled in child processes created by fork(2).
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
         } else {
-            Self { applied_role_name: None, ..*self }
+            Self { committed_role_name: None, ..*self }
         }
     }
 
@@ -562,7 +584,7 @@ impl std::default::Default for SchedulerState {
             normal_priority: NormalPriority::default(),
             realtime_priority: RealtimePriority::NON_REAL_TIME,
             reset_on_fork: false,
-            applied_role_name: None,
+            committed_role_name: None,
         }
     }
 }
@@ -635,14 +657,14 @@ mod tests {
         assert!(SchedulerState::default().is_default());
         assert!(
             SchedulerState {
-                applied_role_name: Some("fuchsia.starnix.fair.16".to_string()),
+                committed_role_name: Some("fuchsia.starnix.fair.16".to_string()),
                 ..SchedulerState::default()
             }
             .is_default()
         );
         assert!(
             !SchedulerState {
-                applied_role_name: Some("overridden_role".to_string()),
+                committed_role_name: Some("overridden_role".to_string()),
                 ..SchedulerState::default()
             }
             .is_default()
@@ -662,13 +684,13 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn scheduler_state_fork_clears_applied_role_name() {
+    fn scheduler_state_fork_clears_committed_role_name() {
         let state = SchedulerState {
             policy: SchedulingPolicy::Fifo,
             normal_priority: NormalPriority { value: 30 },
             realtime_priority: RealtimePriority { value: 50 },
             reset_on_fork: false,
-            applied_role_name: Some("fuchsia.starnix.realtime".to_string()),
+            committed_role_name: Some("fuchsia.starnix.realtime".to_string()),
         };
         assert_eq!(
             state.fork(),
@@ -677,7 +699,7 @@ mod tests {
                 normal_priority: NormalPriority { value: 30 },
                 realtime_priority: RealtimePriority { value: 50 },
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
         );
 
@@ -689,7 +711,7 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
         );
 
@@ -698,7 +720,7 @@ mod tests {
             normal_priority: NormalPriority { value: 30 },
             realtime_priority: RealtimePriority::NON_REAL_TIME,
             reset_on_fork: true,
-            applied_role_name: Some("fuchsia.starnix.fair.21".to_string()),
+            committed_role_name: Some("fuchsia.starnix.fair.21".to_string()),
         };
         assert_eq!(
             reset_normal_state.fork(),
@@ -707,7 +729,7 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
         );
     }
@@ -720,7 +742,7 @@ mod tests {
                 normal_priority: NormalPriority { value: 10 },
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.fair.11"
@@ -731,7 +753,7 @@ mod tests {
                 normal_priority: NormalPriority { value: 27 },
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.fair.19"
@@ -746,7 +768,7 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority { value: 1 },
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.realtime",
@@ -757,7 +779,7 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority { value: 2 },
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.realtime",
@@ -768,7 +790,7 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority { value: 99 },
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.realtime",
@@ -783,7 +805,7 @@ mod tests {
                 normal_priority: NormalPriority { value: 1 },
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.fair.0"
@@ -794,7 +816,7 @@ mod tests {
                 normal_priority: NormalPriority::default(),
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.fair.0"
@@ -805,7 +827,7 @@ mod tests {
                 normal_priority: NormalPriority { value: 40 },
                 realtime_priority: RealtimePriority::NON_REAL_TIME,
                 reset_on_fork: false,
-                applied_role_name: None,
+                committed_role_name: None,
             }
             .role_name(),
             "fuchsia.starnix.fair.0"
@@ -846,6 +868,37 @@ mod tests {
     fn invalid_profile_for_test() -> zx::Profile {
         let (client, _server) = zx::Socket::create_stream();
         zx::Profile::from(zx::NullableHandle::from(client))
+    }
+
+    #[fuchsia::test]
+    async fn commit_thread_role_failure_does_not_update_committed_role_name() {
+        crate::testing::spawn_kernel_and_run_sync(|current_task| {
+            let (role_manager, server_end) =
+                fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
+            drop(server_end);
+
+            let manager = SchedulerManager {
+                role_manager: Some(role_manager),
+                role_overrides: RoleOverrides::new().build().unwrap(),
+                profile_handle_cache: LockDepMutex::new(HashMap::from([(
+                    "fuchsia.starnix.fair.16".to_string(),
+                    invalid_profile_for_test(),
+                )])),
+            };
+
+            assert_eq!(current_task.read().scheduler_state.committed_role_name, None);
+            assert_eq!(manager.commit_thread_role(current_task), error!(EINVAL));
+            assert_eq!(current_task.read().scheduler_state.committed_role_name, None);
+
+            current_task.write().scheduler_state.committed_role_name =
+                Some("previous_role".to_string());
+            assert_eq!(manager.commit_thread_role(current_task), error!(EINVAL));
+            assert_eq!(
+                current_task.read().scheduler_state.committed_role_name.as_deref(),
+                Some("previous_role")
+            );
+        })
+        .await;
     }
 
     #[fuchsia::test]

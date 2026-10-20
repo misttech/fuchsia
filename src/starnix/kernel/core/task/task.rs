@@ -162,7 +162,7 @@ pub struct TaskMutableState {
     exit_status: Option<ExitStatus>,
 
     /// Desired scheduler state for the task. This may not reflect the actual committed Zircon
-    /// priority, which can be confirmed via SchedulerState::applied_role_name.
+    /// priority, which is not applied until [`SchedulerManager::commit_thread_role`] is invoked.
     pub scheduler_state: SchedulerState,
 
     /// The UTS namespace assigned to this thread.
@@ -1300,40 +1300,19 @@ impl Task {
     ///
     /// This should be called on tasks that have newly created threads, e.g. after cloning.
     pub fn sync_scheduler_state_to_role(&self) -> Result<(), Errno> {
-        self.update_scheduler_state_then_role(|_| {})
+        self.thread_group().kernel.scheduler.commit_thread_role(self)
     }
 
     fn update_scheduler_state_then_role(
         &self,
         updater: impl FnOnce(&mut SchedulerState),
     ) -> Result<(), Errno> {
-        let process_name = self.thread_group().read().leader_command();
-        let thread_name = self.command();
-
-        let (new_scheduler_state, cpuset_path) = {
+        {
+            // Hold the task state lock as briefly as possible, it's not needed to update the role.
             let mut state = self.write();
             updater(&mut state.scheduler_state);
-            (state.scheduler_state.clone(), state.cpuset_path.clone())
-        };
-
-        let scheduler = &self.thread_group().kernel.scheduler;
-        let role_name = scheduler.resolve_role_name(
-            &process_name,
-            &thread_name,
-            &cpuset_path,
-            self.is_leader(),
-            &new_scheduler_state,
-        );
-        if new_scheduler_state.applied_role_name.as_deref() == Some(role_name) {
-            return Ok(());
         }
-        scheduler.set_thread_role(self, role_name)?;
-        // Note: Re-acquiring the lock here to update `applied_role_name` has a minor race if
-        // concurrent state updates execute `set_thread_role` out of order relative to cache writes.
-        // Dropping the lock across `set_thread_role` avoids holding `Task` write lock over FIDL RPCs,
-        // and any cache mismatch will self-correct on the next scheduler state or cgroup change.
-        self.write().scheduler_state.applied_role_name = Some(role_name.to_string());
-        Ok(())
+        self.thread_group().kernel.scheduler.commit_thread_role(self)
     }
 
     /// Signals the vfork event, if any, to unblock waiters.

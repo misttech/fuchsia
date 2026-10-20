@@ -360,16 +360,14 @@ impl CgroupPidTable {
     }
 }
 
-/// Updates `cpuset_path` on `task` and returns `true` if `sync_scheduler_state_to_role()`
-/// should be called (because `cpuset_path` changed or no role has been applied yet).
+/// Updates `cpuset_path` on `task` and returns `true` if `cpuset_path` changed.
 fn set_task_cpuset_path(task: &Task, cpuset_path: &str) -> bool {
     let mut state = task.write();
-    if state.cpuset_path != cpuset_path {
+    let changed = state.cpuset_path != cpuset_path;
+    if changed {
         state.cpuset_path = cpuset_path.to_string();
-        true
-    } else {
-        state.scheduler_state.applied_role_name.is_none()
     }
+    changed
 }
 
 fn sync_task_scheduler_role(task: &Task) {
