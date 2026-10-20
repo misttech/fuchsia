@@ -53,5 +53,8 @@ rustc_library(
 alias(
     name = "rust",
     actual = ":lib",
-    visibility = ["//src/sys/pkg/bin/system-update-checker:__pkg__"],
+    visibility = [
+        "//src/sys/pkg/bin/system-update-checker:__pkg__",
+        "//src/sys/pkg/bin/system-update-committer:__pkg__",
+    ],
 )

@@ -14,5 +14,6 @@ exports_files(
         "//bundles/assembly:__subpackages__",
         "//src/security/lib/scrutiny/tests/route_verification:__pkg__",
         "//src/sys/pkg/bin/system-update-checker:__pkg__",
+        "//src/sys/pkg/bin/system-update-committer:__pkg__",
     ],
 )
