@@ -1,0 +1,75 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The default version for the normal case.
+fx_cc_library(
+    name = "trace-provider",
+    srcs = [
+        "export.h",
+        "fdio_connect.cc",
+        "handler.cc",
+        "provider_impl.cc",
+        "provider_impl.h",
+        "provider_with_fdio.cc",
+        "session.cc",
+        "session.h",
+        "start.cc",
+        "utils.cc",
+        "utils.h",
+    ],
+    hdrs = [
+        "include/lib/trace-provider/fdio_connect.h",
+        "include/lib/trace-provider/handler.h",
+        "include/lib/trace-provider/provider.h",
+        "include/lib/trace-provider/start.h",
+    ],
+    # Source dependencies, not including the trace engine.
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_cpp",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/sync",
+        "//zircon/system/ulib/trace",
+    ],
+    includes = ["include"],
+    public_configs = [":trace_provider_include"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        # <trace-provider/provider.h> has #include <lib/async/dispatcher.h>.
+        "//sdk/lib/async",
+        "//zircon/system/ulib/trace-engine",
+
+        # <trace-provider/provider.h> has #include <lib/zx/channel.h>.
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+# For apps that use the trace engine, but not via a trace provider.
+# These are usually test and benchmarking apps.
+# Normal apps are not expected to use this.
+fx_cc_library(
+    name = "trace-handler",
+    srcs = ["handler.cc"],
+    hdrs = ["include/lib/trace-provider/handler.h"],
+    includes = ["include"],
+    public_configs = [":trace_provider_include"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//zircon/system/ulib/trace-test-utils:__pkg__",
+        "//zircon/system/ulib/trace-vthread/test:__pkg__",
+    ],
+    deps = [
+        # It is up to the client to choose which engine (shared, static),
+        # just reference the headers here.
+        "//zircon/system/ulib/trace-engine",  # @bazel2gn:path_overwrite://zircon/system/ulib/trace-engine:trace-engine-headersonly
+    ],
+)
