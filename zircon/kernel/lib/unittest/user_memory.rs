@@ -231,3 +231,43 @@ impl Drop for UserMemory {
         debug_assert_eq!(status, Ok(()));
     }
 }
+
+/// UserMemory unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "user_memory_tests_rust")]
+mod tests {
+    use super::UserMemory;
+    use core::mem::size_of;
+    use unittest::{expect_eq, unwrap_ok};
+
+    /// test_get_put
+    #[test]
+    fn test_get_put() {
+        {
+            let umem = UserMemory::create(size_of::<u32>()).unwrap();
+            expect_eq!(0u32, unwrap_ok!(umem.get::<u32>(0)));
+        }
+
+        {
+            let umem = UserMemory::create(2 * size_of::<u32>()).unwrap();
+            expect_eq!(0u32, unwrap_ok!(umem.get::<u32>(1)));
+        }
+
+        {
+            let umem = UserMemory::create(size_of::<u32>()).unwrap();
+            unwrap_ok!(umem.put::<u32>(0, 0));
+        }
+
+        {
+            let umem = UserMemory::create(2 * size_of::<u32>()).unwrap();
+            unwrap_ok!(umem.put::<u32>(0, 1));
+        }
+
+        {
+            let umem = UserMemory::create(size_of::<u32>()).unwrap();
+            expect_eq!(0u32, unwrap_ok!(umem.get::<u32>(0)));
+            unwrap_ok!(umem.put::<u32>(42u32, 0));
+            expect_eq!(42u32, unwrap_ok!(umem.get::<u32>(0)));
+        }
+    }
+}
