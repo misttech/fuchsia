@@ -55,7 +55,6 @@ group("tests") {
     "fuchsia-component:tests",
     "fuchsia-component-test:tests",
     "fuchsia-cprng:tests",
-    "fuchsia-emulated-handle:tests",
     "fuchsia-fs:tests",
     "fuchsia-hyper:tests",
     "fuchsia-image-format:tests",
@@ -147,5 +146,6 @@ group("boot_tests") {
 }
 
 bazel_test_suite("bazel_tests") {
+  host_tests = [ "//src/lib:host_tests" ]
   target_tests = [ "//src/lib:target_tests" ]
 }

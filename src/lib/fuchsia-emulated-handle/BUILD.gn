@@ -2,30 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/rust/rustc_library.gni")
-import("//build/rust/rustc_test.gni")
-
-if (is_host) {
-  rustc_test("fuchsia-emulated-handle-shutdown-test") {
-    edition = "2024"
-    deps = [
-      ":fuchsia-emulated-handle",
-      "//sdk/rust/zx",
-    ]
-    source_root = "src/shutdown_test.rs"
-    sources = [ "src/shutdown_test.rs" ]
-  }
-}
-
-group("tests") {
-  testonly = true
-  deps = [
-    ":fuchsia-emulated-handle-shutdown-test($host_toolchain)",
-    ":fuchsia-emulated-handle_test($host_toolchain)",
-  ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -58,9 +34,11 @@ rustc_library("fuchsia-emulated-handle") {
     "src/socket.rs",
   ]
   edition = "2024"
-  test_deps = [ "//third_party/rust_crates:futures-test" ]
-  version = "0.1.0"
-  with_unit_tests = true
+  visibility = [
+    ":*",
+    "//src/developer/ffx/command:*",
+    "//src/lib/fidl/rust/fidl:*",
+  ]
   deps = [
     "//sdk/rust/zx",
     "//sdk/rust/zx-types",

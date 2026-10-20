@@ -2,12 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 rustc_library(
     name = "fuchsia-emulated-handle",
@@ -17,11 +15,10 @@ rustc_library(
         "src/socket.rs",
     ],
     edition = "2024",
-    test_deps = [
-        "//third_party/rust_crates/vendor:futures-test",
+    visibility = [
+        "//src/developer/ffx/command:__pkg__",
+        "//src/lib/fidl/rust/fidl:__pkg__",
     ],
-    version = "0.1.0",
-    with_host_unit_tests = True,
     deps = [
         "//sdk/rust/zx",
         "//sdk/rust/zx-types",
@@ -29,5 +26,29 @@ rustc_library(
         "//third_party/rust_crates/vendor:bitflags",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:tokio",
+    ],
+)
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "fuchsia-emulated-handle_test",
+    crate = ":fuchsia-emulated-handle",
+    edition = "2024",
+    visibility = ["//src/lib:__pkg__"],
+    deps = [
+        "//third_party/rust_crates/vendor:futures-test",
+    ],
+)
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "fuchsia-emulated-handle-shutdown-test",
+    srcs = ["src/shutdown_test.rs"],
+    crate_root = "src/shutdown_test.rs",
+    edition = "2024",
+    visibility = ["//src/lib:__pkg__"],
+    deps = [
+        ":fuchsia-emulated-handle",
+        "//sdk/rust/zx",
     ],
 )
