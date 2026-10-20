@@ -446,6 +446,7 @@ llvm_library("LLVMInstrumentation") {
     ":LLVMCore",
     ":LLVMDemangle",
     ":LLVMMC",
+    ":LLVMOption",
     ":LLVMProfileData",
     ":LLVMSupport",
     ":LLVMTargetParser",
@@ -569,6 +570,7 @@ llvm_library("LLVMPasses") {
     ":LLVMInstCombine",
     ":LLVMInstrumentation",
     ":LLVMObjCARCOpts",
+    ":LLVMOption",
     ":LLVMScalarOpts",
     ":LLVMSupport",
     ":LLVMTarget",
@@ -601,6 +603,7 @@ llvm_library("LLVMRISCVCodeGen") {
     ":LLVMCore",
     ":LLVMGlobalISel",
     ":LLVMMC",
+    ":LLVMOption",
     ":LLVMPasses",
     ":LLVMRISCVDesc",
     ":LLVMRISCVInfo",
@@ -619,6 +622,7 @@ llvm_library("LLVMRISCVDesc") {
   deps = [
     ":LLVMBinaryFormat",
     ":LLVMMC",
+    ":LLVMOption",
     ":LLVMRISCVInfo",
     ":LLVMSupport",
     ":LLVMTargetParser",
@@ -670,6 +674,7 @@ llvm_library("LLVMScalarOpts") {
   deps = [
     ":LLVMAnalysis",
     ":LLVMCore",
+    ":LLVMOption",
     ":LLVMProfileData",
     ":LLVMSupport",
     ":LLVMTransformUtils",
@@ -741,6 +746,7 @@ llvm_library("LLVMVectorize") {
   deps = [
     ":LLVMAnalysis",
     ":LLVMCore",
+    ":LLVMOption",
     ":LLVMSandboxIR",
     ":LLVMSupport",
     ":LLVMTransformUtils",
