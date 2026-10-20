@@ -1504,7 +1504,8 @@ impl Task {
         // cycles with SELinux checks.
         let mut command_guard = self.persistent_info.command_guard();
 
-        // Set the name on the Linux thread.
+        // Set the name on the Linux thread. If the thread has already exited concurrently in
+        // Zircon, `set_zx_name` safely ignores `ZX_ERR_BAD_STATE`.
         if let Some(thread) = running_state.thread.get() {
             set_zx_name(thread.thread.as_ref(), new_name.as_bytes());
         }

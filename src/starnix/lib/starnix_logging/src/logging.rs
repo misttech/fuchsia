@@ -283,4 +283,17 @@ mod tests {
             unsafe { zx::Unowned::<zx::Thread>::from_raw_handle(zx::sys::ZX_HANDLE_INVALID) };
         set_zx_name(&invalid, b"any-name");
     }
+
+    #[test]
+    fn test_set_zx_name_vmo() {
+        let vmo = zx::Vmo::create(4096).unwrap();
+        set_zx_name(&vmo, b"my_vmo");
+        assert_eq!(vmo.get_name().unwrap(), "my_vmo");
+    }
+
+    #[test]
+    fn test_with_zx_name() {
+        let vmo = with_zx_name(zx::Vmo::create(4096).unwrap(), b"my_vmo_2");
+        assert_eq!(vmo.get_name().unwrap(), "my_vmo_2");
+    }
 }
