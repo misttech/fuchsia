@@ -6,6 +6,8 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::num::{NonZeroU8, NonZeroU16, NonZeroU32};
 
+use fuchsia_rcu::RcuDroppable;
+
 use super::traits::PolicyId;
 
 /// Type-safe wrapper around a primitive integer representing a policy identifier.
@@ -13,7 +15,7 @@ use super::traits::PolicyId;
 /// The `Tag` phantom parameter ensures that identifiers for different domain types
 /// (e.g., [`super::types::TypeId`]) cannot be mixed up at compile time, even if they share
 /// the same underlying integer representation.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd, RcuDroppable)]
 pub struct IdType<T, Tag> {
     value: T,
     _phantom: PhantomData<Tag>,

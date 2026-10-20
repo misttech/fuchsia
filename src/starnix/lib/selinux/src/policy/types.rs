@@ -5,6 +5,7 @@
 use std::num::NonZeroU16;
 use std::ops::Index;
 
+use fuchsia_rcu::RcuDroppable;
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 use selinux_policy_derive::{HasPolicyId, Parse, Serialize, Validate};
@@ -18,7 +19,7 @@ use super::traits::{HasName, Parse, PolicyId, Serialize, Validate};
 use super::{Policy, U24Index};
 
 /// Tag type for type safety of policy type identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, RcuDroppable)]
 pub struct TypeTag;
 
 /// Identifies a type (or type attribute) within a policy.

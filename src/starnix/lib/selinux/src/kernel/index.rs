@@ -18,12 +18,16 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use strum::VariantArray as _;
 
+// SAFETY: `Policy` contains only plain data and heap-allocated slices/tables with no custom `Drop`
+// logic, so it is safe to drop asynchronously on the RCU reclamation thread.
+unsafe impl RcuDroppable for Policy {}
+
 /// Array of [`PermissionId`] values for each of a kernel security class' permissions.
 type KernelPermissionIdsArray = [Option<PermissionId>; 32];
 
 /// Cached `process` class identifier and permission bitmask for `transition` and `dyntransition`
 /// checks across different roles.
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, RcuDroppable)]
 struct ProcessTransitionPermissions {
     class: ClassId,
     permissions: AccessVector,
@@ -36,7 +40,7 @@ struct ProcessTransitionPermissions {
 /// of classes that are identified by string names included in each collection entry. However,
 /// `policy_index.class(KernelClass::Process.into()).unwrap()` yields the [`Class`] entry in the
 /// policy's collection of classes without scanning by name.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub(crate) struct PolicyIndex {
     /// Map from [`KernelClass`]es to their corresponding [`ClassId`]s in the associated policy's
     /// classes collection.
@@ -49,10 +53,6 @@ pub(crate) struct PolicyIndex {
     /// Parsed binary policy.
     policy: Policy,
 }
-
-// SAFETY: `PolicyIndex` contains only plain data, arrays, a `HashMap`, and a parsed `Policy` with
-// no custom `Drop` logic, so it is safe to drop asynchronously on the RCU reclamation thread.
-unsafe impl RcuDroppable for PolicyIndex {}
 
 impl PolicyIndex {
     /// Constructs a [`PolicyIndex`] that indexes over well-known policy elements.
@@ -177,7 +177,7 @@ impl PolicyIndex {
             // Process domain transitions ("transition" and "dyntransition") across different roles
             // require explicit authorization in policy via a role allow rule ("allow old_role
             // new_role;").
-            if let Some(process_transition) = self.process_transition_permissions
+            if let Some(ref process_transition) = self.process_transition_permissions
                 && target_class.id() == process_transition.class
                 && source_context.role() != target_context.role()
                 && (decision.allow & process_transition.permissions) != AccessVector::NONE

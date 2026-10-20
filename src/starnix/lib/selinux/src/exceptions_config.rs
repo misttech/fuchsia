@@ -12,14 +12,11 @@ use std::num::NonZeroU32;
 use strum::VariantArray as _;
 
 /// Encapsulates a set of access-check exceptions parsed from a supplied configuration.
+#[derive(RcuDroppable)]
 pub(super) struct ExceptionsConfig {
     todo_deny_entries: HashMap<ExceptionsEntry, NonZeroU32>,
     permissive_entries: HashMap<TypeId, NonZeroU32>,
 }
-
-// SAFETY: `ExceptionsConfig` contains only `HashMap`s of plain ID/integer values with no custom
-// `Drop` logic, so it is safe to drop asynchronously on the RCU reclamation thread.
-unsafe impl RcuDroppable for ExceptionsConfig {}
 
 impl ExceptionsConfig {
     /// Parses the supplied `exceptions` lines and returns an `ExceptionsConfig` with an entry for
@@ -150,7 +147,7 @@ impl ExceptionsConfig {
 }
 
 /// Key used to index the access check exceptions table.
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Eq, Hash, PartialEq, RcuDroppable)]
 struct ExceptionsEntry {
     source: TypeId,
     target: TypeId,

@@ -64,7 +64,7 @@ macro_rules! declare_kernel_classes {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         named_enum! {
-            #[derive(VariantArray, zerocopy::IntoBytes, zerocopy::Immutable)]
+            #[derive(VariantArray, zerocopy::IntoBytes, zerocopy::Immutable, RcuDroppable)]
             $(#[$meta])* KernelClass {
                 $($(#[$variant_meta])* $variant ($variant_name),)*
             }

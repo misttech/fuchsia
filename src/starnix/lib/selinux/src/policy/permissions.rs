@@ -4,6 +4,7 @@
 
 use std::num::NonZeroU8;
 
+use fuchsia_rcu::RcuDroppable;
 use selinux_policy_derive::{HasName, HasPolicyId, Validate};
 
 use super::Policy;
@@ -13,7 +14,7 @@ use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 
 /// Tag type for type safety of policy permission identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, RcuDroppable)]
 pub struct PermissionTag;
 
 /// Identifies a permission within an object class (class-relative, 1-indexed).

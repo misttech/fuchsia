@@ -98,6 +98,11 @@ unsafe impl<T: RcuDroppable + Sync> RcuDroppable for std::sync::OnceLock<T> {}
 unsafe impl<T: ?Sized + Send + Sync + 'static> RcuDroppable for std::sync::Weak<T> {}
 // SAFETY: Vec<T> deallocates buffer memory and drops elements of type T, which are RcuDroppable.
 unsafe impl<T: RcuDroppable> RcuDroppable for Vec<T> {}
+// SAFETY: HashMap deallocates table memory and drops keys, values, and the hasher, all of which are RcuDroppable.
+unsafe impl<K: RcuDroppable, V: RcuDroppable, S: RcuDroppable> RcuDroppable
+    for std::collections::HashMap<K, V, S>
+{
+}
 // SAFETY: Arrays drop their elements of type T, which are RcuDroppable.
 unsafe impl<T: RcuDroppable, const N: usize> RcuDroppable for [T; N] {}
 // SAFETY: Slice drops its elements of type T, which are RcuDroppable.
@@ -207,6 +212,7 @@ mod tests {
         rwlock: fuchsia_sync::RwLock<String>,
         rcu_arc: crate::RcuArc<u32>,
         weak: std::sync::Weak<u32>,
+        hash_map: std::collections::HashMap<u32, String>,
     }
 
     fn assert_rcu_droppable<T: super::RcuDroppable>() {}

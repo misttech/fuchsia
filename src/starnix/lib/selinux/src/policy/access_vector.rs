@@ -6,6 +6,7 @@ use std::fmt::{Debug, Formatter, LowerHex};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::str::FromStr;
 
+use fuchsia_rcu::RcuDroppable;
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::PermissionId;
@@ -13,7 +14,18 @@ use super::traits::PolicyId;
 
 /// Set of permissions that may be granted to sources accessing targets of a particular class.
 #[derive(
-    Copy, Clone, Default, Eq, Hash, PartialEq, PartialOrd, Ord, Parse, Serialize, Validate,
+    Copy,
+    Clone,
+    Default,
+    Eq,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    RcuDroppable,
+    Parse,
+    Serialize,
+    Validate,
 )]
 pub struct AccessVector(u32);
 

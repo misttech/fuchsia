@@ -4,6 +4,7 @@
 
 use std::num::NonZeroU16;
 
+use fuchsia_rcu::RcuDroppable;
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 use super::Policy;
@@ -16,7 +17,7 @@ use super::permissions::Permission;
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 
 /// Tag type for type safety of policy class identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, RcuDroppable)]
 pub struct ClassTag;
 
 /// Identifies a class within a policy.

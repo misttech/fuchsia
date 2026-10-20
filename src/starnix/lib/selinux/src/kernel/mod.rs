@@ -18,10 +18,11 @@ pub(crate) use index::PolicyIndex;
 pub use permissions::*;
 
 use crate::policy::{AccessVector, ClassId, XpermsBitmap};
+use fuchsia_rcu::RcuDroppable;
 use std::num::NonZeroU32;
 
 /// Identifies a specific class by its policy-defined Id, or as a kernel object class enum Id.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, RcuDroppable)]
 pub enum ObjectClass {
     /// Refers to a well-known SELinux [`KernelClass`] (e.g. "process", "file", "capability").
     Kernel(KernelClass),
