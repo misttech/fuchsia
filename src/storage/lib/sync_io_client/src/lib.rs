@@ -94,14 +94,45 @@ fn zxio_attr_from_fidl(
     out_attr
 }
 
+/// A handle to an open directory connection for iterating over directory entries.
+///
+/// Readdir is a stateful operation, unlike all the other file and directory operations handled by
+/// SyncIo. Implementors of this trait need to manage that internal state, and users with different
+/// readdir positions each need to get their own SyncIoDirectory instance.
+pub trait SyncIoDirectory: Send + Sync + 'static {
+    /// Repositions the directory iterator for subsequent [`Self::readdir`] calls.
+    ///
+    /// `new_index` is a 0-based entry count from the start of the directory. Returns the actual
+    /// internal index.
+    fn seek(&self, new_index: u64) -> Result<u64, zx::Status>;
+
+    /// Reads entries from the current iterator position, calling the callback function on each
+    /// entry.
+    ///
+    /// Returning `ControlFlow::Continue(())` from the callback consumes the entry and advances the
+    /// index by 1. `ControlFlow::Break(b)` stops iteration without consuming the entry and returns
+    /// `Ok(Some(b))`. Returns `Ok(None)` when no more entries remain.
+    fn readdir<B, S: FnMut(u64, fio::DirentType, &[u8]) -> ControlFlow<B, ()>>(
+        &self,
+        sink: S,
+    ) -> Result<Option<B>, zx::Status>;
+
+    /// Flushes pending directory updates to underlying storage.
+    fn sync(&self) -> Result<(), zx::Status>;
+
+    /// Clones the underlying FIDL directory connection if backed by one, or returns `Ok(None)` for
+    /// in-process implementations. The cloned connection resets the position to zero.
+    fn clone_proxy(&self) -> Result<Option<fio::DirectorySynchronousProxy>, zx::Status>;
+}
+
 /// This trait is used so that clients can create their own wrappers around types exposed here.
-pub trait Factory {
+pub trait Factory<T> {
     type Result;
 
-    fn create_node(self, io: RemoteIo, info: fio::NodeInfo) -> Self::Result;
-    fn create_directory(self, io: RemoteIo, info: fio::DirectoryInfo) -> Self::Result;
-    fn create_file(self, io: RemoteIo, info: fio::FileInfo) -> Self::Result;
-    fn create_symlink(self, io: RemoteIo, info: fio::SymlinkInfo) -> Self::Result;
+    fn create_node(self, io: T, info: fio::NodeInfo) -> Self::Result;
+    fn create_directory(self, io: T, info: fio::DirectoryInfo) -> Self::Result;
+    fn create_file(self, io: T, info: fio::FileInfo) -> Self::Result;
+    fn create_symlink(self, io: T, info: fio::SymlinkInfo) -> Self::Result;
 }
 
 /// Waits for the fuchsia.io `OnRepresentation` event and then uses the factory to create an an
@@ -110,7 +141,7 @@ pub trait Factory {
 ///
 /// NOTE: The attributes returned are not comprehensive.  Check `zxio_attr_from_fidl` above for
 /// supported attributes.
-pub fn create_with_on_representation<F: Factory>(
+pub fn create_with_on_representation<F: Factory<RemoteIo>>(
     proxy: fio::NodeSynchronousProxy,
     factory: F,
 ) -> Result<F::Result, zx::Status> {
@@ -144,6 +175,159 @@ pub fn create_with_on_representation<F: Factory>(
     }
 }
 
+/// Trait abstraction for synchronous I/O operations on Fuchsia nodes.
+pub trait SyncIo: Send + Sync + Sized + 'static {
+    type Directory: SyncIoDirectory;
+
+    /// Returns attributes in fuchsia.io's FIDL representation.
+    fn attr_get(
+        &self,
+        query: fio::NodeAttributesQuery,
+    ) -> Result<(fio::MutableNodeAttributes, fio::ImmutableNodeAttributes), zx::Status>;
+
+    /// Sets attributes.
+    fn attr_set(&self, attributes: fio::MutableNodeAttributes) -> Result<(), zx::Status>;
+
+    /// Queries the filesystem info.
+    fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status>;
+
+    /// Opens a node relative to this directory.
+    fn open<F: Factory<Self>>(
+        &self,
+        path: &str,
+        flags: fio::Flags,
+        create_attributes: Option<fio::MutableNodeAttributes>,
+        query: fio::NodeAttributesQuery,
+        factory: F,
+    ) -> Result<F::Result, zx::Status>;
+
+    /// Opens all nodes iteratively along the relative sub-paths given in `paths`.
+    /// Each item in `paths` is opened from the node returned by opening the previous item in
+    /// `paths`.
+    fn open_pipelined<F: Factory<Self>>(
+        &self,
+        paths: &[&str],
+        flags: fio::Flags,
+        query: fio::NodeAttributesQuery,
+        factory_fn: impl FnMut() -> F,
+    ) -> impl Iterator<Item = Result<F::Result, zx::Status>>;
+
+    /// Links this node into `target_dir` with `name`.
+    fn link_into(&self, target_dir: &Self, name: &str) -> Result<(), zx::Status>;
+
+    /// Unlinks `name` from this directory.
+    fn unlink(&self, name: &str, flags: fio::UnlinkFlags) -> Result<(), zx::Status>;
+
+    /// Renames `old_path` in this directory to `new_path` in `new_directory`.
+    fn rename(
+        &self,
+        old_path: &str,
+        new_directory: &Self,
+        new_path: &str,
+    ) -> Result<(), zx::Status>;
+
+    /// Creates a symlink in this directory.
+    fn create_symlink(&self, name: &str, target: &[u8]) -> Result<Self, zx::Status>;
+
+    /// Returns `(data, eof)`, where `eof` is true if we encountered the end of the file. If `eof`
+    /// is false, then it is still possible that a subsequent read would read no more i.e. the end
+    /// of the file _might_ have been reached. This might return fewer bytes than `max`.
+    fn read_partial(&self, offset: u64, max: usize) -> Result<(Vec<u8>, bool), zx::Status>;
+
+    /// Attempts to read `len` bytes and will only return fewer if it encounters the end of the
+    /// file, or an error. `callback` will be called for each chunk. If any bytes are successfully
+    /// passed to `callback`, `read` will return the total number of bytes successfully written and
+    /// any error encountered will be discarded.
+    fn read<E>(
+        &self,
+        offset: u64,
+        len: usize,
+        mut callback: impl FnMut(Vec<u8>) -> Result<usize, E>,
+        map_err: impl FnOnce(zx::Status) -> E,
+    ) -> Result<usize, E> {
+        let mut total = 0;
+        while total < len {
+            match self.read_partial(offset + total as u64, len - total) {
+                Ok((data, eof)) => {
+                    if data.is_empty() {
+                        break;
+                    }
+                    let data_len = data.len();
+                    let written = callback(data)?;
+                    total += written;
+                    if eof || written < data_len {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    if total > 0 {
+                        break;
+                    }
+                    return Err(map_err(e));
+                }
+            }
+        }
+        Ok(total)
+    }
+
+    /// Writes `data` at `offset`.
+    fn write(&self, offset: u64, data: &[u8]) -> Result<usize, zx::Status>;
+
+    /// Returns true if vectored operations are supported.
+    fn supports_vectored(&self) -> bool;
+
+    /// Reads into `iovecs` using a vectored read. This is only supported with a valid stream. See
+    /// `supports_vectored` above.
+    ///
+    /// # Safety
+    ///
+    /// Same as `zx::Stream::readv`.
+    unsafe fn readv(
+        &self,
+        offset: u64,
+        iovecs: &mut [zx::sys::zx_iovec_t],
+    ) -> Result<usize, zx::Status>;
+
+    /// Writes from `iovecs` using vectored write. This is only supported with a valid stream. See
+    /// `supports_vectored` above.
+    fn writev(&self, offset: u64, iovecs: &[zx::sys::zx_iovec_t]) -> Result<usize, zx::Status>;
+
+    /// Truncates the file to `length`.
+    fn truncate(&self, length: u64) -> Result<(), zx::Status>;
+
+    /// Returns a VMO backing the file.
+    fn vmo_get(&self, flags: zx::VmarFlags) -> Result<zx::Vmo, zx::Status>;
+
+    /// Syncs this node.
+    fn sync(&self) -> Result<(), zx::Status>;
+
+    /// Enables fsverity on this file.
+    fn enable_verity(&self, descriptor: &zxio_fsverity_descriptor_t) -> Result<(), zx::Status>;
+
+    /// Allocates space for this file.
+    fn allocate(&self, offset: u64, len: u64, mode: AllocateMode) -> Result<(), zx::Status>;
+
+    /// Gets an extended attribute.
+    fn xattr_get(&self, name: &[u8]) -> Result<Vec<u8>, zx::Status>;
+
+    /// Sets an extended attribute.
+    fn xattr_set(
+        &self,
+        name: &[u8],
+        value: &[u8],
+        mode: syncio::XattrSetMode,
+    ) -> Result<(), zx::Status>;
+
+    /// Removes an extended attribute.
+    fn xattr_remove(&self, name: &[u8]) -> Result<(), zx::Status>;
+
+    /// Lists extended attributes.
+    fn xattr_list(&self) -> Result<Vec<Vec<u8>>, zx::Status>;
+
+    /// Opens a directory iterator for this node.
+    fn open_directory(&self) -> Result<Self::Directory, zx::Status>;
+}
+
 /// Wraps a proxy and optional stream and provides wrappers around most fuchsia.io methods.
 ///
 /// NOTE: The caller must take care to call appropriate methods for the underlying type.  Calling
@@ -169,12 +353,34 @@ impl RemoteIo {
         self.proxy
     }
 
+    /// Clones (in the fuchsia.unknown.Clonable sense) the underlying proxy.
+    pub fn clone_proxy(&self) -> Result<fio::NodeSynchronousProxy, zx::Status> {
+        let (client_end, server_end) = zx::Channel::create();
+        self.proxy.clone(server_end.into()).map_err(|_| zx::Status::IO)?;
+        Ok(client_end.into())
+    }
+
+    /// Returns attributes mapped to `zxio_node_attributes_t`.
+    ///
+    /// NOTE: Not all attributes are supported. See `zxio_attr_from_fidl` above for supported
+    /// attributes.
+    pub fn attr_get_zxio(
+        &self,
+        query: fio::NodeAttributesQuery,
+    ) -> Result<zxio_node_attributes_t, zx::Status> {
+        self.attr_get(query).map(|(m, i)| zxio_attr_from_fidl(&m, &i))
+    }
+
     fn cast_proxy<T: From<zx::Channel> + Into<zx::NullableHandle>>(&self) -> zx::Unowned<'_, T> {
         zx::Unowned::new(self.proxy.as_channel())
     }
+}
+
+impl SyncIo for RemoteIo {
+    type Directory = RemoteDirectory;
 
     /// Returns attributes in fuchsia.io's FIDL representation.
-    pub fn attr_get(
+    fn attr_get(
         &self,
         query: fio::NodeAttributesQuery,
     ) -> Result<(fio::MutableNodeAttributes, fio::ImmutableNodeAttributes), zx::Status> {
@@ -184,27 +390,25 @@ impl RemoteIo {
             .map_err(zx::Status::err_from_raw)
     }
 
-    /// Returns attributes mapped to `zxio_node_attributes_t`
-    ///
-    /// NOTE: Not all attributes are supported.  See `zxio_attr_from_fidl` above for supported
-    /// attributes.
-    pub fn attr_get_zxio(
-        &self,
-        query: fio::NodeAttributesQuery,
-    ) -> Result<zxio_node_attributes_t, zx::Status> {
-        self.attr_get(query).map(|(m, i)| zxio_attr_from_fidl(&m, &i))
-    }
-
     /// Sets attributes.
-    pub fn attr_set(&self, attributes: fio::MutableNodeAttributes) -> Result<(), zx::Status> {
+    fn attr_set(&self, attributes: fio::MutableNodeAttributes) -> Result<(), zx::Status> {
         self.proxy
             .update_attributes(&attributes, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
             .map_err(zx::Status::err_from_raw)
     }
 
+    fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status> {
+        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
+        let (status, info) = dir_proxy
+            .query_filesystem(zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?;
+        zx::Status::ok(status)?;
+        info.map(|b| *b).ok_or(zx::Status::NOT_SUPPORTED)
+    }
+
     /// Wraps fuchsia.io/Directory's Open.
-    pub fn open<F: Factory>(
+    fn open<F: Factory<Self>>(
         &self,
         path: &str,
         flags: fio::Flags,
@@ -240,7 +444,7 @@ impl RemoteIo {
     ///
     /// NOTE: To prevent opening and writing through non-directory nodes, this function adds
     /// `fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::PROTOCOL_SYMLINK` to intermediate components.
-    pub fn open_pipelined<F: Factory>(
+    fn open_pipelined<F: Factory<Self>>(
         &self,
         paths: &[&str],
         flags: fio::Flags,
@@ -300,7 +504,7 @@ impl RemoteIo {
     /// Returns `(data, eof)`, where `eof` is true if we encountered the end of the file.  If `eof`
     /// is false, then it is still possible that a subsequent read would read no more i.e. the end
     /// of the file _might_ have been reached.  This might return fewer bytes than `max`.
-    pub fn read_partial(&self, offset: u64, max: usize) -> Result<(Vec<u8>, bool), zx::Status> {
+    fn read_partial(&self, offset: u64, max: usize) -> Result<(Vec<u8>, bool), zx::Status> {
         if self.stream.is_invalid() {
             let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
             let max = std::cmp::min(max as u64, fio::MAX_TRANSFER_SIZE);
@@ -319,44 +523,8 @@ impl RemoteIo {
         }
     }
 
-    /// Attempts to read `len` bytes and will only return fewer if it encounters the end of the
-    /// file, or an error.  `callback` will be called for each chunk.  If any bytes are successfully
-    /// passed to `callback`, `read` will return the total number of bytes successfully written and
-    /// any error encountered will be discarded.
-    pub fn read<E>(
-        &self,
-        offset: u64,
-        len: usize,
-        mut callback: impl FnMut(Vec<u8>) -> Result<usize, E>,
-        map_err: impl FnOnce(zx::Status) -> E,
-    ) -> Result<usize, E> {
-        let mut total = 0;
-        while total < len {
-            match self.read_partial(offset + total as u64, len - total) {
-                Ok((data, eof)) => {
-                    if data.is_empty() {
-                        break;
-                    }
-                    let data_len = data.len();
-                    let written = callback(data)?;
-                    total += written;
-                    if eof || written < data_len {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    if total > 0 {
-                        break;
-                    }
-                    return Err(map_err(e));
-                }
-            }
-        }
-        Ok(total)
-    }
-
     /// Writes `data` at `offset`.
-    pub fn write(&self, offset: u64, data: &[u8]) -> Result<usize, zx::Status> {
+    fn write(&self, offset: u64, data: &[u8]) -> Result<usize, zx::Status> {
         let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
         let mut total_written = 0;
         for chunk in data.chunks(fio::MAX_TRANSFER_SIZE as usize) {
@@ -384,7 +552,7 @@ impl RemoteIo {
     }
 
     /// Returns true if vectored operations are supported.
-    pub fn supports_vectored(&self) -> bool {
+    fn supports_vectored(&self) -> bool {
         // We only support readv and writev if we have a stream.
         !self.stream.is_invalid()
     }
@@ -395,7 +563,7 @@ impl RemoteIo {
     /// # Safety
     ///
     /// Same as `zx::Stream::readv`.
-    pub unsafe fn readv(
+    unsafe fn readv(
         &self,
         offset: u64,
         iovecs: &mut [zx::sys::zx_iovec_t],
@@ -409,7 +577,7 @@ impl RemoteIo {
 
     /// Writes from `iovecs` using vectored write.  This is only supported with a valid stream.  See
     /// `supports_vectored` above.
-    pub fn writev(&self, offset: u64, iovecs: &[zx::sys::zx_iovec_t]) -> Result<usize, zx::Status> {
+    fn writev(&self, offset: u64, iovecs: &[zx::sys::zx_iovec_t]) -> Result<usize, zx::Status> {
         if self.stream.is_invalid() {
             return Err(zx::Status::NOT_SUPPORTED);
         }
@@ -417,7 +585,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/File's Truncate.
-    pub fn truncate(&self, length: u64) -> Result<(), zx::Status> {
+    fn truncate(&self, length: u64) -> Result<(), zx::Status> {
         self.cast_proxy::<fio::FileSynchronousProxy>()
             .resize(length, zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
@@ -425,7 +593,7 @@ impl RemoteIo {
     }
 
     /// Returns a VMO backing the file.
-    pub fn vmo_get(&self, flags: zx::VmarFlags) -> Result<zx::Vmo, zx::Status> {
+    fn vmo_get(&self, flags: zx::VmarFlags) -> Result<zx::Vmo, zx::Status> {
         let mut fio_flags = fio::VmoFlags::empty();
         if flags.contains(zx::VmarFlags::PERM_READ) {
             fio_flags |= fio::VmoFlags::READ;
@@ -445,30 +613,15 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Node's Sync.
-    pub fn sync(&self) -> Result<(), zx::Status> {
+    fn sync(&self) -> Result<(), zx::Status> {
         self.proxy
             .sync(zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
             .map_err(zx::Status::err_from_raw)
     }
 
-    /// Closes and updates access time asynchronously.
-    pub fn close_and_update_access_time(self) {
-        let _ = self.proxy.get_attributes(
-            fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE,
-            zx::MonotonicInstant::INFINITE_PAST,
-        );
-    }
-
-    /// Clones (in the fuchsia.unknown.Clonable sense) the underlying proxy.
-    pub fn clone_proxy(&self) -> Result<fio::NodeSynchronousProxy, zx::Status> {
-        let (client_end, server_end) = zx::Channel::create();
-        self.proxy.clone(server_end.into()).map_err(|_| zx::Status::IO)?;
-        Ok(client_end.into())
-    }
-
     /// Wraps fuchsia.io/Node's LinkInto.
-    pub fn link_into(&self, target_dir: &Self, name: &str) -> Result<(), zx::Status> {
+    fn link_into(&self, target_dir: &Self, name: &str) -> Result<(), zx::Status> {
         let target_dir_proxy = target_dir.cast_proxy::<fio::DirectorySynchronousProxy>();
         let (status, token) = target_dir_proxy
             .deprecated_get_token(zx::MonotonicInstant::INFINITE)
@@ -486,7 +639,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Directory's Unlink.
-    pub fn unlink(&self, name: &str, flags: fio::UnlinkFlags) -> Result<(), zx::Status> {
+    fn unlink(&self, name: &str, flags: fio::UnlinkFlags) -> Result<(), zx::Status> {
         let options = fio::UnlinkOptions { flags: Some(flags), ..Default::default() };
         let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
         dir_proxy
@@ -496,7 +649,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Directory's Rename.
-    pub fn rename(
+    fn rename(
         &self,
         old_path: &str,
         new_directory: &Self,
@@ -516,7 +669,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Directory's CreateSymlink.
-    pub fn create_symlink(&self, name: &str, target: &[u8]) -> Result<RemoteIo, zx::Status> {
+    fn create_symlink(&self, name: &str, target: &[u8]) -> Result<RemoteIo, zx::Status> {
         let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
         let (client_end, server_end) = zx::Channel::create();
         dir_proxy
@@ -527,7 +680,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/File's EnableVerity.
-    pub fn enable_verity(&self, descriptor: &zxio_fsverity_descriptor_t) -> Result<(), zx::Status> {
+    fn enable_verity(&self, descriptor: &zxio_fsverity_descriptor_t) -> Result<(), zx::Status> {
         let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
         let options = fio::VerificationOptions {
             hash_algorithm: Some(match descriptor.hash_algorithm {
@@ -545,7 +698,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/File's Allocate.
-    pub fn allocate(&self, offset: u64, len: u64, mode: AllocateMode) -> Result<(), zx::Status> {
+    fn allocate(&self, offset: u64, len: u64, mode: AllocateMode) -> Result<(), zx::Status> {
         let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
         let mut fio_mode = fio::AllocateMode::empty();
         if mode.contains(AllocateMode::KEEP_SIZE) {
@@ -573,7 +726,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Node's GetExtendedAttribute.
-    pub fn xattr_get(&self, name: &[u8]) -> Result<Vec<u8>, zx::Status> {
+    fn xattr_get(&self, name: &[u8]) -> Result<Vec<u8>, zx::Status> {
         let name_str = std::str::from_utf8(name.as_ref()).map_err(|_| zx::Status::INVALID_ARGS)?;
         let result = self
             .proxy
@@ -593,7 +746,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Node's SetExtendedAttribute.
-    pub fn xattr_set(
+    fn xattr_set(
         &self,
         name: &[u8],
         value: &[u8],
@@ -612,7 +765,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Node's RenoveExtendedAttribute.
-    pub fn xattr_remove(&self, name: &[u8]) -> Result<(), zx::Status> {
+    fn xattr_remove(&self, name: &[u8]) -> Result<(), zx::Status> {
         let name_str = std::str::from_utf8(name.as_ref()).map_err(|_| zx::Status::INVALID_ARGS)?;
         self.proxy
             .remove_extended_attribute(name_str.as_bytes(), zx::MonotonicInstant::INFINITE)
@@ -621,7 +774,7 @@ impl RemoteIo {
     }
 
     /// Wraps fuchsia.io/Node's ListExtendedAttributes.
-    pub fn xattr_list(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+    fn xattr_list(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
         let (client_end, server_end) = zx::Channel::create();
         self.proxy.list_extended_attributes(server_end.into()).map_err(|_| zx::Status::IO)?;
         let iterator = fio::ExtendedAttributeIteratorSynchronousProxy::new(client_end);
@@ -637,6 +790,11 @@ impl RemoteIo {
             }
         }
         Ok(all_attrs)
+    }
+
+    fn open_directory(&self) -> Result<Self::Directory, zx::Status> {
+        let proxy = self.clone_proxy()?;
+        Ok(RemoteDirectory::new(proxy.into_channel().into()))
     }
 }
 
@@ -776,9 +934,11 @@ impl RemoteDirectory {
     pub fn new(proxy: fio::DirectorySynchronousProxy) -> Self {
         Self { proxy, state: Mutex::default() }
     }
+}
 
+impl SyncIoDirectory for RemoteDirectory {
     /// Seeks to `new_index` in the directory.
-    pub fn seek(&self, new_index: u64) -> Result<u64, zx::Status> {
+    fn seek(&self, new_index: u64) -> Result<u64, zx::Status> {
         let mut state = self.state.lock();
 
         if new_index < state.current_index {
@@ -810,7 +970,7 @@ impl RemoteDirectory {
     /// Returns `None` if there are no more entries to be read.  `sink` can choose to return
     /// `ControlFlow::Break(_)` in which case the entry will be returned the next time `readdir` is
     /// called.
-    pub fn readdir<B, S: FnMut(u64, fio::DirentType, &[u8]) -> ControlFlow<B, ()>>(
+    fn readdir<B, S: FnMut(u64, fio::DirentType, &[u8]) -> ControlFlow<B, ()>>(
         &self,
         mut sink: S,
     ) -> Result<Option<B>, zx::Status> {
@@ -832,7 +992,7 @@ impl RemoteDirectory {
     }
 
     /// Wraps fuchsia.io/Node's Sync.
-    pub fn sync(&self) -> Result<(), zx::Status> {
+    fn sync(&self) -> Result<(), zx::Status> {
         self.proxy
             .sync(zx::MonotonicInstant::INFINITE)
             .map_err(|_| zx::Status::IO)?
@@ -840,10 +1000,10 @@ impl RemoteDirectory {
     }
 
     /// Clones (in the fuchsia.unknown.Clonable sense) the underlying proxy.
-    pub fn clone_proxy(&self) -> Result<fio::DirectorySynchronousProxy, zx::Status> {
+    fn clone_proxy(&self) -> Result<Option<fio::DirectorySynchronousProxy>, zx::Status> {
         let (client_end, server_end) = zx::Channel::create();
         self.proxy.clone(server_end.into()).map_err(|_| zx::Status::IO)?;
-        Ok(client_end.into())
+        Ok(Some(client_end.into()))
     }
 }
 
@@ -1154,7 +1314,7 @@ mod tests {
 
     struct DummyFactory;
 
-    impl Factory for DummyFactory {
+    impl Factory<RemoteIo> for DummyFactory {
         type Result = RemoteIo;
         fn create_node(self, io: RemoteIo, _info: fio::NodeInfo) -> Self::Result {
             io
@@ -1310,6 +1470,65 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(results.len(), 1);
             assert_eq!(results[0].as_ref().err(), Some(&zx::Status::PEER_CLOSED));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_query_filesystem() {
+        let (client, mut stream) = fidl::endpoints::create_request_stream::<fio::DirectoryMarker>();
+        let _server_task = fasync::Task::spawn(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::DirectoryRequest::QueryFilesystem { responder } => {
+                        let info = fio::FilesystemInfo {
+                            total_bytes: 1024,
+                            used_bytes: 512,
+                            total_nodes: 100,
+                            used_nodes: 10,
+                            free_shared_pool_bytes: 0,
+                            fs_id: 12345,
+                            block_size: 4096,
+                            max_filename_size: 255,
+                            fs_type: 0x66786673,
+                            padding: 0,
+                            name: [0; 32],
+                        };
+                        responder.send(0, Some(&info)).unwrap();
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        let io = RemoteIo::new(client.into_channel().into());
+        fasync::unblock(move || {
+            let info = io.query_filesystem().expect("query_filesystem failed");
+            assert_eq!(info.total_bytes, 1024);
+            assert_eq!(info.fs_id, 12345);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_open_directory_and_clone() {
+        let (client, mut stream) = fidl::endpoints::create_request_stream::<fio::DirectoryMarker>();
+        let _server_task = fasync::Task::spawn(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::DirectoryRequest::Clone { request, .. } => {
+                        let _stream = request.into_stream();
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        let io = RemoteIo::new(client.into_channel().into());
+        fasync::unblock(move || {
+            let dir = io.open_directory().expect("open_directory failed");
+            let cloned = dir.clone_proxy().expect("clone_proxy failed");
+            assert!(cloned.is_some());
         })
         .await;
     }

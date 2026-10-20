@@ -18,6 +18,7 @@ use starnix_logging::{Level, log, log_error};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, from_status_like_fdio, statfs};
 use std::sync::Arc;
+use sync_io_client::SyncIo;
 use thiserror::Error;
 
 const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
@@ -25,19 +26,19 @@ const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
 // container's data storage capability.
 const KEY_FILE_PATH: &str = "key_file";
 
-pub struct RemoteVolume {
-    remotefs: RemoteFs,
+pub struct RemoteVolume<I> {
+    remotefs: RemoteFs<I>,
     exposed_dir_proxy: fio::DirectorySynchronousProxy,
     crypt_service: Arc<CryptService>,
 }
 
-impl RemoteVolume {
-    pub fn remotefs(&self) -> &RemoteFs {
+impl<I> RemoteVolume<I> {
+    pub fn remotefs(&self) -> &RemoteFs<I> {
         &self.remotefs
     }
 }
 
-impl FileSystemOps for RemoteVolume {
+impl<I: SyncIo> FileSystemOps for RemoteVolume<I> {
     fn statfs(&self, fs: &FileSystem, current_task: &CurrentTask) -> Result<statfs, Errno> {
         self.remotefs.statfs(fs, current_task)
     }

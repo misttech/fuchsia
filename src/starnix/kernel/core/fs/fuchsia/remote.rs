@@ -52,7 +52,7 @@ use starnix_uapi::{
 use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
-use sync_io_client::{RemoteIo, create_with_on_representation};
+use sync_io_client::{RemoteDirectory, RemoteIo, SyncIo, SyncIoDirectory};
 use syncio::zxio::{
     ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_SYMLINK, ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET,
     ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET, ZXIO_OBJECT_TYPE_RAW_SOCKET,
@@ -123,7 +123,7 @@ pub fn new_remotefs_in_root(
     RemoteFs::new_fs(kernel, root.into_channel(), options, rights)
 }
 
-pub struct RemoteFs {
+pub struct RemoteFs<I> {
     // If true, trust the remote file system's IDs (which requires that the remote file system does
     // not span mounts).  This must be true to properly support hard links.  If this is false, the
     // same node can end up having different IDs as it leaves and reenters the node cache.
@@ -131,7 +131,7 @@ pub struct RemoteFs {
     // unique IDs so this *must* be false in that case.
     use_remote_ids: bool,
 
-    root_proxy: fio::DirectorySynchronousProxy,
+    root_io: I,
 
     // The rights used for the root node.
     root_rights: fio::Flags,
@@ -142,18 +142,18 @@ pub struct RemoteFs {
     name: &'static str,
 }
 
-impl RemoteFs {
+impl<I: 'static> RemoteFs<I> {
     /// Returns a reference to a RemoteFs given a reference to a FileSystem.
     ///
     /// # Panics
     ///
     /// This will panic if `fs`'s ops aren't `RemoteFs`, so this should only be called when this is
     /// known to be the case.
-    fn from_fs(fs: &FileSystem) -> &RemoteFs {
-        if let Some(remote_vol) = fs.downcast_ops::<RemoteVolume>() {
+    fn from_fs(fs: &FileSystem) -> &RemoteFs<I> {
+        if let Some(remote_vol) = fs.downcast_ops::<RemoteVolume<I>>() {
             remote_vol.remotefs()
         } else {
-            fs.downcast_ops::<RemoteFs>().unwrap()
+            fs.downcast_ops::<RemoteFs<I>>().unwrap()
         }
     }
 }
@@ -163,56 +163,44 @@ const DYNAMIC_FS_BYTES_PER_INODE_FALLBACK: u64 = 16384; // 16 KiB
 const SYNC_IOC_FILE_INFO: u8 = 4;
 const SYNC_IOC_MERGE: u8 = 3;
 
-impl FileSystemOps for RemoteFs {
+impl<I: SyncIo> FileSystemOps for RemoteFs<I> {
     fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
-        let (status, info) = self
-            .root_proxy
-            .query_filesystem(zx::MonotonicInstant::INFINITE)
-            .map_err(|_| errno!(EIO))?;
-        // Not all remote filesystems support `QueryFilesystem`, many return ZX_ERR_NOT_SUPPORTED.
-        if status == 0 {
-            if let Some(info) = info {
-                let (total_blocks, free_blocks) = if info.block_size > 0 {
-                    (
-                        (info.total_bytes / u64::from(info.block_size))
-                            .try_into()
-                            .unwrap_or(i64::MAX),
-                        ((info.total_bytes.saturating_sub(info.used_bytes))
-                            / u64::from(info.block_size))
-                        .try_into()
-                        .unwrap_or(i64::MAX),
-                    )
-                } else {
-                    (0, 0)
-                };
+        if let Ok(info) = self.root_io.query_filesystem() {
+            let (total_blocks, free_blocks) = if info.block_size > 0 {
+                (
+                    (info.total_bytes / u64::from(info.block_size)).try_into().unwrap_or(i64::MAX),
+                    ((info.total_bytes.saturating_sub(info.used_bytes))
+                        / u64::from(info.block_size))
+                    .try_into()
+                    .unwrap_or(i64::MAX),
+                )
+            } else {
+                (0, 0)
+            };
 
-                let total_nodes = std::cmp::min(
-                    info.total_nodes,
-                    info.total_bytes / DYNAMIC_FS_BYTES_PER_INODE_FALLBACK,
-                );
-                let free_nodes = total_nodes.saturating_sub(info.used_nodes);
+            let total_nodes = std::cmp::min(
+                info.total_nodes,
+                info.total_bytes / DYNAMIC_FS_BYTES_PER_INODE_FALLBACK,
+            );
+            let free_nodes = total_nodes.saturating_sub(info.used_nodes);
 
-                let fsid = __kernel_fsid_t {
-                    val: [
-                        (info.fs_id & 0xffffffff) as i32,
-                        ((info.fs_id >> 32) & 0xffffffff) as i32,
-                    ],
-                };
+            let fsid = __kernel_fsid_t {
+                val: [(info.fs_id & 0xffffffff) as i32, ((info.fs_id >> 32) & 0xffffffff) as i32],
+            };
 
-                return Ok(statfs {
-                    f_type: info.fs_type as i64,
-                    f_bsize: info.block_size.into(),
-                    f_blocks: total_blocks,
-                    f_bfree: free_blocks,
-                    f_bavail: free_blocks,
-                    f_files: total_nodes.try_into().unwrap_or(i64::MAX),
-                    f_ffree: free_nodes.try_into().unwrap_or(i64::MAX),
-                    f_fsid: fsid,
-                    f_namelen: info.max_filename_size.try_into().unwrap_or(0),
-                    f_frsize: info.block_size.into(),
-                    ..statfs::default()
-                });
-            }
+            return Ok(statfs {
+                f_type: info.fs_type as i64,
+                f_bsize: info.block_size.into(),
+                f_blocks: total_blocks,
+                f_bfree: free_blocks,
+                f_bavail: free_blocks,
+                f_files: total_nodes.try_into().unwrap_or(i64::MAX),
+                f_ffree: free_nodes.try_into().unwrap_or(i64::MAX),
+                f_fsid: fsid,
+                f_namelen: info.max_filename_size.try_into().unwrap_or(0),
+                f_frsize: info.block_size.into(),
+                ..statfs::default()
+            });
         }
         Ok(default_statfs(REMOTE_FS_MAGIC))
     }
@@ -250,8 +238,9 @@ impl FileSystemOps for RemoteFs {
             new_parent.fail_if_locked(current_task, info)?;
         }
 
-        let Some((old_parent_ops, new_parent_ops)) =
-            old_parent.downcast_ops::<RemoteNode>().zip(new_parent.downcast_ops::<RemoteNode>())
+        let Some((old_parent_ops, new_parent_ops)) = old_parent
+            .downcast_ops::<RemoteNode<I>>()
+            .zip(new_parent.downcast_ops::<RemoteNode<I>>())
         else {
             return error!(EXDEV);
         };
@@ -262,7 +251,7 @@ impl FileSystemOps for RemoteFs {
             nodes.push(r);
         }
 
-        will_dirty(&nodes, || {
+        will_dirty::<I, _, _>(&nodes, || {
             old_parent_ops
                 .node
                 .io
@@ -276,10 +265,7 @@ impl FileSystemOps for RemoteFs {
     }
 
     fn sync(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<(), Errno> {
-        self.root_proxy
-            .sync(zx::MonotonicInstant::INFINITE)
-            .map_err(|_| errno!(EIO))?
-            .map_err(|status| map_sync_error(zx::Status::err_from_raw(status)))
+        self.root_io.sync().map_err(map_sync_error)
     }
 
     fn manages_timestamps(&self) -> bool {
@@ -312,10 +298,16 @@ struct Factory<'a> {
     assume_special: bool,
 }
 
-impl<'a> sync_io_client::Factory for Factory<'a> {
+impl<'a> Factory<'a> {
+    fn new(node_info: &'a mut FsNodeInfo, assume_special: bool) -> Self {
+        Self { node_info, assume_special }
+    }
+}
+
+impl<'a, I: SyncIo> sync_io_client::Factory<I> for Factory<'a> {
     type Result = (Box<dyn FsNodeOps>, u64);
 
-    fn create_node(self, io: RemoteIo, info: fio::NodeInfo) -> Self::Result {
+    fn create_node(self, io: I, info: fio::NodeInfo) -> Self::Result {
         let dirty = info.attributes.is_none();
         let attrs = get_attributes(&info.attributes);
         let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
@@ -327,7 +319,7 @@ impl<'a> sync_io_client::Factory for Factory<'a> {
         (Box::new(RemoteNode::new(io, dirty)), id)
     }
 
-    fn create_directory(self, io: RemoteIo, info: fio::DirectoryInfo) -> Self::Result {
+    fn create_directory(self, io: I, info: fio::DirectoryInfo) -> Self::Result {
         let dirty = info.attributes.is_none();
         let attrs = get_attributes(&info.attributes);
         let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
@@ -339,7 +331,7 @@ impl<'a> sync_io_client::Factory for Factory<'a> {
         (Box::new(RemoteNode::new(io, dirty)), id)
     }
 
-    fn create_file(self, io: RemoteIo, info: fio::FileInfo) -> Self::Result {
+    fn create_file(self, io: I, info: fio::FileInfo) -> Self::Result {
         let dirty = info.attributes.is_none();
         let is_special_node = self.assume_special || is_special(&info);
         let attrs = get_attributes(&info.attributes);
@@ -357,7 +349,7 @@ impl<'a> sync_io_client::Factory for Factory<'a> {
         (ops, id)
     }
 
-    fn create_symlink(self, io: RemoteIo, info: fio::SymlinkInfo) -> Self::Result {
+    fn create_symlink(self, io: I, info: fio::SymlinkInfo) -> Self::Result {
         let dirty = info.attributes.is_none();
         let attrs = get_attributes(&info.attributes);
         let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
@@ -380,14 +372,18 @@ struct LookupFactory<'a> {
 }
 
 impl<'a> LookupFactory<'a> {
-    fn get_node(
+    fn new(fs: &'a FileSystemHandle, current_task: &'a CurrentTask) -> Self {
+        Self { fs, current_task }
+    }
+
+    fn get_node<I: SyncIo>(
         &self,
-        io: RemoteIo,
+        io: I,
         attributes: &fio::NodeAttributes2,
-        create_ops: impl FnOnce(RemoteIo) -> Box<dyn FsNodeOps>,
+        create_ops: impl FnOnce(I) -> Box<dyn FsNodeOps>,
     ) -> Result<FsNodeHandle, Errno> {
         let fs = self.fs;
-        let fs_ops = RemoteFs::from_fs(fs);
+        let fs_ops = RemoteFs::<I>::from_fs(fs);
         let fio::NodeAttributes2 { mutable_attributes: mutable, immutable_attributes: immutable } =
             attributes;
 
@@ -448,22 +444,22 @@ impl<'a> LookupFactory<'a> {
     }
 }
 
-impl<'a> sync_io_client::Factory for LookupFactory<'a> {
+impl<'a, I: SyncIo> sync_io_client::Factory<I> for LookupFactory<'a> {
     type Result = Result<FsNodeHandle, Errno>;
 
-    fn create_node(self, io: RemoteIo, info: fio::NodeInfo) -> Self::Result {
+    fn create_node(self, io: I, info: fio::NodeInfo) -> Self::Result {
         self.get_node(io, get_attributes(&info.attributes), |io| {
             Box::new(RemoteNode::new(io, false))
         })
     }
 
-    fn create_directory(self, io: RemoteIo, info: fio::DirectoryInfo) -> Self::Result {
+    fn create_directory(self, io: I, info: fio::DirectoryInfo) -> Self::Result {
         self.get_node(io, get_attributes(&info.attributes), |io| {
             Box::new(RemoteNode::new(io, false))
         })
     }
 
-    fn create_file(self, io: RemoteIo, info: fio::FileInfo) -> Self::Result {
+    fn create_file(self, io: I, info: fio::FileInfo) -> Self::Result {
         let is_special_node = is_special(&info);
         self.get_node(io, get_attributes(&info.attributes), |io| {
             if is_special_node {
@@ -474,7 +470,7 @@ impl<'a> sync_io_client::Factory for LookupFactory<'a> {
         })
     }
 
-    fn create_symlink(self, io: RemoteIo, mut info: fio::SymlinkInfo) -> Self::Result {
+    fn create_symlink(self, io: I, mut info: fio::SymlinkInfo) -> Self::Result {
         let mut target = info.target.take();
         if target.is_none() {
             return error!(EIO);
@@ -491,7 +487,7 @@ impl<'a> sync_io_client::Factory for LookupFactory<'a> {
         // here.  Once the key has been provided, the entry will be cached with the directory and
         // whilst the entry remains cached, `lookup` will not be called.
         if let Some(target) = target
-            && let Some(symlink) = node.downcast_ops::<RemoteSymlink>()
+            && let Some(symlink) = node.downcast_ops::<RemoteSymlink<I>>()
         {
             *symlink.target.write() = target.into_boxed_slice();
         }
@@ -509,46 +505,15 @@ fn get_attributes(attrs: &Option<fio::NodeAttributes2>) -> &fio::NodeAttributes2
     attrs.as_ref().unwrap_or_else(|| &*DEFAULT_NODE_ATTRIBUTES)
 }
 
-impl RemoteFs {
-    pub fn new(
-        root: zx::Channel,
+impl<I: SyncIo> RemoteFs<I> {
+    pub fn new_with_io(
+        root_io: I,
         root_rights: fio::Flags,
         name: &'static str,
-    ) -> Result<(RemoteFs, Box<dyn FsNodeOps>, FsNodeInfo, u64), Errno> {
-        let (client_end, server_end) = zx::Channel::create();
-        let root_proxy = fio::DirectorySynchronousProxy::new(root);
-        root_proxy
-            .open(
-                ".",
-                fio::Flags::PROTOCOL_DIRECTORY
-                    | fio::PERM_READABLE
-                    | fio::Flags::PERM_INHERIT_WRITE
-                    | fio::Flags::PERM_INHERIT_EXECUTE
-                    | fio::Flags::FLAG_SEND_REPRESENTATION,
-                &fio::Options {
-                    attributes: Some(
-                        NODE_INFO_ATTRIBUTES
-                            | fio::NodeAttributesQuery::ID
-                            | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
-                    ),
-                    ..Default::default()
-                },
-                server_end,
-            )
-            .map_err(|_| errno!(EIO))?;
-
-        // Use remote IDs if the filesystem is Fxfs which we know will give us unique IDs.  Hard
-        // links need to resolve to the same underlying FsNode, so we can only support hard links if
-        // the remote file system will give us unique IDs.  The IDs are also used as the key in
-        // caches, so we can't use remote IDs if the remote filesystem is not guaranteed to provide
-        // unique IDs, or if the remote filesystem spans multiple filesystems.
-        let (status, info) =
-            root_proxy.query_filesystem(zx::MonotonicInstant::INFINITE).map_err(|_| errno!(EIO))?;
-
-        // Be tolerant of errors here; many filesystems return `ZX_ERR_NOT_SUPPORTED`.
-        let vfs_type = (status == 0)
-            .then_some(info)
-            .flatten()
+    ) -> Result<(RemoteFs<I>, Box<dyn FsNodeOps>, FsNodeInfo, u64), Errno> {
+        let vfs_type = root_io
+            .query_filesystem()
+            .ok()
             .and_then(|i| fidl_fuchsia_fs::VfsType::from_primitive(i.fs_type));
         let (use_remote_ids, casefold) = match vfs_type {
             Some(fidl_fuchsia_fs::VfsType::Fxfs) => (true, true),
@@ -558,18 +523,42 @@ impl RemoteFs {
 
         // The OnRepresentation response will return an initial set of `attrs`.
         let mut node_info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
-        let (remote_node, node_id) = create_with_on_representation(
-            client_end.into(),
-            Factory { node_info: &mut node_info, assume_special: false },
-        )
-        .map_err(map_sync_io_client_error)?;
+        let (remote_node, node_id) = root_io
+            .open(
+                ".",
+                fio::Flags::PROTOCOL_DIRECTORY
+                    | fio::PERM_READABLE
+                    | fio::Flags::PERM_INHERIT_WRITE
+                    | fio::Flags::PERM_INHERIT_EXECUTE,
+                None,
+                NODE_INFO_ATTRIBUTES
+                    | fio::NodeAttributesQuery::ID
+                    | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
+                Factory::new(&mut node_info, false),
+            )
+            .map_err(map_sync_io_client_error)?;
 
         Ok((
-            RemoteFs { use_remote_ids, root_proxy, root_rights, casefold, name },
+            RemoteFs { use_remote_ids, root_io, root_rights, casefold, name },
             remote_node,
             node_info,
             node_id,
         ))
+    }
+
+    pub(super) fn use_remote_ids(&self) -> bool {
+        self.use_remote_ids
+    }
+}
+
+impl RemoteFs<RemoteIo> {
+    pub fn new(
+        root: zx::Channel,
+        root_rights: fio::Flags,
+        name: &'static str,
+    ) -> Result<(RemoteFs<RemoteIo>, Box<dyn FsNodeOps>, FsNodeInfo, u64), Errno> {
+        let root_io = RemoteIo::new(fio::NodeSynchronousProxy::new(root));
+        Self::new_with_io(root_io, root_rights, name)
     }
 
     pub fn new_fs(
@@ -596,29 +585,27 @@ impl RemoteFs {
 
         Ok(fs)
     }
-
-    pub(super) fn use_remote_ids(&self) -> bool {
-        self.use_remote_ids
-    }
 }
 
 /// All nodes compose `BaseNode`.
 ///
 /// NOTE: If new node types are created, the `TryFrom` implementation needs updating below.
-struct BaseNode {
+struct BaseNode<I> {
     /// The underlying I/O object for this remote node.
-    io: RemoteIo,
+    io: I,
 
     /// The number of active dirty operations on this node and whether the node info is in sync.
     /// See the `will_dirty` function for semantics.
     info_state: InfoState,
 }
 
-impl BaseNode {
-    fn new(io: RemoteIo, dirty: bool) -> Self {
+impl<I> BaseNode<I> {
+    fn new(io: I, dirty: bool) -> Self {
         Self { io, info_state: InfoState::new(dirty) }
     }
+}
 
+impl<I: SyncIo> BaseNode<I> {
     fn fetch_and_refresh_info<'a>(
         &self,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
@@ -669,26 +656,26 @@ impl BaseNode {
     }
 }
 
-impl<'a> TryFrom<&'a FsNode> for &'a BaseNode {
+impl<'a, I: SyncIo> TryFrom<&'a FsNode> for &'a BaseNode<I> {
     type Error = ();
-    fn try_from(value: &FsNode) -> Result<&BaseNode, ()> {
+    fn try_from(value: &'a FsNode) -> Result<&'a BaseNode<I>, ()> {
         value
-            .downcast_ops::<RemoteNode>()
+            .downcast_ops::<RemoteNode<I>>()
             .map(|n| &n.node)
-            .or_else(|| value.downcast_ops::<RemoteSpecialNode>().map(|n| &n.node))
-            .or_else(|| value.downcast_ops::<RemoteSymlink>().map(|n| &n.node))
+            .or_else(|| value.downcast_ops::<RemoteSpecialNode<I>>().map(|n| &n.node))
+            .or_else(|| value.downcast_ops::<RemoteSymlink<I>>().map(|n| &n.node))
             .ok_or(())
     }
 }
 
 /// This is the most common type of node.  It is used for files and directories.  Symlinks and
 /// special nodes use RemoteSymlink and RemoteSpecialNode respectively.
-struct RemoteNode {
-    node: BaseNode,
+struct RemoteNode<I> {
+    node: BaseNode<I>,
 }
 
-impl RemoteNode {
-    fn new(io: RemoteIo, dirty: bool) -> Self {
+impl<I> RemoteNode<I> {
+    fn new(io: I, dirty: bool) -> Self {
         Self { node: BaseNode::new(io, dirty) }
     }
 }
@@ -785,7 +772,9 @@ fn remote_file_attrs_and_ops(
                     .map_err(map_sync_io_client_error)?;
                 return Ok((
                     attr,
-                    Box::new(RemoteDirectoryObject::new(io.into_proxy().into_channel().into())),
+                    Box::new(RemoteDirectoryObject::new(RemoteDirectory::new(
+                        io.into_proxy().into_channel().into(),
+                    ))),
                 ));
             }
             _ => {
@@ -1002,7 +991,7 @@ fn get_name_str<'a>(name_bytes: &'a FsStr) -> Result<&'a str, Errno> {
     })
 }
 
-impl XattrStorage for BaseNode {
+impl<I: SyncIo> XattrStorage for BaseNode<I> {
     fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno> {
         Ok(self
             .io
@@ -1046,7 +1035,7 @@ impl XattrStorage for BaseNode {
     }
 }
 
-impl FsNodeOps for RemoteNode {
+impl<I: SyncIo> FsNodeOps for RemoteNode<I> {
     fs_node_impl_xattr_delegate!(self, self.node);
 
     fn create_file_ops(
@@ -1075,11 +1064,7 @@ impl FsNodeOps for RemoteNode {
                 // For directories we need to clone the connection because we rely on the seek
                 // offset.
                 return Ok(Box::new(RemoteDirectoryObject::new(
-                    self.node
-                        .io
-                        .clone_proxy()
-                        .map(|p| p.into_channel().into())
-                        .map_err(map_sync_io_client_error)?,
+                    self.node.io.open_directory().map_err(map_sync_io_client_error)?,
                 )));
             }
         }
@@ -1092,7 +1077,7 @@ impl FsNodeOps for RemoteNode {
             node.fsverity.lock().check_writable()?;
         }
 
-        Ok(Box::new(RemoteFileObject::default()))
+        Ok(Box::new(RemoteFileObject::<I>::default()))
     }
 
     fn sync(&self, _node: &FsNode, _current_task: &CurrentTask) -> Result<(), Errno> {
@@ -1112,7 +1097,7 @@ impl FsNodeOps for RemoteNode {
         let name = get_name_str(name)?;
 
         let fs = node.fs();
-        let fs_ops = RemoteFs::from_fs(&fs);
+        let fs_ops = RemoteFs::<I>::from_fs(&fs);
 
         if !(mode.is_reg() || mode.is_chr() || mode.is_blk() || mode.is_fifo() || mode.is_sock()) {
             return error!(EINVAL, name);
@@ -1138,7 +1123,7 @@ impl FsNodeOps for RemoteNode {
                     NODE_INFO_ATTRIBUTES
                         | fio::NodeAttributesQuery::ID
                         | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
-                    Factory { node_info: &mut node_info, assume_special: !mode.is_reg() },
+                    Factory::new(&mut node_info, !mode.is_reg()),
                 )
                 .map_err(|status| from_status_like_fdio!(status, name))
         })?;
@@ -1161,7 +1146,7 @@ impl FsNodeOps for RemoteNode {
         let name = get_name_str(name)?;
 
         let fs = node.fs();
-        let fs_ops = RemoteFs::from_fs(&fs);
+        let fs_ops = RemoteFs::<I>::from_fs(&fs);
 
         let mut node_info = FsNodeInfo::new(mode, owner);
         let (ops, node_id) = will_dirty(&[&self.node], || {
@@ -1182,7 +1167,7 @@ impl FsNodeOps for RemoteNode {
                     NODE_INFO_ATTRIBUTES
                         | fio::NodeAttributesQuery::ID
                         | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
-                    Factory { node_info: &mut node_info, assume_special: false },
+                    Factory::new(&mut node_info, false),
                 )
                 .map_err(|status| from_status_like_fdio!(status, name))
         })?;
@@ -1202,7 +1187,7 @@ impl FsNodeOps for RemoteNode {
         let name = get_name_str(name)?;
 
         let fs = entry.node.fs();
-        let fs_ops = RemoteFs::from_fs(&fs);
+        let fs_ops = RemoteFs::<I>::from_fs(&fs);
 
         let mut query = MODE_ATTRIBUTES
             | NODE_INFO_ATTRIBUTES
@@ -1220,7 +1205,7 @@ impl FsNodeOps for RemoteNode {
 
         self.node
             .io
-            .open(name, fs_ops.root_rights, None, query, LookupFactory { fs: &fs, current_task })
+            .open(name, fs_ops.root_rights, None, query, LookupFactory::new(&fs, current_task))
             .map_err(|status| from_status_like_fdio!(status, name))?
     }
 
@@ -1235,7 +1220,7 @@ impl FsNodeOps for RemoteNode {
         names: &[&FsStr],
     ) -> LookupVec<Result<FsNodeHandle, Errno>> {
         let fs = entry.node.fs();
-        let fs_ops = RemoteFs::from_fs(&fs);
+        let fs_ops = RemoteFs::<I>::from_fs(&fs);
 
         let mut query = MODE_ATTRIBUTES
             | NODE_INFO_ATTRIBUTES
@@ -1259,9 +1244,8 @@ impl FsNodeOps for RemoteNode {
 
         self.node
             .io
-            .open_pipelined(&names_str, fs_ops.root_rights, query, || LookupFactory {
-                fs: &fs,
-                current_task,
+            .open_pipelined(&names_str, fs_ops.root_rights, query, || {
+                LookupFactory::new(&fs, current_task)
             })
             .map(|r| r.map_err(|status| from_status_like_fdio!(status)).flatten())
             .collect()
@@ -1361,7 +1345,7 @@ impl FsNodeOps for RemoteNode {
         // children lock, so we don't have to worry about conflicts on this path, and 2. the remote
         // filesystem tracks the link counts so we don't need to update them here.
         let name = get_name_str(name)?;
-        will_dirty(&[node, child], || {
+        will_dirty::<I, _, _>(&[node, child], || {
             self.node
                 .io
                 .unlink(name, fio::UnlinkFlags::empty())
@@ -1388,7 +1372,7 @@ impl FsNodeOps for RemoteNode {
         })?;
 
         let fs = node.fs();
-        let fs_ops = RemoteFs::from_fs(&fs);
+        let fs_ops = RemoteFs::<I>::from_fs(&fs);
 
         let node_id = if fs_ops.use_remote_ids {
             io.attr_get(fio::NodeAttributesQuery::ID)
@@ -1417,7 +1401,7 @@ impl FsNodeOps for RemoteNode {
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         let fs = node.fs();
-        let fs_ops = RemoteFs::from_fs(&fs);
+        let fs_ops = RemoteFs::<I>::from_fs(&fs);
 
         if !mode.is_reg() {
             return error!(EINVAL);
@@ -1448,7 +1432,7 @@ impl FsNodeOps for RemoteNode {
                     NODE_INFO_ATTRIBUTES
                         | fio::NodeAttributesQuery::ID
                         | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
-                    Factory { node_info: &mut node_info, assume_special: false },
+                    Factory::new(&mut node_info, false),
                 )
                 .map_err(|status| from_status_like_fdio!(status))
         })?;
@@ -1464,19 +1448,19 @@ impl FsNodeOps for RemoteNode {
         name: &FsStr,
         child: &FsNodeHandle,
     ) -> Result<(), Errno> {
-        if !RemoteFs::from_fs(&node.fs()).use_remote_ids {
+        if !RemoteFs::<I>::from_fs(&node.fs()).use_remote_ids {
             return error!(EPERM);
         }
         let name = get_name_str(name)?;
 
-        will_dirty(&[node, child], || {
-            if let Some(child) = child.downcast_ops::<RemoteNode>() {
+        will_dirty::<I, _, _>(&[node, child], || {
+            if let Some(child) = child.downcast_ops::<RemoteNode<I>>() {
                 child.node.io.link_into(&self.node.io, name).map_err(|status| match status {
                     zx::Status::BAD_STATE => errno!(EXDEV),
                     zx::Status::ACCESS_DENIED => errno!(ENOKEY),
                     s => from_status_like_fdio!(s),
                 })
-            } else if let Some(child) = child.downcast_ops::<RemoteSymlink>() {
+            } else if let Some(child) = child.downcast_ops::<RemoteSymlink<I>>() {
                 child.node.io.link_into(&self.node.io, name).map_err(|status| match status {
                     zx::Status::BAD_STATE => errno!(EXDEV),
                     zx::Status::ACCESS_DENIED => errno!(ENOKEY),
@@ -1570,11 +1554,11 @@ impl FsNodeOps for RemoteNode {
     }
 }
 
-struct RemoteSpecialNode {
-    node: BaseNode,
+struct RemoteSpecialNode<I> {
+    node: BaseNode<I>,
 }
 
-impl FsNodeOps for RemoteSpecialNode {
+impl<I: SyncIo> FsNodeOps for RemoteSpecialNode<I> {
     fs_node_impl_not_dir!();
     fs_node_impl_xattr_delegate!(self, self.node);
 
@@ -1600,15 +1584,15 @@ impl FsNodeOps for RemoteSpecialNode {
     }
 }
 
-struct RemoteDirectoryObject(sync_io_client::RemoteDirectory);
+struct RemoteDirectoryObject<D>(D);
 
-impl RemoteDirectoryObject {
-    fn new(proxy: fio::DirectorySynchronousProxy) -> Self {
-        Self(sync_io_client::RemoteDirectory::new(proxy))
+impl<D> RemoteDirectoryObject<D> {
+    fn new(dir: D) -> Self {
+        Self(dir)
     }
 }
 
-impl FileOps for RemoteDirectoryObject {
+impl<D: SyncIoDirectory> FileOps for RemoteDirectoryObject<D> {
     fileops_impl_directory!();
 
     fn seek(
@@ -1667,34 +1651,51 @@ impl FileOps for RemoteDirectoryObject {
 
     fn to_handle(
         &self,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
+        file: &FileObject,
+        current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
         // If expose a handle to a directory to a Fuchsia component, we trust that it will not
         // modify the directory in a way that will confuse Starnix.
-        self.0
-            .clone_proxy()
-            .map_err(map_sync_io_client_error)
-            .map(|p| Some(p.into_channel().into()))
+        match self.0.clone_proxy().map_err(map_sync_io_client_error)? {
+            Some(proxy) => Ok(Some(proxy.into_channel().into())),
+            None => serve_file_tagged(
+                current_task,
+                file,
+                current_task.current_creds().clone(),
+                "remote_files",
+            )
+            .map(|c| Some(c.0.into_channel().into())),
+        }
     }
 }
 
-#[derive(Default)]
-pub struct RemoteFileObject {
+struct RemoteFileObject<I> {
     /// Cached read-only VMO handle.
     read_only_memory: OnceCell<Arc<MemoryObject>>,
 
     /// Cached read/exec VMO handle.
     read_exec_memory: OnceCell<Arc<MemoryObject>>,
+
+    _phantom: std::marker::PhantomData<fn() -> I>,
 }
 
-impl RemoteFileObject {
+impl<I> Default for RemoteFileObject<I> {
+    fn default() -> Self {
+        Self {
+            read_only_memory: OnceCell::new(),
+            read_exec_memory: OnceCell::new(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<I: SyncIo> RemoteFileObject<I> {
     /// # Panics
     ///
     /// This will panic if the node's ops are not `RemoteNode`; `AnonymousRemoteFileObject` should
     /// be used if this won't be the case.
-    fn io(file: &FileObject) -> &RemoteIo {
-        &file.node().downcast_ops::<RemoteNode>().unwrap().node.io
+    fn io(file: &FileObject) -> &I {
+        &file.node().downcast_ops::<RemoteNode<I>>().unwrap().node.io
     }
 }
 
@@ -1712,7 +1713,7 @@ trait RemoteIoExt {
     fn fetch_remote_memory(&self, prot: ProtectionFlags) -> Result<Arc<MemoryObject>, Errno>;
 }
 
-impl RemoteIoExt for RemoteIo {
+impl<T: SyncIo> RemoteIoExt for T {
     fn read_to_output_buffer(
         &self,
         offset: u64,
@@ -1770,7 +1771,7 @@ impl RemoteIoExt for RemoteIo {
     }
 }
 
-impl FileOps for RemoteFileObject {
+impl<I: SyncIo> FileOps for RemoteFileObject<I> {
     fileops_impl_seekable!();
 
     fn read(
@@ -1790,7 +1791,7 @@ impl FileOps for RemoteFileObject {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        will_dirty(&[&***file.node()], || {
+        will_dirty::<I, _, _>(&[&***file.node()], || {
             let written = Self::io(file).write_from_input_buffer(offset as u64, data)?;
 
             // If we increased the file size, we need to update that here so that `NodeInfo::size`
@@ -2063,18 +2064,23 @@ impl FileOps for RemoteZxioFileObject {
     }
 }
 
-struct RemoteSymlink {
-    node: BaseNode,
+/// Returns true if `file` is a `RemoteFileObject`.
+pub fn is_remote_file(file: &FileObject) -> bool {
+    file.downcast_file::<RemoteFileObject<RemoteIo>>().is_some()
+}
+
+struct RemoteSymlink<I> {
+    node: BaseNode<I>,
     target: LockDepRwLock<Box<[u8]>, FuchsiaRemoteTargetLock>,
 }
 
-impl RemoteSymlink {
-    fn new(node: BaseNode, target: impl Into<Box<[u8]>>) -> Self {
+impl<I> RemoteSymlink<I> {
+    fn new(node: BaseNode<I>, target: impl Into<Box<[u8]>>) -> Self {
         Self { node, target: LockDepRwLock::new(target.into()) }
     }
 }
 
-impl FsNodeOps for RemoteSymlink {
+impl<I: SyncIo> FsNodeOps for RemoteSymlink<I> {
     fs_node_impl_symlink!();
     fs_node_impl_xattr_delegate!(self, self.node);
 
@@ -2368,7 +2374,10 @@ impl Drop for DirtyOpGuard<'_> {
 }
 
 /// A wrapper to be used around calls that will end up making node info dirty.
-fn will_dirty<'a, N: TryInto<&'a BaseNode> + Copy, T>(nodes: &[N], f: impl FnOnce() -> T) -> T {
+fn will_dirty<'a, I: SyncIo, N: TryInto<&'a BaseNode<I>> + Copy, T>(
+    nodes: &[N],
+    f: impl FnOnce() -> T,
+) -> T {
     // We are about to execute an operation that will make the cached information for one or more
     // nodes out of date, and we must deal with races.  If we mark the node as dirty first, another
     // thread could sneak in and refresh the node information before this operation has finished,
@@ -5052,5 +5061,250 @@ mod test {
         .await;
 
         fixture.close().await;
+    }
+
+    #[derive(Clone, Default)]
+    struct MockSyncDirectory;
+
+    impl SyncIoDirectory for MockSyncDirectory {
+        fn seek(&self, _new_index: u64) -> Result<u64, zx::Status> {
+            Ok(0)
+        }
+        fn readdir<B, S: FnMut(u64, fio::DirentType, &[u8]) -> ControlFlow<B, ()>>(
+            &self,
+            _sink: S,
+        ) -> Result<Option<B>, zx::Status> {
+            Ok(None)
+        }
+        fn sync(&self) -> Result<(), zx::Status> {
+            Ok(())
+        }
+        fn clone_proxy(&self) -> Result<Option<fio::DirectorySynchronousProxy>, zx::Status> {
+            Ok(None)
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct MockSyncIo {
+        id: u64,
+    }
+
+    impl SyncIo for MockSyncIo {
+        type Directory = MockSyncDirectory;
+
+        fn attr_get(
+            &self,
+            _query: fio::NodeAttributesQuery,
+        ) -> Result<(fio::MutableNodeAttributes, fio::ImmutableNodeAttributes), zx::Status>
+        {
+            Ok((
+                fio::MutableNodeAttributes {
+                    mode: Some(FileMode::IFDIR.bits() | 0o755),
+                    ..Default::default()
+                },
+                fio::ImmutableNodeAttributes {
+                    id: Some(self.id),
+                    protocols: Some(fio::NodeProtocolKinds::DIRECTORY),
+                    ..Default::default()
+                },
+            ))
+        }
+
+        fn attr_set(&self, _attributes: fio::MutableNodeAttributes) -> Result<(), zx::Status> {
+            Ok(())
+        }
+
+        fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status> {
+            Ok(fio::FilesystemInfo {
+                total_bytes: 1024 * 1024,
+                used_bytes: 4096,
+                total_nodes: 1000,
+                used_nodes: 10,
+                free_shared_pool_bytes: 0,
+                fs_id: 42,
+                block_size: 4096,
+                max_filename_size: 255,
+                fs_type: fidl_fuchsia_fs::VfsType::Fxfs.into_primitive(),
+                padding: 0,
+                name: [0; 32],
+            })
+        }
+
+        fn open<F: sync_io_client::Factory<Self>>(
+            &self,
+            _path: &str,
+            _flags: fio::Flags,
+            _attributes: Option<fio::MutableNodeAttributes>,
+            _query: fio::NodeAttributesQuery,
+            factory: F,
+        ) -> Result<F::Result, zx::Status> {
+            Ok(factory.create_directory(
+                MockSyncIo { id: self.id },
+                fio::DirectoryInfo {
+                    attributes: Some(fio::NodeAttributes2 {
+                        mutable_attributes: fio::MutableNodeAttributes {
+                            mode: Some(FileMode::IFDIR.bits() | 0o755),
+                            ..Default::default()
+                        },
+                        immutable_attributes: fio::ImmutableNodeAttributes {
+                            id: Some(self.id),
+                            protocols: Some(fio::NodeProtocolKinds::DIRECTORY),
+                            ..Default::default()
+                        },
+                    }),
+                    ..Default::default()
+                },
+            ))
+        }
+
+        fn open_pipelined<F: sync_io_client::Factory<Self>>(
+            &self,
+            _paths: &[&str],
+            _flags: fio::Flags,
+            _query: fio::NodeAttributesQuery,
+            _create_factory: impl FnMut() -> F,
+        ) -> impl Iterator<Item = Result<F::Result, zx::Status>> {
+            std::iter::empty()
+        }
+
+        fn link_into(&self, _target_dir: &Self, _name: &str) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn unlink(&self, _name: &str, _flags: fio::UnlinkFlags) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn rename(
+            &self,
+            _old_path: &str,
+            _new_dir: &Self,
+            _new_path: &str,
+        ) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn create_symlink(&self, _name: &str, _target: &[u8]) -> Result<Self, zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn read_partial(&self, _offset: u64, _max: usize) -> Result<(Vec<u8>, bool), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn write(&self, _offset: u64, _data: &[u8]) -> Result<usize, zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn supports_vectored(&self) -> bool {
+            false
+        }
+
+        unsafe fn readv(
+            &self,
+            _offset: u64,
+            _iovecs: &mut [zx::sys::zx_iovec_t],
+        ) -> Result<usize, zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn writev(
+            &self,
+            _offset: u64,
+            _iovecs: &[zx::sys::zx_iovec_t],
+        ) -> Result<usize, zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn truncate(&self, _length: u64) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn vmo_get(&self, _flags: zx::VmarFlags) -> Result<zx::Vmo, zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn sync(&self) -> Result<(), zx::Status> {
+            Ok(())
+        }
+
+        fn enable_verity(
+            &self,
+            _descriptor: &zxio_fsverity_descriptor_t,
+        ) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn allocate(
+            &self,
+            _offset: u64,
+            _length: u64,
+            _mode: syncio::AllocateMode,
+        ) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn xattr_get(&self, _name: &[u8]) -> Result<Vec<u8>, zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn xattr_set(
+            &self,
+            _name: &[u8],
+            _value: &[u8],
+            _mode: syncio::XattrSetMode,
+        ) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn xattr_remove(&self, _name: &[u8]) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        fn xattr_list(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+            Ok(vec![])
+        }
+
+        fn open_directory(&self) -> Result<Self::Directory, zx::Status> {
+            Ok(MockSyncDirectory)
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_remote_fs_new_with_mock_sync_io() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let mock_io = MockSyncIo { id: 1001 };
+            let (remotefs, root_node, info, node_id) = RemoteFs::new_with_io(
+                mock_io,
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+                "mock_remotefs",
+            )
+            .expect("new_with_io failed");
+            assert_eq!(node_id, 1001);
+            assert!(remotefs.use_remote_ids());
+            assert_eq!(remotefs.name(), "mock_remotefs");
+
+            let fs = FileSystem::new(
+                kernel,
+                CacheMode::Uncached,
+                remotefs,
+                FileSystemOptions::default(),
+            )
+            .expect("FileSystem::new failed");
+            fs.create_root_with_info(node_id, root_node, info);
+
+            let root_entry = fs.root();
+            let file =
+                root_entry.open_anonymous(&current_task, OpenFlags::RDONLY).expect("open failed");
+            let stat = fs.statfs(&current_task).expect("statfs failed");
+            assert_eq!(stat.f_bsize as u64, 4096);
+            assert_eq!(stat.f_blocks, 256); // 1024 * 1024 / 4096
+
+            // Check to_handle falls back when clone_proxy returns None
+            let handle = file.to_handle(&current_task).expect("to_handle failed");
+            assert!(handle.is_some());
+        })
+        .await;
     }
 }

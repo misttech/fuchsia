@@ -129,9 +129,7 @@ use magma::{
 };
 use starnix_core::fileops_impl_nonseekable;
 use starnix_core::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
-use starnix_core::fs::fuchsia::{
-    AnonymousRemoteFileObject, RemoteFileObject, RemoteZxioFileObject,
-};
+use starnix_core::fs::fuchsia::{AnonymousRemoteFileObject, RemoteZxioFileObject, is_remote_file};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::CurrentTask;
@@ -319,7 +317,7 @@ impl MagmaFile {
                 file.memory.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(impossible_error)?,
                 buffer,
             ))
-        } else if file.downcast_file::<RemoteFileObject>().is_some()
+        } else if is_remote_file(&file)
             || file.downcast_file::<RemoteZxioFileObject>().is_some()
             || file.downcast_file::<AnonymousRemoteFileObject>().is_some()
         {
