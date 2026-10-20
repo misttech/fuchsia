@@ -361,6 +361,32 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
     fn extra_fdinfo(&self, _file: &FileHandle, _current_task: &CurrentTask) -> Option<FsString> {
         None
     }
+
+    /// Returns a token for the underlying Fuchsia file and the byte offset within that file, if
+    /// supported.
+    fn get_file_token(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<FileToken, Errno> {
+        error!(ENOTSUP)
+    }
+}
+
+/// Holds a `fuchsia.io/Node.GetToken` token for an underlying Fuchsia file, its byte offset within
+/// that file, and the temporary `fidl_fuchsia_io::FileSynchronousProxy` keeping the token
+/// registered until the caller finishes using it.
+pub struct FileToken {
+    pub token: zx::Event,
+    pub offset: u64,
+    pub keep_alive: fidl_fuchsia_io::FileSynchronousProxy,
+}
+
+impl FileToken {
+    pub fn add_offset(mut self, delta: u64) -> Result<Self, Errno> {
+        self.offset = self.offset.checked_add(delta).ok_or_else(|| errno!(EINVAL))?;
+        Ok(self)
+    }
 }
 
 /// Marker trait for implementation of FileOps that do not need to implement `close` and can
@@ -532,6 +558,14 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
 
     fn extra_fdinfo(&self, file: &FileHandle, current_task: &CurrentTask) -> Option<FsString> {
         self.deref().extra_fdinfo(file, current_task)
+    }
+
+    fn get_file_token(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<FileToken, Errno> {
+        self.deref().get_file_token(file, current_task)
     }
 }
 
@@ -2048,6 +2082,10 @@ impl FileObject {
         current_task: &CurrentTask,
     ) -> Result<Vec<zx::NullableHandle>, Errno> {
         self.ops().get_handles(self, current_task)
+    }
+
+    pub fn get_file_token(&self, current_task: &CurrentTask) -> Result<FileToken, Errno> {
+        self.ops().get_file_token(self, current_task)
     }
 
     pub fn as_pid(&self) -> Result<Pid, Errno> {

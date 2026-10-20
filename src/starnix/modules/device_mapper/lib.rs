@@ -20,8 +20,9 @@ use starnix_core::security;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, VecOutputBuffer};
 use starnix_core::vfs::{
-    FileHandle, FileObject, FileObjectState, FileOps, FsString, NamespaceNode, OutputBuffer,
-    fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
+    FileHandle, FileObject, FileObjectState, FileOps, FileToken, FsString, NamespaceNode,
+    OutputBuffer, fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekable,
+    fileops_impl_seekless,
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{log_trace, track_stub};
@@ -277,6 +278,9 @@ impl FileOps for DmDeviceFile {
                 active_table.size().checked_sub(offset).ok_or_else(|| errno!(EINVAL))?,
             );
             let mut buffer = VecOutputBuffer::new(to_read);
+            if active_table.targets.is_empty() {
+                return error!(EINVAL);
+            }
             if active_table.targets.len() > 1 {
                 track_stub!(
                     TODO("https://fxbug.dev/339701082"),
@@ -334,6 +338,9 @@ impl FileOps for DmDeviceFile {
             return error!(EINVAL);
         }
         if let Some(active_table) = &state.active_table {
+            if active_table.targets.is_empty() {
+                return error!(EINVAL);
+            }
             if active_table.targets.len() > 1 {
                 track_stub!(
                     TODO("https://fxbug.dev/339701082"),
@@ -351,6 +358,39 @@ impl FileOps for DmDeviceFile {
                 TargetType::Error => {
                     error!(EIO)
                 }
+            }
+        } else {
+            error!(EINVAL)
+        }
+    }
+
+    fn get_file_token(
+        &self,
+        _file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<FileToken, Errno> {
+        let state = self.device.state.lock();
+        if state.suspended {
+            return error!(EINVAL);
+        }
+        if let Some(active_table) = &state.active_table {
+            if active_table.targets.is_empty() {
+                return error!(EINVAL);
+            }
+            if active_table.targets.len() > 1 {
+                return error!(ENOTSUP);
+            }
+            match &active_table.targets[0].target_type {
+                TargetType::Verity(verity_target) => {
+                    // `get_file_token` only succeeds when `block_device` is backed by a Fuchsia
+                    // package blob (`RemoteBundle` / `VmoBlob` in `pkg-cache`), which is already
+                    // cryptographically verified at page-in time against the Fuchsia blob's Merkle
+                    // tree by `BlobPagerAndVerifier` before any child VMO pages are supplied.
+                    // Furthermore, `VerityTarget::create_and_verify` has already verified the
+                    // dm-verity root digest and leaf hashes during `DM_TABLE_LOAD`.
+                    verity_target.block_device.get_file_token(current_task)
+                }
+                TargetType::Error => error!(EIO),
             }
         } else {
             error!(EINVAL)

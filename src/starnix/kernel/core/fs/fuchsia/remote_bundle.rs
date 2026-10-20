@@ -9,11 +9,11 @@ use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::{
     CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType, DirentSink,
-    FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode,
-    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer, OutputBuffer, SeekTarget,
-    StatxFlags, SymlinkTarget, ValueOrSize, default_seek, emit_dotdot, fileops_impl_directory,
-    fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_dir_readonly, fs_node_impl_not_dir,
-    fs_node_impl_symlink,
+    FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FileToken,
+    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer, OutputBuffer,
+    SeekTarget, StatxFlags, SymlinkTarget, ValueOrSize, default_seek, emit_dotdot,
+    fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
+    fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
 };
 use anyhow::{Error, anyhow, ensure};
 use ext4_metadata::{Metadata, Node, NodeInfo};
@@ -341,6 +341,26 @@ impl FileOps for MemoryFile {
         })
     }
 
+    fn get_file_token(
+        &self,
+        file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<FileToken, Errno> {
+        let fs = file.node().fs();
+        let bundle = RemoteBundle::from_fs(&fs);
+        let ino = file.node().ino;
+        let (proxy, server_end) = fidl::endpoints::create_sync_proxy::<fio::FileMarker>();
+        bundle
+            .root
+            .open(&format!("{ino}"), bundle.rights, &Default::default(), server_end.into_channel())
+            .map_err(|_| errno!(EIO))?;
+        let token = proxy
+            .get_token(zx::MonotonicInstant::INFINITE)
+            .map_err(|err| errno!(EIO, format!("Error {err} on GetToken")))?
+            .map_err(|s| from_status_like_fdio!(zx::Status::err_from_raw(s)))?;
+        Ok(FileToken { token, offset: 0, keep_alive: proxy })
+    }
+
     fn wait_async(
         &self,
         _file: &FileObject,
@@ -581,6 +601,10 @@ mod test {
             assert_eq!(test_file.read(&current_task, &mut buffer).expect("read failed"), 6);
             let buffer: Vec<u8> = buffer.into();
             assert_eq!(&buffer[..6], b"hello\n");
+
+            let file_token =
+                test_file.get_file_token(&current_task).expect("get_file_token failed");
+            assert_eq!(file_token.offset, 0);
 
             assert_eq!(
                 &test_file

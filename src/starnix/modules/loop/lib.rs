@@ -16,9 +16,9 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::{
-    Buffer, FdNumber, FileHandle, FileObject, FileOps, FsNodeOps, FsString, InputBufferCallback,
-    NamespaceNode, PeekBufferSegmentsCallback, fileops_impl_dataless, fileops_impl_noop_sync,
-    fileops_impl_seekable, fileops_impl_seekless,
+    Buffer, FdNumber, FileHandle, FileObject, FileOps, FileToken, FsNodeOps, FsString,
+    InputBufferCallback, NamespaceNode, PeekBufferSegmentsCallback, fileops_impl_dataless,
+    fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::track_stub;
@@ -427,6 +427,16 @@ impl FileOps for LoopDeviceFile {
                 .map_err(|e| errno!(EINVAL, e))?
         };
         Ok(Arc::new(mem))
+    }
+
+    fn get_file_token(
+        &self,
+        _file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<FileToken, Errno> {
+        let backing_file = self.device.backing_file().ok_or_else(|| errno!(EBADF))?;
+        let configured_offset = self.device.state.lock().offset;
+        backing_file.get_file_token(current_task)?.add_offset(configured_offset)
     }
 
     fn sync(&self, _file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
