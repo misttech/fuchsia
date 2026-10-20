@@ -108,6 +108,9 @@ pub mod root_resource_filter;
 #[path = "lib/stall/src/mod.rs"]
 pub mod stall;
 
+#[path = "lib/suspend_wakeup_timer/suspend_wakeup_timer.rs"]
+pub mod suspend_wakeup_timer;
+
 #[path = "lib/syscalls/mod.rs"]
 pub mod syscalls_rs;
 

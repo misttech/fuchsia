@@ -7,13 +7,33 @@
 #ifndef ZIRCON_KERNEL_LIB_SUSPEND_WAKEUP_TIMER_INCLUDE_LIB_SUSPEND_WAKEUP_TIMER_H_
 #define ZIRCON_KERNEL_LIB_SUSPEND_WAKEUP_TIMER_INCLUDE_LIB_SUSPEND_WAKEUP_TIMER_H_
 
-#include <lib/relaxed_atomic.h>
-#include <stdint.h>
+#include <assert.h>
+#include <lib/fit/function.h>
+#include <stddef.h>
 #include <zircon/time.h>
 
-#include <kernel/spinlock.h>
+#include <fbl/alloc_checker.h>
+#include <fbl/macros.h>
+#include <kernel/ffi.h>
 #include <ktl/unique_ptr.h>
 #include <ktl/utility.h>
+
+#if SCHEDULER_LOCK_SPIN_TRACING_ENABLED
+inline constexpr size_t kSuspendWakeupTimerSpinlockSize = 24;
+#elifdef WITH_LOCK_DEP
+inline constexpr size_t kSuspendWakeupTimerSpinlockSize = 16;
+#else
+inline constexpr size_t kSuspendWakeupTimerSpinlockSize = 8;
+#endif
+// The Rust backend selector is zero-sized unless the ARMv7 MMIO timer backend exists.
+#ifdef __aarch64__
+inline constexpr size_t kSuspendWakeupTimerBackendSize = 8;
+#else
+inline constexpr size_t kSuspendWakeupTimerBackendSize = 0;
+#endif
+inline constexpr size_t kSuspendWakeupTimerStorageSize =
+    kSuspendWakeupTimerSpinlockSize + kSuspendWakeupTimerBackendSize + 128;
+inline constexpr size_t kSuspendWakeupTimerStorageAlign = 8;
 
 // # SuspendWakeupTimer
 //
@@ -73,9 +93,9 @@
 // certain that the hardware is properly set up to deliver an interrupt which
 // will wake the system at an appropriate time.  This call *must* be made from
 // the BOOT_CPU and interrupts *must* be disabled when this happens.  Similar to
-// CancelTimer, EnsureStarted is idempotent and may multiple times without a
-// problem.  If there is a configured deadline and the timer is not yet started,
-// it will be.
+// CancelTimer, EnsureStarted is idempotent and may be called multiple times
+// without a problem.  If there is a configured deadline and the timer is not
+// yet started, it will be.
 //
 // So, the summary of the usage protocol is as follows.
 //
@@ -103,107 +123,66 @@ class SuspendWakeupTimer {
  public:
   using Callback =
       fit::inline_function<void(zx_instant_boot_t now, zx_instant_boot_t resume_at), sizeof(void*)>;
-  virtual ~SuspendWakeupTimer() = default;
 
-  static ktl::unique_ptr<SuspendWakeupTimer> Create(Callback callback);
+  ~SuspendWakeupTimer();
+
+  DISALLOW_COPY_ASSIGN_AND_MOVE(SuspendWakeupTimer);
+
+  static ktl::unique_ptr<SuspendWakeupTimer> Create(Callback callback) {
+    fbl::AllocChecker ac;
+    ktl::unique_ptr<SuspendWakeupTimer> ret(new (&ac) SuspendWakeupTimer(ktl::move(callback)));
+    ASSERT(ac.check());
+    return ret;
+  }
 
   // Sets the time at which the SuspendWakeupTimer should call the user's
   // callback in order to wake the system from suspend.  Note that once this has
   // been called and the timer has an assigned deadline, it is illegal to call
   // this method again without first calling CancelTimer.
-  void SetResumeDeadline(zx_instant_boot_t resume_at) {
-    Guard<SpinLock, IrqSave> timer_guard{&lock_};
-    DEBUG_ASSERT(!started_);
-    DEBUG_ASSERT(resume_at_ == ZX_TIME_INFINITE);
-    resume_at_ = resume_at;
-  }
+  void SetResumeDeadline(zx_instant_boot_t resume_at);
 
   // Called by the BOOT_CPU's IdlePowerThread every time it is just about to
   // enter a suspended state to ensure that its SuspendWakeupTimer is started
   // and will wake it up at the appropriate time.
-  virtual void EnsureStarted() = 0;
+  void EnsureStarted();
 
   // Called to cancel any pending timer and its callback.  Must be called at
   // least once after every call to SetResumeDeadline before a second call to
   // SetResumeDeadline may be made.  After returning from CancelTimer, the user
   // is guaranteed that there the registered callback is no longer in flight.
   // It has either completed, or was successfully canceled.
-  virtual void CancelTimer() = 0;
+  void CancelTimer();
 
- protected:
-  SuspendWakeupTimer(Callback callback) : callback_(ktl::move(callback)) {}
+ private:
+  explicit SuspendWakeupTimer(Callback callback);
 
-  SuspendWakeupTimer(const SuspendWakeupTimer&) = delete;
-  SuspendWakeupTimer& operator=(const SuspendWakeupTimer&) = delete;
-  SuspendWakeupTimer(SuspendWakeupTimer&&) = delete;
-  SuspendWakeupTimer& operator=(SuspendWakeupTimer&&) = delete;
-
-  void ResetLocked() TA_REQ(lock_) {
-    started_ = false;
-    resume_at_ = ZX_TIME_INFINITE;
-  }
-
-  void DoCallback(zx_instant_boot_t now) {
-    // Don't hold any locks when calling our callback.  Our underlying timers
-    // don't hold any locks, and if we don't hold any locks either, it becomes
-    // safe for the callback to call its own timer instance's methods while
-    // executing.
-    //
-    // But, why is it safe for us to read `resume_at_` then?  What is to prevent
-    // a callback from running on the boot CPU and attempting to read
-    // resume_at_, while at the same time someone is calling cancel which is
-    // resetting resume_at_ back to ZX_TIME_INFINITE?  Isn't a formal data race?
-    //
-    // Turns out, the answer is "no", but the reason why is not all that
-    // obvious.  There are 4 operations we need to consider, the 3 public
-    // interface methods and the callback itself.
-    //
-    // The 3 public interface methods all hold the timer's spinlock as they read
-    // and write.  The mutually exclusive nature of the lock guarantees that
-    // there are no formal races, and that the value observed will always be
-    // "correct" for the internal state of the timer.  So, this leaves the
-    // callback itself, and its interaction with the 3 public methods, to
-    // consider.
-    //
-    // + CancelTimer: Cancel operations will mutate the resume_at_ member of the
-    //   timer, but before doing so, they will call "cancel" on their underlying
-    //   timer.  All existing low level timer implementations guarantee that,
-    //   "after cancel is called, any callback in flight has been successfully
-    //   canceled and will not run --or--, the callback has already run to
-    //   completion.  So, if the callback is either finished or never will be
-    //   run, and then resume_at_ is mutated, there is no possibility that the
-    //   value can be written (from the method) while concurrently being read by
-    //   the callback.  So, no formal race.
-    //
-    // + SetResumeDeadline: It is illegal for a user to set a new resume
-    //   deadline without first having called CancelTimer.  SetResumeDeadline
-    //   will obtain lock_, synchronizing it with any CancelTimer operations,
-    //   before checking the value in resume_at_, and will ASSERT if the timer
-    //   has not been first canceled.  So, if there is a timer callback in
-    //   flight, cancel has not been called, and the system will panic (because
-    //   of the protocol violation).  If cancel _has_ been called, then there is
-    //   no timer in flight, and a callback cannot become in-fight for the
-    //   duration of the Set operation (because holding lock_ prevents
-    //   EnsureStarted from being called concurrently).
-    //
-    // + EnsureStarted: Holds the lock, but never mutates resume_at_, meaning
-    //   that there is no possibility of a formal race.
-    //
-    // Please note: even though there is no chance of a formal race here, we
-    // still declare resume_at_ as a RelaxedAtomic.  Why?  Because there is no
-    // real penalty to be paid for relaxed atomic access to variables on the
-    // architectures we support, and it makes it easier for a reader to know
-    // that there is no chance of a formal data race by simply observing the
-    // atomic nature of the member, without having to understand the more
-    // complex chain of reasoning given above.
-    //
-    callback_(now, resume_at_);
-  }
-
-  DECLARE_SPINLOCK(SuspendWakeupTimer) lock_;
-  bool started_ TA_GUARDED(lock_){false};
-  RelaxedAtomic<zx_instant_boot_t> resume_at_{ZX_TIME_INFINITE};
-  const Callback callback_;
+  OpaqueStorage<kSuspendWakeupTimerStorageSize, kSuspendWakeupTimerStorageAlign> storage_{};
 };
+
+extern "C" {
+
+void rust_suspend_wakeup_timer_init(void* storage, SuspendWakeupTimer::Callback* callback);
+void rust_suspend_wakeup_timer_destroy(void* storage);
+void rust_suspend_wakeup_timer_set_resume_deadline(void* storage, zx_instant_boot_t resume_at);
+void rust_suspend_wakeup_timer_ensure_started(void* storage);
+void rust_suspend_wakeup_timer_cancel_timer(void* storage);
+
+}  // extern "C"
+
+inline SuspendWakeupTimer::SuspendWakeupTimer(Callback callback) {
+  rust_suspend_wakeup_timer_init(&storage_, &callback);
+}
+
+inline SuspendWakeupTimer::~SuspendWakeupTimer() { rust_suspend_wakeup_timer_destroy(&storage_); }
+
+inline void SuspendWakeupTimer::SetResumeDeadline(zx_instant_boot_t resume_at) {
+  rust_suspend_wakeup_timer_set_resume_deadline(&storage_, resume_at);
+}
+
+inline void SuspendWakeupTimer::EnsureStarted() {
+  rust_suspend_wakeup_timer_ensure_started(&storage_);
+}
+
+inline void SuspendWakeupTimer::CancelTimer() { rust_suspend_wakeup_timer_cancel_timer(&storage_); }
 
 #endif  // ZIRCON_KERNEL_LIB_SUSPEND_WAKEUP_TIMER_INCLUDE_LIB_SUSPEND_WAKEUP_TIMER_H_
