@@ -132,3 +132,42 @@ pub const fn remove_cpu_from_mask(mask: &mut cpu_mask_t) -> cpu_num_t {
     *mask &= !cpu_num_to_mask(index_of_lowest_set_bit);
     index_of_lowest_set_bit
 }
+
+/// CPU mask and number unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "cpu_rust")]
+mod cpu_tests {
+    use unittest::{assert_false, expect_eq, expect_ne, expect_true};
+
+    /// remove_cpu_from_mask
+    #[test]
+    fn remove_cpu_from_mask() {
+        {
+            // Empty.
+            let mut mask: cpu_mask_t = 0;
+            expect_eq!(INVALID_CPU, super::remove_cpu_from_mask(&mut mask));
+        }
+
+        {
+            // Full.
+            let full_mask: cpu_mask_t = ((1u64 << SMP_MAX_CPUS) - 1) as cpu_mask_t;
+            let mut mask: cpu_mask_t = full_mask;
+            let mut result: cpu_mask_t = 0;
+            while mask != 0 {
+                let prev_mask: cpu_mask_t = mask;
+                let cpu: cpu_num_t = super::remove_cpu_from_mask(&mut mask);
+                // Make sure it's valid.
+                expect_ne!(INVALID_CPU, cpu);
+                expect_true!(is_valid_cpu_num(cpu));
+                // Make sure it was removed.  If not, abort the test so we don't loop forever.
+                assert_false!((mask & cpu_num_to_mask(cpu)) != 0);
+                // Make sure nothing else was removed.
+                expect_eq!(prev_mask, mask | cpu_num_to_mask(cpu));
+                // Add it to our result set.
+                result |= cpu_num_to_mask(cpu);
+            }
+            // See that the result set is complete.
+            expect_eq!(full_mask, result);
+        }
+    }
+}
