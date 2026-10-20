@@ -33,7 +33,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, TextIO
 
 # Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
@@ -42,6 +42,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.auth import gcloud
+from build.profile import procfs
 from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
 from build.scripts import properties, signal_utils
@@ -1799,6 +1800,74 @@ def find_fuchsia_dir(from_path: pathlib.Path | None = None) -> pathlib.Path:
             )
 
 
+# Timeout for probing whether the Ninja persistent server is responding.
+_NINJA_SERVER_PROBE_TIMEOUT_S = 5
+
+
+def _kill_ninja_persistent_server(
+    build_dir: pathlib.Path,
+    proc_root: pathlib.Path = procfs.DEFAULT_PROC_ROOT,
+) -> None:
+    """Kills any Ninja persistent server for build_dir by scanning /proc.
+
+    Identifies the server by process name ('ninja'), working directory
+    (build_dir), and NINJA_PERSISTENT_MODE=server in its environment.
+    Linux-only; a no-op elsewhere.
+    """
+    if sys.platform != "linux":
+        return
+    try:
+        resolved_build_dir = build_dir.resolve()
+    except OSError:
+        return
+
+    for pid in procfs.iter_pids(proc_root):
+        # Check cheap procfs entries (comm, cwd) before reading environ.
+        if procfs.read_process_comm(pid, proc_root) != "ninja":
+            continue
+        if procfs.read_process_cwd(pid, proc_root) != resolved_build_dir:
+            continue
+        environ = procfs.read_process_environ(pid, proc_root)
+        if not environ or environ.get("NINJA_PERSISTENT_MODE") != "server":
+            continue
+        msg(f"Killing Ninja persistent server (PID {pid})")
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            # The process exited, or belongs to another user; skip it.
+            continue
+
+
+def _kill_ninja_persistent_server_if_stuck(
+    build_dir: pathlib.Path,
+    env: dict[str, str],
+    ninja_bin: str,
+    proc_root: pathlib.Path = procfs.DEFAULT_PROC_ROOT,
+) -> PreflightStatus:
+    """Kills the Ninja persistent server for build_dir if it is unresponsive.
+
+    Probes the server with `ninja -t server pid` (`status` and `stop` do not
+    wait for an IPC reply from the server). If the probe times out, the server
+    is considered stuck and terminated via /proc. Other outcomes (a PID, -1
+    when no server is running, or an error) leave the server alone.
+    """
+    cmd = [ninja_bin, "-C", str(build_dir), "-t", "server", "pid"]
+    try:
+        subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=_NINJA_SERVER_PROBE_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        msg("Ninja persistent server is not responding, killing it.")
+        _kill_ninja_persistent_server(build_dir, proc_root=proc_root)
+    except OSError as e:
+        msg(f"Failed to probe Ninja persistent server: {e}")
+    return PreflightStatus.OK
+
+
 def new_ninja_build_command_execution(
     context: FuchsiaBuildContext,
     ninja_args: Sequence[str],
@@ -1881,9 +1950,28 @@ def new_ninja_build_command_execution(
     )
     is_build = is_ninja_build_command(build_cmd)
     invocation = BuildInvocation(context)
+
+    # Ensure any wedged persistent server from an interrupted build is
+    # cleaned up before starting a new build.
+    preflight_actions: list[PreflightAction] = []
+    if is_build and is_ninja_persistent_mode_enabled(context.env):
+        preflight_actions.append(
+            lambda: _kill_ninja_persistent_server_if_stuck(
+                context.build_dir, context.env, ninja_bin
+            )
+        )
+
     return invocation.new_build_command_execution(
-        "ninja", build_cmd, is_build=is_build
+        "ninja",
+        build_cmd,
+        is_build=is_build,
+        preflight_actions=preflight_actions,
     )
+
+
+def is_ninja_persistent_mode_enabled(env: Mapping[str, str]) -> bool:
+    """Returns True if NINJA_PERSISTENT_MODE is enabled for client builds."""
+    return env.get("NINJA_PERSISTENT_MODE") in ("1", "on", "client")
 
 
 def is_ninja_build_command(ninja_args: list[str]) -> bool:

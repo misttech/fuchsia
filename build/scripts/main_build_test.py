@@ -1996,7 +1996,7 @@ class PrepareFunctionsTest(MainBuildTestBase):
             self.assertEqual(exec_info.full_command, ["bazel", "info"])
 
     def test_ninja_non_build(self) -> None:
-        context = self.create_context()
+        context = self.create_context(env={"NINJA_PERSISTENT_MODE": "1"})
         with self.mock_invocation_context():
             exec_info = main_build.new_ninja_build_command_execution(
                 context, ["--help"]
@@ -2007,6 +2007,8 @@ class PrepareFunctionsTest(MainBuildTestBase):
                 str(context.top_build_wrapper), exec_info.full_command
             )
             self.assertIn("--help", exec_info.full_command)
+            # Non-build commands never probe the persistent server.
+            self.assertEqual(exec_info.preflight_actions, [])
 
     def test_fint(self) -> None:
         context = self.create_context()
@@ -2083,6 +2085,116 @@ class PrepareFunctionsTest(MainBuildTestBase):
                 )
                 j_idx = exec_info.full_command.index("-j")
                 self.assertEqual(exec_info.full_command[j_idx + 1], "128")
+
+    def test_ninja_persistent_mode_preflight(self) -> None:
+        enabled_ctx = self.create_context(env={"NINJA_PERSISTENT_MODE": "1"})
+        disabled_ctx = self.create_context(env={"NINJA_PERSISTENT_MODE": "0"})
+        with self.mock_invocation_context():
+            enabled = main_build.new_ninja_build_command_execution(
+                enabled_ctx, ["default"]
+            )
+            disabled = main_build.new_ninja_build_command_execution(
+                disabled_ctx, ["default"]
+            )
+        self.assertEqual(len(enabled.preflight_actions), 1)
+        self.assertEqual(disabled.preflight_actions, [])
+
+
+class NinjaPersistentServerTest(unittest.TestCase):
+    def test_is_ninja_persistent_mode_enabled(self) -> None:
+        for val in ("1", "on", "client"):
+            self.assertTrue(
+                main_build.is_ninja_persistent_mode_enabled(
+                    {"NINJA_PERSISTENT_MODE": val}
+                )
+            )
+        for val in ("0", "off", "", "server"):
+            self.assertFalse(
+                main_build.is_ninja_persistent_mode_enabled(
+                    {"NINJA_PERSISTENT_MODE": val}
+                )
+            )
+        self.assertFalse(main_build.is_ninja_persistent_mode_enabled({}))
+
+    @mock.patch.object(os, "kill")
+    @mock.patch.object(subprocess, "run")
+    def test_healthy_or_missing_probe_leaves_processes_alone(
+        self, mock_run: mock.Mock, mock_kill: mock.Mock
+    ) -> None:
+        build_dir = pathlib.Path("/tmp/out")
+        env = {"NINJA_PERSISTENT_MODE": "1"}
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0
+        )
+        self.assertEqual(
+            main_build._kill_ninja_persistent_server_if_stuck(
+                build_dir, env, "ninja"
+            ),
+            main_build.PreflightStatus.OK,
+        )
+
+        mock_run.side_effect = FileNotFoundError("ninja")
+        self.assertEqual(
+            main_build._kill_ninja_persistent_server_if_stuck(
+                build_dir, env, "ninja"
+            ),
+            main_build.PreflightStatus.OK,
+        )
+
+        mock_kill.assert_not_called()
+
+    @mock.patch.object(sys, "platform", "linux")
+    @mock.patch.object(os, "kill")
+    @mock.patch.object(
+        subprocess,
+        "run",
+        side_effect=subprocess.TimeoutExpired(cmd="ninja", timeout=5),
+    )
+    def test_probe_timeout_kills_matching_server(
+        self, _mock_run: mock.Mock, mock_kill: mock.Mock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            build_dir = root / "out/default"
+            other_dir = root / "out/other"
+            proc_root = root / "proc"
+            build_dir.mkdir(parents=True)
+            other_dir.mkdir(parents=True)
+            proc_root.mkdir()
+
+            def add_proc(
+                pid: str, comm: bytes, cwd: pathlib.Path, env: bytes
+            ) -> None:
+                p = proc_root / pid
+                p.mkdir()
+                (p / "comm").write_bytes(comm)
+                (p / "environ").write_bytes(env)
+                (p / "cwd").symlink_to(cwd)
+
+            server_env = b"PATH=/usr/bin\0NINJA_PERSISTENT_MODE=server\0"
+            # PID 101: matching ninja server for build_dir -> should be killed.
+            add_proc("101", b"ninja\n", build_dir, server_env)
+            # PID 102: ninja server for a different build_dir -> must survive.
+            add_proc("102", b"ninja\n", other_dir, server_env)
+            # PID 103: ninja client (not server) in build_dir -> must survive.
+            add_proc("103", b"ninja\n", build_dir, b"NINJA_PERSISTENT_MODE=1\0")
+            # PID 104: unrelated process with non-UTF-8 comm -> must not crash.
+            add_proc("104", b"\xff\xfe\n", build_dir, server_env)
+            # Non-numeric /proc entry -> ignored.
+            (proc_root / "self").mkdir()
+
+            self.assertEqual(
+                main_build._kill_ninja_persistent_server_if_stuck(
+                    build_dir,
+                    {"NINJA_PERSISTENT_MODE": "1"},
+                    "ninja",
+                    proc_root=proc_root,
+                ),
+                main_build.PreflightStatus.OK,
+            )
+
+            mock_kill.assert_called_once_with(101, signal.SIGKILL)
 
 
 class CheckShellCommandTest(unittest.TestCase):

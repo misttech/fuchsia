@@ -158,6 +158,28 @@ class ReadProcessInfoTest(unittest.TestCase):
                 procfs.read_process_info(9999, proc_root=Path(tmpdir))
             )
 
+    def test_read_process_comm_cwd_environ(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            proc_root = root / "proc"
+            cwd = (root / "work").resolve()
+            cwd.mkdir()
+            pid_dir = proc_root / "42"
+            pid_dir.mkdir(parents=True)
+            (pid_dir / "comm").write_bytes(b"ninja\n")
+            (pid_dir / "cwd").symlink_to(cwd)
+            (pid_dir / "environ").write_bytes(b"A=1\0B=two=2\0INVALID\0")
+
+            self.assertEqual(procfs.read_process_comm(42, proc_root), "ninja")
+            self.assertEqual(procfs.read_process_cwd(42, proc_root), cwd)
+            self.assertEqual(
+                procfs.read_process_environ(42, proc_root),
+                {"A": "1", "B": "two=2"},
+            )
+            self.assertIsNone(procfs.read_process_comm(99, proc_root))
+            self.assertIsNone(procfs.read_process_cwd(99, proc_root))
+            self.assertIsNone(procfs.read_process_environ(99, proc_root))
+
 
 class IterPidsTest(unittest.TestCase):
     def test_iter_pids(self) -> None:

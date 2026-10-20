@@ -156,6 +156,48 @@ def read_process_stat(
     return parse_stat_file(stat_text)
 
 
+def read_process_comm(
+    pid: int, proc_root: Path = DEFAULT_PROC_ROOT
+) -> str | None:
+    """Reads the process command name from /proc/<pid>/comm."""
+    try:
+        return (
+            (proc_root / str(pid) / "comm")
+            .read_text(encoding="utf-8", errors="replace")
+            .rstrip("\n")
+        )
+    except OSError:
+        return None
+
+
+def read_process_cwd(
+    pid: int, proc_root: Path = DEFAULT_PROC_ROOT
+) -> Path | None:
+    """Resolves the working directory symlink /proc/<pid>/cwd."""
+    try:
+        return (proc_root / str(pid) / "cwd").resolve(strict=True)
+    except OSError:
+        return None
+
+
+def read_process_environ(
+    pid: int, proc_root: Path = DEFAULT_PROC_ROOT
+) -> dict[str, str] | None:
+    """Reads and parses NUL-separated KEY=VALUE entries from /proc/<pid>/environ."""
+    try:
+        text = (proc_root / str(pid) / "environ").read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return None
+    env: dict[str, str] = {}
+    for entry in text.split("\0"):
+        if "=" in entry:
+            k, _, v = entry.partition("=")
+            env[k] = v
+    return env
+
+
 def read_process_info(
     pid: int, proc_root: Path = DEFAULT_PROC_ROOT
 ) -> ProcessInfo | None:

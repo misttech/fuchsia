@@ -13,6 +13,7 @@ if (is_host) {
       ":signal_utils_lib",
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
+      "//build/profile:procfs",
       "//build/rbe:build_summary",
       "//build/rbe:casfs",
       "//build/rbe:rbe_profile",
