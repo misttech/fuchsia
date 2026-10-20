@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wlan-trace",
+    srcs = [
+        "src/lib.rs",
+        "src/names.rs",
+    ],
+    edition = "2024",
+    visibility = ["//src/connectivity/wlan:__subpackages__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "wlan-trace_test",
+    crate = ":wlan-trace",
+)
+
+fx_unittest_package(
+    name = "wlan-trace-tests",
+    unit_tests = [":wlan-trace_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
