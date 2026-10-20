@@ -14,7 +14,9 @@ mod tests {
     };
     use crate::user_memory::UserMemory;
     use core::mem::MaybeUninit;
-    use unittest::{assert_eq, assert_nonnull, assert_null, assert_true, unwrap_ok};
+    use unittest::{
+        assert_eq, assert_nonnull, assert_null, assert_true, expect_eq, expect_true, unwrap_ok,
+    };
     use zx_status::Status;
     use zx_types::zx_iovec_t;
 
@@ -369,5 +371,225 @@ mod tests {
         let str_trunc = unwrap_ok!(in_ptr.copy_user_string(6, &mut exact_buf));
         assert_true!(str_trunc == &test_name[..5]);
         assert_eq!(unsafe { exact_buf[5].assume_init() }, 0);
+    }
+
+    /// fault_copy_out
+    #[test]
+    fn fault_copy_out() {
+        const TEST_VALUE: u32 = 0xDEADBEEF;
+        let user = UserMemory::create(4096).unwrap();
+
+        unwrap_ok!(user.user_out::<u32>().copy_to_user(&TEST_VALUE));
+
+        let mut temp = [MaybeUninit::<u8>::uninit(); 4];
+        let bytes = unwrap_ok!(user.vmo_read(&mut temp, 0));
+        let val = u32::from_ne_bytes(<[u8; 4]>::try_from(bytes).unwrap());
+        expect_eq!(val, TEST_VALUE);
+    }
+
+    /// fault_copy_in
+    #[test]
+    fn fault_copy_in() {
+        const TEST_VALUE: u32 = 0xDEADBEEF;
+        let user = UserMemory::create(4096).unwrap();
+
+        unwrap_ok!(user.vmo_write(&TEST_VALUE.to_ne_bytes(), 0));
+
+        let mut temp = MaybeUninit::<u32>::uninit();
+        let val = unwrap_ok!(user.user_in::<u32>().copy_from_user(&mut temp));
+        expect_eq!(*val, TEST_VALUE);
+    }
+
+    /// capture_faults_copy_out_success
+    #[test]
+    fn capture_faults_copy_out_success() {
+        const TEST_VALUE: u32 = 0xDEADBEEF;
+        let user = UserMemory::create(4096).unwrap();
+        unwrap_ok!(user.commit_and_map(0..4096));
+
+        let ret = user.user_out::<u32>().copy_to_user_capture_faults(&TEST_VALUE);
+        assert_true!(ret.is_ok());
+
+        let mut temp = [MaybeUninit::<u8>::uninit(); 4];
+        let bytes = unwrap_ok!(user.vmo_read(&mut temp, 0));
+        let val = u32::from_ne_bytes(<[u8; 4]>::try_from(bytes).unwrap());
+        expect_eq!(val, TEST_VALUE);
+    }
+
+    /// user_copy_test_addresses_outside_user_range
+    #[test]
+    fn user_copy_test_addresses_outside_user_range() {
+        use crate::arch_rs::{USER_ASPACE_BASE, USER_ASPACE_SIZE};
+
+        // User copy routines can operate on user addresses whose values may be outside
+        // the range of [USER_ASPACE_BASE, USER_ASPACE_BASE + USER_ASPACE_SIZE]. If a
+        // user_copy function accepts an address that userspace would normally fault on
+        // when accessed, then user_copy will page fault on that address.
+        //
+        // Test to make sure that we fault on anything that userspace would normally
+        // fault on. If we do fault or receive something that isn't accessible to the
+        // user (determined by the arch), then ZX_ERR_INVALID_ARGS is returned. If
+        // there was a fault, then fault info should be provided.
+        const TEST_BUFFER_LEN: usize = 32;
+        let test_buffer = [0u8; TEST_BUFFER_LEN];
+        const _: () = assert!(
+            (TEST_BUFFER_LEN * 2) < USER_ASPACE_BASE,
+            "Insufficient space before start of user address space for test buffer"
+        );
+        const _: () = assert!(
+            (TEST_BUFFER_LEN * 2) < (usize::MAX - (USER_ASPACE_BASE + USER_ASPACE_SIZE)),
+            "Insufficient space afer end of user address space for test buffer."
+        );
+
+        struct TestCase {
+            test_addr: usize,
+            expected_status: Status,
+        }
+
+        const TEST_CASES: &[TestCase] = &[
+            // These addresses will result in ZX_ERR_INVALID_ARGS when copying to and
+            // from a user pointer because we fault on bad addresses.
+
+            // Explicit check of null
+            TestCase { test_addr: 0, expected_status: Status::INVALID_ARGS },
+            // Entirely before USER_ASPACE_BASE
+            TestCase {
+                test_addr: USER_ASPACE_BASE - (TEST_BUFFER_LEN * 2),
+                expected_status: Status::INVALID_ARGS,
+            },
+            // Overlapping USER_ASPACE_BASE
+            TestCase {
+                test_addr: USER_ASPACE_BASE - (TEST_BUFFER_LEN / 2),
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "aarch64")]
+            // These addresses will result in ZX_ERR_INVALID_ARGS when copying to a
+            // user pointer because we fault on a bad address.
+
+            // Entirely after USER_ASPACE_BASE + USER_ASPACE_SIZE
+            TestCase {
+                test_addr: USER_ASPACE_BASE + USER_ASPACE_SIZE + TEST_BUFFER_LEN,
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "aarch64")]
+            // Overlapping USER_ASPACE_BASE + USER_ASPACE_SIZE
+            TestCase {
+                test_addr: USER_ASPACE_BASE + USER_ASPACE_SIZE - (TEST_BUFFER_LEN / 2),
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "aarch64")]
+            // On AArch64, an address is considered accessible to the user if bit 55
+            // is zero. This implies addresses above 2^55 that don't set that bit are
+            // considered accessible to the user, but the user_copy operation would
+            // still fault on them.
+            //
+            // These addresses will result in ZX_ERR_INVALID_ARGS when copying to and
+            // from a user pointer either because bit 55 is not zero or there was a
+            // page fault.
+
+            // Start at 2^55
+            TestCase { test_addr: 1usize << 55, expected_status: Status::INVALID_ARGS },
+            #[cfg(target_arch = "aarch64")]
+            // Slightly after 2^55 (bit 55 is set)
+            TestCase {
+                test_addr: (1usize << 55) + TEST_BUFFER_LEN,
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "aarch64")]
+            // Overlapping 2^55
+            TestCase {
+                test_addr: (1usize << 55) - TEST_BUFFER_LEN / 2,
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "aarch64")]
+            // These addresses will result in ZX_ERR_INVALID_ARGS when copying to a
+            // user pointer because we fault on a bad address.
+
+            // End right before 2^55
+            TestCase {
+                test_addr: (1usize << 55) - TEST_BUFFER_LEN,
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "aarch64")]
+            // Way beyond 2^55 (bit 55 is not set). Note that this is effectively a null
+            // pointer with a tag of 1.
+            TestCase { test_addr: 1usize << 56, expected_status: Status::INVALID_ARGS },
+            #[cfg(target_arch = "x86_64")]
+            // On x86_64, an address is considered accessible to the user if everything
+            // above bit 47 is zero. Passing an address that doesn't meet this constraint
+            // will cause the user_copy to fail without performing the copy.
+
+            // Entirely after USER_ASPACE_BASE + USER_ASPACE_SIZE
+            TestCase {
+                test_addr: USER_ASPACE_BASE + USER_ASPACE_SIZE + TEST_BUFFER_LEN,
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "x86_64")]
+            // Overlapping USER_ASPACE_BASE + USER_ASPACE_SIZE
+            TestCase {
+                test_addr: USER_ASPACE_BASE + USER_ASPACE_SIZE - (TEST_BUFFER_LEN / 2),
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "x86_64")]
+            // Start at 2^48
+            TestCase { test_addr: 1usize << 48, expected_status: Status::INVALID_ARGS },
+            #[cfg(target_arch = "x86_64")]
+            // Overlapping 2^48
+            TestCase {
+                test_addr: (1usize << 48) - TEST_BUFFER_LEN / 2,
+                expected_status: Status::INVALID_ARGS,
+            },
+            #[cfg(target_arch = "x86_64")]
+            // Additionally, all virtual addresses (including virtual mode user addresses) must be
+            // "canonical" addresses.  For machines with 48 bit virtual addresses (an assumption
+            // currently validated in "kernel/arch/x86/mmu.cc"), this means that virtual addresses
+            // in the range from [0x0000'8000'0000'0000, 0xFFFF'8000'0000'0000) are considered to
+            // be "non-canonical" and will generate a GPF if they are accessed.  See
+            // https://en.wikipedia.org/wiki/X86-64 "Canonical form addresses" for more details.
+            //
+            // Make sure that user-copy operations consider these addresses to be invalid, and do
+            // not produce faults if we attempt to access them via a user-copy operation.
+            TestCase { test_addr: 0x0000_8000_0000_0000, expected_status: Status::INVALID_ARGS },
+            #[cfg(target_arch = "x86_64")]
+            TestCase { test_addr: 0xFFFF_7FFF_FFFF_FFFF, expected_status: Status::INVALID_ARGS },
+            #[cfg(target_arch = "x86_64")]
+            TestCase { test_addr: 0x1234_5678_9ABC_DEF0, expected_status: Status::INVALID_ARGS },
+        ];
+
+        #[cfg(target_arch = "x86_64")]
+        // Test vectors (above) rely on the current compile time assumption that the
+        // number of virtual address bits in use is 48.  If this ever changes, the
+        // tests will need to be updated.
+        const _: () = assert!(
+            crate::arch_rs::vm::X86_CANONICAL_ADDRESS_MASK == !((1usize << 47) - 1),
+            "The number of x64 virtual address is no longer 48. Unit test vectors need update."
+        );
+
+        for test_case in TEST_CASES {
+            #[cfg_attr(not(target_arch = "aarch64"), expect(unused_mut))]
+            let mut test_addr = test_case.test_addr;
+            #[cfg(target_arch = "aarch64")]
+            {
+                // TODO(https://fxbug.dev/42175395): We strip the tag here because tags are not
+                // relayed to user_copy page fault information. The only user of this page fault
+                // info is the deferred kernel exception handler (via VmAspace::SoftFault), but
+                // that does not operate on tags. We would like to rethink how user_copy exception
+                // info is handled, but that's outside the scope of TBI.
+                test_addr = crate::arch_rs::vm::detag_ptr(test_addr);
+            }
+
+            {
+                let user = UserInPtr::<u8>::new(test_addr as *const u8);
+                let mut read_buf = [MaybeUninit::<u8>::uninit(); TEST_BUFFER_LEN];
+                let ret = user.copy_slice_from_user(&mut read_buf);
+                expect_true!(ret.err() == Some(test_case.expected_status));
+            }
+
+            {
+                let user = UserOutPtr::<u8>::new(test_addr as *mut u8);
+                let ret = user.copy_slice_to_user(&test_buffer);
+                expect_true!(ret.err() == Some(test_case.expected_status));
+            }
+        }
     }
 }
