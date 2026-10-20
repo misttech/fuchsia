@@ -2,7 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -20,14 +25,20 @@ rustc_library(
     ],
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    test_deps = [
-        "//src/lib/fuchsia",
-        "//third_party/rust_crates/vendor:assert_matches",
-        "//third_party/rust_crates/vendor:itertools",
-    ],
     # Used widely across the repository (build, bringup, developer, devices, lib, security, starnix, sys, tools).
-    visibility = ["//visibility:public"],
-    with_unit_tests = True,
+    visibility = [
+        "//build/assembly:__subpackages__",
+        "//src/bringup:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/lib/assembly:__subpackages__",
+        "//src/security:__subpackages__",
+        "//src/starnix:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//tools/pkgstats:__pkg__",
+        "//tools/test_list_tool:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
     deps = [
         "//src/lib/fuchsia-fs",
         "//third_party/rust_crates/vendor:futures",
@@ -37,10 +48,29 @@ rustc_library(
     ],
 )
 
+# @bazel2gn:skip
+rustc_test(
+    name = "fuchsia-archive_test",
+    crate = ":fuchsia-archive",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:itertools",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "fuchsia-archive_host_test",
+    binary_name = "fuchsia-archive_test",
+)
+
+# @bazel2gn:skip
 rustc_test(
     name = "reject-invalid-fars-test",
     srcs = ["tests/reject_invalid_fars.rs"],
-    crate_root = "tests/reject_invalid_fars.rs",
     edition = "2024",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
@@ -50,4 +80,35 @@ rustc_test(
         "//src/lib/fuchsia-fs",
         "//third_party/rust_crates/vendor:assert_matches",
     ],
+)
+
+# @bazel2gn:skip
+fx_unittest_component(
+    name = "unit-test-component",
+    binary = ":fuchsia-archive_test",
+    component_name = "fuchsia-archive-lib-test",
+)
+
+# @bazel2gn:skip
+fx_unittest_component(
+    name = "invalid-fars-test-component",
+    binary = ":reject-invalid-fars-test",
+    component_name = "reject-invalid-fars-test",
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "fuchsia-archive-tests-package",
+    package_name = "fuchsia-archive-tests",
+    resources = ["//src/sys/pkg/testing/invalid-fars:resource"],
+    test_components = [
+        ":unit-test-component",
+        ":invalid-fars-test-component",
+    ],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "fuchsia-archive-tests",
+    package = ":fuchsia-archive-tests-package",
 )
