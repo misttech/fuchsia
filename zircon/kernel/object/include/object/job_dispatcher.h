@@ -25,8 +25,6 @@
 
 #include "zircon/syscalls/object.h"
 
-class JobNode;
-
 // Job signal that is active when a job has no children (i.e., no child jobs and no child
 // processes).
 //
