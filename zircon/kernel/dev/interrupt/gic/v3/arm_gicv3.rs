@@ -344,11 +344,22 @@ fn gic_wait_for_mask(
     true
 }
 
-/// Waits for the "register write pending" bit of a CTLR register to clear.
-fn gic_wait_for_rwp(bank: &MmioBank<u32, RwSafe>, offset: Offset<u32, RwSafe>) {
+/// Waits for the "register write pending" bit of GICD_CTLR to clear.
+fn gicd_wait_for_rwp() {
     // Maintain the current log message for RWP timeouts.
-    if !gic_wait_for_mask(bank, offset, regs::GICD_CTLR_RWP, 0) {
-        ltracef!("arm_gicv3: rwp timeout {:#x}\n", read32(bank, offset));
+    if !gic_wait_for_mask(&gicd_bank(), regs::gicd_ctlr(), regs::GICD_CTLR_RWP, 0) {
+        ltracef!("arm_gicv3: rwp timeout {:#x}\n", gicd_read32(regs::gicd_ctlr()));
+    }
+}
+
+/// Waits for the "register write pending" bit of `cpu`'s GICR_CTLR to clear.
+///
+/// Note that GICR_CTLR.RWP is not at the same position as GICD_CTLR.RWP (GICR_CTLR bit 31 is
+/// UWP, upstream write pending).  Also note that GICR_CTLR.RWP only tracks writes to
+/// GICR_ICENABLER0 and to certain GICR_CTLR fields (e.g. clearing EnableLPIs).
+fn gicr_wait_for_rwp(cpu: cpu_num_t) {
+    if !gic_wait_for_mask(&gicr_bank(cpu), regs::gicr_ctlr(), regs::GICR_CTLR_RWP, 0) {
+        ltracef!("arm_gicv3: gicr rwp timeout {:#x}\n", gicr_read32(cpu, regs::gicr_ctlr()));
     }
 }
 
@@ -359,11 +370,11 @@ fn gic_set_enable(vector: u32, enable: bool) {
         let cpu_id = curr_cpu_num();
         let offset = if enable { regs::gicr_isenabler0() } else { regs::gicr_icenabler0() };
         gicr_write32(cpu_id, offset, mask);
-        gic_wait_for_rwp(&gicr_bank(cpu_id), regs::gicr_ctlr());
+        gicr_wait_for_rwp(cpu_id);
     } else {
         let offset = if enable { regs::gicd_isenabler(reg) } else { regs::gicd_icenabler(reg) };
         gicd_write32(offset, mask);
-        gic_wait_for_rwp(&gicd_bank(), regs::gicd_ctlr());
+        gicd_wait_for_rwp();
     }
 }
 
@@ -417,7 +428,7 @@ fn gic_init_percpu_lpi(cpu: cpu_num_t) {
     let gicr_ctlr = gicr_read32(cpu, regs::gicr_ctlr());
     if (gicr_ctlr & regs::GICR_CTLR_ENABLE_LPIS) != 0 {
         gicr_write32(cpu, regs::gicr_ctlr(), gicr_ctlr & !regs::GICR_CTLR_ENABLE_LPIS);
-        gic_wait_for_mask(&gicr_bank(cpu), regs::gicr_ctlr(), regs::GICR_CTLR_RWP, 0);
+        gicr_wait_for_rwp(cpu);
         if (gicr_read32(cpu, regs::gicr_ctlr()) & regs::GICR_CTLR_ENABLE_LPIS) != 0 {
             return;
         }
@@ -490,12 +501,12 @@ extern "C" fn gic_init_percpu_early() {
     // redistributer config: configure sgi/ppi as non-secure group 1.
     gicr_write32(cpu, regs::gicr_igroupr0(), !0);
     gicr_write32(cpu, regs::gicr_igrpmod0(), 0);
-    gic_wait_for_rwp(&gicr_bank(cpu), regs::gicr_ctlr());
+    gicr_wait_for_rwp(cpu);
 
     // redistributer config: clear and mask sgi/ppi.
     gicr_write32(cpu, regs::gicr_icenabler0(), 0xffffffff);
     gicr_write32(cpu, regs::gicr_icpendr0(), !0);
-    gic_wait_for_rwp(&gicr_bank(cpu), regs::gicr_ctlr());
+    gicr_wait_for_rwp(cpu);
 
     gic_init_percpu_lpi(cpu);
 
@@ -934,7 +945,7 @@ fn gic_init() -> Result<(), Status> {
 
     // disable the distributor
     gicd_write32(regs::gicd_ctlr(), 0);
-    gic_wait_for_rwp(&gicd_bank(), regs::gicd_ctlr());
+    gicd_wait_for_rwp();
     isb();
 
     // distributor config: mask and clear all spis, set group 1.
@@ -946,14 +957,14 @@ fn gic_init() -> Result<(), Status> {
         gicd_write32(regs::gicd_igrpmodr(i / 32), 0);
         i += 32;
     }
-    gic_wait_for_rwp(&gicd_bank(), regs::gicd_ctlr());
+    gicd_wait_for_rwp();
 
     // enable distributor with ARE, group 1 enable
     gicd_write32(
         regs::gicd_ctlr(),
         regs::CTLR_ENABLE_G0 | regs::CTLR_ENABLE_G1NS | regs::CTLR_ARE_S,
     );
-    gic_wait_for_rwp(&gicd_bank(), regs::gicd_ctlr());
+    gicd_wait_for_rwp();
 
     // ensure we're running on cpu 0
     debug_assert!(curr_cpu_num() == 0);
