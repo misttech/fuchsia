@@ -48,6 +48,7 @@ rustc_library("mapped-vmo") {
   visibility = [
     ":*",
     "//src/bringup/*",
+    "//src/connectivity/*",
     "//src/devices/*",
     "//src/graphics/*",
     "//src/lib/ui/carnelian:*",

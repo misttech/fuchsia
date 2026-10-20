@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 {
     name: "gvnic",
-    include: [ "//sdk/lib/driver/compat/compat.shard.cml" ],
+    include: [ "driver_component/driver.shard.cml" ],
     program: {
-        compat: "driver/gvnic.so",
+        binary: "driver/gvnic.so",
     },
     capabilities: [
         { service: "fuchsia.hardware.network.driver.Service" },

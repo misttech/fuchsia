@@ -18,6 +18,7 @@ rustc_library(
     edition = "2024",
     visibility = [
         "//src/bringup:__subpackages__",
+        "//src/connectivity:__subpackages__",
         "//src/devices:__subpackages__",
         "//src/graphics:__subpackages__",
         "//src/lib/ui/carnelian:__pkg__",

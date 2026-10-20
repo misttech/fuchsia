@@ -126,7 +126,6 @@ source_set("ddktl") {
     "//src/connectivity/ethernet/drivers/asix-88179:*",
     "//src/connectivity/ethernet/drivers/dwmac:*",
     "//src/connectivity/ethernet/drivers/ethernet/netdevice-migration:*",
-    "//src/connectivity/ethernet/drivers/gvnic:*",
     "//src/connectivity/ethernet/drivers/realtek-8211f:*",
     "//src/connectivity/ethernet/drivers/rndis-function:*",
     "//src/connectivity/ethernet/drivers/rndis-host:*",
