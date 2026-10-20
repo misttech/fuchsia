@@ -70,12 +70,11 @@ if (current_toolchain == default_toolchain) {
     # Always enable frame pointers.
     configs += [ "//build/config:frame_pointers" ]
 
-    cflags = [ "-Wno-builtin-macro-redefined" ]
-
     if (is_win) {
       # Don't set MSVC predefines which are set by the compiler when Windows
       # target triples are used.
-      cflags += [
+      cflags = [
+        "-Wno-builtin-macro-redefined",
         "-U_MSC_VER",
         "-U_MSC_FULL_VER",
       ]
