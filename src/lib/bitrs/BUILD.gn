@@ -46,6 +46,7 @@ rustc_library("bitrs") {
     ":*",
     "//src/lib/bitrs/examples:*",
     "//src/performance/lib/fxt/rust:*",
+    "//zircon/kernel/dev/hw_rng/qcom_rng:*",
     "//zircon/kernel/lib/arch:*",
     "//zircon/kernel/object:*",
   ]

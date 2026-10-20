@@ -4,19 +4,36 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-config("includes") {
-  include_dirs = [ "include" ]
+import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
+
+library_headers("headers") {
+  headers = [ "dev/hw_rng/qcom_rng/init.h" ]
+  public_deps = [ "//sdk/lib/zbi-format" ]
+}
+
+kernel_rust_mod("qcom_rng-rs") {
+  output_name = "qcom_rng"
+  source_root = "qcom_rng.rs"
+  sources = [ "qcom_rng.rs" ]
+  deps = [
+    "//sdk/rust/zbi",
+    "//src/lib/bitrs",
+    "//src/lib/kprint",
+    "//src/lib/ksync",
+    "//src/lib/regio",
+    "//src/lib/zr",
+    "//zircon/system/ulib/explicit-memory:explicit-memory-rs",
+  ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 source_set("qcom_rng") {
-  public = [ "include/dev/hw_rng/qcom_rng/init.h" ]
-  public_deps = [ "//sdk/lib/zbi-format" ]
   sources = [ "qcom-rng.cc" ]
+  public_deps = [ ":headers" ]
   deps = [
+    ":qcom_rng-rs",
     "//zircon/kernel/dev/hw_rng",
-    "//zircon/kernel/phys/handoff",
     "//zircon/system/ulib/explicit-memory",
-    "//zircon/system/ulib/hwreg",
   ]
-  public_configs = [ ":includes" ]
 }

@@ -9,8 +9,6 @@
 
 #include <lib/zbi-format/driver-config.h>
 
-#include <phys/handoff/handoff.h>
-
 // Initializes the driver.
 void QcomRngInit(const zbi_dcfg_qcom_rng_t& config);
 

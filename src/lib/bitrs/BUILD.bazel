@@ -19,6 +19,7 @@ rustc_library(
     visibility = [
         "//src/lib/bitrs/examples:__pkg__",
         "//src/performance/lib/fxt/rust:__pkg__",
+        "//zircon/kernel/dev/hw_rng/qcom_rng:__pkg__",
         "//zircon/kernel/lib/arch:__pkg__",
         "//zircon/kernel/object:__pkg__",
     ],

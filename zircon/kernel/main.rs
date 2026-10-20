@@ -162,6 +162,10 @@ pub mod pdev_interrupt;
 #[path = "dev/hw_rng/amlogic_rng/amlogic_rng.rs"]
 pub mod amlogic_rng;
 
+#[cfg(target_arch = "aarch64")]
+#[path = "dev/hw_rng/qcom_rng/qcom_rng.rs"]
+pub mod qcom_rng;
+
 #[cfg(target_arch = "x86_64")]
 #[path = "dev/hw_rng/intel_rng/intel_rng.rs"]
 pub mod intel_rng;
