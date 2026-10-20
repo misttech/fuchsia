@@ -26,5 +26,6 @@ test_suite(
         "//src/lib/backoff:backoff_tests",
         "//src/lib/callback:callback_tests",
         "//src/lib/cstringify:cstringify-test",
+        "//src/lib/fuchsia-image-format:fuchsia-image-format-tests",
     ],
 )

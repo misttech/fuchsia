@@ -57,7 +57,6 @@ group("tests") {
     "fuchsia-cprng:tests",
     "fuchsia-fs:tests",
     "fuchsia-hyper:tests",
-    "fuchsia-image-format:tests",
     "fuchsia-lockfile:tests",
     "fuchsia-rcu:tests",
     "fuchsia-rcu-collections:tests",
