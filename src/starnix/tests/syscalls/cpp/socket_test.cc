@@ -2697,4 +2697,199 @@ TEST_F(ScmCredentialsTest, ForgeryGid) {
   TestForgery(std::nullopt, 100, 202, sender, no_caps, {.success = true});
 }
 
+TEST(SocketCrossFamilyTest, CrossFamilyBindConnectSendto) {
+  sockaddr_in addr_ipv4 = {};
+  addr_ipv4.sin_family = AF_INET;
+  addr_ipv4.sin_port = htons(0);
+  addr_ipv4.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+  sockaddr_in6 addr_ipv6 = {};
+  addr_ipv6.sin6_family = AF_INET6;
+  addr_ipv6.sin6_port = htons(0);
+  addr_ipv6.sin6_addr = in6addr_loopback;
+
+  sockaddr_un addr_unix = {};
+  addr_unix.sun_family = AF_UNIX;
+  const char abstract_name[] = "\0/abstract_name_unix_socket";
+  memcpy(addr_unix.sun_path, abstract_name, sizeof(abstract_name) - 1);
+  socklen_t addr_unix_short_len = offsetof(sockaddr_un, sun_path) + 5;  // 7 bytes (< 16)
+  socklen_t addr_unix_med_len = offsetof(sockaddr_un, sun_path) + 20;   // 22 bytes (16 <= len < 24)
+  socklen_t addr_unix_long_len =
+      offsetof(sockaddr_un, sun_path) + sizeof(abstract_name) - 1;  // 29 bytes (>= 28)
+
+  sockaddr addr_unspec = {};
+  addr_unspec.sa_family = AF_UNSPEC;
+
+  char buf[4] = {'t', 'e', 's', 't'};
+
+  // 1. AF_INET SOCK_DGRAM
+  {
+    fbl::unique_fd fd(socket(AF_INET, SOCK_DGRAM, 0));
+    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+
+    // Earlier EBADF and EFAULT checks take precedence over sockaddr length and family validation.
+    EXPECT_THAT(bind(-1, reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(connect(-1, reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(
+        sendto(-1, buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+        SyscallFailsWithErrno(EBADF));
+    sockaddr* bad_addr = reinterpret_cast<sockaddr*>(1);
+    EXPECT_THAT(bind(fd.get(), bad_addr, sizeof(addr_ipv6)), SyscallFailsWithErrno(EFAULT));
+    EXPECT_THAT(connect(fd.get(), bad_addr, sizeof(addr_ipv6)), SyscallFailsWithErrno(EFAULT));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, bad_addr, sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EFAULT));
+
+    // With AF_INET6 address (28 bytes >= 16)
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_ipv6),
+                       sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+
+    // With AF_UNIX address of various lengths
+    // Long (>= 16):
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix),
+                       addr_unix_long_len),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+
+    // Short (< sizeof(sockaddr_in) == 16):
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_short_len),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_short_len),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix),
+                       addr_unix_short_len),
+                SyscallFailsWithErrno(EINVAL));
+  }
+
+  // 2. AF_INET6 SOCK_DGRAM
+  {
+    fbl::unique_fd fd(socket(AF_INET6, SOCK_DGRAM, 0));
+    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+
+    // With AF_INET address (16 bytes < SIN6_LEN_RFC2133 (24))
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_ipv4), sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_ipv4),
+                       sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+
+    // With AF_UNIX long (29 bytes >= 24)
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix),
+                       addr_unix_long_len),
+                SyscallFailsWithErrno(EINVAL));
+
+    // With AF_UNIX med (22 bytes < 24)
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_med_len),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_med_len),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix),
+                       addr_unix_med_len),
+                SyscallFailsWithErrno(EINVAL));
+  }
+
+  // 2b. AF_INET and AF_INET6 SOCK_STREAM
+  {
+    fbl::unique_fd fd4(socket(AF_INET, SOCK_STREAM, 0));
+    ASSERT_TRUE(fd4.is_valid()) << strerror(errno);
+    EXPECT_THAT(connect(fd4.get(), reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(connect(fd4.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(connect(fd4.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_short_len),
+                SyscallFailsWithErrno(EINVAL));
+
+    fbl::unique_fd fd6(socket(AF_INET6, SOCK_STREAM, 0));
+    ASSERT_TRUE(fd6.is_valid()) << strerror(errno);
+    EXPECT_THAT(connect(fd6.get(), reinterpret_cast<sockaddr*>(&addr_ipv4), sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(connect(fd6.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallFailsWithErrno(EAFNOSUPPORT));
+    EXPECT_THAT(connect(fd6.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_med_len),
+                SyscallFailsWithErrno(EINVAL));
+  }
+
+  // 3. AF_UNIX SOCK_DGRAM
+  {
+    fbl::unique_fd fd(socket(AF_UNIX, SOCK_DGRAM, 0));
+    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_ipv4), sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_ipv4), sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_ipv4),
+                       sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+
+    EXPECT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_ipv6),
+                       sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EINVAL));
+
+    // Bind, connect, and sendto on AF_UNIX SOCK_DGRAM with explicit and null destination addresses.
+    ASSERT_THAT(bind(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallSucceeds());
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix),
+                       addr_unix_long_len),
+                SyscallSucceedsWithValue(sizeof(buf)));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, nullptr, 0), SyscallFailsWithErrno(ENOTCONN));
+    ASSERT_THAT(connect(fd.get(), reinterpret_cast<sockaddr*>(&addr_unix), addr_unix_long_len),
+                SyscallSucceeds());
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix),
+                       addr_unix_long_len),
+                SyscallSucceedsWithValue(sizeof(buf)));
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, nullptr, 0),
+                SyscallSucceedsWithValue(sizeof(buf)));
+
+    // Empty AF_UNIX address (addrlen == sizeof(sa_family_t)) on sendto fails with EINVAL.
+    sockaddr_un addr_unix_empty = {};
+    addr_unix_empty.sun_family = AF_UNIX;
+    EXPECT_THAT(sendto(fd.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix_empty),
+                       sizeof(sa_family_t)),
+                SyscallFailsWithErrno(EINVAL));
+
+    // Connected AF_UNIX SOCK_STREAM still rejects sendto with a destination address with EISCONN.
+    int stream_fds[2] = {-1, -1};
+    ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, stream_fds), SyscallSucceeds());
+    fbl::unique_fd s0(stream_fds[0]);
+    fbl::unique_fd s1(stream_fds[1]);
+    EXPECT_THAT(sendto(s0.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_unix),
+                       addr_unix_long_len),
+                SyscallFailsWithErrno(EISCONN));
+
+    // Unconnected AF_UNIX SOCK_STREAM rejects cross-family bind and connect with EINVAL,
+    // and sendto with a destination address with EOPNOTSUPP.
+    fbl::unique_fd ustream(socket(AF_UNIX, SOCK_STREAM, 0));
+    ASSERT_TRUE(ustream.is_valid()) << strerror(errno);
+    EXPECT_THAT(bind(ustream.get(), reinterpret_cast<sockaddr*>(&addr_ipv4), sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(connect(ustream.get(), reinterpret_cast<sockaddr*>(&addr_ipv4), sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(bind(ustream.get(), reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(connect(ustream.get(), reinterpret_cast<sockaddr*>(&addr_ipv6), sizeof(addr_ipv6)),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(sendto(ustream.get(), buf, sizeof(buf), 0, reinterpret_cast<sockaddr*>(&addr_ipv4),
+                       sizeof(addr_ipv4)),
+                SyscallFailsWithErrno(EOPNOTSUPP));
+  }
+}
+
 }  // namespace

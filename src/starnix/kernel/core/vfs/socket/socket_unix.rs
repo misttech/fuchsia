@@ -632,8 +632,11 @@ impl SocketOps for UnixSocket {
             (Some(peer), Some(_), SocketType::SeqPacket) => peer,
             (None, Some(_), SocketType::Stream) => return error!(EOPNOTSUPP),
             (None, Some(_), SocketType::SeqPacket) => return error!(ENOTCONN),
-            (Some(_), Some(_), _) => return error!(EISCONN),
+            (Some(_), Some(_), SocketType::Stream) => return error!(EISCONN),
             (_, Some(SocketAddress::Unix(name)), _) => {
+                if name.is_empty() {
+                    return error!(EINVAL);
+                }
                 resolve_unix_socket_address(current_task, name.as_ref())?
             }
             (_, Some(_), _) => return error!(EINVAL),

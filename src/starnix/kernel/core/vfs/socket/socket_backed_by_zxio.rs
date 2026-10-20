@@ -216,6 +216,7 @@ impl ZxioBackedSocket {
                 | SocketAddress::Inet6(sockaddr)
                 | SocketAddress::Packet(sockaddr),
             ) => sockaddr.clone(),
+            Some(_) if socket.domain == SocketDomain::Inet => return error!(EAFNOSUPPORT),
             Some(_) => return error!(EINVAL),
             None => vec![],
         };

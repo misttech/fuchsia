@@ -219,6 +219,9 @@ fn generate_autobind_address() -> FsString {
     format!("\0{value:05x}").into()
 }
 
+// Minimum IPv6 sockaddr length before sin6_scope_id (RFC 2133), matching Linux SIN6_LEN_RFC2133.
+const SIN6_LEN_RFC2133: usize = 24;
+
 pub fn sys_bind(
     current_task: &CurrentTask,
     fd: FdNumber,
@@ -229,22 +232,33 @@ pub fn sys_bind(
     let socket = Socket::get_from_file(&file)?;
     let address = parse_socket_address(current_task, user_socket_address, user_address_length)?;
     if !address.valid_for_domain(socket.domain) {
-        if socket.domain == SocketDomain::Inet && address == SocketAddress::Unspecified {
-            if let Ok(local_addr) = socket.getsockname() {
-                if local_addr.maybe_inet_port().unwrap_or(0) != 0 {
-                    return Ok(());
-                }
-            }
-        }
         return match socket.domain {
             SocketDomain::Unix
             | SocketDomain::Vsock
-            | SocketDomain::Inet6
             | SocketDomain::Netlink
             | SocketDomain::Key
             | SocketDomain::Packet
             | SocketDomain::Qipcrtr => error!(EINVAL),
-            SocketDomain::Inet => error!(EAFNOSUPPORT),
+            SocketDomain::Inet => {
+                if user_address_length < std::mem::size_of::<uapi::sockaddr_in>() {
+                    return error!(EINVAL);
+                }
+                if address == SocketAddress::Unspecified {
+                    if let Ok(local_addr) = socket.getsockname() {
+                        if local_addr.maybe_inet_port().unwrap_or(0) != 0 {
+                            return Ok(());
+                        }
+                    }
+                }
+                error!(EAFNOSUPPORT)
+            }
+            SocketDomain::Inet6 => {
+                if user_address_length < SIN6_LEN_RFC2133 {
+                    error!(EINVAL)
+                } else {
+                    error!(EAFNOSUPPORT)
+                }
+            }
         };
     }
     if let Some(port) = address.maybe_inet_port() {
@@ -378,6 +392,29 @@ pub fn sys_connect(
     let client = current_task.files().get(fd)?;
     let client = SocketFile::get_from_file(&client)?;
     let address = parse_socket_address(current_task, user_socket_address, user_address_length)?;
+    let domain = client.socket().domain;
+    if address != SocketAddress::Unspecified && !address.valid_for_domain(domain) {
+        match domain {
+            SocketDomain::Inet => {
+                if user_address_length < std::mem::size_of::<uapi::sockaddr_in>() {
+                    return error!(EINVAL);
+                }
+                return error!(EAFNOSUPPORT);
+            }
+            SocketDomain::Inet6 => {
+                if !(matches!(address, SocketAddress::Inet(_))
+                    && client.socket().socket_type == SocketType::Datagram)
+                {
+                    if user_address_length < SIN6_LEN_RFC2133 {
+                        return error!(EINVAL);
+                    }
+                    return error!(EAFNOSUPPORT);
+                }
+            }
+            SocketDomain::Unix => return error!(EINVAL),
+            _ => {}
+        }
+    }
     let peer = match address {
         SocketAddress::Unspecified => SocketPeer::Address(address),
         SocketAddress::Unix(ref name) => {
@@ -832,6 +869,13 @@ fn sendmsg_internal_with_header(
 
     let flags = SocketMessageFlags::from_bits(flags).ok_or_else(|| errno!(EOPNOTSUPP))?;
     let socket_ops = file.downcast_file::<SocketFile>().unwrap();
+    if dest_address.is_some()
+        && socket_ops.socket.domain == SocketDomain::Inet
+        && socket_ops.socket.socket_type != SocketType::Stream
+        && (message_header.name_len as usize) < std::mem::size_of::<uapi::sockaddr_in>()
+    {
+        return error!(EINVAL);
+    }
     socket_ops.sendmsg(
         current_task,
         file,
@@ -917,6 +961,13 @@ pub fn sys_sendto(
 
     let flags = SocketMessageFlags::from_bits(flags).ok_or_else(|| errno!(EOPNOTSUPP))?;
     let socket_file = file.downcast_file::<SocketFile>().unwrap();
+    if dest_address.is_some()
+        && socket_file.socket.domain == SocketDomain::Inet
+        && socket_file.socket.socket_type != SocketType::Stream
+        && (user_dest_address_length as usize) < std::mem::size_of::<uapi::sockaddr_in>()
+    {
+        return error!(EINVAL);
+    }
     socket_file.sendmsg(current_task, &file, &mut data, dest_address, vec![], flags)
 }
 
