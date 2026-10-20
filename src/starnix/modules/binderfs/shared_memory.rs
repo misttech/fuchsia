@@ -158,7 +158,7 @@ impl SharedMemory {
     /// Allocate a buffer of size `length` from this memory block using a Best-Fit strategy.
     fn allocate(&mut self, length: usize) -> Result<usize, TransactionError> {
         if length == 0 || length > self.length {
-            return Err(TransactionError::Failure);
+            return Err(TransactionError::Failure(errno!(ENOMEM)));
         }
 
         // Find the best-fit free chunk: smallest free chunk with size >= length.
@@ -166,7 +166,7 @@ impl SharedMemory {
             .free_buffers_by_size
             .range((length, 0)..)
             .next()
-            .ok_or(TransactionError::Failure)?;
+            .ok_or_else(|| TransactionError::Failure(errno!(ENOMEM)))?;
 
         self.free_buffers_by_size.remove(&(chunk_size, chunk_offset));
 

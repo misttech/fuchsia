@@ -77,10 +77,10 @@ use starnix_uapi::{
     binder_driver_command_protocol_BC_REQUEST_DEATH_NOTIFICATION,
     binder_driver_command_protocol_BC_REQUEST_FREEZE_NOTIFICATION,
     binder_driver_command_protocol_BC_TRANSACTION,
-    binder_driver_command_protocol_BC_TRANSACTION_SG, binder_freeze_info,
-    binder_frozen_status_info, binder_transaction_data, binder_transaction_data_sg,
-    binder_uintptr_t, binder_version, binder_write_read, errno, error, flat_binder_object,
-    transaction_flags_TF_ONE_WAY, uapi,
+    binder_driver_command_protocol_BC_TRANSACTION_SG, binder_driver_return_protocol_BR_OK,
+    binder_extended_error, binder_freeze_info, binder_frozen_status_info, binder_transaction_data,
+    binder_transaction_data_sg, binder_uintptr_t, binder_version, binder_write_read, errno, error,
+    flat_binder_object, transaction_flags_TF_ONE_WAY, uapi,
 };
 use std::cell::Cell;
 use std::collections::btree_map::Entry;
@@ -870,6 +870,23 @@ impl BinderDriver {
                     binder_proc.lock().unregister_thread(current_task, &binder_thread.tid);
                     Ok(SUCCESS)
                 }
+                uapi::BINDER_GET_EXTENDED_ERROR => {
+                    if user_arg.is_null() {
+                        return error!(EINVAL);
+                    }
+                    // Report `BR_OK` when no error has been recorded since the last transaction.
+                    let ee = binder_thread.lock().take_extended_error().unwrap_or(
+                        binder_extended_error {
+                            id: 0,
+                            command: binder_driver_return_protocol_BR_OK,
+                            param: 0,
+                        },
+                    );
+                    binder_proc
+                        .get_memory_accessor(current_task, remote_memory_accessor)
+                        .write_object(UserRef::new(user_arg), &ee)?;
+                    Ok(SUCCESS)
+                }
                 uapi::BINDER_GET_NODE_DEBUG_INFO => {
                     track_stub!(TODO("https://fxbug.dev/322874232"), "binder GET_NODE_DEBUG_INFO");
                     error!(EOPNOTSUPP)
@@ -1024,6 +1041,7 @@ impl BinderDriver {
             "data_size" => data.transaction_data.data_size as u64,
             "offsets_size" => data.transaction_data.offsets_size as u64
         );
+        context.binder_thread.lock().reset_extended_error();
         // SAFETY: Transactions can only refer to handles.
         let handle = unsafe { data.transaction_data.target.handle }.into();
 
@@ -1034,8 +1052,10 @@ impl BinderDriver {
             }
             Handle::Object { index } => {
                 let binder_proc = context.binder_proc.lock();
-                let (object, guard) =
-                    binder_proc.handles.get(index).ok_or(TransactionError::Failure)?;
+                let (object, guard) = binder_proc
+                    .handles
+                    .get(index)
+                    .ok_or_else(|| TransactionError::Failure(errno!(EINVAL)))?;
                 let owner = object.owner.upgrade().map(TempRef::into_static);
                 (object, owner, Some(guard))
             }
@@ -1253,7 +1273,11 @@ impl BinderDriver {
             "offsets_size" => data.transaction_data.offsets_size as u64
         );
         // Find the process and thread that initiated the transaction. This reply is for them.
-        let (peer, trace_id) = context.binder_thread.lock().pop_transaction_caller()?;
+        let (peer, trace_id) = {
+            let mut thread_state = context.binder_thread.lock();
+            thread_state.reset_extended_error();
+            thread_state.pop_transaction_caller()?
+        };
         let Some((target_proc, target_thread)) = peer.upgrade() else {
             // The thread that initiated the transaction is dead, so there is nobody to reply to.
             context.binder_thread.lock().enqueue_command(Command::TransactionComplete.into());
@@ -1952,12 +1976,13 @@ impl BinderDriver {
                                 // 1. Find the object and add a guard on it in the
                                 //    transaction to ensures the receiving process keep
                                 //    it alive until the transactions is finished
-                                let (proxy, guard) = source
-                                    .binder_proc
-                                    .lock()
-                                    .handles
-                                    .get(index)
-                                    .ok_or(TransactionError::Failure)?;
+                                let (proxy, guard) =
+                                    source
+                                        .binder_proc
+                                        .lock()
+                                        .handles
+                                        .get(index)
+                                        .ok_or_else(|| TransactionError::Failure(errno!(EINVAL)))?;
                                 if proxy.owner.as_ptr() == target_proc.weak_self.as_ptr() {
                                     // The binder object belongs to the receiving process.
 
@@ -2006,7 +2031,7 @@ impl BinderDriver {
                                 .binder_proc
                                 .lock()
                                 .find_or_register_object(source.binder_thread, local, flags)
-                                .map_err(|_| TransactionError::Failure)?;
+                                .map_err(TransactionError::Failure)?;
                             // Create a handle in the receiving process that references the binder object
                             // in the sender's process.
                             let handle =

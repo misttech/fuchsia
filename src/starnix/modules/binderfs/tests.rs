@@ -5,6 +5,7 @@
 #[cfg(test)]
 pub mod tests {
     use crate::binder::{BinderConnection, BinderDevice, BinderDriver, OperationContext};
+    use crate::fs::BinderFs;
     use crate::objects::{
         BinderObject, BinderObjectFlags, FlatBinderObject, Handle, LocalBinderObject,
         RefCountActions, SerializedBinderObject, StrongRefGuard, TransactionData,
@@ -15,9 +16,9 @@ pub mod tests {
     };
     use crate::shared_memory::{SharedMemory, TransactionBuffers};
     use crate::thread::{
-        BinderThread, Command, QueuedCommand, RegistrationState, RequeueEventRegistration,
-        TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
-        generate_dead_replies_for_transactions,
+        BinderThread, BinderThreadState, Command, QueuedCommand, RegistrationState,
+        RequeueEventRegistration, TransactionError, TransactionRole, TransactionSender,
+        WeakBinderPeer, generate_dead_replies_for_transactions,
     };
     use crate::user_memory_cursor::UserMemoryCursor;
     use assert_matches::assert_matches;
@@ -39,7 +40,10 @@ pub mod tests {
     };
     use starnix_core::task::{CurrentTask, ExitStatus, Kernel, SimpleWaiter, Waiter};
     use starnix_core::testing::*;
-    use starnix_core::vfs::{Anon, FdFlags, FdNumber, FileHandle, FileObject, anon_fs};
+    use starnix_core::vfs::{
+        Anon, FdFlags, FdNumber, FileHandle, FileObject, FileSystemOptions, VecOutputBuffer,
+        WhatToMount, anon_fs,
+    };
     use starnix_logging::log_warn;
     use starnix_sync::InterruptibleEvent;
     use starnix_types::convert::IntoFidl;
@@ -47,18 +51,22 @@ pub mod tests {
     use starnix_types::user_buffer::UserBuffer;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::device_id::DeviceId;
-    use starnix_uapi::errors::{EBADF, EINVAL, Errno};
+    use starnix_uapi::errors::{EBADF, EINVAL, ENOMEM, Errno};
+    use starnix_uapi::file_mode::mode;
+    use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::union::struct_with_union_into_bytes;
     use starnix_uapi::user_address::{UserAddress, UserRef};
     use starnix_uapi::{
         BINDER_BUFFER_FLAG_HAS_PARENT, BINDER_TYPE_BINDER, BINDER_TYPE_FD, BINDER_TYPE_FDA,
         BINDER_TYPE_HANDLE, BINDER_TYPE_PTR, BINDER_TYPE_WEAK_HANDLE, binder_buffer_object,
-        binder_fd_array_object, binder_fd_object, binder_freeze_info, binder_frozen_state_info,
-        binder_frozen_status_info, binder_object_header, binder_transaction_data,
-        binder_transaction_data__bindgen_ty_1, binder_transaction_data__bindgen_ty_2,
-        binder_transaction_data__bindgen_ty_2__bindgen_ty_1, binder_transaction_data_sg,
-        binder_uintptr_t, errno, flat_binder_object, transaction_flags_TF_ONE_WAY, uapi,
+        binder_driver_return_protocol_BR_ERROR, binder_driver_return_protocol_BR_FAILED_REPLY,
+        binder_driver_return_protocol_BR_OK, binder_extended_error, binder_fd_array_object,
+        binder_fd_object, binder_freeze_info, binder_frozen_state_info, binder_frozen_status_info,
+        binder_object_header, binder_transaction_data, binder_transaction_data__bindgen_ty_1,
+        binder_transaction_data__bindgen_ty_2, binder_transaction_data__bindgen_ty_2__bindgen_ty_1,
+        binder_transaction_data_sg, binder_uintptr_t, errno, flat_binder_object,
+        transaction_flags_TF_ONE_WAY, uapi,
     };
     use static_assertions::const_assert;
     use std::cell::Cell;
@@ -2654,7 +2662,7 @@ pub mod tests {
                 )
                 .expect_err("translate handles unexpectedly succeeded");
 
-            assert_eq!(transaction_ref_error, TransactionError::Failure);
+            assert_eq!(transaction_ref_error, TransactionError::Failure(errno!(EINVAL)));
         })
         .await;
     }
@@ -3391,7 +3399,7 @@ pub mod tests {
                 Some(QueuedCommand { command: Command::Error(val), .. }) if val == EINVAL.return_value() as i32
             );
 
-            TransactionError::Failure
+            TransactionError::Failure(errno!(EINVAL))
                 .dispatch(&proc.thread)
                 .expect("no error");
             assert_matches!(
@@ -7232,6 +7240,201 @@ pub mod tests {
                 .expect("failed to read secctx");
             assert_eq!(&secctx_bytes[..EXPECTED_SECCTX.len()], EXPECTED_SECCTX);
             assert_eq!(secctx_bytes[EXPECTED_SECCTX.len()], 0xff);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn binder_features_extended_error() {
+        spawn_kernel_and_run(async |current_task| {
+            current_task
+                .lookup_path_from_root("/".into())
+                .expect("root")
+                .create_node(current_task, "dev".into(), mode!(IFDIR, 0o755), DeviceId::NONE)
+                .expect("mkdir dev");
+            let dev = current_task.lookup_path_from_root("/dev".into()).expect("lookup dev");
+            dev.mount(
+                WhatToMount::Fs(
+                    BinderFs::new_fs(current_task, FileSystemOptions::default()).expect("new_fs"),
+                ),
+                MountpointFlags::empty(),
+            )
+            .expect("mount");
+
+            let node = current_task
+                .lookup_path_from_root("/dev/features/extended_error".into())
+                .expect("lookup extended_error");
+            let file = node.entry.open_anonymous(current_task, OpenFlags::RDONLY).expect("open");
+            let mut content = VecOutputBuffer::new(16);
+            file.read(current_task, &mut content).expect("read");
+            let bytes: Vec<u8> = content.into();
+            assert_eq!(&bytes, b"1\n");
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn binder_get_extended_error_ioctl() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let client = BinderProcessFixture::new_current(current_task, &device);
+
+            let ee_addr = map_memory(
+                current_task,
+                UserAddress::default(),
+                std::mem::size_of::<binder_extended_error>() as u64,
+            );
+
+            let get_extended_error = || -> binder_extended_error {
+                device
+                    .ioctl(
+                        current_task,
+                        &client.proc,
+                        None,
+                        uapi::BINDER_GET_EXTENDED_ERROR,
+                        ee_addr.into(),
+                        Vec::new(),
+                    )
+                    .expect("ioctl BINDER_GET_EXTENDED_ERROR");
+                current_task.read_object(UserRef::new(ee_addr)).unwrap()
+            };
+
+            // Initially, extended error is BR_OK with param = 0.
+            let ee = get_extended_error();
+            assert_eq!(ee.command, binder_driver_return_protocol_BR_OK);
+            assert_eq!(ee.param, 0);
+
+            // Test Malformed(EINVAL):
+            TransactionError::Malformed(errno!(EINVAL)).dispatch(&client.thread).expect("dispatch");
+            let ee = get_extended_error();
+            assert_eq!(ee.command, binder_driver_return_protocol_BR_ERROR);
+            assert_eq!(ee.param, -(EINVAL.error_code() as i32));
+
+            // Verify that BINDER_GET_EXTENDED_ERROR reset the error to BR_OK:
+            let ee = get_extended_error();
+            assert_eq!(ee.command, binder_driver_return_protocol_BR_OK);
+            assert_eq!(ee.param, 0);
+
+            // Test Failure(EINVAL):
+            TransactionError::Failure(errno!(EINVAL)).dispatch(&client.thread).expect("dispatch");
+            let ee = get_extended_error();
+            assert_eq!(ee.command, binder_driver_return_protocol_BR_FAILED_REPLY);
+            assert_eq!(ee.param, -(EINVAL.error_code() as i32));
+
+            // Test Failure(ENOMEM):
+            TransactionError::Failure(errno!(ENOMEM)).dispatch(&client.thread).expect("dispatch");
+            let ee = get_extended_error();
+            assert_eq!(ee.command, binder_driver_return_protocol_BR_FAILED_REPLY);
+            assert_eq!(ee.param, -(ENOMEM.error_code() as i32));
+
+            // Verify that starting a new handle_transaction clears a previously recorded
+            // extended_error back to BR_OK when BINDER_GET_EXTENDED_ERROR was not called.
+            TransactionError::Failure(errno!(EINVAL)).dispatch(&client.thread).expect("dispatch");
+            assert!(client.thread.lock().extended_error.is_some());
+            let _ = device.handle_transaction(
+                &client.context(current_task),
+                &mut Vec::new(),
+                binder_transaction_data_sg::default(),
+            );
+            assert!(client.thread.lock().extended_error.is_none());
+            let ee = get_extended_error();
+            assert_eq!(ee.command, binder_driver_return_protocol_BR_OK);
+            assert_eq!(ee.param, 0);
+
+            // Verify that starting a new handle_reply clears a previously recorded
+            // extended_error back to BR_OK when BINDER_GET_EXTENDED_ERROR was not called.
+            TransactionError::Failure(errno!(EINVAL)).dispatch(&client.thread).expect("dispatch");
+            assert!(client.thread.lock().extended_error.is_some());
+            let _ = device.handle_reply(
+                &client.context(current_task),
+                &mut Vec::new(),
+                binder_transaction_data_sg::default(),
+            );
+            assert!(client.thread.lock().extended_error.is_none());
+            let ee = get_extended_error();
+            assert_eq!(ee.command, binder_driver_return_protocol_BR_OK);
+            assert_eq!(ee.param, 0);
+
+            // Test that null user pointer returns EINVAL:
+            let err = device
+                .ioctl(
+                    current_task,
+                    &client.proc,
+                    None,
+                    uapi::BINDER_GET_EXTENDED_ERROR,
+                    UserAddress::NULL.into(),
+                    Vec::new(),
+                )
+                .expect_err("null ptr should fail");
+            assert_eq!(err, errno!(EINVAL));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn deliver_failed_reply_does_not_override_extended_error() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc_a = BinderProcessFixture::new_current(current_task, &device);
+            let proc_b = BinderProcessFixture::new(current_task, &device);
+            let trace_id = fuchsia_trace::Id::new();
+
+            let push_sender = |thread_state: &mut BinderThreadState| {
+                thread_state.transactions.push(TransactionRole::Sender(TransactionSender {
+                    target_proc: proc_b.proc.identifier,
+                    target_thread: Some(proc_b.thread.tid.clone()),
+                    is_alive: true,
+                    target_thread_handle: Some(proc_b.thread.thread.clone()),
+                    trace_id,
+                }));
+            };
+
+            // With no error recorded, a failed reply records its extended
+            // error.
+            {
+                let mut thread_a = proc_a.thread.lock();
+                assert!(thread_a.extended_error.is_none());
+                push_sender(&mut thread_a);
+                thread_a.deliver_failed_reply(
+                    proc_b.proc.identifier,
+                    &TransactionError::Failure(errno!(ENOMEM)),
+                    trace_id,
+                );
+                let ee = thread_a.extended_error.expect("extended error recorded");
+                assert_eq!(ee.command, binder_driver_return_protocol_BR_FAILED_REPLY);
+                assert_eq!(ee.param, -(ENOMEM.error_code() as i32));
+            }
+
+            // An error that is already recorded is not overridden by a later
+            // failed reply.
+            {
+                let mut thread_a = proc_a.thread.lock();
+                push_sender(&mut thread_a);
+                thread_a.deliver_failed_reply(
+                    proc_b.proc.identifier,
+                    &TransactionError::Dead,
+                    trace_id,
+                );
+                let ee = thread_a.extended_error.expect("extended error recorded");
+                assert_eq!(ee.command, binder_driver_return_protocol_BR_FAILED_REPLY);
+                assert_eq!(ee.param, -(ENOMEM.error_code() as i32));
+            }
+
+            // Once reset, the next failed reply is recorded again.
+            {
+                let mut thread_a = proc_a.thread.lock();
+                thread_a.reset_extended_error();
+                assert!(thread_a.extended_error.is_none());
+                push_sender(&mut thread_a);
+                thread_a.deliver_failed_reply(
+                    proc_b.proc.identifier,
+                    &TransactionError::Dead,
+                    trace_id,
+                );
+                let ee = thread_a.extended_error.expect("extended error recorded");
+                assert_eq!(ee.command, uapi::binder_driver_return_protocol_BR_DEAD_REPLY);
+                assert_eq!(ee.param, 0);
+            }
         })
         .await;
     }

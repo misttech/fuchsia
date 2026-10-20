@@ -36,8 +36,8 @@ use starnix_uapi::{
     binder_driver_return_protocol_BR_SPAWN_LOOPER, binder_driver_return_protocol_BR_TRANSACTION,
     binder_driver_return_protocol_BR_TRANSACTION_COMPLETE,
     binder_driver_return_protocol_BR_TRANSACTION_PENDING_FROZEN,
-    binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_frozen_state_info,
-    binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, error,
+    binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_extended_error,
+    binder_frozen_state_info, binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, error,
 };
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -316,6 +316,9 @@ pub struct BinderThreadState {
     pub request_kick: bool,
     /// Tracks whether this thread is registered as an available thread.
     pub available: bool,
+    /// The extended error recorded for the calling thread since it last started a transaction or
+    /// reply, or `None` if no error has been recorded. Reported by `BINDER_GET_EXTENDED_ERROR`.
+    pub extended_error: Option<binder_extended_error>,
 }
 
 pub struct BinderThreadGuard<'a> {
@@ -359,7 +362,16 @@ impl BinderThreadState {
             command_queue: Default::default(),
             request_kick: false,
             available: false,
+            extended_error: None,
         }
+    }
+
+    pub fn reset_extended_error(&mut self) {
+        self.extended_error = None;
+    }
+
+    pub fn take_extended_error(&mut self) -> Option<binder_extended_error> {
+        self.extended_error.take()
     }
 
     pub fn is_main_or_registered(&self) -> bool {
@@ -462,6 +474,9 @@ impl BinderThreadState {
             return;
         }
         self.transactions.pop();
+        if self.extended_error.is_none() {
+            self.extended_error = Some(error.extended_error());
+        }
         self.enqueue_command(QueuedCommand::new(error.to_command(), trace_id));
     }
 
@@ -875,7 +890,7 @@ pub enum TransactionError {
     Malformed(Errno),
 
     /// A general failure, e.g. the transaction could not be allocated, or was rejected by SELinux.
-    Failure,
+    Failure(Errno),
 
     /// The target process is dead.
     Dead,
@@ -896,8 +911,20 @@ impl TransactionError {
                 &err
             );
         }
-        binder_thread.lock().enqueue_command(self.to_command().into());
+        let mut thread_state = binder_thread.lock();
+        thread_state.extended_error = Some(self.extended_error());
+        thread_state.enqueue_command(self.to_command().into());
         Ok(())
+    }
+
+    pub fn extended_error(&self) -> binder_extended_error {
+        let param = match self {
+            TransactionError::Malformed(err) | TransactionError::Failure(err) => {
+                err.return_value() as i32
+            }
+            TransactionError::Dead | TransactionError::Frozen => 0,
+        };
+        binder_extended_error { id: 0, command: self.to_command().driver_return_code(), param }
     }
 
     /// Returns the command that notifies a binder thread of the error.
@@ -905,7 +932,7 @@ impl TransactionError {
         match self {
             // Negate the value, as the binder runtime assumes error values are already negative.
             TransactionError::Malformed(err) => Command::Error(err.return_value() as i32),
-            TransactionError::Failure => Command::FailedReply,
+            TransactionError::Failure(_) => Command::FailedReply,
             TransactionError::Dead => Command::DeadReply,
             TransactionError::Frozen => Command::FrozenReply,
         }
@@ -915,7 +942,7 @@ impl TransactionError {
 impl From<Errno> for TransactionError {
     fn from(errno: Errno) -> TransactionError {
         match errno.code {
-            EACCES | EPERM => TransactionError::Failure,
+            EACCES | EPERM => TransactionError::Failure(errno),
             ESRCH => TransactionError::Dead,
             _ => TransactionError::Malformed(errno),
         }
