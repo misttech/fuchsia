@@ -2140,3 +2140,130 @@ mod intensive_thread_tests {
         }
     }
 }
+
+/// Preemption disable and timeslice extension RAII guard unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "preempt_disable_tests_rust")]
+mod preempt_disable_tests {
+    use super::{
+        AutoExpiringPreemptDisabler, AutoPreemptDisabler, preempt_disable_count, preempt_is_enabled,
+    };
+    use crate::platform_rs::timer::DurationMono;
+    use unittest::{assert_eq, assert_false, assert_true};
+
+    /// Tests `AutoPreemptDisabler` deferred and immediate modes, nesting, and toggling.
+    #[test]
+    fn test_auto_preempt_disabler() {
+        // Make sure that nothing funny is going on with our preempt disable count as
+        // it stands now.
+        assert_eq!(0u32, preempt_disable_count());
+
+        {
+            // Create a disabler inside of a scope, but do not have it immediately
+            // request that preemption be disabled.  Our count should still be zero.
+            let mut ap_disabler = AutoPreemptDisabler::new_deferred();
+            assert_eq!(0u32, preempt_disable_count());
+
+            // Now explicitly disable.  Our count should go to 1.
+            ap_disabler.disable();
+            assert_eq!(1u32, preempt_disable_count());
+
+            // Do it again, our count should remain at 1.
+            ap_disabler.disable();
+            assert_eq!(1u32, preempt_disable_count());
+
+            {
+                // Make another inside of a new scope.  Our count should remain at 1 until
+                // we explicitly use the new instance to disable preemption.
+                let mut ap_disabler2 = AutoPreemptDisabler::new_deferred();
+                assert_eq!(1u32, preempt_disable_count());
+
+                ap_disabler2.disable();
+                assert_eq!(2u32, preempt_disable_count());
+            } // Let it go out of scope, we should drop down to a count of 1.
+
+            assert_eq!(1u32, preempt_disable_count());
+        } // Allow the original to go out of scope.  This should get us back down to a count of 0.
+
+        assert_eq!(0u32, preempt_disable_count());
+
+        // Next, do a similar test, but this time with the version which automatically
+        // begins life with preemption disabled.
+        {
+            let mut ap_disabler = AutoPreemptDisabler::new();
+            assert_eq!(1u32, preempt_disable_count());
+
+            // Attempting to call disable should do nothing.
+            ap_disabler.disable();
+            assert_eq!(1u32, preempt_disable_count());
+
+            {
+                // Add a second.  Watch the count go up as it comes into scope, and back
+                // down again when it goes out.
+                let _ap_disabler2 = AutoPreemptDisabler::new();
+                assert_eq!(2u32, preempt_disable_count());
+            }
+
+            assert_eq!(1u32, preempt_disable_count());
+        } // Allow the original to go out of scope.  This should get us back down to a count of 0.
+
+        // Test an explicit Enable
+        {
+            let mut ap_disabler = AutoPreemptDisabler::new();
+            assert_eq!(1u32, preempt_disable_count());
+
+            {
+                // Create a defered disabler, and test that Enabling it before its disabled does
+                // nothing.
+                let mut ap_disabler2 = AutoPreemptDisabler::new_deferred();
+                assert_eq!(1u32, preempt_disable_count());
+
+                ap_disabler2.enable();
+                assert_eq!(1u32, preempt_disable_count());
+            }
+            assert_eq!(1u32, preempt_disable_count());
+
+            // Should be able to toggle enable and disable
+            ap_disabler.enable();
+            assert_eq!(0u32, preempt_disable_count());
+            ap_disabler.disable();
+            assert_eq!(1u32, preempt_disable_count());
+            // Ending on Enable should result in no change after the disabler goes out of scope.
+            ap_disabler.enable();
+            assert_eq!(0u32, preempt_disable_count());
+        }
+
+        assert_eq!(0u32, preempt_disable_count());
+    }
+
+    /// Tests basic and nested `AutoExpiringPreemptDisabler` timeslice extensions.
+    #[test]
+    fn test_auto_timeslice_extension() {
+        // Basic.
+        {
+            assert_true!(preempt_is_enabled());
+            {
+                let _guard = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
+                assert_false!(preempt_is_enabled());
+            }
+            assert_true!(preempt_is_enabled());
+        }
+
+        // Nested.  Only the outermost guard matters.
+        {
+            assert_true!(preempt_is_enabled());
+            {
+                let _guard1 = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
+                assert_false!(preempt_is_enabled());
+                {
+                    let _guard2 = AutoExpiringPreemptDisabler::new(DurationMono::ZERO);
+                    // Even though _guard2's duration is 0, preemption should still be disabled
+                    // because of _guard1's extension.
+                    assert_false!(preempt_is_enabled());
+                }
+                assert_false!(preempt_is_enabled());
+            }
+            assert_true!(preempt_is_enabled());
+        }
+    }
+}
