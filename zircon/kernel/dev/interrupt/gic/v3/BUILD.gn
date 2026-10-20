@@ -5,25 +5,47 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = [ "dev/interrupt/arm_gicv3_init.h" ]
   public_deps = [ "//sdk/lib/zbi-format" ]
 }
 
+kernel_rust_mod("gicv3-rs") {
+  output_name = "gicv3"
+  source_root = "arm_gicv3.rs"
+  sources = [
+    "arm_gicv3.rs",
+    "regs.rs",
+  ]
+  deps = [
+    "//sdk/rust/zbi",
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/kprint",
+    "//src/lib/ksync",
+    "//src/lib/lazy_init:lazy_init_rs",
+    "//src/lib/regio",
+    "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/arch:arch-rs",
+    "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/ktrace:ktrace-rs",
+    "//zircon/kernel/lib/page:page-rs",
+    "//zircon/kernel/lib/pow2_range_allocator:pow2-range-allocator-rs",
+    "//zircon/kernel/lib/root_resource_filter:root_resource_filter_rs",
+  ]
+}
+
 source_set("v3") {
-  sources = [ "arm_gicv3.cc" ]
+  sources = []
   public_deps = [ ":headers" ]
   deps = [
-    "//src/lib/lazy_init",
+    ":gicv3-rs",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/interrupt/gic/common",
     "//zircon/kernel/dev/pdev/interrupt",
-    "//zircon/kernel/lib/init",
-    "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/ktrace",
-    "//zircon/kernel/lib/pow2_range_allocator",
     "//zircon/kernel/lib/root_resource_filter",
-    "//zircon/kernel/vm:headers",
   ]
 }

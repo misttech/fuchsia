@@ -159,6 +159,14 @@ pub mod generic32;
 pub mod plic;
 
 #[cfg(target_arch = "aarch64")]
+#[path = "dev/interrupt/gic/common/gic_common.rs"]
+pub mod gic_common;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "dev/interrupt/gic/v3/arm_gicv3.rs"]
+pub mod arm_gicv3;
+
+#[cfg(target_arch = "aarch64")]
 #[path = "dev/power/iris/iris.rs"]
 pub mod power_iris;
 

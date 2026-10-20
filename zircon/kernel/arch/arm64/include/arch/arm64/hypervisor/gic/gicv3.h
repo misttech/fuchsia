@@ -24,6 +24,8 @@
 
 // clang-format on
 
-void gicv3_hw_interface_register();
+// Registers the GICv3 hardware interface ops with the GIC common layer. Declared with C
+// linkage so that the Rust GICv3 driver can call it.
+extern "C" void gicv3_hw_interface_register();
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_ARM64_HYPERVISOR_GIC_GICV3_H_
