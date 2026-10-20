@@ -1655,3 +1655,488 @@ mod tests {
         }
     }
 }
+
+/// Intensive scheduler and thread synchronization unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "intensive_thread_rust")]
+mod intensive_thread_tests {
+    // These tests take much longer than, and are more intensive on the scheduler than,
+    // the //zircon/kernel/kernel/thread.cc tests.
+    use super::{
+        DEFAULT_PRIORITY, Interruptible, LOW_PRIORITY, ThreadPtr, create_with_priority,
+        current_get, sleep_interruptible, sleep_relative, r#yield,
+    };
+    use crate::kernel::event::{AutounsignalEvent, Event};
+    use crate::platform_rs::timer::{DurationMono, InstantMono};
+    use core::ffi::{c_int, c_void};
+    use core::ptr;
+    use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+    use kprint::kprintln;
+    use pin_init::{pin_init, stack_pin_init};
+    use unittest::unwrap_ok;
+    use zx_status::Status;
+    use zx_types::ZX_ERR_INTERNAL_INTR_KILLED;
+
+    const INTERNAL_INTR_KILLED: Status = Status::err_from_raw(ZX_ERR_INTERNAL_INTR_KILLED);
+
+    unsafe extern "C" {
+        fn rand() -> c_int;
+    }
+
+    #[ksync::guarded]
+    struct IntensiveMutexHolder {
+        #[mutex]
+        m: ksync::KMutex<ksync::RawMutex>,
+    }
+
+    extern "C" fn mutex_thread(arg: *mut c_void) -> i32 {
+        const ITERATIONS: i32 = 100000;
+        static SHARED: AtomicUsize = AtomicUsize::new(0);
+
+        // SAFETY: `arg` points to `m` on `mutex_test`'s stack, which outlives all worker threads.
+        let holder = unsafe { &*(arg as *const IntensiveMutexHolder) };
+
+        for _i in 0..ITERATIONS {
+            {
+                ksync::lock!(let _guard = holder.lock_m());
+
+                if SHARED.load(Ordering::Relaxed) != 0 {
+                    panic!("someone else has messed with the shared data\n");
+                }
+
+                SHARED.store(current_get() as usize, Ordering::Relaxed);
+                // SAFETY: `rand` is a thread-safe C library PRNG function in the kernel.
+                if (unsafe { rand() } % 5) == 0 {
+                    r#yield();
+                }
+
+                SHARED.store(0, Ordering::Relaxed);
+            }
+            // SAFETY: `rand` is a thread-safe C library PRNG function in the kernel.
+            if (unsafe { rand() } % 5) == 0 {
+                r#yield();
+            }
+        }
+
+        0
+    }
+
+    /// Stress-tests mutex acquisition and release across 5 concurrent threads.
+    #[test]
+    fn mutex_test() {
+        stack_pin_init!(let m = pin_init!(IntensiveMutexHolder {
+            m <- ksync::KMutex::init(),
+        }));
+        let m_ptr: *mut c_void = ptr::from_ref(&*m).cast_mut().cast();
+
+        let threads: [ThreadPtr; 5] = core::array::from_fn(|_| {
+            // SAFETY: `mutex_thread` is a valid thread entry point and `m` outlives all threads
+            // joined below.
+            let thread = unsafe {
+                create_with_priority(
+                    c"mutex tester".as_ptr(),
+                    mutex_thread,
+                    m_ptr,
+                    DEFAULT_PRIORITY,
+                )
+            }
+            .unwrap();
+            // SAFETY: `thread` was just created and has not been resumed or joined yet.
+            unsafe { thread.resume() };
+            thread
+        });
+
+        for thread in threads {
+            // SAFETY: `thread` is valid and has not been joined yet.
+            let _ = unsafe { thread.join(InstantMono::INFINITE) };
+        }
+
+        let _ = sleep_relative(DurationMono::from_millis(100));
+    }
+
+    extern "C" fn event_signaler(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` points to a valid `Event` on `event_test`'s stack, which outlives this
+        // thread.
+        let event = unsafe { &*(arg as *const Event) };
+
+        // event signaler pausing
+        let _ = sleep_relative(DurationMono::from_seconds(1));
+
+        event.signal();
+        r#yield();
+
+        0
+    }
+
+    #[derive(Clone, Copy)]
+    struct WaiterArgs {
+        event: *const Event,
+        count: usize,
+    }
+
+    #[allow(clippy::if_same_then_else)]
+    extern "C" fn event_waiter(arg: *mut c_void) -> i32 {
+        // Copy our arguments here so we can mutate the count.
+        // SAFETY: `arg` points to a valid `WaiterArgs` on `event_test`'s stack, which outlives
+        // this thread.
+        let mut args: WaiterArgs = unsafe { *(arg as *const WaiterArgs) };
+
+        while args.count > 0 {
+            // SAFETY: `args.event` points to a valid `Event` on `event_test`'s stack, which
+            // outlives this thread.
+            let status =
+                unsafe { (*args.event).wait_deadline(InstantMono::INFINITE, Interruptible::Yes) };
+            if status == Err(INTERNAL_INTR_KILLED) {
+                return -1;
+            } else if status.is_err() {
+                return -1;
+            }
+            r#yield();
+            args.count -= 1;
+        }
+
+        0
+    }
+
+    /// Tests `Event` (broadcast wakeup) and `AutounsignalEvent` (single-waiter wakeup).
+    #[test]
+    fn event_test() {
+        {
+            // make sure signaling the event wakes up all the threads and stays signaled
+            stack_pin_init!(let event = Event::init_unsignaled());
+            let event_ptr: *const Event = &*event;
+            let mut args = WaiterArgs { event: event_ptr, count: 2 };
+            let args_ptr: *mut c_void = (&raw mut args).cast();
+
+            // SAFETY: `event_signaler` and `event_waiter` are valid entry points, and `event` and
+            // `args` outlive all 5 threads (joined before the end of this block).
+            let threads = unsafe {
+                [
+                    unwrap_ok!(create_with_priority(
+                        c"event signaler".as_ptr(),
+                        event_signaler,
+                        event_ptr.cast_mut().cast(),
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 0".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 1".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 2".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 3".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                ]
+            };
+
+            for thread in threads {
+                // SAFETY: `thread` was just created and has not been resumed or joined yet.
+                unsafe { thread.resume() };
+            }
+
+            for thread in threads {
+                // SAFETY: `thread` is valid and has not been joined yet.
+                let _ = unsafe { thread.join(InstantMono::INFINITE) };
+            }
+
+            let _ = sleep_relative(DurationMono::from_seconds(2));
+            // destroying event by going out of scope
+        }
+
+        {
+            stack_pin_init!(let event = AutounsignalEvent::init_unsignaled());
+            let event_ptr: *const Event = event.as_event();
+            let mut args = WaiterArgs { event: event_ptr, count: 99 };
+            let args_ptr: *mut c_void = (&raw mut args).cast();
+            // make sure signaling the event wakes up precisely one thread
+            // SAFETY: `event_signaler` and `event_waiter` are valid entry points, and `event` and
+            // `args` outlive all 5 threads (joined before the end of this block).
+            let threads = unsafe {
+                [
+                    unwrap_ok!(create_with_priority(
+                        c"event signaler".as_ptr(),
+                        event_signaler,
+                        event_ptr.cast_mut().cast(),
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 0".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 1".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 2".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                    unwrap_ok!(create_with_priority(
+                        c"event waiter 3".as_ptr(),
+                        event_waiter,
+                        args_ptr,
+                        DEFAULT_PRIORITY,
+                    )),
+                ]
+            };
+
+            for thread in threads {
+                // SAFETY: `thread` was just created and has not been resumed or joined yet.
+                unsafe { thread.resume() };
+            }
+
+            let _ = sleep_relative(DurationMono::from_seconds(2));
+
+            for thread in threads {
+                // SAFETY: `thread` is valid and has not been joined yet.
+                unsafe {
+                    thread.kill();
+                    let _ = thread.join(InstantMono::INFINITE);
+                }
+            }
+        }
+    }
+
+    static ATOMIC_VAR: AtomicI32 = AtomicI32::new(0);
+    static ATOMIC_COUNT: AtomicI32 = AtomicI32::new(0);
+
+    extern "C" fn atomic_tester(arg: *mut c_void) -> i32 {
+        let add = arg as isize as i32;
+        const ITER: i32 = 10000000;
+
+        for _i in 0..ITER {
+            let _ = ATOMIC_VAR.fetch_add(add, Ordering::SeqCst);
+        }
+
+        let _ = ATOMIC_COUNT.fetch_sub(1, Ordering::SeqCst);
+
+        0
+    }
+
+    /// Stress-tests concurrent atomic `fetch_add` and `fetch_sub` across 8 threads.
+    #[test]
+    fn atomic_test() {
+        ATOMIC_VAR.store(0, Ordering::SeqCst);
+        ATOMIC_COUNT.store(8, Ordering::SeqCst);
+
+        #[allow(clippy::manual_dangling_ptr)]
+        let plus_one = 1usize as *mut c_void;
+        let minus_one = (-1isize as usize) as *mut c_void;
+        // SAFETY: `atomic_tester` is a valid thread entry point and interprets its `arg` as an
+        // integer delta without dereferencing it.
+        let threads = unsafe {
+            [
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 1".as_ptr(),
+                    atomic_tester,
+                    plus_one,
+                    LOW_PRIORITY,
+                )),
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 1".as_ptr(),
+                    atomic_tester,
+                    plus_one,
+                    LOW_PRIORITY,
+                )),
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 1".as_ptr(),
+                    atomic_tester,
+                    plus_one,
+                    LOW_PRIORITY,
+                )),
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 1".as_ptr(),
+                    atomic_tester,
+                    plus_one,
+                    LOW_PRIORITY,
+                )),
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 2".as_ptr(),
+                    atomic_tester,
+                    minus_one,
+                    LOW_PRIORITY,
+                )),
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 2".as_ptr(),
+                    atomic_tester,
+                    minus_one,
+                    LOW_PRIORITY,
+                )),
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 2".as_ptr(),
+                    atomic_tester,
+                    minus_one,
+                    LOW_PRIORITY,
+                )),
+                unwrap_ok!(create_with_priority(
+                    c"atomic tester 2".as_ptr(),
+                    atomic_tester,
+                    minus_one,
+                    LOW_PRIORITY,
+                )),
+            ]
+        };
+
+        // start all the threads
+        for thread in threads {
+            // SAFETY: `thread` was just created and has not been resumed or joined yet.
+            unsafe { thread.resume() };
+        }
+
+        // wait for them to all stop
+        for thread in threads {
+            // SAFETY: `thread` is valid and has not been joined yet.
+            let _ = unsafe { thread.join(InstantMono::INFINITE) };
+        }
+    }
+
+    extern "C" fn sleeper_kill_thread_infinite_wait(_arg: *mut c_void) -> i32 {
+        let _ = sleep_relative(DurationMono::from_millis(100));
+
+        kprintln!("sleeper_kill_thread_infinite_wait: waiting until killed");
+        let err = sleep_interruptible(InstantMono::INFINITE);
+        assert_eq!(err, Err(INTERNAL_INTR_KILLED));
+
+        0
+    }
+
+    extern "C" fn waiter_kill_thread_infinite_wait(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` points to a valid `Event` on `kill_test`'s stack, which outlives this
+        // thread.
+        let e = unsafe { &*(arg as *const Event) };
+
+        let _ = sleep_relative(DurationMono::from_millis(100));
+
+        kprintln!("waiter_kill_thread_infinite_wait: waiting until killed");
+        let err = e.wait_deadline(InstantMono::INFINITE, Interruptible::Yes);
+        assert_eq!(err, Err(INTERNAL_INTR_KILLED));
+
+        0
+    }
+
+    /// Tests killing threads blocked in interruptible sleep or event wait across lifecycle stages.
+    #[test]
+    fn kill_test() {
+        // Starting sleeper thread, then killing it while it sleeps.
+        // SAFETY: `sleeper_kill_thread_infinite_wait` is a valid thread entry point that ignores
+        // its argument.
+        let t = unwrap_ok!(unsafe {
+            create_with_priority(
+                c"sleeper".as_ptr(),
+                sleeper_kill_thread_infinite_wait,
+                ptr::null_mut(),
+                LOW_PRIORITY,
+            )
+        });
+        // SAFETY: `t` was just created and is joined before the end of this section.
+        unsafe {
+            t.resume();
+            let _ = sleep_relative(DurationMono::from_millis(200));
+            t.kill();
+            let _ = t.join(InstantMono::INFINITE);
+        }
+
+        // Starting sleeper thread, then killing it before it wakes up.
+        // SAFETY: `sleeper_kill_thread_infinite_wait` is a valid thread entry point that ignores
+        // its argument.
+        let t = unwrap_ok!(unsafe {
+            create_with_priority(
+                c"sleeper".as_ptr(),
+                sleeper_kill_thread_infinite_wait,
+                ptr::null_mut(),
+                LOW_PRIORITY,
+            )
+        });
+        // SAFETY: `t` was just created and is joined before the end of this section.
+        unsafe {
+            t.resume();
+            t.kill();
+            let _ = t.join(InstantMono::INFINITE);
+        }
+
+        // Starting sleeper thread, then killing it before it is unsuspended.
+        // SAFETY: `sleeper_kill_thread_infinite_wait` is a valid thread entry point that ignores
+        // its argument.
+        let t = unwrap_ok!(unsafe {
+            create_with_priority(
+                c"sleeper".as_ptr(),
+                sleeper_kill_thread_infinite_wait,
+                ptr::null_mut(),
+                LOW_PRIORITY,
+            )
+        });
+        // SAFETY: `t` was just created and is joined before the end of this section.
+        unsafe {
+            t.kill(); // kill it before it is resumed
+            t.resume();
+            let _ = t.join(InstantMono::INFINITE);
+        }
+
+        {
+            // Starting waiter thread that waits forever, then killing it while it blocks.
+            stack_pin_init!(let e = Event::init_unsignaled());
+            let e_ptr: *mut c_void = ptr::from_ref(&*e).cast_mut().cast();
+            // SAFETY: `waiter_kill_thread_infinite_wait` is a valid entry point and `e` outlives
+            // `t` (joined below).
+            let t = unwrap_ok!(unsafe {
+                create_with_priority(
+                    c"waiter".as_ptr(),
+                    waiter_kill_thread_infinite_wait,
+                    e_ptr,
+                    LOW_PRIORITY,
+                )
+            });
+            // SAFETY: `t` was just created and is joined before `e` goes out of scope.
+            unsafe {
+                t.resume();
+                let _ = sleep_relative(DurationMono::from_millis(200));
+                t.kill();
+                let _ = t.join(InstantMono::INFINITE);
+            }
+        }
+
+        {
+            // Starting waiter thread that waits forever, then killing it before it wakes up.
+            stack_pin_init!(let e = Event::init_unsignaled());
+            let e_ptr: *mut c_void = ptr::from_ref(&*e).cast_mut().cast();
+            // SAFETY: `waiter_kill_thread_infinite_wait` is a valid entry point and `e` outlives
+            // `t` (joined below).
+            let t = unwrap_ok!(unsafe {
+                create_with_priority(
+                    c"waiter".as_ptr(),
+                    waiter_kill_thread_infinite_wait,
+                    e_ptr,
+                    LOW_PRIORITY,
+                )
+            });
+            // SAFETY: `t` was just created and is joined before `e` goes out of scope.
+            unsafe {
+                t.resume();
+                t.kill();
+                let _ = t.join(InstantMono::INFINITE);
+            }
+        }
+    }
+}
