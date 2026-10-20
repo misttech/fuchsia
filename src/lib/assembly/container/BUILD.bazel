@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
 
 package(default_applicable_licenses = ["//:license"])
@@ -18,5 +20,50 @@ rustc_proc_macro(
         "//third_party/rust_crates/vendor:proc-macro2",
         "//third_party/rust_crates/vendor:quote",
         "//third_party/rust_crates/vendor:syn",
+    ],
+)
+
+rustc_library(
+    name = "container",
+    srcs = [
+        "src/assembly_container.rs",
+        "src/lib.rs",
+        "src/merge.rs",
+    ],
+    crate_name = "assembly_container",
+    edition = "2024",
+    proc_macro_deps = [":container_macro"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    version = "0.1.0",
+    visibility = [
+        "//build/assembly/tools:__subpackages__",
+        "//src/developer/ffx/plugins:__subpackages__",
+        "//src/lib/assembly:__subpackages__",
+        "//tools/pbtool:__pkg__",
+        "//tools/pkgstats:__pkg__",
+    ],
+    deps = [
+        "//src/lib/assembly/package_copy",
+        "//src/lib/assembly/util",
+        "//src/lib/depfile",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:pathdiff",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:serde_json5",
+    ],
+)
+
+host_rustc_test(
+    name = "container_test",
+    crate = ":container",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/assembly:__pkg__"],
+    deps = [
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//third_party/rust_crates/vendor:tempfile",
     ],
 )

@@ -1,0 +1,44 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "images_config",
+    srcs = [
+        "src/board_filesystem_config.rs",
+        "src/images_config.rs",
+        "src/lib.rs",
+        "src/product_filesystem_config.rs",
+    ],
+    crate_name = "assembly_images_config",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    version = "0.1.0",
+    visibility = [
+        "//src/developer/ffx/plugins/assembly:__pkg__",
+        "//src/lib/assembly:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/assembly/container",
+        "//src/storage/fshost/config",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json5",
+    ],
+)
+
+host_rustc_test(
+    name = "images_config_test",
+    crate = ":images_config",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/assembly:__pkg__"],
+    deps = ["//third_party/rust_crates/vendor:serde_json"],
+)

@@ -13,6 +13,9 @@ test_suite(
     target_compatible_with = HOST_OS_CONSTRAINTS,
     tests = [
         "//src/lib/assembly/blobfs:blobfs_test",
+        "//src/lib/assembly/constants:constants_test",
+        "//src/lib/assembly/container:container_test",
+        "//src/lib/assembly/images_config:images_config_test",
         "//src/lib/assembly/package_copy:package_copy_test",
         "//src/lib/assembly/package_list:package_list_test",
         "//src/lib/assembly/package_utils:package_utils_test",

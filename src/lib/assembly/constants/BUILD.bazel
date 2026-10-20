@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "constants",
+    srcs = [
+        "src/board_features.rs",
+        "src/files.rs",
+        "src/kernel_args.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "assembly_constants",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:strum_macros"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    version = "0.1.0",
+    visibility = [
+        "//build/assembly/tools/generate_assembly_scrutiny_configs:__pkg__",
+        "//src/lib/assembly:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/assembly/container",
+        "//src/lib/assembly/util",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:strum",
+    ],
+)
+
+host_rustc_test(
+    name = "constants_test",
+    crate = ":constants",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/assembly:__pkg__"],
+)
