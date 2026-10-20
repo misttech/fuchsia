@@ -12,10 +12,8 @@
 // and enable the DHCPv4 server. On the client side is a test that waits to
 // observe the client interface being assigned an address by the DHCPv4 server.
 //
-// This test can be run against either Netstack2 or Netstack3, by including
-// either the `-with-ns2` or `-with-ns3` CML shard. To use those shards as part
-// of a test, one will need to start a component that acts as a DHCP client, and
-// route it capabilities from the client netstack.
+// To use this shard as part of a test, one will need to start a component that
+// acts as a DHCP client, and route it capabilities from the client netstack.
 {
     include: [
         "//src/connectivity/network/testing/netemul/runner/default.shard.cml",
@@ -64,6 +62,14 @@
         {
             name: "test",
             url: "#meta/test.cm",
+        },
+        {
+            name: "client-netstack",
+            url: "#meta/configurable-netstack-netstack3.cm",
+        },
+        {
+            name: "server-netstack",
+            url: "#meta/configurable-netstack-netstack3.cm",
         },
         {
             name: "dhcpd",
