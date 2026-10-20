@@ -664,5 +664,84 @@ TEST_F(FakeDdkSysmem, OverflowBytesPerRowDivisorRoundUp) {
   EXPECT_TRUE(!wait_result.is_ok());
 }
 
+TEST_F(FakeDdkSysmem, PartialMultiBufferAllocationFailure) {
+  class FakeHeap : public fidl::WireServer<fuchsia_hardware_sysmem::Heap> {
+   public:
+    void AllocateVmo(AllocateVmoRequestView request,
+                     AllocateVmoCompleter::Sync& completer) override {
+      if (request->buffer_index >= 1) {
+        completer.ReplyError(ZX_ERR_NO_MEMORY);
+        return;
+      }
+      zx::vmo vmo;
+      ASSERT_EQ(zx::vmo::create(request->size, 0, &vmo), ZX_OK);
+      completer.ReplySuccess(std::move(vmo));
+    }
+    void DeleteVmo(DeleteVmoRequestView request, DeleteVmoCompleter::Sync& completer) override {
+      request->vmo.reset();
+      completer.Reply();
+    }
+  };
+
+  FakeHeap fake_heap;
+  async::Loop heap_loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_EQ(heap_loop.StartThread("FakeHeap"), ZX_OK);
+
+  auto heap = sysmem::MakeHeap("test_partial_alloc_heap", 0);
+  auto [client, server] = fidl::Endpoints<fuchsia_hardware_sysmem::Heap>::Create();
+
+  device_->RunSyncOnClientDispatcher([this, heap = heap, client = std::move(client)]() mutable {
+    std::lock_guard lock(device_->client_checker_);
+    zx_status_t status = device_->RegisterHeapInternal(heap, std::move(client));
+    EXPECT_EQ(status, ZX_OK);
+  });
+
+  fidl::Arena arena;
+  auto coherency = fuchsia_hardware_sysmem::wire::CoherencyDomainSupport::Builder(arena)
+                       .cpu_supported(true)
+                       .ram_supported(true)
+                       .inaccessible_supported(true)
+                       .Build();
+  auto properties = fuchsia_hardware_sysmem::wire::HeapProperties::Builder(arena)
+                        .coherency_domain_support(coherency)
+                        .need_clear(false)
+                        .need_flush(false)
+                        .Build();
+  EXPECT_TRUE(fidl::WireSendEvent(server)->OnRegister(properties).ok());
+
+  fidl::BindServer(heap_loop.dispatcher(), std::move(server), &fake_heap);
+
+  while (true) {
+    bool is_present = false;
+    device_->RunSyncOnLoop([this, &heap, &is_present]() {
+      std::lock_guard lock(*device_->loop_checker_);
+      is_present = device_->is_allocator_present_for_testing(heap);
+    });
+    if (is_present) {
+      break;
+    }
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  }
+
+  auto collection_client = AllocateNonSharedCollection();
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count() = 2;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  bmc.min_size_bytes() = zx_system_get_page_size();
+  bmc.cpu_domain_supported() = true;
+  bmc.permitted_heaps() = {heap};
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_FALSE(wait_result.is_ok());
+
+  heap_loop.Shutdown();
+}
+
 }  // namespace
 }  // namespace sysmem_service

@@ -4907,8 +4907,7 @@ TrackedParentVmo::TrackedParentVmo(fbl::RefPtr<LogicalBufferCollection> buffer_c
 }
 
 TrackedParentVmo::~TrackedParentVmo() {
-  // In some error paths, we just delete.
-  CancelWait();
+  ZX_ASSERT(!waiting_);
 
   // Some do_delete_ callbacks are not safe to run from within ~TrackedParentVmo, so we require that
   // TakeDeleteCallback has already been called before ~TrackedParentVmo (and the do_delete_
@@ -4916,7 +4915,7 @@ TrackedParentVmo::~TrackedParentVmo() {
   //
   // In async cleanup case (normal), this gets cleaned up via OnZeroChildren. In sync cleanup case
   // after AllocateVmo fails due to no memory, this gets cleaned up in ~LogicalBuffer.
-  ZX_DEBUG_ASSERT(!do_delete_);
+  ZX_ASSERT(!do_delete_);
 }
 
 zx_status_t TrackedParentVmo::StartWait(async_dispatcher_t* dispatcher) {
@@ -4934,15 +4933,26 @@ zx_status_t TrackedParentVmo::StartWait(async_dispatcher_t* dispatcher) {
 }
 
 zx_status_t TrackedParentVmo::CancelWait() {
+  bool was_waiting = waiting_;
   waiting_ = false;
-  return zero_children_wait_.Cancel();
+  zx_status_t status = zero_children_wait_.Cancel();
+  ZX_ASSERT(!was_waiting || status == ZX_OK);
+  return status;
 }
 
-TrackedParentVmo::DoDelete TrackedParentVmo::TakeDeleteCallback() { return std::move(do_delete_); }
+TrackedParentVmo::DoDelete TrackedParentVmo::TakeDeleteCallback() {
+  // We must cancel the wait before do_delete calls TakeVmo() and closes the VMO handle; closing the
+  // last handle to the VMO while zero_children_wait_ is still waiting on the port causes the kernel
+  // to reap the PortObserver without queuing a packet, which causes zx_port_cancel_key in
+  // async_loop_cancel_wait to return ZX_ERR_NOT_FOUND and skip unlinking zero_children_wait_ from
+  // loop->wait_list.
+  CancelWait();
+  return std::move(do_delete_);
+}
 
 zx::vmo TrackedParentVmo::TakeVmo() {
-  ZX_DEBUG_ASSERT(!waiting_);
-  ZX_DEBUG_ASSERT(vmo_);
+  ZX_ASSERT(!waiting_);
+  ZX_ASSERT(vmo_);
   return std::move(vmo_);
 }
 

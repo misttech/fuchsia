@@ -50,7 +50,7 @@ zx_status_t ExternalMemoryAllocator::Allocate(uint64_t raw_vmo_size,
   auto allocate_result = heap_.sync()->AllocateVmo(raw_vmo_size, fidl::ToWire(arena, settings),
                                                    buffer_collection_id, buffer_index);
   if (!allocate_result.ok() || !allocate_result->is_ok()) {
-    LOG(ERROR, "Heap.AllocateVmo failed: %d %d", allocate_result.error().status(),
+    LOG(ERROR, "Heap.AllocateVmo failed: %d %d", allocate_result.status(),
         allocate_result.ok() ? allocate_result->error_value() : ZX_ERR_INTERNAL);
     // sanitize to ZX_ERR_NO_MEMORY regardless of why.
     return ZX_ERR_NO_MEMORY;

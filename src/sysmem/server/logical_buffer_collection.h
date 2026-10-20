@@ -73,9 +73,6 @@ class TrackedParentVmo {
   // for ZX_VMO_ZERO_CHILDREN.
   zx_status_t StartWait(async_dispatcher_t* dispatcher);
 
-  // Cancel the wait.
-  zx_status_t CancelWait();
-
   zx::vmo TakeVmo();
   [[nodiscard]] const zx::vmo& vmo() const;
 
@@ -94,6 +91,8 @@ class TrackedParentVmo {
 
   uint32_t buffer_index() { return buffer_index_; }
 
+  // Cancels any active wait on ZX_VMO_ZERO_CHILDREN and returns the delete callback (if not already
+  // taken or run).
   DoDelete TakeDeleteCallback();
 
   // no copy, no move (async::WaitMethod isn't anyway, but just to be clear about it)
@@ -103,6 +102,7 @@ class TrackedParentVmo {
   TrackedParentVmo& operator=(TrackedParentVmo&&) = delete;
 
  private:
+  zx_status_t CancelWait();
   void OnZeroChildren(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
                       const zx_packet_signal_t* signal);
   fbl::RefPtr<LogicalBufferCollection> buffer_collection_;
