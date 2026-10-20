@@ -86,19 +86,19 @@ rust_library(
     version = "0.3.14",
     deps = select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(unix)
+            "//third_party/rust_crates/forks/libc-0.2.190:libc",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(unix)
+            "//third_party/rust_crates/forks/libc-0.2.190:libc",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:riscv64gc-unknown-fuchsia": [
-            "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(unix)
+            "//third_party/rust_crates/forks/libc-0.2.190:libc",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(unix)
+            "//third_party/rust_crates/forks/libc-0.2.190:libc",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(unix)
+            "//third_party/rust_crates/forks/libc-0.2.190:libc",  # cfg(unix)
         ],
         "//conditions:default": [],
     }),

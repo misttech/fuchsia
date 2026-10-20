@@ -78,7 +78,7 @@ rust_library(
     version = "0.9.117",
     deps = [
         ":build_script_main",
-        "//third_party/rust_crates/forks/libc-0.2.189:libc",
+        "//third_party/rust_crates/forks/libc-0.2.190:libc",
         "//third_party/rust_crates/intree/bssl-sys:bssl_sys",
     ],
 )

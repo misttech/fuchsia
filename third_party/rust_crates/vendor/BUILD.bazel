@@ -1498,14 +1498,14 @@ alias(
 )
 
 alias(
-    name = "libc-0.2.189",
-    actual = "//third_party/rust_crates/forks/libc-0.2.189:libc",
+    name = "libc-0.2.190",
+    actual = "//third_party/rust_crates/forks/libc-0.2.190:libc",
     tags = ["manual"],
 )
 
 alias(
     name = "libc",
-    actual = "//third_party/rust_crates/forks/libc-0.2.189:libc",
+    actual = "//third_party/rust_crates/forks/libc-0.2.190:libc",
     tags = ["manual"],
 )
 

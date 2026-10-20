@@ -86,7 +86,7 @@ rust_library(
     }),
     version = "0.8.4",
     deps = [
-        "//third_party/rust_crates/forks/libc-0.2.189:libc",
+        "//third_party/rust_crates/forks/libc-0.2.190:libc",
         "//third_party/rust_crates/vendor/chacha20-0.10.2:chacha20",
         "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
         "//third_party/rust_crates/vendor/rand_chacha-0.3.1:rand_chacha",

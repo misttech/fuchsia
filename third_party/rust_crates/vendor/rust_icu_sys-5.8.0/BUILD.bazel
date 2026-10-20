@@ -80,7 +80,7 @@ rust_library(
     version = "5.8.0",
     deps = [
         ":build_script_build",
-        "//third_party/rust_crates/forks/libc-0.2.189:libc",
+        "//third_party/rust_crates/forks/libc-0.2.190:libc",
     ],
 )
 

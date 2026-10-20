@@ -149,7 +149,7 @@ iota = "0.2.3"
 itertools = "0.14"
 itoa = "1.0"
 json5format = "0.2.6"
-libc = { version = "0.2.189", features = ["extra_traits"] }
+libc = { version = "0.2.190", features = ["extra_traits"] }
 libm = "0.2.16"
 linked-hash-map = "0.5.6"
 lock_api = { version = "0.4.14", features = ["serde"] }
@@ -474,7 +474,7 @@ bt-vcs = { path = "forks/bluetooth/bt-vcs" }
 errno = { path = "forks/errno-0.3.14" }
 fatfs = { path = "forks/fatfs" }
 fuse3 = { path = "forks/fuse3" }
-libc = { path = "forks/libc-0.2.189" }
+libc = { path = "forks/libc-0.2.190" }
 nix_0_29_0 = { package = "nix", path = "forks/nix-0.29.0" }
 nom-language = { package = "nom-language", path = "forks/nom-language-0.1.0" }
 notify = { path = "forks/notify" }
@@ -787,7 +787,7 @@ rustflags = [
 [gn.package.indexmap."1.9.2"]
 rustflags = ["--cfg=has_std"]
 
-[gn.package.libc."0.2.189"]
+[gn.package.libc."0.2.190"]
 rustflags = [
   "--cfg=libc_priv_mod_use",
   "--cfg=libc_union",
@@ -804,7 +804,7 @@ rustflags = [
   "--cfg=libc_const_extern_fn",
  ]
 
-[gn.package.libc."0.2.189".platform."cfg(target_os = \"freebsd\")"]
+[gn.package.libc."0.2.190".platform."cfg(target_os = \"freebsd\")"]
 rustflags = ["--cfg=freebsd11"]
 
 [gn.package.libm."0.2.16"]
@@ -1376,7 +1376,7 @@ reviewed_features = [
 [gn.package.tokio."1.53.1".platform."cfg(not(target_os = \"fuchsia\"))"]
 deps = [
   ":bytes-v1_12_1",
-  ":libc-v0_2_189",
+  ":libc-v0_2_190",
   ":memchr-v2_8_3",
   ":mio-v1_2_1",
   ":num_cpus-v1_17_0",

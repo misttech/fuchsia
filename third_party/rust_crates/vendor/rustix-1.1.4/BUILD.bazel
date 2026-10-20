@@ -114,7 +114,7 @@ rust_library(
     deps = [
         ":build_script_build",
         "//third_party/rust_crates/forks/errno-0.3.14:errno",
-        "//third_party/rust_crates/forks/libc-0.2.189:libc",
+        "//third_party/rust_crates/forks/libc-0.2.190:libc",
         "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [

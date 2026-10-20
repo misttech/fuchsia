@@ -81,7 +81,7 @@ rust_library(
     version = "0.4.4",
     deps = [
         ":build_script_build",
-        "//third_party/rust_crates/forks/libc-0.2.189:libc",
+        "//third_party/rust_crates/forks/libc-0.2.190:libc",
         "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
     ],
 )

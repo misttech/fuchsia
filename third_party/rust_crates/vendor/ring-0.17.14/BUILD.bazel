@@ -101,7 +101,7 @@ rust_library(
         "//third_party/rust_crates/vendor/untrusted-0.9.0:untrusted",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(all(any(all(target_arch = "aarch64", target_endian = "little"), all(target_arch = "arm", target_endian = "little")), any(target_os = "android", target_os = "linux")))
+            "//third_party/rust_crates/forks/libc-0.2.190:libc",  # cfg(all(any(all(target_arch = "aarch64", target_endian = "little"), all(target_arch = "arm", target_endian = "little")), any(target_os = "android", target_os = "linux")))
         ],
         "//conditions:default": [],
     }),
