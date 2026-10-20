@@ -567,12 +567,6 @@ pub unsafe extern "C" fn rust_message_packet_delete(packet: *mut MessagePacket) 
     }
 }
 
-/// Returns the number of handles attached to the packet.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_message_packet_get_num_handles(packet: &MessagePacket) -> usize {
-    packet.num_handles()
-}
-
 /// Returns a mutable pointer to the attached handle pointers.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_message_packet_get_mutable_handles(

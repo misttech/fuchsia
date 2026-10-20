@@ -13,11 +13,6 @@
 #include <ktl/unique_ptr.h>
 #include <object/handle.h>
 
-constexpr uint32_t kMaxMessageHandles = 64u;
-
-// ensure public constants are aligned
-static_assert(ZX_CHANNEL_MAX_MSG_HANDLES == kMaxMessageHandles, "");
-
 class Handle;
 class MessagePacket;
 namespace internal {
@@ -33,7 +28,6 @@ extern "C" {
 zx_status_t rust_message_packet_create_kernel(const uint8_t* data, size_t data_size,
                                               size_t num_handles, MessagePacket** out);
 void rust_message_packet_delete(MessagePacket* packet);
-size_t rust_message_packet_get_num_handles(const MessagePacket* packet);
 Handle** rust_message_packet_get_mutable_handles(MessagePacket* packet);
 void rust_message_packet_set_owns_handles(MessagePacket* packet, bool owns_handles);
 }  // extern "C"
@@ -46,9 +40,6 @@ class MessagePacket final {
   static zx_status_t Create(const char* data, uint32_t data_size, uint32_t num_handles,
                             MessagePacketPtr* msg);
 
-  uint32_t num_handles() const {
-    return static_cast<uint32_t>(rust_message_packet_get_num_handles(this));
-  }
   Handle** mutable_handles() { return rust_message_packet_get_mutable_handles(this); }
 
   void set_owns_handles(bool own_handles) {
