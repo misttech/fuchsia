@@ -45,25 +45,7 @@ inline uint64_t Scheduler::NextFlowId() {
 // exported value is scaled by the relative performance factor of the CPU to
 // account for performance differences in the estimate.
 inline void Scheduler::UpdateTotalExpectedRuntime(SchedDuration delta_ns) {
-  rust_state_.total_expected_runtime_ns += delta_ns;
-  DEBUG_ASSERT(rust_state_.total_expected_runtime_ns >= 0);
-  const SchedDuration scaled_ns = ScaleUp(rust_state_.total_expected_runtime_ns);
-  rust_state_.exported_queue_time_ns = scaled_ns;
-  LOCAL_KTRACE_COUNTER(COUNTER, "Estimated Runtime", this_cpu(), ("CPU", scaled_ns.raw_value()));
-
-  if (power_level_control_.is_enabled()) {
-    const SchedUtilization fair_demand = power_level_control_.fair_demand();
-    rust_state_.exported_fair_utilization = fair_demand;
-    rust_state_.exported_clamped_fair_utilization = power_level_control_.clamped_fair_demand();
-    rust_state_.exported_clamped_total_utilization = power_level_control_.clamped_total_demand();
-
-    auto latched_timestamp = KTrace::LatchedTimestamp();
-    KTRACE_CPU_COUNTER_TIMESTAMP("kernel:sched-demand", "Demand:Variable", latched_timestamp(),
-                                 this_cpu(), ("CPU", ffl::Round<uint64_t>(fair_demand * 1000)));
-    KTRACE_CPU_COUNTER_TIMESTAMP(
-        "kernel:sched-demand", "Demand:Total", latched_timestamp(), this_cpu(),
-        ("CPU", ffl::Round<uint64_t>(power_level_control_.total_demand() * 1000)));
-  }
+  rust_scheduler_update_total_expected_runtime(this, delta_ns);
 }
 
 // Updates the total deadline utilization estimator with the given delta.

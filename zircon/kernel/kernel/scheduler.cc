@@ -100,38 +100,6 @@ KCOUNTER(counter_wakeup_synchronous_migrated, "scheduler.wakeup.synchronous-migr
 
 namespace {
 
-// Utility operator to make expressions more succinct that update thread times
-// and durations of basic types using the fixed-point counterparts.
-constexpr zx_instant_mono_t& operator+=(zx_instant_mono_t& value, SchedDuration delta) {
-  value += delta.raw_value();
-  return value;
-}
-
-// Returns a delta value to additively update a predictor. Compares the given
-// sample to the current value of the predictor and returns a delta such that
-// the predictor either exponentially peaks or decays toward the sample. The
-// rate of decay depends on the alpha parameter, while the rate of peaking
-// depends on the beta parameter. The predictor is not permitted to become
-// negative.
-//
-// A single-rate exponential moving average is updated as follows:
-//
-//   Sn = Sn-1 + a * (Yn - Sn-1)
-//
-// This function updates the exponential moving average using potentially
-// different rates for peak and decay:
-//
-//   D  = Yn - Sn-1
-//        [ Sn-1 + a * D      if D < 0
-//   Sn = [
-//        [ Sn-1 + b * D      if D >= 0
-//
-template <typename T, typename Alpha, typename Beta>
-constexpr T PeakDecayDelta(T value, T sample, Alpha alpha, Beta beta) {
-  const T delta = sample - value;
-  return ktl::max<T>(delta >= 0 ? T{beta * delta} : T{alpha * delta}, -value);
-}
-
 // Reset this CPU's preemption timer to fire at |deadline|.
 //
 // |current_cpu| is the current CPU.
@@ -252,141 +220,11 @@ inline void Scheduler::TraceThreadQueueEvent(const fxt::InternedString& name,
 }
 
 void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
-  // We're about to acquire the |queue_lock_| and fprintf some things.
-  // Depending on the FILE, calling fprintf may end up calling |DLog::Write|,
-  // which may call |Event::Signal|, which may re-enter the Scheduler.  If that
-  // happens while we're holding the |queue_lock_| that would be bad.
-  // |DLog::Write| has a hack that allows it to defer the Signal operation when
-  // there's an active chain lock transaction.  So even though we don't *need* a
-  // chain lock transaction, we establish one anyway in order to leverage the
-  // deferred Signal behavior and avoid a re-entrancy issue.
-  //
-  // TODO(https://fxbug.dev/331847876): Remove this hack once we have a better
-  // solution to scheduler re-entrancy issues.
-  const auto do_transaction =
-      [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
-    Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&queue_lock_, SOURCE_TAG};
-
-    const SchedTime now = CurrentTime();
-    const SchedTime variable_now = MonotonicToVariable(now);
-
-    SchedWeight min_weight{0};
-    SchedTime variable_eligible_time{SchedTime::Max()};
-    if (!rust_state_.fair_run_queue.is_empty()) {
-      const Thread& root = *rust_state_.fair_run_queue.croot();
-      AssertInScheduler(root);
-      min_weight = ktl::min(rust_state_.active_thread_weight,
-                            root.scheduler_state().subtree_invariants_.min_weight);
-
-      const Thread& front = rust_state_.fair_run_queue.front();
-      AssertInScheduler(front);
-      variable_eligible_time = front.scheduler_state().start_time();
-    }
-    const SchedTime monotonic_eligible_time = VariableToMonotonic(variable_eligible_time);
-    const SchedUtilization min_utilization =
-        rust_state_.weight_total != 0 ? SchedUtilization{min_weight / rust_state_.weight_total}
-                                      : SchedUtilization{0};
-
-    fprintf(output_target,
-            "\tw_sum=%s w_min=%s T_v=%" PRId64 " count=%d ema_sum=%" PRId64
-            "\n\tU_{c,sum}=%s U_{v,min}=%s"
-            "\n\tnow=%" PRId64 " vnow=%" PRId64 " eligible=%" PRId64 " veligible=%" PRId64
-            "\n\tmono_ref=%" PRId64 " var_ref=%" PRId64 " slope=%s\n",
-            Format(rust_state_.weight_total).c_str(), Format(min_weight).c_str(),
-            rust_state_.fair_period.raw_value(), rust_state_.runnable_task_count,
-            rust_state_.total_expected_runtime_ns.raw_value(),
-            Format(power_level_control_.normalized_deadline_utilization()).c_str(),
-            Format(min_utilization).c_str(), now.raw_value(), variable_now.raw_value(),
-            monotonic_eligible_time.raw_value(), variable_eligible_time.raw_value(),
-            rust_state_.fair_affine_transform.monotonic_reference_time().raw_value(),
-            rust_state_.fair_affine_transform.variable_reference_time().raw_value(),
-            Format(rust_state_.fair_affine_transform.slope()).c_str());
-
-    if (queue_state_only) {
-      return ChainLockTransaction::Done;
-    }
-
-    const auto print_thread =
-        [output_target](const Scheduler* scheduler, const Thread& thread) TA_REQ(
-            scheduler->queue_lock_) TA_REQ_SHARED(thread.get_lock()) {
-          const SchedulerState& state = thread.scheduler_state();
-          const EffectiveProfile& ep = state.effective_profile();
-          const bool is_active = scheduler->rust_state_.active_thread == &thread;
-          if (IsFairThread(&thread)) {
-            // A fair thread that is the active thread has start and finish
-            // times on the monotonic timeline. All fair threads in run queues
-            // have start and finish times on the variable timeline. Display all
-            // start and finish times on the monotonic timeline for consistent
-            // presentation.
-            const SchedTime start_time =
-                is_active ? state.start_time_ : scheduler->VariableToMonotonic(state.start_time_);
-            const SchedTime finish_time =
-                is_active ? state.finish_time_ : scheduler->VariableToMonotonic(state.finish_time_);
-
-            fprintf(output_target,
-                    "\t%s name=%s weight=%s start=%" PRId64 " finish=%" PRId64 " ts=%" PRId64
-                    " ema=%" PRId64 " T_e=%" PRId64 "\n",
-                    is_active ? "->" : "  ", thread.name(), Format(ep.weight()).c_str(),
-                    start_time.raw_value(), finish_time.raw_value(),
-                    state.remaining_time_slice_ns().raw_value(),
-                    state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value());
-          } else {
-            fprintf(output_target,
-                    "\t%s name=%s deadline=(%" PRId64 ", %" PRId64 ") start= %" PRId64
-                    " finish= %" PRId64 " ts= %" PRId64 " ema= %" PRId64 " T_e= %" PRId64 " %s\n",
-                    is_active ? "->" : "  ", thread.name(), ep.deadline().capacity_ns.raw_value(),
-                    ep.deadline().deadline_ns.raw_value(), state.start_time().raw_value(),
-                    state.finish_time().raw_value(), state.time_slice_ns().raw_value(),
-                    state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value(),
-                    IsCriticalDeadlineThread(&thread) ? "critical" : "");
-          }
-        };
-
-    if (rust_state_.active_thread != nullptr) {
-      AssertInScheduler(*rust_state_.active_thread);
-      print_thread(this, *rust_state_.active_thread);
-    }
-
-    for (const RunQueue* run_queue :
-         {&rust_state_.critical_deadline_run_queue, &rust_state_.deadline_run_queue,
-          &rust_state_.fair_run_queue}) {
-      for (const Thread& thread : *run_queue) {
-        AssertInScheduler(thread);
-        print_thread(this, thread);
-      }
-    }
-
-    return ChainLockTransaction::Done;
-  };
-  ChainLockTransaction::UntilDone(NoIrqSaveOption, CLT_TAG("Scheduler::Dump"), do_transaction);
+  rust_kernel_scheduler_dump(this, output_target, queue_state_only);
 }
 
 void Scheduler::DumpActiveThread(FILE* output_target) {
-  // See comment in |Scheduler::Dump|.
-  //
-  // TODO(https://fxbug.dev/331847876): Remove this hack once we have a better
-  // solution to scheduler re-entrancy issues.
-  const auto do_transaction =
-      [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
-    Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&queue_lock_, SOURCE_TAG};
-
-    if (rust_state_.active_thread != nullptr) {
-      AssertInScheduler(*rust_state_.active_thread);
-      fprintf(output_target, "thread: pid=%lu tid=%lu\n", rust_state_.active_thread->pid(),
-              rust_state_.active_thread->tid());
-      ThreadDispatcher* user_thread = rust_state_.active_thread->user_thread();
-      if (user_thread != nullptr) {
-        ProcessDispatcher* process = user_thread->process();
-        char name[ZX_MAX_NAME_LEN]{};
-        [[maybe_unused]] zx_status_t status = process->get_name(name);
-        DEBUG_ASSERT(status == ZX_OK);
-        fprintf(output_target, "process: name=%s\n", name);
-      }
-    }
-    return ChainLockTransaction::Done;
-  };
-  ChainLockTransaction::UntilDone(NoIrqSaveOption, CLT_TAG("Scheduler::DumpActiveThread"),
-                                  do_transaction);
+  rust_kernel_scheduler_dump_active_thread(this, output_target);
 }
 
 SchedWeight Scheduler::GetTotalWeight() const {
@@ -446,11 +284,6 @@ Scheduler* Scheduler::Get(cpu_num_t cpu) {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_dump_write_str(FILE* output_target, const char* str, size_t len) {
-  fwrite(str, 1, len, output_target);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_dump_active(const Thread* thread,
                                               FILE* output_target) TA_NO_THREAD_SAFETY_ANALYSIS {
   fprintf(output_target, "thread: pid=%lu tid=%lu\n", thread->pid(), thread->tid());
@@ -489,16 +322,6 @@ FFI_ALWAYS_INLINE void cpp_scheduler_unblock_list(Thread::UnblockList* list)
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE cpu_stats* cpp_get_cpu_stats(cpu_num_t cpu_num) TA_NO_THREAD_SAFETY_ANALYSIS {
   return &percpu::Get(cpu_num).stats;
-}
-
-static_assert(sizeof(ffi::Uninitialized<cpu_stats>) == sizeof(cpu_stats));
-static_assert(alignof(ffi::Uninitialized<cpu_stats>) == alignof(cpu_stats));
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_scheduler_get_projected_cpu_stats(cpu_num_t cpu_num,
-                                                             ffi::Uninitialized<cpu_stats>* out) {
-  DEBUG_ASSERT(out != nullptr);
-  out->Initialize(Scheduler::GetProjectedCpuStats(cpu_num));
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -1839,157 +1662,20 @@ void Scheduler::ProcessSaveStateList() {
 void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
                                                  SchedMonoTimeAndBootTicks now,
                                                  SchedDuration actual_runtime_ns) {
-  // Time in a low-power idle state should only accrue when running the idle
-  // thread. Always consume the processor idle time, even if an energy model is
-  // not set, to avoid accumulating excessive idle time and triggering the
-  // assert when an energy model is finally set.
-  const SchedDuration idle_processor_time_ns{TakeProcessorIdleTime()};
-  DEBUG_ASSERT_MSG(
-      idle_processor_time_ns <= actual_runtime_ns,
-      "idle_processor_time_ns=%" PRId64 " actual_runtime_ns=%" PRId64 " current_thread=%s",
-      idle_processor_time_ns.raw_value(), actual_runtime_ns.raw_value(), current_thread->name());
-
-  if (power_level_control_.is_enabled()) {
-    ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "update_energy");
-
-    // Subtract any time the processor spent in the low-power idle state from the
-    // runtime to ensure that active vs. idle power consumption is attributed
-    // correctly. Processors can accumulate both active or idle power consumption,
-    // but threads, including the idle power thread, accumulate only active power
-    // consumption.
-    const SchedDuration active_processor_time_ns = actual_runtime_ns - idle_processor_time_ns;
-
-    using FractionalSeconds = ffl::Fixed<uint64_t, 20>;
-    using Energy = ffl::Fixed<uint64_t, 0>;
-
-    // This method can be called from another CPU during PI adjustments. Make sure
-    // to update the stats for the CPU the thread is associated with.
-    cpu_stats& stats = percpu::Get(this_cpu()).stats;
-
-    // The energy consumption over the active interval is computed as:
-    //
-    // E_active = P_active * dt_active
-    //
-    // P_active is the power coefficient of the current active power level.
-    const FractionalSeconds active_interval_s = active_processor_time_ns / ZX_SEC(1);
-    const uint64_t active_power_nw = power_level_control_.active_power_coefficient_nw();
-
-    const Energy active_energy_consumption_nj = active_power_nw * active_interval_s;
-
-    stats.active_energy_consumption_nj += active_energy_consumption_nj.raw_value();
-    current_thread->scheduler_state().estimated_energy_consumption_nj +=
-        active_energy_consumption_nj.raw_value();
-
-    // If the thread is dying, report its active energy concumption after the
-    // final update to ensure an accurate estimate based on its full runtime.
-    if (current_thread->scheduler_state().state() == THREAD_DEATH) {
-      KTRACE_INSTANT("kernel:power", "Thread Energy",
-                     ("estimated energy consumption (nJ)",
-                      current_thread->scheduler_state().estimated_energy_consumption_nj));
-    }
-
-    // TODO(https://fxbug.dev/377583571): Select the correct power coefficient
-    // when deeper idle states are implemented. For now the max idle power
-    // coefficient corresponds to the most general arch idle state (e.g. WFI,
-    // halt).
-    if (idle_processor_time_ns > 0) {
-      const FractionalSeconds idle_interval_s = idle_processor_time_ns / ZX_SEC(1);
-      const uint64_t idle_power_nw = power_level_control_.max_idle_power_coefficient_nw();
-
-      const Energy idle_energy_consumption_nj = idle_power_nw * idle_interval_s;
-      stats.idle_energy_consumption_nj += idle_energy_consumption_nj.raw_value();
-    }
-
-    LOCAL_KTRACE_COUNTER_TIMESTAMP(
-        BANDWIDTH, "Energy (nJ)", now.boot_ticks, this_cpu(),
-        ("CPU", stats.active_energy_consumption_nj + stats.idle_energy_consumption_nj));
-
-    trace = KTRACE_END_SCOPE(("active_processor_time_ns", active_processor_time_ns),
-                             ("idle_processor_time_ns", idle_processor_time_ns));
-  }
+  rust_scheduler_update_estimated_energy_consumption(this, current_thread, now.mono_time,
+                                                     now.boot_ticks, actual_runtime_ns);
 }
 
-// CRITICAL: Maintain Coherency of Idle and Busy States
-//
-// Accurate CPU statistics depend on the atomic coherency of the following:
-// 1. Time Samples: Current time and interval since last update.
-// 2. Idle State: CPU flags (SetIdle, PeekIsIdle, PeekIdleMask).
-// 3. Stats Members: cpu_stats (last_updated_instant, idle_time,
-//    normalized_busy_time).
-// 4. Rate: The current rate of the CPU (processing_rate).
-//
-// ATOMICITY REQUIREMENT:
-// All reads and writes of these variables must occur within a SINGLE
-// acquisition of the queue lock. This ensures that external queries (e.g.,
-// ZX_INFO_CPU_STATS) do not see inconsistent values or "negative progress"
-// during projection.
-//
-// STATE TRANSITIONS, WORK STEALING, AND PROCESSING RATE:
-// If the CPU transitions between idle and busy, or changes rate, stats must be
-// updated carefully:
-// 1. Initial Update: Always performed under the first lock acquisition to
-//    account for time elapsed since the last reschedule.
-// 2. Transition Update: If the CPU's idle state changes, upon re-acquiring the
-//    lock, stats MUST be updated again using FRESH time samples.
-// 3. Processing Rate Update: If the CPU's processing rate changes, upon
-//    re-acquiring the lock, stats MUST be updated again using FRESH time
-//    samples.
-//
-// Failure to re-sample time after re-acquiring the lock will result in
-// "negative progress," as other CPUs may have already projected these values
-// forward while the lock was released.
-//
 void Scheduler::UpdateCpuStatsSegment(SchedTime now, CpuStatsSegmentType stats_segment_type,
                                       SchedProcessingRate segment_processing_rate) const {
-  percpu& percpu = percpu::Get(this_cpu());
-
-  const SchedDuration segment_runtime = now - percpu.stats.last_updated_instant;
-  DEBUG_ASSERT_MSG(segment_runtime >= 0,
-                   "now=%" PRId64 " last_updated_instant=%" PRId64 " segment_runtime=%" PRId64,
-                   now.raw_value(), percpu.stats.last_updated_instant, segment_runtime.raw_value());
-
-  ktl::atomic_ref{percpu.stats.last_updated_instant}.store(now.raw_value(),
-                                                           ktl::memory_order_relaxed);
-
-  if (stats_segment_type == CpuStatsSegmentType::Idle) {
-    ktl::atomic_ref{percpu.stats.idle_time}.fetch_add(segment_runtime.raw_value(),
-                                                      ktl::memory_order_relaxed);
-  } else {
-    ktl::atomic_ref{percpu.stats.normalized_busy_time}.fetch_add(
-        Round<int64_t>(segment_runtime * segment_processing_rate), ktl::memory_order_relaxed);
-  }
+  rust_scheduler_update_cpu_stats_segment(
+      this, now, stats_segment_type == CpuStatsSegmentType::Idle, segment_processing_rate);
 }
 
 cpu_stats Scheduler::GetProjectedCpuStats(cpu_num_t cpu_num) {
-  DEBUG_ASSERT(cpu_num < percpu::processor_count());
-
-  const Scheduler* const scheduler = Get(cpu_num);
-  const percpu& percpu = percpu::Get(cpu_num);
-
-  Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-
-  // Some CPU stats values are synchronized by the queue lock, while others are
-  // updated via unsynchronized relaxed atomic writes. Use well-defined-copy
-  // semantics to avoid formal data races when copying the unsynchronized CPU
-  // stats members.
-  cpu_stats cpu_stats;
-  concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(cpu_stats))>(
-      &cpu_stats, &percpu.stats, sizeof(cpu_stats));
-
-  const SchedTime now = CurrentTime();
-  const SchedDuration duration_since_last_update_ns = now - cpu_stats.last_updated_instant;
-  DEBUG_ASSERT_MSG(
-      duration_since_last_update_ns >= 0,
-      "now=%" PRId64 " last_updated_instant=%" PRId64 " duration_since_last_update_ns=%" PRId64,
-      now.raw_value(), cpu_stats.last_updated_instant, duration_since_last_update_ns.raw_value());
-
-  if (PeekIsIdle(cpu_num)) {
-    cpu_stats.idle_time += duration_since_last_update_ns;
-  } else {
-    cpu_stats.normalized_busy_time += duration_since_last_update_ns * scheduler->processing_rate();
-  }
-
-  return cpu_stats;
+  cpu_stats stats;
+  rust_kernel_scheduler_get_projected_cpu_stats(cpu_num, &stats);
+  return stats;
 }
 
 void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback end_outer_trace) {
@@ -2304,9 +1990,8 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     current_state->banked_runtime_ns_ += adjusted_total_runtime_ns;
 
     if (timeslice_expired || !current_queue_state.active()) {
-      const SchedDuration delta_ns =
-          PeakDecayDelta(current_state->expected_runtime_ns_, current_state->banked_runtime_ns_,
-                         kExpectedRuntimeAlpha, kExpectedRuntimeBeta);
+      const SchedDuration delta_ns = rust_scheduler_peak_decay_delta(
+          current_state->expected_runtime_ns_, current_state->banked_runtime_ns_);
       current_state->expected_runtime_ns_ += delta_ns;
       current_state->banked_runtime_ns_ = SchedDuration{0};
 

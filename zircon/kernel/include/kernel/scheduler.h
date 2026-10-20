@@ -115,13 +115,11 @@ Scheduler* cpp_scheduler_get(cpu_num_t cpu);
 void cpp_scheduler_save_state_list_push_front(Scheduler* sched, Thread* thread);
 
 cpu_stats* cpp_get_cpu_stats(cpu_num_t cpu_num);
-void cpp_scheduler_get_projected_cpu_stats(cpu_num_t cpu_num, ffi::Uninitialized<cpu_stats>* out);
 uint64_t cpp_scheduler_power_state_active_power_coefficient_nw(const Scheduler* sched);
 uint64_t cpp_scheduler_power_level_control_max_idle_power_coefficient_nw(const Scheduler* sched);
 
 void rust_kernel_scheduler_dump(Scheduler* sched, FILE* output_target, bool queue_state_only);
 void rust_kernel_scheduler_dump_active_thread(Scheduler* sched, FILE* output_target);
-void cpp_dump_write_str(FILE* output_target, const char* str, size_t len);
 void cpp_thread_dump_active(const Thread* thread, FILE* output_target);
 void cpp_scheduler_lock_queue(Scheduler* sched);
 void cpp_scheduler_unlock_queue(Scheduler* sched);
@@ -301,6 +299,14 @@ bool rust_scheduler_update_processing_rate(const Scheduler* sched,
 void rust_sched_trace_context_switch(Thread* current_thread, Thread* next_thread,
                                      cpu_num_t current_cpu);
 void rust_sched_trace_wakeup(Thread* thread, cpu_num_t target_cpu);
+void rust_scheduler_update_total_expected_runtime(const Scheduler* sched, SchedDuration delta_ns);
+void rust_scheduler_update_cpu_stats_segment(const Scheduler* sched, SchedTime now, bool is_idle,
+                                             SchedProcessingRate segment_processing_rate);
+void rust_scheduler_update_estimated_energy_consumption(const Scheduler* sched,
+                                                        Thread* current_thread, SchedTime mono_time,
+                                                        zx_instant_boot_ticks_t boot_ticks,
+                                                        SchedDuration actual_runtime_ns);
+SchedDuration rust_scheduler_peak_decay_delta(SchedDuration value, SchedDuration sample);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.
@@ -364,11 +370,6 @@ class Scheduler {
   // processor that would cause the scaled thread utilization to exceed this
   // value is avoided if possible.
   static constexpr SchedUtilization kThreadUtilizationMax{1};
-
-  // The adjustment rates of the exponential moving averages tracking the
-  // expected runtimes of each thread.
-  static constexpr ffl::Fixed<int32_t, 2> kExpectedRuntimeAlpha = ffl::FromRatio(1, 4);
-  static constexpr ffl::Fixed<int32_t, 0> kExpectedRuntimeBeta = ffl::FromRatio(1, 1);
 
   Scheduler() = default;
   ~Scheduler() = default;
@@ -895,8 +896,6 @@ class Scheduler {
     static_assert(kIntraClusterThreshold.raw_value() == 25'000);
     static_assert(kCpuUtilizationLimit.raw_value() == (1LL << 31));
     static_assert(kThreadUtilizationMax.raw_value() == (1LL << 31));
-    static_assert(kExpectedRuntimeAlpha.raw_value() == 1);
-    static_assert(kExpectedRuntimeBeta.raw_value() == 1);
     static_assert(sizeof(Affine) == 24);
     static_assert(alignof(Affine) == 8);
     static_assert(ktl::is_standard_layout_v<RustSchedulerState>);
@@ -1490,11 +1489,6 @@ class Scheduler {
   void UpdateEstimatedEnergyConsumption(Thread* current_thread, SchedMonoTimeAndBootTicks now,
                                         SchedDuration actual_runtime_ns)
       TA_REQ(current_thread->get_lock(), queue_lock_);
-
-  // Returns and resets the accumulated processor idle time.
-  SchedDuration TakeProcessorIdleTime() TA_NO_THREAD_SAFETY_ANALYSIS {
-    return SchedDuration{rust_state_.processor_idle_time_ns.exchange(0, ktl::memory_order_relaxed)};
-  }
 
   // Utilities to scale up or down the given value by the performance scale of the CPU.
   template <typename T>
