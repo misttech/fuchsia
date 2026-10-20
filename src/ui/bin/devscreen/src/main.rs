@@ -19,8 +19,9 @@ use carnelian::{
     ViewAssistantPtr, ViewKey, derive_handle_message, input, make_app_assistant, make_message,
 };
 use fidl_fuchsia_feedback as ffeedback;
-use fidl_fuchsia_hardware_display::TEST_UTILITY_CLIENT_PRIORITY_VALUE;
+use fidl_fuchsia_hardware_display::COMPOSITOR_CLIENT_PRIORITY_VALUE;
 use fidl_fuchsia_hardware_power_statecontrol as fpower;
+use fidl_fuchsia_power_system as fsystem;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use log::{error, info, warn};
@@ -48,6 +49,8 @@ const SNAPSHOT_COLLECTION_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration
 /// Messages delivered to the view.
 pub enum DevscreenMessage {
     Snapshot(Box<Snapshot>),
+    BeforeSuspend(std::sync::Mutex<Option<futures::channel::oneshot::Sender<()>>>),
+    AfterResume,
     /// The confirmation window for an armed action elapsed.
     Disarm,
     /// Result of an action that was executed. `Ok(Some(text))` leaves a
@@ -78,8 +81,8 @@ impl AppAssistant for DevscreenAppAssistant {
         // appear during boot instead of timing out.
         config.view_mode = ViewMode::Direct;
         // Connect above virtcon (`VIRTCON_CLIENT_PRIORITY_VALUE` = 100) using
-        // the platform `TEST_UTILITY_CLIENT_PRIORITY_VALUE` (300).
-        config.client_priority = Some(TEST_UTILITY_CLIENT_PRIORITY_VALUE);
+        // the platform `COMPOSITOR_CLIENT_PRIORITY_VALUE` (200).
+        config.client_priority = Some(COMPOSITOR_CLIENT_PRIORITY_VALUE);
         config.keyboard_autorepeat = false;
     }
 }
@@ -111,6 +114,8 @@ struct DevscreenViewAssistant {
     status_timer: Option<fasync::Task<()>>,
     snapshot_task: Option<fasync::Task<()>>,
     action_task: Option<fasync::Task<()>>,
+    suspended: bool,
+    _suspend_blocker: fasync::Task<()>,
 }
 
 impl DevscreenViewAssistant {
@@ -122,6 +127,62 @@ impl DevscreenViewAssistant {
         let snapshot = Snapshot::default();
         let poller =
             fasync::Task::local(telemetry::run(app_sender.clone(), view_key, snapshot.clone()));
+
+        let _suspend_blocker =
+            if let Ok(governor) = connect_to_protocol::<fsystem::ActivityGovernorMarker>() {
+                let (client, stream) =
+                    fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+                let sender = app_sender.clone();
+                fasync::Task::local(async move {
+                    match governor
+                        .register_suspend_blocker(
+                            fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+                                name: Some("devscreen".to_string()),
+                                suspend_blocker: Some(client),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                    {
+                        Ok(Ok(token)) => drop(token),
+                        Ok(Err(e)) => {
+                            warn!("register_suspend_blocker failed: {:?}", e);
+                            return;
+                        }
+                        Err(e) => {
+                            warn!("FIDL error registering suspend blocker: {:?}", e);
+                            return;
+                        }
+                    }
+                    drop(governor);
+                    let mut stream = stream;
+                    while let Ok(Some(req)) = futures::TryStreamExt::try_next(&mut stream).await {
+                        match req {
+                            fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
+                                let (tx, rx) = futures::channel::oneshot::channel();
+                                sender.queue_message(
+                                    MessageTarget::View(view_key),
+                                    make_message(DevscreenMessage::BeforeSuspend(
+                                        std::sync::Mutex::new(Some(tx)),
+                                    )),
+                                );
+                                let _ = rx.await;
+                                let _ = responder.send();
+                            }
+                            fsystem::SuspendBlockerRequest::AfterResume { responder } => {
+                                sender.queue_message(
+                                    MessageTarget::View(view_key),
+                                    make_message(DevscreenMessage::AfterResume),
+                                );
+                                let _ = responder.send();
+                            }
+                            fsystem::SuspendBlockerRequest::_UnknownMethod { .. } => {}
+                        }
+                    }
+                })
+            } else {
+                fasync::Task::local(async {})
+            };
         Ok(Self {
             app_sender,
             view_key,
@@ -142,12 +203,14 @@ impl DevscreenViewAssistant {
             status_timer: None,
             snapshot_task: None,
             action_task: None,
+            suspended: false,
+            _suspend_blocker,
         })
     }
 
     fn invalidate(&mut self) {
         self.dashboard = None;
-        if self.owned {
+        if self.owned && !self.suspended {
             self.app_sender.request_render(self.view_key);
         }
     }
@@ -191,6 +254,28 @@ impl DevscreenViewAssistant {
 
     fn handle_devscreen_message(&mut self, message: &DevscreenMessage) {
         match message {
+            DevscreenMessage::BeforeSuspend(tx) => {
+                self.suspended = true;
+                self.poller = None;
+                self.invalidate();
+                if let Ok(mut tx_guard) = tx.lock() {
+                    if let Some(tx) = tx_guard.take() {
+                        let _ = tx.send(());
+                    }
+                }
+            }
+            DevscreenMessage::AfterResume => {
+                self.suspended = false;
+                if self.owned {
+                    let sender = self.app_sender.clone();
+                    let view_key = self.view_key;
+                    let snapshot = self.snapshot.clone();
+                    self.poller.get_or_insert_with(|| {
+                        fasync::Task::local(telemetry::run(sender, view_key, snapshot))
+                    });
+                }
+                self.invalidate();
+            }
             DevscreenMessage::Snapshot(snapshot) => {
                 self.snapshot = (**snapshot).clone();
                 // Don't rebuild under a finger; the next snapshot will catch up.
@@ -455,7 +540,7 @@ impl ViewAssistant for DevscreenViewAssistant {
             self.armed = None;
             self.disarm_timer = None;
             self.dashboard = None;
-        } else {
+        } else if !self.suspended {
             let sender = self.app_sender.clone();
             let view_key = self.view_key;
             let snapshot = self.snapshot.clone();

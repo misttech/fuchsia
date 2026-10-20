@@ -30,6 +30,13 @@
             to: "#devscreen",
         },
         {
+            protocol: "fuchsia.power.system.ActivityGovernor",
+            from: "parent",
+            to: "#devscreen",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.buildinfo.Provider",
             from: "#build-info",
             to: "#devscreen",

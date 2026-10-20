@@ -27,6 +27,7 @@
                 "fuchsia.hwinfo.Device",
                 "fuchsia.kernel.Stats",
                 "fuchsia.net.interfaces.State",
+                "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.wlan.device.service.DeviceMonitor",
                 "fuchsia.wlan.policy.ClientProvider",
             ],

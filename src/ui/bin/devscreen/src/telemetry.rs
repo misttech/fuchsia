@@ -554,6 +554,13 @@ async fn wlan_scan_loop(state: Rc<RefCell<ScanState>>, ifaces: Rc<RefCell<usize>
                     other => warn!("StartClientConnections failed: {other:?}"),
                 }
             }
+            if let ScanState::Done { at, .. } = *state.borrow() {
+                let remaining = (at + zx::MonotonicDuration::from(WLAN_SCAN_INTERVAL))
+                    - zx::MonotonicInstant::get();
+                if remaining.into_nanos() > 0 {
+                    fasync::Timer::new(remaining).await;
+                }
+            }
             let result = scan_once(&controller).await;
             *state.borrow_mut() = match result {
                 Ok(networks) => ScanState::Done { networks, at: zx::MonotonicInstant::get() },
@@ -673,8 +680,13 @@ pub async fn run(app_sender: AppSender, view_key: ViewKey, mut snapshot: Snapsho
         ..Default::default()
     }));
     let _drivers = fasync::Task::local(driver_loop(readings.clone()));
-    let scan_state = Rc::new(RefCell::new(ScanState::Unavailable));
-    let wlan_ifaces = Rc::new(RefCell::new(0usize));
+    let (initial_state, initial_ifaces) = snapshot
+        .wlan
+        .as_ref()
+        .map(|w| (w.scan.clone(), w.ifaces))
+        .unwrap_or((ScanState::Unavailable, 0));
+    let scan_state = Rc::new(RefCell::new(initial_state));
+    let wlan_ifaces = Rc::new(RefCell::new(initial_ifaces));
     let _scanner = fasync::Task::local(wlan_scan_loop(scan_state.clone(), wlan_ifaces.clone()));
     let mut round: u64 = 0;
 

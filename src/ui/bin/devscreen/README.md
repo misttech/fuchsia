@@ -5,7 +5,7 @@ A readable boot dashboard for display-only `eng` builds (e.g. `minimal.*`).
 On products without a UI stack, the only thing on the panel is virtcon's logo
 tab, which is unreadable on a small, high-DPI display. `devscreen` is a small
 Carnelian app that runs directly on the display coordinator above virtcon's
-priority (`TEST_UTILITY_CLIENT_PRIORITY_VALUE`) and shows, in large type:
+priority (`COMPOSITOR_CLIENT_PRIORITY_VALUE`) and shows, in large type:
 
 * product / board / build version, device name, serial, uptime
 * last boot: reason, whether it was graceful, previous uptime
