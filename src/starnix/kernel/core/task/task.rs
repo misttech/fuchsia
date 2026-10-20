@@ -1027,7 +1027,6 @@ impl Task {
             return;
         }
 
-        let pgid = self.thread_group().pgid();
         let exit_signal = self.thread_group().read().exit_signal.clone();
         let mut state = self.write();
         state.set_stopped(StopState::ForceAwake, None, None, None);
@@ -1053,7 +1052,6 @@ impl Task {
                         .weak_self
                         .upgrade()
                         .expect("Task strong reference must exist while &self is held"),
-                    pgid,
                     state: ZombieState {
                         exit_status,
                         // ptrace doesn't need this.

@@ -102,20 +102,25 @@ pub struct DeferredZombiePTracer {
     pub tracer_pid: Pid,
     /// Tracee tid
     pub tracee_tid: Pid,
-    /// Tracee pgid
-    pub tracee_pgid: Pid,
     /// Tracee thread group
     pub tracee_pid: Pid,
+    /// Tracee thread group, used to resolve the tracee's current process group.
+    pub tracee_thread_group: Weak<ThreadGroup>,
 }
 
 impl DeferredZombiePTracer {
-    fn new(tracer: &ThreadGroup, tracee: &Task, tracee_pgid: Pid) -> Self {
+    fn new(tracer: &ThreadGroup, tracee: &Task) -> Self {
         Self {
             tracer_pid: tracer.leader.clone(),
             tracee_tid: tracee.tid.clone(),
-            tracee_pgid,
             tracee_pid: tracee.pid.clone(),
+            tracee_thread_group: Arc::downgrade(tracee.thread_group()),
         }
+    }
+
+    /// Returns the tracee's current process group ID, if its thread group is still alive.
+    fn tracee_pgid(&self) -> Option<Pid> {
+        self.tracee_thread_group.upgrade().map(|thread_group| thread_group.pgid())
     }
 }
 
@@ -1114,13 +1119,10 @@ impl ThreadGroup {
                 drop(state);
                 {
                     // Tell the parent to expect a notification later.
-                    let tracee_pgid = tracee.thread_group().pgid();
                     let mut parent_state = parent.write();
-                    parent_state.deferred_zombie_ptracers.push(DeferredZombiePTracer::new(
-                        self,
-                        tracee,
-                        tracee_pgid,
-                    ));
+                    parent_state
+                        .deferred_zombie_ptracers
+                        .push(DeferredZombiePTracer::new(self, tracee));
                     parent_state.children.remove(&tracee.pid);
                 }
 
@@ -2299,7 +2301,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             if self.deferred_zombie_ptracers.iter().any(|dzp| match selector {
                 ProcessSelector::Any => true,
                 ProcessSelector::Pid(pid) => &dzp.tracee_pid == pid,
-                ProcessSelector::Pgid(pgid) => &dzp.tracee_pgid == pgid,
+                ProcessSelector::Pgid(pgid) => dzp.tracee_pgid().as_ref() == Some(pgid),
             }) {
                 return WaitableChildResult::ShouldWait;
             }

@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <thread>
@@ -14,6 +15,7 @@
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -285,6 +287,26 @@ TEST_F(ZombieProcTest, Status) {
   std::string status;
   ASSERT_TRUE(ReadZombieProcFile("status", status));
   ASSERT_THAT(status, testing::ContainsRegex("\nState:[[:space:]]+Z \\(zombie\\)\n"));
+}
+
+TEST(ZombieTest, Setpgid) {
+  test_helper::ForkHelper fork_helper;
+  fork_helper.OnlyWaitForForkedChildren();
+  fork_helper.ExpectExitValue(42);
+  pid_t child_pid = fork_helper.RunInForkedProcess([] { _exit(42); });
+
+  ASSERT_TRUE(test_helper::WaitUntilZombie(child_pid));
+
+  ASSERT_THAT(setpgid(child_pid, child_pid), SyscallSucceeds());
+  EXPECT_THAT(getpgid(child_pid), SyscallSucceedsWithValue(child_pid));
+
+  int status = 0;
+  EXPECT_THAT(waitpid(0, &status, WNOHANG), SyscallFailsWithErrno(ECHILD));
+  EXPECT_THAT(waitpid(-child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(WEXITSTATUS(status), 42);
+
+  EXPECT_THAT(waitpid(child_pid, &status, WNOHANG), SyscallFailsWithErrno(ECHILD));
 }
 
 }  // namespace

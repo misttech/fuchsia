@@ -11,13 +11,12 @@ use starnix_logging::log_warn;
 use starnix_types::ownership::{OwnedRef, Releasable};
 use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::signals::{SIGCHLD, Signal};
-use starnix_uapi::{pid_t, uid_t};
+use starnix_uapi::uid_t;
 use std::sync::{Arc, Weak};
 
 #[derive(Debug)]
 pub struct ZombieProcess {
     pub task: Arc<Task>,
-    pub pgid: Pid,
     pub exit_signal: Option<Signal>,
     pub state: ZombieState,
 
@@ -57,15 +56,10 @@ impl ZombieProcess {
         let time_stats = thread_group.base.time_stats() + thread_group.children_time_stats;
         OwnedRef::new(ZombieProcess {
             task,
-            pgid: thread_group.base.pgid(),
             state: ZombieState { exit_status, time_stats },
             exit_signal,
             is_canonical: true,
         })
-    }
-
-    pub fn pgid(&self) -> pid_t {
-        self.pgid.id
     }
 
     pub fn to_wait_result(&self) -> WaitResult {
@@ -80,7 +74,6 @@ impl ZombieProcess {
     pub fn as_artificial(&self) -> Self {
         ZombieProcess {
             task: self.task.clone(),
-            pgid: self.pgid.clone(),
             state: self.state.clone(),
             exit_signal: self.exit_signal,
             is_canonical: false,
@@ -91,7 +84,7 @@ impl ZombieProcess {
         match selector {
             ProcessSelector::Any => true,
             ProcessSelector::Pid(pid) => &self.task.pid == pid,
-            ProcessSelector::Pgid(pgid) => &self.pgid == pgid,
+            ProcessSelector::Pgid(pgid) => &self.task.thread_group().pgid() == pgid,
         }
     }
 
