@@ -262,3 +262,85 @@ pub unsafe extern "C" fn rust_interrupt_event_dispatcher_create(
         Err(status) => status.into_raw(),
     }
 }
+
+#[cfg(ktest)]
+/// InterruptEventDispatcher unit tests.
+#[unittest::suite(name = "interrupt_event_dispatcher_tests_rust")]
+mod tests {
+    #[cfg(target_arch = "x86_64")]
+    extern "C" fn int_worker(arg: *mut c_void) -> i32 {
+        use crate::arch_rs::arch_x86::apic::ApicInterruptDeliveryMode;
+        use crate::arch_rs::arch_x86::lapic::apic_send_self_ipi;
+        use core::sync::atomic::{AtomicU16, Ordering};
+
+        // SAFETY: `arg` points to a valid `AtomicU16` on the caller's stack until `join`.
+        let state = unsafe { &*(arg as *const AtomicU16) };
+        let vec = (state.load(Ordering::SeqCst) & 0xff) as u8;
+        // Loop until anything is set in the high byte of the state.
+        while (state.load(Ordering::SeqCst) & 0xff00) == 0 {
+            apic_send_self_ipi(vec, ApicInterruptDeliveryMode::Fixed);
+            crate::kernel::thread::r#yield();
+        }
+        -1
+    }
+
+    // Tests that if an irq handler fires at the same time as an interrupt dispatcher is destroyed
+    // the system does not deadlock.
+    /// ConcurrentIntEventDispatcherTeardown
+    #[test]
+    fn concurrent_int_event_dispatcher_teardown() {
+        // Generating the interrupt events for this test is necessarily arch specific and is only
+        // implemented for x86 here.
+        #[cfg(target_arch = "x86_64")]
+        {
+            use crate::arch_rs::arch_x86::ioapic::apic_io_fetch_irq_vector;
+            use crate::kernel::thread::{DEFAULT_PRIORITY, create_with_priority};
+            use crate::platform_rs::timer::{DurationMono, current_mono_time};
+            use core::sync::atomic::{AtomicU16, Ordering};
+            use unittest::{assert_ne, expect_ok, unwrap_ok};
+
+            let mut interrupt = None;
+            let mut gsi: u32 = 0;
+            const GSI_SEARCH_MAX: u32 = 24;
+            while gsi < GSI_SEARCH_MAX {
+                if let Ok((handle, _rights)) =
+                    InterruptEventDispatcher::create(gsi, ZX_INTERRUPT_MODE_DEFAULT, false)
+                {
+                    interrupt = Some(handle);
+                    break;
+                }
+                gsi += 1;
+            }
+            assert_ne!(gsi, GSI_SEARCH_MAX, "Failed to find free global interrupt");
+
+            // Find the local vector, put it in the low byte of our shared state.
+            let state = AtomicU16::new(apic_io_fetch_irq_vector(gsi) as u16);
+
+            // Spin up a thread to generate the interrupt. As IPIs cannot be masked this causes the
+            // associated InterruptDispatcher handler to constantly get invoked, which is what we
+            // want.
+            // SAFETY: `int_worker` and `state` are valid until `int_thread.join` completes.
+            let int_thread = unwrap_ok!(unsafe {
+                create_with_priority(
+                    c"int".as_ptr(),
+                    int_worker,
+                    core::ptr::from_ref(&state).cast_mut().cast(),
+                    DEFAULT_PRIORITY,
+                )
+            });
+            // SAFETY: `int_thread` was just created and has not been resumed yet.
+            unsafe { int_thread.resume() };
+
+            // Remove the interrupt and if we don't deadlock and keep executing then all is well.
+            drop(interrupt);
+
+            // Signal the thread by setting bits in the high byte.
+            state.fetch_or(0xff00, Ordering::SeqCst);
+            // Shutdown the test.
+            // SAFETY: `int_thread` has not been joined yet.
+            let status =
+                unsafe { int_thread.join(current_mono_time() + DurationMono::from_seconds(5)) };
+            expect_ok!(status.map(|_| ()));
+        }
+    }
+}
