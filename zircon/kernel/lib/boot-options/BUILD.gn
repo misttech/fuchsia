@@ -10,6 +10,7 @@ import("//build/testing/golden_files.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 if (current_toolchain == default_toolchain) {
   compiled_action("json") {
@@ -127,12 +128,46 @@ kernel_bindgen_crate("boot-options-bindings") {
   if (is_kernel) {
     raw_lines += [
       "",
-      "unsafe extern \"C\" { fn cpp_boot_options_get() -> *const BootOptions; }",
+      "unsafe extern \"C\" {",
+      "    fn cpp_boot_options_get() -> *const BootOptions;",
+      "    fn cpp_boot_options_set_many(opts: *mut BootOptions, ptr: *const u8, len: usize);",
+      "    fn cpp_boot_options_show_key(",
+      "        opts: *const BootOptions,",
+      "        ptr: *const u8,",
+      "        len: usize,",
+      "    ) -> i32;",
+      "    fn cpp_boot_options_show_all(opts: *const BootOptions);",
+      "}",
       "",
       "impl BootOptions {",
-      "    pub fn get() -> &'static Self { ",
-      "        // Safety: This pointer is set before the kernel proper boots.",
-      "        unsafe { cpp_boot_options_get().as_ref_unchecked() } ",
+      "    /// Returns a raw pointer to the global `BootOptions` instance.",
+      "    pub fn as_ptr() -> *const Self {",
+      "        // SAFETY: This pointer is set before the kernel proper boots.",
+      "        unsafe { cpp_boot_options_get() }",
+      "    }",
+      "    /// Returns a shared reference to the global `BootOptions` instance.",
+      "    pub fn get() -> &'static Self {",
+      "        // SAFETY: This pointer is set before the kernel proper boots.",
+      "        unsafe { Self::as_ptr().as_ref_unchecked() }",
+      "    }",
+      "    /// Parses and applies space-separated `<key>[=<value>]` boot options.",
+      "    ///",
+      "    /// # Safety",
+      "    ///",
+      "    /// `opts` must point to a valid, writable `BootOptions` instance.",
+      "    pub unsafe fn set_many(opts: *mut Self, cmdline: &str) {",
+      "        // SAFETY: Caller guarantees `opts` is valid and writable; `cmdline` is valid.",
+      "        unsafe { cpp_boot_options_set_many(opts, cmdline.as_ptr(), cmdline.len()) };",
+      "    }",
+      "    /// Prints the current value and defaults for the boot option named `key`.",
+      "    pub fn show_key(&self, key: &str) -> i32 {",
+      "        // SAFETY: `self` and `key` are valid for the duration of the FFI call.",
+      "        unsafe { cpp_boot_options_show_key(self, key.as_ptr(), key.len()) }",
+      "    }",
+      "    /// Prints all boot options and their current values.",
+      "    pub fn show(&self) {",
+      "        // SAFETY: `self` is a valid `BootOptions` reference.",
+      "        unsafe { cpp_boot_options_show_all(self) };",
       "    }",
       "}",
     ]
@@ -162,13 +197,12 @@ kernel_rust_crate("boot-options-rs") {
 }
 
 if (toolchain_environment == "kernel") {
-  source_set("boot-options-cli") {
-    sources = [ "console.cc" ]
+  kernel_rust_mod("boot-options-cli") {
+    sources = [ "console.rs" ]
     deps = [
-      ":boot-options",
-      "//zircon/kernel/lib/console",
-      "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/vm:headers",
+      ":boot-options-rs",
+      "//src/lib/kprint",
+      "//zircon/kernel/lib/console:console_rs",
     ]
   }
 }

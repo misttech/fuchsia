@@ -9,7 +9,6 @@
 #include <inttypes.h>
 #include <lib/affine/ratio.h>
 #include <lib/boot-options/boot-options.h>
-#include <lib/console.h>
 #include <lib/counters.h>
 #include <lib/crashlog.h>
 #include <lib/lockup_detector/diagnostics.h>
@@ -22,6 +21,7 @@
 
 #include <dev/hw_watchdog.h>
 #include <kernel/auto_preempt_disabler.h>
+#include <kernel/ffi.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
 #include <kernel/scheduler.h>
@@ -602,146 +602,45 @@ int64_t lockup_get_no_heartbeat_oops_count() {
   return counter_lockup_no_heartbeat_oops.SumAcrossAllCpus();
 }
 
-namespace {
+static_assert(sizeof(LockupDetectorState) == 2 * size_t{MAX_CACHE_LINE});
+static_assert(alignof(LockupDetectorState) == MAX_CACHE_LINE);
+static_assert(offsetof(LockupDetectorState, current_checker_id) == 0);
+static_assert(offsetof(LockupDetectorState, heartbeat) == 8);
+static_assert(offsetof(LockupDetectorState, heartbeat.active) == 8);
+static_assert(offsetof(LockupDetectorState, heartbeat.last_heartbeat) == 16);
+static_assert(offsetof(LockupDetectorState, heartbeat.max_gap) == 24);
+static_assert(offsetof(LockupDetectorState, heartbeat.alert_limiter) == 32);
+static_assert(offsetof(LockupDetectorState, critical_section) == 40);
+static_assert(offsetof(LockupDetectorState, critical_section.depth) == 40);
+static_assert(offsetof(LockupDetectorState, critical_section.name) == 48);
+static_assert(offsetof(LockupDetectorState, critical_section.worst_case_ticks) == 56);
+static_assert(offsetof(LockupDetectorState, critical_section.begin_ticks) == 64);
+static_assert(offsetof(LockupDetectorState, critical_section.last_counted_begin_ticks) == 72);
+static_assert(offsetof(LockupDetectorState, critical_section.reported_worst_case_ticks) == 80);
+static_assert(offsetof(LockupDetectorState, critical_section.ongoing_call_alert_limiter) == 88);
+static_assert(offsetof(LockupDetectorState, critical_section.worst_case_alert_limiter) == 96);
 
-void lockup_status() {
-  const zx_duration_boot_ticks_t ticks = CriticalSectionLockupChecker::threshold_ticks();
-  printf("critical section threshold is %" PRId64 " ticks (%" PRId64 " ms)\n", ticks,
-         TicksToDuration(ticks) / ZX_MSEC(1));
-  if (ticks != 0) {
-    for (cpu_num_t i = 0; i < percpu::processor_count(); i++) {
-      if (!Scheduler::PeekIsActive(i)) {
-        printf("CPU-%u is not active, skipping\n", i);
-        continue;
-      }
+extern "C" {
 
-      const auto& cs_state = gLockupDetectorPerCpuState[i].critical_section;
-      const zx_instant_boot_ticks_t begin_ticks =
-          cs_state.begin_ticks.load(ktl::memory_order_acquire);
-      const char* name = cs_state.name.load(ktl::memory_order_relaxed);
-      const zx_instant_boot_ticks_t now = current_boot_ticks();
-      const int64_t worst_case_usec =
-          TicksToDuration(cs_state.worst_case_ticks.load(ktl::memory_order_relaxed)) / ZX_USEC(1);
-      if (begin_ticks == 0) {
-        printf("CPU-%u not in critical section (worst case %" PRId64 " uSec)\n", i,
-               worst_case_usec);
-      } else {
-        zx_duration_boot_t duration = TicksToDuration(now - begin_ticks);
-        printf("CPU-%u in critical section (%s) for %" PRId64 " ms (worst case %" PRId64 " uSec)\n",
-               i, (name != nullptr ? name : "unknown"), duration / ZX_MSEC(1), worst_case_usec);
-      }
-    }
-  }
-
-  printf("heartbeat period is %" PRId64 " ms, heartbeat threshold is %" PRId64 " ms\n",
-         HeartbeatLockupChecker::period() / ZX_MSEC(1),
-         HeartbeatLockupChecker::threshold() / ZX_MSEC(1));
-
-  for (cpu_num_t cpu = 0; cpu < percpu::processor_count(); ++cpu) {
-    if (!mp_is_cpu_online(cpu) || !Scheduler::PeekIsActive(cpu)) {
-      continue;
-    }
-
-    const auto& hb_state = gLockupDetectorPerCpuState[cpu].heartbeat;
-    if (!hb_state.active.load()) {
-      printf("CPU-%u heartbeats disabled\n", cpu);
-      continue;
-    }
-    const zx_instant_boot_t last_heartbeat = hb_state.last_heartbeat.load();
-    const zx_duration_boot_t age = zx_time_sub_time(current_boot_time(), last_heartbeat);
-    const zx_duration_boot_t max_gap = hb_state.max_gap.load();
-    printf("CPU-%u last heartbeat at %" PRId64 " ms, age is %" PRId64 " ms, max gap is %" PRId64
-           " ms\n",
-           cpu, last_heartbeat / ZX_MSEC(1), age / ZX_MSEC(1), max_gap / ZX_MSEC(1));
-  }
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_duration_boot_ticks_t cpp_lockup_get_cs_threshold_ticks() {
+  return CriticalSectionLockupChecker::threshold_ticks();
 }
 
-// Runs |func| on |cpu|, passing |duration| as an argument.
-void run_lockup_func(cpu_num_t cpu, zx_duration_boot_t duration, thread_start_routine func) {
-  Thread* t = Thread::Create("lockup-test", func, &duration, DEFAULT_PRIORITY);
-  t->SetCpuAffinity(cpu_num_to_mask(cpu));
-  t->Resume();
-  t->Join(nullptr, ZX_TIME_INFINITE);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_duration_boot_t cpp_lockup_get_hb_period() {
+  return HeartbeatLockupChecker::period();
 }
 
-// Trigger a temporary lockup of |cpu| by holding a spinlock for |duration|.
-void lockup_trigger_spinlock(cpu_num_t cpu, zx_duration_boot_t duration) {
-  run_lockup_func(cpu, duration, [](void* arg) -> int {
-    const zx_duration_boot_t duration = *reinterpret_cast<zx_duration_boot_t*>(arg);
-    // Acquire a spinlock and hold it for |duration|.
-    DECLARE_SINGLETON_SPINLOCK_WITH_TYPE(lockup_test_lock, MonitoredSpinLock);
-    Guard<MonitoredSpinLock, IrqSave> guard{lockup_test_lock::Get(), SOURCE_TAG};
-    const zx_instant_boot_t deadline = zx_time_add_duration(current_boot_time(), duration);
-    while (current_boot_time() < deadline) {
-      arch::Yield();
-    }
-    return 0;
-  });
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_duration_boot_t cpp_lockup_get_hb_threshold() {
+  return HeartbeatLockupChecker::threshold();
 }
 
-// Trigger a temporary lockup of |cpu| by remaining in a critical section for |duration|.
-void lockup_trigger_critical_section(cpu_num_t cpu, zx_duration_boot_t duration) {
-  run_lockup_func(cpu, duration, [](void* arg) -> int {
-    const zx_duration_boot_t duration = *reinterpret_cast<zx_duration_boot_t*>(arg);
-    AutoPreemptDisabler preempt_disable;
-    LOCKUP_TIMED_BEGIN("trigger-tool");
-    const zx_instant_boot_t deadline = zx_time_add_duration(current_boot_time(), duration);
-    while (current_boot_time() < deadline) {
-      arch::Yield();
-    }
-    LOCKUP_TIMED_END();
-    return 0;
-  });
-}
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_lockup_timed_begin(const char* name) { LOCKUP_TIMED_BEGIN(name); }
 
-int cmd_lockup(int argc, const cmd_args* argv, uint32_t flags) {
-  auto usage = [cmd_name = argv[0].str]() -> int {
-    printf("usage:\n");
-    printf("%s status                                 : print lockup detector status\n", cmd_name);
-    printf("%s test_spinlock <cpu> <num msec>         : hold spinlock on <cpu> for <num msec>\n",
-           cmd_name);
-    printf(
-        "%s test_critical_section <cpu> <num msec> : hold critical section on <cpu> for <num "
-        "msec>\n",
-        cmd_name);
-    return ZX_ERR_INTERNAL;
-  };
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_lockup_timed_end() { LOCKUP_TIMED_END(); }
 
-  if (argc < 2) {
-    printf("not enough arguments\n");
-    return usage();
-  }
-
-  if (!strcmp(argv[1].str, "status")) {
-    lockup_status();
-  } else if (!strcmp(argv[1].str, "test_spinlock")) {
-    if (argc < 4) {
-      return usage();
-    }
-    const auto cpu = static_cast<cpu_num_t>(argv[2].u);
-    const auto ms = static_cast<uint32_t>(argv[3].u);
-    printf("test_spinlock: locking up CPU %u for %u ms\n", cpu, ms);
-    lockup_trigger_spinlock(cpu, ZX_MSEC(ms));
-    printf("done\n");
-  } else if (!strcmp(argv[1].str, "test_critical_section")) {
-    if (argc < 4) {
-      return usage();
-    }
-    const auto cpu = static_cast<cpu_num_t>(argv[2].u);
-    const auto ms = static_cast<uint32_t>(argv[3].u);
-    printf("test_critical_section: locking up CPU %u for %u ms\n", cpu, ms);
-    lockup_trigger_critical_section(cpu, ZX_MSEC(ms));
-    printf("done\n");
-  } else {
-    printf("unknown command\n");
-    return usage();
-  }
-
-  return ZX_OK;
-}
-
-}  // namespace
-
-STATIC_COMMAND_START
-STATIC_COMMAND("lockup", "lockup detector commands", &cmd_lockup)
-STATIC_COMMAND_END(lockup)
+}  // extern "C"

@@ -59,17 +59,30 @@ use console_env as _;
 #[path = "lib/counters/src/lib.rs"]
 pub mod counters;
 
+#[path = "lib/crashlog/crashlog.rs"]
+pub mod crashlog;
+
 #[path = "lib/debuglog/debuglog.rs"]
 pub mod debuglog_rs;
 
 #[path = "lib/instrumentation/mod.rs"]
 pub mod instrumentation;
 
+#[path = "lib/jtrace/jtrace.rs"]
+pub mod jtrace;
+
 #[path = "lib/kconcurrent/src/mod.rs"]
 pub mod kconcurrent;
 
 #[path = "lib/ktrace/src/mod.rs"]
 pub mod ktrace_rs;
+
+#[cfg(with_lock_dep)]
+#[path = "lib/lockdep/lock_dep.rs"]
+pub mod lockdep_rs;
+
+#[path = "lib/lockup_detector/lockup_detector.rs"]
+pub mod lockup_detector;
 
 #[path = "lib/mmu_rcu/src/mod.rs"]
 pub mod mmu_rcu;
@@ -187,6 +200,10 @@ pub mod power_motmot;
 #[cfg(ktest)]
 #[path = "tests/arch_rs_tests.rs"]
 pub mod arch_rs_tests;
+
+#[cfg(all(console_enabled, ktest))]
+#[path = "lib/boot-options/console.rs"]
+pub mod boot_options_cli;
 
 #[cfg(ktest)]
 #[path = "lib/console/tests/mod.rs"]

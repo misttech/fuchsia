@@ -577,3 +577,22 @@ void BootOptions::PrintValue(const IntelHwpPolicy& value, FILE* out) {
 extern "C" FFI_ALWAYS_INLINE const BootOptions* cpp_boot_options_get() {
   return BootOptions::Get();
 }
+
+#ifdef _KERNEL
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void cpp_boot_options_set_many(BootOptions* opts, const char* ptr,
+                                                            size_t len) {
+  opts->SetMany({ptr, len}, stdout);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE int cpp_boot_options_show_key(const BootOptions* opts, const char* ptr,
+                                                           size_t len) {
+  return opts->Show({ptr, len});
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void cpp_boot_options_show_all(const BootOptions* opts) {
+  opts->Show();
+}
+#endif

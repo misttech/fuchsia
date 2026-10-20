@@ -466,7 +466,10 @@ config("jtrace_config") {
 
   if (jtrace_enabled == false) {
     defines = [ "JTRACE_TARGET_BUFFER_SIZE=0" ]
-    rustenv = [ "JTRACE_TARGET_BUFFER_SIZE=0" ]
+    rustenv = [
+      "JTRACE_TARGET_BUFFER_SIZE=0",
+      "JTRACE_LAST_ENTRY_STORAGE=0",
+    ]
   } else {
     if (jtrace_target_buffer_size == "auto") {
       if (jtrace_enabled == "persistent") {
@@ -490,11 +493,18 @@ config("jtrace_config") {
       "JTRACE_USE_LARGE_ENTRIES=$jtrace_use_large_entries",
       "JTRACE_USE_MONO_TIMESTAMPS=$jtrace_use_mono_timestamps",
     ]
-    rustenv = [ "JTRACE_TARGET_BUFFER_SIZE=$jtrace_target_buffer_size" ]
+    rustenv = [
+      "JTRACE_TARGET_BUFFER_SIZE=$jtrace_target_buffer_size",
+      "JTRACE_LAST_ENTRY_STORAGE=$jtrace_last_entry_storage",
+    ]
+    rustflags = []
+    if (jtrace_use_large_entries) {
+      rustflags += [ "--cfg=jtrace_use_large_entries" ]
+    }
 
     if (jtrace_enabled == "persistent") {
       defines += [ "JTRACE_IS_PERSISTENT=true" ]
-      rustflags = [ "--cfg=jtrace_persistent" ]
+      rustflags += [ "--cfg=jtrace_persistent" ]
     } else {
       defines += [ "JTRACE_IS_PERSISTENT=false" ]
     }

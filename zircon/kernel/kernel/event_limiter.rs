@@ -25,6 +25,7 @@ use zx_types::{zx_duration_mono_t, zx_instant_mono_t};
 ///     // ...
 /// }
 /// ```
+#[repr(transparent)]
 pub struct EventLimiter<const DURATION: zx_duration_mono_t> {
     last_event: AtomicI64,
 }

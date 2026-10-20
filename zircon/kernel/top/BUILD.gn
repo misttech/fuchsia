@@ -67,6 +67,7 @@ source_set("main") {
     "//zircon/kernel/lib/heap",
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/jtrace",
+    "//zircon/kernel/lib/lockdep:lockdep-rs",
     "//zircon/kernel/lib/lockup_detector",
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/userabi",

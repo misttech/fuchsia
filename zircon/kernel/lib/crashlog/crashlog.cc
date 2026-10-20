@@ -10,7 +10,6 @@
 #include <inttypes.h>
 #include <lib/affine/ratio.h>
 #include <lib/boot-options/boot-options.h>
-#include <lib/console.h>
 #include <lib/debuglog.h>
 #include <lib/io.h>
 #include <lib/lockup_detector.h>
@@ -253,54 +252,3 @@ fbl::RefPtr<VmObject> crashlog_get_stashed() {
   Guard<Mutex> guard{RecoveredCrashlogLock::Get()};
   return recovered_crashlog;
 }
-
-static void print_recovered_crashlog() {
-  fbl::RefPtr<VmObject> crashlog = crashlog_get_stashed();
-  if (!crashlog) {
-    printf("no recovered crashlog\n");
-    return;
-  }
-
-  // Allocate a temporary buffer so we can convert the VMO's contents to a C string.
-  const size_t buffer_size = crashlog->size() + 1;
-  fbl::AllocChecker ac;
-  auto buffer = ktl::unique_ptr<char[]>(new (&ac) char[buffer_size]);
-  if (!ac.check()) {
-    printf("error: failed to allocate %lu for crashlog\n", buffer_size);
-    return;
-  }
-
-  memset(buffer.get(), 0, buffer_size);
-  zx_status_t status = crashlog->Read(buffer.get(), 0, buffer_size - 1);
-  if (status != ZX_OK) {
-    printf("error: failed to read from recovered crashlog vmo: %d\n", status);
-    return;
-  }
-
-  printf("recovered crashlog follows...\n");
-  printf("%s\n", buffer.get());
-  printf("... end of recovered crashlog\n");
-}
-
-static int cmd_crashlog(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-    printf("not enough arguments\n");
-  usage:
-    printf("usage:\n");
-    printf("%s dump                              : dump the recovered crashlog\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  }
-
-  if (!strcmp(argv[1].str, "dump")) {
-    print_recovered_crashlog();
-  } else {
-    printf("unknown command\n");
-    goto usage;
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND_MASKED("crashlog", "crashlog", &cmd_crashlog, CMD_AVAIL_ALWAYS)
-STATIC_COMMAND_END(crashlog)

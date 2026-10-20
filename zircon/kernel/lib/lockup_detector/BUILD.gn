@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 static_library("lockup_detector") {
   public_deps = [ ":headers" ]
@@ -14,14 +15,26 @@ static_library("lockup_detector") {
     "lockup_detector.cc",
   ]
   deps = [
+    ":lockup_detector-rs",
     "//zircon/kernel/lib/backtrace",
     "//zircon/kernel/lib/boot-options",
-    "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
     "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/object",
     "//zircon/system/ulib/affine",
+  ]
+}
+
+kernel_rust_mod("lockup_detector-rs") {
+  sources = [ "lockup_detector.rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/kprint",
+    "//src/lib/ksync",
+    "//src/lib/zr",
+    "//zircon/kernel/lib/console:console_rs",
   ]
 }
 

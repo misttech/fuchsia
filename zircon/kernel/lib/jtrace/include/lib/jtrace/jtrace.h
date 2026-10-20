@@ -161,6 +161,8 @@ extern "C" {
 void cpp_jtrace_set_location(void* ptr, size_t len);
 void cpp_jtrace_invalidate();
 void cpp_jtrace_dump_current();
+void cpp_jtrace_dump(jtrace::TraceBufferType which);
+const uint8_t* cpp_jtrace_get_location(size_t* out_size);
 
 }  // extern "C"
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/console.h>
 #include <lib/io.h>
 #include <lib/jtrace/jtrace.h>
 
@@ -249,64 +248,6 @@ void jtrace_dump(jtrace::TraceBufferType which) {
     g_trace->Dump(ZX_MSEC(50));
   }
 }
-
-// CLI
-//
-static int cmd_jtrace(int argc, const cmd_args* argv, uint32_t flags) {
-  auto usage = [program = argv[0].str]() -> int {
-    printf("usage: %s [-r|-i]\n", program);
-    printf("  -r : dump the recovered trace buffer instead of the current trace buffer.\n");
-    printf("  -i : dump information about the current JTRACE configuration.\n");
-    return -1;
-  };
-
-  switch (argc) {
-    case 1:
-      jtrace_dump(jtrace::TraceBufferType::Current);
-      break;
-
-    case 2:
-      if (strcmp(argv[1].str, "-r") == 0) {
-        jtrace_dump(jtrace::TraceBufferType::Recovered);
-      } else if (strcmp(argv[1].str, "-i") == 0) {
-        if constexpr (JTraceConfig::kTargetBufferSize == 0) {
-          printf("Debug tracing is not enabled in this build.\n");
-        } else {
-          ktl::span<uint8_t> location = g_trace->GetLocation();
-          printf("JTRACE configuration\n");
-          printf("--------------------\n");
-          printf("Requested Buffer Size  : %zu\n", JTraceConfig::kTargetBufferSize);
-          printf("Allocated Buffer Size  : %zu\n", location.size());
-          printf("Allocated Buffer Loc   : %p\n", location.data());
-          printf("Per-CPU last entry cnt : %zu\n", JTraceConfig::kLastEntryStorage);
-          printf("Large entries          : %s\n",
-                 (JTraceConfig::kUseLargeEntries == ::jtrace::UseLargeEntries::Yes) ? "yes" : "no");
-          printf("Persistent             : %s\n",
-                 (JTraceConfig::kIsPersistent == ::jtrace::IsPersistent::Yes) ? "yes" : "no");
-
-          if ((JTraceConfig::kLastEntryStorage > 0) &&
-              (JTraceConfig::kLastEntryStorage != arch_max_num_cpus())) {
-            printf(
-                "\nWarning! Configured per-cpu last entry count (%zu) does not match target's "
-                "number of CPUs (%u)\n",
-                JTraceConfig::kLastEntryStorage, arch_max_num_cpus());
-          }
-        }
-      } else {
-        return usage();
-      }
-      break;
-
-    default:
-      return usage();
-  }
-
-  return 0;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND("jtrace", "dump the current or recovered jtrace", &cmd_jtrace)
-STATIC_COMMAND_END(jtrace)
 #endif
 
 extern "C" {
@@ -321,5 +262,20 @@ FFI_ALWAYS_INLINE void cpp_jtrace_invalidate() { jtrace_invalidate(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_jtrace_dump_current() { jtrace_dump(jtrace::TraceBufferType::Current); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_jtrace_dump(jtrace::TraceBufferType which) { jtrace_dump(which); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const uint8_t* cpp_jtrace_get_location(size_t* out_size) {
+#if JTRACE_TARGET_BUFFER_SIZE > 0
+  ktl::span<uint8_t> loc = g_trace->GetLocation();
+  *out_size = loc.size();
+  return loc.data();
+#else
+  *out_size = 0;
+  return nullptr;
+#endif
+}
 
 }  // extern "C"

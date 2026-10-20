@@ -31,6 +31,13 @@
 
 struct BootOptions;
 extern "C" const BootOptions* cpp_boot_options_get();
+#ifdef _KERNEL
+extern "C" {
+void cpp_boot_options_set_many(BootOptions* opts, const char* ptr, size_t len);
+int cpp_boot_options_show_key(const BootOptions* opts, const char* ptr, size_t len);
+void cpp_boot_options_show_all(const BootOptions* opts);
+}
+#endif
 
 struct BootOptions {
   // This returns the only instance of BootOptions that ever exists outside

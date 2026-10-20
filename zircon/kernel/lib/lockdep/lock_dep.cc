@@ -6,13 +6,14 @@
 
 #include <debug.h>
 #include <inttypes.h>
-#include <lib/console.h>
 #include <string.h>
 
 #include <new>
 
 #include <arch/ops.h>
 #include <kernel/event.h>
+#include <kernel/ffi.h>
+#include <kernel/lockdep.h>
 #include <kernel/mutex.h>
 #include <kernel/percpu.h>
 #include <kernel/thread.h>
@@ -59,54 +60,6 @@ void LockDepInit(unsigned /*level*/) {
   t->DetachAndResume();
 }
 
-// Dumps the state of the lock dependency graph.
-void DumpLockClassState() {
-  printf("Lock class states:\n");
-  for (auto& state : lockdep::ValidatorLockClassState::Iter()) {
-    printf("  %s {\n", state.name());
-    for (lockdep::LockClassId id : state.dependency_set()) {
-      printf("    %s\n", lockdep::ValidatorLockClassState::GetName(id));
-    }
-    printf("  }\n");
-  }
-  printf("\nConnected sets:\n");
-  for (auto& state : lockdep::ValidatorLockClassState::Iter()) {
-    // Only handle root nodes in the outer loop. The nested loop will pick
-    // up all of the child nodes under each parent node.
-    if (state.connected_set() == &state) {
-      printf("{\n");
-      for (auto& other_state : lockdep::ValidatorLockClassState::Iter()) {
-        if (other_state.connected_set() == &state)
-          printf("  %s\n", other_state.name());
-      }
-      printf("}\n");
-    }
-  }
-}
-
-// Top-level lockdep command.
-int CommandLockDep(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-    printf("Not enough arguments:\n");
-  usage:
-    printf("%s dump              : dump lock classes\n", argv[0].str);
-    printf("%s loop              : trigger loop detection pass\n", argv[0].str);
-    return -1;
-  }
-
-  if (strcmp(argv[1].str, "dump") == 0) {
-    DumpLockClassState();
-  } else if (strcmp(argv[1].str, "loop") == 0) {
-    printf("Triggering loop detection pass:\n");
-    lockdep::SystemTriggerLoopDetection();
-  } else {
-    printf("Unrecognized subcommand: '%s'\n", argv[1].str);
-    goto usage;
-  }
-
-  return 0;
-}
-
 }  // anonymous namespace
 
 // Wait for a loop detection pass to complete, or timeout. This is exposed for tests.
@@ -117,10 +70,6 @@ zx_status_t TriggerAndWaitForLoopDetection(zx_instant_mono_t deadline) {
   lockdep::SystemTriggerLoopDetection();
   return detection_complete_event.WaitDeadline(deadline, Interruptible::Yes);
 }
-
-STATIC_COMMAND_START
-STATIC_COMMAND("lockdep", "kernel lock diagnostics", &CommandLockDep)
-STATIC_COMMAND_END(lockdep)
 
 LK_INIT_HOOK(lockdep, LockDepInit, LK_INIT_LEVEL_THREADING)
 
@@ -195,5 +144,50 @@ void SystemInitThreadLockState(ThreadLockState*) {}
 void SystemTriggerLoopDetection() { loop_detection_graph_is_dirty.store(true); }
 
 }  // namespace lockdep
+
+extern "C" {
+
+static_assert(sizeof(lockdep::ValidatorLockClassState::Iterator) == sizeof(void*));
+static_assert(alignof(lockdep::ValidatorLockClassState::Iterator) == alignof(void*));
+static_assert(alignof(lockdep::ValidatorLockClassState) == 8);
+static_assert(lockdep::kMaxLockDependencies == 193);
+static_assert(sizeof(lockdep::LockDependencySet) == lockdep::kMaxLockDependencies * sizeof(void*));
+static_assert(alignof(lockdep::LockDependencySet) == alignof(void*));
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_lockdep_iter_begin() {
+  auto it = lockdep::ValidatorLockClassState::Iter().begin();
+  return it != lockdep::ValidatorLockClassState::Iter().end() ? &*it : nullptr;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_lockdep_iter_next(void* state) {
+  lockdep::ValidatorLockClassState::Iterator it;
+  memcpy(&it, &state, sizeof(it));
+  ++it;
+  return it != lockdep::ValidatorLockClassState::Iter().end() ? &*it : nullptr;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const char* cpp_lockdep_state_name(const void* state) {
+  return static_cast<const lockdep::ValidatorLockClassState*>(state)->name();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const void* cpp_lockdep_state_dependency_set(const void* state) {
+  return &static_cast<const lockdep::ValidatorLockClassState*>(state)->dependency_set();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_lockdep_state_connected_set(void* state) {
+  return static_cast<lockdep::ValidatorLockClassState*>(state)->connected_set();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_lockdep_trigger_loop_detection() {
+  lockdep::SystemTriggerLoopDetection();
+}
+
+}  // extern "C"
 
 #endif

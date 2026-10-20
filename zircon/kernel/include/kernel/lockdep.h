@@ -55,4 +55,15 @@ using lockdep::NullGuard;
 #define DECLARE_SINGLETON_LOCK_WRAPPER(name, global_lock, ...) \
   LOCK_DEP_SINGLETON_LOCK_WRAPPER(name, global_lock, ##__VA_ARGS__)
 
+#if WITH_LOCK_DEP
+extern "C" {
+void* cpp_lockdep_iter_begin();
+void* cpp_lockdep_iter_next(void* state);
+const char* cpp_lockdep_state_name(const void* state);
+const void* cpp_lockdep_state_dependency_set(const void* state);
+void* cpp_lockdep_state_connected_set(void* state);
+void cpp_lockdep_trigger_loop_detection();
+}
+#endif
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_LOCKDEP_H_

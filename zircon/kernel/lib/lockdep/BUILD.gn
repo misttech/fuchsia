@@ -4,10 +4,11 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//zircon/kernel/kernel_rust_mod.gni")
+
 source_set("lockdep") {
   sources = [ "lock_dep.cc" ]
   deps = [
-    "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/vm:headers",
@@ -18,6 +19,15 @@ source_set("lockdep") {
     # kernel/lib/lockdep is used as if it were a library() itself and acts
     # as the kernel's drop-in replacement for system/ulib/lockdep.
     "//src/lib/lockdep",
+  ]
+}
+
+kernel_rust_mod("lockdep-rs") {
+  sources = [ "lock_dep.rs" ]
+  deps = [
+    "//src/lib/kprint",
+    "//src/lib/zr",
+    "//zircon/kernel/lib/console:console_rs",
   ]
 }
 
