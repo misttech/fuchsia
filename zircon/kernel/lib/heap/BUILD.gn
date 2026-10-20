@@ -54,6 +54,7 @@ kernel_bindgen_crate("heap-bindings") {
 
   notice_year = 2026
   function_allowlist = [
+    "cpp_get_heap_profile",
     "cpp_heap_get_info",
     "cpp_profile_track_alloc",
     "cpp_profile_track_free",

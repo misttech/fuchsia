@@ -23,6 +23,11 @@ zr::static_assert!(core::mem::size_of::<PinnedVmObject>() == 24);
 zr::static_assert!(core::mem::align_of::<PinnedVmObject>() == 8);
 
 impl PinnedVmObject {
+    /// Creates an empty `PinnedVmObject`.
+    pub const fn new() -> Self {
+        Self { vmo: None, offset: 0, size: 0 }
+    }
+
     /// Pins `size` bytes starting at `offset` in `vmo` and returns a
     /// `PinnedVmObject`.
     pub fn create(

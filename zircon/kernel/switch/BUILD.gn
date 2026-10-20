@@ -459,6 +459,9 @@ config("kernel_image_max_size") {
 config("kernel_memory_profiler") {
   visibility = [ ":*" ]
   defines = [ "KERNEL_MEMORY_PROFILER=$kernel_memory_profiler" ]
+  if (kernel_memory_profiler) {
+    rustflags = [ "--cfg=kernel_memory_profiler" ]
+  }
 }
 
 config("jtrace_config") {

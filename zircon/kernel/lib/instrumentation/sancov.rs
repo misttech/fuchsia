@@ -65,8 +65,8 @@ static SANCOV_PC_COUNTS: AtomicPtr<AtomicU64> = AtomicPtr::new(ptr::null_mut());
 #[sanitize(address = "off")]
 pub(super) fn init_sancov(
     guards: &[AtomicU32],
-    pc_vmo: &KernelMappedVmo,
-    counts_vmo: &KernelMappedVmo,
+    pc_vmo: &mut KernelMappedVmo,
+    counts_vmo: &mut KernelMappedVmo,
 ) {
     let guards_count = guards.len();
     let vmo = VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, data_size(guards_count) as u64);
@@ -75,7 +75,7 @@ pub(super) fn init_sancov(
         VmObjectPaged::into_vm_object(vmo.unwrap()),
         0,
         data_size(guards_count),
-        c"sancov-pc-table",
+        b"sancov-pc-table",
     );
     assert!(status.is_ok());
 
@@ -85,15 +85,15 @@ pub(super) fn init_sancov(
         VmObjectPaged::into_vm_object(vmo.unwrap()),
         0,
         data_size(guards_count),
-        c"sancov-pc-counts-table",
+        b"sancov-pc-counts-table",
     );
     assert!(status.is_ok());
 
     // SAFETY: `pc_vmo.init` and `counts_vmo.init` succeeded above, mapping at least
     // `data_size(guards_count)` bytes (`guards_count + 1` `u64` elements) for each VMO.
     unsafe {
-        let pc_table = ptr::with_exposed_provenance_mut::<AtomicU64>(pc_vmo.base_locking());
-        let pc_counts = ptr::with_exposed_provenance_mut::<AtomicU64>(counts_vmo.base_locking());
+        let pc_table = ptr::with_exposed_provenance_mut::<AtomicU64>(pc_vmo.base_locking().0);
+        let pc_counts = ptr::with_exposed_provenance_mut::<AtomicU64>(counts_vmo.base_locking().0);
         SANCOV_PC_TABLE.store(pc_table, Ordering::Relaxed);
 
         (*pc_table).store(MAGIC64, Ordering::Relaxed);

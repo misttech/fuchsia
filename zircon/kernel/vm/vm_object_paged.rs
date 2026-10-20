@@ -13,6 +13,7 @@ use crate::user_copy::{UserInIovec, UserOutIovec};
 use core::marker::PhantomPinned;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
+use core::ptr::NonNull;
 use fbl::{IsOpaqueRefCounted, RefPtr};
 use ksync::LockToken;
 use pin_init::PinInit;
@@ -124,13 +125,33 @@ impl VmObjectPaged {
         data: &'static [u8],
         exclusive: bool,
     ) -> Result<RefPtr<VmObjectPaged>, Status> {
+        // SAFETY: `data` points to `data.len()` bytes of static kernel memory.
+        unsafe {
+            Self::create_from_wired_pages_raw(NonNull::from(data).cast(), data.len(), exclusive)
+        }
+    }
+
+    /// Creates a VMO from `size` bytes of wired pages starting at `data`.
+    ///
+    /// See [`Self::create_from_wired_pages`] for details on ownership and `exclusive`.
+    ///
+    /// # Safety
+    ///
+    /// `data` must point to `size` bytes of wired kernel memory that has not already been wrapped
+    /// in a VMO, and if `exclusive` is true (or once the returned VMO is released), the memory
+    /// must not be accessed through `data` after it is unmapped or freed.
+    pub unsafe fn create_from_wired_pages_raw(
+        data: NonNull<u8>,
+        size: usize,
+        exclusive: bool,
+    ) -> Result<RefPtr<VmObjectPaged>, Status> {
         let mut status = 0;
-        // SAFETY: `data` points to `data.len()` bytes of wired kernel memory, and `status` is a
-        // valid local mutable reference.
+        // SAFETY: Caller guarantees `data` points to `size` bytes of wired kernel memory, and
+        // `status` is a valid local mutable reference.
         let raw = unsafe {
             bindings::cpp_vm_object_paged_create_from_wired_pages(
                 data.as_ptr().cast(),
-                data.len(),
+                size,
                 exclusive,
                 &mut status,
             )

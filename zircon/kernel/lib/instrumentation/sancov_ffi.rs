@@ -43,8 +43,8 @@ pub unsafe extern "C" fn rust_sancov_init(
     let (guards, pc_vmo, counts_vmo) = unsafe {
         (
             slice::from_raw_parts(guards_start.cast::<AtomicU32>(), guards_count),
-            &*pc_vmo,
-            &*counts_vmo,
+            &mut *pc_vmo,
+            &mut *counts_vmo,
         )
     };
     init_sancov(guards, pc_vmo, counts_vmo);

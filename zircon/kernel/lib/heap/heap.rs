@@ -4,7 +4,22 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::ptr::NonNull;
 use heap_bindings as bindings;
+
+/// Returns the address and size of the heap profile buffer if it exists, and `None` otherwise.
+///
+/// The buffer is wired kernel memory that lives for the lifetime of the kernel and is written
+/// concurrently by the heap profiler, so it must not be read through a Rust reference.
+pub fn get_heap_profile() -> Option<(NonNull<u8>, usize)> {
+    let mut ptr: *const core::ffi::c_void = core::ptr::null();
+    let mut size: usize = 0;
+    // SAFETY: `ptr` and `size` are valid local out-pointers.
+    unsafe {
+        bindings::cpp_get_heap_profile(&raw mut ptr, &raw mut size);
+    }
+    NonNull::new(ptr.cast_mut().cast::<u8>()).map(|ptr| (ptr, size))
+}
 
 /// Tracks an allocation of the given `size` in the heap profiler. This can be used to make visible
 /// allocations that, while not from the general kernel heap, are notionally heap-like or from

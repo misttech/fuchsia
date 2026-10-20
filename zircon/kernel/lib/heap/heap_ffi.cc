@@ -13,6 +13,10 @@
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
 
+FFI_ALWAYS_INLINE void cpp_get_heap_profile(const void** ptr, size_t* size) {
+  get_heap_profile(ptr, size);
+}
+
 FFI_ALWAYS_INLINE uint32_t cpp_profile_track_alloc(size_t size) {
   return profile_track_alloc(size);
 }
