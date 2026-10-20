@@ -19,6 +19,11 @@ starnix_linux_executable("zombie_shutdown_bin") {
   sources = [ "zombie_shutdown.cc" ]
 }
 
+starnix_linux_executable("exit_on_sigterm_bin") {
+  testonly = true
+  sources = [ "exit_on_sigterm.cc" ]
+}
+
 rustc_test("starnix_shutdown_test_runner") {
   testonly = true
   edition = "2024"
@@ -31,7 +36,6 @@ rustc_test("starnix_shutdown_test_runner") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
   ]
 
@@ -42,6 +46,21 @@ rustc_test("starnix_shutdown_test_runner") {
 fuchsia_test_component("zombie_shutdown") {
   manifest = "meta/zombie_shutdown.cml"
   deps = [ ":zombie_shutdown_bin" ]
+}
+
+fuchsia_test_component("stopped_first") {
+  manifest = "meta/stopped_first.cml"
+  deps = [ ":exit_on_sigterm_bin" ]
+}
+
+fuchsia_test_component("stopped_last") {
+  manifest = "meta/stopped_last.cml"
+  deps = [ ":exit_on_sigterm_bin" ]
+}
+
+fuchsia_component("container") {
+  testonly = true
+  manifest = "meta/container.cml"
 }
 
 fuchsia_test_component("realm") {
@@ -58,12 +77,15 @@ fuchsia_test_component("starnix_shutdown_test_component") {
 fuchsia_test_package("starnix_shutdown_test") {
   test_components = [ ":starnix_shutdown_test_component" ]
   deps = [
+    ":container",
     ":realm",
+    ":stopped_first",
+    ":stopped_last",
     ":zombie_shutdown",
+    "//src/starnix/containers/debian:container_resources",
   ]
 
-  subpackages = starnix_test_subpackages +
-                [ "//src/starnix/containers/debian:debian_package" ]
+  subpackages = starnix_test_subpackages
 
   # TODO(https://fxbug.dev/295073633): Remove when Starnix can shut down
   # gracefully.

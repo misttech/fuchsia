@@ -315,6 +315,12 @@ pub struct ContainerProgram {
     /// allows us to specify different constant bandwidth profiles for different workloads.
     #[serde(default)]
     task_role_overrides: Vec<TaskSchedulerMapping>,
+
+    /// Paths of executables whose processes are stopped only after all other processes except init
+    /// have exited when the container shuts down, e.g. one that writes crash dumps for processes
+    /// that crash during shutdown.
+    #[serde(default)]
+    pub stop_last_on_shutdown: Vec<String>,
 }
 
 /// Specifies a role override for a class of tasks whose process and thread names match provided

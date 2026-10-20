@@ -152,6 +152,11 @@ pub struct KernelFeatures {
 
     /// Free-memory watermarks (in MiB) for `/proc/zoneinfo`.
     pub oom_watermarks_mb: Option<OomWatermarksMb>,
+
+    /// Paths of executables whose processes are stopped only after all other processes except init
+    /// have exited when the kernel shuts down, e.g. one that writes crash dumps for processes that
+    /// crash during shutdown. See `Kernel::run_shutdown()`.
+    pub stop_last_on_shutdown: Vec<FsString>,
 }
 
 impl KernelFeatures {
@@ -683,7 +688,8 @@ impl Kernel {
     /// Shutdown happens in several phases:
     ///
     /// 1. Disable launching new processes
-    /// 2. Shut down individual ThreadGroups until only the init and system tasks remain
+    /// 2. Shut down individual ThreadGroups until only the init and system tasks remain, stopping
+    ///    the `stop_last_on_shutdown` ones last
     /// 3. Repeat the above for the init task
     /// 4. Clean up kernel-internal structures that can hold processes alive
     /// 5. Ensure this process is the only one running in the kernel job.
@@ -714,14 +720,33 @@ impl Kernel {
         log_info!("Shutting down Starnix kernel.");
 
         // Step 2: Shut down thread groups in a loop until init and the system task are all that
-        // remain.
+        // remain. Processes running a `stop_last_on_shutdown` executable are kept until everything
+        // else has exited, e.g. so that processes that crash during shutdown can still have their
+        // crash dumps written.
+        // TODO(https://fxbug.dev/574471394): Remove once a shutdown that isn't forced lets the
+        // container run its own shutdown sequence.
+        let stop_last = &self.features.stop_last_on_shutdown;
+        let is_stop_last = |tg: &ThreadGroup| {
+            let exe = tg.read().first_task().and_then(|task| task.mm().ok());
+            let exe = exe.and_then(|mm| mm.executable_node());
+            exe.is_some_and(|exe| stop_last.contains(&exe.path_escaping_chroot()))
+        };
+        let mut keep_stop_last = !stop_last.is_empty();
         loop {
             let tgs = self
                 .pids
                 .get_thread_groups(&RcuReadScope::new())
-                .filter(|tg| tg.leader.id != SYSTEM_TASK_PID && tg.leader.id != INIT_PID)
+                .filter(|tg| {
+                    tg.leader.id != SYSTEM_TASK_PID
+                        && tg.leader.id != INIT_PID
+                        && !(keep_stop_last && is_stop_last(tg))
+                })
                 .collect::<Vec<_>>();
             if tgs.is_empty() {
+                if keep_stop_last {
+                    keep_stop_last = false;
+                    continue;
+                }
                 log_info!("pid table is empty except init and system task");
                 break;
             }

@@ -99,6 +99,7 @@ impl Features {
                         remotevol_in_process,
                         log_sysfs_lookup_misses,
                         oom_watermarks_mb,
+                        stop_last_on_shutdown,
                     },
                 system_limits,
                 selinux,
@@ -171,6 +172,10 @@ impl Features {
                     inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
                     inspect_node.record_bool("fake_ion", *fake_ion);
                     inspect_node.record_bool("remotevol_in_process", *remotevol_in_process);
+                    kernel_node.record_string(
+                        "stop_last_on_shutdown",
+                        format!("{:?}", stop_last_on_shutdown),
+                    );
                 });
             }
         });
@@ -350,6 +355,8 @@ pub fn parse_features(
 
     features.kernel.default_uid = start_info.program.default_uid.0;
     features.kernel.default_seclabel = start_info.program.default_seclabel.clone();
+    features.kernel.stop_last_on_shutdown =
+        start_info.program.stop_last_on_shutdown.iter().map(|path| path.as_str().into()).collect();
     features.kernel.default_ns_mount_options =
         if let Some(mount_options) = &start_info.program.default_ns_mount_options {
             let options = mount_options
