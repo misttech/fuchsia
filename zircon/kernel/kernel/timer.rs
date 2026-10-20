@@ -147,19 +147,62 @@ zr::static_assert!(core::mem::align_of::<Timer>() == 8);
 #[cfg(ktest)]
 #[unittest::suite(name = "timer_rust")]
 mod tests {
-    use super::{Timer, ZX_CLOCK_MONOTONIC};
-    use crate::platform_rs::timer::DurationMono;
-    use core::sync::atomic::{AtomicBool, Ordering};
+    use crate::kernel::deadline::{SlackMode, TimerSlack};
+    use crate::platform_rs::timer::{
+        CurrentTicksObservation, DurationMono, DurationUnknown, current_boot_time,
+        current_mono_time, timer_current_boot_ticks, timer_current_mono_and_boot_ticks,
+        timer_current_mono_ticks, zx_hour, zx_msec, zx_usec,
+    };
+    use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
     use pin_init::stack_pin_init;
+    use unittest::{assert_eq, assert_false, assert_ge, assert_le, assert_true};
+    use zx_types::ZX_TIME_INFINITE;
 
-    unsafe extern "C" {
-        fn cpp_current_mono_time() -> i64;
+    #[derive(Default)]
+    struct TimerArgs {
+        result: AtomicBool,
+        timer_fired: AtomicBool,
+        remaining: AtomicI32,
     }
 
-    unsafe extern "C" fn timer_cb(_timer: *mut Timer, _now: i64, arg: *mut core::ffi::c_void) {
+    unsafe extern "C" fn oneshot_cb(_timer: *mut Timer, _now: i64, arg: *mut core::ffi::c_void) {
         // SAFETY: arg is a valid pointer to AtomicBool.
         let fired = unsafe { &*(arg as *const AtomicBool) };
         fired.store(true, Ordering::Release);
+    }
+
+    unsafe extern "C" fn timer_cb(_timer: *mut Timer, _now: i64, void_arg: *mut core::ffi::c_void) {
+        // SAFETY: `void_arg` points to a valid `TimerArgs` for the duration of the timer.
+        let arg = unsafe { &*(void_arg as *const TimerArgs) };
+        arg.timer_fired.store(true, Ordering::SeqCst);
+    }
+
+    unsafe extern "C" fn timer_cancel_cb(
+        t: *mut Timer,
+        _now: i64,
+        void_arg: *mut core::ffi::c_void,
+    ) {
+        // SAFETY: `void_arg` points to a valid `TimerArgs` and `t` points to a valid pinned
+        // `Timer`.
+        let arg = unsafe { &*(void_arg as *const TimerArgs) };
+        // SAFETY: `t` is a valid pinned `Timer` for the duration of the callback.
+        let t = unsafe { &*t };
+        arg.result.store(t.cancel(), Ordering::SeqCst);
+        arg.timer_fired.store(true, Ordering::SeqCst);
+    }
+
+    unsafe extern "C" fn timer_set_cb(t: *mut Timer, _now: i64, void_arg: *mut core::ffi::c_void) {
+        // SAFETY: `void_arg` points to a valid `TimerArgs` for the duration of the timer.
+        let arg = unsafe { &*(void_arg as *const TimerArgs) };
+        if arg.remaining.fetch_sub(1, Ordering::SeqCst) >= 1 {
+            let deadline = Deadline::after_mono(DurationMono(zx_usec(10)), TimerSlack::none());
+            // SAFETY: `t` is a valid pinned `Timer` and `void_arg` remains valid until `t` is
+            // cancelled at the end of `set_from_callback`.
+            unsafe {
+                let t = core::pin::Pin::new_unchecked(&*t);
+                t.set_deadline(&deadline, timer_set_cb, void_arg);
+            }
+        }
     }
 
     /// Verifies that a scheduled oneshot timer fires and executes its callback.
@@ -170,10 +213,10 @@ mod tests {
         let arg = &fired as *const AtomicBool as *mut core::ffi::c_void;
 
         // Schedule timer to fire in 1ms (1,000,000 ns) from now.
-        let now = unsafe { cpp_current_mono_time() };
-        // SAFETY: timer_cb and arg are valid.
+        let now = current_mono_time().0;
+        // SAFETY: oneshot_cb and arg are valid.
         unsafe {
-            timer.as_ref().set_oneshot(now + 1_000_000, timer_cb, arg);
+            timer.as_ref().set_oneshot(now + 1_000_000, oneshot_cb, arg);
         }
 
         // Poll up to 100ms (100 iterations of 1ms sleep) for the timer to fire.
@@ -197,10 +240,10 @@ mod tests {
         let arg = &fired as *const AtomicBool as *mut core::ffi::c_void;
 
         // Schedule timer to fire in 10 seconds (in the future).
-        let now = unsafe { cpp_current_mono_time() };
-        // SAFETY: timer_cb and arg are valid.
+        let now = current_mono_time().0;
+        // SAFETY: oneshot_cb and arg are valid.
         unsafe {
-            timer.as_ref().set_oneshot(now + 10_000_000_000, timer_cb, arg);
+            timer.as_ref().set_oneshot(now + 10_000_000_000, oneshot_cb, arg);
         }
 
         // Cancel it immediately.
@@ -213,5 +256,165 @@ mod tests {
 
         // Verify that it did not fire.
         unittest::expect_false!(fired.load(Ordering::Acquire));
+    }
+
+    // Set a timer and cancel it before the deadline has elapsed.
+    /// cancel_before_deadline
+    #[test]
+    fn cancel_before_deadline() {
+        let arg = TimerArgs::default();
+        stack_pin_init!(let t = Timer::init(ZX_CLOCK_MONOTONIC));
+        let deadline = Deadline::after_mono(DurationMono(zx_hour(5)), TimerSlack::none());
+        // SAFETY: `timer_cb` and `&arg` are valid while `t` is active.
+        unsafe {
+            t.as_ref().set_deadline(&deadline, timer_cb, (&raw const arg).cast_mut().cast());
+        }
+        assert_true!(t.cancel());
+        assert_false!(arg.timer_fired.load(Ordering::SeqCst));
+    }
+
+    // Set a timer and cancel it after it has fired.
+    /// cancel_after_fired
+    #[test]
+    fn cancel_after_fired() {
+        let arg = TimerArgs::default();
+        stack_pin_init!(let t = Timer::init(ZX_CLOCK_MONOTONIC));
+        let deadline = Deadline::no_slack(current_mono_time().into());
+        // SAFETY: `timer_cb` and `&arg` are valid while `t` is active.
+        unsafe {
+            t.as_ref().set_deadline(&deadline, timer_cb, (&raw const arg).cast_mut().cast());
+        }
+        while !arg.timer_fired.load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
+        assert_false!(t.cancel());
+    }
+
+    // Set a timer and cancel it from its own callback.
+    /// cancel_from_callback
+    #[test]
+    fn cancel_from_callback() {
+        let arg = TimerArgs { result: AtomicBool::new(true), ..Default::default() };
+        stack_pin_init!(let t = Timer::init(ZX_CLOCK_MONOTONIC));
+        let deadline = Deadline::no_slack(current_mono_time().into());
+        // SAFETY: `timer_cancel_cb` and `&arg` are valid while `t` is active.
+        unsafe {
+            t.as_ref().set_deadline(&deadline, timer_cancel_cb, (&raw const arg).cast_mut().cast());
+        }
+        while !arg.timer_fired.load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
+        assert_false!(t.cancel());
+        assert_false!(arg.result.load(Ordering::SeqCst));
+    }
+
+    // Set a timer that re-sets itself from its own callback.
+    /// set_from_callback
+    #[test]
+    fn set_from_callback() {
+        let arg = TimerArgs { remaining: AtomicI32::new(5), ..Default::default() };
+        stack_pin_init!(let t = Timer::init(ZX_CLOCK_MONOTONIC));
+        let deadline = Deadline::no_slack(current_mono_time().into());
+        // SAFETY: `timer_set_cb` and `&arg` are valid while `t` is active.
+        unsafe {
+            t.as_ref().set_deadline(&deadline, timer_set_cb, (&raw const arg).cast_mut().cast());
+        }
+        while arg.remaining.load(Ordering::SeqCst) > 0 {
+            core::hint::spin_loop();
+        }
+
+        // We cannot assert the return value below because we don't know if the last timer has
+        // fired.
+        t.cancel();
+    }
+
+    /// Deadline::after
+    #[test]
+    fn deadline_after() {
+        let slack_modes: [Option<TimerSlack>; 5] = [
+            None,                     // None is used for testing the default mode ("none").
+            Some(TimerSlack::none()), // an explicit test of "none"
+            Some(TimerSlack::new(DurationUnknown(zx_usec(100)), SlackMode::Center)),
+            Some(TimerSlack::new(DurationUnknown(zx_usec(200)), SlackMode::Early)),
+            Some(TimerSlack::new(DurationUnknown(zx_usec(200)), SlackMode::Late)),
+        ];
+
+        // Test to make sure that a relative timeout which is an infinite amount of
+        // time from now produces an infinite deadline.
+        for slack in &slack_modes {
+            let deadline = match slack {
+                Some(s) => Deadline::after_mono(DurationMono(ZX_TIME_INFINITE), *s),
+                None => Deadline::after_mono(DurationMono(ZX_TIME_INFINITE), TimerSlack::none()),
+            };
+            assert_eq!(ZX_TIME_INFINITE, deadline.when().0);
+
+            // Default slack should be "none"
+            let expected = slack.unwrap_or_else(TimerSlack::none);
+            assert_eq!(expected.amount().0, deadline.slack().amount().0);
+            assert_eq!(expected.mode(), deadline.slack().mode());
+        }
+
+        // While we cannot control the precise deadline which will be produced from
+        // our call to Deadline::after, we _can_ bound the range it might exist in.
+        // Test for this as well.
+        for slack in &slack_modes {
+            const TIMEOUT: DurationMono = DurationMono(zx_msec(10));
+            let before = current_mono_time() + TIMEOUT;
+            let deadline = match slack {
+                Some(s) => Deadline::after_mono(TIMEOUT, *s),
+                None => Deadline::after_mono(TIMEOUT, TimerSlack::none()),
+            };
+            let after = current_mono_time() + TIMEOUT;
+            assert_le!(before.0, deadline.when().0);
+            assert_ge!(after.0, deadline.when().0);
+
+            // Default slack should be "none"
+            let expected = slack.unwrap_or_else(TimerSlack::none);
+            assert_eq!(expected.amount().0, deadline.slack().amount().0);
+            assert_eq!(expected.mode(), deadline.slack().mode());
+        }
+    }
+
+    /// test_timer_current_mono_and_boot_ticks
+    #[test]
+    fn test_timer_current_mono_and_boot_ticks() {
+        // Get the current monotonic and boot ticks. This should occur prior to our observation of
+        // both below, providing us with a lower bound on those values.
+        let boot_before = timer_current_boot_ticks();
+        let mono_before = timer_current_mono_ticks();
+
+        // Perform a synchronized read of the monotonic and boot ticks.
+        let obs: CurrentTicksObservation = timer_current_mono_and_boot_ticks();
+
+        // Get the current monotonic and boot ticks. This should occur after our observation of
+        // both above, providing us with an upper bound on those values.
+        let mono_after = timer_current_mono_ticks();
+        let boot_after = timer_current_boot_ticks();
+
+        // Ensure that the monotonic ticks are less than or equal to the boot ticks.
+        assert_le!(obs.mono_now, obs.boot_now);
+
+        // Ensure that our observations are monotonic, meaning that they are greater than or equal
+        // to our before observations and less than or equal to our after observations.
+        assert_ge!(obs.mono_now, mono_before.0);
+        assert_ge!(obs.boot_now, boot_before.0);
+        assert_le!(obs.mono_now, mono_after.0);
+        assert_le!(obs.boot_now, boot_after.0);
+    }
+
+    // Ensure that a boot timer fires.
+    /// boot_timer
+    #[test]
+    fn boot_timer() {
+        let arg = TimerArgs::default();
+        stack_pin_init!(let t = Timer::init(ZX_CLOCK_BOOT));
+        let deadline = Deadline::no_slack(current_boot_time().into());
+        // SAFETY: `timer_cb` and `&arg` are valid while `t` is active.
+        unsafe {
+            t.as_ref().set_deadline(&deadline, timer_cb, (&raw const arg).cast_mut().cast());
+        }
+        while !arg.timer_fired.load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
     }
 }
