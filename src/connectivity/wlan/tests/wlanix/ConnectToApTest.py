@@ -11,12 +11,9 @@ logger = logging.getLogger(__name__)
 
 import asyncio
 import struct
-from dataclasses import dataclass
-from typing import Any
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import wlanix_testing.base_test as base_test
-from fuchsia_controller_py import Channel
 from legacy_access_point.access_point import AccessPoint, setup_ap
 from legacy_access_point.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
@@ -40,6 +37,10 @@ from openwrt_access_point.lib.access_point_config import (
 )
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
+)
+from wlanix_testing import (
+    Nl80211MulticastServer,
+    SupplicantStaIfaceCallbackServer,
 )
 
 
@@ -230,107 +231,6 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 "Unexpectedly received additional callback messages.",
             )
             logger.info(f'Successfully connected to "{ssid}"!')
-
-
-@dataclass
-class SupplicantStaIfaceCallbackContext:
-    state_change_queue: asyncio.Queue[
-        fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest
-        | fidl_wlanix.SupplicantStaIfaceCallbackOnDisconnectedRequest
-        | fidl_wlanix.SupplicantStaIfaceCallbackOnAssociationRejectedRequest
-    ]
-    callback_channel: Channel
-
-
-class SupplicantStaIfaceCallbackServer(
-    fidl_wlanix.SupplicantStaIfaceCallbackServer
-):
-    def __init__(
-        self,
-        client: Channel,
-        server: Channel,
-        verbose: bool = True,
-    ) -> None:
-        # Defer initialization of parent class to __aenter__
-        self.client = client
-        self.server = server
-        self.verbose = verbose
-
-    def on_state_changed(
-        self,
-        request: fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest,
-    ) -> None:
-        if self.verbose:
-            logger.info("State changed: %s", request)
-        self.state_change_queue.put_nowait(request)
-
-    def on_disconnected(
-        self,
-        request: fidl_wlanix.SupplicantStaIfaceCallbackOnDisconnectedRequest,
-    ) -> None:
-        if self.verbose:
-            logger.info("Disconnected: %s", request)
-        self.state_change_queue.put_nowait(request)
-
-    def on_association_rejected(
-        self,
-        request: fidl_wlanix.SupplicantStaIfaceCallbackOnAssociationRejectedRequest,
-    ) -> None:
-        if self.verbose:
-            logger.info("Association rejected: %s", request)
-        self.state_change_queue.put_nowait(request)
-
-    async def __aenter__(self) -> SupplicantStaIfaceCallbackContext:
-        super().__init__(channel=self.server)
-
-        self.state_change_queue: asyncio.Queue[
-            fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest
-            | fidl_wlanix.SupplicantStaIfaceCallbackOnDisconnectedRequest
-            | fidl_wlanix.SupplicantStaIfaceCallbackOnAssociationRejectedRequest
-        ] = asyncio.Queue()
-        self.server_task = asyncio.create_task(self.serve())
-        return SupplicantStaIfaceCallbackContext(
-            state_change_queue=self.state_change_queue,
-            callback_channel=self.client,
-        )
-
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
-        if self.server_task:
-            self.server_task.cancel()
-
-
-@dataclass
-class Nl80211MulticastServerContext:
-    message_queue: asyncio.Queue[fidl_wlanix.Nl80211Message]
-    callback_channel: Channel
-
-
-class Nl80211MulticastServer(fidl_wlanix.Nl80211MulticastServer):
-    def __init__(self, client: Channel, server: Channel) -> None:
-        # Defer initialization of parent class to __aenter__
-        self.client = client
-        self.server = server
-
-    async def message(
-        self, request: fidl_wlanix.Nl80211MulticastMessageRequest
-    ) -> None:
-        if request.message is not None:
-            self.message_queue.put_nowait(request.message)
-
-    async def __aenter__(self) -> Nl80211MulticastServerContext:
-        super().__init__(channel=self.server)
-        self.message_queue: asyncio.Queue[
-            fidl_wlanix.Nl80211Message
-        ] = asyncio.Queue()
-        self.server_task = asyncio.create_task(self.serve())
-        return Nl80211MulticastServerContext(
-            message_queue=self.message_queue,
-            callback_channel=self.client,
-        )
-
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
-        if self.server_task:
-            self.server_task.cancel()
 
 
 if __name__ == "__main__":

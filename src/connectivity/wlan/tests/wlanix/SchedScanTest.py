@@ -9,14 +9,12 @@ import asyncio
 import logging
 import struct
 import time
-from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Iterator
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import wlanix_testing.base_test as base_test
 from common.utils.ies import read_ssid
-from fuchsia_controller_py import Channel
 from honeydew.utils.deadline import Deadline
 from legacy_access_point.access_point import AccessPoint, setup_ap
 from legacy_access_point.ap_lib.hostapd_constants import (
@@ -45,63 +43,32 @@ from openwrt_access_point.lib.access_point_config import (
     SecurityOpen,
 )
 from wlan_test_utils import odpm_utils
+from wlanix_testing import (
+    NL80211_ATTR_BSS,
+    NL80211_ATTR_IFINDEX,
+    NL80211_ATTR_SCAN_FREQUENCIES,
+    NL80211_ATTR_SCAN_SSIDS,
+    NL80211_ATTR_SCHED_SCAN_INTERVAL,
+    NL80211_ATTR_SCHED_SCAN_MATCH,
+    NL80211_ATTR_SCHED_SCAN_PLANS,
+    NL80211_BSS_INFORMATION_ELEMENTS,
+    NL80211_CMD_GET_SCAN,
+    NL80211_CMD_SCHED_SCAN_RESULTS,
+    NL80211_CMD_START_SCHED_SCAN,
+    NL80211_CMD_STOP_SCHED_SCAN,
+    NL80211_SCHED_SCAN_MATCH_ATTR_RSSI,
+    NL80211_SCHED_SCAN_MATCH_ATTR_SSID,
+    NL80211_SCHED_SCAN_PLAN_INTERVAL,
+    NL80211_SCHED_SCAN_PLAN_ITERATIONS,
+    Nl80211MulticastServer,
+    build_nla,
+    parse_netlink_attributes,
+)
 
 logger = logging.getLogger(__name__)
 
-NL80211_CMD_START_SCHED_SCAN = 0x4B
-NL80211_CMD_STOP_SCHED_SCAN = 0x4C
-NL80211_CMD_SCHED_SCAN_RESULTS = 77
-NL80211_ATTR_IFINDEX = 0x03
-NL80211_ATTR_SCAN_SSIDS = 45
-NL80211_ATTR_SCAN_FREQUENCIES = 44
-NL80211_ATTR_SCHED_SCAN_INTERVAL = 0x77
-NL80211_ATTR_SCHED_SCAN_MATCH = 132
-NL80211_CMD_GET_SCAN = 32
-NL80211_ATTR_BSS = 47
-NL80211_BSS_INFORMATION_ELEMENTS = 6
-IE_TYPE_SSID = 0
-NL80211_SCHED_SCAN_MATCH_ATTR_RSSI = 2
-NL80211_ATTR_SCHED_SCAN_PLANS = 225
-NL80211_SCHED_SCAN_PLAN_INTERVAL = 1
-NL80211_SCHED_SCAN_PLAN_ITERATIONS = 2
-
 DEFAULT_SCHED_SCAN_INTERVAL_MS = 5000
 DEFAULT_MATCH_TIMEOUT_SEC = 15.0
-
-
-def parse_netlink_attributes(
-    payload: bytes, start_offset: int = 4
-) -> dict[int, bytes]:
-    """Parses Netlink attributes from a payload.
-
-    Args:
-        payload: The bytes to parse.
-        start_offset: The offset to start parsing from (default 4 to skip GenNetlink header).
-
-    Returns:
-        A dictionary mapping attribute type to attribute value.
-    """
-    attrs = {}
-    offset = start_offset
-    while offset + 4 <= len(payload):
-        nla_len, nla_type = struct.unpack_from("<HH", payload, offset)
-        if nla_len < 4:
-            break
-        # The most significant bits are reserved for NLA_F_NESTED and NLA_F_NET_BYTEORDER.
-        nla_type &= 0x3FFF
-        value = payload[offset + 4 : offset + nla_len]
-        attrs[nla_type] = value
-        # Move offset forward to the next 4-byte boundary.
-        offset += (nla_len + 3) & ~3
-    return attrs
-
-
-def build_nla(attr_type: int, value: bytes) -> bytes:
-    true_len = 4 + len(value)
-    header = struct.pack("<HH", true_len, attr_type)
-    attr = header + value
-    pad_len = (4 - (len(attr) % 4)) % 4
-    return attr + b"\x00" * pad_len
 
 
 def build_match_set(
@@ -111,7 +78,7 @@ def build_match_set(
 ) -> bytes:
     """Builds an NLA structure for a single match set entry containing SSID and optional RSSI threshold."""
     ssid_bytes = ssid.encode("ascii") if isinstance(ssid, str) else ssid
-    ssid_attr = build_nla(1, ssid_bytes)
+    ssid_attr = build_nla(NL80211_SCHED_SCAN_MATCH_ATTR_SSID, ssid_bytes)
     rssi_attr = (
         build_nla(NL80211_SCHED_SCAN_MATCH_ATTR_RSSI, struct.pack("<i", rssi))
         if rssi is not None
@@ -152,39 +119,6 @@ def build_start_sched_scan_payload(
     if plans_attr is not None:
         payload.extend(plans_attr)
     return payload
-
-
-@dataclass
-class Nl80211MulticastServerContext:
-    message_queue: asyncio.Queue[fidl_wlanix.Nl80211Message]
-    callback_channel: Channel
-
-
-class Nl80211MulticastServer(fidl_wlanix.Nl80211MulticastServer):
-    def __init__(self, client: Channel, server: Channel) -> None:
-        self.client = client
-        self.server = server
-
-    async def message(
-        self, request: fidl_wlanix.Nl80211MulticastMessageRequest
-    ) -> None:
-        if request.message is not None:
-            self.message_queue.put_nowait(request.message)
-
-    async def __aenter__(self) -> Nl80211MulticastServerContext:
-        super().__init__(channel=self.server)
-        self.message_queue: asyncio.Queue[
-            fidl_wlanix.Nl80211Message
-        ] = asyncio.Queue()
-        self.server_task = asyncio.create_task(self.serve())
-        return Nl80211MulticastServerContext(
-            message_queue=self.message_queue,
-            callback_channel=self.client,
-        )
-
-    async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
-        if self.server_task:
-            self.server_task.cancel()
 
 
 class SchedScanTest(base_test.ConnectionBaseTestClass):
