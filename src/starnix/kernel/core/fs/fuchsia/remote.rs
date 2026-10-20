@@ -672,11 +672,21 @@ impl<'a, I: SyncIo> TryFrom<&'a FsNode> for &'a BaseNode<I> {
 /// special nodes use RemoteSymlink and RemoteSpecialNode respectively.
 struct RemoteNode<I> {
     node: BaseNode<I>,
+
+    /// Cached read-only VMO handle shared across all open `RemoteFileObject`s for this inode.
+    read_only_memory: OnceCell<Arc<MemoryObject>>,
+
+    /// Cached read/exec VMO handle shared across all open `RemoteFileObject`s for this inode.
+    read_exec_memory: OnceCell<Arc<MemoryObject>>,
 }
 
 impl<I> RemoteNode<I> {
     fn new(io: I, dirty: bool) -> Self {
-        Self { node: BaseNode::new(io, dirty) }
+        Self {
+            node: BaseNode::new(io, dirty),
+            read_only_memory: OnceCell::new(),
+            read_exec_memory: OnceCell::new(),
+        }
     }
 }
 
@@ -1670,22 +1680,12 @@ impl<D: SyncIoDirectory> FileOps for RemoteDirectoryObject<D> {
 }
 
 struct RemoteFileObject<I> {
-    /// Cached read-only VMO handle.
-    read_only_memory: OnceCell<Arc<MemoryObject>>,
-
-    /// Cached read/exec VMO handle.
-    read_exec_memory: OnceCell<Arc<MemoryObject>>,
-
     _phantom: std::marker::PhantomData<fn() -> I>,
 }
 
 impl<I> Default for RemoteFileObject<I> {
     fn default() -> Self {
-        Self {
-            read_only_memory: OnceCell::new(),
-            read_exec_memory: OnceCell::new(),
-            _phantom: std::marker::PhantomData,
-        }
+        Self { _phantom: std::marker::PhantomData }
     }
 }
 
@@ -1818,19 +1818,30 @@ impl<I: SyncIo> FileOps for RemoteFileObject<I> {
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
         fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
-        let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
-            Some(&self.read_exec_memory)
+        let remote_node = file.node().downcast_ops::<RemoteNode<I>>().unwrap();
+        let io = &remote_node.node.io;
+
+        if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
+            remote_node
+                .read_exec_memory
+                .get_or_try_init(|| {
+                    if let Some(ro_memory) = remote_node.read_only_memory.get() {
+                        ro_memory
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                            .map_err(|status| from_status_like_fdio!(status))?
+                            .replace_as_executable(&VMEX_RESOURCE)
+                            .map_err(impossible_error)
+                            .map(Arc::new)
+                    } else {
+                        io.fetch_remote_memory(prot)
+                    }
+                })
+                .cloned()
         } else if prot == ProtectionFlags::READ {
-            Some(&self.read_only_memory)
+            remote_node.read_only_memory.get_or_try_init(|| io.fetch_remote_memory(prot)).cloned()
         } else {
-            None
-        };
-
-        let io = Self::io(file);
-
-        memory_cache
-            .map(|c| c.get_or_try_init(|| io.fetch_remote_memory(prot)).cloned())
-            .unwrap_or_else(|| io.fetch_remote_memory(prot))
+            io.fetch_remote_memory(prot)
+        }
     }
 
     fn to_handle(

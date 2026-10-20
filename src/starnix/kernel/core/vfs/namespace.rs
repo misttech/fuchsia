@@ -2123,8 +2123,8 @@ impl NamespaceNode {
     }
 
     pub fn update_atime(&self) {
-        // Do not update the atime of this node if it is mounted with the NOATIME flag.
-        if !self.mount.flags().contains(MountFlags::NOATIME) {
+        // Do not update the atime of this node if it is mounted with the NOATIME or RDONLY flag.
+        if !self.mount.flags().intersects(MountFlags::NOATIME | MountFlags::RDONLY) {
             self.entry.node.update_info(|info| {
                 let now = utc::utc_now();
                 info.time_access = now;
