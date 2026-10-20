@@ -16,8 +16,6 @@
 // the encoded bit fields of each policy.
 struct JobPolicyCollection {
   uint64_t storage[2];
-
-  bool operator==(const JobPolicyCollection& other) const = default;
 };
 
 class JobPolicy;
@@ -30,7 +28,6 @@ uint32_t rust_job_policy_query_basic_policy(const JobPolicy* policy, uint32_t co
 uint32_t rust_job_policy_query_basic_policy_override(const JobPolicy* policy, uint32_t condition);
 void rust_job_policy_set_timer_slack(JobPolicy* policy, const TimerSlack* slack);
 void rust_job_policy_get_timer_slack(const JobPolicy* policy, TimerSlack* out_slack);
-bool rust_job_policy_eq(const JobPolicy* lhs, const JobPolicy* rhs);
 void rust_job_policy_increment_counter(uint32_t action, uint32_t condition);
 }
 
@@ -85,9 +82,6 @@ class JobPolicy {
 
   // Returns the timer slack policy.
   TimerSlack GetTimerSlack() const;
-
-  bool operator==(const JobPolicy& rhs) const;
-  bool operator!=(const JobPolicy& rhs) const;
 
   // Increment the kcounter for the given |action| and |condition|.
   //

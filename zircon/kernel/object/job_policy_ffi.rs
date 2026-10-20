@@ -63,11 +63,6 @@ pub extern "C" fn rust_job_policy_get_timer_slack(policy: &JobPolicy, out_slack:
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_job_policy_eq(lhs: &JobPolicy, rhs: &JobPolicy) -> bool {
-    lhs == rhs
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn rust_job_policy_increment_counter(action: u32, condition: u32) {
     JobPolicy::increment_counter(action, condition);
 }

@@ -156,7 +156,6 @@ source_set("tests") {
     "test/handle_tests.cc",
     "test/interrupt_event_dispatcher_tests.cc",
     "test/job_dispatcher_tests.cc",
-    "test/job_policy_tests.cc",
     "test/process_dispatcher_tests.cc",
     "test/shareable_process_state_tests.cc",
     "test/state_tracker_tests.cc",

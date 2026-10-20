@@ -479,7 +479,7 @@ impl JobPolicy {
 }
 
 #[cfg(ktest)]
-#[unittest::suite(name = "job_policy_rust")]
+#[unittest::suite(name = "job_policy")]
 /// Tests for JobPolicy and JobPolicyCollection.
 mod tests {
     use unittest::{expect_eq, expect_ok, expect_true};

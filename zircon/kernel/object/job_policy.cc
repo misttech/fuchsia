@@ -40,15 +40,6 @@ TimerSlack JobPolicy::GetTimerSlack() const {
   return slack;
 }
 
-bool JobPolicy::operator==(const JobPolicy& rhs) const {
-  if (this == &rhs) {
-    return true;
-  }
-  return rust_job_policy_eq(this, &rhs);
-}
-
-bool JobPolicy::operator!=(const JobPolicy& rhs) const { return !operator==(rhs); }
-
 void JobPolicy::IncrementCounter(uint32_t action, uint32_t condition) {
   rust_job_policy_increment_counter(action, condition);
 }
