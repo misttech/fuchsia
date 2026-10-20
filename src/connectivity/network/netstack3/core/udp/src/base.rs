@@ -27,7 +27,7 @@ use netstack3_base::socket::{
     SocketMapStateSpec,
 };
 use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged};
-use netstack3_base::sync::{RwLock, StrongRc};
+use netstack3_base::sync::{BindingsSyncTypes, RwLock, StrongRc};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, CounterContext,
     DeviceIdContext, GsoInfo, Inspector, InspectorDeviceExt, InstantContext,
@@ -478,6 +478,12 @@ pub enum UdpSerializeError {
     /// [`UdpRemotePort::Unset`] for the rationale.
     #[error("sending packets with a remote port of 0 is not allowed")]
     RemotePortUnset,
+}
+
+impl<BT: UdpBindingsTypes> BindingsSyncTypes for Udp<BT> {
+    type Mutex = BT::Mutex;
+    type RwLock = BT::RwLock;
+    type Once = BT::Once;
 }
 
 impl<BT: UdpBindingsTypes> DatagramSocketSpec for Udp<BT> {
@@ -1061,7 +1067,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> UdpSocketId<I, D, 
     /// Returns the inner state for this socket, sidestepping locking
     /// mechanisms.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn state(&self) -> &RwLock<UdpSocketState<I, D, BT>> {
+    pub fn state(&self) -> &RwLock<UdpSocketState<I, D, BT>, BT::RwLock> {
         let Self(rc) = self;
         rc.state()
     }

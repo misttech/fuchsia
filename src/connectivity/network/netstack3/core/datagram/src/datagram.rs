@@ -27,7 +27,7 @@ use netstack3_base::socket::{
     SocketMapAddrSpec, SocketMapConflictPolicy, SocketMapStateSpec, SocketStateEntry,
     SocketZonedAddrExt as _, StrictlyZonedAddr,
 };
-use netstack3_base::sync::{self, RwLock};
+use netstack3_base::sync::{self, BindingsSyncTypes, RwLock};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, DeviceIdContext,
     DeviceIdentifier, EitherDeviceId, IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, Inspector,
@@ -60,7 +60,7 @@ use crate::internal::tx_metadata::TxMetadata;
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 pub struct ReferenceState<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
-    pub(crate) state: RwLock<SocketState<I, D, S>>,
+    pub(crate) state: RwLock<SocketState<I, D, S>, S::RwLock>,
     pub(crate) external_data: S::ExternalData<I>,
     pub(crate) counters: S::Counters<I>,
 }
@@ -75,7 +75,7 @@ pub type WeakRc<I, D, S> = sync::WeakRc<ReferenceState<I, D, S>>;
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
     OrderedLockAccess<SocketState<I, D, S>> for ReferenceState<I, D, S>
 {
-    type Lock = RwLock<SocketState<I, D, S>>;
+    type Lock = RwLock<SocketState<I, D, S>, S::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.state)
     }
@@ -94,7 +94,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> ReferenceState<I,
 
     /// Provides access to the socket state sidestepping lock ordering.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn state(&self) -> &RwLock<SocketState<I, D, S>> {
+    pub fn state(&self) -> &RwLock<SocketState<I, D, S>, S::RwLock> {
         &self.state
     }
 
@@ -816,8 +816,8 @@ pub(crate) type BoundSocketsFromSpec<I, CC, S> =
     BoundDatagramSocketMap<I, <CC as DeviceIdContext<AnyDevice>>::WeakDeviceId, S>;
 
 /// A marker trait for bindings types traits used by datagram.
-pub trait DatagramBindingsTypes: TxMetadataBindingsTypes {}
-impl<BT> DatagramBindingsTypes for BT where BT: TxMetadataBindingsTypes {}
+pub trait DatagramBindingsTypes: TxMetadataBindingsTypes + BindingsSyncTypes {}
+impl<BT> DatagramBindingsTypes for BT where BT: TxMetadataBindingsTypes + BindingsSyncTypes {}
 
 /// The core context providing access to bound datagram sockets.
 pub trait DatagramBoundStateContext<
@@ -1339,7 +1339,7 @@ pub struct WrapOtherStackIpOptionsMut<
 /// Types and behavior for datagram sockets.
 ///
 /// These sockets may or may not support dual-stack operation.
-pub trait DatagramSocketSpec: Sized + 'static {
+pub trait DatagramSocketSpec: BindingsSyncTypes + Sized + 'static {
     /// Name of this datagram protocol.
     const NAME: &'static str;
 
@@ -5240,6 +5240,12 @@ mod test {
 
     const FAKE_DATAGRAM_IPV4_PROTOCOL: Ipv4Proto = Ipv4Proto::Other(253);
     const FAKE_DATAGRAM_IPV6_PROTOCOL: Ipv6Proto = Ipv6Proto::Other(254);
+
+    impl BindingsSyncTypes for FakeStateSpec {
+        type Mutex = netstack3_base::sync::lock_impl::RawMutex;
+        type RwLock = netstack3_base::sync::lock_impl::RawRwLock;
+        type Once = netstack3_base::sync::lock_impl::Once;
+    }
 
     impl DatagramSocketSpec for FakeStateSpec {
         const NAME: &'static str = "FAKE";
