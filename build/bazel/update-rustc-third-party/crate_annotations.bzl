@@ -150,6 +150,7 @@ CRATE_ANNOTATIONS = {
     "libc": [
         crate.annotation(
             version = "0.2.190",
+            gen_build_script = False,
             rustc_flags = crate.select(
                 common = [
                     "--cfg=libc_priv_mod_use",
