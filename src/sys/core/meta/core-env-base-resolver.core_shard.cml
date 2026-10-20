@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 {
     // These environments inherit realm's resolver capability instead of overriding with the
-    // full-resolver's resolver capability (which is done by the full-resolver version of this
-    // shard).
+    // full_resolver resolver capability provided by parent (which is what is done by the
+    // full-resolver version of this shard).
     environments: [
         {
             name: "core-env",

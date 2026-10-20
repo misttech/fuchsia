@@ -272,10 +272,30 @@
             {
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
+                source_name: "fuchsia.pkg.resolution.PackageResolver",
+                capability: "protocol",
+                target_monikers: [
+                    "/toolbox",
+                ],
+            },
+            {
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
                 source_name: "fuchsia.pkg.PackageResolver-base",
                 capability: "protocol",
                 target_monikers: [
                     "/core/process_resolver",
+                ],
+            },
+            {
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.PackageResolver-full",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
+                    // capability no longer run in the sshd realm.
+                    "/toolbox",
                 ],
             },
             {
@@ -289,30 +309,9 @@
                 ],
             },
             {
-                // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
-                // capability no longer run in the sshd realm.
-                source_moniker: "/core/pkg-resolver",
-                source: "component",
-                source_name: "fuchsia.pkg.PackageResolver",
-                capability: "protocol",
-                target_monikers: [
-                    "/core/process_resolver",
-                    "/toolbox",
-                ],
-            },
-            {
                 source_moniker: "/core/pkg-resolver",
                 source: "component",
                 source_name: "fuchsia.pkg.RepositoryManager",
-                capability: "protocol",
-                target_monikers: [
-                    "/toolbox",
-                ],
-            },
-            {
-                source_moniker: "/core/pkg-resolver",
-                source: "component",
-                source_name: "fuchsia.pkg.resolution.PackageResolver",
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",

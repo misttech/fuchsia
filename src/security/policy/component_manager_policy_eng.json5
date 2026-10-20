@@ -360,7 +360,28 @@
             {
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
+                source_name: "fuchsia.component.resolution.Resolver-full",
+                capability: "protocol",
+                target_monikers: [
+                    "/bootstrap/full_resolver",
+                    "/core/test_manager",
+                    "/core/testing/component-framework-tests:**",
+                    "/core/testing/test-arch-tests:**",
+                ],
+            },
+            {
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
                 source_name: "fuchsia.pkg.garbagecollector.Manager",
+                capability: "protocol",
+                target_monikers: [
+                    "/toolbox",
+                ],
+            },
+            {
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.resolution.PackageResolver",
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
@@ -382,7 +403,38 @@
                 capability: "protocol",
                 target_monikers: [
                     "/core/debug-dash-launcher",
+
+                    // This eng allowlist is used on userdebug builds when sl4f is enabled, so this
+                    // entry is needed even though this is the eng policy file and on eng builds
+                    // /core/process_resolver is routed the -full impl instead of the -base impl.
+                    // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/assembly/platform_configuration/src/subsystems/component.rs;l=172-175;drc=73535c61bc4f4402a06cf86985b426996895a6d1
                     "/core/process_resolver",
+                ],
+            },
+            {
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.PackageResolver-full",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/process_resolver",
+                    "/core/test_manager",
+                    "/core/testing/component-framework-tests:**",
+                    "/toolbox",
+
+                    // debug-dash-launcher is used in engineering builds to launch
+                    // dash shells. It uses PackageResolver to add tool package directories
+                    // into the dash environment.
+                    "/core/debug-dash-launcher",
+                ],
+            },
+            {
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "full_resolver",
+                capability: "resolver",
+                target_monikers: [
+                    "/**",
                 ],
             },
             {
@@ -398,41 +450,7 @@
             {
                 source_moniker: "/core/pkg-resolver",
                 source: "component",
-                source_name: "fuchsia.component.resolution.Resolver",
-                capability: "protocol",
-                target_monikers: [
-                    "/bootstrap/full_resolver",
-                    "/core/test_manager",
-                    "/core/testing/component-framework-tests:**",
-                    "/core/testing/test-arch-tests:**",
-                ],
-            },
-            {
-                source_moniker: "/core/pkg-resolver",
-                source: "component",
-                source_name: "fuchsia.pkg.PackageResolver",
-                capability: "protocol",
-                target_monikers: [
-                    "/core/debug-dash-launcher",
-                    "/core/process_resolver",
-                    "/core/test_manager",
-                    "/core/testing/component-framework-tests:**",
-                    "/toolbox",
-                ],
-            },
-            {
-                source_moniker: "/core/pkg-resolver",
-                source: "component",
                 source_name: "fuchsia.pkg.RepositoryManager",
-                capability: "protocol",
-                target_monikers: [
-                    "/toolbox",
-                ],
-            },
-            {
-                source_moniker: "/core/pkg-resolver",
-                source: "component",
-                source_name: "fuchsia.pkg.resolution.PackageResolver",
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
@@ -445,15 +463,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                ],
-            },
-            {
-                source_moniker: "/core/pkg-resolver",
-                source: "component",
-                source_name: "full-resolver",
-                capability: "resolver",
-                target_monikers: [
-                    "/**",
                 ],
             },
             {

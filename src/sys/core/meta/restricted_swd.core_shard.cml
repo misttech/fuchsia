@@ -19,4 +19,11 @@
             to: "#pkg-resolver",
         },
     ],
+    expose: [
+        {
+            protocol: "fuchsia.pkg.http.GoogleClient",
+            from: "#network",
+            as: "fuchsia.pkg.http.Client",
+        },
+    ],
 }

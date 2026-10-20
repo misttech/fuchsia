@@ -283,6 +283,7 @@
         // Non-zircon services for bootstrap
         {
             protocol: [
+                "fuchsia.component.resolution.Resolver-full",
                 "fuchsia.device.NameProvider",
                 "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LogSettings",
@@ -303,8 +304,11 @@
                 "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.logger.Log",
                 "fuchsia.pkg.garbagecollector.Manager",
+                "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver-base",
+                "fuchsia.pkg.PackageResolver-full",
+                "fuchsia.pkg.PackageResolver-ota",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
                 "fuchsia.power.button.Monitor",
@@ -549,7 +553,11 @@
             target_availability: "unknown",
         },
         {
-            protocol: [ "fuchsia.process.Resolver" ],
+            protocol: [
+                "fuchsia.pkg.Authority",
+                "fuchsia.pkg.http.Client",
+                "fuchsia.process.Resolver",
+            ],
             from: "#core",
             to: "#bootstrap",
             dependency: "weak",
@@ -572,6 +580,11 @@
         },
         {
             resolver: "base_resolver",
+            from: "#bootstrap",
+            to: "#core",
+        },
+        {
+            resolver: "full_resolver",
             from: "#bootstrap",
             to: "#core",
         },

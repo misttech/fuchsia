@@ -770,9 +770,7 @@
         },
         {
             protocol: [
-                "fuchsia.pkg.PackageResolver",
                 "fuchsia.pkg.RepositoryManager",
-                "fuchsia.pkg.resolution.PackageResolver",
                 "fuchsia.pkg.rewrite.Engine",
             ],
             from: "#pkg-resolver",
@@ -900,17 +898,11 @@
         },
         {
             protocol: [
-                "fuchsia.pkg.PackageResolver",
+                "fuchsia.pkg.Authority",
                 "fuchsia.pkg.RepositoryManager",
-                "fuchsia.pkg.resolution.PackageResolver",
                 "fuchsia.pkg.rewrite.Engine",
             ],
             from: "#pkg-resolver",
-        },
-        {
-            protocol: "fuchsia.component.resolution.Resolver",
-            from: "#pkg-resolver",
-            as: "fuchsia.component.resolution.Resolver-full",
         },
         {
             protocol: [ "fuchsia.ui.activity.Provider" ],

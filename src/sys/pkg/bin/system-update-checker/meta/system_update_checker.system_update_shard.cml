@@ -27,8 +27,9 @@
             to: [ "#system-update-checker" ],
         },
         {
-            protocol: "fuchsia.pkg.PackageResolver",
+            protocol: "fuchsia.pkg.PackageResolver-ota",
             from: "parent",
+            as: "fuchsia.pkg.PackageResolver",
             to: "#system-update-checker",
         },
         {

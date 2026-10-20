@@ -253,12 +253,13 @@ Use `pkgctl` directly on the device shell to resolve the package:
    resolver stats:
 
    ```posix-terminal
-   ffx inspect show core/pkg-resolver:root/resolver_service/successful_resolves
+   ffx inspect show bootstrap/pkg-cache:root/fuchsia.pkg.PackageResolver-full/recent
    ```
 
-   Look for entries where `source = TUF` and the hash of the `debug_agent` package
-   matches the value from the `out/default/amber-files/repository/targets.json` file
-   in your Fuchsia source checkout setup.
+   Look for entries where `authority = "tuf"` and the hash of the `debug_agent`
+   package matches the value from the
+   `out/default/amber-files/repository/targets.json` file in your Fuchsia source
+   checkout setup.
 
 ## Check if the debugger component exists {:#check-if-the-debugger-component-exists}
 

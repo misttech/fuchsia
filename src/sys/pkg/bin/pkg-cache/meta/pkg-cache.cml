@@ -33,6 +33,10 @@
             path: "/svc/fuchsia.component.resolution.Resolver-base",
         },
         {
+            resolver: "full_resolver",
+            path: "/svc/fuchsia.component.resolution.Resolver-full",
+        },
+        {
             directory: "pkgfs",
             rights: [ "rx*" ],
             path: "/pkgfs",
@@ -88,18 +92,10 @@
                 "fuchsia.fxfs.BlobReader",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.metrics.MetricEventLoggerFactory",
-                "fuchsia.update.CommitStatusProvider",
-            ],
-        },
-
-        // TODO(https://fxbug.dev/542865121): Make these capabilties required when pkg-cache
-        //     replaces pkg-resolver as the provider of the full and OTA resolvers.
-        {
-            protocol: [
                 "fuchsia.pkg.Authority",
                 "fuchsia.pkg.http.Client",
+                "fuchsia.update.CommitStatusProvider",
             ],
-            availability: "optional",
         },
         {
             protocol: "fuchsia.tracing.provider.Registry",
@@ -200,6 +196,10 @@
     expose: [
         {
             resolver: "base_resolver",
+            from: "self",
+        },
+        {
+            resolver: "full_resolver",
             from: "self",
         },
         {

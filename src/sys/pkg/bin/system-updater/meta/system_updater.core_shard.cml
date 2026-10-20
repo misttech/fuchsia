@@ -19,7 +19,7 @@
                 "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageResolver-ota",
             ],
-            from: "#pkg-resolver",
+            from: "parent",
             to: "#system-update",
         },
         {

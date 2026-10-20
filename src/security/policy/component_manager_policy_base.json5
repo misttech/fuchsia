@@ -302,6 +302,7 @@
                 capability: "protocol",
                 target_monikers: [
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
                     "/bootstrap/pkg-cache",
                 ],
             },
@@ -339,7 +340,14 @@
                 source_name: "fuchsia.pkg.PackageResolver-full",
                 capability: "protocol",
                 target_monikers: [
+                    // TODO(https://fxbug.dev/294908859) Use optional routing to remove this route
+                    // on non-eng builds.
+                    // Use of this capability is controlled by kernel command line options
+                    // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/bringup/bin/console-launcher/console_launcher.cc;l=53;drc=2abb92a67d8528b484e1c8ee49bdc8badeaec184
+                    "/bootstrap/console-launcher",
+
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
                     "/bootstrap/pkg-cache",
                 ],
             },
@@ -350,7 +358,11 @@
                 source_name: "fuchsia.pkg.PackageResolver-ota",
                 capability: "protocol",
                 target_monikers: [
+                    "/core/system-update/system-updater",
+                    "/core/system-update/system-update-checker",
+
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
                     "/bootstrap/pkg-cache",
                 ],
             },
@@ -404,7 +416,10 @@
                 source_name: "fuchsia.pkg.internal.OtaDownloader",
                 capability: "protocol",
                 target_monikers: [
+                    "/core/system-update/system-updater",
+
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
                     "/bootstrap/pkg-cache",
                 ],
             },
@@ -442,6 +457,7 @@
                 ],
             },
             {
+                // TODO(https://fxbug.dev/542690944): Remove pkg-resolver capabilities when deleted.
                 // We restrict access to Resolver because it gives direct access to package
                 // handles which provide executability which bypasses VX security policy.
                 source_moniker: "/core/pkg-resolver",
@@ -450,7 +466,6 @@
                 capability: "protocol",
                 target_monikers: [
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
-                    "/core",
                     "/core/pkg-resolver",
                 ],
             },
@@ -460,7 +475,10 @@
                 source_name: "fuchsia.pkg.Authority",
                 capability: "protocol",
                 target_monikers: [
+                    "/bootstrap/pkg-cache",
+
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/core",
                     "/core/pkg-resolver",
                 ],
             },
@@ -477,6 +495,7 @@
                 ],
             },
             {
+                // TODO(https://fxbug.dev/542690944): Remove pkg-resolver capabilities when deleted.
                 // We restrict access to PackageResolver because it gives direct access to package
                 // handles which provide executability which bypasses VX security policy.
                 source_moniker: "/core/pkg-resolver",
@@ -484,28 +503,18 @@
                 source_name: "fuchsia.pkg.PackageResolver",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/system-update/system-update-checker",
-
-                    // TODO(https://fxbug.dev/294908859): Use optional routing to remove this route
-                    // on non-eng builds.
-                    // Use of this capability is controlled by kernel command line options
-                    // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/bringup/bin/console-launcher/console_launcher.cc;l=53;drc=2abb92a67d8528b484e1c8ee49bdc8badeaec184
-                    "/bootstrap/console-launcher",
-
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
-                    "/core",
                     "/core/pkg-resolver",
                 ],
             },
             {
+                // TODO(https://fxbug.dev/542690944): Remove pkg-resolver capabilities when deleted.
                 // Can write files to blobfs and interfere with OTA.
                 source_moniker: "/core/pkg-resolver",
                 source: "component",
                 source_name: "fuchsia.pkg.PackageResolver-ota",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/system-update/system-updater",
-
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
                     "/core/pkg-resolver",
                 ],
@@ -526,19 +535,19 @@
                 ],
             },
             {
+                // TODO(https://fxbug.dev/542690944): Remove pkg-resolver capabilities when deleted.
                 // Writes files to blobfs and interferes with OTA.
                 source_moniker: "/core/pkg-resolver",
                 source: "component",
                 source_name: "fuchsia.pkg.internal.OtaDownloader",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/system-update/system-updater",
-
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
                     "/core/pkg-resolver",
                 ],
             },
             {
+                // TODO(https://fxbug.dev/542690944): Remove pkg-resolver capabilities when deleted.
                 // Writes files to blobfs.
                 source_moniker: "/core/pkg-resolver",
                 source: "component",
@@ -546,7 +555,6 @@
                 capability: "protocol",
                 target_monikers: [
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
-                    "/core",
                     "/core/pkg-resolver",
                 ],
             },
@@ -565,6 +573,7 @@
                 ],
             },
             {
+                // TODO(https://fxbug.dev/542690944): Remove pkg-resolver capabilities when deleted.
                 // Enforce that full-resolver is only used on builds that explicitly enable it.
                 source_moniker: "/core/pkg-resolver",
                 source: "component",

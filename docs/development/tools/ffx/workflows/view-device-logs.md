@@ -74,10 +74,6 @@ A common use case for this feature is to select a component (for example,
 
 ```none {:.devsite-disable-click-to-copy}
 $ ffx log --filter hello_world
-[177262.742][core/pkg-resolver][pkg-resolver][I] Fetching blobs for fuchsia-pkg://fuchsiasamples.com/hello_world: []
-[177262.762][core/pkg-resolver][pkg-resolver][I] resolved fuchsia-pkg://fuchsiasamples.com/hello_world as fuchsia-pkg://fuchsiasamples.com/hello_world to ff6a0f00bde933c0fb393405ccf2d4c17e6eabeb9bfc82c9bf91db35693933ca with TUF
-[177262.788][core/pkg-resolver][pkg-resolver][I] Fetching blobs for fuchsia-pkg://fuchsiasamples.com/hello_world: []
-[177262.789][core/pkg-resolver][pkg-resolver][I] resolved fuchsia-pkg://fuchsiasamples.com/hello_world as fuchsia-pkg://fuchsiasamples.com/hello_world to ff6a0f00bde933c0fb393405ccf2d4c17e6eabeb9bfc82c9bf91db35693933ca with TUF
 [177262.816][core/ffx-laboratory:hello_world][][I] Hello, World!
 
 ```

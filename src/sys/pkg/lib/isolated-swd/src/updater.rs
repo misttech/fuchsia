@@ -369,7 +369,7 @@ pub(crate) mod for_tests {
                 .await
                 .unwrap();
 
-            // Set up pkg-resolver and pkg-cache routes
+            // Set up pkg-cache routes
             realm_builder
                 .add_route(
                     Route::new()
@@ -377,15 +377,6 @@ pub(crate) mod for_tests {
                             Capability::protocol_by_name("fuchsia.pkg.PackageResolver-ota")
                                 .as_("fuchsia.pkg.PackageResolver"),
                         )
-                        .from(&resolver_realm.resolver)
-                        .to(&system_updater),
-                )
-                .await
-                .unwrap();
-
-            realm_builder
-                .add_route(
-                    Route::new()
                         .capability(Capability::protocol_by_name("fuchsia.pkg.PackageCache"))
                         .capability(Capability::protocol_by_name("fuchsia.pkg.RetainedPackages"))
                         .capability(Capability::protocol_by_name(

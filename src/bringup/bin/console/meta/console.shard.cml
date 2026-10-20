@@ -112,10 +112,16 @@
         {
             // Allow launching shell tools from the console,
             // including from universe packages.
-            protocol: [
-                "fuchsia.pkg.PackageResolver",
-                "fuchsia.process.Resolver",
-            ],
+            protocol: "fuchsia.pkg.PackageResolver-full",
+            from: "#pkg-cache",
+            as: "fuchsia.pkg.PackageResolver",
+            to: "#console-launcher",
+            source_availability: "unknown",
+        },
+        {
+            // Allow launching shell tools from the console,
+            // including from universe packages.
+            protocol: [ "fuchsia.process.Resolver" ],
             from: "parent",
             to: "#console-launcher",
         },

@@ -52,7 +52,7 @@ async fn handle_force_install_impl(
 Progress reporting is based on the fraction of packages resolved, so if one package is much
 larger than the others, then the reported progress could appear to stall near the end.
 Until the update process is improved to have more granular reporting, try using
-    ffx inspect show 'core/pkg-resolver'
+    ffx inspect show 'bootstrap/pkg-cache'
 for more detail on the progress of update-related downloads.
 "
     );

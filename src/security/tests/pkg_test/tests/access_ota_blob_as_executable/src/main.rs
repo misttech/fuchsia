@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use argh::{FromArgs, from_env};
-use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem::Buffer;
 use fidl_fuchsia_pkg::{BlobId, PackageCacheMarker, PackageResolverMarker, PackageUrl};
@@ -15,7 +15,7 @@ use fidl_fuchsia_update_installer::{
 };
 use fidl_test_security_pkg::PackageServer_Marker;
 use fuchsia_async::Task;
-use fuchsia_component::client::connect_to_protocol;
+use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use fuchsia_fs::directory::{open_file, readdir};
 use fuchsia_fs::file;
 use fuchsia_hash::Hash;
@@ -84,10 +84,10 @@ struct AccessCheckResult {
     pub pkg_cache_get: Option<ReadableExecutableResult>,
     /// Result of opening via package resolver API with
     /// fuchsia-pkg://[domain]/[package]/0?hash=[hash].
-    pub pkg_resolver_with_hash: Option<ReadableExecutableResult>,
+    pub full_resolver_with_hash: Option<ReadableExecutableResult>,
     /// Result of opening via package resolver API with
     /// fuchsia-pkg://[domain]/[package]/0.
-    pub pkg_resolver_without_hash: Option<ReadableExecutableResult>,
+    pub full_resolver_without_hash: Option<ReadableExecutableResult>,
 }
 
 struct AccessCheckSelectors {
@@ -95,16 +95,20 @@ struct AccessCheckSelectors {
     pub pkg_cache_get: bool,
     /// Perform access check against package resolver API with
     /// fuchsia-pkg://[domain]/[package]/0?hash=[hash].
-    pub pkg_resolver_with_hash: bool,
+    pub full_resolver_with_hash: bool,
     /// Perform access check against package resolver API with
     /// fuchsia-pkg://[domain]/[package]/0.
-    pub pkg_resolver_without_hash: bool,
+    pub full_resolver_without_hash: bool,
 }
 
 impl AccessCheckSelectors {
     /// Enable all access checks.
     pub fn all() -> Self {
-        Self { pkg_cache_get: true, pkg_resolver_with_hash: true, pkg_resolver_without_hash: true }
+        Self {
+            pkg_cache_get: true,
+            full_resolver_with_hash: true,
+            full_resolver_without_hash: true,
+        }
     }
 }
 
@@ -166,20 +170,20 @@ impl AccessCheckRequest {
             None
         };
 
-        // Resolve package as executable via pkg-resolver API.
+        // Resolve package as executable via PackageResolver-full.
         let url_with_hash = format!(
             "fuchsia-pkg://{}/{}/0?hash={}",
             &self.config.domain_with_hash, &self.config.package_name, &package_merkle
         );
-        let pkg_resolver_with_hash_rx_result = if self.selectors.pkg_resolver_with_hash {
-            info!(url_with_hash:%; "Opening package via pkg-resolver");
+        let full_resolver_with_hash_rx_result = if self.selectors.full_resolver_with_hash {
+            info!(url_with_hash:%; "Opening package via PackageResolver-full");
             let package_directory_proxy = self.resolve_package(&url_with_hash).await;
             Some((
                 self.attempt_readable(&package_directory_proxy).await,
                 self.attempt_executable(&package_directory_proxy).await,
             ))
         } else {
-            info!(url_with_hash:%; "Skipping open package via pkg-resolver");
+            info!(url_with_hash:%; "Skipping open package via PackageResolver-full");
             None
         };
 
@@ -187,15 +191,15 @@ impl AccessCheckRequest {
             "fuchsia-pkg://{}/{}/0",
             &self.config.domain_without_hash, &self.config.package_name
         );
-        let pkg_resolver_without_hash_rx_result = if self.selectors.pkg_resolver_without_hash {
-            info!(url_without_hash:%; "Opening package via pkg-resolver");
+        let full_resolver_without_hash_rx_result = if self.selectors.full_resolver_without_hash {
+            info!(url_without_hash:%; "Opening package via PackageResolver-full");
             let package_directory_proxy = self.resolve_package(&url_without_hash).await;
             Some((
                 self.attempt_readable(&package_directory_proxy).await,
                 self.attempt_executable(&package_directory_proxy).await,
             ))
         } else {
-            info!(url_without_hash:%; "Skipping open package via pkg-resolver");
+            info!(url_without_hash:%; "Skipping open package via PackageResolver-full");
             None
         };
 
@@ -203,7 +207,7 @@ impl AccessCheckRequest {
         let buffers = vec![
             // ..._rx_result.1 contains Result<Box<Buffer>>.
             pkg_cache_get_rx_result.as_ref().map(|rx| &rx.1),
-            pkg_resolver_with_hash_rx_result.as_ref().map(|rx| &rx.1),
+            full_resolver_with_hash_rx_result.as_ref().map(|rx| &rx.1),
         ]
         .into_iter()
         .filter_map(|opt_rx| opt_rx) // Drop `None` (configured not to run).
@@ -214,20 +218,23 @@ impl AccessCheckRequest {
 
         AccessCheckResult {
             pkg_cache_get: Self::pair_to_result(pkg_cache_get_rx_result),
-            pkg_resolver_with_hash: Self::pair_to_result(pkg_resolver_with_hash_rx_result),
-            pkg_resolver_without_hash: Self::pair_to_result(pkg_resolver_without_hash_rx_result),
+            full_resolver_with_hash: Self::pair_to_result(full_resolver_with_hash_rx_result),
+            full_resolver_without_hash: Self::pair_to_result(full_resolver_without_hash_rx_result),
         }
     }
 
     async fn resolve_package(&self, package_url: &str) -> fio::DirectoryProxy {
         let (package_directory_proxy, package_directory_server_end) =
             create_proxy::<fio::DirectoryMarker>();
-        connect_to_protocol::<PackageResolverMarker>()
-            .unwrap()
-            .resolve(package_url, package_directory_server_end)
-            .await
-            .unwrap()
-            .unwrap();
+        connect_to_protocol_at_path::<PackageResolverMarker>(format!(
+            "/svc/{}-full",
+            PackageResolverMarker::PROTOCOL_NAME
+        ))
+        .unwrap()
+        .resolve(package_url, package_directory_server_end)
+        .await
+        .unwrap()
+        .unwrap();
         package_directory_proxy
     }
 
@@ -441,10 +448,10 @@ async fn access_ota_blob_as_executable() {
             },
             selectors: AccessCheckSelectors {
                 pkg_cache_get: true,
-                pkg_resolver_with_hash: true,
+                full_resolver_with_hash: true,
 
                 // Disable non-hash-qualified checks.
-                pkg_resolver_without_hash: false,
+                full_resolver_without_hash: false,
             },
         },
         // Access check for referring to package by a different name (but using
@@ -458,11 +465,11 @@ async fn access_ota_blob_as_executable() {
                 packaged_binary_path: HELLO_WORLD_V1_PACKAGED_BINARY_PATH.to_string(),
             },
             selectors: AccessCheckSelectors {
-                pkg_resolver_with_hash: true,
+                full_resolver_with_hash: true,
 
                 // Disable most checks; only interested in package resolution.
                 pkg_cache_get: false,
-                pkg_resolver_without_hash: false,
+                full_resolver_without_hash: false,
             },
         },
     );
@@ -480,13 +487,13 @@ async fn access_ota_blob_as_executable() {
     assert!(hello_world_v0_access_check_result.pkg_cache_get.unwrap().is_readable_executable_ok());
     assert!(
         hello_world_v0_access_check_result
-            .pkg_resolver_with_hash
+            .full_resolver_with_hash
             .unwrap()
             .is_readable_executable_ok()
     );
     assert!(
         hello_world_v0_access_check_result
-            .pkg_resolver_without_hash
+            .full_resolver_without_hash
             .unwrap()
             .is_readable_executable_ok()
     );
@@ -510,7 +517,9 @@ async fn access_ota_blob_as_executable() {
     // Post-update new version access check: Access should fail on all
     // hash-qualified attempts to open as executable.
     assert!(hello_world_v1_access_check_result.pkg_cache_get.unwrap().is_executable_err());
-    assert!(hello_world_v1_access_check_result.pkg_resolver_with_hash.unwrap().is_executable_err());
+    assert!(
+        hello_world_v1_access_check_result.full_resolver_with_hash.unwrap().is_executable_err()
+    );
 
     let hello_world_v0_access_check_result =
         hello_world_v0_access_check.perform_access_check().await;
@@ -519,13 +528,13 @@ async fn access_ota_blob_as_executable() {
     assert!(hello_world_v0_access_check_result.pkg_cache_get.unwrap().is_readable_executable_ok());
     assert!(
         hello_world_v0_access_check_result
-            .pkg_resolver_with_hash
+            .full_resolver_with_hash
             .unwrap()
             .is_readable_executable_ok()
     );
     assert!(
         hello_world_v0_access_check_result
-            .pkg_resolver_without_hash
+            .full_resolver_without_hash
             .unwrap()
             .is_readable_executable_ok()
     );
@@ -536,7 +545,7 @@ async fn access_ota_blob_as_executable() {
     // Accessing via different package name: Should fail.
     assert!(
         different_package_name_access_check_result
-            .pkg_resolver_with_hash
+            .full_resolver_with_hash
             .unwrap()
             .is_executable_err()
     );

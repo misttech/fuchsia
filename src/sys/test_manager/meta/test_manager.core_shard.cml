@@ -103,14 +103,15 @@
             source_availability: "unknown",
         },
         {
-            protocol: "fuchsia.component.resolution.Resolver",
-            from: "#pkg-resolver",
+            protocol: "fuchsia.component.resolution.Resolver-full",
+            from: "parent",
+            as: "fuchsia.component.resolution.Resolver",
             to: "#test_manager",
-            source_availability: "unknown",
         },
         {
-            protocol: "fuchsia.pkg.PackageResolver",
-            from: "#pkg-resolver",
+            protocol: "fuchsia.pkg.PackageResolver-full",
+            from: "parent",
+            as: "fuchsia.pkg.PackageResolver",
             to: "#test_manager",
         },
         {

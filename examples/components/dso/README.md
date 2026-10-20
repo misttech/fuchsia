@@ -47,8 +47,8 @@ collection to use the runner.
             ],
             resolvers: [
                 {
-                    resolver: "full-resolver",
-                    from: "#pkg-resolver",
+                    resolver: "full_resolver",
+                    from: "parent",
                     scheme: "fuchsia-pkg",
                 },
             ],

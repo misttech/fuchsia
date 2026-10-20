@@ -10,7 +10,6 @@ pub(crate) mod for_tests {
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_metrics as fmetrics;
     use fidl_fuchsia_pkg as fpkg;
-    use fidl_fuchsia_pkg_ext as pkg;
     use fidl_fuchsia_pkg_ext::RepositoryConfigs;
     use fuchsia_async as fasync;
     use fuchsia_component_test::{
@@ -45,7 +44,6 @@ pub(crate) mod for_tests {
     }
 
     pub struct ResolverRealm {
-        pub resolver: ChildRef,
         pub cache: ChildRef,
     }
 
@@ -159,16 +157,6 @@ pub(crate) mod for_tests {
             realm_builder
                 .add_route(
                     Route::new()
-                        .capability(Capability::protocol_by_name("fuchsia.pkg.PackageResolver-ota"))
-                        .from(&pkg_resolver)
-                        .to(Ref::parent()),
-                )
-                .await
-                .unwrap();
-
-            realm_builder
-                .add_route(
-                    Route::new()
                         .capability(Capability::protocol_by_name("fuchsia.pkg.http.Client"))
                         .capability(Capability::protocol_by_name("fuchsia.net.http.Loader"))
                         .from(&http_client)
@@ -186,6 +174,26 @@ pub(crate) mod for_tests {
                         ))
                         .from(&cache_ref)
                         .to(&pkg_resolver),
+                )
+                .await
+                .unwrap();
+
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::protocol_by_name("fuchsia.pkg.http.Client"))
+                        .from(&http_client)
+                        .to(&cache_ref),
+                )
+                .await
+                .unwrap();
+
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::protocol_by_name("fuchsia.pkg.Authority").weak())
+                        .from(&pkg_resolver)
+                        .to(&cache_ref),
                 )
                 .await
                 .unwrap();
@@ -232,7 +240,7 @@ pub(crate) mod for_tests {
                 .await
                 .unwrap();
 
-            Ok(ResolverRealm { resolver: pkg_resolver, cache: cache_ref })
+            Ok(ResolverRealm { cache: cache_ref })
         }
 
         pub async fn new(
@@ -247,7 +255,7 @@ pub(crate) mod for_tests {
                 .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(
                     "fuchsia.pkg.PackageResolver-ota",
                 )
-                .expect("connect to pkg resolver");
+                .expect("connect to ota resolver");
 
             let resolver = Resolver::new_with_proxy(resolver_proxy).unwrap();
 
@@ -263,7 +271,7 @@ pub(crate) mod for_tests {
         pub async fn resolve_package(
             &self,
             url: &str,
-        ) -> Result<(fio::DirectoryProxy, pkg::ResolutionContext), Error> {
+        ) -> Result<(fio::DirectoryProxy, fpkg::ResolutionContext), Error> {
             let proxy = &self.resolver.proxy;
             let (package, package_remote) = fidl::endpoints::create_proxy();
             let resolved_context = proxy
@@ -271,7 +279,7 @@ pub(crate) mod for_tests {
                 .await
                 .unwrap()
                 .map_err(|e| anyhow!("Package resolver error: {:?}", e))?;
-            Ok((package, (&resolved_context).try_into().expect("resolver returns valid context")))
+            Ok((package, resolved_context))
         }
     }
 }

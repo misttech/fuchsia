@@ -122,14 +122,11 @@
 
         // Attempt to access packages via the `pkg-cache` APIs.
         {
-            protocol: "fuchsia.pkg.PackageCache",
+            protocol: [
+                "fuchsia.pkg.PackageCache",
+                "fuchsia.pkg.PackageResolver-full",
+            ],
             from: "#pkg-cache",
-        },
-
-        // Attempt to access packages via the `pkg-resolver` APIs.
-        {
-            protocol: "fuchsia.pkg.PackageResolver",
-            from: "#pkg-resolver",
         },
 
         // Wait for locally isolated package server to be ready.
@@ -335,6 +332,18 @@
             to: "#pkg-resolver",
         },
         {
+            protocol: "fuchsia.pkg.http.Client",
+            from: "#http-client",
+            to: "#pkg-cache",
+            dependency: "weak",
+        },
+        {
+            protocol: "fuchsia.pkg.Authority",
+            from: "#pkg-resolver",
+            to: "#pkg-cache",
+            dependency: "weak",
+        },
+        {
             protocol: "fuchsia.tracing.provider.Registry",
             from: "parent",
             to: [
@@ -360,8 +369,9 @@
             ],
         },
         {
-            protocol: "fuchsia.pkg.PackageResolver",
-            from: "#pkg-resolver",
+            protocol: "fuchsia.pkg.PackageResolver-ota",
+            from: "#pkg-cache",
+            as: "fuchsia.pkg.PackageResolver",
             to: "#system-updater",
         },
         {

@@ -64,6 +64,16 @@
             value: 300,
         },
         {
+            config: "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+            type: "uint32",
+            value: 300,
+        },
+        {
+            config: "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+            type: "uint32",
+            value: 300,
+        },
+        {
             config: "fuchsia.system-updater.VerifyExistingBlobs",
             type: "bool",
             value: true,
@@ -89,6 +99,14 @@
             from: "void",
             to: "#pkg-resolver",
             availability: "optional",
+        },
+        {
+            config: [
+                "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
+                "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
+            ],
+            from: "self",
+            to: "#pkg-cache",
         },
 
         // Routes from the parent to children. All are required if you are a
@@ -124,8 +142,6 @@
                 "fuchsia.fshost.StartupProfilingSeconds",
                 "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
                 "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
-                "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",
-                "fuchsia.pkgcache.BlobNetworkHeaderTimeoutSeconds",
                 "fuchsia.pkgcache.UseDriverBlobPaging",
             ],
             from: "void",
@@ -175,7 +191,10 @@
             rights: [ "r*" ],
         },
         {
-            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
+            protocol: [
+                "fuchsia.metrics.MetricEventLoggerFactory",
+                "fuchsia.pkg.http.Client",
+            ],
             from: "parent",
             to: "#pkg-cache",
         },
@@ -218,6 +237,12 @@
             to: "#pkg-resolver",
         },
         {
+            protocol: [ "fuchsia.pkg.Authority" ],
+            from: "#pkg-resolver",
+            to: "#pkg-cache",
+            dependency: "weak",
+        },
+        {
             protocol: [
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
@@ -229,13 +254,13 @@
         },
         {
             protocol: "fuchsia.pkg.PackageResolver-ota",
-            from: "#pkg-resolver",
+            from: "#pkg-cache",
             as: "fuchsia.pkg.PackageResolver",
             to: "#system-updater",
         },
         {
             protocol: [ "fuchsia.pkg.internal.OtaDownloader" ],
-            from: "#pkg-resolver",
+            from: "#pkg-cache",
             to: "#system-updater",
         },
     ],

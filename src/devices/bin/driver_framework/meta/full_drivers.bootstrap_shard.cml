@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 {
     children: [
-        // Full-drivers collection needs the full_resolver to load components.
-        // But we can't use the full_resolver from the core realm, since that
-        // would create a cycle. Instead, we create a "local" instance of the
-        // full resolver, which simply delegates to the supplied resolver
-        // protocol
-        //
+        // #driver_index needs fuchsia.component.resolution.Resolver-full, which is routed to it in
+        // driver_framework.bootstrap_shard.cml with `source_availability: "unknown"` so that the
+        // route is replaced with `from: "void"` when this shard is not included. We cannot route
+        // directly from #pkg-cache in driver_framework.bootstrap_shard.cml because #pkg-cache is
+        // present even when this shard is not included. Instead, we create a local instance of
+        // loopback_resolver here that only exists when this shard is included, and redirect the
+        // capability from #pkg-cache through it.
         // TODO(https://fxbug.dev/42180879): Remove need for this component.
         {
             name: "full_resolver",
@@ -44,7 +45,7 @@
         },
         {
             protocol: "fuchsia.component.resolution.Resolver-full",
-            from: "parent",
+            from: "#pkg-cache",
             as: "fuchsia.component.resolution.Resolver",
             to: "#full_resolver",
         },

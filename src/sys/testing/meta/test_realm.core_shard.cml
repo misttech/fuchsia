@@ -48,8 +48,9 @@
             to: "#testing",
         },
         {
-            protocol: "fuchsia.pkg.PackageResolver",
-            from: "#pkg-resolver",
+            protocol: "fuchsia.pkg.PackageResolver-full",
+            from: "parent",
+            as: "fuchsia.pkg.PackageResolver",
             to: "#testing",
         },
 
@@ -110,10 +111,10 @@
             source_availability: "unknown",
         },
         {
-            protocol: "fuchsia.component.resolution.Resolver",
-            from: "#pkg-resolver",
+            protocol: "fuchsia.component.resolution.Resolver-full",
+            from: "parent",
+            as: "fuchsia.component.resolution.Resolver",
             to: "#testing",
-            source_availability: "unknown",
         },
         {
             protocol: "fuchsia.intl.PropertyProvider",

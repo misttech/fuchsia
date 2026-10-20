@@ -17,4 +17,10 @@
             to: "#pkg-resolver",
         },
     ],
+    expose: [
+        {
+            protocol: "fuchsia.pkg.http.Client",
+            from: "#network",
+        },
+    ],
 }

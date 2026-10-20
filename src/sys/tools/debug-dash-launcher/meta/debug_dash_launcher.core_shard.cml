@@ -57,9 +57,8 @@
             to: "#debug-dash-launcher",
         },
         {
-            protocol: "fuchsia.pkg.PackageResolver",
-            from: "#pkg-resolver",
-            as: "fuchsia.pkg.PackageResolver-full",
+            protocol: "fuchsia.pkg.PackageResolver-full",
+            from: "parent",
             to: "#debug-dash-launcher",
         },
         {

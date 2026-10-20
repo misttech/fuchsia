@@ -9,11 +9,6 @@
             to: "#system-update",
         },
         {
-            protocol: "fuchsia.pkg.PackageResolver",
-            from: "#pkg-resolver",
-            to: "#system-update",
-        },
-        {
             protocol: "fuchsia.pkg.RepositoryManager",
             from: "#pkg-resolver",
             to: "#system-update",

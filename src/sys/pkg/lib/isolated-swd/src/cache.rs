@@ -235,6 +235,7 @@ pub(crate) mod for_tests {
                 .add_route(
                     Route::new()
                         .capability(Capability::protocol_by_name("fuchsia.pkg.PackageCache"))
+                        .capability(Capability::protocol_by_name("fuchsia.pkg.PackageResolver-ota"))
                         .capability(Capability::protocol_by_name("fuchsia.pkg.RetainedPackages"))
                         .capability(Capability::protocol_by_name(
                             "fuchsia.pkg.garbagecollector.Manager",
