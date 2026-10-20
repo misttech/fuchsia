@@ -18,13 +18,16 @@
 // This test exercises the implementation of the fuchsia.ui.views.ViewRefFocused protocol, which
 // allows clients to listen to view-focus events.
 //
-// Visual geometry is not important in this test. We use the following two-node tree topology:
-//   A
-//   |
-//   B
+// Visual geometry is not important in this test. We use the following two-node (or three-node) tree
+// topology:
+//   A     A
+//   |     |
+//   B     B
+//         |
+//         C
 namespace {
 
-enum : zx_koid_t { kNodeA = 1, kNodeB };
+enum : zx_koid_t { kNodeA = 1, kNodeB, kNodeC };
 
 // Class fixture for TEST_F.
 class ViewRefFocusedTest : public gtest::TestLoopFixture {
@@ -42,6 +45,19 @@ class ViewRefFocusedTest : public gtest::TestLoopFixture {
     view_tree[kNodeA] = view_tree::ViewNode{.parent = ZX_KOID_INVALID, .children = {kNodeB}};
     view_tree[kNodeB] = view_tree::ViewNode{.parent = kNodeA};
 
+    return snapshot;
+  }
+
+  // Creates a snapshot with the following three-node topology:
+  //     A
+  //     |
+  //     B
+  //     |
+  //     C
+  std::shared_ptr<const view_tree::Snapshot> ThreeNodeSnapshot() {
+    auto snapshot = std::make_shared<view_tree::Snapshot>(*TwoNodeSnapshot());
+    snapshot->view_tree[kNodeB].children = {kNodeC};
+    snapshot->view_tree[kNodeC] = view_tree::ViewNode{.parent = kNodeB};
     return snapshot;
   }
 
@@ -221,6 +237,157 @@ TEST_F(ViewRefFocusedTest, ChildFocus_TrueToTrue) {
   RunLoopUntilIdle();
   ASSERT_TRUE(node_b_focus.has_value());
   EXPECT_TRUE(node_b_focus.value());
+}
+
+TEST_F(ViewRefFocusedTest, RegisterAfterSnapshot_FocusedView) {
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
+
+  // Move focus to kNodeC before kNodeC registers its ViewRefFocused endpoint.
+  focus_manager_.OnNewViewTreeSnapshot();
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeC), focus::FocusChangeStatus::kAccept);
+
+  auto [client_c, server_c] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> node_c_focused(std::move(client_c), dispatcher());
+  focus_manager_.RegisterViewRefFocused(kNodeC, std::move(server_c));
+
+  std::optional<bool> node_c_focus;
+  node_c_focused->Watch().Then(
+      [&node_c_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_c_focus = result->state().focused().value();
+      });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(node_c_focus.has_value());
+  EXPECT_TRUE(node_c_focus.value());
+}
+
+TEST_F(ViewRefFocusedTest, RegisterAfterSetSnapshot_UsesUpdatedFocus) {
+  // 1. A view that gains focus in a newly published snapshot (via auto-focus) and registers
+  // after `SetSnapshot()` but before `OnNewViewTreeSnapshot()` runs should observe `focused = true`
+  // from the new snapshot.
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot();
+  focus_manager_.SetAutoFocusForTest(kNodeA, kNodeC);
+
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
+  auto [client_c, server_c] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> node_c_focused(std::move(client_c), dispatcher());
+  focus_manager_.RegisterViewRefFocused(kNodeC, std::move(server_c));
+
+  std::optional<bool> node_c_focus;
+  node_c_focused->Watch().Then(
+      [&node_c_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_c_focus = result->state().focused().value();
+      });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(node_c_focus.has_value());
+  EXPECT_TRUE(node_c_focus.value());
+  focus_manager_.OnNewViewTreeSnapshot();
+
+  // 2. A view (`kNodeD`) that was focused in the previous snapshot but loses focus in the new
+  // snapshot (`is_focusable = false`) and registers after `SetSnapshot()` before
+  // `OnNewViewTreeSnapshot()` runs should not be bound as focused from the stale `focus_chain_`.
+  focus_manager_.SetAutoFocusForTest(kNodeA, ZX_KOID_INVALID);
+
+  constexpr zx_koid_t kNodeD = 4;
+  auto snapshot_with_d = std::make_shared<view_tree::Snapshot>(*TwoNodeSnapshot());
+  snapshot_with_d->view_tree[kNodeB].children = {kNodeD};
+  snapshot_with_d->view_tree[kNodeD] = view_tree::ViewNode{.parent = kNodeB};
+  snapshot_holder_->SetSnapshot(snapshot_with_d);
+  focus_manager_.OnNewViewTreeSnapshot();
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeD), focus::FocusChangeStatus::kAccept);
+
+  auto unfocusable_d_snapshot = std::make_shared<view_tree::Snapshot>(*TwoNodeSnapshot());
+  unfocusable_d_snapshot->view_tree[kNodeB].children = {kNodeD};
+  unfocusable_d_snapshot->view_tree[kNodeD] =
+      view_tree::ViewNode{.parent = kNodeB, .is_focusable = false};
+  snapshot_holder_->SetSnapshot(unfocusable_d_snapshot);
+
+  auto [client_d, server_d] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> node_d_focused(std::move(client_d), dispatcher());
+  focus_manager_.RegisterViewRefFocused(kNodeD, std::move(server_d));
+
+  std::optional<bool> node_d_focus;
+  node_d_focused->Watch().Then(
+      [&node_d_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_d_focus = result->state().focused().value();
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_FALSE(node_d_focus.has_value());
+
+  focus_manager_.OnNewViewTreeSnapshot();
+  RunLoopUntilIdle();
+  EXPECT_FALSE(node_d_focus.has_value());
+}
+
+TEST_F(ViewRefFocusedTest, RegisterAfterSnapshot_UnfocusedView) {
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
+
+  // Process the snapshot (focus is on kNodeA) before kNodeC registers its ViewRefFocused endpoint.
+  focus_manager_.OnNewViewTreeSnapshot();
+
+  auto [client_c, server_c] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> node_c_focused(std::move(client_c), dispatcher());
+  focus_manager_.RegisterViewRefFocused(kNodeC, std::move(server_c));
+
+  std::optional<bool> node_c_focus;
+  node_c_focused->Watch().Then(
+      [&node_c_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_c_focus = result->state().focused().value();
+      });
+
+  // Watch() should hang because kNodeC has never been focused.
+  RunLoopUntilIdle();
+  EXPECT_FALSE(node_c_focus.has_value());
+
+  // Focusing kNodeC now should resolve the pending Watch().
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeC), focus::FocusChangeStatus::kAccept);
+  RunLoopUntilIdle();
+  ASSERT_TRUE(node_c_focus.has_value());
+  EXPECT_TRUE(node_c_focus.value());
+}
+
+TEST_F(ViewRefFocusedTest, RegisterBeforeSnapshot_UnknownViewStaysPendingUntilInSnapshot) {
+  // Register an endpoint for kNodeC before it appears in any snapshot.
+  auto [client_c, server_c] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> node_c_focused(std::move(client_c), dispatcher());
+  focus_manager_.RegisterViewRefFocused(kNodeC, std::move(server_c));
+
+  bool watch_completed = false;
+  std::optional<bool> node_c_focus;
+  node_c_focused->Watch().Then([&watch_completed, &node_c_focus](
+                                   fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+    watch_completed = true;
+    ASSERT_TRUE(result.is_ok());
+    ASSERT_TRUE(result->state().focused().has_value());
+    node_c_focus = result->state().focused().value();
+  });
+
+  // Apply a snapshot without kNodeC; the pending endpoint should remain open and Watch() should not
+  // error or complete.
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot();
+  RunLoopUntilIdle();
+  EXPECT_FALSE(watch_completed);
+
+  // Apply a snapshot containing kNodeC, focus it, and verify Watch() resolves.
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot();
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeC), focus::FocusChangeStatus::kAccept);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(watch_completed);
+  ASSERT_TRUE(node_c_focus.has_value());
+  EXPECT_TRUE(node_c_focus.value());
 }
 
 }  // namespace

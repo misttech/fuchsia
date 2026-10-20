@@ -30,10 +30,12 @@ class ViewRefFocusedRegistry {
   ViewRefFocusedRegistry(ViewRefFocusedRegistry&&) = delete;
   ViewRefFocusedRegistry& operator=(ViewRefFocusedRegistry&&) = delete;
 
-  // Stores a FIDL request for fuchsia.ui.views.ViewRefFocused to |pending_requests_|.
-  // Pre: |session_id| is unassociated with any fuchsia.ui.views.ViewRefFocused.
-  void Register(zx_koid_t view_ref_koid,
-                fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> endpoint);
+  // If `is_in_view_tree` is true, binds `endpoint` immediately in `endpoints_` (and sets its
+  // initial focus state if `is_currently_focused` is true); otherwise stores `endpoint` in
+  // `pending_requests_` until a snapshot containing `view_ref_koid` arrives.
+  // Pre: `view_ref_koid` is unassociated with any fuchsia.ui.views.ViewRefFocused.
+  void Register(zx_koid_t view_ref_koid, fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> endpoint,
+                bool is_in_view_tree, bool is_currently_focused);
 
   // Binds and registers endpoints in |pending_requests_| if its |view_ref_koid| is present in
   // |snapshot|. Remove and destroy any registered endpoint not present in |snapshot|.

@@ -175,7 +175,12 @@ void FocusManager::RegisterViewRefFocused(zx_koid_t koid,
                                           fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf) {
   TRACE_DURATION("gfx", "FocusManager::RegisterViewRefFocused");
   utils::CheckIsOnInputThread();
-  view_ref_focused_registry_.Register(koid, std::move(vrf));
+  auto snapshot_ref = snapshot_holder_->GetSnapshot();
+  EnsureValidFocus(*snapshot_ref);
+  const bool in_view_tree = snapshot_ref->view_tree.contains(koid);
+  const bool is_focused = FocusKoidOf(focus_chain_) == koid;
+
+  view_ref_focused_registry_.Register(koid, std::move(vrf), in_view_tree, is_focused);
 }
 
 void FocusManager::RegisterViewFocuser(zx_koid_t koid,

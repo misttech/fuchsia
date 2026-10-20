@@ -16,13 +16,31 @@ ViewRefFocusedRegistry::ViewRefFocusedRegistry(async_dispatcher_t* dispatcher)
     : dispatcher_(dispatcher ? dispatcher : async_get_default_dispatcher()) {}
 
 void ViewRefFocusedRegistry::Register(zx_koid_t view_ref_koid,
-                                      fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> endpoint) {
+                                      fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> endpoint,
+                                      bool is_in_view_tree, bool is_currently_focused) {
   utils::CheckIsOnInputThread();
+  // The `FX_DCHECK` below does not assert an internally-guaranteed invariant: nothing prevents a
+  // client from calling `Flatland.CreateView2` multiple times with the same control-ref/view-ref
+  // pair (in the same or different Flatland sessions). Instead, it serves to catch accidental
+  // client misuse; in release builds the new endpoint is simply dropped immediately.
+  const bool already_registered =
+      endpoints_.contains(view_ref_koid) || pending_requests_.contains(view_ref_koid);
+  FX_DCHECK(!already_registered) << "view_ref_koid should not already be registered";
+  if (already_registered) {
+    return;
+  }
+
+  if (is_in_view_tree) {
+    auto [it, inserted] = endpoints_.emplace(
+        view_ref_koid, std::make_unique<Endpoint>(dispatcher_, std::move(endpoint)));
+    FX_DCHECK(inserted) << "endpoint emplace should always succeed";
+    if (is_currently_focused) {
+      it->second->UpdateFocus(true);
+    }
+    return;
+  }
+
   auto [_, inserted] = pending_requests_.try_emplace(view_ref_koid, std::move(endpoint));
-  // This DCHECK does not assert an internally-guaranteed invariant: nothing prevents a client from
-  // calling `Flatland.CreateView2` multiple times with the same control-ref/view-ref pair (in the
-  // same or different Flatland sessions).  Instead, this DCHECK serves to catch accidental client
-  // misuse; in release builds the new endpoint is simply dropped immediately.
   FX_DCHECK(inserted) << "endpoint emplace should always succeed";
 }
 
