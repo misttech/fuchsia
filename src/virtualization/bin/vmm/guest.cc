@@ -44,9 +44,9 @@ constexpr uint64_t kOneGibibyte = 1ul << 30;
 // below.
 constexpr std::array kRestrictedRegions = {
 #if __aarch64__
-    // Reserve MMIO regions used by the PL031 RTC and PCI ECAM below 1 GiB.
+    // Reserve MMIO regions used by the PL031 RTC, PCI BARs, and PCI ECAM below 1 GiB.
     RestrictRegion(kPl031PhysBase, kPl031PhysBase + kPl031Size),
-    RestrictRegion(kPciEcamPhysBase, kPciEcamPhysBase + kPciEcamSize),
+    RestrictRegion(kPciMmioBarPhysBase, kPciEcamPhysBase + kPciEcamSize),
     // For ARM most devices are mapped in at a relatively high address, so it's reasonable to just
     // block off the rest of guest memory.
     RestrictUntilEnd(std::min(kDevicePhysBase, kFirstDynamicDeviceAddr)),

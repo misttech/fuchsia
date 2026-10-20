@@ -75,7 +75,7 @@ inline constexpr uint64_t pci_ecam_size(uint64_t start_bus, uint64_t end_bus) {
 #if __aarch64__
 static constexpr uint64_t kPciEcamPhysBase    = 0x3f000000;
 static constexpr uint64_t kPciEcamSize        = pci_ecam_size(0, 16);
-static constexpr uint64_t kPciMmioBarPhysBase = 0x808200000;
+static constexpr uint64_t kPciMmioBarPhysBase = 0x3ee00000;
 #elif __x86_64__
 static constexpr uint64_t kPciEcamPhysBase    = 0xf8100000;
 static constexpr uint64_t kPciEcamSize        = pci_ecam_size(0, 1);

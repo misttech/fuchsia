@@ -107,8 +107,8 @@ TEST(GuestTest, GetGuestMemoryRegion) {
 #else
   const GuestMemoryRegion kExpected[] = {
       {0x0, 0x09010000},                                 // 0 to start of PL031 RTC
-      {0x09011000, 0x3f000000 - 0x09011000},             // End of PL031 RTC to start of PCI ECAM
-      {0x40000000, guest_memory - 0x3f000000 + 0x1000},  // Remaining memory.
+      {0x09011000, 0x3ee00000 - 0x09011000},             // End of PL031 RTC to start of PCI BARs
+      {0x40000000, guest_memory - 0x3ee00000 + 0x1000},  // Remaining memory.
   };
 #endif
 
