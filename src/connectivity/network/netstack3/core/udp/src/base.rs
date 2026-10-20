@@ -92,16 +92,16 @@ pub struct BoundSockets<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct Sockets<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> {
-    bound: RwLock<BoundSockets<I, D, BT>>,
+    bound: RwLock<BoundSockets<I, D, BT>, BT::RwLock>,
     // Destroy all_sockets last so the strong references in the demux are
     // dropped before the primary references in the set.
-    all_sockets: RwLock<UdpSocketSet<I, D, BT>>,
+    all_sockets: RwLock<UdpSocketSet<I, D, BT>, BT::RwLock>,
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>
     OrderedLockAccess<BoundSockets<I, D, BT>> for Sockets<I, D, BT>
 {
-    type Lock = RwLock<BoundSockets<I, D, BT>>;
+    type Lock = RwLock<BoundSockets<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.bound)
     }
@@ -110,7 +110,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>
     OrderedLockAccess<UdpSocketSet<I, D, BT>> for Sockets<I, D, BT>
 {
-    type Lock = RwLock<UdpSocketSet<I, D, BT>>;
+    type Lock = RwLock<UdpSocketSet<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.all_sockets)
     }
