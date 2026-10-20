@@ -11,7 +11,7 @@ TEST_F(DeviceEnumerationTest, QemuRiscv64Test) {
   static const char* kNodeMonikers[] = {
       "goldfish-rtc",        // goldfish-rtc
       "PCI0.bus.00_00_0", // host bridge
-      "qemu-riscv64",     // board driver
+      "board",            // board driver
   };
   // clang-format on
 

@@ -133,7 +133,6 @@ static_library("ddk") {
     "//src/devices/board/drivers/nelson:*",
     "//src/devices/board/drivers/nelson/post-init:*",
     "//src/devices/board/drivers/qemu-arm64:*",
-    "//src/devices/board/drivers/qemu-riscv64:*",
     "//src/devices/board/drivers/sherlock:*",
     "//src/devices/board/drivers/sherlock/post-init:*",
     "//src/devices/board/drivers/vim3:*",

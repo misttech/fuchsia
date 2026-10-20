@@ -4,9 +4,7 @@
 
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/platform-defs.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/google/platform/cpp/bind.h>
 
@@ -33,11 +31,11 @@ zx::result<> QemuRiscv64::RtcInit() {
   fdf::Arena arena('RTC_');
   auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, goldfish_rtc_dev));
   if (!result.ok()) {
-    zxlogf(ERROR, "NodeAdd goldfish-rtc request failed: %s", result.FormatDescription().data());
+    fdf::error("NodeAdd goldfish-rtc request failed: {}", result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "NodeAdd goldfish-rtc failed: %s", zx_status_get_string(result->error_value()));
+    fdf::error("NodeAdd goldfish-rtc failed: {}", zx_status_get_string(result->error_value()));
     return zx::error(result->error_value());
   }
 

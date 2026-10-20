@@ -3,17 +3,20 @@
 // found in the LICENSE file.
 {
     include: [
-        "//sdk/lib/driver/compat/compat.shard.cml",
+        "driver_component/driver.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
         runner: "driver",
+        binary: "driver/qemu-riscv64.so",
         bind: "meta/bind/qemu-riscv64_bind.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        compat: "driver/qemu-riscv64.so",
         colocate: "true",
     },
+    capabilities: [
+        { service: "fuchsia.driver.compat.Service" },
+    ],
     use: [
         {
             protocol: [
@@ -24,6 +27,14 @@
                 "fuchsia.kernel.MsiResource",
             ],
         },
-        { service: "fuchsia.hardware.platform.bus.Service" },
+        {
+            service: [ "fuchsia.hardware.platform.bus.Service" ],
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.driver.compat.Service",
+            from: "self",
+        },
     ],
 }

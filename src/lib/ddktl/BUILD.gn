@@ -147,7 +147,6 @@ source_set("ddktl") {
     "//src/devices/board/drivers/integration-test:*",
     "//src/devices/board/drivers/nelson:*",
     "//src/devices/board/drivers/qemu-arm64:*",
-    "//src/devices/board/drivers/qemu-riscv64:*",
     "//src/devices/board/drivers/sherlock:*",
     "//src/devices/board/drivers/vim3:*",
     "//src/devices/board/drivers/x86:*",
