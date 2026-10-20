@@ -5,12 +5,16 @@
 package ffx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
+	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
@@ -279,6 +283,51 @@ func (t *FFXTool) TargetWait(ctx context.Context, target string) error {
 
 func (t *FFXTool) RebootToBootloader(ctx context.Context, target string) error {
 	return t.impl.RebootToBootloader(ctx, target)
+}
+
+// HasMonitor reports whether an ffx monitor started by botanist is available
+// to notify (false for local runs).
+func HasMonitor() bool {
+	return os.Getenv(botanistconstants.FFXSharedDataEnvKey) != "" &&
+		os.Getenv(botanistconstants.HostToolsEnvKey) != ""
+}
+
+// NotifyIntentionalDisconnect tells the ffx monitor started by botanist that
+// `nodename` is about to disconnect on purpose, so
+// that the upcoming disconnect is not recorded as unexpected.
+func NotifyIntentionalDisconnect(ctx context.Context, nodename string) error {
+	if !HasMonitor() {
+		return fmt.Errorf("%s or %s is not set; no ffx monitor to notify",
+			botanistconstants.FFXSharedDataEnvKey, botanistconstants.HostToolsEnvKey)
+	}
+	hostTools, err := filepath.Abs(os.Getenv(botanistconstants.HostToolsEnvKey))
+	if err != nil {
+		return err
+	}
+	ffxPath := filepath.Join(hostTools, "ffx")
+	args := intentionalDisconnectArgs(hostTools, os.Getenv(botanistconstants.FFXSharedDataEnvKey), nodename)
+
+	logger.Infof(ctx, "running: %s %q", ffxPath, args)
+	cmd := exec.CommandContext(ctx, ffxPath, args...)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s %q failed: %w: %s", ffxPath, args, err, output.String())
+	}
+	return nil
+}
+
+// intentionalDisconnectArgs returns the strict-mode ffx arguments to notify
+// the monitor in `sharedData` of an intentional disconnect of `nodename`,
+// using the monitor subtool found in `hostTools`.
+func intentionalDisconnectArgs(hostTools, sharedData, nodename string) []string {
+	return []string{
+		"-o", "stderr", "--log-level", "error", "--strict", "--machine", "json",
+		"-c", "ffx.subtool-search-paths=" + hostTools,
+		"-c", "shared_data=" + sharedData,
+		"monitor", "intentional-disconnect", "--nodename", nodename,
+	}
 }
 
 func (t *FFXTool) SetLogLevel(level string) {

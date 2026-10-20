@@ -454,8 +454,25 @@ func (c *Client) Suspend(ctx context.Context) error {
 	})
 }
 
+// notifyIntentionalDisconnect tells the ffx monitor (if one is running, as
+// in infra) that this device is about to disconnect on purpose, so the
+// disconnect is not counted as unexpected. Best-effort: never fails the
+// caller and is bounded by a short timeout.
+func (c *Client) notifyIntentionalDisconnect(ctx context.Context) {
+	if c.nodeName == "" || !ffx.HasMonitor() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := ffx.NotifyIntentionalDisconnect(ctx, c.nodeName); err != nil {
+		logger.Warningf(ctx, "failed to notify ffx monitor of intentional disconnect of %q: %v", c.nodeName, err)
+	}
+}
+
 func (c *Client) ExpectDisconnect(ctx context.Context, f func() error) error {
 	ch := c.DisconnectionListener()
+
+	c.notifyIntentionalDisconnect(ctx)
 
 	if err := f(); err != nil {
 		return err
@@ -531,6 +548,8 @@ func (c *Client) ExpectReboot(
 	initialBootCount := *c.bootCounter
 
 	ch := c.DisconnectionListener()
+
+	c.notifyIntentionalDisconnect(ctx)
 
 	if err := f(); err != nil {
 		return err

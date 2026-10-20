@@ -11,6 +11,7 @@ if (is_host) {
     deps = [
       "../util",
       "//third_party/golibs:golang.org/x/crypto",
+      "//tools/botanist:constants",
       "//tools/lib/ffxutil",
       "//tools/lib/logger",
     ]

@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 )
 
 // createScript returns the path to a bash script that output the given content.
@@ -139,6 +141,86 @@ func TestCloseStrict(t *testing.T) {
 	}
 	if err := ffxStrict.Close(context.Background()); err != nil {
 		t.Fatalf("Close failed: %s", err)
+	}
+}
+
+// createHostToolsDir creates a fake botanist host tools directory whose ffx
+// is a bash script that appends its arguments, one per line, to argsFile.
+func createHostToolsDir(t *testing.T, argsFile string) string {
+	hostTools := t.TempDir()
+	contents := `#!/bin/bash
+	printf '%s\n' "$@" >> '` + argsFile + `'`
+	if err := os.WriteFile(filepath.Join(hostTools, "ffx"), []byte(contents), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return hostTools
+}
+
+func TestNotifyIntentionalDisconnectNoMonitor(t *testing.T) {
+	for _, unset := range []string{
+		botanistconstants.FFXSharedDataEnvKey,
+		botanistconstants.HostToolsEnvKey,
+	} {
+		t.Run("no "+unset, func(t *testing.T) {
+			t.Setenv(botanistconstants.FFXSharedDataEnvKey, t.TempDir())
+			t.Setenv(botanistconstants.HostToolsEnvKey, t.TempDir())
+			t.Setenv(unset, "")
+			if HasMonitor() {
+				t.Fatalf("HasMonitor() = true when %s is unset", unset)
+			}
+			if err := NotifyIntentionalDisconnect(context.Background(), "fuchsia-1234"); err == nil {
+				t.Fatalf("expected an error when %s is unset", unset)
+			}
+		})
+	}
+}
+
+func TestNotifyIntentionalDisconnect(t *testing.T) {
+	sharedData := filepath.Join(t.TempDir(), "botanist-shared")
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	hostTools := createHostToolsDir(t, argsFile)
+	t.Setenv(botanistconstants.FFXSharedDataEnvKey, sharedData)
+	t.Setenv(botanistconstants.HostToolsEnvKey, hostTools)
+
+	if !HasMonitor() {
+		t.Fatal("HasMonitor() = false")
+	}
+	if err := NotifyIntentionalDisconnect(context.Background(), "fuchsia-1234"); err != nil {
+		t.Fatalf("NotifyIntentionalDisconnect failed: %s", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Split(strings.TrimSpace(string(data)), "\n")
+
+	want := []string{
+		"-o", "stderr", "--log-level", "error", "--strict", "--machine", "json",
+		"-c", "ffx.subtool-search-paths=" + hostTools,
+		"-c", "shared_data=" + sharedData,
+		"monitor", "intentional-disconnect", "--nodename", "fuchsia-1234",
+	}
+	if diff := cmp.Diff(want, args); diff != "" {
+		t.Fatalf("unexpected args, diff:\n%s", diff)
+	}
+}
+
+func TestNotifyIntentionalDisconnectFailure(t *testing.T) {
+	hostTools := t.TempDir()
+	contents := "#!/bin/bash\necho 'reading port file: No such file' >&2\nexit 1"
+	if err := os.WriteFile(filepath.Join(hostTools, "ffx"), []byte(contents), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(botanistconstants.FFXSharedDataEnvKey, t.TempDir())
+	t.Setenv(botanistconstants.HostToolsEnvKey, hostTools)
+
+	err := NotifyIntentionalDisconnect(context.Background(), "fuchsia-1234")
+	if err == nil {
+		t.Fatal("expected an error when ffx fails")
+	}
+	if !strings.Contains(err.Error(), "reading port file") {
+		t.Fatalf("error should include ffx output, got: %v", err)
 	}
 }
 
