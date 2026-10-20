@@ -2,12 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/rust/rustc_binary.gni")
-import("//build/rust/rustc_test.gni")
+import("//build/bazel/bazel_test_suite.gni")
+
+bazel_test_suite("epoch-generator-tests") {
+  host_tests =
+      [ "//src/sys/pkg/bin/system-updater/epoch:epoch-generator-tests" ]
+}
 
 group("host_tests") {
   testonly = true
-  deps = [ ":epoch-generator-tests($host_toolchain)" ]
+  deps = [ ":epoch-generator-tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -62,18 +66,10 @@ if (is_host) {
     sources = _GENERATOR_SRCS
     output_name = "epoch_generator"
     edition = "2024"
+    visibility = [
+      ":*",
+      "//src/sys/pkg/bin/system-updater:*",
+    ]
     deps = _GENERATOR_DEPS
-  }
-}
-if (is_host) {
-  rustc_test("epoch-generator-tests") {
-    sources = _GENERATOR_SRCS
-    source_root = "src/main.rs"
-    edition = "2024"
-    proc_macro_deps = [ "//third_party/rust_crates:indoc" ]
-    deps = _GENERATOR_DEPS + [
-             "//third_party/rust_crates:assert_matches",
-             "//third_party/rust_crates:proptest",
-           ]
   }
 }

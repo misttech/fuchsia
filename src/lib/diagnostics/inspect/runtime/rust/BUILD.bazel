@@ -56,5 +56,6 @@ alias(
     visibility = [
         "//src/sys/pkg/bin/system-update-checker:__pkg__",
         "//src/sys/pkg/bin/system-update-committer:__pkg__",
+        "//src/sys/pkg/bin/system-updater:__pkg__",
     ],
 )

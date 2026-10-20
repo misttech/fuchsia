@@ -3,9 +3,15 @@
 # found in the LICENSE file.
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/bazel/rules/rust:defs.bzl", "rustc_binary", "rustc_test")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 
 package(default_applicable_licenses = ["//:license"])
+
+exports_files(
+    ["history"],
+    visibility = ["//src/sys/pkg/bin/system-updater:__pkg__"],
+)
 
 _GENERATOR_SRCS = [
     "src/args.rs",
@@ -28,10 +34,12 @@ rustc_binary(
     crate_name = "epoch_generator",
     edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//src/sys/pkg/bin/system-updater:__pkg__"],
     deps = _GENERATOR_DEPS,
 )
 
-rustc_test(
+# @bazel2gn:skip
+host_rustc_test(
     name = "epoch-generator-tests",
     srcs = _GENERATOR_SRCS,
     crate_root = "src/main.rs",
