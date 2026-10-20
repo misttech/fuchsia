@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(
@@ -22,5 +23,57 @@ rustc_library(
         "//third_party/rust_crates/vendor:libc",
         "//third_party/rust_crates/vendor:pin-project",
         "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+# The C++ trace provider that `:trace-provider` wraps.
+#
+# In GN this is `shared_library("rust-trace-provider")`, defined by hand in
+# BUILD.gn, which produces librust-trace-provider.so. That file is also included
+# in bootfs (see `bootfs_files_for_assembly("bootfs")` in BUILD.gn). Bazel links
+# the trace provider statically for now.
+# @bazel2gn:skip
+fx_cc_library(
+    name = "rust-trace-provider",
+    srcs = ["trace-provider/trace_provider.cc"],
+    implementation_deps = [
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//zircon/system/ulib/trace-provider",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+rustc_library(
+    name = "trace-provider",
+    srcs = ["trace-provider/src/lib.rs"],
+    crate_name = "fuchsia_trace_provider",
+    crate_root = "trace-provider/src/lib.rs",
+    edition = "2024",
+    link_deps = [
+        # GN links Rust binaries with rustc, which needs the C++ standard
+        # library to be linked dynamically for librust-trace-provider.so; see
+        # group("rust-trace-provider-for-rust") in BUILD.gn.
+        ":rust-trace-provider",  # @bazel2gn:path_overwrite::rust-trace-provider-for-rust
+        "//zircon/system/ulib/trace-provider",
+    ],
+    deps = [
+        "//sdk/lib/async/rust",
+        "//sdk/lib/async/rust/sys",
+        "//sdk/rust/zx",
+    ],
+)
+
+rustc_library(
+    name = "trace-observer",
+    srcs = ["trace-observer/src/lib.rs"],
+    crate_name = "fuchsia_trace_observer",
+    crate_root = "trace-observer/src/lib.rs",
+    edition = "2024",
+    link_deps = ["//zircon/system/ulib/trace"],
+    deps = [
+        ":trace",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
     ],
 )
