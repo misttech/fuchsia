@@ -50,6 +50,7 @@ if (is_host) {
       "//scripts/lib/package_server",
       "//src/lib/debug/dap/python:lib",
       "//src/lib/debug/dap/python/zxdb:zxdb_dap",
+      "//third_party/python_portpicker:portpicker",
     ]
   }
 

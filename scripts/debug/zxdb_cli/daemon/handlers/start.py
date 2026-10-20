@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import package_server
 from daemon.constants import DEFAULT_DAP_PORT, UDS_PATH
+from portpicker import portpicker
 from shared.protocol.base import Response
 from shared.protocol.start import (
     COMMAND_NAME,
@@ -24,11 +25,18 @@ async def handle(daemon: Daemon, req: StartRequest) -> Response[Any]:
     if resp := daemon._check_already_running(req):
         return resp
 
+    daemon.connect_to_existing = req.connect
+
+    # An explicit port requested by the user or already configured on the daemon
+    # takes precedence. The default DAP port or a randomly picked port are only
+    # used as fallbacks when no port is specified.
     if req.port is not None:
         daemon.port = req.port
     elif daemon.port is None:
-        daemon.port = DEFAULT_DAP_PORT
-    daemon.connect_to_existing = req.connect
+        if daemon.connect_to_existing:
+            daemon.port = DEFAULT_DAP_PORT
+        else:
+            daemon.port = portpicker.pick_unused_port()
 
     startup_success = False
     try:

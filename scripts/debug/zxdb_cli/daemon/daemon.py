@@ -179,7 +179,7 @@ class Daemon:
     ) -> None:
         self.registry = CommandHandlerRegistry()
         self.dap_client = ZxdbDapClient()
-        self.background_tasks: set[asyncio.Task[None]] = set()
+        self.background_tasks: set[asyncio.Task[Any]] = set()
         self.active_handlers: set[asyncio.Task[Any]] = set()
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
         self.event_waiter = DapEventWaiter()
@@ -363,15 +363,37 @@ class Daemon:
         loop.add_signal_handler(signal.SIGUSR1, handle_sigusr1)
 
         try:
-            await asyncio.wait_for(signal_fut, timeout=30.0)
-            print("Received SIGUSR1 from zxdb.")
-            return None
-        except asyncio.TimeoutError:
-            print("Timed out waiting for SIGUSR1 from zxdb.")
-            return Response(
-                success=False,
-                message="Timed out waiting for SIGUSR1 from zxdb",
+            dap_wait_task = asyncio.create_task(
+                self.dap_proc.run_to_completion()
             )
+            done, pending = await asyncio.wait(
+                [signal_fut, dap_wait_task],
+                timeout=30.0,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if signal_fut in done:
+                print("Received SIGUSR1 from zxdb.")
+                # We don't cancel dap_wait_task here because we want it to
+                # keep consuming output from zxdb in the background to prevent
+                # unbounded memory growth.
+                self.background_tasks.add(dap_wait_task)
+                return None
+            elif dap_wait_task in done:
+                for task in pending:
+                    task.cancel()
+                output = dap_wait_task.result()
+                err_msg = f"zxdb exited early with code {output.return_code}"
+                print(err_msg)
+                return Response(success=False, message=err_msg)
+            else:
+                for task in pending:
+                    task.cancel()
+                print("Timed out waiting for SIGUSR1 from zxdb.")
+                return Response(
+                    success=False,
+                    message="Timed out waiting for SIGUSR1 from zxdb",
+                )
         finally:
             loop.remove_signal_handler(signal.SIGUSR1)
 
