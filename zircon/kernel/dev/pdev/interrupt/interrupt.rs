@@ -14,6 +14,7 @@ use debug as _;
 use crate::arch_rs::Iframe;
 use crate::kernel::mp::MpIpi;
 use crate::kernel::types::cpu_mask_t;
+use core::cell::UnsafeCell;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 use lazy_init::LazyInit;
@@ -22,8 +23,10 @@ use pin_init as _;
 use unittest as _;
 use zx_status::Status;
 
-// NOTE: Keep constants, structures, and layout definitions in sync with the C++ header:
-// zircon/kernel/dev/pdev/interrupt/include/pdev/interrupt.h
+// NOTE: The C entry points below define functions declared in <dev/interrupt.h>
+// (zircon/kernel/dev/interrupt/include/dev/interrupt.h); keep the two in sync. The interrupt
+// controller interface itself is the `InterruptControllerOps` trait below; every registrant is
+// Rust, so it has no C++ ABI.
 
 pub use crate::dev_interrupt::{
     InterruptHandler, InterruptPolarity, InterruptTriggerMode, InterruptVector, MAX_INTERRUPTS,
@@ -72,167 +75,241 @@ impl PdevInterruptManager {
 
 static PDEV_INTERRUPTS: LazyInit<PdevInterruptManager> = LazyInit::uninit();
 
-#[repr(C)]
-pub struct PdevInterruptOps {
-    pub mask: extern "C" fn(vector: InterruptVector) -> Result<(), Status>,
-    pub unmask: extern "C" fn(vector: InterruptVector) -> Result<(), Status>,
-    pub deactivate: extern "C" fn(vector: InterruptVector) -> Result<(), Status>,
-    pub configure: extern "C" fn(
+/// Interrupt controller interface.
+///
+/// Implemented by the platform's interrupt controller driver and installed with
+/// [`register_interrupt_controller`].
+pub trait InterruptControllerOps: Sync + 'static {
+    /// Disables (masks) the interrupt specified by `vector`. In the case of interrupts which
+    /// target a specific CPU but share an interrupt vector number (for example, SGIs and PPIs in
+    /// ARM's GIC interrupt controller designs), this affects the masked/unmasked state of the
+    /// interrupt vector for the caller's CPU only. It does not mask the specified vector for any
+    /// of the other CPUs.
+    fn mask(&self, vector: InterruptVector) -> Result<(), Status>;
+
+    /// Enables (unmasks) the interrupt specified by `vector`. In the case of interrupts which
+    /// target a specific CPU but share an interrupt vector number (for example, SGIs and PPIs in
+    /// ARM's GIC interrupt controller designs), this affects the masked/unmasked state of the
+    /// interrupt vector for the caller's CPU only. It does not unmask the specified vector for
+    /// any of the other CPUs.
+    fn unmask(&self, vector: InterruptVector) -> Result<(), Status>;
+
+    /// Deactivates the interrupt specified by `vector`.
+    fn deactivate(&self, vector: InterruptVector) -> Result<(), Status>;
+
+    /// Configures the specified interrupt vector. If it is invoked, it must be invoked prior to
+    /// interrupt registration.
+    fn configure(
+        &self,
         vector: InterruptVector,
         tm: InterruptTriggerMode,
         pol: InterruptPolarity,
-    ) -> Result<(), Status>,
-    pub get_config: extern "C" fn(
+    ) -> Result<(), Status>;
+
+    /// Returns the trigger mode and polarity configured for the specified interrupt vector.
+    fn config(
+        &self,
         vector: InterruptVector,
-        tm: *mut InterruptTriggerMode,
-        pol: *mut InterruptPolarity,
-    ) -> Result<(), Status>,
-    pub set_affinity: extern "C" fn(vector: InterruptVector, mask: u32) -> Result<(), Status>,
-    pub is_valid: extern "C" fn(vector: InterruptVector, flags: u32) -> bool,
-    pub get_base_vector: extern "C" fn() -> InterruptVector,
-    pub get_max_vector: extern "C" fn() -> InterruptVector,
-    pub remap: extern "C" fn(vector: InterruptVector) -> InterruptVector,
-    pub send_ipi: extern "C" fn(target: cpu_mask_t, ipi: MpIpi) -> Result<(), Status>,
-    pub init_percpu_early: extern "C" fn(),
-    pub init_percpu: extern "C" fn(),
-    pub handle_irq: extern "C" fn(frame: *mut Iframe),
-    pub shutdown: extern "C" fn(),
-    pub shutdown_cpu: extern "C" fn(),
-    pub suspend_cpu: extern "C" fn() -> Result<(), Status>,
-    pub resume_cpu: extern "C" fn() -> Result<(), Status>,
-    pub msi_is_supported: extern "C" fn() -> bool,
-    pub msi_supports_masking: extern "C" fn() -> bool,
-    pub msi_mask_unmask: extern "C" fn(block: *const MsiBlock, msi_id: u32, mask: bool),
-    pub msi_alloc_block: extern "C" fn(
+    ) -> Result<(InterruptTriggerMode, InterruptPolarity), Status>;
+
+    /// Sets the affinity for an interrupt. Intrinsically set to cpu 0 by default.
+    fn set_affinity(&self, vector: InterruptVector, mask: cpu_mask_t) -> Result<(), Status>;
+
+    /// Returns `true` if `vector` is a valid interrupt for this controller.
+    fn is_valid(&self, vector: InterruptVector, flags: u32) -> bool;
+
+    /// Returns the base of the `[base, max]` range of vectors that can be used with `zx_interrupt`
+    /// syscalls. This api will need to evolve if valid vector ranges later are not contiguous.
+    fn base_vector(&self) -> InterruptVector;
+
+    /// Returns the maximum of the `[base, max]` range of vectors that can be used with
+    /// `zx_interrupt` syscalls. This api will need to evolve if valid vector ranges later are not
+    /// contiguous.
+    fn max_vector(&self) -> InterruptVector;
+
+    /// Remaps the given interrupt vector.
+    fn remap(&self, vector: InterruptVector) -> InterruptVector;
+
+    /// Sends an inter-processor interrupt.
+    fn send_ipi(&self, target: cpu_mask_t, ipi: MpIpi) -> Result<(), Status>;
+
+    /// Performs early per-cpu initialization for the interrupt controller.
+    fn init_percpu_early(&self);
+
+    /// Performs per-cpu initialization for the interrupt controller.
+    fn init_percpu(&self);
+
+    /// Handles a platform interrupt taken on the calling CPU.
+    fn handle_irq(&self, frame: &mut Iframe);
+
+    /// Shuts down all interrupts.
+    fn shutdown(&self);
+
+    /// Shuts down interrupts for the calling CPU.
+    ///
+    /// Should be called before powering off the calling CPU.
+    fn shutdown_cpu(&self);
+
+    /// Suspends interrupts for the calling CPU.
+    ///
+    /// Should be called before entering a hardware suspend state.
+    fn suspend_cpu(&self) -> Result<(), Status>;
+
+    /// Resumes interrupts for the calling CPU.
+    ///
+    /// Should be called after coming out of a hardware suspend state.
+    fn resume_cpu(&self) -> Result<(), Status>;
+
+    /// Returns `true` if the platform supports MSI.
+    ///
+    /// If the platform supports MSI, it must supply valid implementations of
+    /// [`Self::msi_alloc_block`], [`Self::msi_free_block`] and [`Self::msi_register_handler`].
+    fn msi_is_supported(&self) -> bool;
+
+    /// Returns `true` if the platform can mask individual MSI vectors at the platform level.
+    ///
+    /// If the platform supports MSI masking, it must supply a valid implementation of
+    /// [`Self::msi_mask_unmask`].
+    fn msi_supports_masking(&self) -> bool;
+
+    /// Masks (`mask` is `true`) or unmasks (`mask` is `false`) the given MSI within `block`.
+    fn msi_mask_unmask(&self, block: &MsiBlock, msi_id: u32, mask: bool);
+
+    /// Platform allocation of blocks of MSI and MSI-X compatible IRQ targets.
+    ///
+    /// `requested_irqs` is the total number of irqs being requested. `can_target_64bit` is `true`
+    /// if the target address of the MSI block can be located past the 4GB boundary, `false` if the
+    /// target address must be in low memory. `is_msix` is `true` if this request is for an MSI-X
+    /// compatible block, `false` for plain old MSI. `out_block` is the allocation bookkeeping to
+    /// be filled out upon successful allocation of the requested block of IRQs.
+    fn msi_alloc_block(
+        &self,
         requested_irqs: u32,
         can_target_64bit: bool,
         is_msix: bool,
-        out_block: *mut MsiBlock,
-    ) -> Result<(), Status>,
-    pub msi_free_block: extern "C" fn(block: *mut MsiBlock),
-    pub msi_register_handler:
-        extern "C" fn(block: *mut MsiBlock, msi_id: u32, handler: InterruptHandler),
-    pub get_status: Option<
-        extern "C" fn(
-            vector: InterruptVector,
-            out_pending: *mut bool,
-            out_enabled: *mut bool,
-        ) -> Result<(), Status>,
-    >,
+        out_block: &mut MsiBlock,
+    ) -> Result<(), Status>;
+
+    /// Frees a block of MSI IRQs previously allocated by [`Self::msi_alloc_block`]. This does not
+    /// unregister IRQ handlers.
+    fn msi_free_block(&self, block: &mut MsiBlock);
+
+    /// Registers a handler function for a given `msi_id` within an MSI block. Passing an empty
+    /// handler will effectively unregister a handler for a given `msi_id` within the block.
+    fn msi_register_handler(&self, block: &MsiBlock, msi_id: u32, handler: InterruptHandler);
+
+    /// Returns the `(pending, enabled)` state of the given interrupt vector.
+    ///
+    /// Only used by IRQ console commands.
+    fn status(&self, vector: InterruptVector) -> Result<(bool, bool), Status> {
+        let _ = vector;
+        Err(Status::NOT_SUPPORTED)
+    }
 }
 
-static INTR_OPS: LazyInit<&'static PdevInterruptOps> = LazyInit::uninit();
+/// The interrupt controller used until a platform driver registers one.
+///
+/// By default most of these are empty stubs and the particular interrupt controller must override
+/// all of them.
+struct DefaultInterruptController;
 
-extern "C" fn default_mask(_: InterruptVector) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
+impl InterruptControllerOps for DefaultInterruptController {
+    fn mask(&self, _: InterruptVector) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn unmask(&self, _: InterruptVector) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn deactivate(&self, _: InterruptVector) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn configure(
+        &self,
+        _: InterruptVector,
+        _: InterruptTriggerMode,
+        _: InterruptPolarity,
+    ) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn config(
+        &self,
+        _: InterruptVector,
+    ) -> Result<(InterruptTriggerMode, InterruptPolarity), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn set_affinity(&self, _: InterruptVector, _: cpu_mask_t) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn is_valid(&self, _: InterruptVector, _: u32) -> bool {
+        false
+    }
+    fn base_vector(&self) -> InterruptVector {
+        InterruptVector(0)
+    }
+    fn max_vector(&self) -> InterruptVector {
+        InterruptVector(0)
+    }
+    fn remap(&self, _: InterruptVector) -> InterruptVector {
+        InterruptVector(0)
+    }
+    fn send_ipi(&self, _: cpu_mask_t, _: MpIpi) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn init_percpu_early(&self) {}
+    fn init_percpu(&self) {}
+    fn handle_irq(&self, _: &mut Iframe) {}
+    fn shutdown(&self) {}
+    fn shutdown_cpu(&self) {}
+    fn suspend_cpu(&self) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn resume_cpu(&self) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn msi_is_supported(&self) -> bool {
+        false
+    }
+    fn msi_supports_masking(&self) -> bool {
+        false
+    }
+    fn msi_mask_unmask(&self, _: &MsiBlock, _: u32, _: bool) {}
+    fn msi_alloc_block(&self, _: u32, _: bool, _: bool, _: &mut MsiBlock) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+    fn msi_free_block(&self, _: &mut MsiBlock) {}
+    fn msi_register_handler(&self, _: &MsiBlock, _: u32, _: InterruptHandler) {}
 }
-extern "C" fn default_unmask(_: InterruptVector) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_deactivate(_: InterruptVector) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_configure(
-    _: InterruptVector,
-    _: InterruptTriggerMode,
-    _: InterruptPolarity,
-) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_get_config(
-    _: InterruptVector,
-    _: *mut InterruptTriggerMode,
-    _: *mut InterruptPolarity,
-) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_set_affinity(_: InterruptVector, _: u32) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_is_valid(_: InterruptVector, _: u32) -> bool {
-    false
-}
-extern "C" fn default_get_base_vector() -> InterruptVector {
-    InterruptVector(0)
-}
-extern "C" fn default_get_max_vector() -> InterruptVector {
-    InterruptVector(0)
-}
-extern "C" fn default_remap(_: InterruptVector) -> InterruptVector {
-    InterruptVector(0)
-}
-extern "C" fn default_send_ipi(_: cpu_mask_t, _: MpIpi) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_init_percpu_early() {}
-extern "C" fn default_init_percpu() {}
-extern "C" fn default_handle_irq(_: *mut Iframe) {}
-extern "C" fn default_shutdown() {}
-extern "C" fn default_shutdown_cpu() {}
-extern "C" fn default_suspend_cpu() -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_resume_cpu() -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_msi_is_supported() -> bool {
-    false
-}
-extern "C" fn default_msi_supports_masking() -> bool {
-    false
-}
-extern "C" fn default_msi_mask_unmask(_: *const MsiBlock, _: u32, _: bool) {}
-extern "C" fn default_msi_alloc_block(
-    _: u32,
-    _: bool,
-    _: bool,
-    _: *mut MsiBlock,
-) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-extern "C" fn default_msi_free_block(_: *mut MsiBlock) {}
 
-extern "C" fn default_msi_register_handler(_: *mut MsiBlock, _: u32, _: InterruptHandler) {}
+static DEFAULT_DRIVER: DefaultInterruptController = DefaultInterruptController;
 
-// By default most of these are empty stubs and the particular interrupt controller must override
-// all of them.
-static DEFAULT_OPS: PdevInterruptOps = PdevInterruptOps {
-    mask: default_mask,
-    unmask: default_unmask,
-    deactivate: default_deactivate,
-    configure: default_configure,
-    get_config: default_get_config,
-    set_affinity: default_set_affinity,
-    is_valid: default_is_valid,
-    get_base_vector: default_get_base_vector,
-    get_max_vector: default_get_max_vector,
-    remap: default_remap,
-    send_ipi: default_send_ipi,
-    init_percpu_early: default_init_percpu_early,
-    init_percpu: default_init_percpu,
-    handle_irq: default_handle_irq,
-    shutdown: default_shutdown,
-    shutdown_cpu: default_shutdown_cpu,
-    suspend_cpu: default_suspend_cpu,
-    resume_cpu: default_resume_cpu,
-    msi_is_supported: default_msi_is_supported,
-    msi_supports_masking: default_msi_supports_masking,
-    msi_mask_unmask: default_msi_mask_unmask,
-    msi_alloc_block: default_msi_alloc_block,
-    msi_free_block: default_msi_free_block,
-    msi_register_handler: default_msi_register_handler,
-    get_status: None,
-};
+struct DriverHolder(UnsafeCell<Option<&'static dyn InterruptControllerOps>>);
 
-/// Registers the platform interrupt operations.
+// SAFETY: The driver is written once during single-threaded early boot and read immutable
+// thereafter.
+unsafe impl Sync for DriverHolder {}
+
+static ACTIVE_DRIVER: DriverHolder = DriverHolder(UnsafeCell::new(None));
+
+/// Returns the registered interrupt controller, or the default no-op controller if no driver has
+/// registered yet.
+///
+/// The `interrupt_init_percpu_early` init hook runs on secondary CPUs and may run before any
+/// controller has registered, so this must never touch uninitialized state.
+fn get_driver() -> &'static dyn InterruptControllerOps {
+    // SAFETY: ACTIVE_DRIVER is written once during single-threaded early boot, and read immutable
+    // thereafter.
+    unsafe { (*ACTIVE_DRIVER.0.get()).unwrap_or(&DEFAULT_DRIVER) }
+}
+
+/// Registers the platform's interrupt controller with the PDEV dispatch layer.
 ///
 /// # Safety
 ///
-/// `ops` must point to a valid, static `PdevInterruptOps` structure that remains
-/// valid for the lifetime of the kernel.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn pdev_register_interrupts(ops: *const PdevInterruptOps) {
-    // SAFETY: Called once during boot, serialized with respect to any other access.
+/// Must be called at most once, during single-threaded boot: before secondary CPUs are started
+/// and before anything can call `get_driver()` concurrently.
+pub unsafe fn register_interrupt_controller(driver: &'static dyn InterruptControllerOps) {
+    // SAFETY: This function's contract makes this the only initialization of `PDEV_INTERRUPTS`,
+    // with no concurrent access.
     let _ = unsafe {
         Pin::static_ref(&PDEV_INTERRUPTS).init_pin(pin_init::pin_init!(PdevInterruptManager {
             table: [
@@ -247,19 +324,24 @@ pub unsafe extern "C" fn pdev_register_interrupts(ops: *const PdevInterruptOps) 
             lock <- ksync::KSpinlock::init(),
         }))
     };
-    // SAFETY: Called once during boot, serialized with respect to any other access.
+
+    // SAFETY: This function's contract makes this the only write to `ACTIVE_DRIVER`, with no
+    // concurrent reader.
     unsafe {
-        INTR_OPS.init(&*ops);
+        *ACTIVE_DRIVER.0.get() = Some(driver);
     }
+    // Architectural memory barrier to guarantee the vtable and data pointers, along with the
+    // driver's early initialization writes, are visible to all future CPUs before they boot up and
+    // enable interrupts.
+    core::sync::atomic::fence(Ordering::SeqCst);
 }
 
 /// Invokes the interrupt handler for the vector if it is present and permanent.
 ///
 /// # Safety
 ///
-/// `vector` must be a valid interrupt vector index.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn pdev_invoke_int_if_present(vector: InterruptVector) -> bool {
+/// `vector` must be less than `MAX_INTERRUPTS`.
+pub unsafe fn pdev_invoke_int_if_present(vector: InterruptVector) -> bool {
     // SAFETY: vector is guaranteed by caller to be a valid interrupt vector index (< MAX_INTERRUPTS).
     let slot = unsafe { PDEV_INTERRUPTS.slot_unchecked(vector.0 as usize) };
     // Use a relaxed load as permanent handlers are never modified once set, and they are only set in
@@ -285,13 +367,13 @@ pub unsafe extern "C" fn pdev_invoke_int_if_present(vector: InterruptVector) -> 
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
+/// - The global interrupt controller must be registered.
 unsafe fn register_int_handler_common(
     vector: InterruptVector,
     handler: InterruptHandler,
     permanent: bool,
 ) -> Result<(), Status> {
-    if !(INTR_OPS.is_valid)(vector, 0) {
+    if !get_driver().is_valid(vector, 0) {
         return Err(Status::INVALID_ARGS);
     }
 
@@ -311,7 +393,7 @@ unsafe fn register_int_handler_common(
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
+/// - The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn register_int_handler(
     vector: InterruptVector,
@@ -324,7 +406,7 @@ pub unsafe extern "C" fn register_int_handler(
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
+/// - The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn register_permanent_int_handler(
     vector: InterruptVector,
@@ -349,261 +431,268 @@ pub fn is_interrupt_registered(vector: u32) -> bool {
 
 /// Queries the status of an interrupt vector.
 pub fn query_interrupt_status(vector: u32) -> (Option<bool>, Option<bool>) {
-    let ops = *INTR_OPS;
-    let mut pending = false;
-    let mut enabled = false;
-    if let Some(get_status) = ops.get_status
-        && get_status(InterruptVector(vector), &mut pending, &mut enabled).is_ok()
-    {
-        return (Some(pending), Some(enabled));
+    match get_driver().status(InterruptVector(vector)) {
+        Ok((pending, enabled)) => (Some(pending), Some(enabled)),
+        Err(_) => (None, None),
     }
-
-    (None, None)
 }
 
 /// Queries the configuration of an interrupt vector.
 pub fn query_interrupt_config(
     vector: u32,
 ) -> (Option<InterruptTriggerMode>, Option<InterruptPolarity>) {
-    let ops = *INTR_OPS;
-    let mut tm = InterruptTriggerMode::Edge;
-    let mut pol = InterruptPolarity::High;
-    if (ops.get_config)(InterruptVector(vector), &mut tm, &mut pol).is_ok() {
-        return (Some(tm), Some(pol));
+    match get_driver().config(InterruptVector(vector)) {
+        Ok((tm, pol)) => (Some(tm), Some(pol)),
+        Err(_) => (None, None),
     }
-
-    (None, None)
 }
 
 /// Masks the specified interrupt vector.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered, and vector must be valid.
+/// The global interrupt controller must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mask_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    (INTR_OPS.mask)(vector)
+    get_driver().mask(vector)
 }
 
 /// Unmasks the specified interrupt vector.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered, and vector must be valid.
+/// The global interrupt controller must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn unmask_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    (INTR_OPS.unmask)(vector)
+    get_driver().unmask(vector)
 }
 
 /// Deactivates the specified interrupt vector.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered, and vector must be valid.
+/// The global interrupt controller must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn deactivate_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    (INTR_OPS.deactivate)(vector)
+    get_driver().deactivate(vector)
 }
 
 /// Configures the specified interrupt vector trigger mode and polarity.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered, and vector must be valid.
+/// The global interrupt controller must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn configure_interrupt(
     vector: InterruptVector,
     tm: InterruptTriggerMode,
     pol: InterruptPolarity,
 ) -> Result<(), Status> {
-    (INTR_OPS.configure)(vector, tm, pol)
+    get_driver().configure(vector, tm, pol)
 }
 
 /// Gets the specified interrupt vector configuration.
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
-/// - `tm` and `pol` must be valid, non-null pointers to enum memory.
+/// - The global interrupt controller must be registered.
+/// - `tm` and `pol` must each be null or valid for writes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_interrupt_config(
     vector: InterruptVector,
     tm: *mut InterruptTriggerMode,
     pol: *mut InterruptPolarity,
 ) -> Result<(), Status> {
-    (INTR_OPS.get_config)(vector, tm, pol)
+    match get_driver().config(vector) {
+        Ok((out_tm, out_pol)) => {
+            // SAFETY: `tm` and `pol` are either null or valid pointers supplied by the caller.
+            unsafe {
+                if !tm.is_null() {
+                    *tm = out_tm;
+                }
+                if !pol.is_null() {
+                    *pol = out_pol;
+                }
+            }
+            Ok(())
+        }
+        Err(status) => Err(status),
+    }
 }
 
 /// Sets the interrupt affinity mask for the specified vector.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered, and vector must be valid.
+/// The global interrupt controller must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn set_interrupt_affinity(
     vector: InterruptVector,
     mask: u32,
 ) -> Result<(), Status> {
-    (INTR_OPS.set_affinity)(vector, mask)
+    get_driver().set_affinity(vector, mask)
 }
 
 /// Gets the base interrupt vector.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn interrupt_get_base_vector() -> InterruptVector {
-    (INTR_OPS.get_base_vector)()
+    get_driver().base_vector()
 }
 
 /// Gets the maximum interrupt vector.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn interrupt_get_max_vector() -> InterruptVector {
-    (INTR_OPS.get_max_vector)()
+    get_driver().max_vector()
 }
 
 /// Checks if the given interrupt vector is valid.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn is_valid_interrupt(vector: InterruptVector, flags: u32) -> bool {
-    (INTR_OPS.is_valid)(vector, flags)
+    get_driver().is_valid(vector, flags)
 }
 
 /// Remaps the specified interrupt vector.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn remap_interrupt(vector: InterruptVector) -> InterruptVector {
-    (INTR_OPS.remap)(vector)
+    get_driver().remap(vector)
 }
 
 /// Sends an IPI to the target CPU.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn interrupt_send_ipi(target: u32, ipi: MpIpi) -> Result<(), Status> {
-    (INTR_OPS.send_ipi)(target, ipi)
+pub unsafe extern "C" fn interrupt_send_ipi(target: cpu_mask_t, ipi: MpIpi) -> Result<(), Status> {
+    get_driver().send_ipi(target, ipi)
 }
 
 /// Initializes interrupts for the current CPU early in boot.
-///
-/// # Safety
-///
-/// The global interrupt ops must be registered.
 fn interrupt_init_percpu_early(_level: init::LkInitLevel) {
-    (INTR_OPS.init_percpu_early)()
+    get_driver().init_percpu_early();
 }
 
 /// Initializes interrupts for the current CPU.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn interrupt_init_percpu() {
-    (INTR_OPS.init_percpu)()
+    get_driver().init_percpu();
 }
 
 /// Handles a platform IRQ.
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
+/// - The global interrupt controller must be registered.
 /// - `frame` must point to a valid interrupt frame.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn platform_irq(frame: *mut Iframe) {
-    (INTR_OPS.handle_irq)(frame)
+    // SAFETY: `frame` points to a valid interrupt frame supplied by the caller.
+    let frame = unsafe { &mut *frame };
+    get_driver().handle_irq(frame);
 }
 
 /// Shuts down all interrupts.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn shutdown_interrupts() {
-    (INTR_OPS.shutdown)()
+    get_driver().shutdown();
 }
 
 /// Shuts down interrupts for the current CPU.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn shutdown_interrupts_curr_cpu() {
-    (INTR_OPS.shutdown_cpu)()
+    get_driver().shutdown_cpu();
 }
 
 /// Suspends interrupts for the current CPU.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn suspend_interrupts_curr_cpu() -> Result<(), Status> {
-    (INTR_OPS.suspend_cpu)()
+    get_driver().suspend_cpu()
 }
 
 /// Resumes interrupts for the current CPU.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn resume_interrupts_curr_cpu() -> Result<(), Status> {
-    (INTR_OPS.resume_cpu)()
+    get_driver().resume_cpu()
 }
 
 /// Checks if MSI is supported.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn msi_is_supported() -> bool {
-    (INTR_OPS.msi_is_supported)()
+    get_driver().msi_is_supported()
 }
 
 /// Checks if MSI supports masking.
 ///
 /// # Safety
 ///
-/// The global interrupt ops must be registered.
+/// The global interrupt controller must be registered.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn msi_supports_masking() -> bool {
-    (INTR_OPS.msi_supports_masking)()
+    get_driver().msi_supports_masking()
 }
 
 /// Masks or unmasks the specified MSI interrupt.
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
+/// - The global interrupt controller must be registered.
 /// - `block` must point to a valid, initialized `MsiBlock`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn msi_mask_unmask(block: *const MsiBlock, msi_id: u32, mask: bool) {
-    (INTR_OPS.msi_mask_unmask)(block, msi_id, mask)
+    debug_assert!(!block.is_null());
+    // SAFETY: `block` points at a valid, initialized `MsiBlock` owned by the caller for the
+    // duration of the call.
+    let block = unsafe { &*block };
+    get_driver().msi_mask_unmask(block, msi_id, mask);
 }
 
 /// Allocates a block of MSIs.
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
-/// - `out_block` must point to a valid, writable `MsiBlock` memory slot.
+/// - The global interrupt controller must be registered.
+/// - `out_block` must point to a valid, initialized `MsiBlock` that the caller owns for the
+///   duration of the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn msi_alloc_block(
     requested_irqs: u32,
@@ -611,25 +700,35 @@ pub unsafe extern "C" fn msi_alloc_block(
     is_msix: bool,
     out_block: *mut MsiBlock,
 ) -> Result<(), Status> {
-    (INTR_OPS.msi_alloc_block)(requested_irqs, can_target_64bit, is_msix, out_block)
+    if out_block.is_null() {
+        return Err(Status::INVALID_ARGS);
+    }
+    // SAFETY: `out_block` was checked to be non-null, and the caller guarantees that it points
+    // at an initialized block that it owns for the duration of the call.
+    let out_block = unsafe { &mut *out_block };
+    get_driver().msi_alloc_block(requested_irqs, can_target_64bit, is_msix, out_block)
 }
 
 /// Frees the specified block of MSIs.
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
+/// - The global interrupt controller must be registered.
 /// - `block` must point to a valid, previously allocated `MsiBlock` that needs to be freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn msi_free_block(block: *mut MsiBlock) {
-    (INTR_OPS.msi_free_block)(block)
+    debug_assert!(!block.is_null());
+    // SAFETY: `block` points at a valid, previously allocated `MsiBlock` owned by the caller for
+    // the duration of the call.
+    let block = unsafe { &mut *block };
+    get_driver().msi_free_block(block);
 }
 
 /// Registers an interrupt handler for the specified MSI.
 ///
 /// # Safety
 ///
-/// - The global interrupt ops must be registered.
+/// - The global interrupt controller must be registered.
 /// - `block` must point to a valid, initialized `MsiBlock`.
 /// - `handler` must point to a valid interrupt handler function or be null.
 #[unsafe(no_mangle)]
@@ -638,12 +737,12 @@ pub unsafe extern "C" fn msi_register_handler(
     msi_id: u32,
     handler: InterruptHandler,
 ) {
-    (INTR_OPS.msi_register_handler)(block, msi_id, handler)
+    debug_assert!(!block.is_null());
+    // SAFETY: `block` points at a valid, initialized `MsiBlock` owned by the caller for the
+    // duration of the call.
+    let block = unsafe { &*block };
+    get_driver().msi_register_handler(block, msi_id, handler);
 }
-
-// SAFETY: `PdevInterruptOps` is a static dispatch table of function pointers
-// whose operations are thread-safe once registered during boot.
-unsafe impl Sync for PdevInterruptOps {}
 
 /// PDEV interrupt layer kernel tests.
 #[cfg(ktest)]
@@ -653,11 +752,11 @@ mod tests {
     use super::*;
     use unittest::{assert_err, assert_false};
 
-    /// Test default ops dispatch table fallback behavior.
+    /// Test default interrupt controller fallback behavior.
     #[test]
     fn test_pdev_default_ops_fallback() {
-        assert_err!((DEFAULT_OPS.mask)(InterruptVector(0)), Status::NOT_SUPPORTED);
-        assert_err!((DEFAULT_OPS.unmask)(InterruptVector(0)), Status::NOT_SUPPORTED);
+        assert_err!(DEFAULT_DRIVER.mask(InterruptVector(0)), Status::NOT_SUPPORTED);
+        assert_err!(DEFAULT_DRIVER.unmask(InterruptVector(0)), Status::NOT_SUPPORTED);
     }
 
     /// Test unregistered interrupt vector state query.

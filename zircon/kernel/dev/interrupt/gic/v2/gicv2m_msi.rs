@@ -6,8 +6,8 @@
 // https://opensource.org/licenses/MIT
 
 //! Since ARM determines which GIC is used at runtime, this module sets up the gicv2m instances
-//! of the MSI functions so they can be passed into the pbus interrupt function table, which
-//! fulfills the interface specified in dev/interrupt.h.
+//! of the MSI functions so that the `Gicv2` implementation of `InterruptControllerOps` can forward
+//! its MSI methods to them.
 
 use super::gicv2m::{ArmGicv2mFrameInfo, arm_gicv2m_get_frame_info};
 use crate::dev_interrupt::MAX_MSI_IRQS;
@@ -107,19 +107,15 @@ pub(super) fn arm_gicv2m_msi_init() -> Result<(), Status> {
     ret
 }
 
-pub(super) extern "C" fn arm_gicv2m_msi_alloc_block(
+/// Allocates a block of MSI compatible IRQ targets. See
+/// `InterruptControllerOps::msi_alloc_block`.
+pub(super) fn arm_gicv2m_msi_alloc_block(
     requested_irqs: u32,
     can_target_64bit: bool,
     _is_msix: bool,
-    out_block: *mut MsiBlock,
+    out_block: &mut MsiBlock,
 ) -> Result<(), Status> {
-    if out_block.is_null() {
-        return Err(Status::INVALID_ARGS);
-    }
-    // SAFETY: `out_block` was checked to be non-null and the caller owns the block it
-    // points at for the duration of the call. Only `allocated` is read, so the rest of the
-    // block need not hold valid values; it is written whole once the allocation succeeds.
-    if unsafe { (&raw const (*out_block).allocated).read() } {
+    if out_block.allocated {
         return Err(Status::BAD_STATE);
     }
 
@@ -185,33 +181,29 @@ pub(super) extern "C" fn arm_gicv2m_msi_alloc_block(
     ltracef!("success: base spi {} size {}\n", alloc_start, alloc_size);
 
     // Success!  Fill out the bookkeeping and we are done
-    // SAFETY: As above. `write` neither reads nor drops the old contents.
-    unsafe {
-        out_block.write(MsiBlock {
-            tgt_addr: info.doorbell,
-            tgt_data: alloc_start,
-            base_irq_id: alloc_start,
-            num_irq: alloc_size,
-            allocated: true,
-            is_32bit,
-        })
-    };
+    out_block.is_32bit = is_32bit;
+    out_block.base_irq_id = alloc_start;
+    out_block.num_irq = alloc_size;
+    out_block.tgt_addr = info.doorbell;
+    out_block.tgt_data = alloc_start;
+    out_block.allocated = true;
     Ok(())
 }
 
-pub(super) extern "C" fn arm_gicv2m_msi_is_supported() -> bool {
+/// Returns `true` if MSI is supported. See `InterruptControllerOps::msi_is_supported`.
+pub(super) fn arm_gicv2m_msi_is_supported() -> bool {
     S_MSI_INITIALIZED.load(Ordering::Relaxed)
 }
 
-pub(super) extern "C" fn arm_gicv2m_msi_supports_masking() -> bool {
+/// Returns `true` if MSI masking is supported. See
+/// `InterruptControllerOps::msi_supports_masking`.
+pub(super) fn arm_gicv2m_msi_supports_masking() -> bool {
     S_MSI_INITIALIZED.load(Ordering::Relaxed)
 }
 
-pub(super) extern "C" fn arm_gicv2m_msi_free_block(block: *mut MsiBlock) {
-    debug_assert!(!block.is_null());
-    // SAFETY: The pdev ops contract has the caller pass a valid `block` that it owns for the
-    // duration of the call.
-    let block = unsafe { &mut *block };
+/// Frees a previously allocated block of MSI IRQ targets. See
+/// `InterruptControllerOps::msi_free_block`.
+pub(super) fn arm_gicv2m_msi_free_block(block: &mut MsiBlock) {
     debug_assert!(block.allocated);
 
     // We stashed whether or not this came from the 32 bit pool in the platform context pointer
@@ -220,15 +212,13 @@ pub(super) extern "C" fn arm_gicv2m_msi_free_block(block: *mut MsiBlock) {
     *block = MsiBlock::default();
 }
 
-pub(super) extern "C" fn arm_gicv2m_msi_register_handler(
-    block: *mut MsiBlock,
+/// Registers a handler for one MSI within a block. See
+/// `InterruptControllerOps::msi_register_handler`.
+pub(super) fn arm_gicv2m_msi_register_handler(
+    block: &MsiBlock,
     msi_id: u32,
     handler: InterruptHandler,
 ) {
-    debug_assert!(!block.is_null());
-    // SAFETY: The pdev ops contract has the caller pass a valid `block` that it owns for the
-    // duration of the call.
-    let block = unsafe { &*block };
     debug_assert!(block.allocated);
     debug_assert!(msi_id < block.num_irq);
     // SAFETY: The interrupt controller ops are registered before any MSI block can be allocated.
@@ -237,15 +227,9 @@ pub(super) extern "C" fn arm_gicv2m_msi_register_handler(
     debug_assert!(status.is_ok());
 }
 
-pub(super) extern "C" fn arm_gicv2m_msi_mask_unmask(
-    block: *const MsiBlock,
-    msi_id: u32,
-    mask: bool,
-) {
-    debug_assert!(!block.is_null());
-    // SAFETY: The pdev ops contract has the caller pass a valid `block` that it owns for the
-    // duration of the call.
-    let block = unsafe { &*block };
+/// Masks or unmasks one MSI within a block. See
+/// `InterruptControllerOps::msi_mask_unmask`.
+pub(super) fn arm_gicv2m_msi_mask_unmask(block: &MsiBlock, msi_id: u32, mask: bool) {
     debug_assert!(block.allocated);
     debug_assert!(msi_id < block.num_irq);
     // SAFETY: The interrupt controller ops are registered before any MSI block can be allocated.

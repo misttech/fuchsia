@@ -11,8 +11,9 @@ use crate::arch_rs::riscv64::{arch_curr_cpu_num, boot_hart_id, curr_hart_id};
 use crate::kernel::mp::MpIpi;
 use crate::kernel::types::{PAddr, cpu_mask_t};
 use crate::pdev_interrupt::{
-    InterruptHandler, InterruptPolarity, InterruptTriggerMode, InterruptVector, MsiBlock,
-    PdevInterruptOps, pdev_invoke_int_if_present, pdev_register_interrupts,
+    InterruptControllerOps, InterruptHandler, InterruptPolarity, InterruptTriggerMode,
+    InterruptVector, MAX_INTERRUPTS, MsiBlock, pdev_invoke_int_if_present,
+    register_interrupt_controller,
 };
 use crate::vm::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ARCH_MMU_FLAG_UNCACHED_DEVICE,
@@ -67,20 +68,6 @@ fn plic_claim_complete_offset(hart: u32) -> Offset<u32, RwSafe> {
     Offset::new(word_offset * 4)
 }
 
-extern "C" fn plic_is_valid_interrupt(vector: InterruptVector, _flags: u32) -> bool {
-    vector.0 < *PLIC_MAX_INT
-}
-
-extern "C" fn plic_get_base_vector() -> InterruptVector {
-    InterruptVector(0)
-}
-
-extern "C" fn plic_get_max_vector() -> InterruptVector {
-    InterruptVector(*PLIC_MAX_INT)
-}
-
-extern "C" fn plic_init_percpu_early() {}
-
 fn plic_enable_vector(vector: u32, hart_id: u32) {
     let offset = plic_enable_offset(vector, hart_id);
     // SAFETY: offset is within bounds of the mapped PLIC MMIO bank.
@@ -95,202 +82,185 @@ fn plic_disable_vector(vector: u32, hart_id: u32) {
     reg.modify(|val| *val &= !(1 << (vector % 32)));
 }
 
-// Enable and disable act on the boot hart's PLIC context only.  That is the whole
-// of the current policy: `plic_set_affinity()` below is unimplemented, so every
-// interrupt is delivered to the boot hart, and there is no other context to keep in
-// sync.  Per-hart routing would change both of these and that function together.
-extern "C" fn plic_mask_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    ltracef!("vector {}\n", vector.0);
-    if vector.0 >= *PLIC_MAX_INT {
-        return Err(Status::INVALID_ARGS);
-    }
-    plic_disable_vector(vector.0, boot_hart_id());
-    Ok(())
-}
+/// The RISC-V platform-level interrupt controller driver.
+struct Plic;
 
-extern "C" fn plic_unmask_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    ltracef!("vector {}\n", vector.0);
-    if vector.0 >= *PLIC_MAX_INT {
-        return Err(Status::INVALID_ARGS);
-    }
-    plic_enable_vector(vector.0, boot_hart_id());
-    Ok(())
-}
+static PLIC: Plic = Plic;
 
-extern "C" fn plic_deactivate_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    if vector.0 >= *PLIC_MAX_INT {
-        return Err(Status::INVALID_ARGS);
-    }
-    // TODO-rvbringup: investigate what this would do
-    panic!("PLIC deactivate unimplemented");
-}
-
-extern "C" fn plic_configure_interrupt(
-    vector: InterruptVector,
-    tm: InterruptTriggerMode,
-    pol: InterruptPolarity,
-) -> Result<(), Status> {
-    ltracef!("vector {}, trigger mode {:?}, polarity {:?}\n", vector.0, tm, pol);
-    if vector.0 >= *PLIC_MAX_INT {
-        return Err(Status::INVALID_ARGS);
-    }
-    if pol != InterruptPolarity::High {
-        return Err(Status::NOT_SUPPORTED);
-    }
-    Ok(())
-}
-
-extern "C" fn plic_get_interrupt_config(
-    vector: InterruptVector,
-    tm: *mut InterruptTriggerMode,
-    pol: *mut InterruptPolarity,
-) -> Result<(), Status> {
-    ltracef!("vector {}\n", vector.0);
-    if vector.0 >= *PLIC_MAX_INT {
-        return Err(Status::INVALID_ARGS);
-    }
-    // SAFETY: Writing configuration constants back to pointers provided by C++ caller.
-    // interrupt_trigger_mode::EDGE is 0, interrupt_polarity::HIGH is 0.
-    unsafe {
-        if !tm.is_null() {
-            *tm = InterruptTriggerMode::Edge;
+impl InterruptControllerOps for Plic {
+    // Enable and disable act on the boot hart's PLIC context only.  That is the whole
+    // of the current policy: `set_affinity()` below is unimplemented, so every
+    // interrupt is delivered to the boot hart, and there is no other context to keep in
+    // sync.  Per-hart routing would change both of these and that function together.
+    fn mask(&self, vector: InterruptVector) -> Result<(), Status> {
+        ltracef!("vector {}\n", vector.0);
+        if vector.0 >= *PLIC_MAX_INT {
+            return Err(Status::INVALID_ARGS);
         }
-        if !pol.is_null() {
-            *pol = InterruptPolarity::High;
+        plic_disable_vector(vector.0, boot_hart_id());
+        Ok(())
+    }
+
+    fn unmask(&self, vector: InterruptVector) -> Result<(), Status> {
+        ltracef!("vector {}\n", vector.0);
+        if vector.0 >= *PLIC_MAX_INT {
+            return Err(Status::INVALID_ARGS);
+        }
+        plic_enable_vector(vector.0, boot_hart_id());
+        Ok(())
+    }
+
+    fn deactivate(&self, vector: InterruptVector) -> Result<(), Status> {
+        if vector.0 >= *PLIC_MAX_INT {
+            return Err(Status::INVALID_ARGS);
+        }
+        // TODO-rvbringup: investigate what this would do
+        panic!("PLIC deactivate unimplemented");
+    }
+
+    fn configure(
+        &self,
+        vector: InterruptVector,
+        tm: InterruptTriggerMode,
+        pol: InterruptPolarity,
+    ) -> Result<(), Status> {
+        ltracef!("vector {}, trigger mode {:?}, polarity {:?}\n", vector.0, tm, pol);
+        if vector.0 >= *PLIC_MAX_INT {
+            return Err(Status::INVALID_ARGS);
+        }
+        if pol != InterruptPolarity::High {
+            return Err(Status::NOT_SUPPORTED);
+        }
+        Ok(())
+    }
+
+    fn config(
+        &self,
+        vector: InterruptVector,
+    ) -> Result<(InterruptTriggerMode, InterruptPolarity), Status> {
+        ltracef!("vector {}\n", vector.0);
+        if vector.0 >= *PLIC_MAX_INT {
+            return Err(Status::INVALID_ARGS);
+        }
+        // interrupt_trigger_mode::EDGE is 0, interrupt_polarity::HIGH is 0.
+        Ok((InterruptTriggerMode::Edge, InterruptPolarity::High))
+    }
+
+    fn set_affinity(&self, _vector: InterruptVector, _mask: cpu_mask_t) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    fn is_valid(&self, vector: InterruptVector, _flags: u32) -> bool {
+        vector.0 < *PLIC_MAX_INT
+    }
+
+    fn base_vector(&self) -> InterruptVector {
+        InterruptVector(0)
+    }
+
+    fn max_vector(&self) -> InterruptVector {
+        InterruptVector(*PLIC_MAX_INT)
+    }
+
+    fn remap(&self, vector: InterruptVector) -> InterruptVector {
+        ltracef!("vector {}\n", vector.0);
+        vector
+    }
+
+    fn send_ipi(&self, _target: cpu_mask_t, _ipi: MpIpi) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    fn init_percpu_early(&self) {}
+
+    fn init_percpu(&self) {
+        let curr_hart = curr_hart_id();
+        ltracef!("hart {}\n", curr_hart);
+        let max_int = *PLIC_MAX_INT;
+        // mask all irqs on this cpu
+        for i in 1..max_int {
+            plic_disable_vector(i, curr_hart);
         }
     }
-    Ok(())
-}
 
-extern "C" fn plic_set_affinity(_vector: InterruptVector, _mask: u32) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
+    fn handle_irq(&self, _frame: &mut Iframe) {
+        // get the current vector
+        let curr_hart_id = curr_hart_id();
+        let boot_hart_id = boot_hart_id();
+        assert_eq!(curr_hart_id, boot_hart_id, "PLIC interrupt handled on non-boot hart");
 
-extern "C" fn plic_remap_interrupt(vector: InterruptVector) -> InterruptVector {
-    ltracef!("vector {}\n", vector.0);
-    vector
-}
+        let claim_offset = plic_claim_complete_offset(curr_hart_id);
+        // SAFETY: claim_offset is within bounds of the mapped PLIC region.
+        let claim_reg = unsafe { PLIC_BANK.at(claim_offset) };
+        let vector = claim_reg.read();
+        ltracef_level!(2, "vector {}\n", vector);
 
-extern "C" fn plic_handle_irq(_frame: *mut Iframe) {
-    // get the current vector
-    let curr_hart_id = curr_hart_id();
-    let boot_hart_id = boot_hart_id();
-    assert_eq!(curr_hart_id, boot_hart_id, "PLIC interrupt handled on non-boot hart");
+        if vector == 0 {
+            // spurious
+            return;
+        }
 
-    let claim_offset = plic_claim_complete_offset(curr_hart_id);
-    // SAFETY: claim_offset is within bounds of the mapped PLIC region.
-    let claim_reg = unsafe { PLIC_BANK.at(claim_offset) };
-    let vector = claim_reg.read();
-    ltracef_level!(2, "vector {}\n", vector);
+        crate::kernel::stats::inc_interrupts();
 
-    if vector == 0 {
-        // spurious
-        return;
+        // deliver the interrupt; the pdev table has MAX_INTERRUPTS slots
+        if (vector as usize) < MAX_INTERRUPTS {
+            // SAFETY: `vector` was checked to be less than `MAX_INTERRUPTS` just above.
+            unsafe {
+                pdev_invoke_int_if_present(InterruptVector(vector));
+            }
+        }
+        // EOI
+        claim_reg.write(vector);
+        ltracef_level!(2, "cpu {} exit\n", curr_hart_id);
     }
 
-    crate::kernel::stats::inc_interrupts();
-
-    // SAFETY: Delivering interrupt and signaling EOI.
-    unsafe {
-        // deliver the interrupt
-        pdev_invoke_int_if_present(InterruptVector(vector));
+    fn shutdown(&self) {
+        panic!("PLIC shutdown unimplemented");
     }
-    // EOI
-    claim_reg.write(vector);
-    ltracef_level!(2, "cpu {} exit\n", curr_hart_id);
-}
 
-extern "C" fn plic_send_ipi(_target: cpu_mask_t, _ipi: MpIpi) -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
+    fn shutdown_cpu(&self) {
+        // Nothing to be done here on the secondary cpus.
+        assert!(arch_curr_cpu_num() != 0, "Shutdown called on boot CPU");
+    }
 
-extern "C" fn plic_init_percpu() {
-    let curr_hart = curr_hart_id();
-    ltracef!("hart {}\n", curr_hart);
-    let max_int = *PLIC_MAX_INT;
-    // mask all irqs on this cpu
-    for i in 1..max_int {
-        plic_disable_vector(i, curr_hart);
+    fn suspend_cpu(&self) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    fn resume_cpu(&self) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    fn msi_is_supported(&self) -> bool {
+        false
+    }
+
+    fn msi_supports_masking(&self) -> bool {
+        false
+    }
+
+    fn msi_mask_unmask(&self, _block: &MsiBlock, _msi_id: u32, _mask: bool) {
+        panic!("PLIC MSI mask/unmask unimplemented");
+    }
+
+    fn msi_alloc_block(
+        &self,
+        _requested_irqs: u32,
+        _can_target_64bit: bool,
+        _is_msix: bool,
+        _out_block: &mut MsiBlock,
+    ) -> Result<(), Status> {
+        panic!("PLIC MSI alloc block unimplemented");
+    }
+
+    fn msi_free_block(&self, _block: &mut MsiBlock) {
+        panic!("PLIC MSI free block unimplemented");
+    }
+
+    fn msi_register_handler(&self, _block: &MsiBlock, _msi_id: u32, _handler: InterruptHandler) {
+        panic!("PLIC MSI register handler unimplemented")
     }
 }
-
-extern "C" fn plic_shutdown() {
-    panic!("PLIC shutdown unimplemented");
-}
-
-extern "C" fn plic_shutdown_cpu() {
-    // Nothing to be done here on the secondary cpus.
-    assert!(arch_curr_cpu_num() != 0, "Shutdown called on boot CPU");
-}
-
-extern "C" fn plic_suspend_cpu() -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-
-extern "C" fn plic_resume_cpu() -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-
-extern "C" fn plic_msi_is_supported() -> bool {
-    false
-}
-
-extern "C" fn plic_msi_supports_masking() -> bool {
-    false
-}
-
-extern "C" fn plic_msi_mask_unmask(_block: *const MsiBlock, _msi_id: u32, _mask: bool) {
-    panic!("PLIC MSI mask/unmask unimplemented");
-}
-
-extern "C" fn plic_msi_alloc_block(
-    _requested_irqs: u32,
-    _can_target_64bit: bool,
-    _is_msix: bool,
-    _out_block: *mut MsiBlock,
-) -> Result<(), Status> {
-    panic!("PLIC MSI alloc block unimplemented");
-}
-
-extern "C" fn plic_msi_free_block(_block: *mut MsiBlock) {
-    panic!("PLIC MSI free block unimplemented");
-}
-
-extern "C" fn plic_msi_register_handler(
-    _block: *mut MsiBlock,
-    _msi_id: u32,
-    _handler: InterruptHandler,
-) {
-    panic!("PLIC MSI register handler unimplemented")
-}
-
-static PLIC_OPS: PdevInterruptOps = PdevInterruptOps {
-    mask: plic_mask_interrupt,
-    unmask: plic_unmask_interrupt,
-    deactivate: plic_deactivate_interrupt,
-    configure: plic_configure_interrupt,
-    get_config: plic_get_interrupt_config,
-    set_affinity: plic_set_affinity,
-    is_valid: plic_is_valid_interrupt,
-    get_base_vector: plic_get_base_vector,
-    get_max_vector: plic_get_max_vector,
-    remap: plic_remap_interrupt,
-    send_ipi: plic_send_ipi,
-    init_percpu_early: plic_init_percpu_early,
-    init_percpu: plic_init_percpu,
-    handle_irq: plic_handle_irq,
-    shutdown: plic_shutdown,
-    shutdown_cpu: plic_shutdown_cpu,
-    suspend_cpu: plic_suspend_cpu,
-    resume_cpu: plic_resume_cpu,
-    msi_is_supported: plic_msi_is_supported,
-    msi_supports_masking: plic_msi_supports_masking,
-    msi_mask_unmask: plic_msi_mask_unmask,
-    msi_alloc_block: plic_msi_alloc_block,
-    msi_free_block: plic_msi_free_block,
-    msi_register_handler: plic_msi_register_handler,
-    get_status: None,
-};
 
 unsafe extern "C" {
     fn root_resource_filter_add_deny_region(base: usize, size: usize, kind: u32);
@@ -304,6 +274,7 @@ pub fn plic_init_early(_config: &DcfgRiscvPlicDriver) {}
 pub fn plic_init_post_vm(config: &DcfgRiscvPlicDriver) {
     ltrace_entry!();
     assert!(config.num_irqs > 0);
+    assert!(config.num_irqs as usize <= MAX_INTERRUPTS);
 
     let mut plic_base_void: *mut c_void = core::ptr::null_mut();
     let aspace = VmAspace::kernel_aspace();
@@ -344,9 +315,10 @@ pub fn plic_init_post_vm(config: &DcfgRiscvPlicDriver) {
     let threshold_reg = unsafe { PLIC_BANK.at(plic_threshold_offset(boot_hart)) };
     threshold_reg.write(0);
 
-    // SAFETY: Registering the ops.
+    // SAFETY: `plic_init_post_vm` runs once, from the post-VM driver handoff during
+    // single-threaded boot, before secondary harts are started.
     unsafe {
-        pdev_register_interrupts(&PLIC_OPS as *const PdevInterruptOps);
+        register_interrupt_controller(&PLIC);
     }
     ltrace_exit!();
 }
@@ -384,9 +356,9 @@ mod tests {
     fn test_plic_vector_bounds_enforcement() {
         let max = *PLIC_MAX_INT;
         if max > 0 {
-            assert_true!(plic_is_valid_interrupt(InterruptVector(max - 1), 0));
-            assert_false!(plic_is_valid_interrupt(InterruptVector(max), 0));
-            assert_err!(plic_mask_interrupt(InterruptVector(max)), Status::INVALID_ARGS);
+            assert_true!(PLIC.is_valid(InterruptVector(max - 1), 0));
+            assert_false!(PLIC.is_valid(InterruptVector(max), 0));
+            assert_err!(PLIC.mask(InterruptVector(max)), Status::INVALID_ARGS);
         }
     }
 
@@ -395,13 +367,13 @@ mod tests {
     fn test_plic_configure_rejects_invalid_polarity() {
         let max = *PLIC_MAX_INT;
         if max > 1 {
-            assert_ok!(plic_configure_interrupt(
+            assert_ok!(PLIC.configure(
                 InterruptVector(1),
                 InterruptTriggerMode::Edge,
                 InterruptPolarity::High
             ));
             assert_err!(
-                plic_configure_interrupt(
+                PLIC.configure(
                     InterruptVector(1),
                     InterruptTriggerMode::Edge,
                     InterruptPolarity::Low

@@ -21,8 +21,8 @@ use crate::kernel::types::{
     BOOT_CPU_ID, PAddr, cpu_mask_t, cpu_num_t, cpu_num_to_mask, highest_cpu_set, lowest_cpu_set,
 };
 use crate::pdev_interrupt::{
-    InterruptHandler, InterruptPolarity, InterruptTriggerMode, InterruptVector, PdevInterruptOps,
-    pdev_invoke_int_if_present, pdev_register_interrupts,
+    InterruptControllerOps, InterruptHandler, InterruptPolarity, InterruptTriggerMode,
+    InterruptVector, MsiBlock, pdev_invoke_int_if_present, register_interrupt_controller,
 };
 use crate::root_resource_filter::root_resource_filter_add_deny_region;
 use crate::vm::arch_vm_aspace::{
@@ -187,20 +187,6 @@ fn gic_determine_local_mask(fetch_gicd_targetsr_reg: impl Fn(usize) -> u32) -> u
     0
 }
 
-extern "C" fn gic_is_valid_interrupt(vector: InterruptVector, _flags: u32) -> bool {
-    vector.0 < MAX_IRQS.load(Ordering::Relaxed)
-}
-
-extern "C" fn gic_get_base_vector() -> InterruptVector {
-    // ARM Generic Interrupt Controller v2 chapter 2.1
-    // INTIDs 0-15 are local CPU interrupts
-    InterruptVector(16)
-}
-
-extern "C" fn gic_get_max_vector() -> InterruptVector {
-    InterruptVector(MAX_IRQS.load(Ordering::Relaxed))
-}
-
 fn gic_set_enable(vector: u32, enable: bool) {
     let reg = vector / 32;
     let mask = 1u32 << (vector % 32);
@@ -210,11 +196,6 @@ fn gic_set_enable(vector: u32, enable: bool) {
     } else {
         arm_gicv2_write32(regs::gicd_icenabler(reg), mask);
     }
-}
-
-extern "C" fn gic_init_percpu_early() {
-    arm_gicv2_write32(regs::gicc_ctlr(), 0x1); // EnableGrp1
-    arm_gicv2_write32(regs::gicc_pmr(), 0xff); // unmask interrupts at all priority levels
 }
 
 fn arm_gic_max_cpu() -> u32 {
@@ -251,7 +232,7 @@ fn arm_gic_init() -> Result<(), Status> {
     }
     // Initialize all the SPIs to edge triggered
     for i in GIC_BASE_SPI..max_irqs {
-        let _ = gic_configure_interrupt(
+        let _ = GICV2.configure(
             InterruptVector(i),
             InterruptTriggerMode::Edge,
             InterruptPolarity::High,
@@ -260,7 +241,7 @@ fn arm_gic_init() -> Result<(), Status> {
 
     arm_gicv2_write32(regs::gicd_ctlr(), 1); // enable GIC0
 
-    gic_init_percpu_early();
+    GICV2.init_percpu_early();
 
     Ok(())
 }
@@ -282,186 +263,6 @@ fn arm_gic_sgi(irq: u32, flags: u32, cpu_mask: u32) -> Result<(), Status> {
     Ok(())
 }
 
-extern "C" fn gic_mask_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    ltracef!("vector {}\n", vector.0);
-    if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    gic_set_enable(vector.0, false);
-
-    Ok(())
-}
-
-extern "C" fn gic_unmask_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    ltracef!("vector {}\n", vector.0);
-    if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    gic_set_enable(vector.0, true);
-
-    Ok(())
-}
-
-extern "C" fn gic_deactivate_interrupt(vector: InterruptVector) -> Result<(), Status> {
-    if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    let reg = 1u32 << (vector.0 % 32);
-    arm_gicv2_write32(regs::gicd_icactiver(vector.0 / 32), reg);
-
-    Ok(())
-}
-
-extern "C" fn gic_configure_interrupt(
-    vector: InterruptVector,
-    tm: InterruptTriggerMode,
-    pol: InterruptPolarity,
-) -> Result<(), Status> {
-    // Only configurable for SPI interrupts
-    if (vector.0 >= MAX_IRQS.load(Ordering::Relaxed)) || (vector.0 < GIC_BASE_SPI) {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    if pol != InterruptPolarity::High {
-        // TODO: polarity should actually be configure through a GPIO controller
-        return Err(Status::NOT_SUPPORTED);
-    }
-
-    ksync::lock!(GicLock::lock());
-
-    // type is encoded with two bits, MSB of the two determine type
-    // 16 irqs encoded per ICFGR register
-    let reg_ndx = vector.0 >> 4;
-    let bit_shift = ((vector.0 & 0xf) << 1) + 1;
-    let mut reg_val = arm_gicv2_read32(regs::gicd_icfgr(reg_ndx));
-    if tm == InterruptTriggerMode::Edge {
-        reg_val |= 1u32 << bit_shift;
-    } else {
-        reg_val &= !(1u32 << bit_shift);
-    }
-    arm_gicv2_write32(regs::gicd_icfgr(reg_ndx), reg_val);
-
-    let clear_reg = vector.0 / 32;
-    let clear_mask = 1u32 << (vector.0 % 32);
-    arm_gicv2_write32(regs::gicd_icpendr(clear_reg), clear_mask);
-
-    Ok(())
-}
-
-extern "C" fn gic_get_interrupt_config(
-    vector: InterruptVector,
-    tm: *mut InterruptTriggerMode,
-    pol: *mut InterruptPolarity,
-) -> Result<(), Status> {
-    if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    // SAFETY: `tm` and `pol` are either null or valid pointers supplied by the caller.
-    unsafe {
-        if !tm.is_null() {
-            *tm = InterruptTriggerMode::Edge;
-        }
-        if !pol.is_null() {
-            *pol = InterruptPolarity::High;
-        }
-    }
-
-    Ok(())
-}
-
-extern "C" fn gic_set_affinity(vector: InterruptVector, mask: cpu_mask_t) -> Result<(), Status> {
-    ltracef!("vector {}, mask {:#x}\n", vector.0, mask);
-
-    if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    // make sure the cpu mask is within range
-    if highest_cpu_set(mask) > 7 {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    // The inner scope releases `GicLock` before the result is traced.
-    let (old_targetsr, targetsr) = {
-        ksync::lock!(GicLock::lock());
-
-        // set the 4 bit field in the corresponding targetsr register with the
-        // 8 bit cpu mask.
-        let mut targetsr = arm_gicv2_read32(regs::gicd_itargetsr(vector.0 / 4));
-        let old_targetsr = targetsr;
-        targetsr &= !(0xffu32 << ((vector.0 % 4) * 8));
-        targetsr |= mask << ((vector.0 % 4) * 8);
-        arm_gicv2_write32(regs::gicd_itargetsr(vector.0 / 4), targetsr);
-
-        (old_targetsr, targetsr)
-    };
-
-    ltracef!("setting TARGETSR old {:#x} new {:#x}\n", old_targetsr, targetsr);
-
-    Ok(())
-}
-
-extern "C" fn gic_remap_interrupt(vector: InterruptVector) -> InterruptVector {
-    vector
-}
-
-extern "C" fn gic_handle_irq(frame: *mut Iframe) {
-    // get the current vector
-    let iar = arm_gicv2_read32(regs::gicc_iar());
-    let vector = iar & 0x3ff;
-
-    if vector >= 0x3fe {
-        // spurious
-        return;
-    }
-
-    // tracking external hardware irqs in this variable
-    if vector >= 32 {
-        crate::kernel::stats::inc_interrupts();
-    }
-
-    let _trace = crate::ktrace_rs::cpu_begin_scope!("kernel:irq", "irq", "irq #" => vector);
-
-    // SAFETY: `gic_handle_irq` is called from the exception vector with a valid iframe pointer,
-    // and the dereference only happens when local tracing is compiled in.
-    ltracef_level!(
-        2,
-        "iar {:#x} cpu {} currthread {:p} vector {} pc {:#x}\n",
-        iar,
-        curr_cpu_num(),
-        crate::kernel::thread::current_get(),
-        vector,
-        unsafe { (*frame).elr }
-    );
-
-    // deliver the interrupt
-    // SAFETY: The `vector >= 0x3fe` check above caps `vector` at 0x3fd, which is less than
-    // `MAX_INTERRUPTS` (1024), so the handler table index is in range.
-    unsafe {
-        pdev_invoke_int_if_present(InterruptVector(vector));
-    }
-    arm_gicv2_write32(regs::gicc_eoir(), iar);
-
-    ltracef_level!(2, "cpu {} exit\n", curr_cpu_num());
-}
-
-extern "C" fn gic_send_ipi(logical_target: cpu_mask_t, ipi: MpIpi) -> Result<(), Status> {
-    let target = MASK_TRANSLATOR.logical_mask_to_gic(logical_target);
-
-    let gic_ipi_num = ipi as u32 + IPI_BASE.load(Ordering::Relaxed);
-
-    if target != 0 {
-        ltracef!("target {:#x}, gic_ipi {}\n", target, gic_ipi_num);
-        let _ = arm_gic_sgi(gic_ipi_num, ARM_GIC_SGI_FLAG_NS, target);
-    }
-
-    Ok(())
-}
-
 fn arm_ipi_halt_handler() {
     ltracef!("cpu {}\n", curr_cpu_num());
 
@@ -469,63 +270,6 @@ fn arm_ipi_halt_handler() {
     loop {
         wfi();
     }
-}
-
-extern "C" fn gic_init_percpu() {
-    crate::kernel::mp::set_curr_cpu_online(true);
-    let ipi_base = IPI_BASE.load(Ordering::Relaxed);
-    let _ = gic_unmask_interrupt(InterruptVector(MpIpi::Generic as u32 + ipi_base));
-    let _ = gic_unmask_interrupt(InterruptVector(MpIpi::Reschedule as u32 + ipi_base));
-    let _ = gic_unmask_interrupt(InterruptVector(MpIpi::Interrupt as u32 + ipi_base));
-    let _ = gic_unmask_interrupt(InterruptVector(MpIpi::Halt as u32 + ipi_base));
-
-    let logical_num = curr_cpu_num();
-
-    match crate::topology::get_system_topology().processor_by_logical_id(logical_num) {
-        Ok(node) => {
-            let arm64_info = match *node.entity() {
-                zbi::TopologyEntity::Processor(zbi::TopologyProcessor {
-                    architecture_info: zbi::TopologyArchitectureInfo::Arm64(info),
-                    ..
-                }) => Some(info),
-                _ => None,
-            };
-            debug_assert!(arm64_info.is_some());
-            if let Some(info) = arm64_info {
-                let gic_id = cpu_num_t::from(info.gic_id);
-                MASK_TRANSLATOR.set_gic_id_for_logical_id(logical_num, gic_id);
-            }
-        }
-        Err(status) => kprintln!(
-            "arm_gicv2: unable to get logical processor {} in topology, status: {}",
-            logical_num,
-            status.into_raw()
-        ),
-    }
-
-    // Lookup the gic_mask for this processor via GIC registers and compare it
-    // to what we were told by the bootloader, warn if there is a mismatch.
-    let gic_mask = gic_determine_local_mask(read_gicd_targetsr) as cpu_mask_t;
-    let assigned_gic_mask = MASK_TRANSLATOR.get_gic_mask(logical_num);
-    if gic_mask != assigned_gic_mask {
-        kprint!(
-            "arm_gicv2: WARNING assigned gic_id of {} does not match processor's gic_id of {}.\
-Successful operation is unlikely!",
-            assigned_gic_mask,
-            gic_mask
-        );
-    }
-    tracef!(
-        "logical_cpu_mask: {} programmatic_gic_mask: {} assigned_gic_mask: {}\n",
-        cpu_num_to_mask(curr_cpu_num()),
-        gic_mask,
-        assigned_gic_mask
-    );
-}
-
-extern "C" fn gic_shutdown() {
-    // Turn off all GIC0 interrupts at the distributor.
-    arm_gicv2_write32(regs::gicd_ctlr(), 0);
 }
 
 /// Returns true if any PPIs are enabled on the calling CPU.
@@ -561,90 +305,328 @@ fn is_spi_enabled() -> bool {
     false
 }
 
-extern "C" fn gic_shutdown_cpu() {
-    debug_assert!(ints_disabled());
+/// The ARM Generic Interrupt Controller v2 driver.
+struct Gicv2;
 
-    // If we're running on a secondary CPU there's a good chance this CPU will be powered off
-    // shortly (PSCI_CPU_OFF).  Sending an interrupt to a CPU that's been powered off may result in
-    // an "erronerous state" (see Power State Coordination Interface (PSCI) System Software on ARM
-    // specification, 5.5.2).  So before we shutdown the GIC, make sure we've migrated/disabled any
-    // and all peripheral interrupts targeted at this CPU (PPIs and SPIs).
-    //
-    // Note, we don't perform these checks on the boot CPU because we don't call PSCI_CPU_OFF on the
-    // boot CPU, and we likely still have PPIs and SPIs targeting the boot CPU.
-    debug_assert!(curr_cpu_num() == BOOT_CPU_ID || !is_ppi_enabled());
-    debug_assert!(curr_cpu_num() == BOOT_CPU_ID || !is_spi_enabled());
+static GICV2: Gicv2 = Gicv2;
 
-    // Turn off interrupts at the CPU interface.
-    arm_gicv2_write32(regs::gicc_ctlr(), 0);
-}
+impl InterruptControllerOps for Gicv2 {
+    fn mask(&self, vector: InterruptVector) -> Result<(), Status> {
+        ltracef!("vector {}\n", vector.0);
+        if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
+            return Err(Status::INVALID_ARGS);
+        }
 
-extern "C" fn gic_suspend_cpu() -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
+        gic_set_enable(vector.0, false);
 
-extern "C" fn gic_resume_cpu() -> Result<(), Status> {
-    Err(Status::NOT_SUPPORTED)
-}
-
-extern "C" fn gic_get_status(
-    vector: InterruptVector,
-    out_pending: *mut bool,
-    out_enabled: *mut bool,
-) -> Result<(), Status> {
-    // SAFETY: `out_pending` and `out_enabled` are valid pointers supplied by the caller.
-    unsafe {
-        *out_pending = false;
-        *out_enabled = false;
-    }
-    // TODO(https://fxbug.dev/537888583): Unlike every other entry point of this driver, the bound
-    // checked here is the architectural maximum rather than the number of interrupts the
-    // distributor reported.
-    if vector.0 >= MAX_INT {
-        return Err(Status::INVALID_ARGS);
+        Ok(())
     }
 
-    let reg = vector.0 / 32;
-    let mask = 1u32 << (vector.0 % 32);
-    let enabled = (arm_gicv2_read32(regs::gicd_isenabler(reg)) & mask) != 0;
-    let pending = (arm_gicv2_read32(regs::gicd_ispendr(reg)) & mask) != 0;
+    fn unmask(&self, vector: InterruptVector) -> Result<(), Status> {
+        ltracef!("vector {}\n", vector.0);
+        if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
+            return Err(Status::INVALID_ARGS);
+        }
 
-    // SAFETY: As above.
-    unsafe {
-        *out_enabled = enabled;
-        *out_pending = pending;
+        gic_set_enable(vector.0, true);
+
+        Ok(())
     }
 
-    Ok(())
-}
+    fn deactivate(&self, vector: InterruptVector) -> Result<(), Status> {
+        if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
+            return Err(Status::INVALID_ARGS);
+        }
 
-static GIC_OPS: PdevInterruptOps = PdevInterruptOps {
-    mask: gic_mask_interrupt,
-    unmask: gic_unmask_interrupt,
-    deactivate: gic_deactivate_interrupt,
-    configure: gic_configure_interrupt,
-    get_config: gic_get_interrupt_config,
-    set_affinity: gic_set_affinity,
-    is_valid: gic_is_valid_interrupt,
-    get_base_vector: gic_get_base_vector,
-    get_max_vector: gic_get_max_vector,
-    remap: gic_remap_interrupt,
-    send_ipi: gic_send_ipi,
-    init_percpu_early: gic_init_percpu_early,
-    init_percpu: gic_init_percpu,
-    handle_irq: gic_handle_irq,
-    shutdown: gic_shutdown,
-    shutdown_cpu: gic_shutdown_cpu,
-    suspend_cpu: gic_suspend_cpu,
-    resume_cpu: gic_resume_cpu,
-    msi_is_supported: gicv2m_msi::arm_gicv2m_msi_is_supported,
-    msi_supports_masking: gicv2m_msi::arm_gicv2m_msi_supports_masking,
-    msi_mask_unmask: gicv2m_msi::arm_gicv2m_msi_mask_unmask,
-    msi_alloc_block: gicv2m_msi::arm_gicv2m_msi_alloc_block,
-    msi_free_block: gicv2m_msi::arm_gicv2m_msi_free_block,
-    msi_register_handler: gicv2m_msi::arm_gicv2m_msi_register_handler,
-    get_status: Some(gic_get_status),
-};
+        let reg = 1u32 << (vector.0 % 32);
+        arm_gicv2_write32(regs::gicd_icactiver(vector.0 / 32), reg);
+
+        Ok(())
+    }
+
+    fn configure(
+        &self,
+        vector: InterruptVector,
+        tm: InterruptTriggerMode,
+        pol: InterruptPolarity,
+    ) -> Result<(), Status> {
+        // Only configurable for SPI interrupts
+        if (vector.0 >= MAX_IRQS.load(Ordering::Relaxed)) || (vector.0 < GIC_BASE_SPI) {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        if pol != InterruptPolarity::High {
+            // TODO: polarity should actually be configure through a GPIO controller
+            return Err(Status::NOT_SUPPORTED);
+        }
+
+        ksync::lock!(GicLock::lock());
+
+        // type is encoded with two bits, MSB of the two determine type
+        // 16 irqs encoded per ICFGR register
+        let reg_ndx = vector.0 >> 4;
+        let bit_shift = ((vector.0 & 0xf) << 1) + 1;
+        let mut reg_val = arm_gicv2_read32(regs::gicd_icfgr(reg_ndx));
+        if tm == InterruptTriggerMode::Edge {
+            reg_val |= 1u32 << bit_shift;
+        } else {
+            reg_val &= !(1u32 << bit_shift);
+        }
+        arm_gicv2_write32(regs::gicd_icfgr(reg_ndx), reg_val);
+
+        let clear_reg = vector.0 / 32;
+        let clear_mask = 1u32 << (vector.0 % 32);
+        arm_gicv2_write32(regs::gicd_icpendr(clear_reg), clear_mask);
+
+        Ok(())
+    }
+
+    fn config(
+        &self,
+        vector: InterruptVector,
+    ) -> Result<(InterruptTriggerMode, InterruptPolarity), Status> {
+        if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        Ok((InterruptTriggerMode::Edge, InterruptPolarity::High))
+    }
+
+    fn set_affinity(&self, vector: InterruptVector, mask: cpu_mask_t) -> Result<(), Status> {
+        ltracef!("vector {}, mask {:#x}\n", vector.0, mask);
+
+        if vector.0 >= MAX_IRQS.load(Ordering::Relaxed) {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        // make sure the cpu mask is within range
+        if highest_cpu_set(mask) > 7 {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        // The inner scope releases `GicLock` before the result is traced.
+        let (old_targetsr, targetsr) = {
+            ksync::lock!(GicLock::lock());
+
+            // set the 4 bit field in the corresponding targetsr register with the
+            // 8 bit cpu mask.
+            let mut targetsr = arm_gicv2_read32(regs::gicd_itargetsr(vector.0 / 4));
+            let old_targetsr = targetsr;
+            targetsr &= !(0xffu32 << ((vector.0 % 4) * 8));
+            targetsr |= mask << ((vector.0 % 4) * 8);
+            arm_gicv2_write32(regs::gicd_itargetsr(vector.0 / 4), targetsr);
+
+            (old_targetsr, targetsr)
+        };
+
+        ltracef!("setting TARGETSR old {:#x} new {:#x}\n", old_targetsr, targetsr);
+
+        Ok(())
+    }
+
+    fn is_valid(&self, vector: InterruptVector, _flags: u32) -> bool {
+        vector.0 < MAX_IRQS.load(Ordering::Relaxed)
+    }
+
+    fn base_vector(&self) -> InterruptVector {
+        // ARM Generic Interrupt Controller v2 chapter 2.1
+        // INTIDs 0-15 are local CPU interrupts
+        InterruptVector(16)
+    }
+
+    fn max_vector(&self) -> InterruptVector {
+        InterruptVector(MAX_IRQS.load(Ordering::Relaxed))
+    }
+
+    fn remap(&self, vector: InterruptVector) -> InterruptVector {
+        vector
+    }
+
+    fn send_ipi(&self, logical_target: cpu_mask_t, ipi: MpIpi) -> Result<(), Status> {
+        let target = MASK_TRANSLATOR.logical_mask_to_gic(logical_target);
+
+        let gic_ipi_num = ipi as u32 + IPI_BASE.load(Ordering::Relaxed);
+
+        if target != 0 {
+            ltracef!("target {:#x}, gic_ipi {}\n", target, gic_ipi_num);
+            let _ = arm_gic_sgi(gic_ipi_num, ARM_GIC_SGI_FLAG_NS, target);
+        }
+
+        Ok(())
+    }
+
+    fn init_percpu_early(&self) {
+        arm_gicv2_write32(regs::gicc_ctlr(), 0x1); // EnableGrp1
+        arm_gicv2_write32(regs::gicc_pmr(), 0xff); // unmask interrupts at all priority levels
+    }
+
+    fn init_percpu(&self) {
+        crate::kernel::mp::set_curr_cpu_online(true);
+        let ipi_base = IPI_BASE.load(Ordering::Relaxed);
+        let _ = self.unmask(InterruptVector(MpIpi::Generic as u32 + ipi_base));
+        let _ = self.unmask(InterruptVector(MpIpi::Reschedule as u32 + ipi_base));
+        let _ = self.unmask(InterruptVector(MpIpi::Interrupt as u32 + ipi_base));
+        let _ = self.unmask(InterruptVector(MpIpi::Halt as u32 + ipi_base));
+
+        let logical_num = curr_cpu_num();
+
+        match crate::topology::get_system_topology().processor_by_logical_id(logical_num) {
+            Ok(node) => {
+                let arm64_info = match *node.entity() {
+                    zbi::TopologyEntity::Processor(zbi::TopologyProcessor {
+                        architecture_info: zbi::TopologyArchitectureInfo::Arm64(info),
+                        ..
+                    }) => Some(info),
+                    _ => None,
+                };
+                debug_assert!(arm64_info.is_some());
+                if let Some(info) = arm64_info {
+                    let gic_id = cpu_num_t::from(info.gic_id);
+                    MASK_TRANSLATOR.set_gic_id_for_logical_id(logical_num, gic_id);
+                }
+            }
+            Err(status) => kprintln!(
+                "arm_gicv2: unable to get logical processor {} in topology, status: {}",
+                logical_num,
+                status.into_raw()
+            ),
+        }
+
+        // Lookup the gic_mask for this processor via GIC registers and compare it
+        // to what we were told by the bootloader, warn if there is a mismatch.
+        let gic_mask = gic_determine_local_mask(read_gicd_targetsr) as cpu_mask_t;
+        let assigned_gic_mask = MASK_TRANSLATOR.get_gic_mask(logical_num);
+        if gic_mask != assigned_gic_mask {
+            kprint!(
+                "arm_gicv2: WARNING assigned gic_id of {} does not match processor's gic_id of {}.\
+Successful operation is unlikely!",
+                assigned_gic_mask,
+                gic_mask
+            );
+        }
+        tracef!(
+            "logical_cpu_mask: {} programmatic_gic_mask: {} assigned_gic_mask: {}\n",
+            cpu_num_to_mask(curr_cpu_num()),
+            gic_mask,
+            assigned_gic_mask
+        );
+    }
+
+    fn handle_irq(&self, frame: &mut Iframe) {
+        // get the current vector
+        let iar = arm_gicv2_read32(regs::gicc_iar());
+        let vector = iar & 0x3ff;
+
+        if vector >= 0x3fe {
+            // spurious
+            return;
+        }
+
+        // tracking external hardware irqs in this variable
+        if vector >= 32 {
+            crate::kernel::stats::inc_interrupts();
+        }
+
+        let _trace = crate::ktrace_rs::cpu_begin_scope!("kernel:irq", "irq", "irq #" => vector);
+
+        ltracef_level!(
+            2,
+            "iar {:#x} cpu {} currthread {:p} vector {} pc {:#x}\n",
+            iar,
+            curr_cpu_num(),
+            crate::kernel::thread::current_get(),
+            vector,
+            frame.elr
+        );
+
+        // deliver the interrupt
+        // SAFETY: The `vector >= 0x3fe` check above caps `vector` at 0x3fd, which is less than
+        // `MAX_INTERRUPTS` (1024), so the handler table index is in range.
+        unsafe {
+            pdev_invoke_int_if_present(InterruptVector(vector));
+        }
+        arm_gicv2_write32(regs::gicc_eoir(), iar);
+
+        ltracef_level!(2, "cpu {} exit\n", curr_cpu_num());
+    }
+
+    fn shutdown(&self) {
+        // Turn off all GIC0 interrupts at the distributor.
+        arm_gicv2_write32(regs::gicd_ctlr(), 0);
+    }
+
+    fn shutdown_cpu(&self) {
+        debug_assert!(ints_disabled());
+
+        // If we're running on a secondary CPU there's a good chance this CPU will be powered off
+        // shortly (PSCI_CPU_OFF).  Sending an interrupt to a CPU that's been powered off may result
+        // in an "erronerous state" (see Power State Coordination Interface (PSCI) System Software
+        // on ARM specification, 5.5.2).  So before we shutdown the GIC, make sure we've
+        // migrated/disabled any and all peripheral interrupts targeted at this CPU (PPIs and SPIs).
+        //
+        // Note, we don't perform these checks on the boot CPU because we don't call PSCI_CPU_OFF on
+        // the boot CPU, and we likely still have PPIs and SPIs targeting the boot CPU.
+        debug_assert!(curr_cpu_num() == BOOT_CPU_ID || !is_ppi_enabled());
+        debug_assert!(curr_cpu_num() == BOOT_CPU_ID || !is_spi_enabled());
+
+        // Turn off interrupts at the CPU interface.
+        arm_gicv2_write32(regs::gicc_ctlr(), 0);
+    }
+
+    fn suspend_cpu(&self) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    fn resume_cpu(&self) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    fn msi_is_supported(&self) -> bool {
+        gicv2m_msi::arm_gicv2m_msi_is_supported()
+    }
+
+    fn msi_supports_masking(&self) -> bool {
+        gicv2m_msi::arm_gicv2m_msi_supports_masking()
+    }
+
+    fn msi_mask_unmask(&self, block: &MsiBlock, msi_id: u32, mask: bool) {
+        gicv2m_msi::arm_gicv2m_msi_mask_unmask(block, msi_id, mask);
+    }
+
+    fn msi_alloc_block(
+        &self,
+        requested_irqs: u32,
+        can_target_64bit: bool,
+        is_msix: bool,
+        out_block: &mut MsiBlock,
+    ) -> Result<(), Status> {
+        gicv2m_msi::arm_gicv2m_msi_alloc_block(requested_irqs, can_target_64bit, is_msix, out_block)
+    }
+
+    fn msi_free_block(&self, block: &mut MsiBlock) {
+        gicv2m_msi::arm_gicv2m_msi_free_block(block);
+    }
+
+    fn msi_register_handler(&self, block: &MsiBlock, msi_id: u32, handler: InterruptHandler) {
+        gicv2m_msi::arm_gicv2m_msi_register_handler(block, msi_id, handler);
+    }
+
+    fn status(&self, vector: InterruptVector) -> Result<(bool, bool), Status> {
+        // TODO(https://fxbug.dev/537888583): Unlike every other entry point of this driver, the
+        // bound checked here is the architectural maximum rather than the number of interrupts the
+        // distributor reported.
+        if vector.0 >= MAX_INT {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        let reg = vector.0 / 32;
+        let mask = 1u32 << (vector.0 % 32);
+        let enabled = (arm_gicv2_read32(regs::gicd_isenabler(reg)) & mask) != 0;
+        let pending = (arm_gicv2_read32(regs::gicd_ispendr(reg)) & mask) != 0;
+
+        Ok((pending, enabled))
+    }
+}
 
 unsafe extern "C" {
     fn gicv2_hw_interface_register();
@@ -810,13 +792,14 @@ pub unsafe extern "C" fn rust_arm_gicv2_init_post_vm(config: &DcfgArmGicV2Driver
             gicv2m::arm_gicv2m_init(&reg_frames, &reg_frames_virt);
         }
     }
-    // SAFETY: `GIC_OPS` is a static that lives for the lifetime of the kernel.
+    // SAFETY: This function's contract has it called once during boot, before secondary CPUs are
+    // brought up, so nothing calls `get_driver()` concurrently.
     unsafe {
-        pdev_register_interrupts(&GIC_OPS as *const PdevInterruptOps);
+        register_interrupt_controller(&GICV2);
     }
 
     let ipi_base = IPI_BASE.load(Ordering::Relaxed);
-    // SAFETY: The interrupt controller ops were registered just above.
+    // SAFETY: The interrupt controller was registered just above.
     let status = unsafe {
         register_sgi_handler(
             MpIpi::Generic as u32 + ipi_base,
