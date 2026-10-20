@@ -112,7 +112,6 @@ if (toolchain_environment == "kernel.phys" ||
       "smccc.S",
       "spinlock.cc",
       "thread.cc",
-      "uarch.cc",
       "uspace_entry.S",
     ]
     deps = [
@@ -243,6 +242,7 @@ if (toolchain_environment == "kernel.phys" ||
       "src/smccc.rs",
       "src/spinlock.rs",
       "src/sysreg.rs",
+      "src/uarch.rs",
       "src/vm.rs",
     ]
     deps = [

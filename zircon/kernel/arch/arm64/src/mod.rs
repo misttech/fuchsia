@@ -11,6 +11,7 @@ pub mod smccc;
 mod spinlock;
 #[cfg(console_enabled)]
 mod sysreg;
+mod uarch;
 pub mod vm;
 
 use crate::kernel::types::{PAddr, VAddr, cpu_num_t};
