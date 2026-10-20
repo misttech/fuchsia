@@ -68,6 +68,10 @@ int netcp_mkdir(const char* filename) {
 }  // namespace
 
 int netcp_open(const char* filename, uint32_t arg, size_t* file_size) {
+  if (strstr(filename, "..") != nullptr) {
+    errno = EINVAL;
+    return -1;
+  }
   if (netcp.fd >= 0) {
     printf("netsvc: closing still-open '%s', replacing with '%s'\n", netcp.filename, filename);
     close(netcp.fd);
