@@ -9,6 +9,7 @@ if (is_host) {
     main_source = "common_utils_test.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
+      "//third_party/mobly",
       "//third_party/parameterized",
     ]
     main_callable = "unittest.main"

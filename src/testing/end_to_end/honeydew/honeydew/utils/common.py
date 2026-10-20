@@ -16,6 +16,7 @@ from typing import Any
 
 from honeydew import errors
 from honeydew.utils import decorators
+from mobly import signals
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -84,6 +85,10 @@ async def wait_for_state(
             )
             if current_state == expected_state:
                 return
+        except signals.TestSignal:
+            # Mobly signals (e.g. `TestAbortAll` on test timeout) must stop the
+            # test, so propagate them instead of retrying.
+            raise
         except Exception as err:  # pylint: disable=broad-except
             # `state_fn()` raised an exception. Retry again
             _LOGGER.debug(err)
@@ -139,6 +144,10 @@ def wait_for_state_sync(
             )
             if current_state == expected_state:
                 return
+        except signals.TestSignal:
+            # Mobly signals (e.g. `TestAbortAll` on test timeout) must stop the
+            # test, so propagate them instead of retrying.
+            raise
         except Exception as err:  # pylint: disable=broad-except
             # `state_fn()` raised an exception. Retry again
             _LOGGER.debug(err)
@@ -195,6 +204,10 @@ async def retry(
             _LOGGER.debug("%s returned %s", fn.__qualname__, ret_value)
             _LOGGER.info("Successfully finished %s.", fn.__qualname__)
             return ret_value
+        except signals.TestSignal:
+            # Mobly signals (e.g. `TestAbortAll` on test timeout) must stop the
+            # test, so propagate them instead of retrying.
+            raise
         except Exception as err:  # pylint: disable=broad-except
             # `fn()` raised an exception. Retry again
             _LOGGER.warning(

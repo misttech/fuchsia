@@ -11,6 +11,7 @@ from unittest import mock
 
 from honeydew import errors
 from honeydew.utils import common
+from mobly import signals
 from parameterized import param, parameterized
 
 CONFIG_DICT: dict[str, Any] = {
@@ -87,6 +88,23 @@ class CommonUtilsTests(unittest.IsolatedAsyncioTestCase):
         mock_time.assert_called()
         mock_sleep.assert_called()
 
+    @mock.patch("asyncio.sleep", autospec=True)
+    async def test_wait_for_state_propagates_mobly_signals(
+        self, mock_sleep: mock.Mock
+    ) -> None:
+        """Test case for common.wait_for_state() propagating Mobly signals
+        raised by state_fn instead of retrying."""
+
+        def _state_fn() -> bool:
+            raise signals.TestAbortAll("abort")
+
+        with self.assertRaises(signals.TestAbortAll):
+            await common.wait_for_state(
+                state_fn=_state_fn, expected_state=False, timeout=5
+            )
+
+        mock_sleep.assert_not_called()
+
     def test_wait_for_state_sync_success(self) -> None:
         """Test case for common.wait_for_state_sync() success case."""
         common.wait_for_state_sync(
@@ -126,6 +144,23 @@ class CommonUtilsTests(unittest.IsolatedAsyncioTestCase):
 
         mock_time.assert_called()
         mock_sleep.assert_called()
+
+    @mock.patch("time.sleep", autospec=True)
+    def test_wait_for_state_propagates_mobly_signals_sync(
+        self, mock_sleep: mock.Mock
+    ) -> None:
+        """Sync version of test_wait_for_state_propagates_mobly_signals(), for
+        common.wait_for_state_sync()."""
+
+        def _state_fn() -> bool:
+            raise signals.TestAbortAll("abort")
+
+        with self.assertRaises(signals.TestAbortAll):
+            common.wait_for_state_sync(
+                state_fn=_state_fn, expected_state=False, timeout=5
+            )
+
+        mock_sleep.assert_not_called()
 
     async def test_retry_success_with_no_ret_val(self) -> None:
         """Test case for common.retry() success case where fn() does not return
@@ -170,6 +205,21 @@ class CommonUtilsTests(unittest.IsolatedAsyncioTestCase):
 
         mock_time.assert_called()
         mock_sleep.assert_called()
+
+    @mock.patch("asyncio.sleep", autospec=True)
+    async def test_retry_propagates_mobly_signals(
+        self, mock_sleep: mock.Mock
+    ) -> None:
+        """Test case for common.retry() propagating Mobly signals raised by fn
+        instead of retrying."""
+
+        def _fn() -> None:
+            raise signals.TestAbortAll("abort")
+
+        with self.assertRaises(signals.TestAbortAll):
+            await common.retry(fn=_fn, timeout=30, wait_time=5)
+
+        mock_sleep.assert_not_called()
 
     @parameterized.expand(
         [
