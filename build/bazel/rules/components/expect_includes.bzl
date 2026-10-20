@@ -4,6 +4,11 @@
 
 """Provider and rule for declaring expected component manifest shard includes."""
 
+load(
+    "//build/bazel/rules/components:cml_shard.bzl",
+    "FuchsiaCmlShardInfo",
+)
+
 FuchsiaExpectedIncludesInfo = provider(
     doc = "A provider for expected component manifest includes from expect_includes() targets.",
     fields = {
@@ -13,9 +18,9 @@ FuchsiaExpectedIncludesInfo = provider(
         "auto_include_shards": """depset[File] of manifest shard (.shard.cml / .cml) files from all
         expect_includes() targets (both enforce = True and enforce = False) to automatically include
         in fx_unittest_component() generated manifests.""",
-        "transitive_shards": """depset[File] of all shard files from includes, include_deps, and
-        deps of expect_includes() targets, needed as sandbox inputs when running cmc compile or cmc
-        check-includes.""",
+        "transitive_shards": """depset[File] of all shard files from includes (and their
+        cml_shard() transitive includes) and deps of expect_includes() targets, needed as sandbox
+        inputs when running cmc compile or cmc check-includes.""",
     },
 )
 
@@ -36,8 +41,12 @@ def _expect_includes_impl(ctx):
         ],
     )
     transitive_shards = depset(
-        direct_shards + ctx.files.include_deps,
+        direct_shards,
         transitive = [
+            dep[FuchsiaCmlShardInfo].transitive_shards
+            for dep in ctx.attr.includes
+            if FuchsiaCmlShardInfo in dep
+        ] + [
             dep[FuchsiaExpectedIncludesInfo].transitive_shards
             for dep in ctx.attr.deps
         ],
@@ -64,6 +73,10 @@ In addition, `fx_unittest_component()` and `fx_unittest_package()` automatically
 add the shards in `includes` to the component manifest they generate for unit
 test binaries, regardless of whether `enforce` is `True` or `False`.
 
+If a shard in `includes` itself `include`s other `.shard.cml` files, wrap it in
+a `cml_shard()` target so its transitive shards are available in the Bazel
+sandbox when `cmc compile` and `cmc check-includes` run.
+
 Note that rules with strict dependency provider requirements (such as
 `fx_cc_library()`, `cc_library()`, `rustc_library()`, etc.) should depend on
 `expect_includes()` targets via `aspect_hints` rather than `deps`. When
@@ -73,9 +86,9 @@ converted to GN by `bazel2gn`, `aspect_hints` is mapped to `deps` so GN's
     implementation = _expect_includes_impl,
     attrs = {
         "includes": attr.label_list(
-            doc = """The manifest shard (`.shard.cml` / `.cml`) files that dependent components must
-            include in their component manifests, and that are automatically included in generated
-            `fx_unittest_component()` manifests.""",
+            doc = """The manifest shard (`cml_shard()` targets or `.shard.cml` / `.cml` files) that
+            dependent components must include in their component manifests, and that are
+            automatically included in generated `fx_unittest_component()` manifests.""",
             allow_files = [".cml"],
             mandatory = True,
         ),
@@ -91,34 +104,6 @@ manifests, though shard inclusion in generated unit test manifests
             doc = """Other `expect_includes()` targets whose expected includes are transitively
 required by this target.""",
             providers = [FuchsiaExpectedIncludesInfo],
-        ),
-        "include_deps": attr.label_list(
-            doc = """Transitive manifest shard files (`.shard.cml` / `.cml`) required by the
-shards in `includes`.
-
-Because Bazel actions execute in a sandbox, if any shard in `includes` itself
-`include`s other `.shard.cml` files, those transitive `.shard.cml` files must be
-listed in `include_deps` so they are available in the sandbox when `cmc compile`
-and `cmc check-includes` run.
-
-For example, if `client.shard.cml` includes `syslog/offer.shard.cml` and
-`syslog/use.shard.cml`:
-
-```bazel
-expect_includes(
-    name = "client_includes",
-    includes = ["client.shard.cml"],
-    include_deps = [
-        "offer.shard.cml",
-        "use.shard.cml",
-    ],
-)
-```
-
-Note: `bazel2gn` omits `include_deps` when converting `expect_includes()` to GN
-because GN runs `cmc` outside a sandbox and does not take file labels in
-`deps`.""",
-            allow_files = [".cml"],
         ),
     },
     provides = [FuchsiaExpectedIncludesInfo],

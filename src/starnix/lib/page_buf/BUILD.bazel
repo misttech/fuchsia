@@ -56,9 +56,7 @@ fx_component_manifest(
     testonly = True,
     component_name = "page_buf_tests",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
         "//src/sys/test_runners/starnix:unit_test.shard.cml",
     ],
     manifest = "meta/page_buf_tests.cml",

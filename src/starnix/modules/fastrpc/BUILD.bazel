@@ -38,9 +38,7 @@ fx_component_manifest(
     name = "google_fastrpc_manifest",
     component_name = "google_fastrpc",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/fastrpc.cml",
 )

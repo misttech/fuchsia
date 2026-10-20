@@ -57,10 +57,10 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      `<n>`. In `fuchsia_package_with_single_component("<n>")`, `package_name` defaults to `<n>`
      and `component_name` defaults to `package_name` (NOT the `.cml` filename stem), producing
      `meta/<component_name>.cm`.
-   - **Sandboxed `.shard.cml` includes**: `cmc` in Bazel is sandboxed, so list every direct and
-     transitive `.shard.cml` label in `includes = [...]` (e.g. `"include": ["syslog/client.shard.cml"]`
-     needs `"//sdk/lib/syslog:client.shard.cml"`, `"//sdk/lib/syslog:offer.shard.cml"`,
-     `"//sdk/lib/syslog:use.shard.cml"`; `"inspect/client.shard.cml"` needs
+   - **Sandboxed `.shard.cml` includes**: `cmc` in Bazel is sandboxed, so list every direct
+     `cml_shard` target or `.shard.cml` file (plus any transitive `.shard.cml` files not wrapped in
+     `cml_shard`) in `includes = [...]` (e.g. `"include": ["syslog/client.shard.cml"]` needs
+     `"//sdk/lib/syslog:client.shard"`; `"inspect/client.shard.cml"` needs
      `"//sdk/lib/inspect:{client,offer,use}.shard.cml"`).
 2. **Packaged binary & component (`fx_packaged_binary`, `fx_component`)**:
    - Declare the binary (`fx_cc_binary` or `rustc_binary`) with `tags = ["manual"]`. An

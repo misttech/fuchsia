@@ -2608,19 +2608,30 @@ func TestAspectHintsAndExpectIncludes(t *testing.T) {
 		wantGN string
 	}{
 		{
-			name: "expect_includes omits include_deps and preserves deps",
-			bazel: `expect_includes(
-	name = "client_includes",
-	includes = ["client.shard.cml"],
-	deps = [":base_includes"],
-	include_deps = [
-		"offer.shard.cml",
-		"use.shard.cml",
+			name: "cml_shard and expect_includes transform .shard labels to .shard.cml paths",
+			bazel: `cml_shard(
+	name = "client.shard",
+	includes = [
+		":offer.shard",
+		":use.shard",
 	],
+	shard = "client.shard.cml",
+)
+
+expect_includes(
+	name = "client_includes",
+	includes = [
+		":client.shard",
+		"//sdk/lib/syslog:use.shard",
+		"offer.shard.cml",
+	],
+	deps = [":base_includes"],
 )`,
 			wantGN: `expect_includes("client_includes") {
 	includes = [
 		"client.shard.cml",
+		"//sdk/lib/syslog/use.shard.cml",
+		"offer.shard.cml",
 	]
 	deps = [
 		":base_includes",
@@ -2919,6 +2930,48 @@ cc_binary(
 			f := toSyntaxFile(t, tc.bazel)
 			if _, err := bazelToGN(f); err == nil {
 				t.Errorf("Unexpected success converting Bazel targets. Bazel source:\n%s", tc.bazel)
+			}
+		})
+	}
+}
+
+func TestCmlShardValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bazel string
+	}{
+		{
+			name: "cml_shard name does not end in .shard",
+			bazel: `cml_shard(
+	name = "client.shard.cml",
+	shard = "client.shard.cml",
+)`,
+		},
+		{
+			name: "cml_shard missing shard attribute",
+			bazel: `cml_shard(
+	name = "client.shard",
+)`,
+		},
+		{
+			name: "cml_shard shard does not match name + .cml",
+			bazel: `cml_shard(
+	name = "client.shard",
+	shard = "other.shard.cml",
+)`,
+		},
+		{
+			name: "expect_includes includes entry does not end in .shard or .cml",
+			bazel: `expect_includes(
+	name = "client_includes",
+	includes = [":invalid_target"],
+)`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			if _, err := bazelToGN(f); err == nil {
+				t.Fatalf("Expected error converting invalid Bazel target, got nil:\n%s", tc.bazel)
 			}
 		})
 	}

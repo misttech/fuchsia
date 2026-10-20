@@ -38,9 +38,7 @@ fx_component_manifest(
     name = "hvdcp_opti_manifest",
     component_name = "hvdcp_opti",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/hvdcp_opti.cml",
 )

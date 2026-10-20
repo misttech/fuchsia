@@ -47,9 +47,7 @@ fx_component_manifest(
     name = "factory-reset-trigger-manifest",
     component_name = "factory-reset-trigger",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/factory-reset-trigger.cml",
 )

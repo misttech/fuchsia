@@ -64,9 +64,7 @@ fx_component_manifest(
     testonly = True,
     component_name = "fuchsia-inspect-derive-test",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
         "//src/sys/test_runners/rust:default.shard.cml",
     ],
     manifest = "meta/fuchsia-inspect-derive-test.cml",
@@ -84,9 +82,7 @@ fx_component_manifest(
     testonly = True,
     component_name = "fuchsia-inspect-derive-import-test",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
         "//src/sys/test_runners/rust:default.shard.cml",
     ],
     manifest = "meta/fuchsia-inspect-derive-import-test.cml",

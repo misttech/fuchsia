@@ -61,9 +61,7 @@ fx_component_manifest(
     component_name = "atomic-storage-tests",
     includes = [
         "//sdk/lib/sys/testing:rust_test_runner.shard.cml",
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/atomic-storage-tests.cml",
     visibility = ["//visibility:private"],

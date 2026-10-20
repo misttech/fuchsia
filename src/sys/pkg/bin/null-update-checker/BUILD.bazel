@@ -53,9 +53,7 @@ fx_component_manifest(
     name = "manifest",
     component_name = "null-update-checker",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/null-update-checker.cml",
 )

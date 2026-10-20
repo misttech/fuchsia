@@ -202,6 +202,38 @@ func bazelFilePathsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	return lit, nil
 }
 
+// bazelCmlIncludesToGN converts Bazel CML shard labels and file paths (in
+// `expect_includes`) to GN `.cml` file paths.
+//
+// By convention (enforced on `cml_shard` for `bazel2gn` compatibility for now),
+// a `cml_shard` target's name ends in `.shard` and wraps `<name>.cml`, so
+// labels ending in `.shard` are converted to file paths with `.cml` appended.
+func bazelCmlIncludesToGN(expr syntax.Expr) (syntax.Expr, error) {
+	lit, ok := expr.(*syntax.Literal)
+	if !ok {
+		return expr, nil
+	}
+	if path, ok := overwrittenPath(lit); ok {
+		lit.Raw = fmt.Sprintf(`"%s"`, path)
+		return lit, nil
+	}
+	label, ok := lit.Value.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string literal in includes list, got %s", lit.Raw)
+	}
+	gnPath, err := bazelFileLabelToGNPath(label)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(gnPath, ".shard") {
+		gnPath += ".cml"
+	} else if !strings.HasSuffix(gnPath, ".cml") {
+		return nil, fmt.Errorf("expected label in expect_includes `includes` to end in \".shard\" or \".cml\", got %q", label)
+	}
+	lit.Raw = gnQuote(gnPath)
+	return lit, nil
+}
+
 // bazelLdflagsToGN converts Bazel ldflags to GN, supporting overwrites.
 func bazelLdflagsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	lit, ok := expr.(*syntax.Literal)

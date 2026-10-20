@@ -2,13 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
+
 package(default_applicable_licenses = ["//:license"])
 
-exports_files(
-    [
-        "realm_builder.shard.cml",
-        "realm_builder_base_no_diagnostics.shard.cml",
-        "realm_builder_no_diagnostics.shard.cml",
-    ],
+cml_shard(
+    name = "realm_builder_base_no_diagnostics.shard",
+    shard = "realm_builder_base_no_diagnostics.shard.cml",
+)
+
+cml_shard(
+    name = "realm_builder_no_diagnostics.shard",
+    includes = [":realm_builder_base_no_diagnostics.shard"],
+    shard = "realm_builder_no_diagnostics.shard.cml",
+)
+
+cml_shard(
+    name = "realm_builder.shard",
+    includes = [":realm_builder_no_diagnostics.shard"],
+    shard = "realm_builder.shard.cml",
     visibility = ["//src/lib/fuchsia-rseq:__pkg__"],
 )

@@ -66,9 +66,7 @@ fx_component_manifest(
     name = "build-info-manifest",
     component_name = "build-info",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/build_info.cml",
 )

@@ -45,9 +45,7 @@ fx_component_manifest(
     name = "google_display_manifest",
     component_name = "google_display",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/display.cml",
 )
@@ -73,9 +71,7 @@ fx_component_manifest(
     name = "sockettunnel_manifest",
     component_name = "sockettunnel",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/sockettunnel.cml",
 )
@@ -101,9 +97,7 @@ fx_component_manifest(
     name = "google_nanohub_manifest",
     component_name = "google_nanohub",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/nanohub.cml",
 )
@@ -129,9 +123,7 @@ fx_component_manifest(
     name = "google_backlight_manifest",
     component_name = "google_backlight",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/backlight.cml",
 )

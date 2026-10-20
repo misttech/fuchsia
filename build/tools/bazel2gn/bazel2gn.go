@@ -250,6 +250,11 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		return nil, fmt.Errorf("%s is not a known Bazel rule to convert to GN", bazelRule)
 	}
 
+	if bazelRule == "cml_shard" {
+		if err := validateCmlShard(expr); err != nil {
+			return nil, err
+		}
+	}
 	// TODO(jayzhuang): Handle package level settings, e.g. visibility.
 	if gnTemplateName == noGNEquivalent || bazelRule == "package" {
 		if len(rawAttrs) > 0 {
@@ -364,6 +369,53 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		ret = append(ret, "}")
 	}
 	return ret, nil
+}
+
+// validateCmlShard enforces the `cml_shard` naming convention required for
+// compatibility with `bazel2gn` for now: `name` must end in `.shard`, and
+// `shard` must be specified and equal to `name + ".cml"` (or `":" + name + ".cml"`).
+// This allows `bazel2gn` to convert `cml_shard` target labels (e.g. in
+// `expect_includes`) into `.cml` file paths without cross-target lookup.
+func validateCmlShard(expr *syntax.CallExpr) error {
+	var name, shard string
+	for _, arg := range expr.Args {
+		binaryExpr, ok := arg.(*syntax.BinaryExpr)
+		if !ok || binaryExpr.Op != syntax.EQ {
+			return fmt.Errorf("only attribute assignments (e.g. `attr = value`) are allowed in cml_shard, got %#v", arg)
+		}
+		ident, ok := binaryExpr.X.(*syntax.Ident)
+		if !ok {
+			return fmt.Errorf("unexpected node type on the left hand side of binary expression in cml_shard, want syntax.Ident, got %T", binaryExpr.X)
+		}
+		switch ident.Name {
+		case "name":
+			lit, ok := binaryExpr.Y.(*syntax.Literal)
+			if !ok {
+				return fmt.Errorf("cml_shard name must be a string literal, got %T", binaryExpr.Y)
+			}
+			name, _ = lit.Value.(string)
+		case "shard":
+			lit, ok := binaryExpr.Y.(*syntax.Literal)
+			if !ok {
+				return fmt.Errorf("cml_shard shard must be a string literal, got %T", binaryExpr.Y)
+			}
+			shard, _ = lit.Value.(string)
+		}
+	}
+	if name == "" {
+		return errors.New("missing `name` attribute in cml_shard target")
+	}
+	if !strings.HasSuffix(name, ".shard") {
+		return fmt.Errorf("cml_shard name %q must end in \".shard\" (for bazel2gn compatibility)", name)
+	}
+	if shard == "" {
+		return fmt.Errorf("missing `shard` attribute in cml_shard target %q", name)
+	}
+	wantShard := name + ".cml"
+	if strings.TrimPrefix(shard, ":") != wantShard {
+		return fmt.Errorf("cml_shard %q must set `shard = %q` (got %q) for bazel2gn compatibility", name, wantShard, shard)
+	}
+	return nil
 }
 
 // convertAttrName converts input Bazel attrName to the corresponding parameter name in GN.
@@ -624,6 +676,10 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 			transformers = append(transformers, compiledActionOutsTransformer)
 		} else {
 			transformers = append(transformers, bazelFilePathsToGN)
+		}
+	case "includes":
+		if bazelRule == "expect_includes" {
+			transformers = append(transformers, bazelCmlIncludesToGN)
 		}
 	case "args":
 		if bazelRule == compiledActionRule {

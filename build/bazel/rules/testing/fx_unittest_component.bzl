@@ -178,7 +178,7 @@ def _fx_unittest_component_impl(
 
     shards = [
         ":" + runner_shard_name,
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:use.shard",
     ]
 
     generated_manifest_name = name + ".generated_manifest"

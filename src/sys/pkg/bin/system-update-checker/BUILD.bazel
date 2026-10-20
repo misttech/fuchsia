@@ -90,9 +90,7 @@ fx_component_manifest(
         "//sdk/lib/inspect:client.shard.cml",
         "//sdk/lib/inspect:offer.shard.cml",
         "//sdk/lib/inspect:use.shard.cml",
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/system-update-checker.cml",
 )

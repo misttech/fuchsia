@@ -22,6 +22,10 @@ load(
     "collect_component_manifests_aspect",
 )
 load(
+    "//build/bazel/rules/components:cml_shard.bzl",
+    "FuchsiaCmlShardInfo",
+)
+load(
     "//build/bazel/rules/components:expect_includes.bzl",
     "FuchsiaExpectedIncludesInfo",
 )
@@ -123,17 +127,27 @@ def _fx_component_manifest_impl(ctx):
 
     # LINT.ThenChange(//tools/cmc/build/cml.gni:debugdata_merge)
 
+    # `includes` accepts both `cml_shard` targets (which carry `FuchsiaCmlShardInfo`
+    # with their transitive shard dependencies) and raw `.cml` / `.shard.cml` leaf
+    # files (which do not include other shards and only provide `DefaultInfo.files`).
+    includes = depset(
+        transitive = [
+            dep[FuchsiaCmlShardInfo].transitive_shards if FuchsiaCmlShardInfo in dep else dep[DefaultInfo].files
+            for dep in ctx.attr.includes
+        ],
+    )
+
     return compile_component_manifest(
         ctx = ctx,
         cmc_tool = cmc,
         manifest_in = manifest_in,
         component_name = component_name,
-        includes = ctx.files.includes,
+        includes = includes.to_list(),
         include_paths = include_paths,
     ) + [
         _FxComponentManifestSourcesInfo(
             source_manifest = ctx.file.manifest,
-            includes = depset(ctx.files.includes),
+            includes = includes,
         ),
     ]
 

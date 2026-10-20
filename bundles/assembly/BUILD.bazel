@@ -1358,7 +1358,7 @@ assembly_input_bundle(
                     "destination": "inspect/offer.shard.cml",
                 },
                 {
-                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "source": "//sdk/lib/syslog:offer.shard",
                     "destination": "syslog/offer.shard.cml",
                 },
                 {
@@ -1512,7 +1512,7 @@ assembly_input_bundle(
                     "destination": "trace/offer.shard.cml",
                 },
                 {
-                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "source": "//sdk/lib/syslog:offer.shard",
                     "destination": "syslog/offer.shard.cml",
                 },
             ],
@@ -3232,15 +3232,15 @@ assembly_input_bundle(
                     "destination": "inspect/use.shard.cml",
                 },
                 {
-                    "source": "//sdk/lib/syslog:client.shard.cml",
+                    "source": "//sdk/lib/syslog:client.shard",
                     "destination": "syslog/client.shard.cml",
                 },
                 {
-                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "source": "//sdk/lib/syslog:offer.shard",
                     "destination": "syslog/offer.shard.cml",
                 },
                 {
-                    "source": "//sdk/lib/syslog:use.shard.cml",
+                    "source": "//sdk/lib/syslog:use.shard",
                     "destination": "syslog/use.shard.cml",
                 },
                 {
@@ -4888,7 +4888,7 @@ assembly_input_bundle(
             ],
             "component_includes": [
                 {
-                    "source": "//sdk/lib/syslog:client.shard.cml",
+                    "source": "//sdk/lib/syslog:client.shard",
                     "destination": "syslog/client.shard.cml",
                 },
                 {
@@ -4900,7 +4900,7 @@ assembly_input_bundle(
                     "destination": "inspect/offer.shard.cml",
                 },
                 {
-                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "source": "//sdk/lib/syslog:offer.shard",
                     "destination": "syslog/offer.shard.cml",
                 },
                 {
@@ -4908,7 +4908,7 @@ assembly_input_bundle(
                     "destination": "inspect/use.shard.cml",
                 },
                 {
-                    "source": "//sdk/lib/syslog:use.shard.cml",
+                    "source": "//sdk/lib/syslog:use.shard",
                     "destination": "syslog/use.shard.cml",
                 },
             ],

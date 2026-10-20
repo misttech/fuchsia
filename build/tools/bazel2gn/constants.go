@@ -146,6 +146,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	// Bazel-only Fuchsia component, package, and test rules. Any GN wrapper
 	// targets (such as `bazel_fuchsia_package()` or `bazel_test_suite()`) are
 	// maintained by hand above the bazel2gn sentinel in BUILD.gn.
+	"cml_shard":             noGNEquivalent,
 	"fx_component":          noGNEquivalent,
 	"fx_component_manifest": noGNEquivalent,
 	"fx_package":            noGNEquivalent,
@@ -210,10 +211,6 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	"fx_cc_library":            {"includes": true},
 	"idk_cc_source_library":    {"includes": true},
 	"idk_cc_shared_library_zx": {"version_script": true},
-	// In Bazel, `include_deps` on `expect_includes` lists transitive
-	// `.shard.cml` file labels needed in the Bazel action sandbox. GN runs `cmc`
-	// outside a sandbox and does not accept file labels in `deps`.
-	"expect_includes": {"include_deps": true},
 	// We do not need to include the "stamp" destination in GN because it is implicitly created by
 	// the rule.
 	"stamp_group": {"stamp": true},

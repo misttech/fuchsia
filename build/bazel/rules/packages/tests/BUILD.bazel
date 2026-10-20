@@ -6,6 +6,10 @@
 
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load(
+    "//build/bazel/rules/components:cml_shard.bzl",
+    "cml_shard",
+)
+load(
     "//build/bazel/rules/components:expect_includes.bzl",
     "expect_includes",
 )
@@ -57,12 +61,7 @@ fx_component_manifest(
     component_name = "example_test",
     includes = [
         "//sdk/lib/sys/testing:elf_test_runner.shard.cml",
-        "//sdk/lib/syslog:client.shard.cml",
-
-        # `cmc` resolves includes transitively, so the shards that
-        # client.shard.cml itself includes must be declared as inputs too.
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/example_test.cml",
 )
@@ -278,9 +277,7 @@ fx_component_manifest(
     component_name = "example_starnix_test",
     includes = [
         "//sdk/lib/sys/testing:elf_test_runner.shard.cml",
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/example_test.cml",
 )
@@ -350,6 +347,8 @@ filegroup(
     testonly = True,
     srcs = [
         ":example_check_includes_disabled_package",
+        ":example_cml_shard_invalid_name_failure_test",
+        ":example_cml_shard_mismatched_shard_failure_test",
         ":example_conflicting_runners_failure_test",
         ":example_expect_includes_package",
         ":example_expect_includes_unittest_package",
@@ -521,10 +520,44 @@ verify_fx_test_realms(
     test = ":example_multi_unittest_package",
 )
 
+cml_shard(
+    name = "example_invalid_shard_name",
+    shard = "meta/example_parent.shard.cml",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_cml_shard_invalid_name_failure_test",
+    expected_message = "must end in '.shard'",
+    target_under_test = ":example_invalid_shard_name",
+)
+
+cml_shard(
+    name = "example_mismatched.shard",
+    shard = "meta/example_parent.shard.cml",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_cml_shard_mismatched_shard_failure_test",
+    expected_message = 'must reference `shard = "example_mismatched.shard.cml"` in the same package',
+    target_under_test = ":example_mismatched.shard",
+)
+
+cml_shard(
+    name = "meta/example_leaf.shard",
+    shard = "meta/example_leaf.shard.cml",
+)
+
+cml_shard(
+    name = "meta/example_parent.shard",
+    includes = [":meta/example_leaf.shard"],
+    shard = "meta/example_parent.shard.cml",
+)
+
 expect_includes(
     name = "example_enforced_includes",
-    include_deps = ["meta/example_leaf.shard.cml"],
-    includes = ["meta/example_parent.shard.cml"],
+    includes = [":meta/example_parent.shard"],
 )
 
 expect_includes(
@@ -546,8 +579,8 @@ fx_cc_binary(
 
 # Tests that `fx_unittest_package()` automatically includes shards from both
 # enforced and unenforced `expect_includes()` targets in the generated manifest,
-# makes transitive shard `deps` available in the compilation sandbox, and passes
-# `cmc check-includes`.
+# makes transitive shard `includes` available in the compilation sandbox, and
+# passes `cmc check-includes`.
 fx_unittest_package(
     name = "example_expect_includes_unittest_package",
     package_name = "fx-expect-includes-unittest-package-example",
@@ -568,8 +601,7 @@ fx_component_manifest(
     testonly = True,
     component_name = "example_expect_includes",
     includes = [
-        "meta/example_leaf.shard.cml",
-        "meta/example_parent.shard.cml",
+        ":meta/example_parent.shard",
     ],
     manifest = "meta/example_expect_includes.cml",
 )

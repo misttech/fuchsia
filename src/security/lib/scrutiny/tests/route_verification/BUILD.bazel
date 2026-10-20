@@ -33,7 +33,7 @@ fx_component_manifest(
     component_name = "test_session",
     includes = [
         "//sdk/lib/inspect:offer.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:offer.shard",
     ],
     manifest = "meta/test_session.cml",
 )
@@ -63,7 +63,7 @@ fx_component_manifest(
     component_name = "component_with_collection",
     includes = [
         "//sdk/lib/inspect:offer.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:offer.shard",
     ],
     manifest = "meta/component_with_collection.cml",
 )

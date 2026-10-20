@@ -126,9 +126,7 @@ fx_component_manifest(
     testonly = True,
     component_name = "update-package-lib-test",
     includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
         "//src/sys/test_runners:tmp_storage.shard.cml",
         "//src/sys/test_runners/rust:default.shard.cml",
     ],
