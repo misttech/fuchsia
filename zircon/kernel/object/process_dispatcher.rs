@@ -388,8 +388,9 @@ impl ProcessDispatcher {
         vmos: &mut impl VmoInfoWriter,
         max: usize,
     ) -> Result<(usize, usize), Status> {
-        if self.state() != ProcessState::Running {
-            return Err(Status::BAD_STATE);
+        match self.state() {
+            ProcessState::Initial | ProcessState::Running => {}
+            ProcessState::Dying | ProcessState::Dead => return Err(Status::BAD_STATE),
         }
 
         let (actual, available) = get_process_vmos(self, vmos, max)?;

@@ -802,7 +802,7 @@ VmObject::AttributionCounts ProcessDispatcher::GetAttributedMemory() const {
 
   VmObject::AttributionCounts counts;
   Guard<CriticalMutex> guard{get_lock()};
-  if (state_ != State::RUNNING) {
+  if (state_ != State::INITIAL && state_ != State::RUNNING) {
     return counts;
   }
 
