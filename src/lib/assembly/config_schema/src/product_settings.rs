@@ -217,6 +217,16 @@ pub struct StarnixImages {
     #[schemars(schema_with = "path_schema")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vendor: Option<Utf8PathBuf>,
+    /// Path to an Android product partition image
+    #[walk_paths]
+    #[schemars(schema_with = "path_schema")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product: Option<Utf8PathBuf>,
+    /// Path to an Android system_ext partition image
+    #[walk_paths]
+    #[schemars(schema_with = "path_schema")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_ext: Option<Utf8PathBuf>,
     /// Path to the ramdisk images
     #[walk_paths]
     #[schemars(schema_with = "path_schema")]
@@ -956,6 +966,8 @@ mod tests {
         let mut images_or_package = StarnixImagesOrPackage::Images(StarnixImages {
             system: "path/to/system".into(),
             vendor: Some("path/to/vendor".into()),
+            product: Some("path/to/product".into()),
+            system_ext: Some("path/to/system_ext".into()),
             ramdisk: vec!["path/to/ramdisk".into()],
         });
         let mut paths: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = Vec::new();
@@ -968,6 +980,8 @@ mod tests {
         let expected_images: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = vec![
             ("path/to/system".into(), "dest/images/system".into(), FileType::Unknown),
             ("path/to/vendor".into(), "dest/images/vendor".into(), FileType::Unknown),
+            ("path/to/product".into(), "dest/images/product".into(), FileType::Unknown),
+            ("path/to/system_ext".into(), "dest/images/system_ext".into(), FileType::Unknown),
             ("path/to/ramdisk".into(), "dest/images/ramdisk/0".into(), FileType::Unknown),
         ];
         assert_eq!(paths, expected_images);

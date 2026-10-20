@@ -189,6 +189,10 @@ def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_
             images["system"] = container_detail.system
         if container_detail.vendor:
             images["vendor"] = container_detail.vendor
+        if container_detail.product:
+            images["product"] = container_detail.product
+        if container_detail.system_ext:
+            images["system_ext"] = container_detail.system_ext
         if container_detail.ramdisk:
             images["ramdisk"] = container_detail.ramdisk
 

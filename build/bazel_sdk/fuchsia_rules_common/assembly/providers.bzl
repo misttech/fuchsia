@@ -51,6 +51,8 @@ FuchsiaStarnixContainerInfo = provider(
         "skip_subpackages": "Whether to skip inlcuding HALs as subpackages",
         "system": "Path to system image",
         "vendor": "Path to vendor image",
+        "product": "Path to product image",
+        "system_ext": "Path to system_ext image",
         "ramdisk": "Path to ramdisk image",
         "fstab": "Path to fstab will go in /odm which overrides the one in /vendor",
         "init": "Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.",

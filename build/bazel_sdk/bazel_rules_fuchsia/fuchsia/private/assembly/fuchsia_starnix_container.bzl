@@ -10,6 +10,10 @@ def _fuchsia_starnix_container_impl(ctx):
     all_files = [ctx.file.system]
     if ctx.attr.vendor:
         all_files.append(ctx.file.vendor)
+    if ctx.attr.product:
+        all_files.append(ctx.file.product)
+    if ctx.attr.system_ext:
+        all_files.append(ctx.file.system_ext)
     if ctx.attr.fstab:
         all_files.append(ctx.file.fstab)
     all_files += ctx.files.ramdisk
@@ -43,6 +47,8 @@ def _fuchsia_starnix_container_impl(ctx):
             skip_subpackages = ctx.attr.skip_subpackages,
             system = ctx.file.system.path,
             vendor = ctx.file.vendor.path if ctx.attr.vendor else None,
+            product = ctx.file.product.path if ctx.attr.product else None,
+            system_ext = ctx.file.system_ext.path if ctx.attr.system_ext else None,
             ramdisk = [f.path for f in ctx.files.ramdisk],
             fstab = ctx.file.fstab.path if ctx.attr.fstab else None,
             init = [f.path for f in ctx.files.init],
@@ -88,6 +94,14 @@ fuchsia_starnix_container = rule(
         ),
         "vendor": attr.label(
             doc = "Path to vendor image",
+            allow_single_file = True,
+        ),
+        "product": attr.label(
+            doc = "Path to product image",
+            allow_single_file = True,
+        ),
+        "system_ext": attr.label(
+            doc = "Path to system_ext image",
             allow_single_file = True,
         ),
         "ramdisk": attr.label_list(

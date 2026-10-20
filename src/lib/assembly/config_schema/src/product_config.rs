@@ -242,6 +242,8 @@ mod tests {
                       images: {
                         system: "path/to/system.img",
                         vendor: "path/to/vendor.img",
+                        product: "path/to/product.img",
+                        system_ext: "path/to/system_ext.img",
                         ramdisk: ["path/to/ramdisk.img"],
                       },
                     },
@@ -299,6 +301,8 @@ mod tests {
                 images_or_package: StarnixImagesOrPackage::Images(StarnixImages {
                     system: "path/to/system.img".into(),
                     vendor: Some("path/to/vendor.img".into()),
+                    product: Some("path/to/product.img".into()),
+                    system_ext: Some("path/to/system_ext.img".into()),
                     ramdisk: vec![("path/to/ramdisk.img".into()),],
                 }),
                 file_overrides: vec![],

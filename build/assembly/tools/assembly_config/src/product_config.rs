@@ -61,6 +61,12 @@ pub fn new(args: &ProductArgs) -> Result<()> {
                 if let Some(vendor) = &i.vendor {
                     images.insert("vendor".to_string(), vendor.clone());
                 }
+                if let Some(product) = &i.product {
+                    images.insert("product".to_string(), product.clone());
+                }
+                if let Some(system_ext) = &i.system_ext {
+                    images.insert("system_ext".to_string(), system_ext.clone());
+                }
                 Ok((images, i.ramdisk.clone()))
             }
             StarnixImagesOrPackage::Package(_) => Err(anyhow::anyhow!(
