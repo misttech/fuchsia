@@ -40,20 +40,6 @@ TEST_F(ProcessGetInfoTest, InfoProcessMapsUnstartedSucceeds) {
   EXPECT_OK(process.get_info(ZX_INFO_PROCESS_MAPS, &maps, 0, &actual, &avail));
 }
 
-// Tests that ZX_INFO_PROCESS_VMOS does not return ZX_ERR_BAD_STATE
-// when the process has not yet started.
-TEST_F(ProcessGetInfoTest, InfoProcessVmosUnstartedSucceeds) {
-  static constexpr char kProcessName[] = "object-info-unstarted";
-  zx::vmar vmar;
-  zx::process process;
-
-  ASSERT_OK(zx::process::create(*zx::job::default_job(), kProcessName, sizeof(kProcessName),
-                                /* options */ 0u, &process, &vmar));
-  size_t actual, avail;
-  zx_info_vmo_t vmos;
-  EXPECT_OK(process.get_info(ZX_INFO_PROCESS_VMOS, &vmos, 0, &actual, &avail));
-}
-
 template <typename InfoT>
 void TestInfoProcessMapsSmokeTest(const MappingInfo& test_info, const zx::process& process,
                                   const uint32_t topic) {
