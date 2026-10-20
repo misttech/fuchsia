@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
-use fidl_fuchsia_driver_framework as fdf;
+use fdf_component::{Driver, DriverContext, DriverError, Node, ParentProperty, driver_register};
 use fidl_fuchsia_hardware_usb_descriptor as fusb_descriptor;
 use fidl_fuchsia_hardware_usb_endpoint as fusb_endpoint;
 use fidl_fuchsia_hardware_usb_function as fusb_function;
@@ -121,13 +120,14 @@ struct UsbZeroFunctionDevice {
 
 const BIND_USB_PROTOCOL_KEY: &str = "fuchsia.BIND_USB_PROTOCOL";
 
-pub(crate) fn get_usb_protocol(start_args: &fdf::DriverStartArgs) -> Option<u32> {
-    start_args.node_properties_2.as_ref()?.iter().flat_map(|entry| &entry.properties).find_map(
-        |prop| match (prop.key.as_str(), &prop.value) {
-            (BIND_USB_PROTOCOL_KEY, fdf::NodePropertyValue::IntValue(val)) => Some(*val),
-            _ => None,
-        },
-    )
+/// Returns the first integer `fuchsia.BIND_USB_PROTOCOL` property among the parent node
+/// properties, if any.
+pub(crate) fn get_usb_protocol<'a>(
+    properties: impl IntoIterator<Item = ParentProperty<'a>>,
+) -> Option<u32> {
+    properties.into_iter().find_map(|property| {
+        if property.key == BIND_USB_PROTOCOL_KEY { property.value.as_int() } else { None }
+    })
 }
 
 driver_register!(UsbZeroFunction);
@@ -141,7 +141,7 @@ impl Driver for UsbZeroFunction {
 
         info!("Starting usb-zero-function");
 
-        let protocol = get_usb_protocol(&context.start_args).unwrap_or(1);
+        let protocol = get_usb_protocol(context.node_properties()).unwrap_or(1);
         let initial_mode = match protocol {
             2 => TestMode::Loopback,
             _ => TestMode::SourceSink,

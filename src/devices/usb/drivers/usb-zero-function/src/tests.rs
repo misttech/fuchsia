@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::*;
+use fdf_component::PropertyValue;
 use fidl::endpoints::{RequestStream, create_endpoints};
 
 const TEST_EP_IN_ADDR: u8 = 0x81;
@@ -847,36 +848,15 @@ async fn test_standard_endpoint_halt() {
     );
 }
 
+fn parent_property<'a>(key: &'a str, value: impl Into<PropertyValue>) -> ParentProperty<'a> {
+    ParentProperty { parent: "default", key, value: value.into() }
+}
+
 #[fuchsia::test]
 fn test_get_usb_protocol_parsing() {
-    use fidl_fuchsia_driver_framework as fdf;
-
-    let start_args_sourcesink = fdf::DriverStartArgs {
-        node_properties_2: Some(vec![fdf::NodePropertyEntry2 {
-            name: "default".to_string(),
-            properties: vec![fdf::NodeProperty2 {
-                key: super::BIND_USB_PROTOCOL_KEY.to_string(),
-                value: fdf::NodePropertyValue::IntValue(1),
-            }],
-        }]),
-        ..Default::default()
-    };
-    assert_eq!(get_usb_protocol(&start_args_sourcesink), Some(1));
-
-    let start_args_loopback = fdf::DriverStartArgs {
-        node_properties_2: Some(vec![fdf::NodePropertyEntry2 {
-            name: "default".to_string(),
-            properties: vec![fdf::NodeProperty2 {
-                key: super::BIND_USB_PROTOCOL_KEY.to_string(),
-                value: fdf::NodePropertyValue::IntValue(2),
-            }],
-        }]),
-        ..Default::default()
-    };
-    assert_eq!(get_usb_protocol(&start_args_loopback), Some(2));
-
-    let start_args_empty = fdf::DriverStartArgs::default();
-    assert_eq!(get_usb_protocol(&start_args_empty), None);
+    assert_eq!(get_usb_protocol([parent_property(BIND_USB_PROTOCOL_KEY, 1u32)]), Some(1));
+    assert_eq!(get_usb_protocol([parent_property(BIND_USB_PROTOCOL_KEY, 2u32)]), Some(2));
+    assert_eq!(get_usb_protocol([]), None);
 }
 
 #[fuchsia::test]
@@ -1586,23 +1566,13 @@ fn test_control_request_parsing_and_types() {
 
 #[fuchsia::test]
 fn test_get_usb_protocol_non_int_and_unknown_properties() {
-    let start_args_string_prop = fdf::DriverStartArgs {
-        node_properties_2: Some(vec![fdf::NodePropertyEntry2 {
-            name: "default".to_string(),
-            properties: vec![
-                fdf::NodeProperty2 {
-                    key: BIND_USB_PROTOCOL_KEY.to_string(),
-                    value: fdf::NodePropertyValue::StringValue("not_an_int".to_string()),
-                },
-                fdf::NodeProperty2 {
-                    key: "some.other.key".to_string(),
-                    value: fdf::NodePropertyValue::IntValue(42),
-                },
-            ],
-        }]),
-        ..Default::default()
-    };
-    assert_eq!(get_usb_protocol(&start_args_string_prop), None);
+    assert_eq!(
+        get_usb_protocol([
+            parent_property(BIND_USB_PROTOCOL_KEY, "not_an_int"),
+            parent_property("some.other.key", 42u32),
+        ]),
+        None
+    );
 }
 
 #[fuchsia::test]
