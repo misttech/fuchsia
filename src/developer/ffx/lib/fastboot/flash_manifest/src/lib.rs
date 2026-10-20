@@ -68,6 +68,7 @@ pub struct ManifestParams {
     pub flash_timeout_rate_mb_per_second: f64,
     pub flash_min_timeout_seconds: u64,
     pub ssh_key: Option<String>,
+    pub streaming_flash: bool,
 }
 
 impl Default for ManifestParams {
@@ -83,6 +84,7 @@ impl Default for ManifestParams {
             flash_timeout_rate_mb_per_second: 5000.0,
             flash_min_timeout_seconds: 200,
             ssh_key: None,
+            streaming_flash: true,
         }
     }
 }

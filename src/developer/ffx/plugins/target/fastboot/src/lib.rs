@@ -98,6 +98,7 @@ where
                     flash_min_timeout_seconds,
                     flash_timeout_rate_mb_per_second,
                     cmd.max_download_size,
+                    cmd.streaming_flash,
                 )
                 .map_err(anyhow::Error::from),
                 sink(server)

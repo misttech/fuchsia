@@ -50,6 +50,13 @@ pub struct FlashSubcommand {
     #[argh(option, short = 'S')]
     /// overriding the maximum download size
     pub max_download_size: Option<NonZeroU64>,
+
+    #[argh(
+        option,
+        default = "true",
+        description = "use streaming fastboot flash if supported by the device"
+    )]
+    pub streaming_flash: bool,
 }
 
 #[derive(ArgsInfo, FromArgs, Eq, PartialEq, Clone, Debug)]

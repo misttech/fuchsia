@@ -22,6 +22,18 @@
       "short": "S",
       "description": "overriding the maximum download size",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "streaming-flash"
+        }
+      },
+      "optionality": "optional",
+      "long": "--streaming-flash",
+      "short": null,
+      "description": "use streaming fastboot flash if supported by the device",
+      "hidden": false
     }
   ],
   "notes": [],

@@ -120,6 +120,18 @@
       "short": null,
       "description": "skip uploading ssh authorized keys. This is dangerous, you will be unable to communicate with the target via ffx.",
       "hidden": true
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "streaming-flash"
+        }
+      },
+      "optionality": "optional",
+      "long": "--streaming-flash",
+      "short": null,
+      "description": "use streaming fastboot flash if supported by the device",
+      "hidden": false
     }
   ],
   "notes": [

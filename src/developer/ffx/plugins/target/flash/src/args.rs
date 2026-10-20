@@ -105,6 +105,13 @@ pub struct FlashCommand {
         hidden_help
     )]
     pub skip_authorized_keys: bool,
+
+    #[argh(
+        option,
+        default = "true",
+        description = "use streaming fastboot flash if supported by the device"
+    )]
+    pub streaming_flash: bool,
 }
 
 impl FlashCommand {
@@ -147,6 +154,7 @@ impl FlashCommand {
             flash_min_timeout_seconds,
             flash_timeout_rate_mb_per_second,
             ssh_key: self.authorized_keys,
+            streaming_flash: self.streaming_flash,
         }
     }
 }
@@ -209,11 +217,13 @@ mod test {
             min_timeout_secs: Some(100),
             timeout_rate: Some(1.0),
             skip_authorized_keys: false,
+            streaming_flash: true,
         };
 
         let params: ManifestParams = cmd.to_manifest(&env.context);
         assert_eq!(params.oem_stage[0].file(), tmp_file_name);
         assert_eq!(params.oem_stage[0].command(), test_oem_cmd);
+        assert!(params.streaming_flash);
         Ok(())
     }
 }
