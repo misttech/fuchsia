@@ -21,7 +21,7 @@ impl dyn EnvironmentInterface {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct FhoEnvironment {
     ffx: FfxCommandLine,
     context: EnvironmentContext,

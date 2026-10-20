@@ -36,6 +36,7 @@ ffx_plugin("ffx_target_show") {
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust_fdomain",
+    "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/testing:lib",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",

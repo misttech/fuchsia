@@ -1666,6 +1666,7 @@ mod tests {
             _ => panic!("Unexpected request: {:?}", req),
         });
 
+        let env = ffx_config::test_env().build().expect("test env");
         let tool = ProfilerTool {
             controller: fho::Deferred::from_output(Err(fho::Error::Unexpected(anyhow::anyhow!(
                 "controller should not be accessed"
@@ -1682,7 +1683,7 @@ mod tests {
                     print_stats: false,
                 }),
             },
-            context: ffx_config::EnvironmentContext::default(),
+            context: env.context.clone(),
         };
 
         let buffers = TestBuffers::default();
