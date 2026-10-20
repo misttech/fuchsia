@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/rust:rustc_bindgen.bzl", "rustc_bindgen_golden")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
@@ -17,12 +18,59 @@ rustc_library(
     ],
     crate_name = "libasync_sys",
     edition = "2024",
+    validations = [":async_sys_bindgen_golden"],
     visibility = [
         "//sdk/lib/async/rust:__subpackages__",
         "//sdk/lib/driver/runtime/rust/fdf_sys:__pkg__",
         "//src/lib/trace/rust:__pkg__",
     ],
     deps = ["//sdk/rust/zx-types"],
+)
+
+# Checks that src/bindings.rs matches the output of bindgen on the libasync
+# headers whenever `:sys` is built.
+rustc_bindgen_golden(
+    name = "async_sys_bindgen_golden",
+    checked_in_source = "src/bindings.rs",
+    expect_lints = ["non_camel_case_types"],
+
+    # Match bindgen.sh defaults.
+    explicit_padding = False,
+    fuchsia_api_level = "HEAD",
+    function_allowlist = ["async_.*"],
+    headers = [
+        "//sdk/lib/async/include/lib/async/dispatcher.h",
+        "//sdk/lib/async/include/lib/async/irq.h",
+        "//sdk/lib/async/include/lib/async/paged_vmo.h",
+        "//sdk/lib/async/include/lib/async/receiver.h",
+        "//sdk/lib/async/include/lib/async/sequence_id.h",
+        "//sdk/lib/async/include/lib/async/task.h",
+        "//sdk/lib/async/include/lib/async/time.h",
+        "//sdk/lib/async/include/lib/async/trap.h",
+        "//sdk/lib/async/include/lib/async/wait.h",
+    ],
+    layout_tests = True,
+    notice_year = 2025,
+    raw_lines = ["use zx_types::*;"],
+    std_derives = ["default"],
+    std_impls = ["debug"],
+    type_allowlist = [
+        "async_.*",
+        "ASYNC_.*",
+    ],
+    type_blocklist = ["zx_.*"],
+    var_allowlist = [
+        "ASYNC_.*",
+        "async_.*",
+    ],
+    deps = [
+        "//sdk/lib/async",
+
+        # The headers include <zircon/types.h>. Bindgen runs for the host, where
+        # GN's zx_library() adds this dependency automatically but the Bazel
+        # macros do not yet (https://fxbug.dev/429377203).
+        "//zircon/system/public",
+    ],
 )
 
 # @bazel2gn:skip

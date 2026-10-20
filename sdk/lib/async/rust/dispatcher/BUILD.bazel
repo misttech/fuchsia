@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "dispatcher",
+    srcs = [
+        "src/current_dispatcher.rs",
+        "src/detect_dispatcher.rs",
+        "src/lib.rs",
+        "src/task.rs",
+    ],
+    crate_name = "libasync_dispatcher",
+    edition = "2024",
+    link_deps = [
+        "//sdk/lib/async",
+        "//sdk/lib/async-default",
+    ],
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    version = "0.1.0",
+    visibility = [
+        "//sdk/lib/async:__subpackages__",
+        "//sdk/lib/driver/runtime:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/async/rust/sys",
+        "//sdk/rust/zx-status",
+        "//sdk/rust/zx-types",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

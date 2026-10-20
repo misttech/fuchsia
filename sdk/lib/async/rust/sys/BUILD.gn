@@ -3,49 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_test_suite.gni")
-import("//build/rust/rustc_bindgen.gni")
-
-rustc_bindgen_golden("async_sys_bindgen_golden") {
-  headers = [
-    "//sdk/lib/async/include/lib/async/dispatcher.h",
-    "//sdk/lib/async/include/lib/async/irq.h",
-    "//sdk/lib/async/include/lib/async/paged_vmo.h",
-    "//sdk/lib/async/include/lib/async/receiver.h",
-    "//sdk/lib/async/include/lib/async/sequence_id.h",
-    "//sdk/lib/async/include/lib/async/task.h",
-    "//sdk/lib/async/include/lib/async/time.h",
-    "//sdk/lib/async/include/lib/async/trap.h",
-    "//sdk/lib/async/include/lib/async/wait.h",
-  ]
-  checked_in_source = "src/bindings.rs"
-  expect_lints = [ "non_camel_case_types" ]
-
-  # Match bindgen.sh defaults
-  layout_tests = true
-  explicit_padding = false
-
-  std_derives = [ "default" ]
-  std_impls = [ "debug" ]
-
-  function_allowlist = [ "async_.*" ]
-  var_allowlist = [
-    "ASYNC_.*",
-    "async_.*",
-  ]
-  type_allowlist = [
-    "async_.*",
-    "ASYNC_.*",
-  ]
-
-  type_blocklist = [ "zx_.*" ]
-
-  fuchsia_api_level = "HEAD"
-
-  notice_year = 2025
-  raw_lines = [ "use zx_types::*;" ]
-
-  deps = [ "//sdk/lib/async" ]
-}
 
 bazel_test_suite("sys_tests") {
   target_tests = [ "//sdk/lib/async/rust/sys:sys_tests" ]
@@ -53,10 +10,7 @@ bazel_test_suite("sys_tests") {
 
 group("tests") {
   testonly = true
-  deps = [
-    ":async_sys_bindgen_golden",
-    ":sys_tests",
-  ]
+  deps = [ ":sys_tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -92,6 +46,7 @@ rustc_library("sys") {
   ]
   crate_name = "libasync_sys"
   edition = "2024"
+  validations = [ ":async_sys_bindgen_golden" ]
   visibility = [
     ":*",
     "//sdk/lib/async/rust/*",
@@ -99,4 +54,40 @@ rustc_library("sys") {
     "//src/lib/trace/rust:*",
   ]
   deps = [ "//sdk/rust/zx-types" ]
+}
+rustc_bindgen_golden("async_sys_bindgen_golden") {
+  checked_in_source = "src/bindings.rs"
+  expect_lints = [ "non_camel_case_types" ]
+  explicit_padding = false
+  fuchsia_api_level = "HEAD"
+  function_allowlist = [ "async_.*" ]
+  headers = [
+    "//sdk/lib/async/include/lib/async/dispatcher.h",
+    "//sdk/lib/async/include/lib/async/irq.h",
+    "//sdk/lib/async/include/lib/async/paged_vmo.h",
+    "//sdk/lib/async/include/lib/async/receiver.h",
+    "//sdk/lib/async/include/lib/async/sequence_id.h",
+    "//sdk/lib/async/include/lib/async/task.h",
+    "//sdk/lib/async/include/lib/async/time.h",
+    "//sdk/lib/async/include/lib/async/trap.h",
+    "//sdk/lib/async/include/lib/async/wait.h",
+  ]
+  layout_tests = true
+  notice_year = 2025
+  raw_lines = [ "use zx_types::*;" ]
+  std_derives = [ "default" ]
+  std_impls = [ "debug" ]
+  type_allowlist = [
+    "async_.*",
+    "ASYNC_.*",
+  ]
+  type_blocklist = [ "zx_.*" ]
+  var_allowlist = [
+    "ASYNC_.*",
+    "async_.*",
+  ]
+  deps = [
+    "//sdk/lib/async",
+    "//zircon/system/public",
+  ]
 }
