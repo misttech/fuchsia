@@ -22,12 +22,26 @@ pub struct NotANetworkAddress;
 pub enum TargetAddrParseError {
     #[error("Invalid network address: {0}")]
     Net(#[from] std::net::AddrParseError),
+    #[error("Invalid network port: {0}")]
+    Port(#[source] std::num::ParseIntError),
+    #[error("Invalid network interface scope '{scope}': {err}")]
+    Scope { scope: String, err: String },
     #[error("Invalid UART address: {0}")]
     Uart(String),
     #[error("Invalid USB CID: {0}")]
     Usb(#[source] std::num::ParseIntError),
     #[error("Invalid VSOCK CID: {0}")]
     VSock(#[source] std::num::ParseIntError),
+}
+
+impl From<netext::NetExtError> for TargetAddrParseError {
+    fn from(err: netext::NetExtError) -> Self {
+        match err {
+            netext::NetExtError::ParseAddress(_, e) => Self::Net(e),
+            netext::NetExtError::ParsePort(_, e) => Self::Port(e),
+            _ => Self::Net("".parse::<std::net::IpAddr>().unwrap_err()),
+        }
+    }
 }
 
 /// Represents an address associated with a target, like [`TargetAddr`], but is
@@ -72,14 +86,21 @@ impl TargetIpAddr {
     }
 }
 
-/// Construct a new TargetIpAddr from a string representation of the form
-/// accepted by std::net::SocketAddr, e.g. 127.0.0.1:22, or [fe80::1%1]:0.
+/// Construct a new TargetIpAddr from a string representation, supporting both
+/// `SocketAddr` syntax (e.g. `127.0.0.1:22`, `[fe80::1%lo]:0`) and portless IP
+/// syntax (e.g. `127.0.0.1`, `fe80::1`, `fe80::1%lo`).
 impl FromStr for TargetIpAddr {
     type Err = TargetAddrParseError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let sa = s.parse::<SocketAddr>()?;
-        Ok(Self::from(sa))
+        let (addr, scope, port) = netext::parse_address_parts(s)?;
+        let scope = match scope {
+            Some(scope) => netext::get_verified_scope_id(scope).map_err(|e| {
+                TargetAddrParseError::Scope { scope: scope.to_string(), err: e.to_string() }
+            })?,
+            None => 0,
+        };
+        Ok(TargetIpAddr::new(addr, scope, port.unwrap_or(0)))
     }
 }
 // Compare `TargetIpAddr` by ip, port, and scope_id.
@@ -466,8 +487,8 @@ impl FromStr for TargetAddr {
             let cid = cid_str.parse().map_err(TargetAddrParseError::VSock)?;
             return Ok(Self::VSockCtx(cid));
         }
-        let sa = s.parse::<SocketAddr>()?;
-        Ok(Self::from(sa))
+        let ip_addr = s.parse::<TargetIpAddr>()?;
+        Ok(Self::from(ip_addr))
     }
 }
 
@@ -743,7 +764,22 @@ mod test {
         // Net
         let net: TargetAddr = "127.0.0.1:8022".parse().expect("valid net addr");
         assert_eq!(net, TargetAddr::Net("127.0.0.1:8022".parse().unwrap()));
-        assert!(matches!("127.0.0.1".parse::<TargetAddr>(), Err(TargetAddrParseError::Net(_))));
+        let net_no_port: TargetAddr = "127.0.0.1".parse().expect("valid portless v4 addr");
+        assert_eq!(net_no_port, TargetAddr::Net("127.0.0.1:0".parse().unwrap()));
+        let v6_no_port: TargetAddr = "fe80::1".parse().expect("valid portless v6 addr");
+        assert_eq!(v6_no_port, TargetAddr::Net("[fe80::1]:0".parse().unwrap()));
+        let v6_unspec_port: TargetAddr = "[::]:8022".parse().expect("valid v6 unspecified addr");
+        assert_eq!(v6_unspec_port, TargetAddr::Net("[::]:8022".parse().unwrap()));
+        assert!(matches!("not-an-ip".parse::<TargetAddr>(), Err(TargetAddrParseError::Net(_))));
+        assert!(matches!(
+            "127.0.0.1:65536".parse::<TargetAddr>(),
+            Err(TargetAddrParseError::Port(_))
+        ));
+        assert!(matches!("[::]:65536".parse::<TargetAddr>(), Err(TargetAddrParseError::Port(_))));
+        assert!(matches!(
+            "127.0.0.1:abc".parse::<TargetAddr>(),
+            Err(TargetAddrParseError::Port(_))
+        ));
 
         // Uart
         let uart: TargetAddr = "uart:/dev/ttyUSB0".parse().expect("valid uart addr");

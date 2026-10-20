@@ -4,6 +4,7 @@
 
 use crate::{Config, ManualTargets};
 
+use addr::{TargetAddrParseError, TargetIpAddr};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::Fastboot;
@@ -17,7 +18,7 @@ use netext::MultithreadedTokioAsyncWrapper;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::Display;
-use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
@@ -164,32 +165,20 @@ where
 {
     let mut retval = vec![];
     for (unparsed_addr, val) in finder.get_or_default().await {
-        let (addr, scope, port) = match netext::parse_address_parts(unparsed_addr.as_str()) {
-            Ok(res) => res,
+        let sa: SocketAddr = match unparsed_addr.parse::<TargetIpAddr>() {
+            Ok(ip_addr) => ip_addr.into(),
+            Err(TargetAddrParseError::Scope { scope, err }) => {
+                log::error!(
+                    "Scope load of manual address '{unparsed_addr}', which had a scope ID of '{scope}', which was not verifiable: {err}"
+                );
+                continue;
+            }
             Err(e) => {
                 log::error!(
                     "Skipping load of manual target address due to parsing error '{unparsed_addr}': {e}"
                 );
                 continue;
             }
-        };
-        let scope_id = if let Some(scope) = scope {
-            match netext::get_verified_scope_id(scope) {
-                Ok(res) => res,
-                Err(e) => {
-                    log::error!(
-                        "Scope load of manual address '{unparsed_addr}', which had a scope ID of '{scope}', which was not verifiable: {e}"
-                    );
-                    continue;
-                }
-            }
-        } else {
-            0
-        };
-        let port = port.unwrap_or(0);
-        let sa = match addr {
-            IpAddr::V4(i) => SocketAddr::V4(SocketAddrV4::new(i, port)),
-            IpAddr::V6(i) => SocketAddr::V6(SocketAddrV6::new(i, port, 0, scope_id)),
         };
 
         let lifetime = match val.as_u64() {
@@ -344,7 +333,7 @@ mod test {
     use pretty_assertions::assert_eq;
     use serde_json::{Map, Value, json};
     use std::collections::HashMap;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
     use std::sync::{Arc, Mutex};
 
     struct TestManualTargets {

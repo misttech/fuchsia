@@ -76,10 +76,10 @@ if (is_host) {
     deps = [
       "//src/developer/ffx/command/error:lib",
       "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/lib/addr:lib",
       "//src/developer/ffx/lib/errors:lib",
       "//src/developer/ffx/lib/fho/metadata:lib",
       "//src/developer/ffx/lib/metrics:lib",
-      "//src/developer/ffx/lib/netext:lib",
       "//src/developer/ffx/lib/timeout:lib",
       "//src/developer/lib/writer:lib",
       "//src/lib/agents:lib",

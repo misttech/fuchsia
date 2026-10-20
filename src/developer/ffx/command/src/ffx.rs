@@ -480,7 +480,11 @@ fn format_strict_check_error_enums(errors: &Vec<StrictCheckErrorEnum>) -> String
     "\n\t".to_owned() + &error_string
 }
 
-const VALID_STRICT_PREFIXES: &[&str] = &["id:", "serial:", "usb:cid:", "vsock:cid:", "uart:"];
+// Symbolic target query prefixes that are valid in `--strict` mode even though
+// they are not direct transport addresses (`TargetAddr`). ID queries must be
+// resolved via the target registry (`target.registered_targets`) to avoid active
+// discovery.
+const VALID_STRICT_PREFIXES: &[&str] = &["id:", "serial:"];
 
 /// When a tool is run in "strict" mode there are certain constraints on passed
 /// arguments. This ensures they are all satisfied
@@ -529,19 +533,14 @@ pub fn check_strict_constraints(
 fn validate_strict_target(target: Option<&str>, errors: &mut Vec<StrictCheckErrorEnum>) {
     match target {
         None => errors.push(StrictCheckErrorEnum::MustHaveTarget),
-        Some(t) => match netext::parse_address_parts(t) {
+        Some(t) => match t.parse::<addr::TargetAddr>() {
+            Ok(_) => {}
+            Err(addr::TargetAddrParseError::Scope { scope, .. }) => {
+                errors.push(StrictCheckErrorEnum::TargetAddressMustHaveValidScopeId(scope));
+            }
             Err(_) => {
                 if !VALID_STRICT_PREFIXES.iter().any(|&p| t.starts_with(p) && t != p) {
                     errors.push(StrictCheckErrorEnum::TargetSpecificationInvalid(t.to_string()));
-                }
-            }
-            Ok((_, scope, _)) => {
-                if let Some(scope) = scope {
-                    if netext::get_verified_scope_id(scope).is_err() {
-                        errors.push(StrictCheckErrorEnum::TargetAddressMustHaveValidScopeId(
-                            scope.to_string(),
-                        ));
-                    }
                 }
             }
         },

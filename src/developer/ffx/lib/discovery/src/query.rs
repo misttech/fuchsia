@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use crate::desc::Description;
 use crate::{DiscoverySources, TargetHandle};
-use addr::{TargetAddr, TargetIpAddr};
+use addr::{TargetAddr, TargetAddrParseError, TargetIpAddr};
 use std::net::SocketAddr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -172,47 +172,14 @@ impl TryFrom<String> for TargetInfoQuery {
         if let Some(rest) = s.strip_prefix("serial:") {
             return Ok(Self::Id(rest.to_string()));
         }
-        if let Some(endpoint) = s.strip_prefix("uart:") {
-            if endpoint.is_empty() {
-                return Err(crate::error::Error::ParseError(
-                    "UART query requires a non-empty endpoint (e.g. uart:/dev/ttyUSB0)".to_string(),
-                ));
+        match s.parse::<TargetAddr>() {
+            Ok(addr) => Ok(Self::from(addr)),
+            Err(TargetAddrParseError::Net(_)) => {
+                log::trace!("Failed to parse address from '{s}'. Interpreting as nodename");
+                Ok(Self::NodenameOrId(s))
             }
-            return Ok(Self::Uart(endpoint.to_string()));
+            Err(e) => Err(crate::error::Error::ParseError(e.to_string())),
         }
-        if let Some(cid_str) = s.strip_prefix("usb:cid:") {
-            let cid = cid_str
-                .parse()
-                .map_err(|e| crate::error::Error::ParseError(format!("Invalid USB CID: {e}")))?;
-            return Ok(Self::Usb(cid));
-        }
-        if let Some(cid_str) = s.strip_prefix("vsock:cid:") {
-            let cid = cid_str
-                .parse()
-                .map_err(|e| crate::error::Error::ParseError(format!("Invalid VSock CID: {e}")))?;
-            return Ok(Self::VSock(cid));
-        }
-
-        Self::parse_address_or_nodename(s)
-    }
-}
-
-impl TargetInfoQuery {
-    fn parse_address_or_nodename(s: String) -> Result<Self, crate::error::Error> {
-        let (addr, scope, port) = match netext::parse_address_parts(s.as_str()) {
-            Ok(r) => r,
-            Err(e) => {
-                log::trace!(
-                    "Failed to parse address from '{s}'. Interpreting as nodename: {:?}",
-                    e
-                );
-                return Ok(Self::NodenameOrId(s));
-            }
-        };
-
-        let scope = if let Some(s) = scope { netext::get_verified_scope_id(s)? } else { 0 };
-        let addr = TargetIpAddr::new(addr, scope, port.unwrap_or(0)).into();
-        Ok(Self::Addr(addr))
     }
 }
 

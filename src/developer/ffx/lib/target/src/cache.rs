@@ -12,7 +12,6 @@ use ffx_config::keys::{DISCOVERY_CACHE_DIR_CONFIG, REGISTERED_TARGETS_CONFIG};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fs;
 use std::io::{BufReader, BufWriter};
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::NamedTempFile;
@@ -150,29 +149,12 @@ where
     address.optional_port_str().serialize(serializer)
 }
 
-// Parses a single target address string from either SocketAddr/transport syntax or portless IP syntax.
-fn parse_target_addr(addr_str: &str) -> std::result::Result<TargetAddr, String> {
-    if let Ok(addr) = addr_str.parse::<TargetAddr>() {
-        return Ok(addr);
-    }
-    if let Ok(query) = TargetInfoQuery::try_from(addr_str)
-        && let Some(addr) = query.get_target_addr()
-    {
-        return Ok(addr);
-    }
-    if let Ok(socket_addr) = format!("[{addr_str}]:0").parse::<SocketAddr>() {
-        return Ok(TargetAddr::from(socket_addr));
-    }
-    Err(format!("invalid target address: {addr_str:?}"))
-}
-
 // Deserializes a target address string into a TargetAddr value.
 fn deserialize_target_addr<'de, D>(deserializer: D) -> std::result::Result<TargetAddr, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(deserializer)?;
-    parse_target_addr(&s).map_err(serde::de::Error::custom)
+    String::deserialize(deserializer)?.parse().map_err(serde::de::Error::custom)
 }
 
 /// Returns the path to the registered targets file (`target.registered_targets`,
@@ -511,18 +493,18 @@ mod tests {
             .build()
             .unwrap();
 
-        let addr_v4: SocketAddr = "192.168.1.50:8022".parse().unwrap();
+        let addr_v4: TargetAddr = "192.168.1.50:8022".parse().unwrap();
         let product_info = TargetInfo {
             nodename: Some("fuchsia-node".to_string()),
             serial_number: Some("04012C12D45E".to_string()),
-            addresses: vec![TargetAddr::from(addr_v4), TargetAddr::UsbCtx(3)],
+            addresses: vec![addr_v4.clone(), TargetAddr::UsbCtx(3)],
             target_state: TargetState::Product,
             ..Default::default()
         };
         let fastboot_info = TargetInfo {
             nodename: Some("fastboot-node".to_string()),
             serial_number: Some("FB123".to_string()),
-            addresses: vec![TargetAddr::from(addr_v4)],
+            addresses: vec![addr_v4],
             target_state: TargetState::Fastboot,
             ..Default::default()
         };
@@ -563,16 +545,10 @@ mod tests {
         assert_eq!(loaded.len(), 3);
         assert_eq!(loaded[0].nodename, None);
         assert_eq!(loaded[0].serial_number.as_deref(), Some("04012C12D45E"));
-        assert_eq!(
-            loaded[0].addresses,
-            vec![TargetAddr::from("192.168.1.50:22".parse::<SocketAddr>().unwrap())]
-        );
+        assert_eq!(loaded[0].addresses, vec!["192.168.1.50:22".parse::<TargetAddr>().unwrap()]);
         assert_eq!(loaded[1].nodename.as_deref(), Some("only-name"));
         assert_eq!(loaded[1].serial_number, None);
-        assert_eq!(
-            loaded[1].addresses,
-            vec![TargetAddr::from("10.0.0.2:0".parse::<SocketAddr>().unwrap())]
-        );
+        assert_eq!(loaded[1].addresses, vec!["10.0.0.2:0".parse::<TargetAddr>().unwrap()]);
         assert_eq!(loaded[2].serial_number.as_deref(), Some("USB_DEV"));
         assert_eq!(loaded[2].addresses, vec![TargetAddr::UsbCtx(4)]);
     }
