@@ -313,7 +313,7 @@ unsafe fn register_int_handler_common(
 ///
 /// - The global interrupt ops must be registered.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn register_int_handler(
+pub unsafe extern "C" fn register_int_handler(
     vector: InterruptVector,
     handler: InterruptHandler,
 ) -> Result<(), Status> {

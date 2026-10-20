@@ -18,6 +18,7 @@
 #include <lib/zx/result.h>
 #include <platform.h>
 #include <string.h>
+#include <sys/types.h>
 #include <trace.h>
 #include <zircon/errors.h>
 

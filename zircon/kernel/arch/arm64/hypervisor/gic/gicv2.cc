@@ -64,10 +64,11 @@ static volatile Gich* gich = NULL;
 
 static zx_status_t gicv2_get_gicv(paddr_t* gicv_paddr) {
   // Check for presence of GICv2 virtualisation extensions.
-  if (GICV_OFFSET == 0) {
+  void* const gicv_address = rust_arm_gicv2_gicv_address();
+  if (gicv_address == nullptr) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  *gicv_paddr = vaddr_to_paddr(reinterpret_cast<void*>(GICV_ADDRESS));
+  *gicv_paddr = vaddr_to_paddr(gicv_address);
   return ZX_OK;
 }
 
@@ -124,6 +125,6 @@ static const struct arm_gic_hw_interface_ops gic_hw_register_ops = {
 
 void gicv2_hw_interface_register() {
   // Populate GICH
-  gich = reinterpret_cast<volatile Gich*>(GICH_ADDRESS);
+  gich = static_cast<volatile Gich*>(rust_arm_gicv2_gich_address());
   arm_gic_hw_interface_register(&gic_hw_register_ops);
 }

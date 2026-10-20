@@ -20,6 +20,7 @@
 #include <kernel/event.h>
 #include <kernel/percpu.h>
 #include <kernel/stats.h>
+#include <ktl/utility.h>
 #include <platform/timer.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>

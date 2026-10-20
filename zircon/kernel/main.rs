@@ -163,6 +163,10 @@ pub mod plic;
 pub mod gic_common;
 
 #[cfg(target_arch = "aarch64")]
+#[path = "dev/interrupt/gic/v2/arm_gicv2.rs"]
+pub mod arm_gicv2;
+
+#[cfg(target_arch = "aarch64")]
 #[path = "dev/interrupt/gic/v3/arm_gicv3.rs"]
 pub mod arm_gicv3;
 
