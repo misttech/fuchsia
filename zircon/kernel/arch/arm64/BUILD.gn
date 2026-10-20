@@ -105,7 +105,6 @@ if (toolchain_environment == "kernel.phys" ||
       "mmu.cc",
       "mp.cc",
       "perf_mon.cc",
-      "periphmap.cc",
       "registers.cc",
       "secondary.S",
       "secondary.cc",
@@ -238,6 +237,7 @@ if (toolchain_environment == "kernel.phys" ||
       "src/cache.rs",
       "src/mod.rs",
       "src/mp.rs",
+      "src/periphmap.rs",
       "src/restricted.rs",
       "src/smccc.rs",
       "src/spinlock.rs",
@@ -257,6 +257,9 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
+      "//zircon/kernel/lib/init:init_rust",
+      "//zircon/kernel/phys/handoff:handoff-rs",
+      "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs",
     ]
     test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
   }

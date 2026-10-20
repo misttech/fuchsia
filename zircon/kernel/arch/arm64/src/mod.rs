@@ -6,6 +6,7 @@
 
 pub mod cache;
 mod mp;
+mod periphmap;
 pub mod restricted;
 pub mod smccc;
 mod spinlock;
@@ -14,13 +15,12 @@ mod sysreg;
 mod uarch;
 pub mod vm;
 
-use crate::kernel::types::{PAddr, VAddr, cpu_num_t};
+use crate::kernel::types::cpu_num_t;
 use arch_arm64_aspace_bindings as aspace_bindings;
 
 unsafe extern "C" {
     static arm64_isa_features: u32;
     fn cpp_arm64_cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64;
-    fn cpp_arm64_periph_paddr_to_vaddr(paddr: u64) -> usize;
 }
 
 /// The maximum cache line seen on any known ARM hardware.
@@ -40,18 +40,8 @@ pub fn cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64 {
     unsafe { cpp_arm64_cpu_num_to_mpidr(cpu_num) }
 }
 
-/// Translates an arm64 peripheral physical address to a virtual address in the kernel periphmap.
-///
-/// Returns `None` if `paddr` is not in the peripheral mappings.
-#[inline]
-pub fn periph_paddr_to_vaddr(paddr: PAddr) -> Option<VAddr> {
-    // SAFETY: `cpp_arm64_periph_paddr_to_vaddr` is a read-only lookup into the arm64
-    // peripheral mapping table initialized at boot.
-    let vaddr = unsafe { cpp_arm64_periph_paddr_to_vaddr(paddr.0 as u64) };
-    if vaddr == 0 { None } else { Some(VAddr(vaddr)) }
-}
-
 pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi};
+pub use periphmap::periph_paddr_to_vaddr;
 
 // [arm/v8]: C5.2.19 CPSR / D13.2.112 SPSR_EL1
 pub const ARM_NCZV_FLAGS: u32 = 0xf000_0000;

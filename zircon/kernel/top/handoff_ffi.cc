@@ -47,6 +47,28 @@ FFI_ALWAYS_INLINE const memalloc::Range* cpp_phys_handoff_memory(size_t* count) 
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const MappedMmioRange* cpp_phys_handoff_periph_ranges(size_t* count) {
+  std::span<const MappedMmioRange> periph_ranges = gPhysHandoff->periph_ranges.get();
+  *count = periph_ranges.size();
+  return periph_ranges.data();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint64_t cpp_mapped_mmio_range_paddr(const MappedMmioRange& range) {
+  return range.paddr();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uintptr_t cpp_mapped_mmio_range_vaddr(const MappedMmioRange& range) {
+  return range.vaddr();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE size_t cpp_mapped_mmio_range_size_bytes(const MappedMmioRange& range) {
+  return range.size_bytes();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_phys_handoff_platform_id(zbi_platform_id_t* out) {
   std::optional<zbi_platform_id_t> platform_id = gPhysHandoff->platform_id.to_std();
   if (!platform_id) {

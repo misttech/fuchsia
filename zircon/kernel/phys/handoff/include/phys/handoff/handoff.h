@@ -454,9 +454,16 @@ const PhysHandoff* cpp_phys_handoff_get();
 uint8_t* cpp_phys_handoff_nvram(size_t* size);
 const zbi_topology_node_t* cpp_phys_handoff_cpu_topology(size_t* count);
 const memalloc::Range* cpp_phys_handoff_memory(size_t* count);
+const MappedMmioRange* cpp_phys_handoff_periph_ranges(size_t* count);
 // Copies the platform ID into *out and returns true, or returns false if none
 // was handed off.
 bool cpp_phys_handoff_platform_id(zbi_platform_id_t* out);
+
+// MappedMmioRange accessors, for Rust callers: bindgen leaves the
+// PhysHandoffSpan base opaque, and paddr_ is private.
+uint64_t cpp_mapped_mmio_range_paddr(const MappedMmioRange& range);
+uintptr_t cpp_mapped_mmio_range_vaddr(const MappedMmioRange& range);
+size_t cpp_mapped_mmio_range_size_bytes(const MappedMmioRange& range);
 
 }  // extern "C"
 
