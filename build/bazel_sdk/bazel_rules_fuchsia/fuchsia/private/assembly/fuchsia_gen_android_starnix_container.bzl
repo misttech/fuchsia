@@ -36,9 +36,7 @@ def _gen_android_starnix_container_impl(ctx):
         _container_manifest,
         ctx.actions.declare_directory("meta", sibling = _container_manifest),
         meta_far,
-        ctx.actions.declare_directory("odm", sibling = _container_manifest),
-        ctx.actions.declare_directory("ramdisk", sibling = _container_manifest),
-        ctx.actions.declare_directory("system", sibling = _container_manifest),
+        ctx.actions.declare_directory("data", sibling = _container_manifest),
     ]
 
     _args = [
@@ -48,8 +46,8 @@ def _gen_android_starnix_container_impl(ctx):
         _container_manifest.dirname,
         "--base",
         ctx.attr.base[FuchsiaPackageInfo].package_manifest.path,
-        "--system",
-        ctx.file.system.path,
+        "--image",
+        "system=" + ctx.file.system.path,
     ]
     for hal in _hal_package_manifests:
         _args += [
@@ -60,10 +58,9 @@ def _gen_android_starnix_container_impl(ctx):
     if ctx.file.vendor:
         _package_inputs.append(ctx.file.vendor)
         _args += [
-            "--vendor",
-            ctx.file.vendor.path,
+            "--image",
+            "vendor=" + ctx.file.vendor.path,
         ]
-        _outputs.append(ctx.actions.declare_directory("vendor", sibling = _container_manifest))
 
     if ctx.attr.skip_subpackages:
         _args.append("--skip-subpackages")

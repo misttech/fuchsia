@@ -69,8 +69,8 @@ template("android_starnix_container") {
         target_name,
         "--outdir",
         rebase_path(_outdir, root_build_dir),
-        "--system",
-        rebase_path(invoker.system, root_build_dir),
+        "--image",
+        "system=" + rebase_path(invoker.system, root_build_dir),
         "--depfile",
         rebase_path(depfile, root_build_dir),
       ]

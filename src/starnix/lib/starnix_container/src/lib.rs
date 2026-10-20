@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::{Component, Path};
@@ -38,12 +38,10 @@ pub struct StarnixContainerGenerator {
     pub hals: Vec<Utf8PathBuf>,
     /// Whether to skip including HALs as subpackages.
     pub skip_subpackages: bool,
-    /// Path to an Android system image.
-    pub system: Utf8PathBuf,
-    /// Path to an arbitrary number of ramdisk images which will be concatenated.
+    /// Map from name to ext4 image to include in the container.
+    pub images: BTreeMap<String, Utf8PathBuf>,
+    /// Path to an arbitrary number of cpio ramdisk images which will be concatenated.
     pub ramdisk: Vec<Utf8PathBuf>,
-    /// Path to an Android vendor partition image.
-    pub vendor: Option<Utf8PathBuf>,
     /// Path to fstab, will go in /odm which overrides the one in /vendor.
     pub fstab: Option<Utf8PathBuf>,
     /// Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
@@ -86,18 +84,14 @@ impl StarnixContainerGenerator {
     fn add_ext4_image(
         &self,
         name: impl AsRef<Utf8Path>,
-        outdir: impl AsRef<Utf8Path>,
         image_path: impl AsRef<Utf8Path>,
         builder: &mut PackageBuilder,
     ) -> Result<HashMap<String, String>> {
         // Put all the system image files into the container.
         let name = name.as_ref();
-        let outdir = outdir.as_ref();
         let image_path = image_path.as_ref();
 
-        let image_outdir = outdir.join(name);
-        std::fs::create_dir_all(&image_outdir)
-            .with_context(|| format!("Preparing directory for image files: {}", image_outdir))?;
+        let image_outdir = self.make_data_subdir(name)?;
         let mut image_files = ext4_extract(image_path.as_str(), image_outdir.as_str()).with_context(
             || format!("Failed to extract EXT4 image from {}. Please ensure the file is a valid EXT4 filesystem image.", image_path),
         )?;
@@ -141,16 +135,11 @@ impl StarnixContainerGenerator {
     fn add_ramdisks(
         &self,
         name: impl AsRef<Utf8Path>,
-        outdir: impl AsRef<Utf8Path>,
         ramdisk_paths: &[impl AsRef<Utf8Path>],
         builder: &mut PackageBuilder,
     ) -> Result<HashMap<String, String>> {
         let name = name.as_ref();
-        let outdir = outdir.as_ref();
-
-        let image_outdir = outdir.join(name);
-        std::fs::create_dir_all(&image_outdir)
-            .with_context(|| format!("Preparing directory for image files: {}", image_outdir))?;
+        let image_outdir = self.make_data_subdir(name)?;
 
         let mut writer = rb::Writer::new(
             &image_outdir,
@@ -286,6 +275,16 @@ impl StarnixContainerGenerator {
         Ok(builder)
     }
 
+    fn make_data_subdir(&self, name: impl AsRef<Utf8Path>) -> Result<Utf8PathBuf> {
+        let name = name.as_ref();
+        let path = self.outdir.join("data").join(name);
+        if std::fs::exists(&path)? {
+            bail!("collision on data subdirectory: {path}");
+        }
+        std::fs::create_dir_all(&path).with_context(|| format!("Preparing data subdirectory {name:?}"))?;
+        Ok(path)
+    }
+
     pub fn build(self, deps: &mut Depfile) -> Result<()> {
         // Track inputs and outputs for producing a depfile for incremental build correctness.
 
@@ -298,30 +297,27 @@ impl StarnixContainerGenerator {
         builder.published_name(&self.name);
         builder.manifest_blobs_relative_to(fuchsia_pkg::RelativeTo::File);
 
+        match std::fs::remove_dir_all(&self.outdir.join("data")) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            res => res,
+        }?;
+
         if !self.ramdisk.is_empty() {
             let ramdisk_files =
-                self.add_ramdisks("ramdisk", &self.outdir, &self.ramdisk, &mut builder)?;
+                self.add_ramdisks("ramdisk", &self.ramdisk, &mut builder)?;
             deps.add_inputs(&self.ramdisk);
             deps.add_outputs(ramdisk_files.into_values());
         }
 
-        let system_files =
-            self.add_ext4_image("system", &self.outdir, &self.system, &mut builder)?;
-        deps.add_input(&self.system);
-        deps.add_outputs(system_files.into_values());
-
-        // Combine the vendor image with the system image.
-        if let Some(vendor_path) = &self.vendor {
-            let vendor_files =
-                self.add_ext4_image("vendor", &self.outdir, &vendor_path, &mut builder)?;
-            deps.add_input(vendor_path);
-            deps.add_outputs(vendor_files.into_values());
+        for (image_name, image_path) in &self.images {
+            let image_files =
+                self.add_ext4_image(image_name, image_path, &mut builder)?;
+            deps.add_input(image_path);
+            deps.add_outputs(image_files.into_values());
         }
 
         // Initialize ODM filesystem.
-        let odm_outdir = self.outdir.join("odm");
-        std::fs::create_dir_all(&odm_outdir)
-            .with_context(|| format!("Preparing directory for ODM files: {}", odm_outdir))?;
+        let odm_outdir = self.make_data_subdir("odm")?;
         let mut odm_writer = Writer::new(&odm_outdir, |path| {
             // Mimic the SELinux labeling patterns defined for "/odm" in AOSP.
             let label: &[u8] = if path.len() == 0 {
@@ -737,8 +733,12 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+            images: BTreeMap::from([
+                ("system".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ("vendor".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ("product".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ("system_ext".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+            ]),
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
             init: vec![],
@@ -755,7 +755,7 @@ mod tests {
         let manifest = PackageManifest::try_load_from(&manifest_path).unwrap();
         assert_eq!(manifest.name().as_ref(), "test-name");
         let (blobs, subpackages) = manifest.into_blobs_and_subpackages();
-        assert_eq!(blobs.len(), 7);
+        assert_eq!(blobs.len(), 11);
         assert_eq!(subpackages.len(), 1);
         let blob_filenames: Vec<String> = blobs.iter().map(|b| b.path.clone()).collect();
 
@@ -784,8 +784,12 @@ mod tests {
             vec![
                 "meta/".to_string(),
                 "data/odm/metadata.v1".to_string(),
+                "data/product/13".to_string(),
+                "data/product/metadata.v1".to_string(),
                 "data/system/13".to_string(),
                 "data/system/metadata.v1".to_string(),
+                "data/system_ext/13".to_string(),
+                "data/system_ext/metadata.v1".to_string(),
                 "data/test".to_string(),
                 "data/vendor/13".to_string(),
                 "data/vendor/metadata.v1".to_string(),
@@ -795,13 +799,17 @@ mod tests {
         assert_eq!(
             blob_source_paths,
             vec![
+                "data/odm/metadata.v1".to_string(),
+                "data/product/13".to_string(),
+                "data/product/metadata.v1".to_string(),
+                "data/system/13".to_string(),
+                "data/system/metadata.v1".to_string(),
+                "data/system_ext/13".to_string(),
+                "data/system_ext/metadata.v1".to_string(),
+                "data/vendor/13".to_string(),
+                "data/vendor/metadata.v1".to_string(),
                 "meta.far".to_string(),
-                "odm/metadata.v1".to_string(),
-                "system/13".to_string(),
-                "system/metadata.v1".to_string(),
                 "test-blob-file".to_string(),
-                "vendor/13".to_string(),
-                "vendor/metadata.v1".to_string(),
             ]
         );
 
@@ -868,8 +876,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path.clone(),
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![],
@@ -910,8 +920,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path.clone(),
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![],
@@ -952,8 +964,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path.clone(),
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![],
@@ -1007,8 +1021,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path.clone(),
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![],
@@ -1057,8 +1073,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path.clone(),
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![],
@@ -1114,8 +1132,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path.clone(),
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![],
@@ -1198,8 +1218,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+            images: BTreeMap::from([
+                ("system".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ("vendor".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+            ]),
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
             init: vec![],
@@ -1267,8 +1289,10 @@ mod tests {
                 name: "test-name".into(),
                 outdir: outdir.join("case1"),
                 base: base_manifest_path,
-                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                images: BTreeMap::from([
+                    ("system".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                    ("vendor".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ]),
                 ramdisk: vec![],
                 hals: vec![hal_manifest_path.clone()],
                 init: vec![],
@@ -1300,8 +1324,10 @@ mod tests {
                 name: "test-name".into(),
                 outdir: outdir.join("case2"),
                 base: base_manifest_path,
-                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                images: BTreeMap::from([
+                    ("system".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                    ("vendor".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ]),
                 ramdisk: vec![],
                 hals: vec![hal_manifest_path.clone()],
                 init: vec![],
@@ -1332,8 +1358,10 @@ mod tests {
                 name: "test-name".into(),
                 outdir: outdir.join("case3"),
                 base: base_manifest_path,
-                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                images: BTreeMap::from([
+                    ("system".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                    ("vendor".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ]),
                 ramdisk: vec![],
                 hals: vec![hal_manifest_path.clone()],
                 init: vec![],
@@ -1364,8 +1392,10 @@ mod tests {
                 name: "test-name".into(),
                 outdir: outdir.join("case4"),
                 base: base_manifest_path,
-                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                images: BTreeMap::from([
+                    ("system".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                    ("vendor".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ]),
                 ramdisk: vec![],
                 hals: vec![hal_manifest_path.clone()],
                 init: vec![],
@@ -1397,8 +1427,10 @@ mod tests {
                 name: "test-name".into(),
                 outdir: outdir.join("case5"),
                 base: base_manifest_path,
-                system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-                vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                images: BTreeMap::from([
+                    ("system".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                    ("vendor".into(), Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+                ]),
                 ramdisk: vec![],
                 hals: vec![hal_manifest_path.clone()],
                 init: vec![],
@@ -1440,8 +1472,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
             init: vec![],
@@ -1517,8 +1551,10 @@ mod tests {
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
             init: vec![],
@@ -1587,8 +1623,10 @@ tmpfs   /data       tmpfs   defaults            wait
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![],
@@ -1646,8 +1684,10 @@ tmpfs   /data       tmpfs   defaults            wait
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![],
             hals: vec![],
             init: vec![init_path],
@@ -1743,8 +1783,7 @@ tmpfs   /data       tmpfs   defaults            wait
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: invalid_image_path,
-            vendor: None,
+            images: BTreeMap::from([("system".into(), invalid_image_path)]),
             ramdisk: vec![],
             hals: vec![],
             fstab: None,
@@ -1773,8 +1812,10 @@ tmpfs   /data       tmpfs   defaults            wait
             name: "test-name".into(),
             outdir: outdir.to_owned(),
             base: base_manifest_path,
-            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
-            vendor: None,
+            images: BTreeMap::from([(
+                "system".into(),
+                Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            )]),
             ramdisk: vec![invalid_ramdisk_path],
             hals: vec![],
             fstab: None,

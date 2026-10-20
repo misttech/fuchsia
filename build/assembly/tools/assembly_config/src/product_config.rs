@@ -15,6 +15,7 @@ use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use product_input_bundle::ProductInputBundle;
 use starnix_container::StarnixContainerGenerator;
+use std::collections::BTreeMap;
 use std::io::Cursor;
 
 pub fn new(args: &ProductArgs) -> Result<()> {
@@ -53,9 +54,14 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         &mut config.product.packages.base
     };
     for container in starnix_containers {
-        let (system, ramdisk, vendor) = match &container.images_or_package {
+        let (images, ramdisk) = match &container.images_or_package {
             StarnixImagesOrPackage::Images(i) => {
-                Ok((i.system.clone(), i.ramdisk.clone(), i.vendor.clone()))
+                let mut images = BTreeMap::new();
+                images.insert("system".to_string(), i.system.clone());
+                if let Some(vendor) = &i.vendor {
+                    images.insert("vendor".to_string(), vendor.clone());
+                }
+                Ok((images, i.ramdisk.clone()))
             }
             StarnixImagesOrPackage::Package(_) => Err(anyhow::anyhow!(
                 "Existing containers from prebuilt product configs should be repackaged using the hybrid product config command",
@@ -89,9 +95,8 @@ pub fn new(args: &ProductArgs) -> Result<()> {
             base,
             hals,
             skip_subpackages: container.skip_subpackages,
-            system,
+            images,
             ramdisk,
-            vendor,
             fstab: container.fstab.clone(),
             init: container.init.clone(),
             file_overrides: container.file_overrides.clone(),
