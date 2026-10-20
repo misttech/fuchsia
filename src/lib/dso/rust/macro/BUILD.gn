@@ -12,7 +12,7 @@ if (is_host) {
     source_root = "src/transformer.rs"
     sources = [ "src/transformer.rs" ]
     deps = [
-      "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+      "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust_common",
       "//third_party/rust_crates:proc-macro2",
       "//third_party/rust_crates:quote",
       "//third_party/rust_crates:syn",
