@@ -413,6 +413,10 @@ class Daemon:
             except OSError as e:
                 print(f"Failed to write to ready-fd: {e}")
 
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGINT, self.stop_event.set)
+        loop.add_signal_handler(signal.SIGTERM, self.stop_event.set)
+
         # Wait for stop event (sent by handle_stop)
         await self.stop_event.wait()
 

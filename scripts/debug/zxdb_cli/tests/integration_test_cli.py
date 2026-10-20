@@ -987,6 +987,46 @@ class TestCLIIntegration(FakeDapServerMixin):
         finally:
             await _cleanup_process_group(proc)
 
+    async def test_daemon_sigterm(self) -> None:
+        proc, _port = await self._setup_daemon_and_server()
+
+        try:
+            proc.send_signal(signal.SIGTERM)
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(proc.wait), timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                self.fail("Daemon process did not exit after SIGTERM")
+
+            self.assertFalse(
+                UDS_PATH.exists(), "Socket file was not deleted after SIGTERM"
+            )
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_daemon_sigint(self) -> None:
+        proc, _port = await self._setup_daemon_and_server()
+
+        try:
+            proc.send_signal(signal.SIGINT)
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(proc.wait), timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                self.fail("Daemon process did not exit after SIGINT")
+
+            self.assertFalse(
+                UDS_PATH.exists(), "Socket file was not deleted after SIGINT"
+            )
+
+        finally:
+            await _cleanup_process_group(proc)
+
 
 if __name__ == "__main__":
     unittest.main()
