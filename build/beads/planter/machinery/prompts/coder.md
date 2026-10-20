@@ -163,8 +163,9 @@ translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only thro
   (`:<crate>_host_test`, never `($host_toolchain)`); list it in `group("tests")`.
   A package whose remaining GN content is only `bazel_test_suite`/`group("tests")` gets no
   sentinel and no bazel2gn run.
-- Only when Bazel cannot express the test yet (`test_specs` environments or timeouts, `test_type`
-  or custom realms, subpackages, `bootfs_test`, Ninja-generated inputs) keep that one test
+- Only when Bazel cannot express the test yet (test spec fields other than `environments`,
+  `build_only`, `log_settings` and `test_type`, e.g. timeouts; custom realms; e2e tests;
+  `bootfs_test`; Ninja-generated inputs) keep that one test
   hand-written in GN, above the sentinel, depending on the generated library; name the reason in
   the `summary` and commit message.
 
