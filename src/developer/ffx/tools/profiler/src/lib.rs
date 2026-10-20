@@ -1455,6 +1455,7 @@ mod tests {
 
         let raw_bytes = build_minimal_profiler_fxt_bytes();
         std::fs::write(&input_path, &raw_bytes).expect("write raw fxt");
+        let env = ffx_config::test_env().build().expect("test env");
 
         // 1. Run `ProfilerSubCommand::Symbolize` with `OutputFormat::Perfetto` (no device needed).
         let tool_pftrace = ProfilerTool {
@@ -1472,7 +1473,7 @@ mod tests {
                     output_format: args::OutputFormat::Perfetto,
                 }),
             },
-            context: ffx_config::EnvironmentContext::default(),
+            context: env.context.clone(),
         };
         let buffers = TestBuffers::default();
         let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -1510,7 +1511,7 @@ mod tests {
                     output_format: args::OutputFormat::Fxt,
                 }),
             },
-            context: ffx_config::EnvironmentContext::default(),
+            context: env.context.clone(),
         };
         let buffers = TestBuffers::default();
         let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -1578,7 +1579,7 @@ mod tests {
         };
         let buffers = TestBuffers::default();
         let mut writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
-        let context = ffx_config::EnvironmentContext::default();
+        let env = ffx_config::test_env().build().expect("test env");
 
         finalize_profile_session(
             &session_proxy,
@@ -1586,7 +1587,7 @@ mod tests {
             &opts_fxt,
             None,
             &unsymbolized_path,
-            &context,
+            &env.context,
             false,
         )
         .await
@@ -1635,7 +1636,7 @@ mod tests {
             &opts_pf,
             None,
             &unsymbolized_path,
-            &context,
+            &env.context,
             false,
         )
         .await
@@ -1666,6 +1667,7 @@ mod tests {
             _ => panic!("Unexpected request: {:?}", req),
         });
 
+        let env = ffx_config::test_env().build().expect("test env");
         let tool = ProfilerTool {
             controller: fho::Deferred::from_output(Err(fho::Error::Unexpected(anyhow::anyhow!(
                 "controller should not be accessed"
@@ -1682,7 +1684,7 @@ mod tests {
                     print_stats: false,
                 }),
             },
-            context: ffx_config::EnvironmentContext::default(),
+            context: env.context.clone(),
         };
 
         let buffers = TestBuffers::default();
@@ -1702,6 +1704,7 @@ mod tests {
         use target_holders::fake_proxy;
 
         let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_env().build().expect("test env");
 
         for fmt in [args::OutputFormat::Perfetto, args::OutputFormat::Fxt] {
             let attach_session_manager: profiler::SessionManagerProxy =
@@ -1724,7 +1727,7 @@ mod tests {
                         ..Default::default()
                     }),
                 },
-                context: ffx_config::EnvironmentContext::default(),
+                context: env.context.clone(),
             };
             let buffers = TestBuffers::default();
             let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -1754,7 +1757,7 @@ mod tests {
                         ..Default::default()
                     }),
                 },
-                context: ffx_config::EnvironmentContext::default(),
+                context: env.context.clone(),
             };
             let buffers = TestBuffers::default();
             let writer = <ProfilerTool as FfxMain>::Writer::new_test(None, &buffers);
