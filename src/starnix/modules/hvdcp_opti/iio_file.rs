@@ -58,7 +58,7 @@ pub fn build_iio0_directory(
     );
 }
 
-pub fn build_iio1_directory(
+pub fn build_iio3_directory(
     device: &Device,
     proxy: &Arc<fhvdcpopti::IioSynchronousProxy>,
     dir: &SimpleDirectoryMutator,
@@ -138,6 +138,25 @@ pub fn build_battery_power_supply_directory(
     dir.entry("status", IioFile::new_node(proxy.clone(), "battery_status"), mode!(IFREG, 0o444));
     dir.entry(
         "capacity_level",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+}
+
+pub fn build_bms_power_supply_directory(device: &Device, dir: &SimpleDirectoryMutator) {
+    build_device_directory(device, dir);
+    dir.entry(
+        "capacity",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "capacity_level",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "status",
         StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
         mode!(IFREG, 0o444),
     );

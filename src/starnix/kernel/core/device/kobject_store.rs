@@ -72,34 +72,6 @@ impl KObjectStore {
         let platform_bus = self.platform_bus();
         let soc = self.soc_device();
 
-        // TODO(https://fxbug.dev/452096300): Stub Qualcomm SPMI PMIC and battery gauge IIO device.
-        let spmi = registry.add_bus_device(
-            "1c40000.qcom,spmi".into(),
-            Some(soc.clone()),
-            platform_bus.clone(),
-            build_device_directory,
-        );
-        let spmi_bus = self.get_or_create_bus("spmi".into());
-        let spmi_0 = registry.add_bus_device(
-            "spmi-0".into(),
-            Some(spmi),
-            spmi_bus.clone(),
-            build_device_directory,
-        );
-        let spmi_0_00 =
-            registry.add_bus_device("0-00".into(), Some(spmi_0), spmi_bus, build_device_directory);
-        let qbg = registry.add_bus_device(
-            "1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00".into(),
-            Some(spmi_0_00),
-            platform_bus.clone(),
-            build_device_directory,
-        );
-        let iio_bus = self.get_or_create_bus("iio".into());
-        registry.add_bus_device("iio:device3".into(), Some(qbg), iio_bus, |device, dir| {
-            build_device_directory(device, dir);
-            add_stub_attributes(dir, &["in_resistance_resistance_id_input"]);
-        });
-
         // TODO(https://fxbug.dev/452096300): Stub Qualcomm MDSS display controller and DRM
         // connector.
         let mdss_mdp = registry.add_bus_device(

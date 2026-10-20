@@ -33,7 +33,7 @@ pub enum Feature {
     // Until dynamic IIO numbering is supported, they must not be used at the same time.
     GoogleOdpm,
     Gralloc,
-    // Note: HvdcpOpti statically registers IIO devices (`iio:device0`, `iio:device1`).
+    // Note: HvdcpOpti statically registers IIO devices (`iio:device0`, `iio:device3`).
     // Conflicts with `GoogleOdpm`, which also statically registers `iio:device0`.
     // Until dynamic IIO numbering is supported, they must not be used at the same time.
     HvdcpOpti,

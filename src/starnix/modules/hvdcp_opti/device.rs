@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use super::iio_file::{
-    build_battery_power_supply_directory, build_iio0_directory, build_iio1_directory,
-    build_usb_power_supply_directory,
+    build_battery_power_supply_directory, build_bms_power_supply_directory, build_iio0_directory,
+    build_iio3_directory, build_usb_power_supply_directory,
 };
 use super::qbg_battery_file::create_battery_profile_device;
 use super::qbg_file::create_qbg_device;
@@ -117,21 +117,24 @@ fn register_hvdcp_opti_devices(
         build_device_directory,
     );
 
-    // /sys/bus/iio/devices/iio:device{0,1}
+    // /sys/bus/iio/devices/iio:device{0,3}
     let iio = registry.objects.get_or_create_bus("iio".into());
-    registry.add_bus_device("iio:device0".into(), Some(smblite), iio.clone(), |device, dir| {
-        build_iio0_directory(device, &proxy, dir)
-    });
+    registry.add_bus_device(
+        "iio:device0".into(),
+        Some(smblite.clone()),
+        iio.clone(),
+        |device, dir| build_iio0_directory(device, &proxy, dir),
+    );
 
-    registry.add_bus_device("iio:device1".into(), Some(qbg), iio, |device, dir| {
-        build_iio1_directory(device, &proxy, dir)
+    registry.add_bus_device("iio:device3".into(), Some(qbg.clone()), iio, |device, dir| {
+        build_iio3_directory(device, &proxy, dir)
     });
 
     let power_supply = registry.objects.get_or_create_class("power_supply".into());
     // /sys/class/power_supply/usb
     registry.add_numberless_device(
         "usb".into(),
-        /* parent = */ None,
+        Some(smblite.clone()),
         power_supply.clone(),
         |device, dir| build_usb_power_supply_directory(device, &proxy, dir),
     );
@@ -139,7 +142,7 @@ fn register_hvdcp_opti_devices(
     // /sys/class/power_supply/battery
     registry.add_numberless_device(
         "battery".into(),
-        /* parent = */ None,
+        Some(smblite),
         power_supply.clone(),
         |device, dir| build_battery_power_supply_directory(device, &proxy, dir),
     );
@@ -147,9 +150,9 @@ fn register_hvdcp_opti_devices(
     // /sys/class/power_supply/bms
     registry.add_numberless_device(
         "bms".into(),
-        /* parent = */ None,
+        Some(qbg),
         power_supply,
-        build_device_directory,
+        build_bms_power_supply_directory,
     );
     Ok(())
 }

@@ -189,25 +189,6 @@ impl SysFs {
             dir.subdir("leds", dir_mode, |_dir| {});
             dir.subdir("virtual", dir_mode, |dir| {
                 dir.subdir("leds", dir_mode, |_dir| {});
-                dir.subdir("power_supply", dir_mode, |dir| {
-                    dir.subdir("bms", dir_mode, |dir| {
-                        dir.entry(
-                            "capacity",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "capacity_level",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "status",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                    });
-                });
             });
         });
 
@@ -273,17 +254,6 @@ mod tests {
 
             assert!(root.lookup("devices/platform/uevent".into()).is_some());
             assert!(root.lookup("bus/platform/devices/soc".into()).is_some());
-            assert!(root.lookup("bus/platform/devices/1c40000.qcom,spmi".into()).is_some());
-            assert!(root.lookup("bus/spmi/devices/spmi-0".into()).is_some());
-            assert!(root.lookup("bus/spmi/devices/0-00".into()).is_some());
-            assert!(root.lookup("bus/iio/devices/iio:device3".into()).is_some());
-            assert!(
-                root.lookup(
-                    "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00/iio:device3/in_resistance_resistance_id_input"
-                        .into(),
-                )
-                .is_some()
-            );
             assert!(root.lookup("class/drm/card0".into()).is_some());
             assert!(root.lookup("class/drm/sde-conn-0-DSI-1".into()).is_some());
             assert!(
