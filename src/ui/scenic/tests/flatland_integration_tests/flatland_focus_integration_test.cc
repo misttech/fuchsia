@@ -85,6 +85,7 @@ class FlatlandFocusIntegrationTest : public ScenicCtfTest,
             .is_ok());
     EXPECT_EQ(CountReceivedFocusChains(), 0u);
     RunLoopUntil([this] { return CountReceivedFocusChains() >= 1u; });
+    EXPECT_FALSE(LastFocusChain()->focus_chain().has_value());
     observed_focus_chains_.clear();
 
     auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
@@ -142,6 +143,32 @@ class FlatlandFocusIntegrationTest : public ScenicCtfTest,
     RunLoopUntil([&root_focused] { return root_focused; });
 
     observed_focus_chains_.clear();
+  }
+
+  void TearDown() override {
+    // `TearDown()` requires the root view to still be attached so closing `root_session_`
+    // dispatches a fresh empty focus chain.
+    ASSERT_TRUE(root_session_);
+    ASSERT_TRUE(observed_focus_chains_.empty() || LastFocusChain()->focus_chain().has_value());
+    observed_focus_chains_.clear();
+
+    // Close the root Flatland session and its view-bound protocols.
+    root_session_.reset();
+    root_focuser_.reset();
+    root_focused_.reset();
+
+    // Wait until Scenic tears down the scene, publishes an empty ViewTreeSnapshot,
+    // and FocusManager repairs the focus chain back to empty (focus_chain == std::nullopt).
+    // Because Scenic is shared across tests, awaiting the empty focus chain here prevents
+    // asynchronous session destruction from leaking into the next test's SetUp().
+    RunLoopUntil([this] {
+      return CountReceivedFocusChains() >= 1u && !LastFocusChain()->focus_chain().has_value();
+    });
+
+    // Now that FocusManager's focus_chain_ is empty, unbind this test's listener.
+    focus_chain_listener_binding_.reset();
+
+    ScenicCtfTest::TearDown();
   }
 
   bool RequestFocusChange(SimpleWatcherClient<fuv::Focuser>& view_focuser_ptr,
