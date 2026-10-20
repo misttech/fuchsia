@@ -6,6 +6,7 @@ group("tests") {
   deps = [
     "aml-usb-phy:tests",
     "dwc2:tests",
+    "usb-connector:tests",
     "usb-phy:tests",
   ]
   testonly = true

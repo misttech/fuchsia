@@ -74,6 +74,7 @@ devicetree_visitor_collection("all-driver-visitors") {
     "//sdk/lib/driver/devicetree/visitors/drivers/ufs/ufs-phy:ufs-phy-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/usb/aml-usb-phy:aml-usb-phy-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/usb/dwc2:dwc2-visitor",
+    "//sdk/lib/driver/devicetree/visitors/drivers/usb/usb-connector:usb-connector-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/usb/usb-phy:usb-phy-visitor",
   ]
 }
