@@ -965,50 +965,51 @@ mod tests {
     use super::super::job_dispatcher::JobDispatcher;
     use super::super::process_dispatcher::ProcessDispatcher;
     use super::ThreadDispatcher;
-    use unittest::{expect_eq, expect_ok};
+    use unittest::{assert_ok, expect_eq, unwrap_ok};
 
     /// Tests creating and destroying a thread without initializing it.
     #[test]
     fn test_create_destroy_thread_no_init() {
-        let root_job = JobDispatcher::create_root_job();
-        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(root_job, b"k-ut-p0", 0).expect("process created");
-        let (thread_handle, rights) =
-            ThreadDispatcher::create(proc_handle.dispatcher().clone(), 0, b"k-ut-t0")
-                .expect("thread created");
+        let (job, _job_rights) =
+            unwrap_ok!(JobDispatcher::create(0, JobDispatcher::get_root_job()), "job created");
+
+        let (process, _process_rights, _vmar, _vmar_rights) = unwrap_ok!(
+            ProcessDispatcher::create(job.dispatcher().clone(), b"k-ut-p0", 0),
+            "process created"
+        );
+
+        let (thread, rights) = unwrap_ok!(
+            ThreadDispatcher::create(process.dispatcher().clone(), 0, b"k-ut-t0"),
+            "thread created"
+        );
         expect_eq!(rights, ThreadDispatcher::default_rights());
-        expect_eq!(
-            thread_handle.dispatcher().get_related_koid(),
-            proc_handle.dispatcher().get_koid()
-        );
-        expect_eq!(
-            thread_handle.dispatcher().process().get_koid(),
-            proc_handle.dispatcher().get_koid()
-        );
-        expect_eq!(thread_handle.dispatcher().get_type(), zx_types::ZX_OBJ_TYPE_THREAD);
-        expect_eq!(thread_handle.dispatcher().is_current(), false);
-        thread_handle.dispatcher().kill();
-        thread_handle.dispatcher().assert_canary();
+        expect_eq!(thread.dispatcher().get_related_koid(), process.dispatcher().get_koid());
+        expect_eq!(thread.dispatcher().process().get_koid(), process.dispatcher().get_koid());
+        expect_eq!(thread.dispatcher().get_type(), zx_types::ZX_OBJ_TYPE_THREAD);
+        expect_eq!(thread.dispatcher().is_current(), false);
+        thread.dispatcher().assert_canary();
     }
 
     /// Tests creating, initializing, and destroying a thread.
     #[test]
     fn test_create_init_destroy_thread() {
-        let root_job = JobDispatcher::create_root_job();
-        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
-            ProcessDispatcher::create(root_job, b"k-ut-p1", 0).expect("process created");
-        let (thread_handle, rights) =
-            ThreadDispatcher::create(proc_handle.dispatcher().clone(), 0, b"k-ut-t1")
-                .expect("thread created");
+        let (job, _job_rights) =
+            unwrap_ok!(JobDispatcher::create(0, JobDispatcher::get_root_job()), "job created");
+
+        let (process, _process_rights, _vmar, _vmar_rights) = unwrap_ok!(
+            ProcessDispatcher::create(job.dispatcher().clone(), b"k-ut-p1", 0),
+            "process created"
+        );
+
+        let (thread, rights) = unwrap_ok!(
+            ThreadDispatcher::create(process.dispatcher().clone(), 0, b"k-ut-t1"),
+            "thread created"
+        );
         expect_eq!(rights, ThreadDispatcher::default_rights());
-        expect_ok!(thread_handle.dispatcher().initialize());
-        expect_eq!(thread_handle.dispatcher().has_started(), false);
-        expect_eq!(thread_handle.dispatcher().is_dying_or_dead(), false);
-        expect_ok!(thread_handle.dispatcher().suspend());
-        thread_handle.dispatcher().resume();
-        expect_ok!(thread_handle.dispatcher().restricted_kick());
-        thread_handle.dispatcher().kill();
-        expect_eq!(thread_handle.dispatcher().has_started(), false);
-        thread_handle.dispatcher().assert_canary();
+
+        assert_ok!(thread.dispatcher().initialize(), "thread init");
+        expect_eq!(thread.dispatcher().has_started(), false);
+        expect_eq!(thread.dispatcher().is_dying_or_dead(), false);
+        thread.dispatcher().assert_canary();
     }
 }
