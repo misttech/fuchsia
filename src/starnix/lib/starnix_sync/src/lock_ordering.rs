@@ -73,7 +73,6 @@ lock_ordering! {
     EpollStateLock => SuspendResumeManagerInnerLock,
     EpollStateLock => TimerFileInfoLock,
     EpollWaitableStateLock => WaitQueueImplLock,
-    ExecutorVmarManagerLock => ThreadGroupPtraceesLock,
     FastrpcInnerState => MemoryManagerStateLock,
     FdTableMutableStateLock => FsNodeInfoLevel,
     FdTableMutableStateLock => MountsLevel,

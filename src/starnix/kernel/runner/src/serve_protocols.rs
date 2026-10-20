@@ -133,7 +133,6 @@ async fn spawn_console(
                     _ => sender.send(Err(fstarcontainer::SpawnConsoleError::Canceled)),
                 };
             },
-            None,
         )?;
         let _ = forward_to_pty(kernel, console_in, console_out, pty).map_err(|e| {
             log_error!("failed to forward to terminal {:?}", e);

@@ -34,7 +34,7 @@ use starnix_uapi::{
     PTRACE_PEEKDATA, PTRACE_PEEKTEXT, PTRACE_PEEKUSR, PTRACE_POKEDATA, PTRACE_POKETEXT,
     PTRACE_POKEUSR, PTRACE_SETOPTIONS, PTRACE_SETREGSET, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK,
     PTRACE_SYSCALL, PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE,
-    clone_args, errno, error, ptrace_syscall_info, uapi,
+    errno, error, ptrace_syscall_info, uapi,
 };
 use zerocopy::IntoBytes;
 
@@ -351,40 +351,6 @@ impl PtraceState {
             _ => (),
         }
         Ok((info_len as i32, info))
-    }
-
-    /// Gets the core state for this ptrace if the options set on this ptrace
-    /// match |trace_kind|.  Returns a pair: the trace option you *should* use
-    /// (sometimes this is different from the one that the caller thinks it
-    /// should use), and the core state.
-    pub fn get_core_state_for_clone(
-        &self,
-        clone_args: &clone_args,
-    ) -> (PtraceOptions, Option<PtraceCoreState>) {
-        // ptrace(2): If the tracee calls clone(2) with the CLONE_VFORK flag,
-        // PTRACE_EVENT_VFORK will be delivered instead if PTRACE_O_TRACEVFORK
-        // is set, otherwise if the tracee calls clone(2) with the exit signal
-        // set to SIGCHLD, PTRACE_EVENT_FORK will be delivered if
-        // PTRACE_O_TRACEFORK is set.
-        let trace_type = if clone_args.flags & (starnix_uapi::CLONE_UNTRACED as u64) != 0 {
-            PtraceOptions::empty()
-        } else {
-            if clone_args.flags & (starnix_uapi::CLONE_VFORK as u64) != 0 {
-                PtraceOptions::TRACEVFORK
-            } else if clone_args.exit_signal != (starnix_uapi::SIGCHLD as u64) {
-                PtraceOptions::TRACECLONE
-            } else {
-                PtraceOptions::TRACEFORK
-            }
-        };
-
-        if !self.has_option(trace_type)
-            && (clone_args.flags & (starnix_uapi::CLONE_PTRACE as u64) == 0)
-        {
-            return (PtraceOptions::empty(), None);
-        }
-
-        (trace_type, Some(self.get_core_state()))
     }
 }
 
@@ -1109,7 +1075,7 @@ fn do_attach(
 /// Uses the given core ptrace state (including tracer, attach type, etc) to
 /// attach to another task, given by `tracee_task`.  Also sends a signal to stop
 /// tracee_task.  Typical for when inheriting ptrace state from another task.
-pub fn ptrace_attach_from_state(
+pub(super) fn ptrace_attach_from_state(
     tracee_task: &Arc<Task>,
     ptrace_state: PtraceCoreState,
 ) -> Result<(), Errno> {

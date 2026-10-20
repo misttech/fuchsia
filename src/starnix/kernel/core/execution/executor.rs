@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::execution::loop_entry::enter_syscall_loop;
-use crate::ptrace::{PtraceCoreState, ptrace_attach_from_state};
 use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder, ZirconThread};
 use anyhow::Error;
 use starnix_logging::{log_error, log_warn};
@@ -24,7 +23,6 @@ pub fn execute_task_with_prerun_result<F, R, G>(
     task_builder: TaskBuilder,
     pre_run: F,
     task_complete: G,
-    ptrace_state: Option<PtraceCoreState>,
 ) -> Result<R, Errno>
 where
     F: FnOnce(&mut CurrentTask) -> Result<R, Errno> + Send + Sync + 'static,
@@ -45,7 +43,6 @@ where
             }),
         },
         task_complete,
-        ptrace_state,
     )?;
     receiver.recv().map_err(|e| {
         log_error!("Unable to retrieve result from `pre_run`: {e:?}");
@@ -57,7 +54,6 @@ pub fn execute_task<F, G>(
     task_builder: TaskBuilder,
     pre_run: F,
     task_complete: G,
-    ptrace_state: Option<PtraceCoreState>,
 ) -> Result<(), Errno>
 where
     F: FnOnce(&mut CurrentTask) -> Result<(), Errno> + Send + Sync + 'static,
@@ -95,10 +91,6 @@ where
             thrd_set_zx_create_handles(old_handles);
         };
     };
-
-    if let Some(ptrace_state) = ptrace_state {
-        let _ = ptrace_attach_from_state(&task_builder.task, ptrace_state);
-    }
 
     let ref_task = Arc::clone(&task_builder.task);
     let running_state = ref_task.running_state().unwrap();

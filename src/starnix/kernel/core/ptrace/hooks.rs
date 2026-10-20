@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use starnix_logging::CATEGORY_STARNIX;
 use starnix_uapi::signals::SIGTRAP;
+use starnix_uapi::{CLONE_PTRACE, CLONE_UNTRACED, CLONE_VFORK, SIGCHLD, clone_args};
 
-use crate::ptrace::{PtraceEventData, PtraceOptions, StopState};
+use crate::ptrace::{PtraceEventData, PtraceOptions, StopState, ptrace_attach_from_state};
 use crate::signals::{SignalDetail, SignalInfo, send_signal_first};
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, Task};
 
 /// Provides access to ptrace hooks for a [`CurrentTask`].
 #[derive(Debug)]
@@ -107,5 +109,46 @@ impl<'a> CurrentTaskPtrace<'a> {
             );
         }
         self.current_task.block_if_stopped();
+    }
+
+    /// For traced tasks, attaches `child_task` to the same tracer if required by the clone
+    /// flags/ptrace options, and returns the `PtraceOptions` event to emit after spawning.
+    pub fn on_clone(self, clone_args: &clone_args, child_task: &Arc<Task>) -> PtraceOptions {
+        let (trace_type, ptrace_state) = {
+            let state = self.current_task.read();
+            let Some(ptrace) = &state.ptrace else {
+                return PtraceOptions::empty();
+            };
+
+            // ptrace(2): If the tracee calls clone(2) with the CLONE_VFORK flag,
+            // PTRACE_EVENT_VFORK will be delivered instead if PTRACE_O_TRACEVFORK
+            // is set, otherwise if the tracee calls clone(2) with the exit signal
+            // set to SIGCHLD, PTRACE_EVENT_FORK will be delivered if
+            // PTRACE_O_TRACEFORK is set.
+            let trace_type = if clone_args.flags & (CLONE_UNTRACED as u64) != 0 {
+                PtraceOptions::empty()
+            } else if clone_args.flags & (CLONE_VFORK as u64) != 0 {
+                PtraceOptions::TRACEVFORK
+            } else if clone_args.exit_signal != (SIGCHLD as u64) {
+                PtraceOptions::TRACECLONE
+            } else {
+                PtraceOptions::TRACEFORK
+            };
+
+            let trace_type = if ptrace.has_option(trace_type) {
+                trace_type
+            } else if clone_args.flags & (CLONE_PTRACE as u64) != 0 {
+                PtraceOptions::empty()
+            } else {
+                return PtraceOptions::empty();
+            };
+
+            (trace_type, ptrace.get_core_state())
+        };
+
+        if ptrace_attach_from_state(child_task, ptrace_state).is_err() {
+            return PtraceOptions::empty();
+        }
+        trace_type
     }
 }

@@ -105,7 +105,6 @@ pub fn do_clone(current_task: &mut CurrentTask, args: &clone_args) -> Result<pid
     // Set the result register to 0 for the return value from clone in the
     // cloned process.
     new_task.thread_state.registers.set_return_register(0);
-    let (trace_kind, ptrace_state) = current_task.get_ptrace_core_state_for_clone(args);
 
     if args.stack != 0 {
         // In clone() the `stack` argument points to the top of the stack, while in clone3()
@@ -123,7 +122,8 @@ pub fn do_clone(current_task: &mut CurrentTask, args: &clone_args) -> Result<pid
 
     let tid = new_task.task.tid.id;
     let task_ref = Arc::downgrade(&new_task.task);
-    execute_task(new_task, |_| Ok(()), |_| {}, ptrace_state)?;
+    let trace_kind = current_task.ptrace().on_clone(args, &new_task.task);
+    execute_task(new_task, |_| Ok(()), |_| {})?;
 
     current_task.ptrace().on_event(trace_kind, tid as u64);
 

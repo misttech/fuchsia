@@ -211,7 +211,6 @@ where
                 error!(EHWPOISON)
             },
             |_| {},
-            None,
         )
         .unwrap_err();
         // EHWPOISON is expected from the pre_run task, any other error is returned.

@@ -5,7 +5,7 @@
 use crate::arch::task::handle_hardware_exception;
 use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
-use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
+use crate::ptrace::{PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
 use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::loader::{
@@ -50,8 +50,8 @@ use starnix_uapi::{
     CLONE_INTO_CGROUP, CLONE_NEWUTS, CLONE_PARENT, CLONE_PARENT_SETTID, CLONE_PTRACE, CLONE_SETTLS,
     CLONE_SIGHAND, CLONE_SYSVSEM, CLONE_THREAD, CLONE_VFORK, CLONE_VM, FUTEX_OWNER_DIED,
     FUTEX_TID_MASK, ROBUST_LIST_LIMIT, SECCOMP_FILTER_FLAG_LOG, SECCOMP_FILTER_FLAG_NEW_LISTENER,
-    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, clone_args, errno, error, pid_t,
-    sock_filter, ucred,
+    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, errno, error, pid_t, sock_filter,
+    ucred,
 };
 use std::cell::{Ref, RefCell};
 use std::collections::VecDeque;
@@ -2011,20 +2011,6 @@ impl CurrentTask {
             // Maybe go from stopping to stopped, if we are currently stopping
             // again.
             self.finalize_stop_state();
-        }
-    }
-
-    /// For traced tasks, this will return the data neceessary for a cloned task
-    /// to attach to the same tracer.
-    pub fn get_ptrace_core_state_for_clone(
-        &mut self,
-        clone_args: &clone_args,
-    ) -> (PtraceOptions, Option<PtraceCoreState>) {
-        let state = self.write();
-        if let Some(ptrace) = &state.ptrace {
-            ptrace.get_core_state_for_clone(clone_args)
-        } else {
-            (PtraceOptions::empty(), None)
         }
     }
 

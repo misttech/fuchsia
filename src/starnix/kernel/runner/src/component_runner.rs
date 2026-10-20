@@ -311,7 +311,6 @@ pub async fn start_component(
                     // report the result to.
                     let _ = task_complete_sender.send(result);
                 },
-                None,
             )
             .map_err(anyhow::Error::from)
         },
