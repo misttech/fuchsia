@@ -364,9 +364,6 @@ TEST_metrics_state_1xx0() {
 
 ## Analytics disabled
 TEST_metrics_state_xx01() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -392,9 +389,6 @@ TEST_metrics_state_xx01() {
 
 ## Basic analytics enabled
 TEST_metrics_state_xx11() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -420,9 +414,6 @@ TEST_metrics_state_xx11() {
 
 ## Enhanced analytics enabled
 TEST_metrics_state_xx21() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -451,9 +442,6 @@ TEST_metrics_state_xx21() {
 
 ##  New user
 TEST_metrics_state_NNN1() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -472,9 +460,6 @@ TEST_metrics_state_NNN1() {
 
 ## Existing fx user (enabled fx analytics), have not used other tools
 TEST_metrics_state_1NN1() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -492,9 +477,6 @@ TEST_metrics_state_1NN1() {
 
 ## Existing fx user (disabled fx analytics), have not used other tools
 TEST_metrics_state_0NN1() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -512,9 +494,6 @@ TEST_metrics_state_0NN1() {
 
 ## Disabled analytics in other tools
 TEST_metrics_state_x0N1() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -542,9 +521,6 @@ TEST_metrics_state_x0N1() {
 
 ## New fx user, enabled analytics in other tools
 TEST_metrics_state_N1N1() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -563,9 +539,6 @@ TEST_metrics_state_N1N1() {
 
 ## Existing fx user (enabled fx analytics), enabled analytics in other tools
 TEST_metrics_state_11N1() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -583,9 +556,6 @@ TEST_metrics_state_11N1() {
 
 ## Existing fx user (disabled fx analytics), have not used other tools
 TEST_metrics_state_01N1() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   local cmd="build"
   local arg="something"
 
@@ -602,17 +572,11 @@ TEST_metrics_state_01N1() {
 }
 
 TEST_metrics_init_agent_hides_notice() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   set_up_environment "N" "N" "N" "1"
   ANTIGRAVITY_AGENT=1 metrics-init "build" "something" 2>"${metrics_notice}"
   expect_not_show_notice
 }
 TEST_track_test_event() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   set_up_environment "1" "1" "N" "1"
   metrics-read-config
   metrics_init
@@ -648,9 +612,6 @@ EOF
 }
 
 TEST_track_test_event_selection_extraction_and_stripping() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   set_up_environment "1" "1" "N" "1"
   metrics-read-config
   metrics_init
@@ -667,9 +628,6 @@ TEST_track_test_event_selection_extraction_and_stripping() {
 }
 
 TEST_track_test_event_non_internal() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   set_up_environment "0" "1" "N" "1"
   metrics-read-config
   metrics_init
@@ -681,9 +639,6 @@ TEST_track_test_event_non_internal() {
 }
 
 TEST_track_test_event_aborted() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   set_up_environment "1" "1" "N" "1"
   metrics-read-config
   metrics_init
@@ -697,9 +652,6 @@ TEST_track_test_event_aborted() {
 }
 
 TEST_track_test_event_chunking() {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
   set_up_environment "1" "1" "N" "1"
   metrics-read-config
   metrics_init

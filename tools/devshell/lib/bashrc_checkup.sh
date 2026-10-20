@@ -24,8 +24,7 @@ source "${FUCHSIA_DIR}/tools/devshell/lib/common_term_styles.sh" || exit $?
 fx-config-read || exit $?
 
 # For bash users, this script also attempts to load your preferred
-# bash interpreter (if different from the default, such as Homebrew
-# bash on Mac), and load your ~/.bashrc settings, as would happen
+# bash interpreter and load your ~/.bashrc settings, as would happen
 # in an interactive shell. This allows doctor to check for
 # potential issues with settings that don't normally propagate to
 # bash scripts (unless executed with "source"), such as bash
@@ -109,8 +108,8 @@ cd() {
 EOF
   details << EOF
 
-(Note, in this example, "update_terminal_cwd" is a common MacOS function
-to call when changing directories. Other common "cd" overrides may invoke
+(Note, in this example, "update_terminal_cwd" is a custom function
+called when changing directories. Common "cd" overrides may invoke
 "pwd", "print", or other commands.)
 
 EOF

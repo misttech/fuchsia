@@ -172,11 +172,7 @@ EOF
 function get-ninja-log-timestamp {
   NINJA_LOG_FILE="${FUCHSIA_BUILD_DIR}/.ninja_log"
   if [[ -f "${NINJA_LOG_FILE}" ]]; then
-    if [[ "$HOST_OS" == "mac" ]]; then
-      stat -f "%Y" "${NINJA_LOG_FILE}"
-    else
-      stat -c "%Y" "${NINJA_LOG_FILE}"
-    fi
+    stat -c "%Y" "${NINJA_LOG_FILE}"
   else
     echo -1
   fi

@@ -104,7 +104,8 @@ fi
 if [[ "$OSTYPE" =~ "linux" ]]; then
   BUILD_PROFILE_ENABLED=1
 else
-  BUILD_PROFILE_ENABLED=0
+  echo >&2 "Unsupported operating system: $OSTYPE."
+  exit 1
 fi
 readonly fx_build_profile_config="${FX_CONFIG_DIR}/build-profile"
 readonly fx_build_profile_config_old="${FUCHSIA_DIR}/.fx-build-profile-config"
@@ -147,25 +148,11 @@ readonly jq="$PREBUILT_JQ"
 # into an array (expecting one item per line, preserving spaces).
 # $1: variable name
 # $2+: command arguments.
-if [[ "${BASH_VERSION}" =~ ^3 ]]; then
-  # MacOS comes with Bash 3.x which doesn't have readarray at all
-  # so read one line at a time.
-  function fx-command-stdout-to-array {
-    local varname="$1"
-    local line output
-    shift
-    output="$("$@")"
-    while IFS= read -r line; do
-      eval "${varname}+=(\"${line}\")"
-    done <<< "${output}"
-  }
-else
-  function fx-command-stdout-to-array {
-    local varname="$1"
-    shift
-    readarray -t "${varname}" <<< "$("$@")"
-  }
-fi
+function fx-command-stdout-to-array {
+  local varname="$1"
+  shift
+  readarray -t "${varname}" <<< "$("$@")"
+}
 
 readonly BUILD_LOGS_DIR=_build_logs
 readonly build_logs_root="${FUCHSIA_OUT_DIR}/${BUILD_LOGS_DIR}"
@@ -1150,9 +1137,6 @@ function fx-command-help {
 # Arguments following a `--` are also added to FX_ARGV but not split, as they
 # should usually be forwarded as-is to subprocesses.
 function fx-standard-switches {
-  # In bash 4, this can be `declare -a -g FX_ARGV=()` to be explicit
-  # about setting a global array.  But bash 3 (shipped on macOS) does
-  # not support the `-g` flag to `declare`.
   FX_ARGV=()
   while [[ $# -gt 0 ]]; do
     if [[ "$1" = "--help" || "$1" = "-h" ]]; then

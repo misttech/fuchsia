@@ -194,7 +194,7 @@ btf::_make_fx_host_tool_mock() {
 
   btf::make_mock "${tool}"
   cat > "${tool}.mock_side_effects" <<EOF
-    # remove host-tool args (like --check-firewall)
+    # remove host-tool args (like --no-build)
     print=false
     while [[ \$# -gt 0 && \$1 =~ ^- ]]; do
       if [[ \$1 == "--print" ]]; then

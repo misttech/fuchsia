@@ -82,9 +82,7 @@ function fetch_remote_artifacts {
 
   # Artifacts are fetched in a loop since brace expansion occurs after variable
   # expansion on some setups, causing a combined rsync command to fail for some
-  # users. Additionally, we cannot use multiple source arguments since this is
-  # supported for rsync protocol version 30 onwards, which MacOS devices do not
-  # ship with.
+  # users.
   for value in "${artifacts[@]}"
   do
     # --relative ensures that the artifacts are copied to out/fetched relative to

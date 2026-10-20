@@ -33,7 +33,7 @@ def main():
     args = parser.parse_args()
 
     rust = args.rust
-    host_os = {'Linux': 'linux', 'Darwin': 'mac'}[platform.system()]
+    host_os = {'Linux': 'linux'}[platform.system()]
     host_cpu = {'x86_64': 'amd64', 'arm64': 'arm64'}[platform.machine()]
 
     bisect = ['git', 'bisect']

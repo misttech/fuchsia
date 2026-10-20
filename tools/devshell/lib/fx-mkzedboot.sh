@@ -51,18 +51,8 @@ function fx-mkzedboot {
   fx-info "Opening device..."
   # We open the device and hold onto an fd for the duration of our modifications.
   # This prevents automounting solutions from observing a final close and
-  # rescanning the partition table until we're all done making changes -
-  # particularly important on macOS where users would otherwise receive
-  # EAGAIN/EBUSY and so on.
+  # rescanning the partition table until we're all done making changes.
   open_device() {
-    case "${HOST_OS}" in
-      mac)
-        if ! diskutil quiet unmountDisk "${usb_device}"; then
-          fx-error "Failed to unmount ${usb_device}, cannot continue"
-          exit 1
-        fi
-        ;;
-    esac
     exec 3>>"${usb_device}"
   }
   close_device() {
@@ -103,13 +93,6 @@ function fx-mkzedboot {
 
   close_device
 
-  case "${HOST_OS}" in
-    linux)
-      eject "${usb_device}"
-      ;;
-    mac)
-      diskutil eject "${usb_device}"
-      ;;
-  esac
+  eject "${usb_device}"
 
 }

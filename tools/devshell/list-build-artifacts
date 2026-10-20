@@ -19,7 +19,7 @@
 ##  --name        filter the set of artifacts to pick out the particular one of
 ##                the same name
 ##  --os          filter the set of artifacts by intended operating system: one
-##                of `fuchsia`, `linux`, or `mac`. Defaults to $HOST_OS when
+##                of `fuchsia` or `linux`. Defaults to $HOST_OS when
 ##                the mode is `tools.`
 ##  --cpu         filter the set of artifacts by intended architecture: one of
 ##                `x64` or `arm64`. Defaults to $HOST_CPU when the mode is

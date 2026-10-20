@@ -29,11 +29,7 @@ function fx-fvm-extend-image {
   # Rename the decompressed file to |fvmimg| and perform extension.
   mv "${fvm_in}.decompressed" "${fvmimg}"
 
-  stat_flags=()
-  if [[ $(uname) == "Darwin" ]]; then
-    stat_flags+=("-x")
-  fi
-  stat_output=$(LC_ALL=C stat "${stat_flags[@]}" "${fvmimg}")
+  stat_output=$(LC_ALL=C stat "${fvmimg}")
   if [[ "$stat_output" =~ Size:\ ([0-9]+) ]]; then
     size="${BASH_REMATCH[1]}"
     recommended_size=$((size * 2))

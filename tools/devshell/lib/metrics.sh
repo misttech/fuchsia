@@ -174,10 +174,7 @@ _METRICS_TRACK_UNKNOWN_OPS=( "shell" )
 
 # These variables need to be global, but readonly (or declare -r) declares new
 # variables as local when they are source'd inside a function.
-# "declare -g -r" is the right way to handle it, but it is not supported in
-# old versions of Bash, particularly in the one in MacOS. The alternative is to
-# make them global first via the assignments above and marking they readonly
-# later.
+# Mark them readonly after defining them as global variables above.
 readonly _METRICS_VERSION _METRICS_ALLOWS_CUSTOM_REPORTING _METRICS_TRACK_REGEX _METRICS_TRACK_COMMAND_OPS _METRICS_TRACK_UNKNOWN_OPS
 
 # To properly enable unit testing, METRICS_CONFIG is not read-only
@@ -273,18 +270,10 @@ function __is_in_regex {
 }
 
 function _get-metrics-config-dir {
-  local base_dir
-  case "${HOST_OS}" in
-    linux)
-      base_dir="${XDG_DATA_HOME}"
-      if [[ -z "${base_dir}" ]]; then
-        base_dir="${HOME}/.local/share"
-      fi
-      ;;
-    mac)
-      base_dir="${HOME}/Library/Application Support"
-      ;;
-  esac
+  local base_dir="${XDG_DATA_HOME}"
+  if [[ -z "${base_dir}" ]]; then
+    base_dir="${HOME}/.local/share"
+  fi
   echo "${base_dir}/Fuchsia/metrics"
 }
 
@@ -300,8 +289,7 @@ function _write-other-tools-analytics-uuid {
 }
 
 function metrics-is-internal-user {
-  # Due to old bash versions on mac, we don't support internal analytics on mac.
-  [[ "$HOSTNAME" =~ (".c.googlers.com"$)|(".corp.google.com"$)  && "${HOST_OS}" != "mac" ]]
+  [[ "$HOSTNAME" =~ (".c.googlers.com"$)|(".corp.google.com"$) ]]
 }
 
 function metrics-sanitize-string {
@@ -746,10 +734,6 @@ function track-command-finished {
 #   - feature name
 #   - 0 for enabled, 1 for disabled
 function track-feature-status {
-  if [[ "${HOST_OS}" == "mac" ]]; then
-    return
-  fi
-
   exec 1>/dev/null
   exec 2>/dev/null
 

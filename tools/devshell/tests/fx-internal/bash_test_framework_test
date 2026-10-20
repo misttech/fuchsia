@@ -79,8 +79,7 @@ expect_fail() {
 
   local -r strip_escape_sequences=$'s/\033\[[0-9;]*m//g'
   local -r replace_line_numbers='s/:[0-9]*:/:{BASH_LINENO}:/'
-  local -r replace_temp_dir="s#/private${BT_TEMP_DIR}#{BT_TEMP_DIR}#g;s#${BT_TEMP_DIR}#{BT_TEMP_DIR}#g"
-  local -r strip_private_from_tmp="s#/private/tmp#/tmp#g"  # Mac OS result from btf::realpath
+  local -r replace_temp_dir="s#${BT_TEMP_DIR}#{BT_TEMP_DIR}#g"
   local -r delete_assert_abort_message_lines="/${_BTF_ASSERT_ERROR_COUNT_MESSAGE_PREFIX}/d"
   local -r delete_blank_lines='/^[ \t]*$/d'
   local -r delete_eot_marker_from_assert='/^EOT$/d'
@@ -90,7 +89,6 @@ expect_fail() {
     | sed "${strip_escape_sequences}
            ${replace_line_numbers}
            ${replace_temp_dir}
-           ${strip_private_from_tmp}
            ${delete_assert_abort_message_lines}
            ${delete_blank_lines}
            ${delete_eot_marker_from_assert}

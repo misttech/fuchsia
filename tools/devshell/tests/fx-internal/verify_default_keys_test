@@ -175,8 +175,7 @@ TEST_sshkeys-controlpath-scp() {
 
 
 # test if the code path executes fine with an empty ssh_args. If not
-# handled properly, empty arrays crash the old bash version that comes
-# with Mac if "set -u" is used, like it is used by GN SDK, so if this
+# handled properly, empty arrays can fail when "set -u" is used, so if this
 # test passes, the ssh_args array is being handled correctly.
 TEST_sshkeys-empty-ssharg() {
   # key exists in remote

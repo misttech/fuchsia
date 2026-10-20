@@ -28,7 +28,6 @@ BT_MOCKED_TOOLS=(
 
   # System utilites
   "bin/dd"
-  "bin/diskutil"
   "bin/eject"
   "bin/sudo"
 )

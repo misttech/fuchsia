@@ -9,12 +9,22 @@
 
   Then fetch the packages:
   `jiri fetch-packages -local-manifest-project=fuchsia`
+
+  NOTE: Even though macOS is no longer a supported host platform to build
+  Fuchsia, macOS toolchain packages (`mac-amd64`, `mac-arm64`, and
+  `*-apple-darwin` Rust targets) are still required in this manifest and in
+  `//tools/devshell/contrib/roll-compiler`. The toolchain team uses Fuchsia pins
+  for CIPD tagging and downstream integration needs (such as Pigweed). Do not
+  remove macOS entries from this file or `roll-compiler` without coordinating
+  with the toolchain team (see https://fxrev.dev/1414198,
+  https://fxbug.dev/458061496, and https://fxbug.dev/458075605).
   -->
   <packages>
 
     <!-- Clang
          TODO(mcgrathr): repo/bot link about provenance
     -->
+    <!-- mac platforms added to support CIPD tagging (https://fxbug.dev/458061496) -->
     <package name="fuchsia/third_party/clang/${platform}"
              version="git_revision:61aea712077a33fc4aa2be6594f5957686be2547"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64,windows-amd64"
@@ -111,7 +121,6 @@
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
 
      <!-- rust-bindgen, used for generating rust bindings to c/c++ headers -->
-     <!-- mac platforms added to support CIPD tagging -->
      <package name="fuchsia/third_party/rust_bindgen/${platform}"
               version="git_revisions:6bbde80a916cd0591f452b1a061ed8f12281f277,5e63f2ce42db2c42f1d0012a3b5fa9c6113f750a-patch"
               platforms="linux-amd64,linux-arm64"

@@ -17,7 +17,7 @@ FUCHSIA_BUILD_DIR = Path(os.environ.get("FUCHSIA_BUILD_DIR", ""))
 PREBUILT_DIR = ROOT_PATH / "prebuilt"
 PREBUILT_THIRD_PARTY_DIR = PREBUILT_DIR / "third_party"
 HOST_PLATFORM = (
-    platform.system().lower().replace("darwin", "mac")
+    platform.system().lower()
     + "-"
     + {"x86_64": "x64", "aarch64": "arm64", "arm64": "arm64"}[
         platform.machine()

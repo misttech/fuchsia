@@ -30,8 +30,7 @@
 # Visual tests (and demonstration of capabilities) can be run from:
 #   //scripts/tests/style-test-visually
 
-# This script should be sourced. It is compatible with Bash 3.
-# MacOS still comes with Bash 3, so unfortunately no associative arrays.
+# This script should be sourced.
 
 STYLE_TO_TTY_ONLY=false  # Set to true to suppress styling if output is redirected
 

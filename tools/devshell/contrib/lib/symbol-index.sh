@@ -23,12 +23,10 @@ readonly _SYMBOL_INDEX_IDS_TXT_CACHE_DIR="$FX_CACHE_DIR/symbol-index-ids-txt-cac
 
 # Returns the SHA1 digest of the given string.
 function _fx-symbol-index-string-digest {
-  if hash sha1sum 2> /dev/null ; then  # Linux
+  if hash sha1sum 2> /dev/null ; then
     echo "$1" | sha1sum | cut -d' ' -f1
-  elif hash shasum 2> /dev/null ; then  # OSX
-    echo "$1" | shasum -a 1 | cut -d' ' -f1
   else
-    fx-error 'Neither "sha1sum" nor "shasum" are available in your PATH'
+    fx-error '"sha1sum" is not available in your PATH'
     exit 1
   fi
 }

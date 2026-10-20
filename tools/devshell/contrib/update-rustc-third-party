@@ -119,18 +119,7 @@ function prepare_bazel_workspace {
   # process from crate_universe, which always does a slow full rebuild of
   # cargo-bazel.
   cargo_bazel_version=$(cat "${workspace_dir}/rules_rust/version.bzl" | grep 'VERSION =' | awk -F ' = ' '{print $2}' | tr -d '"')
-  case "$(uname -s)" in
-  Linux*)
-    curl -sSL "https://github.com/bazelbuild/rules_rust/releases/download/${cargo_bazel_version}/cargo-bazel-x86_64-unknown-linux-gnu" -o "${workspace_dir}/cargo-bazel"
-    ;;
-  Darwin*)
-    curl -sSL "https://github.com/bazelbuild/rules_rust/releases/download/${cargo_bazel_version}/cargo-bazel-aarch64-apple-darwin" -o "${workspace_dir}/cargo-bazel"
-    ;;
-  *)
-    fx-error "unrecognized OS"
-    exit 1
-    ;;
-  esac
+  curl -sSL "https://github.com/bazelbuild/rules_rust/releases/download/${cargo_bazel_version}/cargo-bazel-x86_64-unknown-linux-gnu" -o "${workspace_dir}/cargo-bazel"
   chmod +x "${workspace_dir}/cargo-bazel"
 }
 
@@ -170,25 +159,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/bazel_utils.sh || exit $?
-
-case "$(uname -s)" in
-Linux*) ;;
-Darwin*)
-  if ! [[ -x "$(command -v brew)" ]]; then
-    fx-error "'brew' binary not found"
-    fx-error "A homebrew <https://brew.sh> installation of opensslis required in order to update"
-    fx-error "Rust third party crates on the Mac."
-    exit 1
-  fi
-
-  declare -x LDFLAGS="-L$(brew --prefix)/opt/openssl/lib"
-  declare -x CPPFLAGS="-I$(brew --prefix)/opt/openssl/include"
-  ;;
-*)
-  fx-error "unrecognized OS"
-  exit 1
-  ;;
-esac
 
 declare -x PATH=$PREBUILT_CMAKE_DIR/cmake/bin:$PATH
 export RUSTC=$PREBUILT_RUST_DIR/bin/rustc

@@ -18,7 +18,7 @@ from enum import Enum
 SCRIPT_DIR = os.path.dirname(__file__)
 FUCHSIA_DIR = os.path.join(SCRIPT_DIR, "..", "..", "..")
 PREBUILT_3P_DIR = os.path.join(FUCHSIA_DIR, "prebuilt", "third_party")
-HOST_OS = {"Linux": "linux", "Darwin": "mac"}[platform.system()]
+HOST_OS = {"Linux": "linux"}[platform.system()]
 HOST_CPU = {"x86_64": "x64", "arm64": "arm64"}[platform.machine()]
 HOST_PLATFORM = f"{HOST_OS}-{HOST_CPU}"
 

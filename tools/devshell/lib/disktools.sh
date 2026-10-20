@@ -15,14 +15,12 @@ fx-truncate() {
   fi
 
   case $(uname) in
-    Darwin)
-      mkfile -n "${size}" "${file}"
-      ;;
     Linux)
       truncate -s "${size}" "${file}"
       ;;
     *)
-      head -c "${size}" /dev/zero > "${file}"
+      echo >&2 "fx-truncate: unsupported OS $(uname)"
+      return 1
       ;;
   esac
   return $?
@@ -77,18 +75,6 @@ compare_human_readable_nums() {
   fi
 }
 
-_fx-extend-generic() {
-  local -r file="$1"
-  local -r size="$2"
-
-  len="$(wc -c < ${file} | awk '{print $1}')"
-  target="$(convert_human_readable_num ${size})"
-  if [[ "$len" -lt "$target" ]]; then
-    rem="$(( $target - $len ))"
-    head -c "${rem}" /dev/zero >> "${file}"
-  fi
-}
-
 # Like fx-truncate, but only ever extends a file (if the file would be truncated, this is a NOP).
 fx-extend() {
   local -r file="$1"
@@ -101,17 +87,6 @@ fx-extend() {
   fi
 
   case $(uname) in
-    Darwin)
-      # mkfile isn't always available on macos.
-      if [[ -n "$(which mkfile)" ]]; then
-        len="$(stat -f %z ${file})"
-        if [[ "$(compare_human_readable_nums ${len} ${size})" -lt "0" ]]; then
-          mkfile -n "${size}" "${file}"
-        fi
-      else
-        _fx-extend-generic "${file}" "${size}"
-      fi
-      ;;
     Linux)
       len="$(stat --format=%s ${file})"
       if [[ "$(compare_human_readable_nums ${len} ${size})" -lt "0" ]]; then
@@ -119,7 +94,8 @@ fx-extend() {
       fi
       ;;
     *)
-      _fx-extend-generic "${file}" "${size}"
+      echo >&2 "fx-extend: unsupported OS $(uname)"
+      return 1
       ;;
   esac
   return $?

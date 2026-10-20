@@ -38,7 +38,8 @@ if ! which socat >/dev/null 2>&1; then
   if [[ "$(uname)" == "Linux" ]]; then
     fx-warn "  If connecting to physical device, maybe \`apt install socat\`"
   else
-    fx-warn "  If connecting to physical device, maybe \`brew install socat\`"
+    fx-error "Unsupported OS: $(uname)"
+    exit 1
   fi
   fx-info "Trying to connect to emulator instead"
   serial-emulator
@@ -82,10 +83,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$DEVICE" ]]; then
-  options=($(find /dev -maxdepth 1 -name ttyUSB\* -or -name tty.SLAB_USBtoUART\* -or -name tty.usbserial\* | sort))
+  options=($(find /dev -maxdepth 1 -name ttyUSB\* | sort))
   options+=("${pontis_options[@]}")
   if [[ "${#options}" = 0 ]]; then
-    fx-warn "No ttyUSB*, tty.SLAB_USBtoUSART* or tty.usbserial* found in /dev${pontis_message}\nIf connecting to physical device, please specify any known path exactly."
+    fx-warn "No ttyUSB* found in /dev${pontis_message}\nIf connecting to physical device, please specify any known path exactly."
     fx-info "Trying to connect to emulator instead"
     serial-emulator
     exit $?
@@ -120,8 +121,8 @@ if [[ ! -r "$DEVICE" ]]; then
       exit 1
     fi
   else
-    fx-warn "$DEVICE is not readable by $USER"
-    fx-warn "Fix the permissions on $DEVICE or group membership of $USER"
+    fx-error "Unsupported OS: $(uname)"
+    exit 1
   fi
 fi
 
