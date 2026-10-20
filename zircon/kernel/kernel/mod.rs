@@ -8,6 +8,8 @@ pub mod align;
 pub mod auto_preempt_disabler;
 pub mod bits;
 pub mod deadline;
+#[cfg(console_enabled)]
+pub mod debug;
 pub mod dpc;
 pub mod event;
 pub mod event_limiter;

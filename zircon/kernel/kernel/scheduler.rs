@@ -465,6 +465,17 @@ pub fn peek_active_mask() -> CpuMask {
     ACTIVE_SCHEDULERS.load(core::sync::atomic::Ordering::Relaxed)
 }
 
+/// Lock class for `Scheduler::queue_lock_`.
+///
+/// `Scheduler::queue_lock_` is constructed in C++ and only accessed via a
+/// `&KMonitoredSpinlock` facade, so `LockClass::ID` is never used to construct a Rust spinlock.
+pub enum SchedulerQueueLockClass {}
+
+impl ksync::LockClass for SchedulerQueueLockClass {
+    const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+}
+
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     /// Updates the active power level for `domain_id` in the kernel scheduler.
     ///
@@ -479,6 +490,10 @@ unsafe extern "C" {
         arg: u64,
         out_mask: *mut CpuMask,
     ) -> Result<(), Status>;
+    fn cpp_scheduler_dump(scheduler: *mut Scheduler, queue_state_only: bool);
+    fn cpp_scheduler_get_queue_lock(
+        scheduler: *const Scheduler,
+    ) -> *const ksync::KMonitoredSpinlock<SchedulerQueueLockClass>;
 }
 
 /// Peek at the current active mask state for a given CPU's scheduler.
@@ -5537,6 +5552,31 @@ impl Scheduler {
     pub unsafe fn is_scheduler_active_locked(&self) -> bool {
         // SAFETY: Forwarded from the caller.
         peek_is_active(unsafe { self.this_cpu() })
+    }
+
+    /// Dumps the state of the run queue to stdout.
+    #[inline]
+    pub fn dump(&self, queue_state_only: bool) {
+        // SAFETY: `self` is a valid `Scheduler` reference.
+        unsafe { cpp_scheduler_dump((self as *const Self).cast_mut(), queue_state_only) };
+    }
+
+    /// Returns a reference to this scheduler's queue lock (`queue_lock_`).
+    #[inline]
+    pub fn queue_lock(&self) -> &ksync::KMonitoredSpinlock<SchedulerQueueLockClass> {
+        // SAFETY: `self` is a valid `Scheduler` and `cpp_scheduler_get_queue_lock` returns a
+        // pointer to its `queue_lock_` member, which is layout-compatible with
+        // `KMonitoredSpinlock`.
+        unsafe { &*cpp_scheduler_get_queue_lock(self) }
+    }
+
+    /// Run the passed callable while holding the specified scheduler's lock.
+    /// Currently used only by the threadload debug function in `kernel/debug.rs`.
+    pub fn run_in_locked_scheduler<R, F: FnOnce(&Self) -> R>(which_cpu: CpuNum, callable: F) -> R {
+        // The call to PerCpu::get will eventually assert if our cpu ID is out of range.
+        let scheduler = &super::percpu::PerCpu::get(which_cpu).scheduler;
+        ksync::lock!(let _queue_guard = scheduler.queue_lock().lock_with(ksync::source_tag!()));
+        callable(scheduler)
     }
 }
 

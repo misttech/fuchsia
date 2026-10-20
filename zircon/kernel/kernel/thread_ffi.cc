@@ -652,4 +652,37 @@ FFI_ALWAYS_INLINE const WaitQueueCollection::ThreadState* cpp_thread_wait_queue_
   return &thread->wait_queue_state();
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_thread_get_list_lock() TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &Thread::get_list_lock();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_thread_id_to_thread_slow(zx_koid_t tid) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread_id_to_thread_slow(tid);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dump_tid(zx_koid_t tid, bool full) { Thread::DumpTid(tid, full); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dump_tid_during_panic(zx_koid_t tid,
+                                                        bool full) TA_NO_THREAD_SAFETY_ANALYSIS {
+  Thread::DumpTidDuringPanic(tid, full);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dump_all(const char* match_owner, bool full) {
+  Thread::DumpAll(match_owner, full);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dump_all_during_panic(const char* match_owner,
+                                                        bool full) TA_NO_THREAD_SAFETY_ANALYSIS {
+  Thread::DumpAllDuringPanic(match_owner, full);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_reschedule() { Thread::Current::Reschedule(); }
+
 }  // extern "C"

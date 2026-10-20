@@ -26,4 +26,17 @@ FFI_ALWAYS_INLINE zx_status_t cpp_scheduler_update_power_level(
   return ZX_OK;
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_dump(Scheduler* scheduler, bool queue_state_only) {
+  DEBUG_ASSERT(scheduler != nullptr);
+  scheduler->Dump(stdout, queue_state_only);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const void* cpp_scheduler_get_queue_lock(const Scheduler* scheduler)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(scheduler != nullptr);
+  return &scheduler->queue_lock_cap();
+}
+
 }  // extern "C"

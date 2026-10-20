@@ -600,6 +600,19 @@ where
     }
 }
 
+impl<I, const TARGET_FRAC: usize, IL, const FL: usize, IR, const FR: usize>
+    From<DivExpression<Fixed<IL, FL>, Fixed<IR, FR>>> for FastFixed<I, TARGET_FRAC>
+where
+    FastFixed<I, TARGET_FRAC>: From<DivExpression<FastFixed<IL, FL>, FastFixed<IR, FR>>>,
+{
+    fn from(expr: DivExpression<Fixed<IL, FL>, Fixed<IR, FR>>) -> Self {
+        Self::from(DivExpression {
+            numerator: FastFixed(expr.numerator),
+            denominator: FastFixed(expr.denominator),
+        })
+    }
+}
+
 // Compound assignments
 impl<I, const FRAC: usize, U, const FRAC_R: usize> core::ops::AddAssign<FastFixed<U, FRAC_R>>
     for FastFixed<I, FRAC>

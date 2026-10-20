@@ -36,13 +36,14 @@ impl String {
 
     /// Formats the given fixed-point value in the specified mode and precision.
     pub fn new<I, const FRAC: usize>(
-        value: Fixed<I, FRAC>,
+        value: impl Into<Fixed<I, FRAC>>,
         mode: Mode,
         precision: Option<usize>,
     ) -> Self
     where
         I: Into<i128> + Copy,
     {
+        let value = value.into();
         let mut s = Self::empty();
         match mode {
             Mode::Dec => s.write_dec(value, precision),

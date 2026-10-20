@@ -684,29 +684,3 @@ void TimerQueue::PrintTimerQueues(char* buf, size_t len) {
   // Null terminate the buffer.
   ktl::move(buffer).take();
 }
-
-#include <lib/console.h>
-
-static int cmd_timers(int argc, const cmd_args* argv, uint32_t flags) {
-  const size_t timer_buffer_size = kPageSize;
-
-  // allocate a buffer to dump the timer queue into to avoid reentrancy issues with the
-  // timer spinlock
-  char* buf = static_cast<char*>(malloc(timer_buffer_size));
-  if (!buf) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  TimerQueue::PrintTimerQueues(buf, timer_buffer_size);
-
-  printf("%s", buf);
-
-  free(buf);
-
-  return 0;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND_MASKED("timers", "dump the current kernel timer queues", &cmd_timers,
-                      CMD_AVAIL_NORMAL)
-STATIC_COMMAND_END(timer)

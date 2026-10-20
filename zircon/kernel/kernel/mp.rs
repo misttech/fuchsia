@@ -267,6 +267,108 @@ pub fn unplug_cpu(cpu: cpu_num_t) -> Result<(), Status> {
     Status::ok(status)
 }
 
+/// # Safety
+///
+/// `argv` must point to a valid array of at least `argc` [`crate::console::CmdArgs`] elements,
+/// where `argc >= 1` and each element's `arg_str` is a valid null-terminated C string.
+#[cfg(console_enabled)]
+unsafe extern "C" fn cmd_mp(
+    argc: core::ffi::c_int,
+    argv: *const crate::console::CmdArgs,
+    _flags: u32,
+) -> core::ffi::c_int {
+    use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num};
+    use crate::kernel::scheduler;
+    use core::ffi::c_int;
+    use kprint::kprintln;
+    use zx_types::ZX_OK;
+
+    // SAFETY: The caller guarantees `argc >= 1` and `argv` points to at least `argc` initialized
+    // `CmdArgs` elements.
+    let argv = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+    let usage = || -> c_int {
+        kprintln!("usage:");
+        kprintln!("{:s} unplug <cpu_id>", argv[0].as_str());
+        kprintln!("{:s} hotplug <cpu_id>", argv[0].as_str());
+        kprintln!(
+            "{:s} reschedule <cpu_id>        : send a reschedule ipi to <cpu_id>",
+            argv[0].as_str()
+        );
+        Status::INTERNAL.into_raw()
+    };
+    if argc < 2 {
+        kprintln!("not enough arguments");
+        return usage();
+    }
+
+    if argv[1].as_str() == "unplug" {
+        if argc < 3 {
+            kprintln!("specify a cpu_id");
+            return usage();
+        }
+        let status = Status::result_into_raw(unplug_cpu(argv[2].arg_uint as cpu_num_t));
+        kprintln!(
+            "CPU {} unplug {:s} {}",
+            argv[2].arg_uint,
+            if status == ZX_OK { "succeeded" } else { "failed" },
+            status
+        );
+    } else if argv[1].as_str() == "hotplug" {
+        if argc < 3 {
+            kprintln!("specify a cpu_id");
+            return usage();
+        }
+        let status = Status::result_into_raw(hotplug_cpu(argv[2].arg_uint as cpu_num_t));
+        kprintln!(
+            "CPU {} hotplug {:s} {}",
+            argv[2].arg_uint,
+            if status == ZX_OK { "succeeded" } else { "failed" },
+            status
+        );
+    } else if argv[1].as_str() == "reschedule" {
+        if argc < 3 {
+            kprintln!("specify a cpu_id");
+            return usage();
+        }
+
+        let target_cpu = argv[2].arg_uint as cpu_num_t;
+        if !scheduler::peek_is_active(target_cpu) {
+            kprintln!("target cpu {} is not active", target_cpu);
+            return ZX_OK;
+        }
+
+        let mask = cpu_num_to_mask(target_cpu);
+        let sending_cpu;
+        {
+            // Disable interrupts so that the sending CPU we record here cannot change
+            // during our call to mp_reschedule.
+            let _irqd = InterruptDisableGuard::new();
+            sending_cpu = curr_cpu_num();
+            reschedule(mask, 0);
+        }
+
+        if sending_cpu == target_cpu {
+            kprintln!("sending cpu is same as target cpu, no ipi sent");
+        } else {
+            kprintln!("sent reschedule ipi to cpu {}", target_cpu);
+        }
+    } else {
+        kprintln!("unknown command");
+        return usage();
+    }
+
+    ZX_OK
+}
+
+#[cfg(console_enabled)]
+crate::console::static_command!(
+    CMD_MP,
+    c"mp".as_ptr(),
+    c"mp test commands".as_ptr(),
+    cmd_mp,
+    crate::console::CMD_AVAIL_NORMAL
+);
+
 /// Kernel MP unit tests.
 #[cfg(ktest)]
 #[unittest::suite(name = "mp_rust")]

@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::backtrace::Backtrace;
+pub use crate::backtrace::Backtrace;
 use crate::platform_rs::timer::{DurationMono, InstantMono};
-use core::ffi::{c_char, c_void};
+use core::ffi::{CStr, c_char, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 use core::pin::Pin;
 use core::ptr::NonNull;
@@ -131,6 +131,8 @@ unsafe extern "C" {
     fn cpp_thread_tid(thread: *const Thread) -> zx_types::zx_koid_t;
     fn cpp_thread_lock_flow_id(thread: *const Thread) -> u64;
     fn cpp_thread_take_next_lock_flow_id(thread: *mut Thread) -> u64;
+    fn cpp_thread_get_list_lock() -> *mut ksync::KSpinlock<ThreadListLockClass>;
+    fn cpp_thread_id_to_thread_slow(tid: zx_types::zx_koid_t) -> *mut Thread;
     fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
     fn cpp_thread_dump(thread: *const Thread, full: bool);
     fn cpp_thread_canary_assert(thread: *const Thread);
@@ -149,6 +151,11 @@ unsafe extern "C" {
     fn cpp_thread_get_scheduler_state(
         thread: *mut Thread,
     ) -> *mut crate::kernel::scheduler::SchedulerState;
+    fn cpp_thread_dump_tid(tid: zx_types::zx_koid_t, full: bool);
+    fn cpp_thread_dump_tid_during_panic(tid: zx_types::zx_koid_t, full: bool);
+    fn cpp_thread_dump_all(match_owner: *const c_char, full: bool);
+    fn cpp_thread_dump_all_during_panic(match_owner: *const c_char, full: bool);
+    fn cpp_thread_current_reschedule();
 }
 
 /// Stall accounting state of a thread.
@@ -254,6 +261,16 @@ pub struct Thread {
     _facade: OpaqueFacade,
 }
 
+/// Lock class for `Thread::list_lock_`.
+///
+/// `Thread::list_lock_` is constructed in C++ and only accessed via a `&KSpinlock` facade, so
+/// `LockClass::ID` is never used to construct a Rust spinlock.
+pub enum ThreadListLockClass {}
+
+impl ksync::LockClass for ThreadListLockClass {
+    const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+}
+
 impl Thread {
     /// Domain-specific conversion: returns raw pointer for [`Thread`].
     #[inline]
@@ -286,6 +303,77 @@ impl Thread {
         // SAFETY: By `Thread`'s safety invariant, `self` points to a live, initialized `Thread`.
         Status::ok(unsafe { cpp_thread_check_kill_or_suspend_signal(self) })
     }
+
+    /// Returns a reference to the global thread list spinlock (`Thread::get_list_lock()`).
+    #[inline]
+    pub fn get_list_lock() -> &'static ksync::KSpinlock<ThreadListLockClass> {
+        // SAFETY: `cpp_thread_get_list_lock` returns the static `Thread::list_lock_` instance,
+        // which is layout-compatible with `ksync::KSpinlock`.
+        unsafe { &*cpp_thread_get_list_lock() }
+    }
+
+    /// Finds a thread whose `tid()` matches `tid` and dumps it (`Thread::DumpTid`).
+    #[inline]
+    pub fn dump_tid(tid: zx_types::zx_koid_t, full: bool) {
+        // SAFETY: Safe FFI call into `Thread::DumpTid`.
+        unsafe { cpp_thread_dump_tid(tid, full) };
+    }
+
+    /// Dumps the thread with `tid` without acquiring locks during a panic
+    /// (`Thread::DumpTidDuringPanic`).
+    ///
+    /// # Safety
+    ///
+    /// Because this method bypasses `Thread::list_lock_` and per-thread locks, it must only be
+    /// called during a kernel panic when normal locking is unsafe or unavailable.
+    #[inline]
+    pub unsafe fn dump_tid_during_panic(tid: zx_types::zx_koid_t, full: bool) {
+        // SAFETY: Caller guarantees the system is in a panic context.
+        unsafe { cpp_thread_dump_tid_during_panic(tid, full) };
+    }
+
+    /// Dumps all threads matching `match_owner` (or all threads if `None`) (`Thread::DumpAll`).
+    #[inline]
+    pub fn dump_all(match_owner: Option<&CStr>, full: bool) {
+        let ptr = match_owner.map_or(core::ptr::null(), CStr::as_ptr);
+        // SAFETY: `ptr` is either null or a valid null-terminated C string.
+        unsafe { cpp_thread_dump_all(ptr, full) };
+    }
+
+    /// Dumps all threads matching `match_owner` (or all threads if `None`) during a panic
+    /// (`Thread::DumpAllDuringPanic`).
+    ///
+    /// # Safety
+    ///
+    /// Because this method bypasses `Thread::list_lock_` and per-thread locks, it must only be
+    /// called during a kernel panic when normal locking is unsafe or unavailable.
+    #[inline]
+    pub unsafe fn dump_all_during_panic(match_owner: Option<&CStr>, full: bool) {
+        let ptr = match_owner.map_or(core::ptr::null(), CStr::as_ptr);
+        // SAFETY: `ptr` is null or a valid C string and the caller guarantees the system is in a
+        // panic context.
+        unsafe { cpp_thread_dump_all_during_panic(ptr, full) };
+    }
+}
+
+/// Finds a thread based on the thread ID (`thread_id_to_thread_slow`).
+///
+/// # Safety
+///
+/// The caller must hold [`Thread::get_list_lock`], and the returned pointer is only guaranteed to
+/// remain valid while that lock is held.
+#[inline]
+pub unsafe fn thread_id_to_thread_slow(tid: zx_types::zx_koid_t) -> Option<ThreadPtr> {
+    // SAFETY: Caller holds `Thread::get_list_lock()`, and `ThreadPtr::from_raw` wraps the raw
+    // pointer without dereferencing it.
+    unsafe { ThreadPtr::from_raw(cpp_thread_id_to_thread_slow(tid)) }
+}
+
+/// Reschedules the current CPU (`Thread::Current::Reschedule()`).
+#[inline]
+pub fn reschedule() {
+    // SAFETY: Safe FFI call into `Thread::Current::Reschedule`.
+    unsafe { cpp_thread_current_reschedule() };
 }
 
 /// Accessors and locked operations for a [`Thread`] guarded by its chain lock.

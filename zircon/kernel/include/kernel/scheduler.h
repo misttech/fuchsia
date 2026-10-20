@@ -703,17 +703,6 @@ class Scheduler {
   static cpu_mask_t SetCpuAffinity(Thread& thread, cpu_mask_t affinity, AffinityType affinity_type)
       TA_EXCL(chainlock_transaction_token, thread.get_lock());
 
-  // Run the passed callable while holding the specified scheduler's lock.
-  // Currently used only by the threadload debug function in kernel/debug.cc
-  template <typename Callable>
-    requires requires(Scheduler& scheduler, Callable callable) { callable(scheduler); }
-  static auto RunInLockedScheduler(cpu_num_t which_cpu, Callable callable) {
-    // The call do Get will eventually DEBUG_ASSERT if our cpu ID is out of range.
-    Scheduler& scheduler = *Get(which_cpu);
-    Guard<MonitoredSpinLock, IrqSave> queue_guard{&scheduler.queue_lock_, SOURCE_TAG};
-    return callable(scheduler);
-  }
-
   // Run the passed callable while holding the current CPU's scheduler's lock.
   // Used by routines in thread.cc who need to change the current thread's
   // state, but need to be holding the current scheduler's lock in order to do
@@ -2264,6 +2253,9 @@ inline const Scheduler& Scheduler::PowerLevelControl::scheduler() const {
 #pragma clang diagnostic pop
 
 extern "C" {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_dump(Scheduler* scheduler, bool queue_state_only);
+FFI_ALWAYS_INLINE const void* cpp_scheduler_get_queue_lock(const Scheduler* scheduler);
 void cpp_current_mono_time_and_boot_ticks(Scheduler::SchedMonoTimeAndBootTicks* out);
 void cpp_scheduler_block(Thread* current_thread);
 void cpp_scheduler_unblock(Thread* thread);

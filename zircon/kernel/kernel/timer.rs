@@ -4,10 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::ffi::c_char;
 use core::marker::{PhantomData, PhantomPinned};
 use core::pin::Pin;
 use pin_init::pin_data;
 use zr::OpaqueBytes;
+
+pub use super::percpu::TimerQueue;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -24,6 +27,7 @@ unsafe extern "C" {
         timer: *mut Timer,
         lock: *const crate::kconcurrent::ChainLock,
     ) -> zx_types::zx_status_t;
+    fn cpp_timer_queue_print_timer_queues(buf: *mut c_char, len: usize);
 }
 
 pub const ZX_CLOCK_MONOTONIC: u32 = 0;
@@ -142,6 +146,56 @@ unsafe impl Send for Timer {}
 
 zr::static_assert!(core::mem::size_of::<Timer>() == 72);
 zr::static_assert!(core::mem::align_of::<Timer>() == 8);
+
+impl TimerQueue {
+    /// Prints the contents of all timer queues into `buf` and null-terminates `buf`.
+    pub fn print_timer_queues(buf: &mut [u8]) {
+        // SAFETY: `buf.as_mut_ptr()` is valid for `buf.len()` bytes.
+        unsafe { cpp_timer_queue_print_timer_queues(buf.as_mut_ptr().cast(), buf.len()) };
+    }
+}
+
+/// # Safety
+///
+/// Nothing: `argv` is never dereferenced. The function is `unsafe` only to match the console
+/// command signature.
+#[cfg(console_enabled)]
+unsafe extern "C" fn cmd_timers(
+    _argc: core::ffi::c_int,
+    _argv: *const crate::console::CmdArgs,
+    _flags: u32,
+) -> core::ffi::c_int {
+    use core::ffi::CStr;
+    use kprint::kprint;
+    use page::SIZE as PAGE_SIZE;
+    use zx_status::Status;
+
+    let timer_buffer_size = PAGE_SIZE;
+
+    // allocate a buffer to dump the timer queue into to avoid reentrancy issues with the
+    // timer spinlock
+    let Ok(mut buf) = kalloc::Box::<[u8]>::try_new_zeroed_slice(timer_buffer_size) else {
+        return Status::NO_MEMORY.into_raw();
+    };
+
+    TimerQueue::print_timer_queues(&mut buf);
+
+    // SAFETY: `TimerQueue::print_timer_queues` null-terminates `buf`.
+    kprint!("{:s}", unsafe { CStr::from_ptr(buf.as_ptr().cast()) });
+
+    drop(buf);
+
+    0
+}
+
+#[cfg(console_enabled)]
+crate::console::static_command!(
+    CMD_TIMERS,
+    c"timers".as_ptr(),
+    c"dump the current kernel timer queues".as_ptr(),
+    cmd_timers,
+    crate::console::CMD_AVAIL_NORMAL
+);
 
 /// Kernel timer tests.
 #[cfg(ktest)]

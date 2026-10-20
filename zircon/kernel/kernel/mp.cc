@@ -11,7 +11,6 @@
 #include <assert.h>
 #include <debug.h>
 #include <lib/arch/intrin.h>
-#include <lib/console.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
@@ -588,70 +587,5 @@ void mp_all_cpu_startup_sync_hook(unsigned int rl) {
 // that all of the CPUs have started and made it to the check-in point (see
 // above).
 LK_INIT_HOOK(mp_all_cpu_startup_sync, mp_all_cpu_startup_sync_hook, LK_INIT_LEVEL_SMP_WAIT)
-
-int cmd_mp(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-    printf("not enough arguments\n");
-  usage:
-    printf("usage:\n");
-    printf("%s unplug <cpu_id>\n", argv[0].str);
-    printf("%s hotplug <cpu_id>\n", argv[0].str);
-    printf("%s reschedule <cpu_id>        : send a reschedule ipi to <cpu_id>\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  }
-
-  if (!strcmp(argv[1].str, "unplug")) {
-    if (argc < 3) {
-      printf("specify a cpu_id\n");
-      goto usage;
-    }
-    zx_status_t status = mp_unplug_cpu(static_cast<cpu_num_t>(argv[2].u));
-    printf("CPU %lu unplug %s %d\n", argv[2].u, (status == ZX_OK ? "succeeded" : "failed"), status);
-  } else if (!strcmp(argv[1].str, "hotplug")) {
-    if (argc < 3) {
-      printf("specify a cpu_id\n");
-      goto usage;
-    }
-    zx_status_t status = mp_hotplug_cpu(static_cast<cpu_num_t>(argv[2].u));
-    printf("CPU %lu hotplug %s %d\n", argv[2].u, (status == ZX_OK ? "succeeded" : "failed"),
-           status);
-  } else if (!strcmp(argv[1].str, "reschedule")) {
-    if (argc < 3) {
-      printf("specify a cpu_id\n");
-      goto usage;
-    }
-
-    auto target_cpu = static_cast<cpu_num_t>(argv[2].u);
-    if (!Scheduler::PeekIsActive(target_cpu)) {
-      printf("target cpu %u is not active\n", target_cpu);
-      return ZX_OK;
-    }
-
-    cpu_mask_t mask = cpu_num_to_mask(target_cpu);
-    cpu_num_t sending_cpu;
-    {
-      // Disable interrupts so that the sending CPU we record here cannot change
-      // during our call to mp_reschedule.
-      InterruptDisableGuard irqd;
-      sending_cpu = arch_curr_cpu_num();
-      mp_reschedule(mask, 0);
-    }
-
-    if (sending_cpu == target_cpu) {
-      printf("sending cpu is same as target cpu, no ipi sent\n");
-    } else {
-      printf("sent reschedule ipi to cpu %u\n", target_cpu);
-    }
-  } else {
-    printf("unknown command\n");
-    goto usage;
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND("mp", "mp test commands", &cmd_mp)
-STATIC_COMMAND_END(mp)
 
 }  // namespace

@@ -10,6 +10,7 @@ use crate::kernel::timer::Timer;
 use crate::kernel::types::cpu_num_t;
 use crate::stall::StallAccumulator;
 use crate::vm::page_state::VmPageCounts;
+use core::cell::UnsafeCell;
 use core::mem::offset_of;
 use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use percpu_bindings as bindings;
@@ -22,9 +23,7 @@ pub struct TimerQueue(pub bindings::TimerQueue);
 #[repr(transparent)]
 pub struct CpuSearchSet(pub bindings::CpuSearchSet);
 
-/// An opaque type representing the C++ `Scheduler` class.
-#[repr(transparent)]
-pub struct Scheduler(pub bindings::Scheduler);
+pub use crate::kernel::scheduler::Scheduler;
 
 #[cfg(with_lock_dep)]
 /// An opaque type representing the C++ `lockdep::ThreadLockState` class.
@@ -72,8 +71,15 @@ pub struct PerCpu {
     pub chain_lock_conflict_id: AtomicU64,
     /// guest entry/exit statistics
     pub gstats: GuestStats,
-    /// thread/cpu level statistics
-    pub stats: CpuStats,
+    /// thread/cpu level statistics.
+    ///
+    /// Wrapped in [`UnsafeCell`] because [`PerCpu::get`] returns a shared `&PerCpu` reference
+    /// while the owning CPU (or another CPU holding the scheduler queue lock) may concurrently
+    /// mutate its `stats`. Synchronization requirements vary across fields: energy fields are
+    /// guarded by the scheduler queue lock, while time and event counter fields are updated via
+    /// relaxed atomic operations and read via [`CpuStats::read_atomic_fields_relaxed`] or
+    /// [`CpuStats::copy_from_relaxed`].
+    pub stats: UnsafeCell<CpuStats>,
     /// per cpu idle/power thread
     pub idle_power_thread: IdlePowerThread,
     /// kernel counters arena

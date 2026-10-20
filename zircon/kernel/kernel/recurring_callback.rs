@@ -153,7 +153,50 @@ pub unsafe extern "C" fn rust_recurring_callback_destroy(cb: *mut RecurringCallb
 }
 
 /// FFI trampoline for [`RecurringCallback::toggle`].
+///
+/// # Safety
+///
+/// `cb` must point to a valid, initialized [`RecurringCallback`] that remains pinned in memory
+/// while toggled on.
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_recurring_callback_toggle(cb: &RecurringCallback) {
-    cb.toggle();
+pub unsafe extern "C" fn rust_recurring_callback_toggle(cb: *const RecurringCallback) {
+    // SAFETY: Caller guarantees `cb` points to a valid, initialized, pinned `RecurringCallback`.
+    unsafe { (*cb).toggle() };
+}
+
+// Spinlock protecting lazy initialization of `StaticRecurringCallback` instances.
+ksync::declare_singleton_spinlock!(RecurringCallbackInitLock);
+
+/// A statically allocated [`RecurringCallback`] that lazily initializes its pinned [`Timer`] on
+/// first [`toggle`](Self::toggle).
+pub struct StaticRecurringCallback {
+    cell: ksync::KOnceCell<RecurringCallback, RecurringCallbackInitLock>,
+    func: CallbackFunc,
+}
+
+impl StaticRecurringCallback {
+    /// Creates a new static recurring callback that invokes `func` once per second when toggled on.
+    pub const fn new(func: CallbackFunc) -> Self {
+        Self { cell: ksync::KOnceCell::new(), func }
+    }
+
+    /// Toggles the recurring callback on or off.
+    pub fn toggle(&'static self) {
+        let cb: &'static RecurringCallback = {
+            ksync::lock!(let mut guard = RecurringCallbackInitLock::get().lock());
+            // SAFETY: `guard.token_mut()` belongs to the singleton `RecurringCallbackInitLock`
+            // that protects `self.cell`. Once initialized, `self.cell` is never mutated again, so
+            // `get_unchecked()` soundly returns a `'static` shared reference without creating a
+            // `&mut RecurringCallback` alias on subsequent calls.
+            unsafe {
+                if !self.cell.is_initialized(guard.token()) {
+                    let _ = self
+                        .cell
+                        .get_or_pin_init(RecurringCallback::init(self.func), guard.token_mut());
+                }
+                self.cell.get_unchecked().unwrap()
+            }
+        };
+        cb.toggle();
+    }
 }

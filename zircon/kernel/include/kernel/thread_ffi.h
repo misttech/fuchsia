@@ -49,6 +49,14 @@ FFI_ALWAYS_INLINE void cpp_scheduler_state_base_profile_init_deadline(
     zx_duration_mono_t deadline_ns);
 FFI_ALWAYS_INLINE void cpp_thread_set_base_profile(Thread* thread,
                                                    const SchedulerState::BaseProfile* profile);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_thread_get_list_lock();
+FFI_ALWAYS_INLINE Thread* cpp_thread_id_to_thread_slow(zx_koid_t tid);
+FFI_ALWAYS_INLINE void cpp_thread_dump_tid(zx_koid_t tid, bool full);
+FFI_ALWAYS_INLINE void cpp_thread_dump_tid_during_panic(zx_koid_t tid, bool full);
+FFI_ALWAYS_INLINE void cpp_thread_dump_all(const char* match_owner, bool full);
+FFI_ALWAYS_INLINE void cpp_thread_dump_all_during_panic(const char* match_owner, bool full);
+FFI_ALWAYS_INLINE void cpp_thread_current_reschedule();
 
 FFI_ALWAYS_INLINE zx_status_t cpp_thread_restricted_kick(Thread* thread);
 FFI_ALWAYS_INLINE void cpp_thread_set_memory_stall_state_inactive(Thread* thread);

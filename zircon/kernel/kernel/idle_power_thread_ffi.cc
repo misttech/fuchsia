@@ -31,4 +31,10 @@ cpp_idle_power_thread_suspend_system(zx_instant_boot_t resume_deadline) {
   return IdlePowerThread::SuspendSystem(resume_deadline);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const Thread* cpp_idle_power_thread_get_thread(const IdlePowerThread* ipt) {
+  DEBUG_ASSERT(ipt != nullptr);
+  return &ipt->thread();
+}
+
 }  // extern "C"

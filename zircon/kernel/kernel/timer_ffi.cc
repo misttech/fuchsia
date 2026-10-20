@@ -48,4 +48,10 @@ FFI_ALWAYS_INLINE zx_status_t cpp_timer_trylock_or_cancel(Timer* timer, ChainLoc
   return timer->TrylockOrCancel(*lock);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_timer_queue_print_timer_queues(char* buf, size_t len) {
+  DEBUG_ASSERT(buf != nullptr);
+  TimerQueue::PrintTimerQueues(buf, len);
+}
+
 }  // extern "C"
