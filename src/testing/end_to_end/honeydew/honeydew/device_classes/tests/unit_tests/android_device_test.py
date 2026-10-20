@@ -25,6 +25,7 @@ from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
 from honeydew.typing import custom_types
+from mobly import signals
 
 # pylint: disable=protected-access
 
@@ -439,6 +440,33 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(errors.NotSupportedError):
+            _: adb_transport.Adb = self.ad_obj.adb
+
+        mock_ffx_serial_number.assert_called_once()
+        self.ad_obj.__dict__.pop("adb", None)
+        self.ad_obj._device_info = device_info
+
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+        side_effect=signals.TestAbortAll("abort"),
+    )
+    def test_adb_transport_ffx_serial_propagates_unexpected_exceptions(
+        self,
+        mock_ffx_serial_number: mock.Mock,
+    ) -> None:
+        """Test accessing "adb" transport propagates unexpected exceptions
+        (e.g. Mobly signals) raised while getting serial_number from FFX."""
+        device_info: custom_types.DeviceInfo = self.ad_obj._device_info
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            ip_port=None,
+            serial_socket=None,
+        )
+
+        with self.assertRaises(signals.TestAbortAll):
             _: adb_transport.Adb = self.ad_obj.adb
 
         mock_ffx_serial_number.assert_called_once()

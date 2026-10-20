@@ -6,7 +6,22 @@
 import logging
 import typing
 
+import fuchsia_controller_py as fcp
+
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# Exceptions raised by Fuchsia-Controller and FIDL calls on failure to talk to
+# the device. See:
+# - `FcTransportStatus`: raised by the native Fuchsia-Controller bindings
+#   (`set_python_exception()` in
+#   //src/developer/fuchsia-controller/cpp/fuchsia_controller_internal/mod.cc).
+# - `ZxStatus`: raised by FIDL calls when the channel is closed with an epitaph
+#   (`EpitaphError` in
+#   //src/developer/fuchsia-controller/python/fidl/_fidl_common.py).
+FIDL_ERRORS: tuple[type[Exception], ...] = (
+    fcp.FcTransportStatus,
+    fcp.ZxStatus,
+)
 
 
 class HoneydewError(Exception):

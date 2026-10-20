@@ -428,7 +428,7 @@ class FuchsiaDevice(
         if fastboot_node_id is None:
             try:
                 fastboot_node_id = self.ffx.serial_number
-            except Exception as err:
+            except errors.HoneydewError as err:
                 _LOGGER.debug(
                     "Failed to get serial number from FFX for %s: %s",
                     self.device_name,
@@ -970,10 +970,14 @@ class FuchsiaDevice(
                 message=f"Powering cycling {self.device_name}...",
                 level=custom_types.LEVEL.INFO,
             )
-        except Exception:  # pylint: disable=broad-except
+        except errors.FIDL_ERRORS + (RuntimeError, errors.HoneydewError):
             # power_cycle can be used as a recovery mechanism when device is
             # unhealthy. So any calls to device prior to power_cycle can
             # fail in such cases and thus ignore them.
+            # `RuntimeError` is raised by the native Fuchsia-Controller
+            # bindings for internal errors, e.g. from
+            # `Context.connect_remote_control_proxy()`. See `_CONTROLLER_ERRORS`
+            # in //src/testing/end_to_end/honeydew/honeydew/transports/fuchsia_controller/fuchsia_controller.py.
             pass
 
         _LOGGER.info("Powering off %s...", self.device_name)
@@ -1224,7 +1228,9 @@ class FuchsiaDevice(
             elif isinstance(target_addr, custom_types.TargetUsb):
                 self.ffx.resolve_target_address()
                 self.fuchsia_controller.after_usb_reconnect()
-        except Exception as err:
+        # `ValueError` covers malformed `ffx` output, from `json.loads()` and
+        # `TargetAddr.from_json()`.
+        except (errors.HoneydewError, ValueError) as err:
             raise errors.FuchsiaDeviceError(
                 f"Failed to resolve IP for '{self.device_name}'"
             ) from err
@@ -1461,7 +1467,16 @@ class FuchsiaDevice(
             raise errors.FuchsiaDeviceError(
                 f"Boot ID not populated in IdentifyHost response for {self.device_name}"
             )
-        except Exception as err:
+        except errors.FIDL_ERRORS + (
+            RuntimeError,
+            AssertionError,
+            errors.HoneydewError,
+        ) as err:
+            # `RuntimeError`: internal errors from the native Fuchsia-Controller
+            # bindings, see `_CONTROLLER_ERRORS` in
+            # //src/testing/end_to_end/honeydew/honeydew/transports/fuchsia_controller/fuchsia_controller.py.
+            # `AssertionError`: raised by `unwrap()` on a FIDL result that holds
+            # an error (//tools/fidl/fidlgen_python/codegen/union.tmpl).
             raise errors.FuchsiaDeviceError(
                 f"Failed to get boot ID from {self.device_name}"
             ) from err

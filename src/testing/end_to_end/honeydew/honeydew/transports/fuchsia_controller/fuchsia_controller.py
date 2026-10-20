@@ -25,8 +25,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 # - `LibraryCommand::TargetWait` in
 #   //src/developer/fuchsia-controller/src/commands.rs, which returns
 #   `FC_ERR_INTERNAL` when the target wait fails.
-_CONTROLLER_ERRORS: tuple[type[Exception], ...] = (
-    fuchsia_controller.FcTransportStatus,
+_CONTROLLER_ERRORS: tuple[type[Exception], ...] = errors.FIDL_ERRORS + (
     RuntimeError,
     errors.HoneydewError,
 )

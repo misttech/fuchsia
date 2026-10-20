@@ -59,6 +59,7 @@ from honeydew.transports.fuchsia_controller import (
 from honeydew.transports.serial import serial as serial_interface
 from honeydew.transports.serial import serial_using_unix_socket
 from honeydew.typing import custom_types
+from mobly import signals
 from parameterized import param, parameterized
 
 # pylint: disable=protected-access
@@ -413,6 +414,36 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(errors.FuchsiaDeviceError):
+            _: fastboot.Fastboot = self.fd_fc_obj.fastboot
+
+        mock_ffx_serial_number.assert_called_once()
+
+        self.fd_fc_obj.__dict__.pop("fastboot", None)
+        self.fd_fc_obj._device_info = device_info
+
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+        side_effect=signals.TestAbortAll("abort"),
+    )
+    def test_fastboot_transport_ffx_serial_propagates_unexpected_exceptions(
+        self,
+        mock_ffx_serial_number: mock.Mock,
+    ) -> None:
+        """Test accessing fastboot propagates unexpected exceptions (e.g. Mobly
+        signals) raised while getting serial_number from FFX."""
+        device_info: custom_types.DeviceInfo = self.fd_fc_obj._device_info
+
+        self.fd_fc_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            ip_port=None,
+            serial_socket=None,
+            fastboot_node_id=None,
+        )
+
+        with self.assertRaises(signals.TestAbortAll):
             _: fastboot.Fastboot = self.fd_fc_obj.fastboot
 
         mock_ffx_serial_number.assert_called_once()
@@ -1340,6 +1371,77 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_wait_for_offline.assert_called()
         mock_wait_for_online.assert_called()
         mock_on_device_boot.assert_called()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "notify_intentional_disconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "on_device_boot",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "wait_for_online",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "wait_for_offline",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "log_message_to_device",
+        autospec=True,
+    )
+    async def test_power_cycle_ignores_log_message_failure(
+        self,
+        mock_log_message_to_device: mock.Mock,
+        mock_wait_for_offline: mock.Mock,
+        mock_wait_for_online: mock.Mock,
+        mock_on_device_boot: mock.Mock,
+        mock_ffx_notify_intentional_disconnect: mock.Mock,
+    ) -> None:
+        """Test power_cycle() still power cycles the device when logging the
+        message to the device fails."""
+        mock_log_message_to_device.side_effect = [
+            ZxStatus(ZxStatus.ZX_ERR_PEER_CLOSED),
+            None,
+        ]
+        power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
+        self.fd_fc_obj.set_power_switch(power_switch=power_switch, outlet=5)
+        await self.fd_fc_obj.power_cycle()
+
+        power_switch.power_off.assert_called_with(5)
+        power_switch.power_on.assert_called_with(5)
+        mock_ffx_notify_intentional_disconnect.assert_called()
+        mock_wait_for_offline.assert_called()
+        mock_wait_for_online.assert_called()
+        mock_on_device_boot.assert_called()
+
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "log_message_to_device",
+        autospec=True,
+        side_effect=signals.TestAbortAll("abort"),
+    )
+    async def test_power_cycle_propagates_unexpected_exceptions(
+        self,
+        mock_log_message_to_device: mock.Mock,
+    ) -> None:
+        """Test power_cycle() propagates unexpected exceptions (e.g. Mobly
+        signals) raised while logging the message to the device."""
+        power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
+        self.fd_fc_obj.set_power_switch(power_switch=power_switch, outlet=5)
+
+        with self.assertRaises(signals.TestAbortAll):
+            await self.fd_fc_obj.power_cycle()
+
+        mock_log_message_to_device.assert_called_once()
+        power_switch.power_off.assert_not_called()
 
     @mock.patch.object(
         ffx.FFX,
@@ -2397,6 +2499,86 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx_resolve_target_address.assert_called_once()
         mock_fc_after_usb_reconnect.assert_called_once()
         mock_fuchsia_device_health_check.assert_called_once()
+
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "health_check",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value="not a json",
+        autospec=True,
+    )
+    async def test_resolve_device_ip_raises_on_malformed_output(
+        self,
+        mock_ffx_run: mock.Mock,
+        mock_fuchsia_device_health_check: mock.Mock,
+    ) -> None:
+        """Test resolve_device_ip() wraps errors parsing malformed ffx output"""
+        with self.assertRaises(errors.FuchsiaDeviceError):
+            await self.fd_fc_obj.resolve_device_ip()
+
+        mock_ffx_run.assert_called_once()
+        mock_fuchsia_device_health_check.assert_not_called()
+
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "health_check",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        side_effect=signals.TestAbortAll("abort"),
+        autospec=True,
+    )
+    async def test_resolve_device_ip_propagates_unexpected_exceptions(
+        self,
+        mock_ffx_run: mock.Mock,
+        mock_fuchsia_device_health_check: mock.Mock,
+    ) -> None:
+        """Test resolve_device_ip() propagates unexpected exceptions as-is."""
+        with self.assertRaises(signals.TestAbortAll):
+            await self.fd_fc_obj.resolve_device_ip()
+
+        mock_ffx_run.assert_called_once()
+        mock_fuchsia_device_health_check.assert_not_called()
+
+    @mock.patch.object(
+        fd_remotecontrol.RemoteControlClient,
+        "identify_host",
+        new_callable=mock.AsyncMock,
+        side_effect=ZxStatus(ZxStatus.ZX_ERR_PEER_CLOSED),
+    )
+    async def test_boot_id_raises_on_fidl_error(
+        self, mock_rcs_identify_host: mock.Mock
+    ) -> None:
+        """Test boot_id() wraps FIDL errors in FuchsiaDeviceError."""
+        self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
+
+        with self.assertRaises(errors.FuchsiaDeviceError):
+            await self.fd_fc_obj.boot_id()
+
+        mock_rcs_identify_host.assert_called_once()
+
+    @mock.patch.object(
+        fd_remotecontrol.RemoteControlClient,
+        "identify_host",
+        new_callable=mock.AsyncMock,
+        side_effect=signals.TestAbortAll("abort"),
+    )
+    async def test_boot_id_propagates_unexpected_exceptions(
+        self, mock_rcs_identify_host: mock.Mock
+    ) -> None:
+        """Test boot_id() propagates unexpected exceptions as-is."""
+        self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
+
+        with self.assertRaises(signals.TestAbortAll):
+            await self.fd_fc_obj.boot_id()
+
+        mock_rcs_identify_host.assert_called_once()
 
 
 if __name__ == "__main__":
