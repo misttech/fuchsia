@@ -35,6 +35,9 @@ pub enum FfxTargetCrateError {
     #[error("Cache error: {0}")]
     Cache(#[from] crate::cache::CacheError),
 
+    #[error("Registry error: {0}")]
+    Registry(#[from] crate::registry::RegistryError),
+
     #[error("Connection error: {0}")]
     Connection(#[from] crate::connection::ConnectionError),
 

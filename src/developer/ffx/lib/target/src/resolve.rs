@@ -284,8 +284,8 @@ pub trait TargetResolver {
             // `discover_matching_targets()` below and return `TargetNotFound` whenever
             // `targets.json` is missing.
             if env_context.is_strict() {
-                match crate::cache::targets_file_path(env_context)
-                    .and_then(|path| crate::cache::load_registered_targets(&path))
+                match crate::registry::targets_file_path(env_context)
+                    .and_then(|path| crate::registry::load_registered_targets(&path))
                 {
                     Ok(targets) => {
                         let matched = match_target_infos_to_resolutions(targets, target_spec);
@@ -295,14 +295,12 @@ pub trait TargetResolver {
                             })
                             .await;
                     }
-                    Err(crate::cache::CacheError::OpenFile { err, .. })
-                        if err.kind() == std::io::ErrorKind::NotFound =>
-                    {
+                    Err(crate::registry::RegistryError::Store(err)) if err.is_not_found() => {
                         log::debug!(
                             "Registered targets file not found in strict mode; temporarily falling back to discovery (b/571246542)"
                         );
                     }
-                    Err(crate::cache::CacheError::SharedData(_)) => {
+                    Err(crate::registry::RegistryError::SharedData(_)) => {
                         log::debug!(
                             "Shared data path not configured in strict mode; temporarily falling back to discovery (b/571246542)"
                         );
@@ -342,9 +340,7 @@ pub trait TargetResolver {
                                 resolutions = Some(matched);
                             }
                         }
-                        Err(crate::cache::CacheError::OpenFile { err, .. })
-                            if err.kind() == std::io::ErrorKind::NotFound =>
-                        {
+                        Err(crate::cache::CacheError::Store(err)) if err.is_not_found() => {
                             emit_cache_event("no_cache_file", &query_tag).await;
                         }
                         Err(crate::cache::CacheError::Expired(_)) => {
@@ -1650,7 +1646,7 @@ mod test {
         target_info.serial_number = Some("04012C12D45E".to_string());
         target_info.target_state = info::TargetState::Product;
         target_info.addresses = vec![sa.into()];
-        crate::cache::register_targets(&strict_ctx, &[target_info]).unwrap();
+        crate::registry::register_targets(&strict_ctx, &[target_info]).unwrap();
 
         let resolver = MockTargetResolver::new();
 
@@ -1694,7 +1690,7 @@ mod test {
         target_info.target_state = info::TargetState::Product;
         target_info.addresses = vec![sa.into()];
         crate::cache::Cache::new(vec![target_info]).save(&cache_file).unwrap();
-        crate::cache::register_targets(&strict_ctx, &[]).unwrap();
+        crate::registry::register_targets(&strict_ctx, &[]).unwrap();
 
         // MockTargetResolver has no expectations: if strict mode attempts active discovery, it will panic.
         let resolver = MockTargetResolver::new();
@@ -1768,7 +1764,7 @@ mod test {
         t2.target_state = info::TargetState::Product;
         t2.addresses = vec!["192.168.1.11:22".parse::<SocketAddr>().unwrap().into()];
 
-        crate::cache::register_targets(&strict_ctx, &[t1, t2]).unwrap();
+        crate::registry::register_targets(&strict_ctx, &[t1, t2]).unwrap();
 
         let resolver = MockTargetResolver::new();
         let query = TargetInfoQuery::try_from("id:DUP_ID").unwrap();

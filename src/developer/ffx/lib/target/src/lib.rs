@@ -32,12 +32,14 @@ mod cache;
 mod error;
 mod fdomain_transport;
 mod fidl_pipe;
+mod registry;
 mod resolve;
+mod store;
 mod target_connector;
 
 pub use cache::{
-    RegisteredTarget, create_target_cache, get_discovery_cache_dir, get_discovery_cache_file,
-    get_discovery_cache_recheck_time, register_targets, remove_target_cache, targets_file_path,
+    create_target_cache, get_discovery_cache_dir, get_discovery_cache_file,
+    get_discovery_cache_recheck_time, remove_target_cache,
 };
 pub use connection::{Connection, ConnectionError};
 pub use discovery::desc::{Description, FastbootInterface};
@@ -46,6 +48,7 @@ pub use error::FfxTargetCrateError;
 pub use fidl_pipe::{FidlPipe, create_overnet_socket};
 pub use info::TargetInfo;
 pub use list::list_targets;
+pub use registry::{RegisteredTarget, register_targets, targets_file_path};
 pub use resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, build_discovery,
     build_discovery_builder_common, build_discovery_from_config, discover_single_default_target,
