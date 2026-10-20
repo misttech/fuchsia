@@ -176,8 +176,8 @@ impl From<&TargetData> for ShowEntry {
                     &value.last_reboot_reason,
                 ),
                 ShowEntry::str_value(
-                    "Uptime (ns)",
-                    "uptime",
+                    "Last boot uptime (ns)",
+                    "last_boot_uptime",
                     "How long the device was running prior to the last reboot.",
                     &Some(value.uptime_nanos.to_string()),
                 ),
@@ -574,6 +574,35 @@ mod tests {
             result.child[3].value,
             Some(ShowValue::StringValue("fake_colorway".to_string()))
         );
+    }
+
+    #[test]
+    fn test_target_to_showentry() {
+        let data = TargetData {
+            name: "fake_target".to_string(),
+            ssh_address: Some(AddressData { host: "127.0.0.1".to_string(), port: 22 }),
+            last_reboot_graceful: true,
+            last_reboot_reason: Some("ZbiSwap".to_string()),
+            uptime_nanos: 65000,
+        };
+        let result: ShowEntry = (&data).into();
+        assert_eq!(result.title, "Target");
+        assert_eq!(result.label, "target");
+        assert_eq!(result.child[0].title, "Name");
+        assert_eq!(result.child[0].label, "name");
+        assert_eq!(result.child[0].value, Some(ShowValue::StringValue("fake_target".to_string())));
+        assert_eq!(result.child[1].title, "SSH Address");
+        assert_eq!(result.child[1].label, "ssh_address");
+        assert_eq!(result.child[1].value, Some(ShowValue::StringValue("127.0.0.1:22".to_string())));
+        assert_eq!(result.child[2].title, "Last Reboot Graceful");
+        assert_eq!(result.child[2].label, "graceful");
+        assert_eq!(result.child[2].value, Some(ShowValue::StringValue("true".to_string())));
+        assert_eq!(result.child[3].title, "Last Reboot Reason");
+        assert_eq!(result.child[3].label, "reason");
+        assert_eq!(result.child[3].value, Some(ShowValue::StringValue("ZbiSwap".to_string())));
+        assert_eq!(result.child[4].title, "Last boot uptime (ns)");
+        assert_eq!(result.child[4].label, "last_boot_uptime");
+        assert_eq!(result.child[4].value, Some(ShowValue::StringValue("65000".to_string())));
     }
 
     #[test]

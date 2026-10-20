@@ -365,7 +365,7 @@ mod tests {
         \n    SSH Address: \u{1b}[38;5;2m\"127.0.0.1:22\"\u{1b}[m\
         \n    Last Reboot Graceful: \"true\"\
         \n    Last Reboot Reason: \"ZbiSwap\"\
-        \n    Uptime (ns): \"65000\"\
+        \n    Last boot uptime (ns): \"65000\"\
         \nBoard: \
         \n    Name: \"fake_name\"\
         \n    Revision: \"fake_revision\"\
