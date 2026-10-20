@@ -52,6 +52,7 @@ unsafe extern "C" {
         arg: *mut c_void,
         profile: *const SchedulerStateBaseProfile,
     ) -> *mut Thread;
+    fn cpp_thread_set_base_profile(thread: *mut Thread, profile: *const SchedulerStateBaseProfile);
     fn cpp_thread_resume(thread: *mut Thread);
     fn cpp_thread_join(
         thread: *mut Thread,
@@ -519,6 +520,21 @@ impl ThreadPtr {
     /// underlying thread has not been destroyed.
     pub unsafe fn fxt_ref(self) -> FxtRef {
         unsafe { cpp_thread_fxt_ref(self.as_raw()) }
+    }
+
+    /// Sets the base profile of the thread (`Thread::SetBaseProfile`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - The thread pointer is still valid and the underlying thread has not been destroyed.
+    /// - This function is called from normal thread context with no spinlocks, `self`'s lock, or
+    ///   active `ChainLockTransaction` held on the current CPU.
+    pub unsafe fn set_base_profile(self, profile: &SchedulerStateBaseProfile) {
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread` and that the calling
+        // context is a normal thread context with no active `ChainLockTransaction` or spinlocks
+        // held.
+        unsafe { cpp_thread_set_base_profile(self.as_raw(), profile) }
     }
 
     /// Returns the current CPU affinity mask of the thread.

@@ -7,10 +7,12 @@
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_DPC_H_
 
 #include <lib/kconcurrent/chainlock.h>
+#include <stdint.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
 #include <fbl/intrusive_double_list.h>
+#include <kernel/cpu.h>
 #include <kernel/event.h>
 #include <kernel/thread.h>
 
@@ -32,20 +34,23 @@ class Dpc : public fbl::DoublyLinkedListable<Dpc*, fbl::NodeOptions::AllowCopyMo
     return static_cast<ArgType*>(arg_);
   }
 
-  // A single spinlock protects the data members of all DpcRunners.
-  //
-  // Take care to drop this lock before calling any code that might acquire a chainlock.
-  DECLARE_SINGLETON_SPINLOCK(Lock);
-
  private:
-  friend class DpcRunner;
-
-  // Called by DpcRunner.
-  void Invoke() TA_EXCL(Dpc::Lock::Get());
-
   Func* const func_;
   void* const arg_;
 };
+
+class DpcRunner;
+
+extern "C" {
+
+void rust_dpc_runner_init(DpcRunner* runner);
+void rust_dpc_runner_destroy(DpcRunner* runner);
+void rust_dpc_runner_init_for_current_cpu(const DpcRunner* runner);
+zx_status_t rust_dpc_runner_shutdown(const DpcRunner* runner, zx_instant_mono_t deadline);
+void rust_dpc_runner_transition_off_cpu(const DpcRunner* runner, const DpcRunner* source);
+zx_status_t rust_dpc_runner_enqueue(const Dpc* dpc, uint32_t queue_type);
+
+}  // extern "C"
 
 // A DpcRunner is responsible for running queued Dpcs.  Under the hood, a given runner may manage
 // multiple independent queues of Dpcs.
@@ -53,10 +58,18 @@ class Dpc : public fbl::DoublyLinkedListable<Dpc*, fbl::NodeOptions::AllowCopyMo
 // Each cpu maintains a DpcRunner, in its percpu structure.
 class DpcRunner {
  public:
+  DpcRunner() { rust_dpc_runner_init(this); }
+  ~DpcRunner() { rust_dpc_runner_destroy(this); }
+
+  DpcRunner(const DpcRunner&) = delete;
+  DpcRunner& operator=(const DpcRunner&) = delete;
+  DpcRunner(DpcRunner&&) = delete;
+  DpcRunner& operator=(DpcRunner&&) = delete;
+
   // Initializes this DpcRunner for the current cpu.
   //
   // The calling thread must have hard-affinity to exactly one CPU.
-  void InitForCurrentCpu();
+  void InitForCurrentCpu() { rust_dpc_runner_init_for_current_cpu(this); }
 
   // Begins the DpcRunner shutdown process.
   //
@@ -80,7 +93,9 @@ class DpcRunner {
   //
   // If |Shutdown| fails, this DpcRunner is left in an undefined state and
   // |TransitionOffCpu| must not be called.
-  zx_status_t Shutdown(zx_instant_mono_t deadline);
+  zx_status_t Shutdown(zx_instant_mono_t deadline) {
+    return rust_dpc_runner_shutdown(this, deadline);
+  }
 
   // Moves queued Dpcs from |source| to this DpcRunner.
   //
@@ -89,7 +104,7 @@ class DpcRunner {
   // This must only be called after |Shutdown| has completed successfully.
   //
   // This must only be called on the current cpu.
-  void TransitionOffCpu(DpcRunner& source);
+  void TransitionOffCpu(DpcRunner& source) { rust_dpc_runner_transition_off_cpu(this, &source); }
 
   // Dpc are placed into different queues depending on their ServiceLevel.  One queue for those that
   // need to execute with |LowLatency| (e.g. signaling a TimerDispatcher from interrupt context).
@@ -118,65 +133,29 @@ class DpcRunner {
   //
   // Returns ZX_ERR_ALREADY_EXISTS if |dpc| is already queued.
   static zx_status_t Enqueue(Dpc& dpc, QueueType type = QueueType::General)
-      TA_EXCL(chainlock_transaction_token);
+      TA_EXCL(chainlock_transaction_token) {
+    return rust_dpc_runner_enqueue(&dpc, static_cast<uint32_t>(type));
+  }
 
  private:
-  // Queue encapsulates a list of Dpc tasks and a thread that pops tasks off the list and executes
-  // them in order.
-  //
-  // A Queue must be initialized (|Init|) prior to use.  A Queue that's been initialized must be
-  // |Shutdown| before it may be reinitialized.
-  class Queue {
-   public:
-    // Initialize |cpu|'s queue.
-    //
-    // Creates a thread with |name_prefix| and scheduler |profile| that will service this Queue.
-    void Init(cpu_num_t cpu, const char* name_prefix, const SchedulerState::BaseProfile& profile);
-
-    // Begins the shutdown process for this Queue.  After a successful |Shutdown|, this Queue's
-    // remaining contents should be moved into elsewhere by calling |TakeFromLocked| on another
-    // Queue.
-    //
-    // Signals the worker thread to terminate and waits until it has terminated or |deadline| is
-    // reached.  If shutdown fails, the object is left in an inconsistent state.
-    zx_status_t Shutdown(zx_instant_mono_t deadline);
-
-    // Moves any queued Dpcs from |source| to |this|.  May only be called after a successful
-    // |Shutdown| of |source|.
-    //
-    // Returns true if any dpcs were moved.
-    bool TakeFromLocked(Queue& source) TA_REQ(Dpc::Lock::Get());
-
-    void EnqueueLocked(Dpc& dpc) TA_REQ(Dpc::Lock::Get());
-    void Signal() TA_EXCL(Dpc::Lock::Get());
-
-   private:
-    int DoWork();
-
-    // Request the thread_ to stop by setting to true.
-    //
-    // This guarded by the static global dpc_lock.
-    bool stop_ TA_GUARDED(Dpc::Lock::Get()) = false;
-
-    fbl::DoublyLinkedList<Dpc*> list_ TA_GUARDED(Dpc::Lock::Get());
-
-    // The thread that executes DPCs queued in list_.
-    Thread* thread_ TA_GUARDED(Dpc::Lock::Get()) = nullptr;
-
-    Event event_;
+  struct QueueLayout {
+    bool stop;
+    void* list;
+    Thread* thread;
+    alignas(Event) uint8_t event[sizeof(Event)];
   };
 
-  static int WorkerThread(void* unused);
-  int Work();
-
-  // The cpu that owns this DpcRunner.
-  cpu_num_t cpu_ TA_GUARDED(Dpc::Lock::Get()) = INVALID_CPU;
-
-  // Whether the DpcRunner has been initialized for the owning cpu.
-  bool initialized_ TA_GUARDED(Dpc::Lock::Get()) = false;
-
-  Queue queue_general_;
-  Queue queue_low_latency_;
+  [[maybe_unused]] cpu_num_t cpu_;
+  [[maybe_unused]] bool initialized_;
+  [[maybe_unused]] QueueLayout queue_general_;
+  [[maybe_unused]] QueueLayout queue_low_latency_;
 };
+
+static_assert(sizeof(Dpc) == 32);
+static_assert(alignof(Dpc) == 8);
+static_assert(sizeof(DpcRunner) == 200);
+static_assert(alignof(DpcRunner) == 8);
+static_assert(static_cast<uint32_t>(DpcRunner::QueueType::General) == 0);
+static_assert(static_cast<uint32_t>(DpcRunner::QueueType::LowLatency) == 1);
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_DPC_H_

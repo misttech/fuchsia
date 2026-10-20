@@ -160,6 +160,22 @@ FFI_ALWAYS_INLINE void cpp_scheduler_state_base_profile_init_fair(
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_state_base_profile_init_deadline(
+    ffi::Uninitialized<SchedulerState::BaseProfile>* out_profile, zx_duration_mono_t capacity_ns,
+    zx_duration_mono_t deadline_ns) {
+  out_profile->Initialize(SchedulerState::BaseProfile{
+      SchedDeadlineParams{SchedDuration{capacity_ns}, SchedDuration{deadline_ns}}});
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_set_base_profile(Thread* thread,
+                                                   const SchedulerState::BaseProfile* profile) {
+  DEBUG_ASSERT(thread != nullptr);
+  DEBUG_ASSERT(profile != nullptr);
+  thread->SetBaseProfile(*profile);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE Thread* cpp_thread_create_with_profile(
     const char* name_ptr, size_t name_len, thread_start_routine entry, void* arg,
     const SchedulerState::BaseProfile* profile) {

@@ -41,9 +41,7 @@ pub use crate::kernel::stats::CpuStats;
 #[allow(non_camel_case_types)]
 pub type cpu_stats = CpuStats;
 
-/// An opaque type representing the C++ `DpcRunner` class.
-#[repr(transparent)]
-pub struct DpcRunner(pub bindings::DpcRunner);
+pub use crate::kernel::dpc::DpcRunner;
 
 /// An opaque type representing the C++ `PlatformCpuResumeState` struct.
 #[repr(transparent)]

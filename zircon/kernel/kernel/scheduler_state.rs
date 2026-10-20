@@ -112,6 +112,11 @@ unsafe extern "C" {
         priority: i32,
         inheritable: bool,
     );
+    fn cpp_scheduler_state_base_profile_init_deadline(
+        out_profile: *mut MaybeUninit<SchedulerStateBaseProfile>,
+        capacity_ns: zx_types::zx_duration_mono_t,
+        deadline_ns: zx_types::zx_duration_mono_t,
+    );
     fn cpp_scheduler_state_curr_cpu(state: *const SchedulerState) -> cpu_num_t;
     fn cpp_scheduler_state_last_cpu(state: *const SchedulerState) -> cpu_num_t;
     fn cpp_scheduler_state_hard_affinity(state: *const SchedulerState) -> cpu_mask_t;
@@ -149,6 +154,26 @@ impl SchedulerStateBaseProfile {
         // state into the provided storage.
         unsafe {
             cpp_scheduler_state_base_profile_init_fair(&mut profile, priority, inheritable);
+            profile.assume_init()
+        }
+    }
+
+    /// Creates a deadline `SchedulerStateBaseProfile` with the given capacity and deadline.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity.0 <= 0` or `capacity.0 > deadline.0`.
+    pub fn deadline(
+        capacity: crate::platform_rs::timer::DurationMono,
+        deadline: crate::platform_rs::timer::DurationMono,
+    ) -> Self {
+        assert!(capacity.0 > 0 && capacity.0 <= deadline.0);
+        let mut profile = MaybeUninit::uninit();
+        // SAFETY: `cpp_scheduler_state_base_profile_init_deadline` unconditionally initializes
+        // a deadline base profile into the provided storage, and `0 < capacity <= deadline` is
+        // verified above.
+        unsafe {
+            cpp_scheduler_state_base_profile_init_deadline(&mut profile, capacity.0, deadline.0);
             profile.assume_init()
         }
     }
