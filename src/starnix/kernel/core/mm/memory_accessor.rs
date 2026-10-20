@@ -86,6 +86,9 @@ pub trait MemoryAccessor {
 pub trait TaskMemoryAccessor: MemoryAccessor {
     /// Returns the maximum valid address for this memory accessor.
     fn maximum_valid_address(&self) -> Option<UserAddress>;
+
+    /// Ensures that any lazy mappings in `buffers` are mapped in the user VMAR.
+    fn ensure_buffers_mapped_in_user_vmar(&self, buffers: &[UserBuffer]) -> Result<(), Errno>;
 }
 
 // TODO(https://fxbug.dev/42079727): replace this with MaybeUninit::as_bytes_mut.

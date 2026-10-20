@@ -28,6 +28,7 @@ use starnix_sync::{
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::stats::TaskTimeStats;
+use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::auth::{CAP_SYS_PTRACE, Credentials, FsCred};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SIGCHLD, SIGKILL, SigSet, Signal, sigaltstack_contains_pointer};
@@ -1676,6 +1677,14 @@ impl MemoryAccessor for Task {
 impl TaskMemoryAccessor for Task {
     fn maximum_valid_address(&self) -> Option<UserAddress> {
         self.mm().map(|mm| mm.maximum_valid_user_address).ok()
+    }
+
+    fn ensure_buffers_mapped_in_user_vmar(&self, _buffers: &[UserBuffer]) -> Result<(), Errno> {
+        // Using `Task` rather than `CurrentTask` indicates that the target address space is not
+        // mapped in the current thread, so buffers cannot be mapped for direct user-VMAR access.
+        // Returning `ENOTSUP` lets callers of `peek_each_segment` (like `with_iovec_segments`)
+        // fall back to `InputBuffer` / `OutputBuffer` read/write methods.
+        error!(ENOTSUP)
     }
 }
 

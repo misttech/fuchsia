@@ -32,6 +32,7 @@ use starnix_syscalls::decls::Syscall;
 use starnix_task_command::TaskCommand;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::ownership::{Releasable, release_on_error};
+use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::auth::{
     CAP_KILL, CAP_SYS_ADMIN, Credentials, FsCred, PTRACE_MODE_FSCREDS, PTRACE_MODE_REALCREDS,
     PtraceAccessMode,
@@ -2226,6 +2227,18 @@ impl MemoryAccessor for CurrentTask {
 impl TaskMemoryAccessor for CurrentTask {
     fn maximum_valid_address(&self) -> Option<UserAddress> {
         self.mm().ok().map(|mm| mm.maximum_valid_user_address)
+    }
+
+    fn ensure_buffers_mapped_in_user_vmar(&self, buffers: &[UserBuffer]) -> Result<(), Errno> {
+        let mut ranges = buffers
+            .iter()
+            .filter(|b| !b.is_empty())
+            .map(|b| (b.address, Some(b.length)))
+            .peekable();
+        if ranges.peek().is_some() {
+            self.mm()?.ensure_ranges_mapped_in_user_vmar(ranges)?;
+        }
+        Ok(())
     }
 }
 

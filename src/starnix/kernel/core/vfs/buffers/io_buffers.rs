@@ -433,6 +433,10 @@ impl<'a, M: TaskMemoryAccessor> Buffer for UserBuffersOutputBuffer<'a, M> {
         // This `UserBuffersOutputBuffer` made sure that each segment only pointed
         // to valid user-space address ranges on creation so each `buffer` is
         // safe to write to.
+        // Callers (including `peek_all_segments_as_iovecs` and `with_iovec_segments`) pass these
+        // segments as `iovec` / `zx_iovec_t` slices directly to Zircon syscalls or `zxio` C FFI
+        // calls (bypassing `usercopy`), so lazy mappings must be mapped in the user VMAR upfront.
+        self.mm.ensure_buffers_mapped_in_user_vmar(&self.buffers)?;
         for buffer in self.buffers.iter().rev() {
             if buffer.is_null() {
                 continue;
@@ -609,6 +613,10 @@ impl<'a, M: TaskMemoryAccessor> Buffer for UserBuffersInputBuffer<'a, M> {
         // This `UserBuffersInputBuffer` made sure that each segment only pointed
         // to valid user-space address ranges on creation so each `buffer` is
         // safe to read from.
+        // Callers (including `peek_all_segments_as_iovecs` and `with_iovec_segments`) pass these
+        // segments as `iovec` / `zx_iovec_t` slices directly to Zircon syscalls or `zxio` C FFI
+        // calls (bypassing `usercopy`), so lazy mappings must be mapped in the user VMAR upfront.
+        self.mm.ensure_buffers_mapped_in_user_vmar(&self.buffers)?;
         for buffer in self.buffers.iter().rev() {
             if buffer.is_null() {
                 continue;
@@ -1098,5 +1106,55 @@ mod tests {
         let mut output_buffer = VecOutputBuffer::new(20);
         assert_eq!(output_buffer.write_buffer(&mut input_buffer).expect("write_buffer"), 10);
         assert_eq!(output_buffer.data(), b"helloworld");
+    }
+
+    #[::fuchsia::test]
+    async fn test_peek_each_segment_maps_lazy_mapping() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE;
+            let length = (2 * page_size) as usize;
+            let addr = map_memory(&current_task, UserAddress::default(), 2 * page_size);
+            let iovecs = smallvec![
+                UserBuffer { address: addr, length: 25 },
+                UserBuffer { address: (addr + 64usize).expect("in bounds"), length: 12 },
+            ];
+
+            // Forking creates a child address space whose mappings are initially `MappingMode::Lazy`.
+            {
+                let child_task = current_task.clone_task_for_test(0, None);
+                let mut input_buffer =
+                    UserBuffersInputBuffer::unified_new(&child_task, iovecs.clone())
+                        .expect("UserBuffersInputBuffer");
+                let segments = input_buffer
+                    .peek_all_segments_as_iovecs()
+                    .expect("peek_all_segments_as_iovecs");
+                assert_eq!(segments.len(), 2);
+                assert!(
+                    !child_task
+                        .mm()
+                        .unwrap()
+                        .ensure_range_mapped_in_user_vmar(addr, Some(length))
+                        .expect("ensure_range_mapped_in_user_vmar")
+                );
+            }
+
+            {
+                let child_task = current_task.clone_task_for_test(0, None);
+                let mut output_buffer = UserBuffersOutputBuffer::unified_new(&child_task, iovecs)
+                    .expect("UserBuffersOutputBuffer");
+                let segments = output_buffer
+                    .peek_all_segments_as_iovecs()
+                    .expect("peek_all_segments_as_iovecs");
+                assert_eq!(segments.len(), 2);
+                assert!(
+                    !child_task
+                        .mm()
+                        .unwrap()
+                        .ensure_range_mapped_in_user_vmar(addr, Some(length))
+                        .expect("ensure_range_mapped_in_user_vmar")
+                );
+            }
+        })
+        .await;
     }
 }

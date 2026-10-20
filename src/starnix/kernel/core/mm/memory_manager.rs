@@ -1161,7 +1161,9 @@ impl MemoryManagerState {
             match length {
                 None => {
                     if let Some((range, mapping)) = self.mappings.get(addr) {
-                        if mapping.mapping_mode() == MappingMode::Lazy {
+                        if mapping.mapping_mode() == MappingMode::Lazy
+                            && !ranges_to_update.contains(range)
+                        {
                             ranges_to_update.push(range.clone());
                         }
                     }
@@ -1170,7 +1172,9 @@ impl MemoryManagerState {
                     assert!(len > 0);
                     let end = addr.checked_add(len).expect("address overflowed after validation");
                     for (range, mapping) in self.mappings.range(addr..end) {
-                        if mapping.mapping_mode() == MappingMode::Lazy {
+                        if mapping.mapping_mode() == MappingMode::Lazy
+                            && !ranges_to_update.contains(range)
+                        {
                             ranges_to_update.push(range.clone());
                         }
                     }
@@ -3355,11 +3359,10 @@ impl MemoryManager {
     pub fn ensure_ranges_mapped_in_user_vmar<I>(&self, ranges: I) -> Result<bool, Errno>
     where
         I: IntoIterator<Item = (UserAddress, Option<usize>)>,
+        I::IntoIter: Clone,
     {
-        // Collect ranges into a SmallVec with capacity 4 to avoid heap allocations in the common
-        // case where there are only a few ranges (e.g., socket read/write buffers).
-        let ranges = ranges.into_iter().collect::<SmallVec<[_; 4]>>();
-        if !self.state.read().any_ranges_lazy(ranges.iter().cloned()) {
+        let ranges = ranges.into_iter();
+        if !self.state.read().any_ranges_lazy(ranges.clone()) {
             return Ok(false);
         }
         self.state.write().ensure_ranges_mapped_in_user_vmar(ranges, &self.mapping_context)
