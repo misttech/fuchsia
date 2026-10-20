@@ -44,6 +44,7 @@ graph TD
     ReviewerReReview --> ReReviewReport{Reviewer Decision}
     ReReviewReport -- Gaps Remain --> ForwardToCoder
     ReReviewReport -- Approved --> Complete
+    ReReviewReport -- Round Limit Reached --> Escalate[Report Open Items to User]
 ```
 
 ## Step-by-Step Orchestration Process
@@ -66,7 +67,7 @@ The orchestration uses two dedicated, pre-defined subagents:
     * **Role**: Dedicated code auditor. Responsible for inspecting real
       repository files in-tree and `git diff` against the original C++ code and
       the unified rubric (`zircon/skills/cpp-to-rust-rubric/SKILL.md`). Rejects
-      any review where files were not modified in-tree.
+      a review of the Coder's changes when no files were modified in-tree.
     * **Tools**: Restricted to read-only tools (`view_file`, `grep_search`,
       `find_by_name`, `read_url_content`) and skills in `zircon/skills/`.
 
@@ -124,7 +125,9 @@ already exists:
 
 #### Option B: Existing Rust Port in Tree
 1.  Proceed directly to Step 5 to ask the **Reviewer** to audit the existing
-    code.
+    code. If the port is already committed, name the commits in the review
+    request and tell the Reviewer the port is committed, so an unmodified
+    working tree is expected rather than a reason to reject the review.
 
 ### Step 4: The Mandatory Git Verification Gate
 
@@ -164,6 +167,13 @@ git diff HEAD | ./zircon/skills/babeldiff/tool/target/release/babeldiff \
   patch -C . --base HEAD --summary --issues-only || [ $? -eq 1 ]
 ```
 
+For a committed port (Option B), run it on the commits instead:
+
+```bash
+./zircon/skills/babeldiff/tool/target/release/babeldiff \
+  git <commit-or-range> --summary --issues-only || [ $? -eq 1 ]
+```
+
 Send a message to the Reviewer subagent pointing to the actual in-tree files and
 git diff:
 
@@ -172,7 +182,8 @@ git diff:
 > original C++ implementation (`<cpp_paths>`).
 >
 > In-tree files modified:
-> `<list of modified files from git status -s>`
+> `<list of modified files from git status -s, or for a committed port, the
+> commits and the files they change>`
 >
 > Please inspect the real files in tree, review against `zircon/skills/cpp-to-rust-rubric/SKILL.md`
 > (and `zircon/skills/cpp-to-rust-dispatcher/SKILL.md` if applicable), and generate a
@@ -207,6 +218,10 @@ When the Coder responds:
 2.  Once verified, forward the updated files and diff to the Reviewer for
     re-review (Step 5).
 3.  Repeat this loop until the Reviewer confirms that all gaps have been closed.
+4.  Stop after three review rounds that still report gaps, or when the Coder and
+    Reviewer disagree on the same item in two consecutive rounds. Report the
+    open items to the user, with the Coder's and Reviewer's positions on each,
+    and wait for direction instead of starting another round.
 
 ### Step 7: Finalize and Clean Up
 

@@ -35,9 +35,10 @@ When tasked with reviewing a port:
 1. **Analyze C++ & Rust Implementations**:
    - **CRITICAL**: Always inspect the actual source files in the repository using `view_file` and
      `grep_search`. Do NOT review an implementation plan or markdown report in lieu of real
-     in-tree files. If the Rust source files do not exist or are unmodified in the workspace,
-     immediately reject the review and alert the orchestrator that no files were created or
-     modified.
+     in-tree files. If you were asked to review the Coder's uncommitted changes and the Rust
+     source files do not exist or are unmodified in the workspace, immediately reject the review
+     and alert the orchestrator that no files were created or modified. When asked to audit a
+     port that is already committed, review the named commits and files instead.
    - Conduct a thorough side-by-side audit of APIs, data structures, type definitions, safety,
      locking, test coverage, and fuzzing.
    - Inspect the original C++ header files, implementation (`.cc`) files, and test files
@@ -76,7 +77,7 @@ When tasked with reviewing a port:
    - Verify every requirement in the **Zircon C++ to Rust Porting Rubric** below (Core Principles,
      Machinery, Detailed Guidelines, and Common Pitfalls Checklist).
    - Verify that the port does not violate any item in the Common Pitfalls & Anti-Patterns
-     Checklist (items 1-47).
+     Checklist (items 1-50).
 
 6. **Generate Structured Review Report**:
    - Always produce your review as a structured markdown report following the exact format
@@ -123,10 +124,15 @@ Use the following markdown template when generating your review report:
 
 ## 1. Core Principles
 
-1.  **Direct Translation & API Parity**: Translate C++ code to Rust using
-    equivalent data structures and algorithms. The Rust API must expose all
-    public functions, methods, constructors, and configurations present in the
-    C++ version.
+1.  **Direct Translation, Control-Flow Fidelity, & API Parity**: Translate C++
+    code to Rust using equivalent data structures, algorithms, and control flow.
+    The Rust API must expose all public functions, methods, constructors, and
+    configurations present in the C++ version, and function bodies should
+    preserve the structure and check ordering of the C++ original rather than
+    restructuring control flow or inventing local helper types without cause.
+    When C++ calls a specific method or overload on a collaborating object, call
+    the corresponding method on the Rust type (adding it if missing) rather than
+    re-implementing its logic inline at the call site.
 2.  **Exact Memory Layout & Alignment Parity**: Rust structs shared across FFI
     or replacing C++ objects must match the memory layout, alignment, and size
     of corresponding C++ objects exactly. Verify with compile-time static
@@ -161,27 +167,48 @@ Use the following markdown template when generating your review report:
       preserved in the corresponding Rust code, updating identifiers that have
       changed names to make sense in Rust.
 8.  **Ergonomic Design & DRY**: Apply idiomatic Rust practices (derive macros,
-    `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator) without
-    breaking layout or safety requirements. Keep visibility as tight as possible
-    (`pub(crate)` or file-private). Preserve named constants. Apply idioms
-    within the C++ structure: keep function boundaries, helpers and control-flow
-    shape so the port can be compared side by side. Do not inline helpers, merge
-    or split functions, or unroll macros unless the C++ shape cannot be
-    expressed in Rust. Out-parameters may become return values.
+    `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator, returning
+    values via `Option<T>` or `Result<T, Status>` instead of C-style
+    out-parameters) without breaking layout or safety requirements. Keep
+    visibility as tight as possible (`pub(crate)` or file-private). Preserve
+    named constants. Apply idioms within the C++ structure: keep function
+    boundaries, helpers and control-flow shape so the port can be compared side
+    by side. Do not inline helpers, merge or split functions, or unroll macros
+    unless the C++ shape cannot be expressed in Rust.
 9.  **Cross-Language FFI Interoperability**: FFI shims must be minimal and
-    declarative, with no business logic. C++ helper functions exposed to Rust
-    must be prefixed with `cpp_` and declared in C++ header files. Rust
-    functions exposed to C++ must be prefixed with `rust_`.
-10. **Allocation Tier & Stack Parity**: Respect the original C++ memory
-    placement (heap, static, intrusive, or stack). Because kernel thread stacks
-    are constrained, do not shift heap or static storage onto the stack.
-    Intermediate working buffers must maintain the C++ allocation tier, with
-    stack allocation reserved only for small scalar or primitive helpers.
+    declarative 1:1 forwards with zero business logic, branching, or sub-object
+    chaining. Facade methods for unported C++ classes must correspond 1:1 to
+    actual methods on the C++ class. C++ helper functions exposed to Rust must
+    be prefixed with `cpp_` and declared in C++ header files. Rust functions
+    exposed to C++ must be prefixed with `rust_`.
+10.  **Allocation Tier & Stack Parity**: Respect the original C++ memory
+     placement (heap, static, intrusive, or stack). Because kernel thread stacks
+     are constrained, do not shift heap or static storage onto the stack.
+     Intermediate working buffers must maintain the C++ allocation tier, with
+     stack allocation reserved only for small scalar or primitive helpers.
+
+---
 
 ## 2. The Zircon Rust Porting Machinery
 
 Fuchsia provides custom in-tree crates designed for low-level kernel and library
 porting:
+
+```mermaid
+graph TD
+    subgraph "Zircon Porting Machinery"
+        ZR[zr: Zero-Dependency Core & Static Assertions]
+        KAlloc[kalloc: Fallible Allocator & Box]
+        KSync[ksync: Ghost Token Synchronization & Guarded Macro]
+        FBL[fbl: Intrusive Containers & RefCounting]
+        LTrace[debug: Zero-Cost Kernel Trace Logging]
+        ZXStatus[zx-status: Zircon Status Codes & Result]
+    end
+
+    FBL --> KAlloc
+    FBL --> ZR
+    KSync --> ZR
+```
 
 * **`zr`**: Fundamental zero-dependency building blocks (`zr::static_assert!`,
   `zr::defer`, `zr::Deferred`, `Opaque<T>`, `OpaqueBytes<N>`, `pin_init_ffi!`).
@@ -192,15 +219,20 @@ porting:
   `WavlTree`), reference counting (`#[ref_counted]`, `RefPtr`), and FFI
   recycling (`Recyclable`). Non-intrusive containers (`Array`, `InlineArray`,
   `Vector`).
-* **`ltrace`**: Module-level conditional debug tracing (`LOCAL_TRACE`,
-  `ltracef!`, `ltrace_entry!`).
+* **`debug`**: Module-level conditional debug tracing (`LOCAL_TRACE`,
+  `ltracef!`, `ltrace_entry!`) and `dprintf!`.
 * **`zx-status`**: Canonical `zx_status::Status` error types for `Result<T,
   Status>`.
+
+---
 
 ## 3. Detailed Guidelines & Technical Patterns
 
 ### 3.1. Memory Layout Matching & Verification
 - Mark FFI-shared structs with `#[repr(C)]`.
+- Do not heap-box (`kalloc::Box`) a ported Rust struct behind an extra pointer
+  in the C++ wrapper when the C++ class stored its fields inline; match the
+  inline layout in-place instead.
 - Always add compile-time static assertions for size and alignment in Rust using
   `zr::static_assert!`. Add matching `static_assert` assertions in C++ test
   files.
@@ -227,14 +259,17 @@ zr::static_assert!(core::mem::align_of::<PortedStruct>() == 8);
 - Kernel code must **never** use standard `alloc::boxed::Box` or collections
   that panic on OOM.
 - Use `kalloc::Box::try_new(val)` for single values.
-- Use `kalloc::Box::<[T]>::try_new_zeroed_slice(len)` for slices.
+- Use `kalloc::Box::<[T]>::try_new_zeroed_slice(len)` for slices of `FromZeros`
+  types; the slice it returns is already initialized. Otherwise use
+  `try_new_uninit_slice(len)` and `assume_init()` once every element is written.
 - Use `try_grow(&mut slice, new_len)` and `unsafe { try_shrink(&mut slice,
   new_len) }` for resizing slices.
+- Allocation fails with `kalloc::AllocError`; map it to `Status::NO_MEMORY`.
 
 ```rust
-let my_box = kalloc::Box::try_new(42u32)?;
-let mut uninit_slice = kalloc::Box::<[u32]>::try_new_zeroed_slice(10)?;
-let mut slice = unsafe { uninit_slice.assume_init() };
+let my_box = kalloc::Box::try_new(42u32).map_err(|_| Status::NO_MEMORY)?;
+let slice =
+    kalloc::Box::<[u32]>::try_new_zeroed_slice(10).map_err(|_| Status::NO_MEMORY)?;
 ```
 
 ### 3.3. Pointer Safety, `NonNull`, & Strict Provenance
@@ -250,14 +285,26 @@ let mut slice = unsafe { uninit_slice.assume_init() };
   casts.
 
 ```rust
-pub fn get_slice(mapped_addr: usize, size: usize) -> &'static [u8] {
-    if mapped_addr == 0 {
-        &[]
-    } else {
-        // SAFETY: mapped_addr is valid memory mapped with `size` bytes.
-        unsafe {
-            let ptr = core::ptr::with_exposed_provenance::<u8>(mapped_addr);
-            core::slice::from_raw_parts(ptr, size)
+/// A read-only view of mapped memory.
+pub struct Mapping {
+    /// Address of `size` bytes that stay mapped, and are not written, for as
+    /// long as this `Mapping` exists. Zero if nothing is mapped.
+    base: usize,
+    size: usize,
+}
+
+impl Mapping {
+    /// Returns the mapped bytes.
+    pub fn as_slice(&self) -> &[u8] {
+        if self.base == 0 {
+            &[]
+        } else {
+            // SAFETY: `base` addresses `size` mapped bytes that nothing writes
+            // while `self` is alive, and the slice borrows `self`.
+            unsafe {
+                let ptr = core::ptr::with_exposed_provenance::<u8>(self.base);
+                core::slice::from_raw_parts(ptr, self.size)
+            }
         }
     }
 }
@@ -293,6 +340,10 @@ pub fn get_slice(mapped_addr: usize, size: usize) -> &'static [u8] {
 - Inline `asm!` must not use `options(nomem)` or `options(readonly)` where the
   C++ uses `asm volatile` with a memory clobber; those options let the compiler
   reorder memory accesses around the instruction.
+- Temporarily Releasing Locks (`call_unlocked`): Translate C++
+  `Guard::CallUnlocked` directly to `guard.as_mut().call_unlocked(|| { ... })`
+  rather than splitting a single lock guard scope into separate `{
+  ksync::lock!(...); }` blocks.
 
 ```rust
 #[guarded]
@@ -323,13 +374,14 @@ let fields = guard.as_mut().fields_mut();
 - Unported C++ `fbl::RefCounted` Types (`Opaque<bindings::T>` vs
   `fbl::impl_opaque_ref_counted_facade!`):
   - **Bindgen-Backed Types** (e.g., `VmObject`, `VmCowPages`, `PageSource`):
-    When `bindgen` generates a struct (`bindings::T`) for a C++ `fbl::RefCounted`
-    type, **do NOT use `fbl::impl_opaque_ref_counted_facade!`**. That macro
-    replaces the struct body with a zero-sized `OpaqueRefCountedFacade<T>`,
-    losing the true C++ size/alignment (`size_of::<T>() == 0`) and creating a
-    pointer-type mismatch between `*mut Self` and `*mut bindings::T`. Instead,
-    keep `raw: Opaque<bindings::T>` (with `phantom: PhantomData<PhantomPinned>`),
-    define `as_raw(&self) -> *mut bindings::T { self.raw.get() }`, and manually
+    When `bindgen` generates a struct (`bindings::T`) for a C++
+    `fbl::RefCounted` type, **do NOT use
+    `fbl::impl_opaque_ref_counted_facade!`**. That macro replaces the struct
+    body with a zero-sized `OpaqueRefCountedFacade<T>`, losing the true C++
+    size/alignment (`size_of::<T>() == 0`) and creating a pointer-type mismatch
+    between `*mut Self` and `*mut bindings::T`. Instead, keep `raw:
+    Opaque<bindings::T>` (with `phantom: PhantomData<PhantomPinned>`), define
+    `as_raw(&self) -> *mut bindings::T { self.raw.get() }`, and manually
     implement `fbl::HasRefCount` and `fbl::Recyclable` delegating to
     `bindings::cpp_<type>_get_ref_counted(self.as_raw())` and
     `bindings::cpp_<type>_free(ptr.as_ptr().cast())`.
@@ -407,7 +459,7 @@ pin_init!(Self {
 
 ### 3.9. Local Trace Logging (`ltrace`), `dprintf` and `printf`
 - Preserve all C++ `LOCAL_TRACE` / `LTRACE` statements.
-- Depend on `//zircon/kernel/lib/debugltrace`.
+- Depend on `//zircon/kernel/lib/debug` and `use debug::ltracef;`.
 - Define module-scoped `const LOCAL_TRACE: u32 = 0;` at the top of each file.
 - Use `ltracef!`, `ltrace_entry!`, `ltrace_exit!`, `ltrace_entry_obj!`, etc.
   When `LOCAL_TRACE` is `0`, dead-branch elimination eliminates all CPU and
@@ -415,10 +467,33 @@ pin_init!(Self {
 - Preserve `dprintf` using the `dprintf!` macro from `//zircon/kernel/lib/debug`
 - Use `kprint` and `kprintln!` from `//src/lib/kprint` to replace `printf`.
 
-### 3.10. Code Organization, Ergonomics, & Visibility
+### 3.10. Code Organization, Control Flow, Ergonomics, & Visibility
 - **File Structure Parity**: Organize Rust modules matching C++ header/source
   files. Re-export public types at root level (`pub use`) to preserve flat C++
   header APIs.
+- **Control-Flow & Structural Fidelity**: Preserve the control flow, variable
+  structure, and sequence of checks within function and method bodies from the
+  C++ original (e.g., shared post-branch validation checks or extracting a
+  common target reference across `if`/`else if` branches) unless Rust's borrow
+  checker or safety rules strictly require restructuring. Do not invent local
+  helper enums or duplicate branch checks when the C++ control flow can be
+  expressed directly in Rust.
+- **Exact Collaborator Method / Overload Parity**: When C++ calls a specific
+  method or overload on a collaborating object (for example, a lookup method
+  that both validates required preconditions/rights and returns outputs, or a
+  lookup method that requires no rights), call the corresponding method on the
+  Rust type (adding the missing method or variant to that type if needed) rather
+  than calling a lower-level method and re-implementing the check inline at the
+  call site.
+- **Idiomatic Return Values Instead of Out-Parameters**: When a C++ method or
+  function returns `bool` or `zx_status_t` and populates one or more
+  out-parameters (`T* out`) by value (where the caller does not need to provide
+  pre-allocated backing storage or pinned in-place memory), the Rust method MUST
+  return the value directly via `Option<T>`, `Result<T, Status>`, or a tuple
+  `Result<(T, U), Status>` rather than taking `&mut T` out-parameters. If C++
+  callers still invoke the method via a `rust_*` FFI trampoline, perform the
+  out-parameter adaptation inside the FFI trampoline, not on the Rust method
+  itself.
 - **Tight Visibility**: Keep items private or `pub(crate)`. Functions, types, or
   helpers used only within a single file MUST NOT be marked `pub` or
   `pub(crate)`.
@@ -433,7 +508,7 @@ pin_init!(Self {
 
 ### 3.11. Check existing Rust conversions
 - Before introducing FFI shims, or copying constants, check if there is already
-  a Rust implementation. For any object, function, etc, you should:
+  a Rust implementation. For any object, function, etc, you should
   1.  Go to the location of the C++ definition.
   2.  Walk up the directory structure to find a Rust module.
   3.  See if there is a similar Rust struct / method impl, taking into account
@@ -456,14 +531,25 @@ pin_init!(Self {
   elsewhere, copy the license lines from neighboring files in the same
   directory.
 
-### 3.13. FFI Interoperability
-- Minimal Shims: FFI functions (`*_ffi.cc`/`*_ffi.rs`) should be purely
-  declarative with zero logic.
+### 3.13. FFI Interoperability & Facade Method Parity
+- Minimal Shims: Isolate FFI functions in `*_ffi.cc` / `*_ffi.rs`; they should
+  be purely declarative with zero logic.
 - Shim Existing APIs: Expose the C++ methods the original code calls. Do not add
   new C++ methods for the port's convenience. Where a shim would only forward to
   a simple C++ free function, giving that function `extern "C"` linkage and
   declaring it in a Rust `unsafe extern "C"` block is an alternative to a
   `cpp_*` shim.
+- **Strict 1:1 Parity for Facade Methods & `cpp_*` FFI Shims**:
+  - Every method added to a Rust facade for an unported C++ class MUST
+    correspond 1:1 to an actual method on that C++ class. Never invent synthetic
+    convenience or composite methods on a facade that do not exist on the C++
+    class.
+  - Every `cpp_*` FFI function (`*_ffi.cc` / `*_ffi.rs`) must be a single direct
+    forwarding call to one C++ method or function with zero business logic.
+    Never encode branching logic (`if`/`else`) or chain across sub-objects
+    (`obj->sub_obj()->Method()`) inside a `cpp_*` FFI function. If C++ accesses
+    a sub-object or helper class (`sub_obj()`), define a Rust facade for that
+    sub-object type as well and expose each method 1:1.
 - Consistent Naming:
   - C++ exported to Rust: `cpp_$namespace_$classname_$functionname`
   - Rust exported to C++: `rust_$modpath_$struct_$functionname`
@@ -474,9 +560,9 @@ pin_init!(Self {
   receive non-null pointers to initialized objects should prefer taking
   `&<Type>` or `&mut <State>` directly in Rust signatures rather than raw
   pointers (`*const`/`*mut`).
-- Always-Inline Annotations for Short FFI Routines: Definitions for
-  short C++ FFI helper routines provided to Rust callers (`cpp_*`, e.g. trivial
-  forwarding shims or accessors) should include `<kernel/ffi.h>`, use the
+- Always-Inline Annotations for Short FFI Routines: Definitions for short C++
+  FFI helper routines provided to Rust callers (`cpp_*`, e.g. trivial forwarding
+  shims or accessors) should include `<kernel/ffi.h>`, use the
   `FFI_ALWAYS_INLINE` macro, and include a TODO tied to
   `https://fxbug.dev/537458631` (e.g., `// TODO(https://fxbug.dev/537458631):
   Remove the annotations once cross-language inlining works.`). Only apply this
@@ -523,7 +609,7 @@ Ok(())
   in-body implementation comments.
 - **Preserve Comments Documenting Behavior**: Preserve all inline comments (`//
   ...`) from C++ source and header files (`.cc` and `.h`) documenting behavior
-  in the corresponding Rust code. It does not matter what behavior is being
+  in the corresponding Rust code; it does not matter what behavior is being
   described; if it documents behavior, preserve it.
 - **Adapt Identifiers for Rust**: Update ported comments so they make sense with
   the Rust port of the code. Identifiers that have changed names (e.g., methods
@@ -600,9 +686,11 @@ Ok(())
   does. It names any lock the caller must hold. It never asserts a check or
   caller guarantee the author has not verified.
 
+---
+
 ## 4. Common Pitfalls & Anti-Patterns Checklist
 
-Reviewers must audit code against this checklist:
+Reviewers and Coders must audit code against this checklist:
 
 1.  [ ] **Runtime Overhead vs. Const Generics**: Features compiled out in C++
     via templates/macros are not hardcoded as runtime fields; `const` generics
@@ -625,76 +713,77 @@ Reviewers must audit code against this checklist:
     Rust module files rather than placed in a single `lib.rs`.
 9.  [ ] **Omitted Fuzz Testing Parity**: C++ fuzzers are checked and
     corresponding Rust fuzzers (`rustc_fuzzer` + `arbitrary`) are provided.
-10. [ ] **Strict Provenance Violations**: Raw integer-to-pointer casts (`as
-    *const T`) are replaced with `core::ptr::with_exposed_provenance`.
-11. [ ] **Redundant LockClass Generic**: `#[guarded]` is used without adding
-    unnecessary `Class: LockClass` generics to the parent struct.
-12. [ ] **Unsafe Post-Init Blocks**: `PinInit` post-initialization blocks do
-    not use `unsafe` to bypass wrappers; block expressions are used during
-    field initialization.
-13. [ ] **Ignoring Default & Derivable Traits**: Types with default states
-    implement `Default`; standard traits (`Debug`, `Clone`, `PartialEq`) are
-    derived.
-14. [ ] **Unsafe Byte Casting**: `zerocopy` (`FromBytes`, `IntoBytes`) is used
-    instead of manual `unsafe` pointer casts or `transmute`.
-15. [ ] **Redundant Custom Numeric Traits**: `num-traits` is used instead of
-    creating custom numeric traits for generic templates.
-16. [ ] **Unported Trace Statements**: C++ `LTRACE` statements are preserved
-    using `ltrace` crate and `const LOCAL_TRACE: u32 = 0;`.
-17. [ ] **Over-broad Visibility**: Helpers and internal structs are private or
-    `pub(crate)`, not `pub`.
-18. [ ] **Missing C++ FFI Header Declarations**: All `cpp_*` functions defined
-    in `.cc` have matching `extern "C"` prototype declarations in C++ headers.
-19. [ ] **Kernel Test Harness Mismatch**: Kernel code (`zircon/kernel/`) does
-    not use standard `#[test]` / `#[cfg(test)]`.
-20. [ ] **Missing Always-Inline on Short FFI Routines**: Short C++
-    FFI routines provided to Rust (`cpp_*`) include `<kernel/ffi.h>`, use
-    `FFI_ALWAYS_INLINE`, and include a TODO for `https://fxbug.dev/537458631`.
-    Not applied to C++ class methods or routines calling Rust (`rust_*`).
-21. [ ] **Raw Pointer to Uninitialized Storage in FFI Initializers**: C++ FFI
-    initialization routines receiving uninitialized storage from Rust do not
-    take raw `T*`; they take `ffi::Uninitialized<T>*` and initialize in-place
-    via `Initialize(...)`.
-22. [ ] **Documentation and Inline Comment Parity**: Both outer documentation
-    (Rustdoc `///`) and inner inline comments (`// ...`) within function and
-    method bodies documenting behavior are ported over from C++ source and
-    header files (.cc and .h) to Rust, with identifiers that have changed names
-    updated to match the Rust port. Reviewers must perform a side-by-side diff
-    of method bodies to verify.
-23. [ ] **Assertions**: Assertions are copied over and correctly use assert! or
-    debug_assert! as matching the C++ use of ASSERT or DEBUG_ASSERT.
-24. [ ] **Canary assertions**: Canary assertions are copied over to Rust and
-    are correctly used.
-25. [ ] **Unnecessary FFI methods**: FFI methods added, or code left in C++,
-    despite there being an existing Rust implementation / port.
-26. [ ] **Kernel Test Suite Naming**: Kernel test suites set their suite name
-    (via default module name or `#[unittest::suite(name = "...")]`) following
-    conventions: keep `mod tests` idiomatic, append `_rust` if colliding with
-    an existing C++ suite name (e.g. `cbuf_rust`), and avoid `rust_` prefixes.
-27. [ ] **Copyright Preservation**: Original copyright authors and dates are
-    maintained if the ported file is not meaningfully divergent.
-28. [ ] **Allocation Tier & Stack Parity**: Data and working buffers that were
-    heap-allocated or static in C++ are not shifted onto the kernel stack in
-    Rust, with stack allocation reserved only for small scalar or primitive
-    helpers.
-29. [ ] **Manual Deferred Cleanup**: C++ `fit::defer` cleanup guards are
-    translated to `zr::defer` rather than manually duplicating cleanup logic
-    before every early return.
-30. [ ] **LazyInit vs. Ad-hoc Statics**: Translation of bare C++ global
-    variables should use the Rust port of `LazyInit` rather than ad-hoc
-    `MaybeUninit`/`UnsafeCell`/`AtomicPtr` statics. Note also when `LazyInit`
-    implements `Deref` and avoid introducing redundant `get_foo()` wrappers in
-    those cases.
-31. [ ] **Mixing `impl_opaque_ref_counted_facade!` with Bindgen Types**: C++
-    `fbl::RefCounted` types with a `bindgen`-generated struct (`bindings::T`)
-    do not use `fbl::impl_opaque_ref_counted_facade!` (which makes the Rust
-    type zero-sized and mismatches `*mut Self` vs `*mut bindings::T`); they
-    wrap `Opaque<bindings::T>` and implement `HasRefCount` and `Recyclable`
-    directly.
-32. [ ] **Lines Exceeding 100 Characters or Unformatted Macros/Comments**: All
-    lines (including comments, string literals, and code inside macros, which
-    `fx format-code` does not touch) are `<= 100` characters, and `fx
-    format-code` is re-run after any manual line wrapping.
+10.  [ ] **Strict Provenance Violations**: Raw integer-to-pointer casts (`as
+     *const T`) are replaced with `core::ptr::with_exposed_provenance`.
+11.  [ ] **Redundant LockClass Generic**: `#[guarded]` is used without adding
+     unnecessary `Class: LockClass` generics to the parent struct.
+12.  [ ] **Unsafe Post-Init Blocks**: `PinInit` post-initialization blocks do
+     not use `unsafe` to bypass wrappers; block expressions are used during
+     field initialization.
+13.  [ ] **Ignoring Default & Derivable Traits**: Types with default states
+     implement `Default`; standard traits (`Debug`, `Clone`, `PartialEq`) are
+     derived.
+14.  [ ] **Unsafe Byte Casting**: `zerocopy` (`FromBytes`, `IntoBytes`) is used
+     instead of manual `unsafe` pointer casts or `transmute`.
+15.  [ ] **Redundant Custom Numeric Traits**: `num-traits` is used instead of
+     creating custom numeric traits for generic templates.
+16.  [ ] **Unported Trace Statements**: C++ `LTRACE` statements are preserved
+     with `const LOCAL_TRACE: u32 = 0;` and the `debug` crate's `ltrace` macros.
+17.  [ ] **Over-broad Visibility**: Helpers and internal structs are private or
+     `pub(crate)`, not `pub`.
+18.  [ ] **Missing C++ FFI Header Declarations**: All `cpp_*` functions defined
+     in `.cc` have matching `extern "C"` prototype declarations in C++ headers.
+19.  [ ] **Kernel Test Harness Mismatch**: Kernel code (`zircon/kernel/`) does
+     not use standard `#[test]` / `#[cfg(test)]`.
+20.  [ ] **Missing Always-Inline on Short FFI Routines**: Short C++ FFI routines
+     provided to Rust (`cpp_*`) include `<kernel/ffi.h>`, use
+     `FFI_ALWAYS_INLINE`, and include a TODO for `https://fxbug.dev/537458631`.
+     Not applied to C++ class methods or routines calling Rust (`rust_*`).
+21.  [ ] **Raw Pointer to Uninitialized Storage in FFI Initializers**: C++ FFI
+     initialization routines receiving uninitialized storage from Rust do not
+     take raw `T*`; they take `ffi::Uninitialized<T>*` and initialize in-place
+     via `Initialize(...)`.
+22.  [ ] **Documentation and Inline Comment Parity**: Both outer documentation
+     (Rustdoc `///`) and inner inline comments (`// ...`) within function and
+     method bodies documenting behavior are ported over from C++ source and
+     header files (.cc and .h) to Rust, with identifiers that have changed names
+     updated to match the Rust port. Reviewers must perform a side-by-side diff
+     of method bodies to verify.
+23.  [ ] **Assertions**: Assertions are copied over and correctly use assert! or
+     debug_assert! as matching the C++ use of ASSERT or DEBUG_ASSERT.
+24.  [ ] **Canary assertions**: Canary assertions are copied over to Rust and
+     are correctly used.
+25.  [ ] **Unnecessary FFI methods**: FFI methods added, or code left in C++,
+     despite there being an existing Rust implementation / port.
+26.  [ ] **Kernel Test Suite Naming**: Kernel test suites set their suite name
+     (via default module name or `#[unittest::suite(name = "...")]`) following
+     conventions: keep `mod tests` idiomatic, append `_rust` if colliding with
+     an existing C++ suite name (e.g. `cbuf_rust`), and avoid `rust_` prefixes.
+27.  [ ] **Copyright Preservation**: Original copyright authors and dates are
+     maintained if the ported file is not meaningfully divergent.
+28.  [ ] **Allocation Tier & Stack Parity**: Data and working buffers that were
+     heap-allocated or static in C++ are not shifted onto the kernel stack in
+     Rust (with stack allocation reserved only for small scalar or primitive
+     helpers), and inline C++ objects are not heap-boxed (`kalloc::Box`) behind
+     an extra pointer indirection in the C++ wrapper.
+29.  [ ] **Manual Deferred Cleanup**: C++ `fit::defer` cleanup guards are
+     translated to `zr::defer` rather than manually duplicating cleanup logic
+     before every early return.
+30.  [ ] **LazyInit vs. Ad-hoc Statics**: Translation of bare C++ global
+     variables should use the Rust port of `LazyInit` rather than ad-hoc
+     `MaybeUninit`/`UnsafeCell`/`AtomicPtr` statics.  Note also when `LazyInit`
+     implements `Deref` and avoid introducing redundant `get_foo()` wrappers in
+     those cases.
+31.  [ ] **Mixing `impl_opaque_ref_counted_facade!` with Bindgen Types**: C++
+     `fbl::RefCounted` types with a `bindgen`-generated struct (`bindings::T`)
+     do not use `fbl::impl_opaque_ref_counted_facade!` (which makes the Rust
+     type zero-sized and mismatches `*mut Self` vs `*mut bindings::T`); they
+     wrap `Opaque<bindings::T>` and implement `HasRefCount` and `Recyclable`
+     directly.
+32.  [ ] **Lines Exceeding 100 Characters or Unformatted Macros/Comments**: All
+     lines (including comments, string literals, and code inside macros, which
+     `fx format-code` does not touch) are `<= 100` characters, and `fx
+     format-code` is re-run after any manual line wrapping.
 33.  [ ] **Error Precedence**: Validation and error checks run in the C++ order,
      so each input returns the same status as before.
 34.  [ ] **Added or Inverted Logic**: No validation, error returns, panics or
@@ -726,3 +815,19 @@ Reviewers must audit code against this checklist:
 47.  [ ] **Copied and Narrating Comments**: No comment copied from a neighboring
      block onto different code, no "ported from" notes, and no comment that
      describes or compares against C++ deleted by the same change.
+48.  [ ] **C-Style Out-Parameters on Rust Methods**: Rust methods do not retain
+     C-style `&mut T` out-parameters paired with `bool` or `Status` returns when
+     returning `Option<T>` or `Result<T, Status>` by value is possible (any
+     out-pointer adaptation belongs only in `rust_*` FFI trampolines).
+49.  [ ] **Unnecessary Control-Flow Divergence or Ad-Hoc Caller Checks**: Ported
+     functions and syscalls preserve the C++ control flow (including translating
+     `Guard::CallUnlocked` directly to `guard.as_mut().call_unlocked(...)`
+     rather than splitting lock scopes) and call the exact corresponding
+     methods/overloads on collaborating types rather than inventing local enums,
+     duplicating branch checks, or re-implementing checks inline at the call
+     site.
+50.  [ ] **Synthetic Facade Methods or Non-Trivial `cpp_*` FFI Shims**: Rust
+     facades for unported C++ types only expose methods that actually exist on
+     the C++ class, and `cpp_*` FFI shims are strict 1:1 single-call forwards
+     without branching (`if`/`else`) or sub-object method chaining
+     (`a->b()->c()`).

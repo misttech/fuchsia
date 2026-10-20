@@ -95,7 +95,7 @@ graph TD
         KAlloc[kalloc: Fallible Allocator & Box]
         KSync[ksync: Ghost Token Synchronization & Guarded Macro]
         FBL[fbl: Intrusive Containers & RefCounting]
-        LTrace[ltrace: Zero-Cost Kernel Trace Logging]
+        LTrace[debug: Zero-Cost Kernel Trace Logging]
         ZXStatus[zx-status: Zircon Status Codes & Result]
     end
 
@@ -112,9 +112,9 @@ graph TD
 * **`fbl`**: Intrusive containers (`DoublyLinkedList`, `SinglyLinkedList`,
   `WavlTree`), reference counting (`#[ref_counted]`, `RefPtr`), and FFI
   recycling (`Recyclable`). Non-intrusive containers (`Array`, `InlineArray`,
-  `Vector`].
-* **`ltrace`**: Module-level conditional debug tracing (`LOCAL_TRACE`,
-  `ltracef!`, `ltrace_entry!`).
+  `Vector`).
+* **`debug`**: Module-level conditional debug tracing (`LOCAL_TRACE`,
+  `ltracef!`, `ltrace_entry!`) and `dprintf!`.
 * **`zx-status`**: Canonical `zx_status::Status` error types for `Result<T,
   Status>`.
 
@@ -153,14 +153,17 @@ zr::static_assert!(core::mem::align_of::<PortedStruct>() == 8);
 - Kernel code must **never** use standard `alloc::boxed::Box` or collections
   that panic on OOM.
 - Use `kalloc::Box::try_new(val)` for single values.
-- Use `kalloc::Box::<[T]>::try_new_zeroed_slice(len)` for slices.
+- Use `kalloc::Box::<[T]>::try_new_zeroed_slice(len)` for slices of `FromZeros`
+  types; the slice it returns is already initialized. Otherwise use
+  `try_new_uninit_slice(len)` and `assume_init()` once every element is written.
 - Use `try_grow(&mut slice, new_len)` and `unsafe { try_shrink(&mut slice,
   new_len) }` for resizing slices.
+- Allocation fails with `kalloc::AllocError`; map it to `Status::NO_MEMORY`.
 
 ```rust
-let my_box = kalloc::Box::try_new(42u32)?;
-let mut uninit_slice = kalloc::Box::<[u32]>::try_new_zeroed_slice(10)?;
-let mut slice = unsafe { uninit_slice.assume_init() };
+let my_box = kalloc::Box::try_new(42u32).map_err(|_| Status::NO_MEMORY)?;
+let slice =
+    kalloc::Box::<[u32]>::try_new_zeroed_slice(10).map_err(|_| Status::NO_MEMORY)?;
 ```
 
 ### 3.3. Pointer Safety, `NonNull`, & Strict Provenance
@@ -176,14 +179,26 @@ let mut slice = unsafe { uninit_slice.assume_init() };
   casts.
 
 ```rust
-pub fn get_slice(mapped_addr: usize, size: usize) -> &'static [u8] {
-    if mapped_addr == 0 {
-        &[]
-    } else {
-        // SAFETY: mapped_addr is valid memory mapped with `size` bytes.
-        unsafe {
-            let ptr = core::ptr::with_exposed_provenance::<u8>(mapped_addr);
-            core::slice::from_raw_parts(ptr, size)
+/// A read-only view of mapped memory.
+pub struct Mapping {
+    /// Address of `size` bytes that stay mapped, and are not written, for as
+    /// long as this `Mapping` exists. Zero if nothing is mapped.
+    base: usize,
+    size: usize,
+}
+
+impl Mapping {
+    /// Returns the mapped bytes.
+    pub fn as_slice(&self) -> &[u8] {
+        if self.base == 0 {
+            &[]
+        } else {
+            // SAFETY: `base` addresses `size` mapped bytes that nothing writes
+            // while `self` is alive, and the slice borrows `self`.
+            unsafe {
+                let ptr = core::ptr::with_exposed_provenance::<u8>(self.base);
+                core::slice::from_raw_parts(ptr, self.size)
+            }
         }
     }
 }
@@ -338,7 +353,7 @@ pin_init!(Self {
 
 ### 3.9. Local Trace Logging (`ltrace`), `dprintf` and `printf`
 - Preserve all C++ `LOCAL_TRACE` / `LTRACE` statements.
-- Depend on `//zircon/kernel/lib/debugltrace`.
+- Depend on `//zircon/kernel/lib/debug` and `use debug::ltracef;`.
 - Define module-scoped `const LOCAL_TRACE: u32 = 0;` at the top of each file.
 - Use `ltracef!`, `ltrace_entry!`, `ltrace_exit!`, `ltrace_entry_obj!`, etc.
   When `LOCAL_TRACE` is `0`, dead-branch elimination eliminates all CPU and
@@ -607,7 +622,7 @@ Reviewers and Coders must audit code against this checklist:
 15.  [ ] **Redundant Custom Numeric Traits**: `num-traits` is used instead of
      creating custom numeric traits for generic templates.
 16.  [ ] **Unported Trace Statements**: C++ `LTRACE` statements are preserved
-     using `ltrace` crate and `const LOCAL_TRACE: u32 = 0;`.
+     with `const LOCAL_TRACE: u32 = 0;` and the `debug` crate's `ltrace` macros.
 17.  [ ] **Over-broad Visibility**: Helpers and internal structs are private or
      `pub(crate)`, not `pub`.
 18.  [ ] **Missing C++ FFI Header Declarations**: All `cpp_*` functions defined
@@ -761,8 +776,11 @@ Reviewers and Coders must audit code against this checklist:
 ### 5.2. Guidelines for Reviewer Subagent (`cpp-to-rust-reviewer`)
 1.  **Audit Real In-Tree Files**: You MUST inspect the actual modified files in
     the repository and check `git diff`. Do NOT review an implementation plan or
-    markdown report in lieu of real files. If the target files have not been
-    created or modified in the workspace, reject the review immediately.
+    markdown report in lieu of real files. If you were asked to review the
+    Coder's uncommitted changes and the target files have not been created or
+    modified in the workspace, reject the review immediately. When asked to
+    audit a port that is already committed, review the named commits and files
+    instead.
 2.  **Analyze C++ & Rust Implementations**: Conduct a side-by-side audit of
     APIs, data structures, safety, locking, test coverage, and fuzzing.
 3.  **Triage `babeldiff` Findings**: The review request includes `babeldiff`
