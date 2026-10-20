@@ -8,6 +8,7 @@ import("//build/cpp/library_headers.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//zircon/kernel/kernel_rust_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = []
@@ -114,6 +115,7 @@ rustc_library("rust") {
   sources = [
     "src/lib.rs",
     "src/stdio.rs",
+    "src/stdio/string_file.rs",
   ]
   deps = [ "." ]
 }
@@ -124,6 +126,14 @@ kernel_rust_crate("rust-libc-tests") {
   source_root = "rust-libc-tests.rs"
   sources = [ source_root ]
   deps = [ ":rust" ]
+}
+
+kernel_rust_mod("string_file_tests_rust") {
+  visibility = [ ":*" ]
+  testonly = true
+  sources = [ "tests/string_file_tests.rs" ]
+  deps = [ ":rust" ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 group("tests") {
@@ -138,6 +148,7 @@ source_set("kernel-tests") {
   ]
   deps = [
     ":rust-libc-tests",
+    ":string_file_tests_rust",
     "//zircon/kernel/lib/ktl:headers",
     "//zircon/kernel/lib/unittest",
   ]

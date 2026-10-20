@@ -210,6 +210,10 @@ pub mod boot_options_cli;
 pub mod console_tests_rust;
 
 #[cfg(ktest)]
+#[path = "lib/libc/tests/string_file_tests.rs"]
+pub mod string_file_tests_rust;
+
+#[cfg(ktest)]
 #[path = "lib/pow2_range_allocator/tests/kernel.rs"]
 pub mod pow2_range_allocator_tests;
 
