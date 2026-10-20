@@ -1,0 +1,62 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "power_manager",
+    srcs = ["src/lib.rs"],
+    crate_name = "wlan_power_manager",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = ["//src/connectivity/wlan:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_library(
+    name = "power_manager_testing",
+    srcs = ["src/testing.rs"],
+    crate_name = "wlan_power_manager_testing",
+    crate_root = "src/testing.rs",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = ["//src/connectivity/wlan:__subpackages__"],
+    deps = [
+        ":power_manager",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "power_manager_test",
+    crate = ":power_manager",
+    deps = [
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fx_unittest_package(
+    name = "wlan-power-manager-tests",
+    unit_tests = [":power_manager_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
