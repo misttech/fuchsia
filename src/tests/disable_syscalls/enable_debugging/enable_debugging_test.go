@@ -21,7 +21,7 @@ func TestEnableDebuggingSyscalls(t *testing.T) {
 	})
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
-	device.KernelArgs = append(device.KernelArgs, "kernel.enable-debugging-syscalls=true ", "kernel.enable-serial-syscalls=true")
+	device.KernelArgs = append(device.KernelArgs, "kernel.enable-debugging-syscalls=true", "kernel.enable-serial-syscalls=true")
 
 	stdout, stderr := distro.RunNonInteractive(
 		"/boot/bin/syscall-check",
