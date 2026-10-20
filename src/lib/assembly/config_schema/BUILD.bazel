@@ -1,0 +1,106 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests of this library stay in BUILD.gn for now, because they
+# depend on //src/lib/assembly/partitions_config, which is not in Bazel yet.
+# LINT.IfChange(config_schema)
+rustc_library(
+    name = "config_schema",
+    srcs = [
+        "src/assembly_input_bundle.rs",
+        "src/board_config.rs",
+        "src/board_input_bundle.rs",
+        "src/board_input_bundle_set.rs",
+        "src/common.rs",
+        "src/developer_overrides.rs",
+        "src/lib.rs",
+        "src/platform_settings.rs",
+        "src/platform_settings/battery_config.rs",
+        "src/platform_settings/bluetooth_config.rs",
+        "src/platform_settings/connectivity_config.rs",
+        "src/platform_settings/development_support_config.rs",
+        "src/platform_settings/diagnostics_config.rs",
+        "src/platform_settings/driver_framework_config.rs",
+        "src/platform_settings/example_config.rs",
+        "src/platform_settings/factory_store_providers_config.rs",
+        "src/platform_settings/fonts_config.rs",
+        "src/platform_settings/forensics_config.rs",
+        "src/platform_settings/graphics_config.rs",
+        "src/platform_settings/health_check_config.rs",
+        "src/platform_settings/icu_config.rs",
+        "src/platform_settings/intl_config.rs",
+        "src/platform_settings/kernel_config.rs",
+        "src/platform_settings/media_config.rs",
+        "src/platform_settings/memory_allocator_config.rs",
+        "src/platform_settings/memory_monitor_config.rs",
+        "src/platform_settings/paravirtualization_config.rs",
+        "src/platform_settings/power_config.rs",
+        "src/platform_settings/recovery_config.rs",
+        "src/platform_settings/session_config.rs",
+        "src/platform_settings/setui_config.rs",
+        "src/platform_settings/starnix_config.rs",
+        "src/platform_settings/storage_config.rs",
+        "src/platform_settings/swd_config.rs",
+        "src/platform_settings/sysmem_config.rs",
+        "src/platform_settings/system_sounds_config.rs",
+        "src/platform_settings/timekeeper_config.rs",
+        "src/platform_settings/ui_config.rs",
+        "src/platform_settings/usb_config.rs",
+        "src/platform_settings/virtualization_config.rs",
+        "src/product_config.rs",
+        "src/product_settings.rs",
+    ],
+    # In GN, the ICU git info is re-serialized by the git_info_json
+    # generated_file() target. In Bazel, read the build-generated JSON file
+    # it is derived from directly.
+    compile_data = ["//:fuchsia_build_generated/icu_build_config.json"],  # @bazel2gn:raw_overwrite:[ "$target_gen_dir/icu_git_info.json" ]
+    crate_name = "assembly_config_schema",
+    data = ["//:fuchsia_build_generated/icu_build_config.json"],  # @bazel2gn:raw_overwrite:[ ":git_info_json" ]
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//src/lib/include_str_from_working_dir",
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    # `include_str_from_working_dir_env!` reads the file relative to the
+    # compiler's working directory: the execroot in Bazel, the build
+    # directory in GN.
+    rustc_env = {
+        "ICU_GIT_INFO_JSON_FILE": "fuchsia_build_generated/icu_build_config.json",
+    },  # @bazel2gn:raw_overwrite:[ "ICU_GIT_INFO_JSON_FILE=" + rebase_path("$target_gen_dir/icu_git_info.json", root_build_dir) ]
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/assembly/tools:__subpackages__",
+        "//src/developer/ffx/plugins/product_bundle:__subpackages__",
+        "//src/lib/assembly:__subpackages__",
+        "//src/starnix/lib/starnix_container:__pkg__",
+        "//tools/assemblydoc:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/assembly/constants",
+        "//src/lib/assembly/container",
+        "//src/lib/assembly/images_config",
+        "//src/lib/assembly/package_utils",
+        "//src/lib/assembly/product_input_bundle",
+        "//src/lib/assembly/release_info",
+        "//src/lib/diagnostics/log/types",
+        "//src/lib/fuchsia-url",
+        "//src/sys/lib/moniker",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//src/ui/lib/input-device-constants:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:uuid",
+    ],
+)
+# LINT.ThenChange(BUILD.gn:config_schema_test)

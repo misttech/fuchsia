@@ -118,6 +118,11 @@ exports_files(
         "fuchsia_build_generated/fuchsia_in_tree_idk.hash",
     ] +
 
+    # ICU git commit info, compiled into //src/lib/assembly/config_schema.
+    [
+        "fuchsia_build_generated/icu_build_config.json",
+    ] +
+
     # Format files for FIDL/Zither
     [
         ".clang-format",
