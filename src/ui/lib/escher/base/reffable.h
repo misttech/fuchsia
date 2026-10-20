@@ -30,7 +30,7 @@ class Reffable {
   virtual ~Reffable();
 
   // Return the number of references to this object.
-  uint32_t ref_count() const { return ref_count_; }
+  uint64_t ref_count() const { return ref_count_.load(std::memory_order_relaxed); }
 
  protected:
   // Return true if the object should be destroyed immediately, or false if its
@@ -45,7 +45,10 @@ class Reffable {
 
   // Called by fxl::RefPtr.
   void Release() {
-    if (--ref_count_ == 0) {
+    uint64_t prev = ref_count_.fetch_sub(1u, std::memory_order_release);
+    FX_DCHECK(prev > 0u);
+    if (prev == 1u) {
+      std::atomic_thread_fence(std::memory_order_acquire);
       if (OnZeroRefCount()) {
         delete this;
       }
@@ -57,10 +60,10 @@ class Reffable {
 #ifndef NDEBUG
     FX_DCHECK(!adoption_required_);
 #endif
-    ++ref_count_;
+    ref_count_.fetch_add(1u, std::memory_order_relaxed);
   }
 
-  mutable std::atomic_int ref_count_ = 1;
+  mutable std::atomic_uint64_t ref_count_ = 1u;
 
 #ifndef NDEBUG
   // Called by fxl::RefPtr, but only in debug builds.

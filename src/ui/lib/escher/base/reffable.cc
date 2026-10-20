@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/syslog/cpp/macros.h>
+#include "src/ui/lib/escher/base/reffable.h"
 
-#include "src/ui/lib/escher/base/ownable.h"
+#include <lib/syslog/cpp/macros.h>
 
 namespace escher {
 
-Reffable::~Reffable() { FX_DCHECK(ref_count_ == 0); }
+Reffable::~Reffable() { FX_DCHECK(ref_count_.load(std::memory_order_relaxed) == 0u); }
 
 #ifndef NDEBUG
 void Reffable::Adopt() {
   FX_DCHECK(adoption_required_);
-  FX_DCHECK(ref_count_ == 1);
+  FX_DCHECK(ref_count_.load(std::memory_order_relaxed) == 1u);
   adoption_required_ = false;
 }
 #endif
