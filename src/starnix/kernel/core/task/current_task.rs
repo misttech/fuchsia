@@ -1690,6 +1690,7 @@ impl CurrentTask {
                 }
             };
 
+            scheduler_state = self.scheduler_state.lock().fork();
             let state = self.read();
 
             no_new_privs = state.no_new_privs();
@@ -1699,7 +1700,6 @@ impl CurrentTask {
             pid = pids.allocate_pid()?;
             command = self.command();
             creds = self.current_creds().clone();
-            scheduler_state = state.scheduler_state.fork();
             timerslack_ns = state.timerslack_ns;
 
             uts_ns = if clone_newuts {

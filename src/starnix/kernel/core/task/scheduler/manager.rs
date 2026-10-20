@@ -67,13 +67,9 @@ impl SchedulerManager {
     }
 
     /// Return the currently active role name for this task. Requires read access to `task`'s state,
-    /// should only be called by code which is not already modifying the provided `task`.
-    pub(crate) fn role_name(&self, task: &Task) -> Result<&str, Errno> {
-        let scheduler_state = task.read().scheduler_state.clone();
-        self.role_name_inner(task, &scheduler_state)
-    }
-
-    fn role_name_inner(
+    /// should only be called by code which is not already modifying the provided `task` or holding
+    /// `task.scheduler_state`.
+    pub(crate) fn role_name(
         &self,
         task: &Task,
         scheduler_state: &SchedulerState,
@@ -84,19 +80,17 @@ impl SchedulerManager {
         // via `fork` only inherit standard scheduling policies (SCHED_NORMAL/SCHED_FIFO) with
         // default profiles to maintain basic parity with Linux and prevent demand amplification.
         if thread_group_state.did_exec {
+            let thread_name = task.command();
             let process_name = if task.tid == task.pid {
-                task.command()
+                thread_name.clone()
             } else {
                 task.pid.get_task().map_err(|_| errno!(EINVAL))?.command()
             };
-            let thread_name = task.command();
-
-            let cpuset_path = task.read().cpuset_path.clone();
 
             return Ok(self.resolve_role_name(
                 &process_name,
                 &thread_name,
-                &cpuset_path,
+                &task.read().cpuset_path,
                 task.is_leader(),
                 scheduler_state,
             ));
@@ -124,30 +118,37 @@ impl SchedulerManager {
         scheduler_state.role_name()
     }
 
-    /// Resolves the target scheduler role for [`Task`] and commits the corresponding profile to its
+    /// Resolves the target scheduler role for `task` and commits the corresponding profile to its
     /// Zircon thread if it differs from the previously committed role.
-    pub(crate) fn commit_thread_role(&self, task: &Task) -> Result<(), Errno> {
+    pub(crate) fn commit_thread_role(
+        &self,
+        task: &Task,
+        scheduler_state: &mut SchedulerState,
+    ) -> Result<(), Errno> {
         let Some(role_manager) = self.role_manager.as_ref() else {
             log_debug!("no role manager for setting role");
             return Ok(());
         };
 
-        let process_name = task.thread_group().read().leader_command();
         let thread_name = task.command();
-        let role_name = {
-            let state = task.read();
-            let role_name = self.resolve_role_name(
-                &process_name,
-                &thread_name,
-                &state.cpuset_path,
-                task.is_leader(),
-                &state.scheduler_state,
-            );
-            if state.scheduler_state.committed_role_name.as_deref() == Some(role_name) {
-                return Ok(());
-            }
-            role_name
+        let process_name = if task.tid == task.pid {
+            thread_name.clone()
+        } else {
+            task.pid
+                .get_task()
+                .map(|l| l.command())
+                .unwrap_or_else(|_| TaskCommand::new(b"<leader exited>"))
         };
+        let role_name = self.resolve_role_name(
+            &process_name,
+            &thread_name,
+            &task.read().cpuset_path,
+            task.is_leader(),
+            scheduler_state,
+        );
+        if scheduler_state.committed_role_name.as_deref() == Some(role_name) {
+            return Ok(());
+        }
 
         let zircon_thread = {
             let running_state = match task.running_state() {
@@ -165,16 +166,14 @@ impl SchedulerManager {
             };
             zircon_thread.clone()
         };
+
         Self::set_zx_thread_role(
             role_manager,
             &zircon_thread.thread,
             role_name,
             &self.profile_handle_cache,
         )?;
-        // Acquiring `task.write()` only after `set_zx_thread_role` avoids holding a `Task`
-        // lock across synchronous RoleManager FIDL RPCs, at the cost of a minor race if concurrent
-        // `commit_thread_role` calls interleave their updates and `committed_role_name` writes.
-        task.write().scheduler_state.committed_role_name = Some(role_name.to_string());
+        scheduler_state.committed_role_name = Some(role_name.to_string());
 
         Ok(())
     }
@@ -391,12 +390,17 @@ impl SchedulingPolicy {
         }
     }
 
+    pub(crate) fn is_valid_priority(&self, priority: RealtimePriority) -> bool {
+        (self.realtime_priority_min()..=self.realtime_priority_max()).contains(&priority.value)
+    }
+
     pub(crate) fn realtime_priority_from(&self, priority: i32) -> Result<RealtimePriority, Errno> {
-        let priority = u8::try_from(priority).map_err(|_| errno!(EINVAL))?;
-        if priority < self.realtime_priority_min() || priority > self.realtime_priority_max() {
+        let priority =
+            RealtimePriority { value: u8::try_from(priority).map_err(|_| errno!(EINVAL))? };
+        if !self.is_valid_priority(priority) {
             return error!(EINVAL);
         }
-        Ok(RealtimePriority { value: priority })
+        Ok(priority)
     }
 }
 
@@ -853,7 +857,7 @@ mod tests {
             let mut state = SchedulerState::default();
             state.policy = SchedulingPolicy::Normal;
 
-            let role = manager.role_name_inner(current_task, &state).expect("role_name");
+            let role = manager.role_name(current_task, &state).expect("role_name");
             assert_eq!(role, "overridden_role");
         })
         .await;
@@ -886,15 +890,21 @@ mod tests {
                 )])),
             };
 
-            assert_eq!(current_task.read().scheduler_state.committed_role_name, None);
-            assert_eq!(manager.commit_thread_role(current_task), error!(EINVAL));
-            assert_eq!(current_task.read().scheduler_state.committed_role_name, None);
-
-            current_task.write().scheduler_state.committed_role_name =
-                Some("previous_role".to_string());
-            assert_eq!(manager.commit_thread_role(current_task), error!(EINVAL));
+            assert_eq!(current_task.scheduler_state.lock().committed_role_name, None);
             assert_eq!(
-                current_task.read().scheduler_state.committed_role_name.as_deref(),
+                manager.commit_thread_role(current_task, &mut current_task.scheduler_state.lock()),
+                error!(EINVAL)
+            );
+            assert_eq!(current_task.scheduler_state.lock().committed_role_name, None);
+
+            current_task.scheduler_state.lock().committed_role_name =
+                Some("previous_role".to_string());
+            assert_eq!(
+                manager.commit_thread_role(current_task, &mut current_task.scheduler_state.lock()),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                current_task.scheduler_state.lock().committed_role_name.as_deref(),
                 Some("previous_role")
             );
         })

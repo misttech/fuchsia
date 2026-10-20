@@ -565,7 +565,7 @@ impl FutexKey for SharedFutexKey {
 /// Computes a priority key for ordering `FUTEX_WAIT` waiters (matching Linux's priority-ordered
 /// `plist` futex queues).
 fn task_futex_priority(task: &Task) -> u8 {
-    task.read().scheduler_state.futex_priority()
+    task.scheduler_state.lock().futex_priority()
 }
 
 enum WaiterKind {

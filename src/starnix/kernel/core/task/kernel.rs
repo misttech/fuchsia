@@ -1044,13 +1044,13 @@ impl Kernel {
                 let set_properties = |node: &fuchsia_inspect::Node| {
                     node.record_string("command", task.command().to_string());
 
-                    let scheduler_state = task.read().scheduler_state.clone();
+                    let scheduler_state = task.scheduler_state.lock().clone();
                     if !scheduler_state.is_default() {
                         node.record_child("sched", |node| {
                             node.record_string(
                                 "role_name",
                                 self.scheduler
-                                    .role_name(&task)
+                                    .role_name(&task, &scheduler_state)
                                     .map(|n| Cow::Borrowed(n))
                                     .unwrap_or_else(|e| Cow::Owned(e.to_string())),
                             );

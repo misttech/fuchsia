@@ -671,7 +671,7 @@ pub fn sys_sched_getscheduler(current_task: &CurrentTask, pid: pid_t) -> Result<
 
     let target_task = get_task_or_current(current_task, pid)?;
     security::check_task_getscheduler_access(current_task, target_task.as_ref())?;
-    Ok(target_task.read().scheduler_state.policy_for_sched_getscheduler())
+    Ok(target_task.scheduler_state.lock().policy_for_sched_getscheduler())
 }
 
 pub fn sys_sched_setscheduler(
@@ -694,19 +694,20 @@ pub fn sys_sched_setscheduler(
         policy.realtime_priority_from(current_task.read_object(param)?.sched_priority)?;
 
     // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let current_state = target_task.read().scheduler_state.clone();
+    let (current_policy, current_realtime_priority, current_normal_priority, current_reset_on_fork) = {
+        let state = target_task.scheduler_state.lock();
+        (state.policy, state.realtime_priority, state.normal_priority, state.reset_on_fork)
+    };
 
     // Check capabilities and permissions, if required, for the operation.
     let euid_friendly = current_task.is_euid_friendly_with(&target_task);
-    let strengthening = current_state.realtime_priority < realtime_priority;
+    let strengthening = current_realtime_priority < realtime_priority;
     let rlimited = strengthening
         && realtime_priority.exceeds(target_task.thread_group().get_rlimit(Resource::RTPRIO));
-    let clearing_reset_on_fork = current_state.reset_on_fork && !reset_on_fork;
-    let caught_in_idle_trap = current_state.policy == SchedulingPolicy::Idle
+    let clearing_reset_on_fork = current_reset_on_fork && !reset_on_fork;
+    let caught_in_idle_trap = current_policy == SchedulingPolicy::Idle
         && policy != SchedulingPolicy::Idle
-        && current_state
-            .normal_priority
-            .exceeds(target_task.thread_group().get_rlimit(Resource::NICE));
+        && current_normal_priority.exceeds(target_task.thread_group().get_rlimit(Resource::NICE));
     if !euid_friendly || rlimited || clearing_reset_on_fork || caught_in_idle_trap {
         security::check_task_capable(current_task, CAP_SYS_NICE)?;
     }
@@ -837,7 +838,7 @@ pub fn sys_sched_getparam(
     }
 
     let target_task = get_task_or_current(current_task, pid)?;
-    let param_value = target_task.read().scheduler_state.get_sched_param();
+    let param_value = target_task.scheduler_state.lock().get_sched_param();
     current_task.write_object(param, &param_value)?;
     Ok(())
 }
@@ -852,17 +853,19 @@ pub fn sys_sched_setparam(
         return error!(EINVAL);
     }
     let target_task = get_task_or_current(current_task, pid)?;
+    let param = current_task.read_object(param)?;
 
     // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let current_state = target_task.read().scheduler_state.clone();
+    let (policy, current_priority) = {
+        let state = target_task.scheduler_state.lock();
+        (state.policy, state.realtime_priority)
+    };
 
-    let realtime_priority = current_state
-        .policy
-        .realtime_priority_from(current_task.read_object(param)?.sched_priority)?;
+    let realtime_priority = policy.realtime_priority_from(param.sched_priority)?;
 
     // Check capabilities and permissions, if required, for the operation.
     let euid_friendly = current_task.is_euid_friendly_with(&target_task);
-    let strengthening = current_state.realtime_priority < realtime_priority;
+    let strengthening = current_priority < realtime_priority;
     let rlimited = strengthening
         && realtime_priority.exceeds(target_task.thread_group().get_rlimit(Resource::RTPRIO));
     if !euid_friendly || rlimited {
@@ -1643,8 +1646,7 @@ pub fn sys_getpriority(current_task: &CurrentTask, which: u32, who: i32) -> Resu
     }
     track_stub!(TODO("https://fxbug.dev/322893809"), "getpriority permissions");
     let target_task = get_task_or_current(current_task, who)?;
-    let state = target_task.read();
-    Ok(state.scheduler_state.normal_priority.raw_priority())
+    Ok(target_task.scheduler_state.lock().normal_priority.raw_priority())
 }
 
 // Note the asymmetry with sys_getpriority: this call's `priority` parameter is a
@@ -1669,11 +1671,11 @@ pub fn sys_setpriority(
     let normal_priority = NormalPriority::from_setpriority_syscall(priority);
 
     // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
-    let current_state = target_task.read().scheduler_state.clone();
+    let current_priority = target_task.scheduler_state.lock().normal_priority;
 
     // Check capabilities and permissions, if required, for the operation.
     let euid_friendly = current_task.is_euid_friendly_with(&target_task);
-    let strengthening = current_state.normal_priority < normal_priority;
+    let strengthening = current_priority < normal_priority;
     let rlimited = strengthening
         && normal_priority.exceeds(target_task.thread_group().get_rlimit(Resource::NICE));
     if !euid_friendly {

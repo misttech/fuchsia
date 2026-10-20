@@ -1301,7 +1301,7 @@ impl DynamicFileSource for StatFile {
         pid = self.target.tid.id;
         comm = task.command();
         state = task.state_code().code_char();
-        nice = task.read().scheduler_state.normal_priority().as_nice() as i64;
+        nice = task.scheduler_state.lock().normal_priority().as_nice() as i64;
 
         {
             let thread_group = task.thread_group();

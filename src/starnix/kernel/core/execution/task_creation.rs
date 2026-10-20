@@ -350,12 +350,11 @@ pub fn create_kernel_thread(
     let mut pids = system_task.kernel().pids.lock();
     let pid = pids.allocate_pid()?;
 
-    let scheduler_state;
+    let scheduler_state = system_task.scheduler_state.lock().fork();
     let uts_ns;
     let default_timerslack_ns;
     {
         let state = system_task.read();
-        scheduler_state = state.scheduler_state.fork();
         uts_ns = state.uts_ns.clone();
         default_timerslack_ns = state.default_timerslack_ns;
     }

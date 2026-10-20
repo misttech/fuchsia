@@ -161,10 +161,6 @@ pub struct TaskMutableState {
     /// The exit status that this task exited with.
     exit_status: Option<ExitStatus>,
 
-    /// Desired scheduler state for the task. This may not reflect the actual committed Zircon
-    /// priority, which is not applied until [`SchedulerManager::commit_thread_role`] is invoked.
-    pub scheduler_state: SchedulerState,
-
     /// The UTS namespace assigned to this thread.
     ///
     /// This field is kept in the mutable state because the UTS namespace of a thread
@@ -966,6 +962,11 @@ pub struct Task {
     mutable_state:
         starnix_sync::LockDepRwLock<TaskMutableState, starnix_sync::TaskMutableStateLock>,
 
+    /// Desired scheduler state for the task. This may not reflect the actual committed Zircon
+    /// priority, which is not applied until [`SchedulerManager::commit_thread_role`] is invoked.
+    pub scheduler_state:
+        starnix_sync::LockDepMutex<SchedulerState, starnix_sync::TaskSchedulerStateLock>,
+
     /// The information of the task that needs to be available to the `ThreadGroup` while computing
     /// which process a wait can target.
     /// Contains the command line, the task credentials and the exit signal.
@@ -1154,7 +1155,6 @@ impl Task {
                     run_state: RunState::default(),
                     kernel_signals,
                     exit_status: None,
-                    scheduler_state,
                     uts_ns,
                     no_new_privs,
                     oom_score_adj: Default::default(),
@@ -1168,6 +1168,7 @@ impl Task {
                     cpuset_path: "/".to_string(),
                 }
                 .into(),
+                scheduler_state: LockDepMutex::new(scheduler_state),
                 persistent_info: TaskPersistentInfoState::new(tid, pid, command, creds),
                 seccomp_filter_state,
                 trace_syscalls: AtomicBool::new(false),
@@ -1177,8 +1178,9 @@ impl Task {
             {
                 // Note that `Kernel::pids` is already locked by the caller of `Task::new()`.
                 let _l1 = task.persistent_info.lock_creds();
-                let _l2 = task.read();
-                let _l3 = task.persistent_info.command_guard();
+                let _l2 = task.scheduler_state.lock();
+                let _l3 = task.read();
+                let _l4 = task.persistent_info.command_guard();
             }
             task
         })
@@ -1284,14 +1286,14 @@ impl Task {
     /// Modify the scheduler state's priority and update the task's thread's role.
     pub(crate) fn set_scheduler_priority(&self, priority: RealtimePriority) -> Result<(), Errno> {
         self.update_scheduler_state_then_role(|scheduler_state| {
-            scheduler_state.realtime_priority = priority
+            scheduler_state.realtime_priority = priority;
         })
     }
 
     /// Modify the scheduler state's nice and update the task's thread's role.
     pub(crate) fn set_scheduler_nice(&self, nice: NormalPriority) -> Result<(), Errno> {
         self.update_scheduler_state_then_role(|scheduler_state| {
-            scheduler_state.normal_priority = nice
+            scheduler_state.normal_priority = nice;
         })
     }
 
@@ -1300,19 +1302,35 @@ impl Task {
     ///
     /// This should be called on tasks that have newly created threads, e.g. after cloning.
     pub fn sync_scheduler_state_to_role(&self) -> Result<(), Errno> {
-        self.thread_group().kernel.scheduler.commit_thread_role(self)
+        self.update_scheduler_state_then_role(|_| {})
     }
 
     fn update_scheduler_state_then_role(
         &self,
         updater: impl FnOnce(&mut SchedulerState),
     ) -> Result<(), Errno> {
+        let mut scheduler_state = self.scheduler_state.lock();
+        let prev = (
+            scheduler_state.policy,
+            scheduler_state.normal_priority,
+            scheduler_state.realtime_priority,
+            scheduler_state.reset_on_fork,
+        );
+        updater(&mut scheduler_state);
+        let result = if !scheduler_state.policy.is_valid_priority(scheduler_state.realtime_priority)
         {
-            // Hold the task state lock as briefly as possible, it's not needed to update the role.
-            let mut state = self.write();
-            updater(&mut state.scheduler_state);
-        }
-        self.thread_group().kernel.scheduler.commit_thread_role(self)
+            error!(EINVAL)
+        } else {
+            self.thread_group().kernel.scheduler.commit_thread_role(self, &mut scheduler_state)
+        };
+        result.inspect_err(|_| {
+            (
+                scheduler_state.policy,
+                scheduler_state.normal_priority,
+                scheduler_state.realtime_priority,
+                scheduler_state.reset_on_fork,
+            ) = prev;
+        })
     }
 
     /// Signals the vfork event, if any, to unblock waiters.
@@ -1801,14 +1819,16 @@ mod test {
             let scheduler = &current_task.thread_group().kernel.scheduler;
 
             // Before rename, check task's role name.
-            let initial_role = scheduler.role_name(current_task).unwrap();
+            let initial_state = current_task.scheduler_state.lock().clone();
+            let initial_role = scheduler.role_name(current_task, &initial_state).unwrap();
             assert_ne!(initial_role, "test-role");
 
             // Rename the task's thread to renamed-thread.
             current_task
                 .set_command_name(starnix_task_command::TaskCommand::new(b"renamed-thread"));
 
-            let renamed_role = scheduler.role_name(current_task).unwrap();
+            let renamed_state = current_task.scheduler_state.lock().clone();
+            let renamed_role = scheduler.role_name(current_task, &renamed_state).unwrap();
             assert_eq!(renamed_role, "test-role");
         })
         .await;
@@ -1831,14 +1851,16 @@ mod test {
             let scheduler = &current_task.thread_group().kernel.scheduler;
 
             // Before rename, check child's role name.
-            let initial_role = scheduler.role_name(&child).unwrap();
+            let initial_state = child.scheduler_state.lock().clone();
+            let initial_role = scheduler.role_name(&child, &initial_state).unwrap();
             assert_ne!(initial_role, "test-role");
 
             // Rename the child's thread to renamed-thread. Since did_exec is false on the child,
             // this should NOT map to "test-role" from the overrides.
             child.set_command_name(starnix_task_command::TaskCommand::new(b"renamed-thread"));
 
-            let renamed_role = scheduler.role_name(&child).unwrap();
+            let renamed_state = child.scheduler_state.lock().clone();
+            let renamed_role = scheduler.role_name(&child, &renamed_state).unwrap();
             assert_ne!(renamed_role, "test-role");
         })
         .await;
@@ -1874,6 +1896,95 @@ mod test {
             let cmd = thread.command();
             assert_eq!(cmd.as_bytes(), b"my_long_command");
             assert_eq!(cmd.comm_name(), b"my_long_command");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_set_scheduler_priority_validates_policy() {
+        spawn_kernel_and_run(async |current_task| {
+            let non_realtime = SchedulingPolicy::Normal.realtime_priority_from(0).unwrap();
+            let realtime_10 = SchedulingPolicy::Fifo.realtime_priority_from(10).unwrap();
+            let realtime_20 = SchedulingPolicy::Fifo.realtime_priority_from(20).unwrap();
+
+            assert!(SchedulingPolicy::Normal.is_valid_priority(non_realtime));
+            assert!(!SchedulingPolicy::Normal.is_valid_priority(realtime_10));
+            assert!(SchedulingPolicy::Fifo.is_valid_priority(realtime_10));
+            assert!(!SchedulingPolicy::Fifo.is_valid_priority(non_realtime));
+
+            assert_eq!(current_task.scheduler_state.lock().policy, SchedulingPolicy::Normal);
+            assert_eq!(current_task.scheduler_state.lock().realtime_priority, non_realtime);
+
+            // Passing a non-zero real-time priority while `SchedulingPolicy::Normal` returns
+            // `EINVAL` without mutating `realtime_priority`.
+            assert_eq!(current_task.set_scheduler_priority(realtime_10), error!(EINVAL));
+            assert_eq!(current_task.scheduler_state.lock().realtime_priority, non_realtime);
+
+            current_task
+                .set_scheduler_policy_priority_and_reset_on_fork(
+                    SchedulingPolicy::Fifo,
+                    realtime_10,
+                    false,
+                )
+                .expect("set_scheduler_policy_priority_and_reset_on_fork");
+            assert_eq!(current_task.scheduler_state.lock().policy, SchedulingPolicy::Fifo);
+            assert_eq!(current_task.scheduler_state.lock().realtime_priority, realtime_10);
+
+            current_task.set_scheduler_priority(realtime_20).expect("set_scheduler_priority");
+            assert_eq!(current_task.scheduler_state.lock().realtime_priority, realtime_20);
+
+            // Passing `NON_REAL_TIME` while `SchedulingPolicy::Fifo` returns `EINVAL` without
+            // mutating `realtime_priority`.
+            assert_eq!(current_task.set_scheduler_priority(non_realtime), error!(EINVAL));
+            assert_eq!(current_task.scheduler_state.lock().realtime_priority, realtime_20);
+
+            // Setting policy and priority together also validates their combination and rolls back
+            // on mismatch.
+            assert_eq!(
+                current_task.set_scheduler_policy_priority_and_reset_on_fork(
+                    SchedulingPolicy::Normal,
+                    realtime_10,
+                    true,
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(current_task.scheduler_state.lock().policy, SchedulingPolicy::Fifo);
+            assert_eq!(current_task.scheduler_state.lock().realtime_priority, realtime_20);
+            assert!(!current_task.scheduler_state.lock().reset_on_fork);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_update_scheduler_state_rolls_back_on_commit_error() {
+        use crate::task::{RoleOverrides, SchedulerManager};
+        use fidl_fuchsia_scheduler::RoleManagerMarker;
+
+        let (role_manager, server_end) = fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
+        // Drop the server endpoint so RoleManager FIDL calls fail and `commit_thread_role`
+        // returns `Err(EINVAL)`.
+        drop(server_end);
+
+        let overrides = RoleOverrides::new().build().unwrap();
+        let scheduler_manager = SchedulerManager::new_for_tests(Some(role_manager), overrides);
+
+        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, |current_task| {
+            let initial_state = current_task.scheduler_state.lock().clone();
+            let realtime_10 = SchedulingPolicy::Fifo.realtime_priority_from(10).unwrap();
+
+            assert_eq!(
+                current_task.set_scheduler_policy_priority_and_reset_on_fork(
+                    SchedulingPolicy::Fifo,
+                    realtime_10,
+                    true,
+                ),
+                error!(EINVAL)
+            );
+            assert_eq!(*current_task.scheduler_state.lock(), initial_state);
+
+            let nicer = NormalPriority::from_setpriority_syscall(-5);
+            assert_eq!(current_task.set_scheduler_nice(nicer), error!(EINVAL));
+            assert_eq!(*current_task.scheduler_state.lock(), initial_state);
         })
         .await;
     }
