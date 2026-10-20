@@ -287,4 +287,100 @@ mod tests {
         }
         rcu.synchronize();
     }
+
+    #[pin_init::pin_data]
+    struct BypassTestShared {
+        rcu: SimpleGenerational,
+        reader_in_lock: core::sync::atomic::AtomicBool,
+        writer_sync_returned: core::sync::atomic::AtomicBool,
+        writer_saw_reader_active: core::sync::atomic::AtomicBool,
+        #[pin]
+        reader_thread_done: crate::kernel::event::Event,
+    }
+
+    extern "C" fn rcu_reader_thread(arg: *mut core::ffi::c_void) -> i32 {
+        // SAFETY: `arg` points to a valid `BypassTestShared` pinned on the writer thread's stack
+        // that outlives this reader thread (which is joined before `shared` is dropped).
+        let shared = unsafe { &*(arg as *const BypassTestShared) };
+
+        {
+            let _reader = AutoSimpleGenerationalReader::new(&shared.rcu);
+            shared.reader_in_lock.store(true, Ordering::SeqCst);
+
+            // Spin for a short fixed amount of time to allow the writer
+            // thread to call Synchronize() from another CPU.
+            for _ in 0..1_000_000 {
+                core::hint::spin_loop();
+            }
+
+            if shared.writer_sync_returned.load(Ordering::SeqCst) {
+                shared.writer_saw_reader_active.store(true, Ordering::SeqCst);
+            }
+        }
+
+        shared.reader_thread_done.signal();
+        0
+    }
+
+    // Regression test for https://fxbug.dev/520581131. Verifies that RCU generation 1 read locks
+    // do not trigger integer sign-extension and cause Synchronize() to bypass active readers.
+    /// gen1_synchronize_bypass
+    #[test]
+    fn gen1_synchronize_bypass() {
+        use crate::kernel::event::Event;
+        use crate::kernel::thread::{self, DEFAULT_PRIORITY};
+        use crate::platform_rs::timer::InstantMono;
+        use core::sync::atomic::AtomicBool;
+        use unittest::{expect_false, unwrap_ok};
+
+        if crate::kernel::mp::get_online_mask().count_ones() <= 1 {
+            kprint::kprintln!("Skipping test on single CPU system to avoid hang");
+            return true;
+        }
+
+        pin_init::stack_pin_init!(let shared = pin_init::pin_init!(BypassTestShared {
+            rcu: SimpleGenerational::new(),
+            reader_in_lock: AtomicBool::new(false),
+            writer_sync_returned: AtomicBool::new(false),
+            writer_saw_reader_active: AtomicBool::new(false),
+            reader_thread_done <- Event::init_unsignaled(),
+        }));
+
+        // 1. Set RCU to generation 1.
+        shared.rcu.synchronize();
+
+        // 2. Spawn reader thread.
+        let shared_ptr = &*shared as *const BypassTestShared as *mut core::ffi::c_void;
+        // SAFETY: `rcu_reader_thread` is safe to run on a new thread with `shared_ptr`, and the
+        // thread is joined below before `shared` goes out of scope.
+        let thread = unsafe {
+            let thread = unwrap_ok!(thread::create_with_priority(
+                c"rcu-bypass-reader".as_ptr(),
+                rcu_reader_thread,
+                shared_ptr,
+                DEFAULT_PRIORITY,
+            ));
+            thread.resume();
+            thread
+        };
+
+        // 3. Busy-spin wait for reader to enter lock. Use spin_loop() to avoid
+        // SleepRelative timer interrupt dependency when CPU interrupts might be disabled.
+        while !shared.reader_in_lock.load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
+
+        // 4. Synchronize.
+        shared.rcu.synchronize();
+        shared.writer_sync_returned.store(true, Ordering::SeqCst);
+
+        // 5. Wait for reader thread to finish.
+        unwrap_ok!(shared.reader_thread_done.wait_infinite());
+
+        // SAFETY: `thread` has not been joined yet.
+        let _retcode = unwrap_ok!(unsafe { thread.join(InstantMono::INFINITE) });
+
+        // If the bug is present, the writer bypassed the reader thread.
+        expect_false!(shared.writer_saw_reader_active.load(Ordering::SeqCst));
+    }
 }
