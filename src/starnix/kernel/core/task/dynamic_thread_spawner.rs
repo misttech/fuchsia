@@ -9,7 +9,8 @@
 
 use crate::execution::create_kernel_thread;
 use crate::task::{
-    CurrentTask, DelayedReleaser, Task, ThreadLockupDetector, WrappedFuture, with_new_current_task,
+    CurrentTask, DelayedReleaser, Task, TaskFlags, ThreadLockupDetector, WrappedFuture,
+    with_new_current_task,
 };
 use futures::TryFutureExt;
 use futures::channel::oneshot;
@@ -381,7 +382,13 @@ impl RunningThread {
                         with_new_current_task(&system_task, debug_task_name, |current_task| {
                             while let Ok(f) = receiver.recv() {
                                 let _guard = ThreadLockupDetector::track();
+                                debug_assert!(
+                                    !current_task.flags().contains(TaskFlags::WORK_CANCELLED)
+                                );
                                 f(&current_task);
+                                debug_assert!(
+                                    !current_task.flags().contains(TaskFlags::WORK_CANCELLED)
+                                );
                                 // Apply any delayed releasers.
                                 current_task.trigger_delayed_releaser();
                                 let mut state = state.lock();

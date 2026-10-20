@@ -58,6 +58,11 @@ atomic_bitflags! {
         const KERNEL_SIGNALS_AVAILABLE = 1 << 4;
         /// Whether the executor has successfully spawned a thread for this task.
         const SPAWNED                  = 1 << 5;
+        /// Whether the current unit of work executing on this task has been cancelled.
+        ///
+        /// Used by reusable kernel worker threads (such as AIO workers) to abort blocking
+        /// operations with `EINTR`.
+        const WORK_CANCELLED           = 1 << 6;
     }
 }
 

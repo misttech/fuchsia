@@ -7,7 +7,7 @@ use crate::mm::{
     TaskMemoryAccessor,
 };
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, SimpleWaiter, Task, WaitQueue};
+use crate::task::{CurrentTask, SimpleWaiter, Task, TaskFlags, WaitQueue};
 use crate::vfs::eventfd::EventFdFileObject;
 use crate::vfs::syscalls::IocbPtr;
 use crate::vfs::{
@@ -26,7 +26,7 @@ use starnix_uapi::{
     aio_context_t, errno, error, io_event, iocb,
 };
 use std::collections::VecDeque;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use zerocopy::IntoBytes;
 
 /// From aio.go in gVisor.
@@ -43,10 +43,12 @@ impl AioContext {
         current_task: &CurrentTask,
         max_operations: usize,
     ) -> Result<aio_context_t, Errno> {
-        let context = Arc::new(AioContext { inner: AioContextInner::new(max_operations) });
-        context.inner.spawn_worker_for(current_task, WorkerType::Read);
-        context.inner.spawn_worker_for(current_task, WorkerType::Write);
-        let context_addr = current_task.mm()?.map_anonymous(
+        let mm = current_task.mm()?;
+        let inner = AioContextInner::new(max_operations);
+        inner.spawn_worker_for(current_task, WorkerType::Read);
+        inner.spawn_worker_for(current_task, WorkerType::Write);
+        let context = Arc::new(AioContext { inner });
+        let context_addr = mm.map_anonymous(
             DesiredAddress::Any,
             AIO_RING_SIZE,
             ProtectionFlags::READ | ProtectionFlags::WRITE,
@@ -105,10 +107,52 @@ impl Drop for AioContext {
     }
 }
 
+struct WorkerCompletion {
+    thread_id: OnceLock<std::thread::ThreadId>,
+    done: zx::Event,
+}
+
+impl Default for WorkerCompletion {
+    fn default() -> Self {
+        Self { thread_id: OnceLock::new(), done: zx::Event::create() }
+    }
+}
+
+impl WorkerCompletion {
+    fn record_current_thread(&self) {
+        self.thread_id
+            .set(std::thread::current().id())
+            .expect("worker thread id should only be set once");
+    }
+
+    fn is_current_thread(&self) -> bool {
+        self.thread_id.get() == Some(&std::thread::current().id())
+    }
+
+    fn signal(&self) {
+        let _ = self.done.signal(zx::Signals::NONE, zx::Signals::USER_0);
+    }
+
+    fn wait(&self) {
+        // `AioContext` is owned by `MemoryManager` (via `MappingName::AioContext`) and is normally
+        // dropped by the user task on `io_destroy`, `munmap`, or task exit (`CurrentTask::exit`).
+        // However, because Starnix uses a single `Arc<MemoryManager>` reference count (rather than
+        // separate `mm_users` / `mm_count` with an explicit `exit_aio` step on last user exit), a
+        // worker transiently calling `task.mm()` to write into user memory in `IoOperation::do_read`
+        // can race with `CurrentTask::exit` and end up dropping the last `Arc<MemoryManager>` (and
+        // thus `AioContext`) on the worker thread itself. Skip waiting if `stop()` is running on
+        // this worker thread to avoid self-deadlock.
+        if !self.is_current_thread() {
+            let _ = self.done.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE);
+        }
+    }
+}
+
 struct AioContextInner {
     operations: OperationQueue,
     results: ResultQueue,
-    write_worker_done: zx::Event,
+    read_worker: WorkerCompletion,
+    write_worker: WorkerCompletion,
 }
 
 impl AioContextInner {
@@ -116,14 +160,22 @@ impl AioContextInner {
         Arc::new(Self {
             operations: OperationQueue::new(max_operations),
             results: Default::default(),
-            write_worker_done: zx::Event::create(),
+            read_worker: Default::default(),
+            write_worker: Default::default(),
         })
+    }
+
+    fn worker_for(&self, worker_type: WorkerType) -> &WorkerCompletion {
+        match worker_type {
+            WorkerType::Read => &self.read_worker,
+            WorkerType::Write => &self.write_worker,
+        }
     }
 
     fn stop(&self) {
         self.operations.stop();
-        let _ =
-            self.write_worker_done.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE);
+        self.write_worker.wait();
+        self.read_worker.wait();
     }
 
     fn get_events(
@@ -180,6 +232,14 @@ impl AioContextInner {
         let creds = current_task.current_creds().clone();
         let inner = self.clone();
         let closure = move |current_task: &CurrentTask| {
+            let worker = inner.worker_for(worker_type);
+            worker.record_current_thread();
+            let _guard = scopeguard::guard((), |_| {
+                if matches!(worker_type, WorkerType::Read) {
+                    current_task.write().set_flags(TaskFlags::WORK_CANCELLED, false);
+                }
+                worker.signal();
+            });
             current_task
                 .override_creds(creds, || inner.perform_next_action(current_task, worker_type))
         };
@@ -194,20 +254,25 @@ impl AioContextInner {
         while let Ok(IoAction::Op(mut op)) =
             self.operations.block_until_dequeue(current_task, worker_type)
         {
-            let Some(result) = op.execute(current_task) else {
-                continue;
-            };
-            self.results.enqueue(op.complete(result));
+            let result = op.execute(current_task);
+            if matches!(worker_type, WorkerType::Read) {
+                // Clear `active_read_task` now that execution is complete so subsequent `stop()`
+                // calls do not interrupt the worker during eventfd notifications or file cleanup.
+                // Also reset `WORK_CANCELLED` if this operation was interrupted, ensuring
+                // `trigger_delayed_releaser()` / `FileOps::close` does not fail with `EINTR`.
+                self.operations.finish_active_read_op(current_task);
+            }
+            if let Some(result) = result {
+                self.results.enqueue(op.complete(result));
 
-            if let Some(eventfd) = op.eventfd {
-                if let Some(eventfd) = eventfd.upgrade() {
+                if let Some(eventfd) = op.eventfd.as_ref().and_then(Weak::upgrade) {
                     let mut input_buffer = VecInputBuffer::new(1u64.as_bytes());
                     let _ = eventfd.write(current_task, &mut input_buffer);
                 }
             }
-        }
-        if matches!(worker_type, WorkerType::Write) {
-            let _ = self.write_worker_done.signal(zx::Signals::NONE, zx::Signals::USER_0);
+            drop(op);
+            // Release closed files immediately instead of waiting for the worker thread to exit.
+            current_task.trigger_delayed_releaser();
         }
     }
 }
@@ -386,17 +451,14 @@ impl IoOperation {
         buffers: &UserBuffers,
         offset: usize,
     ) -> Result<usize, Errno> {
-        let mut output_buffer = {
-            let task = task.upgrade().ok_or_else(|| errno!(EFAULT))?;
-            let sink = UserBuffersOutputBuffer::syscall_new(&task, buffers.clone())?;
-            VecOutputBuffer::new(sink.available())
-        };
+        let mut output_buffer = VecOutputBuffer::new(buffers.iter().map(|b| b.length).sum());
 
         if file.ops().is_seekable() {
             file.read_at(current_task, offset, &mut output_buffer)?;
         } else {
             file.read(current_task, &mut output_buffer)?;
         }
+        drop(file);
 
         let task = task.upgrade().ok_or_else(|| errno!(EFAULT))?;
         let mut sink = UserBuffersOutputBuffer::syscall_new(&task, buffers.clone())?;
@@ -430,6 +492,7 @@ struct PendingOperations {
     // getting the correct parallelism.
     read_ops: VecDeque<IoOperation>,
     write_ops: VecDeque<IoOperation>,
+    active_read_task: Weak<Task>,
 }
 
 impl PendingOperations {
@@ -490,19 +553,34 @@ impl OperationQueue {
             let mut pending = self.pending.lock();
             pending.is_stopped = true;
             pending.read_ops.clear();
+            if let Some(task) = std::mem::take(&mut pending.active_read_task).upgrade() {
+                task.write().set_flags(TaskFlags::WORK_CANCELLED, true);
+                task.interrupt();
+            }
         }
         self.read_waiters.notify_all();
         self.write_waiters.notify_all();
     }
 
-    fn dequeue(&self, worker_type: WorkerType) -> Option<IoAction> {
+    fn finish_active_read_op(&self, current_task: &CurrentTask) {
+        let mut pending = self.pending.lock();
+        pending.active_read_task = Default::default();
+        current_task.write().set_flags(TaskFlags::WORK_CANCELLED, false);
+    }
+
+    fn dequeue(&self, current_task: &CurrentTask, worker_type: WorkerType) -> Option<IoAction> {
         let mut pending = self.pending.lock();
         match worker_type {
             WorkerType::Read => {
                 if pending.is_stopped {
                     return Some(IoAction::Stop);
                 }
-                pending.read_ops.pop_front().map(IoAction::Op)
+                if let Some(op) = pending.read_ops.pop_front() {
+                    pending.active_read_task = current_task.weak_task();
+                    Some(IoAction::Op(op))
+                } else {
+                    None
+                }
             }
             WorkerType::Write => {
                 if let Some(op) = pending.write_ops.pop_front() {
@@ -541,14 +619,14 @@ impl OperationQueue {
         current_task: &CurrentTask,
         worker_type: WorkerType,
     ) -> Result<IoAction, Errno> {
-        if let Some(action) = self.dequeue(worker_type) {
+        if let Some(action) = self.dequeue(current_task, worker_type) {
             return Ok(action);
         }
         loop {
             let event = InterruptibleEvent::new();
             let (mut waiter, guard) = SimpleWaiter::new(&event);
             self.waiters_for(worker_type).wait_async_simple(&mut waiter);
-            if let Some(action) = self.dequeue(worker_type) {
+            if let Some(action) = self.dequeue(current_task, worker_type) {
                 return Ok(action);
             }
             match current_task.block_until(guard, zx::MonotonicInstant::INFINITE) {
@@ -582,6 +660,7 @@ impl ResultQueue {
 mod tests {
     use super::*;
     use crate::mm::{MemoryAccessor, PAGE_SIZE};
+    use crate::task::Waiter;
     use crate::testing::{map_memory, spawn_kernel_and_run};
     use crate::vfs::{
         Anon, FdFlags, FileObject, FileOps, fileops_impl_noop_sync, fileops_impl_seekless,
@@ -619,6 +698,45 @@ mod tests {
             let len = bytes.len();
             self.written.lock().extend_from_slice(&bytes);
             Ok(len)
+        }
+    }
+
+    struct TestBlockedReadFile {
+        read_started: Arc<zx::Event>,
+        file_released: Arc<zx::Event>,
+    }
+
+    impl Drop for TestBlockedReadFile {
+        fn drop(&mut self) {
+            let _ = self.file_released.signal(zx::Signals::NONE, zx::Signals::USER_0);
+        }
+    }
+
+    impl FileOps for TestBlockedReadFile {
+        fileops_impl_seekless!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            _file: &FileObject,
+            current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            let _ = self.read_started.signal(zx::Signals::NONE, zx::Signals::USER_0);
+            let waiter = Waiter::new();
+            waiter.wait(current_task)?;
+            unreachable!("blocked read should be interrupted on context drop");
+        }
+
+        fn write(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            error!(EINVAL)
         }
     }
 
@@ -688,6 +806,77 @@ mod tests {
             expected.extend_from_slice(header);
             expected.extend_from_slice(payload);
             assert_eq!(written.lock().as_slice(), expected.as_slice());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_drop_cancels_blocked_read_and_releases_file() {
+        spawn_kernel_and_run(async |current_task| {
+            let user_buf = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let iocb_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let iocb_ref = IocbPtr::new(current_task, iocb_addr);
+
+            let read_started = Arc::new(zx::Event::create());
+            let file_released = Arc::new(zx::Event::create());
+            let read_file = Anon::new_private_file(
+                current_task,
+                Box::new(TestBlockedReadFile {
+                    read_started: Arc::clone(&read_started),
+                    file_released: Arc::clone(&file_released),
+                }),
+                OpenFlags::RDONLY,
+                "[test-blocked-read]",
+            );
+            let weak_read_file = Arc::downgrade(&read_file);
+            let read_fd = current_task.add_file(read_file, FdFlags::empty()).expect("add file");
+
+            let cb = iocb {
+                aio_fildes: read_fd.raw() as u32,
+                aio_lio_opcode: IOCB_CMD_PREAD as u16,
+                aio_buf: user_buf.ptr() as u64,
+                aio_nbytes: 64,
+                aio_offset: 0,
+                aio_data: 0x5678,
+                ..Default::default()
+            };
+
+            let ctx_id = AioContext::create(current_task, 16).expect("create aio context");
+            let aio_ctx = current_task
+                .mm()
+                .expect("mm")
+                .get_aio_context(ctx_id.into())
+                .expect("get aio context");
+            aio_ctx.submit(current_task, cb, iocb_ref).expect("submit read op");
+            std::mem::drop(aio_ctx);
+
+            // Wait until the read worker has upgraded its `WeakFileHandle` and entered `read()`.
+            read_started
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE)
+                .expect("read started");
+
+            current_task.files().close(read_fd).expect("close read fd");
+            current_task.trigger_delayed_releaser();
+            assert!(
+                weak_read_file.upgrade().is_some(),
+                "blocked read worker should hold strong FileHandle before context teardown"
+            );
+
+            let aio_ctx = current_task
+                .mm()
+                .expect("mm")
+                .destroy_aio_context(ctx_id.into())
+                .expect("destroy aio context");
+            std::mem::drop(aio_ctx);
+
+            file_released
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .expect("read file released synchronously before context drop returns");
+
+            assert!(
+                weak_read_file.upgrade().is_none(),
+                "tearing down AioContext must interrupt blocked read and release FileHandle"
+            );
         })
         .await;
     }

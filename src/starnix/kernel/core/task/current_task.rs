@@ -14,7 +14,7 @@ use crate::task::loader::{
 use crate::task::{
     CurrentTaskCredentialsWriteGuard, ExitStatus, PageFaultExceptionReport, RobustListHeadPtr,
     RunState, SeccompFilter, SeccompFilterContainer, SeccompState, SeccompStateValue, Task,
-    TaskRunningState, ThreadState, Waiter,
+    TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
     AccessCheck, CreationStatus, DirEntry, DirectoryMode, FdFlags, FdNumber, FdTable, FileHandle,
@@ -525,6 +525,10 @@ impl CurrentTask {
         self.read().is_interrupt_pending()
     }
 
+    pub fn is_work_cancelled(&self) -> bool {
+        self.flags().contains(TaskFlags::WORK_CANCELLED)
+    }
+
     /// Set the RunState for the current task to the given value and then call the given callback.
     ///
     /// When the callback is done, the run_state is restored to `RunState::Running`.
@@ -569,7 +573,7 @@ impl CurrentTask {
 
             // `SIGKILL` and `ThreadGroup::kill` mark tasks `EXITED` synchronously without queueing
             // a per-task signal, so check `is_exitted()` before blocking.
-            if self.is_exitted() {
+            if self.is_exitted() || self.is_work_cancelled() {
                 return error!(EINTR);
             }
             if run_state.ignores_signals() {

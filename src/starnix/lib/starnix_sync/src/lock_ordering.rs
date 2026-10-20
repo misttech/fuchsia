@@ -8,6 +8,7 @@ lock_ordering! {
     // keep-sorted start
     AbstractSocketNamespaceLock => UnixSocketInnerLock,
     AbstractSocketNamespaceLock => VsockSocketInnerLock,
+    AioPendingOperationsLock => TaskMutableStateLock,
     AioPendingOperationsLock => WaitQueueImplLock,
     AshmemStateLock => FsNodeWriteGuardStateLock,
     AshmemStateLock => MemoryManagerStateLock,
