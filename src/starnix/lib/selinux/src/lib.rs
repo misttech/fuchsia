@@ -93,7 +93,7 @@ pub struct FileSystemMountOptions {
 
 /// Status information parameter for the [`SeLinuxStatusPublisher`] interface.
 pub struct SeLinuxStatus {
-    /// SELinux-wide enforcing vs. permissive mode  bit.
+    /// SELinux-wide enforcing vs. permissive mode bit.
     pub is_enforcing: bool,
     /// Number of times the policy has been changed since SELinux started.
     pub change_count: u32,

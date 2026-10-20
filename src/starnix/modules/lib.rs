@@ -156,8 +156,7 @@ impl Modules {
             // the policy choice whether to use magma or swiftshader is in vulkan_selector, and it
             // can potentially choose swiftshader for testing purposes even when magma0 is present.
             // Also, it's nice to indicate swiftshader the same way regardless of whether the magma
-            // module is enabled or disabled. If a call to gralloc AIDL IAllocator allocate2 occurs
-            // with this module disabled, the call will fail.
+            // module is enabled or disabled.
             "gralloc" => gralloc_device_init(kernel),
             "hvdcp_opti" => hvdcp_opti_init(kernel),
             "hw_random" => {

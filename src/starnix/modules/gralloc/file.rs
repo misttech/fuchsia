@@ -49,12 +49,12 @@ impl GrallocFile {
         // more than up to one call to this IOCTL per container boot, but nice to avoid holding the
         // lock for any longer than necessary.
         //
-        // This must work, since this is the only way that gralloc will know which vulkan impl,
-        // which is necessary for gralloc to work properly, and the gralloc feature requires gralloc
-        // to work properly. There's no meaningful way for the IOCTL caller to handle an IOCTL
-        // failure other than just logging and then ignoring it, which would only make the overall
-        // broken situation more confusing that just using expect() here. Under normal operation,
-        // this is only called once early in boot.
+        // This must work, since this is how gralloc learns which vulkan impl is in use for GPU_*
+        // allocations (aside from a hermetic-testing fallback to swiftshader when not set), which
+        // is necessary for gralloc to use magma when selected. There's no meaningful way for the
+        // IOCTL caller to handle an IOCTL failure other than just logging and then ignoring it,
+        // which would only make the overall broken situation more confusing than just using
+        // expect() here. Under normal operation, this is only called once early in boot.
         self.mode_setter
             .set_vulkan_mode(
                 &fgralloc::VulkanModeSetterSetVulkanModeRequest {
