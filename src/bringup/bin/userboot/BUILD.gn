@@ -33,8 +33,8 @@ test("userboot-integration-tests-bin") {
     "//zircon/system/ulib/zx",
   ]
   data_deps = [
-    ":userboot-rust.executable",
-    ":userboot-test-rust.executable",
+    ":userboot-test.executable",
+    ":userboot.executable",
     "//src/bringup/lib/userboot:userboot-lib-static-pie-test",
   ]
 }
@@ -77,15 +77,15 @@ template("rust_redirect") {
 }
 
 rust_redirect("userboot") {
-  binary_label = ":userboot-rust.executable"
-  binary_output_name = "userboot_rust"
+  binary_label = ":userboot.executable"
+  binary_output_name = "userboot"
   install_name = "userboot"
 }
 
-rust_redirect("userboot-test-rust") {
-  binary_label = ":userboot-test-rust.executable"
-  binary_output_name = "userboot_test_rust"
-  install_name = "userboot-test-rust"
+rust_redirect("userboot-test") {
+  binary_label = ":userboot-test.executable"
+  binary_output_name = "userboot_test"
+  install_name = "userboot-test"
 }
 
 static_remove_configs = [
@@ -93,8 +93,8 @@ static_remove_configs = [
   "//build/config/fuchsia:dynamic_rust_standard_library",
 ]
 
-rustc_binary("userboot-rust.executable") {
-  output_name = "userboot_rust"
+rustc_binary("userboot.executable") {
+  output_name = "userboot"
   configs += static_remove_configs
   configs -= static_remove_configs
 
@@ -124,8 +124,8 @@ rustc_binary("userboot-rust.executable") {
   ]
 }
 
-rustc_binary("userboot-test-rust.executable") {
-  output_name = "userboot_test_rust"
+rustc_binary("userboot-test.executable") {
+  output_name = "userboot_test"
   configs += static_remove_configs
   configs -= static_remove_configs
 

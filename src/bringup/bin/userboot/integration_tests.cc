@@ -130,7 +130,7 @@ std::vector<zx::handle> CreateUserbootHandles(zx::job root_job, const zx::vmo& z
   return handles;
 }
 
-TEST_F(UserbootTests, UserbootRust) {
+TEST_F(UserbootTests, Userboot) {
   auto child_vmo = userboot::testing::GetExecutable("/pkg/test/userboot-lib-static-pie-test");
   ASSERT_TRUE(child_vmo.is_ok()) << child_vmo.status_string();
 
@@ -147,7 +147,7 @@ TEST_F(UserbootTests, UserbootRust) {
 
   std::vector<zx::handle> handles = CreateUserbootHandles(test_job.Get(), zbi_vmo);
 
-  ASSERT_NO_FATAL_FAILURE(Launch("/pkg/bin/userboot_rust", std::move(handles)));
+  ASSERT_NO_FATAL_FAILURE(Launch("/pkg/bin/userboot", std::move(handles)));
 
   auto result = Wait();
   ASSERT_TRUE(result.is_ok());
@@ -158,7 +158,7 @@ TEST_F(UserbootTests, UserbootRust) {
   EXPECT_THAT(log, HasSubstr("Hello from userland!")) << log;
 }
 
-TEST_F(UserbootTests, UserbootRustTest) {
+TEST_F(UserbootTests, UserbootTest) {
   auto child_vmo = userboot::testing::GetExecutable("/pkg/test/userboot-lib-static-pie-test");
   ASSERT_TRUE(child_vmo.is_ok()) << child_vmo.status_string();
 
@@ -175,7 +175,7 @@ TEST_F(UserbootTests, UserbootRustTest) {
 
   std::vector<zx::handle> handles = CreateUserbootHandles(test_job.Get(), zbi_vmo);
 
-  ASSERT_NO_FATAL_FAILURE(Launch("/pkg/bin/userboot_test_rust", std::move(handles)));
+  ASSERT_NO_FATAL_FAILURE(Launch("/pkg/bin/userboot_test", std::move(handles)));
 
   auto result = Wait();
   ASSERT_TRUE(result.is_ok());

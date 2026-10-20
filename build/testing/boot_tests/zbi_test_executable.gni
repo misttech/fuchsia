@@ -89,7 +89,7 @@ template("zbi_test_executable") {
 
     if (userboot_entry_type == "test") {
       args = [
-        "kernel.select.userboot=userboot-test-rust",
+        "kernel.select.userboot=userboot-test",
         "userboot.test.root=$userboot_prefix",
         "userboot.test.next=$install_path",
       ]
@@ -103,7 +103,7 @@ template("zbi_test_executable") {
     if (userboot_next_is_test) {
       args += [ "userboot.next-is-test=true" ]
       if (userboot_entry_type != "test") {
-        args += [ "kernel.select.userboot=userboot-test-rust" ]
+        args += [ "kernel.select.userboot=userboot-test" ]
       }
     }
   }

@@ -361,7 +361,7 @@ source_set("loader-tests") {
 # Make that into a bootable ZBI with just the kernel.
 zbi_test("zbi-static-pie-test") {
   args = [
-    "kernel.select.userboot=userboot-test-rust",
+    "kernel.select.userboot=userboot-test",
     "userboot.test.next=test/fuchsia-static-pie-test",
     "kernel.enable-serial-syscalls=true",
   ]
