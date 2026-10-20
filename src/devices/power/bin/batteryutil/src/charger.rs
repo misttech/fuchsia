@@ -726,6 +726,34 @@ pub(crate) async fn clear_float_voltage_override(path: Option<&str>) -> Result<(
     .await
 }
 
+/// Applies a sticky charge termination (top-off) current (in `uA`) through the charger
+/// `DebugService`.
+pub async fn set_term_current(path: Option<&str>, current_ua: u32) -> Result<()> {
+    let instance = resolve_debug_instance(path, "charger term-current")?;
+    let options =
+        fcharger::ControlOptions { charge_term_current_ua: Some(current_ua), ..Default::default() };
+    let target = set_debug_control(&instance, &options).await?;
+    println!(
+        "Successfully set charger termination current to {} via {target}",
+        MicroUnit(current_ua, "A")
+    );
+    Ok(())
+}
+
+/// Withdraws the sticky charge termination current override applied through the charger
+/// `DebugService`, leaving any other debug overrides intact.
+pub(crate) async fn clear_term_current_override(path: Option<&str>) -> Result<()> {
+    let options =
+        fcharger::ControlOptions { charge_term_current_ua: Some(0), ..Default::default() };
+    clear_charger_overrides(
+        path,
+        &options,
+        "charger term-current auto",
+        "charger termination current override",
+    )
+    .await
+}
+
 /// Withdraws sticky overrides matching `options` (or all overrides when `options` is empty)
 /// through the charger `DebugService`, handing control back to the production policy client or
 /// the charger's autonomous defaults.
@@ -994,6 +1022,38 @@ mod tests {
         debug_server.await;
     }
 
+    /// Verifies that a termination current override is sent as `charge_term_current_ua` alone.
+    #[fuchsia::test]
+    async fn test_set_debug_control_sends_term_current() {
+        let (debug_proxy, mut debug_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fcharger::DebugMarker>();
+        let debug_server = fuchsia_async::Task::local(async move {
+            let Some(Ok(fcharger::DebugRequest::SetControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected a SetControl request");
+            };
+            assert_eq!(
+                options,
+                fcharger::ControlOptions {
+                    charge_term_current_ua: Some(200_000),
+                    ..Default::default()
+                }
+            );
+            responder.send(Ok(())).expect("send SetControl response");
+        });
+        set_debug_control_with_proxy(
+            &debug_proxy,
+            &fcharger::ControlOptions {
+                charge_term_current_ua: Some(200_000),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("set termination current succeeded");
+        debug_server.await;
+    }
+
     #[test]
     fn test_parse_mode_arg() {
         for s in ["auto", "AUTO", "Auto"] {
@@ -1087,6 +1147,17 @@ mod tests {
             else {
                 panic!("expected fourth ClearControl request");
             };
+            assert!(options.charge_term_current_ua.is_some());
+            assert!(options.operating_mode.is_none());
+            assert!(options.charge_current_limit_ua.is_none());
+            assert!(options.float_voltage_uv.is_none());
+            responder.send(Ok(())).expect("send ClearControl response");
+
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected fifth ClearControl request");
+            };
             assert_eq!(options, fcharger::ControlOptions::default());
             responder.send(Ok(())).expect("send ClearControl response");
         });
@@ -1106,6 +1177,11 @@ mod tests {
         clear_debug_overrides_with_proxy(&debug_proxy, &fv_mask)
             .await
             .expect("clear float voltage override succeeded");
+        let term_mask =
+            fcharger::ControlOptions { charge_term_current_ua: Some(0), ..Default::default() };
+        clear_debug_overrides_with_proxy(&debug_proxy, &term_mask)
+            .await
+            .expect("clear termination current override succeeded");
         clear_debug_overrides_with_proxy(&debug_proxy, &fcharger::ControlOptions::default())
             .await
             .expect("clear all overrides succeeded");

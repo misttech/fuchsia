@@ -16,7 +16,7 @@ under `/svc/`. If multiple instances are present:
 - `watch`, `battery watch`, and `charger watch` multiplex real-time streaming updates across all
   discovered instances.
 - Charger control subcommands (`charger mode`, `charger charge-current`, `charger float-voltage`,
-  `charger clear`) select the first discovered instance and warn if multiple are present.
+  `charger term-current`, `charger clear`) select the first discovered instance and warn if multiple are present.
 
 To target a specific battery or charger instance directly, pass the `-p` / `--path` option before
 the command:
@@ -186,6 +186,9 @@ Supported limit and reset controls:
 - `batteryutil charger float-voltage <limit | auto>`: sets or clears the sticky battery float
   voltage limit (`float_voltage_uv`, e.g. `4.35V`, `4350mV`, `4350000uV`, `4350000`, or `auto`;
   bare numbers without a unit suffix are in microvolts, `uV`)
+- `batteryutil charger term-current <current | auto>`: sets or clears the sticky charge
+  termination (top-off) current (`charge_term_current_ua`, e.g. `200mA`, `200000uA`, `200000`, or
+  `auto`; bare numbers without a unit suffix are in microamps, `uA`)
 - `batteryutil charger clear`: clears all sticky `DebugService` overrides
 
 Settings applied through `DebugService` are sticky overrides: they stay in effect after
@@ -216,6 +219,12 @@ Successfully set charger float voltage to 4.350 V via fuchsia.hardware.power.cha
 
 $ batteryutil charger float-voltage auto
 Successfully cleared charger float voltage override via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+
+$ batteryutil charger term-current 200mA
+Successfully set charger termination current to 200.000 mA via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+
+$ batteryutil charger term-current auto
+Successfully cleared charger termination current override via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
 
 $ batteryutil charger clear
 Successfully cleared all charger overrides via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)

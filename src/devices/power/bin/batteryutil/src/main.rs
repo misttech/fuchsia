@@ -90,6 +90,7 @@ pub enum ChargerSubcommand {
     Mode(ModeCommand),
     ChargeCurrent(ChargeCurrentCommand),
     FloatVoltage(FloatVoltageCommand),
+    TermCurrent(TermCurrentCommand),
     Clear(ClearCommand),
 }
 
@@ -131,6 +132,15 @@ pub struct FloatVoltageCommand {
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "term-current")]
+/// set charger charge termination (top-off) current (e.g. 200mA, 200000, or auto)
+pub struct TermCurrentCommand {
+    #[argh(positional)]
+    /// termination current (e.g. 0.2A, 200mA, uA) or auto (clear termination current override)
+    pub current: CurrentLimitArg,
+}
+
+#[derive(FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "clear")]
 /// clear all sticky charger DebugService overrides
 pub struct ClearCommand {}
@@ -161,6 +171,10 @@ async fn main() -> Result<()> {
             Some(ChargerSubcommand::FloatVoltage(cmd)) => match cmd.voltage {
                 VoltageLimitArg::Set(uv) => charger::set_float_voltage(path, uv).await,
                 VoltageLimitArg::Auto => charger::clear_float_voltage_override(path).await,
+            },
+            Some(ChargerSubcommand::TermCurrent(cmd)) => match cmd.current {
+                CurrentLimitArg::Set(ua) => charger::set_term_current(path, ua).await,
+                CurrentLimitArg::Auto => charger::clear_term_current_override(path).await,
             },
             Some(ChargerSubcommand::Clear(_)) => charger::clear_all_charger_overrides(path).await,
         },
@@ -375,6 +389,27 @@ mod tests {
             Some(Subcommand::Charger(ChargerCommand {
                 command: Some(ChargerSubcommand::FloatVoltage(FloatVoltageCommand {
                     voltage: VoltageLimitArg::Auto
+                }))
+            }))
+        );
+
+        let args =
+            Args::from_args(&["batteryutil"], &["charger", "term-current", "200mA"]).unwrap();
+        assert_eq!(
+            args.command,
+            Some(Subcommand::Charger(ChargerCommand {
+                command: Some(ChargerSubcommand::TermCurrent(TermCurrentCommand {
+                    current: CurrentLimitArg::Set(200_000)
+                }))
+            }))
+        );
+
+        let args = Args::from_args(&["batteryutil"], &["charger", "term-current", "auto"]).unwrap();
+        assert_eq!(
+            args.command,
+            Some(Subcommand::Charger(ChargerCommand {
+                command: Some(ChargerSubcommand::TermCurrent(TermCurrentCommand {
+                    current: CurrentLimitArg::Auto
                 }))
             }))
         );
