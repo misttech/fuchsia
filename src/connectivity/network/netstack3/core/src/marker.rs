@@ -9,8 +9,8 @@
 
 use net_types::ip::{Ipv4, Ipv6};
 use netstack3_base::{
-    AnyDevice, DeviceIdContext, InstantBindingsTypes, ReferenceNotifiers, RngContext,
-    TimerBindingsTypes, TxMetadataBindingsTypes,
+    AnyDevice, BindingsSyncTypes, DeviceIdContext, InstantBindingsTypes, ReferenceNotifiers,
+    RngContext, TimerBindingsTypes, TxMetadataBindingsTypes,
 };
 use netstack3_datagram as datagram;
 use netstack3_device::ethernet::{
@@ -133,6 +133,7 @@ where
 /// by bindings.
 pub trait BindingsTypes:
     InstantBindingsTypes
+    + BindingsSyncTypes
     + DeviceLayerTypes
     + TcpBindingsTypes
     + FilterBindingsTypes
@@ -149,6 +150,7 @@ pub trait BindingsTypes:
 
 impl<O> BindingsTypes for O where
     O: InstantBindingsTypes
+        + BindingsSyncTypes
         + DeviceLayerTypes
         + TcpBindingsTypes
         + FilterBindingsTypes

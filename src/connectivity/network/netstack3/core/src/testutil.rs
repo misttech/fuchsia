@@ -27,7 +27,7 @@ use net_types::ip::{
     Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Mtu, Subnet, SubnetEither,
 };
 use net_types::{MulticastAddr, SpecifiedAddr, UnicastAddr, Witness as _};
-use netstack3_base::sync::{DynDebugReferences, Mutex};
+use netstack3_base::sync::DynDebugReferences;
 use netstack3_base::testutil::{
     AlwaysDefaultsSettingsContext, FakeAtomicInstant, FakeCryptoRng, FakeFrameCtx, FakeInstant,
     FakeNetwork, FakeNetworkLinks, FakeNetworkSpec, FakeSendToken, FakeTimerCtx, FakeTimerCtxExt,
@@ -645,6 +645,8 @@ type InnerFakeBindingsCtx = netstack3_base::testutil::FakeBindingsCtx<
     FakeBindingsCtxState,
     DispatchedFrame,
 >;
+
+type Mutex<T> = netstack3_base::sync::Mutex<T, netstack3_base::sync::lock_impl::RawMutex>;
 
 /// Test-only implementation of [`BindingsContext`].
 #[derive(Default, Clone)]
