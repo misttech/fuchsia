@@ -46,6 +46,10 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
         # Ensure ADB is supported and enabled on this device before starting the test
         # (raises NotSupportedError or NotEnabledError otherwise).
         _ = self.dut.adb
+        # TODO(b/564946370): Remove this unbind once AndroidDevice.adb's
+        # temporary su_root monkey-patch is removed.
+        for attr in ("root", "unroot", "use_adb_root"):
+            self.dut.adb.__dict__.pop(attr, None)
 
         # Seed the random generator for reproducibility.
         # Allow seeding via user_params.
@@ -63,6 +67,7 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
             self._cmd_shell_echo,
             self._cmd_reboot,
             self._cmd_root_unroot_toggle,
+            self._cmd_su_root_unroot_toggle,
             self._cmd_push_pull,
         ]
 
@@ -110,6 +115,8 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
 
     async def _cmd_root_unroot_toggle(self) -> None:
         _LOGGER.info("Running: adb root/unroot toggle")
+        if self.dut.adb.is_su_root:
+            self.dut.adb.su_unroot()
         output = self.dut.adb.run(["shell", "id"])
         if "uid=0(root)" in output:
             await self._unroot()
@@ -131,6 +138,33 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
         output = self.dut.adb.run(["shell", "id"])
         if "uid=2000(shell)" not in output:
             raise Exception(f"Expected shell user (uid=2000) but got: {output}")
+
+    async def _cmd_su_root_unroot_toggle(self) -> None:
+        _LOGGER.info("Running: adb su_root/su_unroot toggle")
+        if self.dut.adb.is_root:
+            await self._unroot()
+        if self.dut.adb.is_su_root:
+            await self._su_unroot()
+        else:
+            await self._su_root()
+
+    async def _su_root(self) -> None:
+        _LOGGER.info("Switching to su_root")
+        self.dut.adb.su_root()
+        output = self.dut.adb.run(["shell", "id"])
+        if "uid=0(root)" not in output:
+            raise Exception(
+                f"Expected root user (uid=0) via su_root but got: {output}"
+            )
+
+    async def _su_unroot(self) -> None:
+        _LOGGER.info("Switching to su_unroot")
+        self.dut.adb.su_unroot()
+        output = self.dut.adb.run(["shell", "id"])
+        if "uid=2000(shell)" not in output:
+            raise Exception(
+                f"Expected shell user (uid=2000) after su_unroot but got: {output}"
+            )
 
     async def _cmd_push_pull(self) -> None:
         _LOGGER.info("Running: adb push/pull")
