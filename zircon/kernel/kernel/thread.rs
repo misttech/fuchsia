@@ -1357,12 +1357,39 @@ pub unsafe fn migrate_to_cpu(target_cpu: cpu_num_t) {
 #[cfg(ktest)]
 #[unittest::suite(name = "thread_rust")]
 mod tests {
-    use super::{AnnotatedAutoEagerReschedDisabler, ThreadPtr, eager_resched_disable_count};
+    use super::{
+        AnnotatedAutoEagerReschedDisabler, DEFAULT_PRIORITY, LOW_PRIORITY,
+        ScopedMemoryAllocationDisabled, Thread, ThreadLockGuard, ThreadPtr,
+        cpp_thread_current_memory_allocation_state_disable,
+        cpp_thread_current_memory_allocation_state_enable, create_with_priority, current_get,
+        current_memory_allocation_state_is_enabled, eager_resched_disable_count, sleep_relative,
+    };
+    use crate::arch_rs::curr_cpu_num;
     use crate::kconcurrent::{
         ChainLockTransaction, DONE, IRQ_SAVE_OPTION, OwnerGuard, SingleChainLockGuard, clt_tag,
         single_chain_lock_guard_owned,
     };
-    use unittest::{assert_eq, assert_ne, assert_true, expect_eq, expect_false, expect_true};
+    use crate::kernel::mp::{INVALID_CPU, cpu_num_to_mask, get_online_mask};
+    use crate::kernel::types::{cpu_mask_t, cpu_num_t, highest_cpu_set};
+    use crate::platform_rs::timer::{DurationMono, InstantMono};
+    use core::ffi::c_void;
+    use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+    use kprint::kprintln;
+    use unittest::{
+        assert_eq, assert_ne, assert_true, expect_eq, expect_false, expect_true, unwrap_ok,
+    };
+    use zx_status::Status;
+
+    // Wait for condition |cond| to become true, polling with slow exponential backoff
+    // to avoid pegging the CPU.
+    fn wait_for_cond(mut cond: impl FnMut() -> bool) {
+        let mut wait_duration = DurationMono::from_micros(1);
+        while !cond() {
+            let _ = sleep_relative(wait_duration);
+            // Increase wait_duration time by ~10%.
+            wait_duration = DurationMono(wait_duration.0 + (wait_duration.0 / 10 + 1));
+        }
+    }
 
     /// Verifies AnnotatedAutoEagerReschedDisabler and ThreadPtr accessors on the current thread.
     #[test]
@@ -1419,6 +1446,7 @@ mod tests {
             assert_true!(lock.is_unlocked());
         }
     }
+
     /// Verifies `ThreadLockGuard::proof` and `OwnerGuard::<Thread>` on the current `Thread`.
     #[test]
     fn thread_lock_proof_and_owner_guard() {
@@ -1474,5 +1502,156 @@ mod tests {
         expect_true!(held);
         expect_true!(owner_matches);
         expect_true!(current.lock().is_unlocked());
+    }
+
+    /// Tests setting CPU affinity on the current thread across online CPUs.
+    #[test]
+    fn set_affinity_self_test() {
+        // Our worker thread will attempt to schedule itself onto each core, one at
+        // a time, and ensure it landed in the right location.
+        let mut online_cpus: cpu_mask_t = get_online_mask();
+        assert_ne!(online_cpus, 0u32, "Expected at least one CPU to be online.");
+        extern "C" fn worker_body(arg: *mut c_void) -> i32 {
+            // SAFETY: `arg` points to `online_cpus` on the caller's stack, which remains valid
+            // until the caller joins this thread.
+            let online_cpus = unsafe { *(arg as *const cpu_mask_t) };
+            // SAFETY: Called in a running kernel worker thread context.
+            let this = unsafe { ThreadPtr::current() };
+
+            for c in 0..=highest_cpu_set(online_cpus) {
+                // Skip offline CPUs.
+                if (cpu_num_to_mask(c) & online_cpus) == 0 {
+                    continue;
+                }
+
+                // Set affinity to the given core.
+                // SAFETY: `this` points to the valid current thread.
+                let _ = unsafe { this.set_cpu_affinity(cpu_num_to_mask(c)) };
+
+                // Ensure we are on the correct CPU.
+                let current_cpu: cpu_num_t = curr_cpu_num();
+                if current_cpu != c {
+                    kprintln!(
+                        "Expected to be running on CPU {}, but actually running on {}.",
+                        c,
+                        current_cpu
+                    );
+                    return Status::INTERNAL.into_raw();
+                }
+            }
+
+            Status::result_into_raw(Ok(()))
+        }
+        // SAFETY: `worker_body` is a valid thread entry point and `online_cpus` outlives the
+        // worker thread (joined below).
+        let worker = unwrap_ok!(
+            unsafe {
+                create_with_priority(
+                    c"set_affinity_self_test_worker".as_ptr(),
+                    worker_body,
+                    (&raw mut online_cpus).cast(),
+                    DEFAULT_PRIORITY,
+                )
+            },
+            "thread_create failed."
+        );
+        // SAFETY: `worker` has just been created and not yet resumed or joined.
+        unsafe { worker.resume() };
+
+        // Wait for the worker thread to test itself.
+        // SAFETY: `worker` is valid and has not been joined yet.
+        let worker_retcode =
+            unwrap_ok!(unsafe { worker.join(InstantMono::INFINITE) }, "Failed to join thread.");
+        expect_eq!(worker_retcode, Status::result_into_raw(Ok(())), "Worker thread failed.");
+    }
+
+    /// Tests migrating another running worker thread across online CPUs via `set_cpu_affinity`.
+    #[test]
+    fn set_affinity_other_test() {
+        struct WorkerState {
+            current_cpu: AtomicU32,
+            should_stop: AtomicI32,
+        }
+        let mut state = WorkerState {
+            current_cpu: AtomicU32::new(INVALID_CPU),
+            should_stop: AtomicI32::new(0),
+        };
+
+        // Start a worker, which reports the CPU it is running on.
+        extern "C" fn worker_body(arg: *mut c_void) -> i32 {
+            // SAFETY: `arg` points to `state` on the caller's stack, which remains valid until the
+            // caller joins this thread.
+            let state = unsafe { &*(arg as *const WorkerState) };
+            while state.should_stop.load(Ordering::SeqCst) != 1 {
+                state.current_cpu.store(curr_cpu_num(), Ordering::SeqCst);
+            }
+            0
+        }
+        // SAFETY: `worker_body` is a valid thread entry point and `state` outlives the worker
+        // thread (joined below).
+        let worker = unwrap_ok!(
+            unsafe {
+                create_with_priority(
+                    c"set_affinity_other_test_worker".as_ptr(),
+                    worker_body,
+                    (&raw mut state).cast(),
+                    LOW_PRIORITY,
+                )
+            },
+            "thread_create failed."
+        );
+        // SAFETY: `worker` has just been created and not yet resumed or joined.
+        unsafe { worker.resume() };
+
+        // Migrate the worker task amongst different threads.
+        let online_cpus: cpu_mask_t = get_online_mask();
+        assert_ne!(online_cpus, 0u32, "Expected at least one CPU to be online.");
+        for c in 0..=highest_cpu_set(online_cpus) {
+            // Skip offline CPUs.
+            if (cpu_num_to_mask(c) & online_cpus) == 0 {
+                continue;
+            }
+
+            // Set affinity to the given core.
+            // SAFETY: `worker` is valid and has not been joined yet.
+            let _ = unsafe { worker.set_cpu_affinity(cpu_num_to_mask(c)) };
+
+            // Wait for it to land on the correct CPU.
+            wait_for_cond(|| state.current_cpu.load(Ordering::SeqCst) == c);
+        }
+
+        // Done.
+        state.should_stop.store(1, Ordering::SeqCst);
+        // SAFETY: `worker` is valid and has not been joined yet.
+        let _worker_retcode =
+            unwrap_ok!(unsafe { worker.join(InstantMono::INFINITE) }, "Failed to join thread.");
+    }
+
+    /// Tests enabling and disabling thread memory allocation state and nested guards.
+    #[test]
+    fn scoped_allocation_disabled_test() {
+        expect_true!(current_memory_allocation_state_is_enabled());
+
+        // SAFETY: Disables memory allocation on the current thread and re-enables it immediately
+        // below.
+        unsafe { cpp_thread_current_memory_allocation_state_disable() };
+        expect_false!(current_memory_allocation_state_is_enabled());
+        // SAFETY: Balances the preceding `cpp_thread_current_memory_allocation_state_disable` call.
+        unsafe { cpp_thread_current_memory_allocation_state_enable() };
+        expect_true!(current_memory_allocation_state_is_enabled());
+
+        {
+            expect_true!(current_memory_allocation_state_is_enabled());
+            {
+                let _smad = ScopedMemoryAllocationDisabled::new();
+                expect_false!(current_memory_allocation_state_is_enabled());
+                {
+                    let _nested_smad = ScopedMemoryAllocationDisabled::new();
+                    expect_false!(current_memory_allocation_state_is_enabled());
+                }
+                expect_false!(current_memory_allocation_state_is_enabled());
+            }
+            expect_true!(current_memory_allocation_state_is_enabled());
+        }
     }
 }
