@@ -1323,6 +1323,56 @@ extern "C" fn gic_shutdown_cpu() {
     // Disable group 1 interrupts at the CPU interface.
     regs::write_igrpen(0);
 
+    // Mask and clear all SGIs and PPIs at the redistributor.
+    //
+    // Once the PE is marked asleep (below, or by firmware during PSCI CPU_OFF if GICR_WAKER is not
+    // writable from here), any interrupt that is both enabled and pending at its redistributor
+    // causes the redistributor to assert a wake request to the power controller, which can prevent
+    // the CPU's power domain (and thus the cluster or the system) from powering down.  The IPI SGIs
+    // are still enabled at this point, and an IPI may have arrived after this CPU disabled
+    // interrupts (e.g. a reschedule IPI sent while it was going offline), leaving it pending.  PPIs
+    // should already be disabled on a secondary CPU, but that is only checked by the debug
+    // assertions above, so mask them too.
+    //
+    // What matters is that the mask has taken effect before the PE is marked asleep, so wait for
+    // it.  An interrupt arriving afterwards is left pending but masked, which is harmless.
+    // Clearing any pending state is not strictly necessary, but ensures nothing is left pending
+    // across power off.
+    //
+    // Masking and clearing here cannot cause a lost wakeup:
+    //
+    // * This CPU will never handle another interrupt before it is powered off.  It has already
+    //   disabled interrupts and group 1 at its CPU interface (above), and PSCI CPU_OFF does not
+    //   return.  So any interrupt pending here, or arriving later, would go unhandled regardless.
+    //
+    // * Nothing depends on this CPU handling such an interrupt.  It is already offline (see
+    //   mp_set_curr_cpu_online(false) in mp_unplug_current_cpu) and inactive, so mp_reschedule no
+    //   longer targets it, its unpinned threads have been migrated, and mp_sync_exec stops waiting
+    //   for (and dequeues its tasks from) CPUs that go offline.  IPIs may still be sent to an
+    //   offline CPU (e.g. by mp_interrupt), but they have no work to do there.
+    //
+    // * An offline CPU is brought back online by PSCI CPU_ON, not by an interrupt.  When it comes
+    //   back online, gic_init_percpu_early masks and clears all SGIs and PPIs anyway (as it always
+    //   has), and then gic_init_percpu marks the CPU online and unmasks the IPI SGIs.  Unmasking
+    //   does not clear pending state, so an IPI sent once the CPU is marked online but before the
+    //   IPI SGIs are unmasked is still delivered.
+    //
+    // * This function is only called on secondary CPUs going offline (the boot CPU is never taken
+    //   offline).  Suspending a CPU, which must remain wakeable by interrupts, uses
+    //   gic_suspend_cpu, which masks nothing.
+    //
+    // Nor can the mask be lost in a way that matters.  It only needs to hold while this CPU is
+    // offline, after which gic_init_percpu_early reinitializes the redistributor, and it is
+    // reapplied every time the CPU goes offline (e.g. at the start of every system suspend).
+    // Preserving redistributor state while the CPU is powered off, including across a system
+    // suspend, is up to the hardware and firmware, as it is for all other GIC state.
+    //
+    // Note that Secure SGIs and PPIs cannot be masked from here; masking those is up to firmware.
+    let cpu = curr_cpu_num();
+    gicr_write32(cpu, regs::gicr_icenabler0(), !0);
+    gicr_wait_for_rwp(cpu);
+    gicr_write32(cpu, regs::gicr_icpendr0(), !0);
+
     // Mark the PE as offline. This will keep the redistributor from routing
     // interrupts and for any interrupts targeting it, trigger a wake-request to
     // the power controller.
