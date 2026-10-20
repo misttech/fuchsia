@@ -43,6 +43,8 @@ inline uint32_t arch_cpu_features() {
   return 0;  // Use cpuid instead.
 }
 
+constexpr uint32_t arch_cpu_sve_features() { return 0; }
+
 uint32_t arch_dcache_line_size();
 uint32_t arch_icache_line_size();
 

@@ -138,6 +138,8 @@ bitflags! {
         const ARM64_FEATURE_ISA_SVE = sys::ZX_ARM64_FEATURE_ISA_SVE;
         #[cfg(target_arch = "aarch64")]
         const ARM64_FEATURE_ISA_ARM32 = sys::ZX_ARM64_FEATURE_ISA_ARM32;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_MOPS = sys::ZX_ARM64_FEATURE_ISA_MOPS;
 
         // This is an obsolete name for the same thing.
         #[cfg(target_arch = "aarch64")]
@@ -151,6 +153,44 @@ bitflags! {
 impl FeatureFlags for CpuFeatureFlags {
     fn kind(_: private::Internal) -> u32 {
         sys::ZX_FEATURE_KIND_CPU
+    }
+}
+
+bitflags! {
+    /// ARM64 SVE CPU feature flags retrieved via `ZX_FEATURE_KIND_CPU_SVE`.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct CpuSveFeatureFlags: u32 {
+        // arm64 SVE CPU features
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVEI8MM = sys::ZX_ARM64_FEATURE_ISA_SVEI8MM;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVEF32MM = sys::ZX_ARM64_FEATURE_ISA_SVEF32MM;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVEF64MM = sys::ZX_ARM64_FEATURE_ISA_SVEF64MM;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVEBF16 = sys::ZX_ARM64_FEATURE_ISA_SVEBF16;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVE2 = sys::ZX_ARM64_FEATURE_ISA_SVE2;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVEAES = sys::ZX_ARM64_FEATURE_ISA_SVEAES;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVEPMULL = sys::ZX_ARM64_FEATURE_ISA_SVEPMULL;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVEBITPERM = sys::ZX_ARM64_FEATURE_ISA_SVEBITPERM;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVESHA3 = sys::ZX_ARM64_FEATURE_ISA_SVESHA3;
+        #[cfg(target_arch = "aarch64")]
+        const ARM64_FEATURE_ISA_SVESM4 = sys::ZX_ARM64_FEATURE_ISA_SVESM4;
+
+        // Allow the source to set any bits.
+        const _ = !0;
+    }
+}
+
+impl FeatureFlags for CpuSveFeatureFlags {
+    fn kind(_: private::Internal) -> u32 {
+        sys::ZX_FEATURE_KIND_CPU_SVE
     }
 }
 
@@ -252,6 +292,7 @@ mod tests {
     fn system_get_features_other_kinds() {
         assert!(system_get_feature_flags::<VirtualMemoryFeatureFlags>().is_ok());
         assert!(system_get_feature_flags::<AddressTaggingFeatureFlags>().is_ok());
+        assert!(system_get_feature_flags::<CpuSveFeatureFlags>().is_ok());
         assert!(system_get_feature_count(FeatureKind::HardwareBreakpointCount).is_ok());
         assert!(system_get_feature_count(FeatureKind::HardwareWatchpointCount).is_ok());
     }

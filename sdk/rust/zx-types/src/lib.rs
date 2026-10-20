@@ -779,14 +779,18 @@ multiconst!(u32, [
     ZX_FEATURE_KIND_HW_WATCHPOINT_COUNT        = 2;
     ZX_FEATURE_KIND_ADDRESS_TAGGING            = 3;
     ZX_FEATURE_KIND_VM                         = 4;
+    ZX_FEATURE_KIND_CPU_SVE                    = 5;
 ]);
 
 // From //zircon/system/public/zircon/features.h
 multiconst!(u32, [
+    // Arch-independent CPU features.
     ZX_HAS_CPU_FEATURES                   = 1 << 0;
 
+    // Virtual memory features.
     ZX_VM_FEATURE_CAN_MAP_XOM             = 1 << 0;
 
+    // arm64 CPU features.
     ZX_ARM64_FEATURE_ISA_FP               = 1 << 1;
     ZX_ARM64_FEATURE_ISA_ASIMD            = 1 << 2;
     ZX_ARM64_FEATURE_ISA_AES              = 1 << 3;
@@ -810,7 +814,21 @@ multiconst!(u32, [
     ZX_ARM64_FEATURE_ISA_ARM32            = 1 << 21;
     ZX_ARM64_FEATURE_ISA_MOPS             = 1 << 22;
     ZX_ARM64_FEATURE_ISA_SHA2             = 1 << 6;
+
+    // arm64 address-tagging features.
     ZX_ARM64_FEATURE_ADDRESS_TAGGING_TBI  = 1 << 0;
+
+    // arm64 SVE CPU features.
+    ZX_ARM64_FEATURE_ISA_SVEI8MM          = 1 << 0;
+    ZX_ARM64_FEATURE_ISA_SVEF32MM         = 1 << 1;
+    ZX_ARM64_FEATURE_ISA_SVEF64MM         = 1 << 2;
+    ZX_ARM64_FEATURE_ISA_SVEBF16          = 1 << 3;
+    ZX_ARM64_FEATURE_ISA_SVE2             = 1 << 4;
+    ZX_ARM64_FEATURE_ISA_SVEAES           = 1 << 5;
+    ZX_ARM64_FEATURE_ISA_SVEPMULL         = 1 << 6;
+    ZX_ARM64_FEATURE_ISA_SVEBITPERM       = 1 << 7;
+    ZX_ARM64_FEATURE_ISA_SVESHA3          = 1 << 8;
+    ZX_ARM64_FEATURE_ISA_SVESM4           = 1 << 9;
 ]);
 
 // From //zircon/system/public/zircon/syscalls/resource.h

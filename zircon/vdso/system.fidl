@@ -382,6 +382,13 @@ closed protocol System {
     /// is `ZX_VM_FEATURE_CAN_MAP_XOM` which is 1 if the system can map pages with
     /// execute only permission.
     ///
+    /// `ZX_FEATURE_KIND_CPU_SVE` reports the arm64 SVE subfeatures
+    /// (`ZX_ARM64_FEATURE_ISA_SVE2`, `ZX_ARM64_FEATURE_ISA_SVEBF16`, ...) that are
+    /// supported by every CPU in the system.  Its bits are only set when
+    /// `ZX_FEATURE_KIND_CPU` reports `ZX_ARM64_FEATURE_ISA_SVE`; on other
+    /// architectures, or when SVE is not supported, it returns `ZX_OK` with no
+    /// bits set.
+    ///
     /// ## Rights
     ///
     /// TODO(https://fxbug.dev/42107318)

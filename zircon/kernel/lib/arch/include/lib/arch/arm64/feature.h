@@ -482,6 +482,93 @@ struct ArmIdAa64Pfr1El1 : public SysRegBase<ArmIdAa64Pfr1El1> {
 };
 ARCH_ARM64_SYSREG(ArmIdAa64Pfr1El1, "ID_AA64PFR1_EL1");
 
+// [arm/sysreg]/ID_AA64ZFR0_EL1: SVE Feature ID Register 0
+struct ArmIdAa64Zfr0El1 : public SysRegBase<ArmIdAa64Zfr0El1> {
+  enum class F64mm : uint8_t {
+    kNone = 0b0000,
+    kF64mm = 0b0001,  // FEAT_F64MM
+  };
+
+  enum class F32mm : uint8_t {
+    kNone = 0b0000,
+    kF32mm = 0b0001,  // FEAT_F32MM
+  };
+
+  enum class F16mm : uint8_t {
+    kNone = 0b0000,
+    kF16mm = 0b0001,  // FEAT_F16MM
+  };
+
+  enum class I8mm : uint8_t {
+    kNone = 0b0000,
+    kI8mm = 0b0001,  // FEAT_I8MM
+  };
+
+  enum class Sm4 : uint8_t {
+    kNone = 0b0000,
+    kSm4 = 0b0001,  // FEAT_SVE_SM4
+  };
+
+  enum class Sha3 : uint8_t {
+    kNone = 0b0000,
+    kSha3 = 0b0001,  // FEAT_SVE_SHA3
+  };
+
+  enum class B16b16 : uint8_t {
+    kNone = 0b0000,
+    kB16b16 = 0b0001,   // FEAT_SVE_B16B16
+    kBfscale = 0b0010,  // FEAT_SVE_BFSCALE
+  };
+
+  enum class Bf16 : uint8_t {
+    kNone = 0b0000,
+    kBf16 = 0b0001,   // FEAT_BF16
+    kEbf16 = 0b0010,  // FEAT_EBF16
+  };
+
+  enum class BitPerm : uint8_t {
+    kNone = 0b0000,
+    kBitPerm = 0b0001,  // FEAT_SVE_BitPerm
+  };
+
+  enum class EltPerm : uint8_t {
+    kNone = 0b0000,
+    kEltPerm = 0b0001,  // FEAT_SVE_EltPerm
+  };
+
+  enum class Aes : uint8_t {
+    kNone = 0b0000,
+    kAes = 0b0001,    // FEAT_SVE_AES
+    kPmull = 0b0010,  // FEAT_SVE_PMULL128
+    kAes2 = 0b0011,   // FEAT_SVE_AES2
+  };
+
+  enum class SveVer : uint8_t {
+    kSve = 0b0000,     // FEAT_SVE
+    kSve2 = 0b0001,    // FEAT_SVE2
+    kSve2p1 = 0b0010,  // FEAT_SVE2p1
+    kSve2p2 = 0b0011,  // FEAT_SVE2p2
+  };
+
+  DEF_RSVDZ_FIELD(63, 60);
+  DEF_ENUM_FIELD(F64mm, 59, 56, f64mm);
+  DEF_ENUM_FIELD(F32mm, 55, 52, f32mm);
+  DEF_ENUM_FIELD(F16mm, 51, 48, f16mm);
+  DEF_ENUM_FIELD(I8mm, 47, 44, i8mm);
+  DEF_ENUM_FIELD(Sm4, 43, 40, sm4);
+  DEF_RSVDZ_FIELD(39, 36);
+  DEF_ENUM_FIELD(Sha3, 35, 32, sha3);
+  DEF_RSVDZ_FIELD(31, 28);
+  DEF_ENUM_FIELD(B16b16, 27, 24, b16b16);
+  DEF_ENUM_FIELD(Bf16, 23, 20, bf16);
+  DEF_ENUM_FIELD(BitPerm, 19, 16, bit_perm);
+  DEF_ENUM_FIELD(EltPerm, 15, 12, elt_perm);
+  DEF_RSVDZ_FIELD(11, 8);
+  DEF_ENUM_FIELD(Aes, 7, 4, aes);
+  DEF_ENUM_FIELD(SveVer, 3, 0, sve_ver);
+};
+ARCH_ARM64_SYSREG(ArmIdAa64Zfr0El1, "S3_0_c0_c4_4");  // id_aa64zfr0_el1
+
 // ASID size.
 enum class ArmAsidSize {
   k8bits = 0b0000,

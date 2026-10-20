@@ -474,3 +474,235 @@ pub fn process_completed_restricted_exit(
     }
     return Ok(result);
 }
+
+#[cfg(all(test, target_arch = "aarch64"))]
+mod tests {
+    use super::*;
+    use core::arch::asm;
+    use extended_pstate::{
+        ExtendedAarch32PstateState, ExtendedPstatePointer, ExtendedPstateState,
+        restore_extended_pstate, save_extended_aarch32_pstate, save_extended_pstate,
+    };
+
+    unsafe extern "C" {
+        fn zx_vmar_root_self() -> zx::sys::zx_handle_t;
+    }
+
+    /// Seeds the hardware extended processor state from `seed_pstate_ptr`, invokes
+    /// `restricted_enter_loop` with `options = u32::MAX` (so `.restricted_enter_loop_top`
+    /// dispatches the CPSR-dependent extended processor state restore and `zx_restricted_enter`
+    /// immediately returns `ZX_ERR_INVALID_ARGS`), and saves the resulting hardware extended
+    /// processor state into `out_pstate_ptr`.
+    ///
+    /// # Safety
+    ///
+    /// * `seed_pstate_ptr` and `out_pstate_ptr` must point to valid `ExtendedPstatePointer`s
+    ///   backed by 64-bit `ExtendedPstateState` storage.
+    /// * `restricted_state` must point to a valid `zx_restricted_state_t`.
+    /// * `in_pstate_ptr` must point to a valid `ExtendedPstatePointer` whose active union field
+    ///   matches the architectural mode selected by `(*restricted_state).cpsr`.
+    unsafe fn call_restricted_enter_loop_and_save_pstate(
+        seed_pstate_ptr: *mut ExtendedPstatePointer,
+        restricted_state: *mut zx::sys::zx_restricted_state_t,
+        in_pstate_ptr: *mut ExtendedPstatePointer,
+        out_pstate_ptr: *mut ExtendedPstatePointer,
+    ) -> zx::sys::zx_status_t {
+        let status: zx::sys::zx_status_t;
+        // SAFETY:
+        // * `restore_extended_pstate`, `restricted_enter_loop`, and `save_extended_pstate` are
+        //   invoked back-to-back in a single assembly block so compiler-generated code cannot
+        //   clobber volatile SIMD/SVE registers between `restricted_enter_loop` and
+        //   `save_extended_pstate`.
+        // * `x20`..`x25` are callee-saved in AAPCS64 and preserved across all three calls.
+        // * All caller-saved registers (`clobber_abi("C")`) and callee-saved SIMD registers
+        //   (`v8`..`v15`) are declared clobbered, and `fpcr`/`fpsr` are reset to zero before
+        //   returning.
+        unsafe {
+            asm!(
+                "mov x0, x20",
+                "bl {restore_fn}",
+                "mov w0, #-1",
+                "mov x1, x21",
+                "mov x2, xzr",
+                "mov x3, x22",
+                "mov x4, x23",
+                "bl {enter_loop_fn}",
+                "mov w25, w0",
+                "mov x0, x24",
+                "bl {save_fn}",
+                "msr fpcr, xzr",
+                "msr fpsr, xzr",
+                restore_fn = sym restore_extended_pstate,
+                enter_loop_fn = sym restricted_enter_loop,
+                save_fn = sym save_extended_pstate,
+                in("x20") seed_pstate_ptr,
+                in("x21") restricted_exit_callback_c as *const (),
+                in("x22") restricted_state,
+                in("x23") in_pstate_ptr,
+                in("x24") out_pstate_ptr,
+                out("w25") status,
+                clobber_abi("C"),
+                out("v8") _, out("v9") _, out("v10") _, out("v11") _,
+                out("v12") _, out("v13") _, out("v14") _, out("v15") _,
+            );
+        }
+        status
+    }
+
+    #[test]
+    fn test_restricted_enter_loop_restores_aarch64_and_aarch32_pstate() {
+        assert_eq!(std::mem::offset_of!(zx::sys::zx_restricted_state_t, cpsr), 34 * 8);
+
+        let mut qregs64 = [0u128; 32];
+        for (i, q) in qregs64.iter_mut().enumerate() {
+            *q = ((i as u128 + 1) << 64) | (0x0102_0304_0506_0708_u128 + i as u128);
+        }
+        // Architecturally defined RW bits: FZ (bit 24) in FPCR; IOC | OFC | IXC (0x15) in FPSR.
+        let fpcr64: u32 = 1 << 24;
+        let fpsr64: u32 = 0x15;
+        let mut pregs64 = [0u16; 16];
+        for (i, p) in pregs64.iter_mut().enumerate() {
+            *p = 0x5a00 | (i as u16 + 1);
+        }
+        let ffr64: u16 = 0x00ff;
+
+        let mut state64 = ExtendedPstateState::default();
+        state64.set_arm64_state(&qregs64, fpsr64, fpcr64);
+        if state64.has_arm64_sve() {
+            state64.set_arm64_sve_state(&pregs64, ffr64);
+        }
+
+        let mut zero_seed = ExtendedPstateState::default();
+        let mut zero_seed_ptr = ExtendedPstatePointer { extended_pstate: &raw mut zero_seed };
+        let mut in_pstate64_ptr = ExtendedPstatePointer { extended_pstate: &raw mut state64 };
+        let mut saved_after_64 = ExtendedPstateState::default();
+        let mut saved_after_64_ptr =
+            ExtendedPstatePointer { extended_pstate: &raw mut saved_after_64 };
+
+        let mut restricted_state = zx::sys::zx_restricted_state_t::default();
+        restricted_state.cpsr = 0;
+
+        // SAFETY: All pointers reference valid stack-allocated state and `cpsr == 0` selects the
+        // 64-bit `ExtendedPstateState` union arm.
+        let status = unsafe {
+            call_restricted_enter_loop_and_save_pstate(
+                &raw mut zero_seed_ptr,
+                &raw mut restricted_state,
+                &raw mut in_pstate64_ptr,
+                &raw mut saved_after_64_ptr,
+            )
+        };
+        assert_eq!(status, zx::sys::ZX_ERR_INVALID_ARGS);
+        assert_eq!(saved_after_64.get_arm64_qregs(), &qregs64);
+        assert_eq!(saved_after_64.get_arm64_fpcr(), fpcr64);
+        assert_eq!(saved_after_64.get_arm64_fpsr(), fpsr64);
+        if state64.has_arm64_sve() {
+            assert_eq!(saved_after_64.get_arm64_p_regs(), &pregs64);
+            assert_eq!(saved_after_64.get_arm64_ffr(), ffr64);
+        }
+
+        // Allocate a 2-page VMAR where only the first page is mapped and the second page is an
+        // unmapped guard page, placing `ExtendedAarch32PstateState` at the very end of the first
+        // page (`page_end - size_of::<ExtendedAarch32PstateState>()`). If `.restricted_enter_loop_top`
+        // mistakenly called the 64-bit `restore_extended_pstate` when `CPSR.M[4]` (`0x10`) is set,
+        // it would read 283 bytes into the unmapped guard page and fault.
+        // SAFETY: `zx_vmar_root_self()` returns the process's valid root VMAR handle.
+        let root_vmar = unsafe { zx::Unowned::<zx::Vmar>::from_raw_handle(zx_vmar_root_self()) };
+        let page_size = zx::system_get_page_size() as usize;
+        let (sub_vmar, _sub_vmar_base) = root_vmar
+            .allocate(
+                0,
+                2 * page_size,
+                zx::VmarFlags::CAN_MAP_READ
+                    | zx::VmarFlags::CAN_MAP_WRITE
+                    | zx::VmarFlags::CAN_MAP_SPECIFIC,
+            )
+            .expect("allocate 2-page VMAR");
+        let vmo = zx::Vmo::create(page_size as u64).expect("create 1-page VMO");
+        let page_start = sub_vmar
+            .map(
+                0,
+                &vmo,
+                0,
+                page_size,
+                zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE | zx::VmarFlags::SPECIFIC,
+            )
+            .expect("map first page");
+        let page_end = page_start + page_size;
+        let state32_addr = page_end - std::mem::size_of::<ExtendedAarch32PstateState>();
+        let state32_ptr: *mut ExtendedAarch32PstateState =
+            std::ptr::without_provenance_mut(state32_addr);
+        assert!(state32_ptr.is_aligned());
+
+        let mut qregs32 = [0u128; 16];
+        for (i, q) in qregs32.iter_mut().enumerate() {
+            *q = 0xfedc_ba98_7654_3210_u128 ^ ((i as u128 + 1) * 0x1111_2222_3333_4444_u128);
+        }
+        // Architecturally defined RW bits: DN | RMode=RP in FPCR; DZC | UFC (0x0a) in FPSR.
+        let fpcr32: u32 = (1 << 25) | (1 << 22);
+        let fpsr32: u32 = 0x0a;
+
+        let mut init32_from_64 = ExtendedPstateState::with_sve(false);
+        let mut init32_qregs = [0u128; 32];
+        init32_qregs[..16].copy_from_slice(&qregs32);
+        init32_from_64.set_arm64_state(&init32_qregs, fpsr32, fpcr32);
+        let mut init32_from_64_ptr =
+            ExtendedPstatePointer { extended_pstate: &raw mut init32_from_64 };
+        let mut in_pstate32_ptr = ExtendedPstatePointer { extended_aarch32_pstate: state32_ptr };
+
+        // SAFETY: `state32_ptr` lies entirely within the mapped first page of `sub_vmar` and is
+        // 16-byte aligned.
+        unsafe {
+            state32_ptr.write(ExtendedAarch32PstateState::default());
+            asm!(
+                "mov x0, x20",
+                "bl {restore_fn}",
+                "mov x0, x21",
+                "bl {save_aarch32_fn}",
+                "msr fpcr, xzr",
+                "msr fpsr, xzr",
+                restore_fn = sym restore_extended_pstate,
+                save_aarch32_fn = sym save_extended_aarch32_pstate,
+                in("x20") &raw mut init32_from_64_ptr,
+                in("x21") &raw mut in_pstate32_ptr,
+                clobber_abi("C"),
+                out("v8") _, out("v9") _, out("v10") _, out("v11") _,
+                out("v12") _, out("v13") _, out("v14") _, out("v15") _,
+            );
+            let state32_ref = &*state32_ptr;
+            assert_eq!(state32_ref.get_arm32_qregs(), &qregs32);
+            assert_eq!(state32_ref.get_arm32_fpcr(), fpcr32);
+            assert_eq!(state32_ref.get_arm32_fpsr(), fpsr32);
+        }
+
+        restricted_state.cpsr = zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32;
+        let mut saved_after_32 = ExtendedPstateState::default();
+        let mut saved_after_32_ptr =
+            ExtendedPstatePointer { extended_pstate: &raw mut saved_after_32 };
+
+        // Seed `q0..q31` with `state64` immediately before invoking `restricted_enter_loop` in
+        // AArch32 mode so we can verify that `restore_extended_aarch32_pstate` updates `q0..q15`,
+        // `fpcr`, and `fpsr` while leaving `q16..q31` untouched and without faulting on the guard
+        // page immediately after `state32_ptr`.
+        // SAFETY: `in_pstate32_ptr` points to the valid `ExtendedAarch32PstateState` at the end of
+        // the mapped page, matching `restricted_state.cpsr`'s `ZX_REG_CPSR_ARCH_32_MASK` bit.
+        let status = unsafe {
+            call_restricted_enter_loop_and_save_pstate(
+                &raw mut in_pstate64_ptr,
+                &raw mut restricted_state,
+                &raw mut in_pstate32_ptr,
+                &raw mut saved_after_32_ptr,
+            )
+        };
+        assert_eq!(status, zx::sys::ZX_ERR_INVALID_ARGS);
+        assert_eq!(&saved_after_32.get_arm64_qregs()[..16], &qregs32);
+        assert_eq!(&saved_after_32.get_arm64_qregs()[16..], &qregs64[16..]);
+        assert_eq!(saved_after_32.get_arm64_fpcr(), fpcr32);
+        assert_eq!(saved_after_32.get_arm64_fpsr(), fpsr32);
+
+        // SAFETY: `state32_ptr` is not accessed after destroying `sub_vmar`.
+        unsafe {
+            sub_vmar.destroy().expect("destroy 2-page VMAR");
+        }
+    }
+}

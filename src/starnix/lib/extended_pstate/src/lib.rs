@@ -56,6 +56,12 @@ impl ExtendedAarch32PstateState {
     pub fn get_arm32_fpcr(&self) -> u32 {
         self.state.fpcr
     }
+
+    pub fn set_arm32_state(&mut self, qregs: &[u128; 16], fpsr: u32, fpcr: u32) {
+        self.state.q = *qregs;
+        self.state.fpsr = fpsr;
+        self.state.fpcr = fpcr;
+    }
 }
 
 impl ExtendedPstateState {
@@ -88,6 +94,56 @@ impl ExtendedPstateState {
         self.state.q = *qregs;
         self.state.fpsr = fpsr;
         self.state.fpcr = fpcr;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn with_sve(has_sve: bool) -> Self {
+        Self { state: aarch64::State { has_sve: u8::from(has_sve), ..Default::default() } }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn has_arm64_sve(&self) -> bool {
+        self.state.has_sve != 0
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_arm64_p_regs(&self) -> &[u16; 16] {
+        &self.state.p
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_arm64_ffr(&self) -> u16 {
+        self.state.ffr
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn set_arm64_sve_state(&mut self, p_regs: &[u16; 16], ffr: u16) {
+        self.state.p = *p_regs;
+        // Per the Arm ARM for WRFFR, FFR must be a monotonically decreasing sequence of 1s
+        // starting from bit 0 (2^k - 1 for 0 <= k <= 16), and the result of writing any other
+        // value is not defined by the architecture. Linux copies a user-supplied FFR (e.g. from
+        // a signal frame) verbatim into the task's SVE state and leaves it to the hardware; Starnix
+        // instead canonicalizes the value by masking it to the contiguous prefix of 1s starting
+        // from bit 0, so that `wrffr` in `restore_extended_pstate` always has well-defined
+        // behavior. Architecturally valid values are stored unchanged.
+        self.state.ffr = ((1u32 << ffr.trailing_ones()) - 1) as u16;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn reset_arm64_sve_state(&mut self) {
+        self.state.p = [0; 16];
+        self.state.ffr = 0;
+    }
+
+    /// Whether the SVE vector length is inherited across `execve` (`PR_SVE_VL_INHERIT`).
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_arm64_sve_vl_inherit(&self) -> bool {
+        self.state.sve_vl_inherit != 0
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn set_arm64_sve_vl_inherit(&mut self, inherit: bool) {
+        self.state.sve_vl_inherit = u8::from(inherit);
     }
 
     #[cfg(target_arch = "riscv64")]

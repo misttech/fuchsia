@@ -52,7 +52,10 @@ rustc_library(
     test_deps = ["//src/lib/fuchsia"],
     visibility = ["//src/starnix/kernel:__subpackages__"],
     with_unit_tests = True,
-    deps = ["//third_party/rust_crates/vendor:static_assertions"],
+    deps = ["//third_party/rust_crates/vendor:static_assertions"] + select({
+        "@platforms//cpu:arm64": ["//sdk/rust/zx"],
+        "//conditions:default": [],
+    }),
 )
 
 rustc_binary(

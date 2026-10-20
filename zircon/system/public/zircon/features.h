@@ -13,6 +13,7 @@
 #define ZX_FEATURE_KIND_HW_WATCHPOINT_COUNT   ((uint32_t)2)
 #define ZX_FEATURE_KIND_ADDRESS_TAGGING       ((uint32_t)3)
 #define ZX_FEATURE_KIND_VM                    ((uint32_t)4)
+#define ZX_FEATURE_KIND_CPU_SVE               ((uint32_t)5)
 
 // arch-independent CPU features
 #define ZX_HAS_CPU_FEATURES            ((uint32_t)(1u << 0))
@@ -56,6 +57,23 @@
 
 // arm64 address-tagging features
 #define ZX_ARM64_FEATURE_ADDRESS_TAGGING_TBI  ((uint32_t)(1u << 0))
+
+// arm64 SVE CPU features (retrieved via ZX_FEATURE_KIND_CPU_SVE).
+// These bits are only set when ZX_ARM64_FEATURE_ISA_SVE is reported in
+// ZX_FEATURE_KIND_CPU. On non-arm64 architectures or when SVE is not
+// supported, ZX_FEATURE_KIND_CPU_SVE returns ZX_OK with 0.
+// Note: ZX_ARM64_FEATURE_ISA_SVEF64MM requires an SVE vector length >= 256 bits
+// and is not reported when the kernel configures a 128-bit vector length.
+#define ZX_ARM64_FEATURE_ISA_SVEI8MM    ((uint32_t)(1u << 0))
+#define ZX_ARM64_FEATURE_ISA_SVEF32MM   ((uint32_t)(1u << 1))
+#define ZX_ARM64_FEATURE_ISA_SVEF64MM   ((uint32_t)(1u << 2))
+#define ZX_ARM64_FEATURE_ISA_SVEBF16    ((uint32_t)(1u << 3))
+#define ZX_ARM64_FEATURE_ISA_SVE2       ((uint32_t)(1u << 4))
+#define ZX_ARM64_FEATURE_ISA_SVEAES     ((uint32_t)(1u << 5))
+#define ZX_ARM64_FEATURE_ISA_SVEPMULL   ((uint32_t)(1u << 6))
+#define ZX_ARM64_FEATURE_ISA_SVEBITPERM ((uint32_t)(1u << 7))
+#define ZX_ARM64_FEATURE_ISA_SVESHA3    ((uint32_t)(1u << 8))
+#define ZX_ARM64_FEATURE_ISA_SVESM4     ((uint32_t)(1u << 9))
 
 #elif defined(__riscv)
 

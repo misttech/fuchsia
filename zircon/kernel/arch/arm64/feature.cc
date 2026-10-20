@@ -15,12 +15,16 @@
 #include <arch/arm64.h>
 #include <fbl/algorithm.h>
 #include <kernel/cpu.h>
+#include <ktl/atomic.h>
 #include <ktl/iterator.h>
 
 #include <ktl/enforce.h>
 
 // saved instruction set feature bitmap
 uint32_t arm64_isa_features;
+// Initialized on the boot CPU in arm64_feature_init() and intersected across secondary CPUs during
+// SMP bringup before userboot populates DATA_CONSTANTS.features.cpu_sve.
+uint32_t arm64_sve_features;
 
 // Whether FEAT_PMUv3 is implemented.
 bool feat_pmuv3_enabled;
@@ -441,6 +445,49 @@ void midr_to_core_string(uint64_t midr, char* str, size_t len) {
 
   snprintf(str, len, "%s r%lup%lu", partnum_str, variant, revision);
 }
+
+uint32_t arm64_boot_cpu_sve_features;
+
+uint32_t read_sve_features() {
+  uint32_t sve_features = 0;
+  auto zfr0 = arch::ArmIdAa64Zfr0El1::Read();
+  // Note: FEAT_F64MM (zfr0.f64mm() / ZX_ARM64_FEATURE_ISA_SVEF64MM) is not advertised here because
+  // all FEAT_F64MM instructions require CurrentVL >= 256 bits and are UNDEFINED when
+  // CurrentVL == 128 bits (ZCR_EL1.LEN == 0).
+  if (zfr0.f32mm() != arch::ArmIdAa64Zfr0El1::F32mm::kNone) {
+    sve_features |= ZX_ARM64_FEATURE_ISA_SVEF32MM;
+  }
+  if (zfr0.i8mm() != arch::ArmIdAa64Zfr0El1::I8mm::kNone) {
+    sve_features |= ZX_ARM64_FEATURE_ISA_SVEI8MM;
+  }
+  if (zfr0.bf16() != arch::ArmIdAa64Zfr0El1::Bf16::kNone) {
+    sve_features |= ZX_ARM64_FEATURE_ISA_SVEBF16;
+  }
+  if (zfr0.sve_ver() != arch::ArmIdAa64Zfr0El1::SveVer::kSve) {
+    sve_features |= ZX_ARM64_FEATURE_ISA_SVE2;
+    if (zfr0.sm4() != arch::ArmIdAa64Zfr0El1::Sm4::kNone) {
+      sve_features |= ZX_ARM64_FEATURE_ISA_SVESM4;
+    }
+    if (zfr0.sha3() != arch::ArmIdAa64Zfr0El1::Sha3::kNone) {
+      sve_features |= ZX_ARM64_FEATURE_ISA_SVESHA3;
+    }
+    if (zfr0.bit_perm() != arch::ArmIdAa64Zfr0El1::BitPerm::kNone) {
+      sve_features |= ZX_ARM64_FEATURE_ISA_SVEBITPERM;
+    }
+    switch (zfr0.aes()) {
+      default:
+      case arch::ArmIdAa64Zfr0El1::Aes::kPmull:
+        sve_features |= ZX_ARM64_FEATURE_ISA_SVEPMULL;
+        [[fallthrough]];
+      case arch::ArmIdAa64Zfr0El1::Aes::kAes:
+        sve_features |= ZX_ARM64_FEATURE_ISA_SVEAES;
+        break;
+      case arch::ArmIdAa64Zfr0El1::Aes::kNone:
+        break;
+    }
+  }
+  return sve_features;
+}
 }  // namespace
 
 bool arm64_feature_current_is_first_in_cluster() {
@@ -576,6 +623,8 @@ void arm64_feature_init() {
     }
     if (pfr0.sve() != arch::ArmIdAa64Pfr0El1::Sve::kNone) {
       arm64_isa_features |= ZX_ARM64_FEATURE_ISA_SVE;
+      arm64_boot_cpu_sve_features = read_sve_features();
+      arm64_sve_features = arm64_boot_cpu_sve_features;
     }
 
     auto mmfr0 = arch::ArmIdAa64Mmfr0El1::Read();
@@ -672,8 +721,19 @@ void arm64_feature_init() {
     }
   } else {
     auto pfr0 = arch::ArmIdAa64Pfr0El1::Read();
-    ASSERT((pfr0.sve() != arch::ArmIdAa64Pfr0El1::Sve::kNone) ==
-           arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE));
+    bool has_sve = pfr0.sve() != arch::ArmIdAa64Pfr0El1::Sve::kNone;
+    ASSERT(has_sve == arm64_feature_test(ZX_ARM64_FEATURE_ISA_SVE));
+    if (has_sve) {
+      // Intersect each secondary CPU's SVE subfeatures into arm64_sve_features before userboot
+      // populates the vDSO constants. Compare against the immutable boot-CPU mask so secondary
+      // CPUs do not race with non-atomic reads of arm64_sve_features.
+      uint32_t cpu_sve_features = read_sve_features();
+      if (cpu_sve_features != arm64_boot_cpu_sve_features) {
+        dprintf(INFO, "ARM: cpu %u SVE features (%#x) differ from boot cpu (%#x)\n", cpu,
+                cpu_sve_features, arm64_boot_cpu_sve_features);
+        ktl::atomic_ref(arm64_sve_features).fetch_and(cpu_sve_features, ktl::memory_order_relaxed);
+      }
+    }
   }
 
   // read the cache info for each cpu
@@ -714,24 +774,42 @@ void print_isa_features() {
       {ZX_ARM64_FEATURE_ISA_I8MM, "i8mm"},       {ZX_ARM64_FEATURE_ISA_SVE, "sve"},
       {ZX_ARM64_FEATURE_ISA_ARM32, "arm32"},     {ZX_ARM64_FEATURE_ISA_MOPS, "mops"},
   };
+  constexpr struct {
+    uint32_t bit;
+    const char* name;
+  } kSveFeatures[] = {
+      {ZX_ARM64_FEATURE_ISA_SVEI8MM, "svei8mm"},   {ZX_ARM64_FEATURE_ISA_SVEF32MM, "svef32mm"},
+      {ZX_ARM64_FEATURE_ISA_SVEF64MM, "svef64mm"}, {ZX_ARM64_FEATURE_ISA_SVEBF16, "svebf16"},
+      {ZX_ARM64_FEATURE_ISA_SVE2, "sve2"},         {ZX_ARM64_FEATURE_ISA_SVEAES, "sveaes"},
+      {ZX_ARM64_FEATURE_ISA_SVEPMULL, "svepmull"}, {ZX_ARM64_FEATURE_ISA_SVEBITPERM, "svebitperm"},
+      {ZX_ARM64_FEATURE_ISA_SVESHA3, "svesha3"},   {ZX_ARM64_FEATURE_ISA_SVESM4, "svesm4"},
+  };
 
   uint line = 0;
   uint col = 0;
+  auto print_feature = [&](const char* name) {
+    if (col == 0) {
+      if (line == 0) {
+        col += printf("ARM ISA Features: ");
+      } else {
+        col += printf("                  ");
+      }
+    }
+    col += printf("%s ", name);
+    if (col >= 100) {
+      printf("\n");
+      col = 0;
+      line++;
+    }
+  };
   for (const auto& feature : kFeatures) {
     if (arm64_feature_test(feature.bit)) {
-      if (col == 0) {
-        if (line == 0) {
-          col += printf("ARM ISA Features: ");
-        } else {
-          col += printf("                  ");
-        }
-      }
-      col += printf("%s ", feature.name);
-      if (col >= 100) {
-        printf("\n");
-        col = 0;
-        line++;
-      }
+      print_feature(feature.name);
+    }
+  }
+  for (const auto& feature : kSveFeatures) {
+    if (arm64_sve_feature_test(feature.bit)) {
+      print_feature(feature.name);
     }
   }
 

@@ -98,7 +98,11 @@ rustc_library("lib") {
     "//src/starnix/kernel/*",
   ]
   with_unit_tests = true
-  deps = [ "//third_party/rust_crates:static_assertions" ]
+  deps = []
+  deps += [ "//third_party/rust_crates:static_assertions" ]
+  if (current_cpu == "arm64") {
+    deps += [ "//sdk/rust/zx" ]
+  }
 }
 rustc_binary("bin") {
   sources = [ "src/benchmark.rs" ]

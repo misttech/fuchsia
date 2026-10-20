@@ -37,6 +37,10 @@ __EXPORT zx_status_t _zx_system_get_features(uint32_t kind, uint32_t* features) 
       *features = DATA_CONSTANTS.features.vm;
       return ZX_OK;
     }
+    case ZX_FEATURE_KIND_CPU_SVE: {
+      *features = DATA_CONSTANTS.features.cpu_sve;
+      return ZX_OK;
+    }
     default:
       return ZX_ERR_NOT_SUPPORTED;
   }

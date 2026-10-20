@@ -18,6 +18,8 @@
 
 inline uint32_t arch_cpu_features() { return 0; }
 
+constexpr uint32_t arch_cpu_sve_features() { return 0; }
+
 inline uint32_t arch_dcache_line_size() { return rust_riscv64_feature_cbom_size(); }
 
 constexpr uint32_t arch_icache_line_size() { return 64; }

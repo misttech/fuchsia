@@ -1161,11 +1161,64 @@ pub fn sys_prctl(
                 error!(EINVAL)
             }
         },
+        #[cfg(target_arch = "aarch64")]
+        starnix_uapi::PR_SVE_GET_VL => {
+            // Like Linux, ignore `arg2`..`arg5`: `prctl` is variadic, so callers leave the unused
+            // arguments uninitialized.
+            if !current_task.thread_state.extended_pstate.has_sve() {
+                return error!(EINVAL);
+            }
+            Ok((sve_prctl_status(current_task) as usize).into())
+        }
+        #[cfg(target_arch = "aarch64")]
+        starnix_uapi::PR_SVE_SET_VL => {
+            // Like Linux, ignore `arg3`..`arg5`.
+            if !current_task.thread_state.extended_pstate.has_sve() {
+                return error!(EINVAL);
+            }
+            let arg = u32::try_from(arg2).map_err(|_| errno!(EINVAL))?;
+            let valid_mask = starnix_uapi::PR_SVE_VL_LEN_MASK
+                | starnix_uapi::PR_SVE_VL_INHERIT
+                | starnix_uapi::PR_SVE_SET_VL_ONEXEC;
+            if (arg & !valid_mask) != 0 {
+                return error!(EINVAL);
+            }
+            let vl = arg & starnix_uapi::PR_SVE_VL_LEN_MASK;
+            if vl < starnix_uapi::SVE_VL_MIN
+                || vl > starnix_uapi::SVE_VL_MAX
+                || vl % starnix_uapi::SVE_VQ_BYTES != 0
+            {
+                return error!(EINVAL);
+            }
+            // The only supported vector length is 128 bits (`SVE_VL_MIN`), so every valid request,
+            // whether immediate or deferred with `PR_SVE_SET_VL_ONEXEC`, clamps to the thread's
+            // current vector length. As in Linux's `vec_set_vector_length()`, setting the current
+            // vector length leaves the SVE register state untouched, while the `PR_SVE_VL_INHERIT`
+            // setting is always updated.
+            current_task
+                .thread_state
+                .extended_pstate
+                .set_sve_vl_inherit((arg & starnix_uapi::PR_SVE_VL_INHERIT) != 0);
+            Ok((sve_prctl_status(current_task) as usize).into())
+        }
         _ => {
             track_stub!(TODO("https://fxbug.dev/322874733"), "prctl fallthrough", option);
             error!(ENOSYS)
         }
     }
+}
+
+/// Returns the value reported by `prctl(PR_SVE_GET_VL)` and `prctl(PR_SVE_SET_VL)`: the thread's
+/// SVE vector length in bytes, which is always 128 bits (`SVE_VL_MIN`) on Starnix, OR-ed with
+/// `PR_SVE_VL_INHERIT` when the vector length is inherited across `execve`.
+#[cfg(target_arch = "aarch64")]
+fn sve_prctl_status(current_task: &CurrentTask) -> u32 {
+    let inherit = if current_task.thread_state.extended_pstate.sve_vl_inherit() {
+        starnix_uapi::PR_SVE_VL_INHERIT
+    } else {
+        0
+    };
+    starnix_uapi::SVE_VL_MIN | inherit
 }
 
 pub fn sys_ptrace(
@@ -2141,6 +2194,500 @@ mod tests {
             // SUID_DUMP_ROOT not supported.
             assert_eq!(sys_prctl(current_task, PR_SET_DUMPABLE, 2, 0, 0, 0), error!(EINVAL));
             assert_eq!(sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0), Ok(1.into()));
+        })
+        .await;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_prctl_sve_vl() {
+        use crate::task::ArchExtendedPstateStorage;
+        use extended_pstate::ExtendedPstateState;
+        use starnix_uapi::{
+            PR_SVE_GET_VL, PR_SVE_SET_VL, PR_SVE_SET_VL_ONEXEC, PR_SVE_VL_INHERIT, SVE_VL_MAX,
+            SVE_VL_MIN,
+        };
+
+        fn vl_result(value: u32) -> Result<SyscallResult, Errno> {
+            Ok((value as usize).into())
+        }
+
+        fn assert_sve_regs(current_task: &CurrentTask, p_regs: &[u16; 16], ffr: u16) {
+            let ArchExtendedPstateStorage::State64(state) =
+                &current_task.thread_state.extended_pstate
+            else {
+                unreachable!()
+            };
+            assert_eq!(state.get_arm64_p_regs(), p_regs);
+            assert_eq!(state.get_arm64_ffr(), ffr);
+        }
+
+        spawn_kernel_and_run(async |current_task| {
+            // When SVE is not supported (`with_sve(false)`), both PR_SVE_GET_VL and PR_SVE_SET_VL
+            // must fail with EINVAL.
+            current_task.thread_state.extended_pstate =
+                ArchExtendedPstateStorage::State64(Box::new(ExtendedPstateState::with_sve(false)));
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0), error!(EINVAL));
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, SVE_VL_MIN as u64, 0, 0, 0),
+                error!(EINVAL)
+            );
+
+            // On a 32-bit compat task (`State32`), both must fail with EINVAL.
+            current_task.thread_state.extended_pstate =
+                ArchExtendedPstateStorage::State32(Box::default());
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0), error!(EINVAL));
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, SVE_VL_MIN as u64, 0, 0, 0),
+                error!(EINVAL)
+            );
+
+            // Enable SVE with initial predicate and FFR values.
+            let pregs = [0x5a5au16; 16];
+            let mut pstate = ExtendedPstateState::with_sve(true);
+            pstate.set_arm64_sve_state(&pregs, 0x00ff);
+            current_task.thread_state.extended_pstate =
+                ArchExtendedPstateStorage::State64(Box::new(pstate));
+
+            // PR_SVE_GET_VL returns 16 (SVE_VL_MIN) without PR_SVE_VL_INHERIT. Like Linux, the
+            // unused trailing arguments are ignored: `prctl` is variadic and callers leave them
+            // uninitialized.
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0), vl_result(SVE_VL_MIN));
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 1, 2, 3, 4), vl_result(SVE_VL_MIN));
+
+            // PR_SVE_SET_VL rejects unknown flags and out-of-range/unaligned VLs.
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, (SVE_VL_MIN | (1 << 20)) as u64, 0, 0, 0),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, (SVE_VL_MIN as u64) | (1 << 32), 0, 0, 0),
+                error!(EINVAL)
+            );
+            for bad_vl in [0u32, 8, 24, SVE_VL_MAX + 16] {
+                assert_eq!(
+                    sys_prctl(current_task, PR_SVE_SET_VL, bad_vl as u64, 0, 0, 0),
+                    error!(EINVAL),
+                    "bad_vl={} should fail",
+                    bad_vl
+                );
+            }
+            // Rejected requests leave the SVE registers and PR_SVE_VL_INHERIT untouched.
+            assert_sve_regs(current_task, &pregs, 0x00ff);
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0), vl_result(SVE_VL_MIN));
+
+            // An immediate PR_SVE_SET_VL clamps the VL to 16, which is already the thread's
+            // current vector length, so, as on Linux, P0-P15 and FFR are preserved. The unused
+            // trailing arguments are ignored.
+            assert_eq!(sys_prctl(current_task, PR_SVE_SET_VL, 64, 1, 2, 3), vl_result(SVE_VL_MIN));
+            assert_sve_regs(current_task, &pregs, 0x00ff);
+
+            // PR_SVE_VL_INHERIT is recorded, echoed back by PR_SVE_SET_VL, reported by
+            // PR_SVE_GET_VL, and preserved across `reset` (execve).
+            assert_eq!(
+                sys_prctl(
+                    current_task,
+                    PR_SVE_SET_VL,
+                    (SVE_VL_MAX | PR_SVE_VL_INHERIT) as u64,
+                    0,
+                    0,
+                    0
+                ),
+                vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+            assert_sve_regs(current_task, &pregs, 0x00ff);
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0),
+                vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+            current_task.thread_state.extended_pstate.reset();
+            assert_sve_regs(current_task, &[0u16; 16], 0);
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0),
+                vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+
+            // PR_SVE_SET_VL_ONEXEC defers the (unchanged) vector length to the next execve, but
+            // still updates PR_SVE_VL_INHERIT immediately, as on Linux.
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, (32 | PR_SVE_SET_VL_ONEXEC) as u64, 0, 0, 0),
+                vl_result(SVE_VL_MIN)
+            );
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0), vl_result(SVE_VL_MIN));
+            assert_eq!(
+                sys_prctl(
+                    current_task,
+                    PR_SVE_SET_VL,
+                    (32 | PR_SVE_SET_VL_ONEXEC | PR_SVE_VL_INHERIT) as u64,
+                    0,
+                    0,
+                    0
+                ),
+                vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0),
+                vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+
+            // A PR_SVE_SET_VL without PR_SVE_VL_INHERIT clears the setting again.
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, SVE_VL_MIN as u64, 0, 0, 0),
+                vl_result(SVE_VL_MIN)
+            );
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0), vl_result(SVE_VL_MIN));
+        })
+        .await;
+    }
+
+    /// The live register state used by the `PR_SVE_*` tests below.
+    #[cfg(target_arch = "aarch64")]
+    struct SveTestRegs {
+        qregs: [u128; 32],
+        fpsr: u32,
+        fpcr: u32,
+        pregs: [u16; 16],
+        ffr: u16,
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    impl SveTestRegs {
+        fn sample() -> Self {
+            let mut qregs = [0u128; 32];
+            for (i, q) in qregs.iter_mut().enumerate() {
+                *q = (i as u128 + 1) * 0x0102030405060708_u128;
+            }
+            let mut pregs = [0u16; 16];
+            for (i, p) in pregs.iter_mut().enumerate() {
+                *p = 0x5a00 | (i as u16 + 1);
+            }
+            Self { qregs, fpsr: 0x10, fpcr: 0x20, pregs, ffr: 0x00ff }
+        }
+
+        fn install(&self, current_task: &mut CurrentTask, has_sve: bool) {
+            use crate::task::ArchExtendedPstateStorage;
+            use extended_pstate::ExtendedPstateState;
+            let mut pstate = ExtendedPstateState::with_sve(has_sve);
+            pstate.set_arm64_state(&self.qregs, self.fpsr, self.fpcr);
+            pstate.set_arm64_sve_state(&self.pregs, self.ffr);
+            current_task.thread_state.extended_pstate =
+                ArchExtendedPstateStorage::State64(Box::new(pstate));
+        }
+
+        fn assert_live(&self, current_task: &CurrentTask, context: &str) {
+            use crate::task::ArchExtendedPstateStorage;
+            let ArchExtendedPstateStorage::State64(state) =
+                &current_task.thread_state.extended_pstate
+            else {
+                panic!("{context}: not 64-bit state");
+            };
+            assert_eq!(state.get_arm64_qregs(), &self.qregs, "{context}");
+            assert_eq!(state.get_arm64_fpsr(), self.fpsr, "{context}");
+            assert_eq!(state.get_arm64_fpcr(), self.fpcr, "{context}");
+            assert_eq!(state.get_arm64_p_regs(), &self.pregs, "{context}");
+            assert_eq!(state.get_arm64_ffr(), self.ffr, "{context}");
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn sve_vl_result(value: u32) -> Result<SyscallResult, Errno> {
+        Ok((value as usize).into())
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_prctl_sve_vl_ignores_trailing_args_and_preserves_registers() {
+        use starnix_uapi::{
+            PR_SVE_GET_VL, PR_SVE_SET_VL, PR_SVE_SET_VL_ONEXEC, PR_SVE_VL_INHERIT, SVE_VL_MAX,
+            SVE_VL_MIN,
+        };
+        const INHERIT: u32 = PR_SVE_VL_INHERIT;
+        const ONEXEC: u32 = PR_SVE_SET_VL_ONEXEC;
+
+        spawn_kernel_and_run(async |current_task| {
+            let regs = SveTestRegs::sample();
+            regs.install(current_task, true);
+
+            // `prctl` is variadic, so Linux's `PR_SVE_GET_VL` ignores `arg2`..`arg5` (and
+            // `PR_SVE_SET_VL` ignores `arg3`..`arg5`) entirely: any garbage left in the unused
+            // argument registers by the caller must not make the call fail.
+            let junk_args: [[u64; 4]; 5] = [
+                [0, 0, 0, 0],
+                [u64::MAX, u64::MAX, u64::MAX, u64::MAX],
+                [1 << 63, 0, 0, 0],
+                [0, 0, 0, u64::MAX],
+                [0xdead_beef, 0xcafe_babe, 0xfeed_face, 0xbaad_f00d],
+            ];
+            for [arg2, arg3, arg4, arg5] in junk_args {
+                assert_eq!(
+                    sys_prctl(current_task, PR_SVE_GET_VL, arg2, arg3, arg4, arg5),
+                    sve_vl_result(SVE_VL_MIN),
+                    "PR_SVE_GET_VL({arg2:#x}, {arg3:#x}, {arg4:#x}, {arg5:#x})"
+                );
+            }
+            regs.assert_live(current_task, "after PR_SVE_GET_VL");
+
+            // Every valid `PR_SVE_SET_VL` request clamps to the thread's current (and only)
+            // 128-bit vector length. As on Linux, setting the current vector length, whether
+            // immediately or deferred with `PR_SVE_SET_VL_ONEXEC`, never touches the live
+            // Q0-Q31/FPSR/FPCR/P0-P15/FFR state, while `PR_SVE_VL_INHERIT` is always updated
+            // immediately and reported by both the call itself and `PR_SVE_GET_VL`.
+            let set_vl_cases: [(u32, [u64; 3], u32); 9] = [
+                (SVE_VL_MIN, [0, 0, 0], SVE_VL_MIN),
+                (SVE_VL_MIN, [u64::MAX, u64::MAX, u64::MAX], SVE_VL_MIN),
+                (SVE_VL_MAX | INHERIT, [u64::MAX, 1, 0], SVE_VL_MIN | INHERIT),
+                (32 | ONEXEC, [u64::MAX, u64::MAX, u64::MAX], SVE_VL_MIN),
+                (
+                    SVE_VL_MIN | ONEXEC | INHERIT,
+                    [u64::MAX, u64::MAX, u64::MAX],
+                    SVE_VL_MIN | INHERIT,
+                ),
+                (4096 | ONEXEC | INHERIT, [7, 8, 9], SVE_VL_MIN | INHERIT),
+                (SVE_VL_MIN | ONEXEC, [0, 0, 0], SVE_VL_MIN),
+                (256 | INHERIT, [0, 0, 1 << 63], SVE_VL_MIN | INHERIT),
+                (SVE_VL_MIN, [1, 2, 3], SVE_VL_MIN),
+            ];
+            for (arg2, [arg3, arg4, arg5], expected) in set_vl_cases {
+                let context = format!("PR_SVE_SET_VL({arg2:#x}, {arg3:#x}, {arg4:#x}, {arg5:#x})");
+                assert_eq!(
+                    sys_prctl(current_task, PR_SVE_SET_VL, arg2 as u64, arg3, arg4, arg5),
+                    sve_vl_result(expected),
+                    "{context}"
+                );
+                regs.assert_live(current_task, &context);
+                assert_eq!(
+                    current_task.thread_state.extended_pstate.sve_vl_inherit(),
+                    (arg2 & INHERIT) != 0,
+                    "{context}"
+                );
+                for [garg2, garg3, garg4, garg5] in junk_args {
+                    assert_eq!(
+                        sys_prctl(current_task, PR_SVE_GET_VL, garg2, garg3, garg4, garg5),
+                        sve_vl_result(expected),
+                        "{context}"
+                    );
+                }
+            }
+
+            // Invalid `arg2` values fail with EINVAL regardless of the trailing arguments, and
+            // leave both the registers and the `PR_SVE_VL_INHERIT` setting untouched.
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, (SVE_VL_MIN | INHERIT) as u64, 0, 0, 0),
+                sve_vl_result(SVE_VL_MIN | INHERIT)
+            );
+            let invalid_arg2: [u64; 7] = [
+                u64::MAX,
+                (SVE_VL_MIN as u64) | (1 << 32),
+                0,
+                8,
+                (SVE_VL_MAX + 16) as u64,
+                (SVE_VL_MIN | ONEXEC | INHERIT | (1 << 16)) as u64,
+                (SVE_VL_MIN | (1 << 31)) as u64,
+            ];
+            for arg2 in invalid_arg2 {
+                for [_, arg3, arg4, arg5] in junk_args {
+                    let context =
+                        format!("PR_SVE_SET_VL({arg2:#x}, {arg3:#x}, {arg4:#x}, {arg5:#x})");
+                    assert_eq!(
+                        sys_prctl(current_task, PR_SVE_SET_VL, arg2, arg3, arg4, arg5),
+                        error!(EINVAL),
+                        "{context}"
+                    );
+                    regs.assert_live(current_task, &context);
+                    assert!(
+                        current_task.thread_state.extended_pstate.sve_vl_inherit(),
+                        "{context}"
+                    );
+                }
+            }
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_GET_VL, u64::MAX, u64::MAX, u64::MAX, u64::MAX),
+                sve_vl_result(SVE_VL_MIN | INHERIT)
+            );
+        })
+        .await;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_prctl_sve_vl_arch32() {
+        use crate::task::ArchExtendedPstateStorage;
+        use starnix_uapi::{
+            PR_SVE_GET_VL, PR_SVE_SET_VL, PR_SVE_SET_VL_ONEXEC, PR_SVE_VL_INHERIT, SVE_VL_MAX,
+            SVE_VL_MIN,
+        };
+
+        spawn_kernel_and_run(async |current_task| {
+            // Start from a 64-bit task with SVE and `PR_SVE_VL_INHERIT` set, then `execve` a
+            // 32-bit binary following the `finish_exec` sequence: `registers.load(regs)` followed
+            // by `extended_pstate.reset_with_arch(arch_width())`, which switches the storage to
+            // `State32`.
+            SveTestRegs::sample().install(current_task, true);
+            assert_eq!(
+                sys_prctl(
+                    current_task,
+                    PR_SVE_SET_VL,
+                    (SVE_VL_MIN | PR_SVE_VL_INHERIT) as u64,
+                    0,
+                    0,
+                    0
+                ),
+                sve_vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+            let mut regs32 = zx::sys::zx_restricted_state_t::default();
+            regs32.cpsr = zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32;
+            current_task.thread_state.registers.load(regs32);
+            let arch_width = current_task.thread_state.arch_width();
+            current_task.thread_state.extended_pstate.reset_with_arch(arch_width);
+            assert!(current_task.is_arch32());
+            assert!(matches!(
+                current_task.thread_state.extended_pstate,
+                ArchExtendedPstateStorage::State32(_)
+            ));
+            assert!(!current_task.thread_state.extended_pstate.has_sve());
+            assert!(!current_task.thread_state.extended_pstate.sve_vl_inherit());
+
+            // Like Linux (where compat tasks have no SVE prctls), both `PR_SVE_GET_VL` and
+            // `PR_SVE_SET_VL` fail with EINVAL on a 32-bit task, regardless of the arguments.
+            let args: [[u64; 4]; 7] = [
+                [0, 0, 0, 0],
+                [SVE_VL_MIN as u64, 0, 0, 0],
+                [(SVE_VL_MIN | PR_SVE_VL_INHERIT) as u64, 0, 0, 0],
+                [(SVE_VL_MAX | PR_SVE_SET_VL_ONEXEC | PR_SVE_VL_INHERIT) as u64, 0, 0, 0],
+                [SVE_VL_MIN as u64, u64::MAX, u64::MAX, u64::MAX],
+                [u64::MAX, u64::MAX, u64::MAX, u64::MAX],
+                [1, 2, 3, 4],
+            ];
+            for [arg2, arg3, arg4, arg5] in args {
+                let context = format!("({arg2:#x}, {arg3:#x}, {arg4:#x}, {arg5:#x})");
+                assert_eq!(
+                    sys_prctl(current_task, PR_SVE_GET_VL, arg2, arg3, arg4, arg5),
+                    error!(EINVAL),
+                    "PR_SVE_GET_VL{context}"
+                );
+                assert_eq!(
+                    sys_prctl(current_task, PR_SVE_SET_VL, arg2, arg3, arg4, arg5),
+                    error!(EINVAL),
+                    "PR_SVE_SET_VL{context}"
+                );
+            }
+            // The 32-bit state is left untouched.
+            let ArchExtendedPstateStorage::State32(state32) =
+                &current_task.thread_state.extended_pstate
+            else {
+                unreachable!()
+            };
+            assert_eq!(state32.get_arm32_qregs(), &[0u128; 16]);
+            assert_eq!(state32.get_arm32_fpsr(), 0);
+            assert_eq!(state32.get_arm32_fpcr(), 0);
+            assert!(!current_task.thread_state.extended_pstate.sve_vl_inherit());
+
+            // `execve` back into a 64-bit binary creates fresh 64-bit storage: the earlier
+            // `PR_SVE_VL_INHERIT` setting did not survive the trip through the 32-bit task.
+            current_task.thread_state.registers.load(zx::sys::zx_restricted_state_t::default());
+            let arch_width = current_task.thread_state.arch_width();
+            current_task.thread_state.extended_pstate.reset_with_arch(arch_width);
+            assert!(!current_task.is_arch32());
+            assert!(matches!(
+                current_task.thread_state.extended_pstate,
+                ArchExtendedPstateStorage::State64(_)
+            ));
+            assert!(!current_task.thread_state.extended_pstate.sve_vl_inherit());
+            let expected = if current_task.thread_state.extended_pstate.has_sve() {
+                sve_vl_result(SVE_VL_MIN)
+            } else {
+                error!(EINVAL)
+            };
+            assert_eq!(sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0), expected);
+        })
+        .await;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[::fuchsia::test]
+    async fn test_prctl_sve_vl_inherited_by_clone() {
+        use crate::task::ArchExtendedPstateStorage;
+        use extended_pstate::ExtendedPstateState;
+        use starnix_uapi::{PR_SVE_GET_VL, PR_SVE_SET_VL, PR_SVE_VL_INHERIT, SVE_VL_MIN};
+
+        spawn_kernel_and_run(async |current_task| {
+            let regs = SveTestRegs::sample();
+            regs.install(current_task, true);
+            assert_eq!(
+                sys_prctl(
+                    current_task,
+                    PR_SVE_SET_VL,
+                    (SVE_VL_MIN | PR_SVE_VL_INHERIT) as u64,
+                    0,
+                    0,
+                    0
+                ),
+                sve_vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+
+            // fork/clone copies the parent's thread state (`ThreadState::snapshot`): the child
+            // inherits `has_sve`, the `PR_SVE_VL_INHERIT` setting, and the live Q0-Q31/FPSR/FPCR
+            // and P0-P15/FFR registers, as on Linux.
+            let mut child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert!(child.thread_state.extended_pstate.has_sve());
+            assert!(child.thread_state.extended_pstate.sve_vl_inherit());
+            regs.assert_live(&child, "child after clone");
+            assert_eq!(
+                sys_prctl(&mut child, PR_SVE_GET_VL, 0, 0, 0, 0),
+                sve_vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+            let (
+                ArchExtendedPstateStorage::State64(parent_state),
+                ArchExtendedPstateStorage::State64(child_state),
+            ) = (&current_task.thread_state.extended_pstate, &child.thread_state.extended_pstate)
+            else {
+                unreachable!()
+            };
+            assert!(!std::ptr::eq(parent_state.as_ref(), child_state.as_ref()));
+
+            // The child's `PR_SVE_SET_VL` does not affect the parent, and the parent's `execve`
+            // (`reset`) does not affect the child.
+            assert_eq!(
+                sys_prctl(&mut child, PR_SVE_SET_VL, SVE_VL_MIN as u64, 0, 0, 0),
+                sve_vl_result(SVE_VL_MIN)
+            );
+            assert_eq!(sys_prctl(&mut child, PR_SVE_GET_VL, 0, 0, 0, 0), sve_vl_result(SVE_VL_MIN));
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0),
+                sve_vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+            regs.assert_live(current_task, "parent after child's PR_SVE_SET_VL");
+            current_task.thread_state.extended_pstate.reset();
+            regs.assert_live(&child, "child after parent's reset");
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_GET_VL, 0, 0, 0, 0),
+                sve_vl_result(SVE_VL_MIN | PR_SVE_VL_INHERIT)
+            );
+
+            // A child cloned after `PR_SVE_SET_VL` without `PR_SVE_VL_INHERIT` does not inherit
+            // the setting either.
+            assert_eq!(
+                sys_prctl(current_task, PR_SVE_SET_VL, SVE_VL_MIN as u64, 0, 0, 0),
+                sve_vl_result(SVE_VL_MIN)
+            );
+            let mut child2 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert!(child2.thread_state.extended_pstate.has_sve());
+            assert!(!child2.thread_state.extended_pstate.sve_vl_inherit());
+            assert_eq!(
+                sys_prctl(&mut child2, PR_SVE_GET_VL, 0, 0, 0, 0),
+                sve_vl_result(SVE_VL_MIN)
+            );
+
+            // A parent without SVE support forks a child without SVE support.
+            current_task.thread_state.extended_pstate =
+                ArchExtendedPstateStorage::State64(Box::new(ExtendedPstateState::with_sve(false)));
+            let mut child3 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert!(!child3.thread_state.extended_pstate.has_sve());
+            assert_eq!(sys_prctl(&mut child3, PR_SVE_GET_VL, 0, 0, 0, 0), error!(EINVAL));
+            assert_eq!(
+                sys_prctl(&mut child3, PR_SVE_SET_VL, SVE_VL_MIN as u64, 0, 0, 0),
+                error!(EINVAL)
+            );
         })
         .await;
     }

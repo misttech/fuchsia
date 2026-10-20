@@ -1258,7 +1258,7 @@ impl CurrentTask {
 
         let regs: zx_restricted_state_t = start_info.into();
         self.thread_state.registers.load(regs);
-        self.thread_state.extended_pstate.reset();
+        self.thread_state.extended_pstate.reset_with_arch(self.thread_state.arch_width());
 
         // The exit signal (and that of the children) is reset to SIGCHLD.
         {

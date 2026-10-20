@@ -17,10 +17,15 @@
 #include <arch/arm64/feature.h>
 #include <arch/arm64/interrupt.h>
 #include <arch/arm64/mp.h>
+#include <ktl/atomic.h>
 
 #define ENABLE_CYCLE_COUNTER 1
 
 inline uint32_t arch_cpu_features() { return arm64_isa_features; }
+
+inline uint32_t arch_cpu_sve_features() {
+  return ktl::atomic_ref(arm64_sve_features).load(ktl::memory_order_relaxed);
+}
 
 inline uint32_t arch_dcache_line_size() { return arm64_cache_features.dcache_size; }
 

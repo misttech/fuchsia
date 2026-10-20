@@ -299,11 +299,11 @@ void SetConstants(const fbl::RefPtr<VmObject>& vmo) {
           arch_get_hw_watchpoint_count(),
           arch_address_tagging_features(),
           arch_vm_features(),
+          arch_cpu_sve_features(),
       },
       arch_dcache_line_size(),
       arch_icache_line_size(),
       kPageSize,
-      0,  // Padding.
       pmm_count_total_bytes(),
       version_string.size(),
   };

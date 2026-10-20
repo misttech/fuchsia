@@ -9,6 +9,13 @@ import("//src/starnix/build/args.gni")
 rustc_library("starnix_syscall_loop") {
   edition = "2024"
   with_unit_tests = true
+
+  # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+  exclude_toolchain_tags = [
+    "asan",
+    "hwasan",
+  ]
+
   sources = [
     "src/lib.rs",
     "src/table.rs",
@@ -38,6 +45,7 @@ rustc_library("starnix_syscall_loop") {
 }
 
 fuchsia_unittest_package("starnix_syscall_loop_tests") {
+  manifest = "meta/starnix_syscall_loop_tests.cml"
   deps = [ ":starnix_syscall_loop_test" ]
   test_type = "starnix"
 }

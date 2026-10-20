@@ -49,6 +49,9 @@ struct vdso_constants {
 
     // Bitmask for vm related features.
     uint32_t vm;
+
+    // Bitmask for arm64 SVE CPU features.
+    uint32_t cpu_sve;
   } features;
 
   // Number of bytes in a data cache line.
@@ -60,8 +63,6 @@ struct vdso_constants {
   // System page size in bytes. Guaranteed to be a power of 2.
   uint32_t page_size;
 
-  uint32_t padding;
-
   // Total amount of physical memory in the system, in bytes.
   uint64_t physmem;
 
@@ -71,6 +72,8 @@ struct vdso_constants {
   // A NUL-terminated UTF-8 string returned by zx_system_get_version_string.
   char version_string[];
 };
+
+static_assert(__builtin_offsetof(vdso_constants, physmem) % sizeof(uint64_t) == 0);
 
 #endif  // __ASSEMBLER__
 
