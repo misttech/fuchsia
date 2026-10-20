@@ -1,0 +1,76 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_test_component",
+    fuchsia_component = "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:defs.bzl", fx_rustc_test = "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_rustc_test(
+    name = "tuf_lib_test",
+    crate = "//third_party/rust_crates/forks/tuf-0.3.0-beta14:tuf",
+    crate_features = ["hyper"],
+    rustc_flags = ["--cap-lints=allow"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures-executor",
+        "//third_party/rust_crates/vendor:maplit",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+    ],
+)
+
+fx_packaged_binary(
+    name = "tuf_lib_test_packaged_bin",
+    testonly = True,
+    binary = ":tuf_lib_test",
+    binary_name = "tuf",
+    visibility = ["//visibility:private"],
+)
+
+fuchsia_component(
+    name = "test-component",
+    testonly = True,
+    component_name = "tuf-lib-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    # @bazel2gn:path_overwrite
+    manifest = "meta/tuf-lib-test.cml",
+    visibility = ["//visibility:private"],
+)
+
+fx_test_component(
+    name = "tuf-lib-test-component",
+    testonly = True,
+    compiled_manifest = ":test-component",
+    component_name = "tuf-lib-test",
+    visibility = ["//visibility:private"],
+    deps = [":tuf_lib_test_packaged_bin"],
+)
+
+fx_package(
+    name = "rust-tuf-tests_pkg",
+    package_name = "rust-tuf-tests",
+    testonly = True,
+    test_components = [":tuf-lib-test-component"],
+    visibility = ["//visibility:private"],
+)
+
+fx_test(
+    name = "rust-tuf-tests",
+    package = ":rust-tuf-tests_pkg",
+    visibility = ["//visibility:public"],
+)
