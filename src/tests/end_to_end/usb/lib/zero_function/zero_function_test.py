@@ -566,6 +566,36 @@ class UsbConfigTest(unittest.TestCase):
             usb_config.get_usb_config(dut)
         dut.ffx.run_ssh_cmd.assert_not_called()
 
+    def test_parse_usb_config_functions_with_interleaved_logs(self) -> None:
+        raw_output = """
+        [00002.645] 30058:34264> [netstack] INFO: Added PBR rule: RuleMatcher { from: None, bound: None }
+        {
+          "configurations": [
+            [
+              "cdc",
+              "vsock"
+            ]
+          ],
+          "id_vendor": 6353,
+          "id_product": 41001,
+          "product": "CDC Ethernet & VSOCK Bridge"
+        }
+        [00002.664] 06425:06434> [fshost] INFO: publishing device to /block/dram_init_5_a
+        [usb-cli:DONE]
+        """
+        funcs = usb_config.parse_usb_config_functions(raw_output)
+        self.assertEqual(funcs, ["cdc", "vsock"])
+
+    def test_parse_usb_config_functions_legacy_format(self) -> None:
+        raw_output = '{"functions": ["cdc", "adb"]} [usb-cli:DONE]'
+        funcs = usb_config.parse_usb_config_functions(raw_output)
+        self.assertEqual(funcs, ["cdc", "adb"])
+
+    def test_parse_usb_config_functions_fallback_comma_separated(self) -> None:
+        raw_output = "cdc,adb [usb-cli:DONE]"
+        funcs = usb_config.parse_usb_config_functions(raw_output)
+        self.assertEqual(funcs, ["cdc", "adb"])
+
 
 if __name__ == "__main__":
     unittest.main()

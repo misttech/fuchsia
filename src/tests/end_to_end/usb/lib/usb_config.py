@@ -70,7 +70,7 @@ def parse_get_config(output: str) -> dict[str, Any] | None:
 
     The serial console also echoes the command and interleaves kernel log
     lines, even inside the JSON. So drop the log lines, then try each `{`
-    until one starts an object with "configurations".
+    until one starts an object with "configurations" or "functions".
     """
     output = KERNEL_LOG_RE.sub("", output)
     decoder = json.JSONDecoder()
@@ -81,7 +81,9 @@ def parse_get_config(output: str) -> dict[str, Any] | None:
             value, _ = decoder.raw_decode(output, start)
         except json.JSONDecodeError:
             continue
-        if isinstance(value, dict) and "configurations" in value:
+        if isinstance(value, dict) and (
+            "configurations" in value or "functions" in value
+        ):
             return value
     return None
 
@@ -212,29 +214,48 @@ def parse_usb_config_functions(config_str: str) -> list[str]:
         List of function names (e.g. ['cdc', 'adb', 'test']).
     """
     raw_functions: list[str] = []
-    try:
-        # usb-cli get-config outputs JSON: {"functions": ["cdc", "adb", ...]}
-        start_idx = config_str.find("{")
-        end_idx = config_str.rfind("}")
-        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
-            data = json.loads(config_str[start_idx : end_idx + 1])
-            if "configurations" in data and isinstance(
-                data["configurations"], list
-            ):
-                raw_functions = [
-                    str(f)
-                    for cfg in data["configurations"]
-                    if isinstance(cfg, list)
-                    for f in cfg
-                ]
-            elif "functions" in data and isinstance(data["functions"], list):
-                raw_functions = [str(f) for f in data["functions"]]
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        _LOGGER.debug(
-            "Failed to parse JSON configuration (%s) from: %s",
-            e,
-            config_str,
-        )
+    # Try structured extraction via parse_get_config first, which strips
+    # interleaved serial console/kernel logs and parses JSON safely.
+    data = parse_get_config(config_str)
+    if data:
+        if "configurations" in data and isinstance(
+            data["configurations"], list
+        ):
+            raw_functions = [
+                str(f)
+                for cfg in data["configurations"]
+                if isinstance(cfg, list)
+                for f in cfg
+            ]
+        elif "functions" in data and isinstance(data["functions"], list):
+            raw_functions = [str(f) for f in data["functions"]]
+
+    if not raw_functions:
+        try:
+            # usb-cli get-config outputs JSON: {"functions": ["cdc", "adb", ...]}
+            start_idx = config_str.find("{")
+            end_idx = config_str.rfind("}")
+            if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+                data = json.loads(config_str[start_idx : end_idx + 1])
+                if "configurations" in data and isinstance(
+                    data["configurations"], list
+                ):
+                    raw_functions = [
+                        str(f)
+                        for cfg in data["configurations"]
+                        if isinstance(cfg, list)
+                        for f in cfg
+                    ]
+                elif "functions" in data and isinstance(
+                    data["functions"], list
+                ):
+                    raw_functions = [str(f) for f in data["functions"]]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            _LOGGER.debug(
+                "Failed to parse JSON configuration (%s) from: %s",
+                e,
+                config_str,
+            )
 
     if not raw_functions:
         # Fallback to comma-separated splitting with identifier validation
