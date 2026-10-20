@@ -233,10 +233,9 @@ generated_file("gn_build_variables_for_bazel") {
 
   # LINT.ThenChange(//build/rust/config.gni)
 
+  # LINT.IfChange
   declaration = "//build/config/compilation_modes.gni"
   import(declaration)
-
-  # LINT.IfChange(compilation_mode)
   contents += [
     {
       name = "compilation_mode"
@@ -246,7 +245,7 @@ generated_file("gn_build_variables_for_bazel") {
     },
   ]
 
-  # LINT.ThenChange(//build/config/compilation_modes.gni:compilation_mode)
+  # LINT.ThenChange(//build/config/compilation_modes.gni)
 
   # LINT.IfChange
   declaration = "//sdk/config.gni"
@@ -448,20 +447,6 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/config/lto/config.gni:lto)
-
-  # LINT.IfChange(clang_ml_inliner)
-  declaration = "//build/config/clang/clang.gni"
-  import(declaration)
-  contents += [
-    {
-      name = "clang_ml_inliner"
-      value = clang_ml_inliner
-      type = "bool"
-      location = declaration
-    },
-  ]
-
-  # LINT.ThenChange(//build/config/clang/clang.gni:clang_ml_inliner)
 }
 
 if (current_toolchain == default_toolchain) {
