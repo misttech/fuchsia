@@ -99,6 +99,7 @@
                 "fuchsia.kernel.Stats",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.scheduler.RoleManager",
+                "fuchsia.storage.mapping.FileMapper",
                 "fuchsia.sys2.BootController",
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.thermal.SensorManager",

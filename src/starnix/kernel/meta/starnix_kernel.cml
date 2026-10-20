@@ -239,6 +239,7 @@
                 "fuchsia.scheduler.RoleManager",
                 "fuchsia.starnix.psi.PsiProvider",
                 "fuchsia.starnix.runner.Manager",
+                "fuchsia.storage.mapping.FileMapper",
                 "fuchsia.sys2.BootController",
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",

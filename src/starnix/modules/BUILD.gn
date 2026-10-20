@@ -12,6 +12,7 @@ group("tests") {
     "boot:tests",
     "cgroupfs:tests",
     "devpts:tests",
+    "erofs:tests",
     "ext4:tests",
     "fastrpc:tests",
     "functionfs:tests",

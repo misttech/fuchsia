@@ -151,6 +151,7 @@
                 "fuchsia.power.cpu.DomainController",
                 "fuchsia.power.suspend.Stats",
                 "fuchsia.power.system.ActivityGovernor",
+                "fuchsia.storage.mapping.FileMapper",
                 "fuchsia.time.external.Adjust",
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",

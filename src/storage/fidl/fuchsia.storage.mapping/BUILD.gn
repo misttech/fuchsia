@@ -31,6 +31,7 @@ fidl("fuchsia.storage.mapping") {
   sources = [ "mapping.fidl" ]
   visibility = [
     ":*",
+    "//src/starnix/modules/erofs:*",
     "//src/storage/benchmarks/*",
     "//src/storage/fxfs/platform:*",
     "//src/storage/fxfs/test:*",

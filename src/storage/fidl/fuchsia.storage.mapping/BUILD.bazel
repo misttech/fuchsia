@@ -12,6 +12,7 @@ fidl_library(
         "mapping.fidl",
     ],
     visibility = [
+        "//src/starnix/modules/erofs:__pkg__",
         "//src/storage/benchmarks:__subpackages__",
         "//src/storage/fxfs/platform:__pkg__",
         "//src/storage/fxfs/test:__pkg__",
