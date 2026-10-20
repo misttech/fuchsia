@@ -392,6 +392,7 @@ pub fn check_with(
     one_finding_per_check(&mut rows, cpp, rust);
     switch_as_if_chain(&mut rows, cpp, rust);
     merged_checks(&mut rows, cpp, rust);
+    fallible_alloc(&mut rows, cpp, rust);
     assert_semantics(&mut rows, cpp, rust);
     exhaustive_match(&mut rows, cpp, rust);
     conditional_compilation(&mut rows, cpp, rust);
@@ -852,6 +853,277 @@ fn merged_checks(rows: &mut [Row], cpp: &Function, rust: &Function) {
             {
                 demote(next, &why);
             }
+        }
+    }
+}
+
+/// How a failed allocation is handled.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OnAllocFailure {
+    /// An assertion or panic: `ASSERT_TRUE(ac.check())`, `unwrap_some!`.
+    Assert,
+    /// An early return: `if (!ac.check()) { return ...; }`, `let-else`, `?`.
+    Return,
+}
+
+/// How the body of the `if`, `let-else` or `match` arm at `k` handles the
+/// failure it tests for: the first return or panic in it.
+fn failure_branch(f: &Function, k: usize) -> Option<OnAllocFailure> {
+    let depth = f.units[k].depth;
+    for u in f.units[k + 1..].iter().take_while(|u| u.depth > depth) {
+        if u.kind == UnitKind::Return {
+            return Some(OnAllocFailure::Return);
+        }
+        if u.features.asserts || u.features.calls.iter().any(|c| c == "panic") {
+            return Some(OnAllocFailure::Assert);
+        }
+    }
+    None
+}
+
+/// The byte index of the `)` closing the `(` at byte `open` of `text`.
+fn closing_paren(text: &str, open: usize) -> Option<usize> {
+    let mut depth = 0;
+    for (k, c) in text[open..].char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + k);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The normalized name an allocation is stored in, from the code before it:
+/// the binding of a `let` pattern, an assigned variable or a `reset` receiver.
+fn alloc_binding(prefix: &str) -> Option<String> {
+    static LET: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\blet\s([^=]*)=").unwrap());
+    // The pattern without its type annotation.
+    static PATTERN: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"^(?:[^:]|::)*").unwrap());
+    static IDENT: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\b[a-z_]\w*").unwrap());
+    static ASSIGN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(\w+)\s*(?:\[[^\]]*\]\s*)?=(?:[^=>]|$)").unwrap()
+    });
+    static RESET: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(\w+)\s*(?:\.|->)\s*reset\s*\(\s*$").unwrap()
+    });
+    let name = if let Some(c) = LET.captures_iter(prefix).last() {
+        let pattern = c.get(1).and_then(|p| PATTERN.find(p.as_str())).map_or("", |m| m.as_str());
+        IDENT.find_iter(pattern).map(|m| m.as_str()).filter(|w| !matches!(*w, "mut" | "ref")).last()
+    } else if let Some(c) = ASSIGN.captures_iter(prefix).last() {
+        c.get(1).map(|m| m.as_str())
+    } else {
+        RESET.captures(prefix).and_then(|c| c.get(1)).map(|m| m.as_str())
+    };
+    name.map(crate::normalize::ident).filter(|n| !n.is_empty())
+}
+
+/// How the Rust allocation at unit `j` handles failure, and the name it is
+/// stored in.
+fn rust_alloc(rust: &Function, j: usize) -> Option<(OnAllocFailure, Option<String>)> {
+    // kalloc's fallible `Box` constructors.
+    static RUST_ALLOC: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(concat!(
+            r"\b(?:try_new|try_new_uninit|try_new_zeroed|try_new_uninit_slice",
+            r"|try_new_zeroed_slice|try_new_zeroed_uninit_slice|try_grow)",
+            r"(?:_in)?\s*(?:::\s*<[^>]*>\s*)?\(",
+        ))
+        .unwrap()
+    });
+    // Conversions between a `try_*` call and its failure handling.
+    static ADAPTER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^\s*\.\s*(?:ok|map_err|ok_or|ok_or_else)\s*\(").unwrap()
+    });
+    // `unwrap_some!(` with the allocation as its argument.
+    static UNWRAP_SOME: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"\bunwrap_some!\s*\(\s*[\w:<>\[\]\s]*$").unwrap()
+    });
+    // `let ... else`, `if let Err(..)` and `if let None`, whose body runs on
+    // failure.
+    static ON_ERR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^(?:let\b|(?:\}\s*)?(?:else\s+)?if\s+let\s+(?:Err|None)\b)").unwrap()
+    });
+    static ERR_ARM: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"^\s*(?:Err|None)\b").unwrap());
+    let v = &rust.units[j];
+    let text = code_only(&unit_text(rust, v));
+    let m = RUST_ALLOC.find(&text)?;
+    let mut rest = &text[closing_paren(&text, m.end() - 1)? + 1..];
+    while let Some(a) = ADAPTER.find(rest) {
+        rest = &rest[closing_paren(rest, a.end() - 1)? + 1..];
+    }
+    let rest = rest.trim_start();
+    let prefix = &text[..m.start()];
+    let on_failure = if rest.starts_with('?') {
+        Some(OnAllocFailure::Return)
+    } else if rest.starts_with(".unwrap()")
+        || rest.starts_with(".expect(")
+        || (rest.starts_with(')') && UNWRAP_SOME.is_match(prefix))
+    {
+        Some(OnAllocFailure::Assert)
+    } else if matches!(v.kind, UnitKind::If | UnitKind::ElseIf)
+        && (ON_ERR.is_match(text.trim_start())
+            || rest.starts_with(".is_err()")
+            || rest.starts_with(".is_none()"))
+    {
+        failure_branch(rust, j)
+    } else if v.kind == UnitKind::Switch && rest.starts_with('{') {
+        let arms = rust.units[j + 1..].iter().take_while(|u| u.depth > v.depth);
+        (j + 1..)
+            .zip(arms)
+            .find(|(_, u)| {
+                u.kind == UnitKind::Case
+                    && u.depth == v.depth + 1
+                    && ERR_ARM.is_match(&code_only(&unit_text(rust, u)))
+            })
+            .and_then(|(k, _)| failure_branch(rust, k))
+    } else {
+        None
+    };
+    Some((on_failure?, alloc_binding(prefix)))
+}
+
+/// The rows of a C++ allocation, its check, and the Rust allocation that
+/// replaces both.
+struct Folded {
+    alloc_row: usize,
+    check_row: usize,
+    rust_row: usize,
+    checker: String,
+}
+
+/// Demotes to notes the one-sided findings for a C++ `fbl::AllocChecker`
+/// allocation, its `ac.check()`, and the Rust `try_*` allocation that
+/// replaces both, when the Rust stores into the same name and handles
+/// failure the same way (both assert, or both return).
+fn fallible_alloc(rows: &mut [Row], cpp: &Function, rust: &Function) {
+    // `make_unique<T>(&ac, ...)`, `MakeRefCountedChecked<T>(&ac, ...)` and
+    // `new (&ac) T`, capturing the checker.
+    static CPP_ALLOC: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(concat!(
+            r"\b(?:make_unique|MakeRefCountedChecked)\s*<[^;]*?>\s*\(\s*&\s*(\w+)\s*[,)]",
+            r"|\bnew\s*\(\s*&\s*(\w+)\s*\)",
+        ))
+        .unwrap()
+    });
+    static DECLARED: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\bAllocChecker\s+(\w+)\b").unwrap());
+    static CHECK: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\b(\w+)\s*\.\s*check\s*\(\s*\)").unwrap());
+    static NEGATED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"!\s*(\w+)\s*\.\s*check\s*\(\s*\)").unwrap()
+    });
+    // An `if` testing `!ac.check()`.
+    static IF_FAILED: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^(?:\}\s*)?(?:else\s+)?if\s*\(\s*!\s*(\w+)\s*\.\s*check\s*\(\s*\)\s*\)")
+            .unwrap()
+    });
+    let names = |re: &regex::Regex, text: &str, ac: &str| {
+        re.captures_iter(text).any(|c| c.get(1).is_some_and(|m| m.as_str() == ac))
+    };
+    if !cpp.lines.iter().any(|l| l.contains("AllocChecker")) {
+        return;
+    }
+    let cpp_text = code_only(&cpp.lines.join("\n"));
+    let declared: std::collections::HashSet<&str> =
+        DECLARED.captures_iter(&cpp_text).filter_map(|c| c.get(1)).map(|m| m.as_str()).collect();
+    let mut folded: Vec<Folded> = Vec::new();
+    for (i, u) in cpp.units.iter().enumerate() {
+        let text = code_only(&unit_text(cpp, u));
+        let Some(cap) = CPP_ALLOC.captures(&text) else {
+            continue;
+        };
+        let Some(m) = cap.get(1).or(cap.get(2)) else {
+            continue;
+        };
+        let ac = m.as_str().to_string();
+        if !declared.contains(ac.as_str()) {
+            continue;
+        }
+        let name = cap.get(0).and_then(|a| alloc_binding(&text[..a.start()]));
+        // The check is the next unit, or this one when it folded in an
+        // `if (!ac.check()) return ...;`.
+        let c = if names(&CHECK, &text, &ac) {
+            i
+        } else {
+            match cpp.units[i + 1..].iter().position(|v| v.kind != UnitKind::Comment) {
+                Some(d) => i + 1 + d,
+                None => continue,
+            }
+        };
+        let cu = &cpp.units[c];
+        let check_text = code_only(&unit_text(cpp, cu));
+        if c != i && !names(&CHECK, &check_text, &ac) {
+            continue;
+        }
+        // An `if` (or folded return) runs on failure only when it tests
+        // `!ac.check()`.
+        let on_failure = if cu.features.asserts {
+            Some(OnAllocFailure::Assert)
+        } else if matches!(cu.kind, UnitKind::If | UnitKind::ElseIf) {
+            if names(&IF_FAILED, check_text.trim_start(), &ac) {
+                failure_branch(cpp, c)
+            } else {
+                None
+            }
+        } else if c == i && cu.features.propagates && names(&NEGATED, &text, &ac) {
+            Some(OnAllocFailure::Return)
+        } else {
+            None
+        };
+        let row_of = |k: usize| rows.iter().position(|r| r.cpp == Some(k));
+        let (Some(on_failure), Some(ka), Some(kc)) = (on_failure, row_of(i), row_of(c)) else {
+            continue;
+        };
+        // The Rust allocation is in the gap of one-sided rows around the
+        // C++ allocation and check, or aligned with the check.
+        let one_sided = |r: &Row| r.cpp.is_none() || r.rust.is_none();
+        let mut lo = ka;
+        while lo > 0 && one_sided(&rows[lo - 1]) {
+            lo -= 1;
+        }
+        let mut hi = kc;
+        while hi + 1 < rows.len() && one_sided(&rows[hi + 1]) {
+            hi += 1;
+        }
+        // Each Rust allocation stands for one C++ allocation into the same
+        // name; one that handles failure differently stays reported.
+        let alloc = (lo..=hi)
+            .filter(|k| !folded.iter().any(|f| f.rust_row == *k))
+            .filter_map(|k| rows[k].rust.and_then(|j| rust_alloc(rust, j)).map(|a| (k, a)))
+            .find(|(_, (_, binding))| *binding == name);
+        if let Some((kr, _)) = alloc.filter(|(_, (rust_failure, _))| *rust_failure == on_failure) {
+            folded.push(Folded { alloc_row: ka, check_row: kc, rust_row: kr, checker: ac });
+        }
+    }
+    for Folded { alloc_row, check_row, rust_row, checker: ac } in folded {
+        let (Some(i), Some(j)) = (rows[alloc_row].cpp, rows[rust_row].rust) else {
+            continue;
+        };
+        let (cpp_line, rust_line) = (cpp.units[i].start_line, rust.units[j].start_line);
+        let why = format!(
+            "it is a fallible allocation checked by `{ac}.check()`, which the Rust makes and \
+             checks in one statement at line {rust_line}"
+        );
+        for k in [alloc_row, check_row] {
+            if rows[k].marker == Marker::CppOnly {
+                demote(&mut rows[k], &why);
+            }
+        }
+        if rows[rust_row].marker == Marker::RustOnly {
+            let why = format!(
+                "it is the fallible allocation the C++ makes at line {cpp_line} and checks with \
+                 `{ac}.check()`"
+            );
+            demote(&mut rows[rust_row], &why);
         }
     }
 }

@@ -479,6 +479,36 @@ fn lantern_finds_the_planted_mistakes() {
     assert_eq!(placement, [("lantern.cc", vec![("lantern.rs", true), ("glow.rs", false)])]);
 }
 
+// The lamplog fixture trims the kernel crashlog tests: each C++ test makes a
+// buffer with `make_unique` and `ASSERT_TRUE(ac.check())`, and each Rust test
+// with `unwrap_some!(try_new_zeroed_slice(..).ok())`, except a planted one
+// that returns on failure instead of asserting.
+#[test]
+fn lamplog_golden() {
+    let report = git_report("lamplog", "lamplog-golden");
+    check_golden(&fixture("lamplog/expected.txt"), &render(&report, &opts(Layout::Stacked)));
+
+    let pair = |name: &str| report.pairs.iter().find(|p| p.cpp.name == name).unwrap();
+    let alloc_notes = |name: &str| {
+        pair(name).findings.iter().filter(|f| f.message.contains("`ac.check()`")).count()
+    };
+    // The C++ allocation and check and the Rust allocation are notes.
+    for name in ["NoGlowTest", "FlickerTest"] {
+        assert_eq!(pair(name).issues(), 0, "{name}: {:#?}", pair(name).findings);
+        assert_eq!(alloc_notes(name), 3, "{name}: {:#?}", pair(name).findings);
+    }
+    // The Rust that returns on failure stays reported.
+    let dim = pair("DimTest");
+    assert!(
+        dim.findings
+            .iter()
+            .any(|f| f.severity == Severity::Issue && f.message.contains("make_unique")),
+        "{:#?}",
+        dim.findings
+    );
+    assert_eq!(alloc_notes("DimTest"), 0, "{:#?}", dim.findings);
+}
+
 #[test]
 fn chain_lock_callback_lines_up_with_a_guard() {
     let cpp = "zx_status_t lamp_get(Lamp* lamp, uint32_t* out) {\n  SingleChainLockGuard guard{IrqSaveOption, lamp->get_lock(), CLT_TAG(\"lamp_get\")};\n  // Only a lit lamp has a color.\n  if (!lamp->lit()) {\n    return ZX_ERR_BAD_STATE;\n  }\n  *out = lamp->color();\n  return ZX_OK;\n}\n";
@@ -570,6 +600,310 @@ fn is_err_early_return_matches_cpp_is_error_check() {
     let rust = "pub fn lamp_init(lamp: &mut Lamp) -> Result<(), Status> {\n    let mut result = lamp.set_power(ON, 0);\n    if result.is_err() {\n        return result;\n    }\n    result = lamp.set_color(WHITE);\n    if result.is_err() {\n        return result;\n    }\n    Ok(())\n}\n";
     let found = all_findings(cpp, rust);
     assert!(found.is_empty(), "{found:?}");
+}
+
+// An `fbl::AllocChecker` allocation and its `ac.check()` match a Rust `try_*`
+// allocation handled in one statement, unless the failure handling differs.
+#[test]
+fn alloc_checker_matches_fallible_allocation() {
+    let cpp_test = concat!(
+        "bool lamp_buffer_test() {\n",
+        "  fbl::AllocChecker ac;\n",
+        "  auto buffer = ktl::make_unique<char[]>(&ac, kLampSize);\n",
+        "  ASSERT_TRUE(ac.check());\n",
+        "  lamp_fill(buffer.get(), kLampSize);\n",
+        "  return true;\n",
+        "}\n",
+    );
+    let rust_test = concat!(
+        "fn lamp_buffer_test() -> bool {\n",
+        "    let mut buffer =\n",
+        "        unwrap_some!(kalloc::Box::<[u8]>::try_new_zeroed_slice(LAMP_SIZE).ok());\n",
+        "    lamp_fill(&mut buffer, LAMP_SIZE);\n",
+        "    true\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_test, rust_test);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    let cpp_load = concat!(
+        "zx_status_t lamp_load(Lamp* lamp, size_t size) {\n",
+        "  fbl::AllocChecker ac;\n",
+        "  auto buffer = ktl::unique_ptr<char[]>(new (&ac) char[size]);\n",
+        "  if (!ac.check()) {\n",
+        "    printf(\"lamp: no memory\\n\");\n",
+        "    return ZX_ERR_NO_MEMORY;\n",
+        "  }\n",
+        "  return lamp->Load(buffer.get(), size);\n",
+        "}\n",
+    );
+    let rust_load = concat!(
+        "pub fn lamp_load(lamp: &mut Lamp, size: usize) -> Result<(), Status> {\n",
+        "    let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(size) else {\n",
+        "        kprintln!(\"lamp: no memory\");\n",
+        "        return Err(Status::NO_MEMORY);\n",
+        "    };\n",
+        "    lamp.load(&mut buffer, size)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_load, rust_load);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // The C++ asserts on failure, but the Rust returns.
+    let returns = concat!(
+        "fn lamp_buffer_test() -> bool {\n",
+        "    let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(LAMP_SIZE) else {\n",
+        "        return false;\n",
+        "    };\n",
+        "    lamp_fill(&mut buffer, LAMP_SIZE);\n",
+        "    true\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_test, returns);
+    assert!(issues.iter().any(|m| m.contains("make_unique")), "{issues:?}");
+
+    // The C++ returns an error on failure, but the Rust panics.
+    let panics = concat!(
+        "pub fn lamp_load(lamp: &mut Lamp, size: usize) -> Result<(), Status> {\n",
+        "    let mut buffer = kalloc::Box::<[u8]>::try_new_zeroed_slice(size).unwrap();\n",
+        "    lamp.load(&mut buffer, size)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_load, panics);
+    assert!(issues.iter().any(|m| m.contains("unique_ptr")), "{issues:?}");
+
+    // The C++ never checks the allocation.
+    let unchecked = cpp_test.replace("  ASSERT_TRUE(ac.check());\n", "");
+    let issues = only_issues(&unchecked, rust_test);
+    assert!(issues.iter().any(|m| m.contains("make_unique")), "{issues:?}");
+
+    // The Rust allocates only `b`: the missing `a` stays reported.
+    let cpp_pair = concat!(
+        "zx_status_t lamp_pair(Lamp* lamp) {\n",
+        "  fbl::AllocChecker ac;\n",
+        "  auto a = ktl::make_unique<Bulb>(&ac);\n",
+        "  if (!ac.check()) {\n",
+        "    return ZX_ERR_NO_MEMORY;\n",
+        "  }\n",
+        "  auto b = ktl::make_unique<Bulb>(&ac);\n",
+        "  if (!ac.check()) {\n",
+        "    return ZX_ERR_NO_MEMORY;\n",
+        "  }\n",
+        "  return lamp->Pair(ktl::move(a), ktl::move(b));\n",
+        "}\n",
+    );
+    let rust_pair = concat!(
+        "pub fn lamp_pair(lamp: &mut Lamp) -> Result<(), Status> {\n",
+        "    let Ok(b) = kalloc::Box::try_new(Bulb::new()) else {\n",
+        "        return Err(Status::NO_MEMORY);\n",
+        "    };\n",
+        "    lamp.pair(b)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_pair, rust_pair);
+    assert!(issues.len() == 1 && issues[0].contains("make_unique"), "{issues:?}");
+
+    // The C++ `if` runs when the allocation succeeds.
+    let succeeded = cpp_load.replace("!ac.check()", "ac.check()");
+    let issues = only_issues(&succeeded, rust_load);
+    assert!(issues.iter().any(|m| m.contains("unique_ptr")), "{issues:?}");
+
+    // The Rust `if let Ok` body runs when the allocation succeeds.
+    let if_ok = concat!(
+        "pub fn lamp_load(lamp: &mut Lamp, size: usize) -> Result<(), Status> {\n",
+        "    if let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(size) {\n",
+        "        lamp.load(&mut buffer, size)?;\n",
+        "        return Err(Status::NO_MEMORY);\n",
+        "    }\n",
+        "    Ok(())\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_load, if_ok);
+    assert!(issues.iter().any(|m| m.contains("unique_ptr")), "{issues:?}");
+
+    // An `unwrap()` inside the arguments does not hide the `?` on the result.
+    let converted = concat!(
+        "pub fn lamp_load(lamp: &mut Lamp, size: u64) -> Result<(), Status> {\n",
+        "    let mut buffer =\n",
+        "        kalloc::Box::<[u8]>::try_new_zeroed_slice(size.try_into().unwrap())\n",
+        "            .map_err(|_| Status::NO_MEMORY)?;\n",
+        "    lamp.load(&mut buffer, size)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_load, converted);
+    assert!(!issues.iter().any(|m| m.contains("try_new_zeroed_slice")), "{issues:?}");
+
+    // `fbl::MakeRefCountedChecked` allocates through the checker too.
+    let cpp_create = concat!(
+        "zx_status_t lamp_create(Lamp* lamp) {\n",
+        "  fbl::AllocChecker ac;\n",
+        "  auto bulb = fbl::MakeRefCountedChecked<Bulb>(&ac, kBulbWatts);\n",
+        "  if (!ac.check()) {\n",
+        "    printf(\"lamp: no memory\\n\");\n",
+        "    return ZX_ERR_NO_MEMORY;\n",
+        "  }\n",
+        "  return lamp->Install(ktl::move(bulb));\n",
+        "}\n",
+    );
+    let rust_create = concat!(
+        "pub fn lamp_create(lamp: &mut Lamp) -> Result<(), Status> {\n",
+        "    let Ok(bulb) = kalloc::Arc::try_new(Bulb::new(BULB_WATTS)) else {\n",
+        "        kprintln!(\"lamp: no memory\");\n",
+        "        return Err(Status::NO_MEMORY);\n",
+        "    };\n",
+        "    lamp.install(bulb)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_create, rust_create);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // An `if (!ac.check())` that only returns folds into the allocation.
+    let cpp_folded = concat!(
+        "zx_status_t lamp_load(Lamp* lamp, size_t size) {\n",
+        "  fbl::AllocChecker ac;\n",
+        "  auto buffer = ktl::make_unique<char[]>(&ac, size);\n",
+        "  if (!ac.check()) {\n",
+        "    return ZX_ERR_NO_MEMORY;\n",
+        "  }\n",
+        "  return lamp->Load(buffer.get(), size);\n",
+        "}\n",
+    );
+    let rust_folded = concat!(
+        "pub fn lamp_load(lamp: &mut Lamp, size: usize) -> Result<(), Status> {\n",
+        "    let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_uninit_slice(size) else {\n",
+        "        return Err(Status::NO_MEMORY);\n",
+        "    };\n",
+        "    lamp.load(&mut buffer, size)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_folded, rust_folded);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // The folded C++ returns on failure, but the Rust `expect`s.
+    let expects = concat!(
+        "pub fn lamp_load(lamp: &mut Lamp, size: usize) -> Result<(), Status> {\n",
+        "    let mut buffer =\n",
+        "        kalloc::Box::<[u8]>::try_new_uninit_slice(size).expect(\"no memory\");\n",
+        "    lamp.load(&mut buffer, size)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_folded, expects);
+    assert!(issues.iter().any(|m| m.contains("make_unique")), "{issues:?}");
+
+    // `try_grow` with `expect` asserts like `ASSERT_TRUE(ac.check())`.
+    let grows = concat!(
+        "fn lamp_buffer_test() -> bool {\n",
+        "    let mut buffer = lamp_spare().try_grow(LAMP_SIZE).expect(\"lamp: no memory\");\n",
+        "    lamp_fill(&mut buffer, LAMP_SIZE);\n",
+        "    true\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_test, grows);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // A `match` whose `Err` arm returns, on an `_in` allocator.
+    let cpp_install = concat!(
+        "zx_status_t lamp_init(Lamp* lamp) {\n",
+        "  fbl::AllocChecker ac;\n",
+        "  auto bulb = ktl::make_unique<Bulb>(&ac);\n",
+        "  if (!ac.check()) {\n",
+        "    printf(\"lamp: no memory\\n\");\n",
+        "    return ZX_ERR_NO_MEMORY;\n",
+        "  }\n",
+        "  return lamp->Install(ktl::move(bulb));\n",
+        "}\n",
+    );
+    let rust_match = concat!(
+        "pub fn lamp_init(lamp: &mut Lamp) -> Result<(), Status> {\n",
+        "    let bulb = match kalloc::Box::try_new_in(Bulb::new(), &LAMP_HEAP) {\n",
+        "        Ok(bulb) => bulb,\n",
+        "        Err(_) => {\n",
+        "            kprintln!(\"lamp: no memory\");\n",
+        "            return Err(Status::NO_MEMORY);\n",
+        "        }\n",
+        "    };\n",
+        "    lamp.install(bulb)\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_install, rust_match);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // `if let Err`, `if let None`, `.is_err()` and `.is_none()` bodies run on
+    // failure.
+    let cpp_probe = concat!(
+        "zx_status_t lamp_probe() {\n",
+        "  fbl::AllocChecker ac;\n",
+        "  ktl::make_unique<Bulb>(&ac);\n",
+        "  if (!ac.check()) {\n",
+        "    printf(\"lamp: no memory\\n\");\n",
+        "    return ZX_ERR_NO_MEMORY;\n",
+        "  }\n",
+        "  return ZX_OK;\n",
+        "}\n",
+    );
+    for condition in [
+        "if let Err(_) = kalloc::Box::try_new(Bulb::new()) {",
+        "if let None = kalloc::Box::try_new(Bulb::new()).ok() {",
+        "if kalloc::Box::try_new(Bulb::new()).is_err() {",
+        "if kalloc::Box::try_new(Bulb::new()).ok().is_none() {",
+    ] {
+        let rust_probe = format!(
+            "pub fn lamp_probe() -> Result<(), Status> {{\n    {condition}\n{}",
+            concat!(
+                "        kprintln!(\"lamp: no memory\");\n",
+                "        return Err(Status::NO_MEMORY);\n",
+                "    }\n",
+                "    Ok(())\n",
+                "}\n",
+            )
+        );
+        let issues = only_issues(cpp_probe, &rust_probe);
+        assert!(issues.is_empty(), "{condition}: {issues:?}");
+    }
+
+    // A `reset` receiver is the name a Rust assignment stores into.
+    let cpp_reset = concat!(
+        "bool lamp_bulb_test() {\n",
+        "  Lamp lamp;\n",
+        "  fbl::AllocChecker ac;\n",
+        "  lamp.bulb_.reset(new (&ac) Bulb);\n",
+        "  ASSERT_TRUE(ac.check());\n",
+        "  EXPECT_TRUE(lamp.Light());\n",
+        "  return true;\n",
+        "}\n",
+    );
+    let rust_assign = concat!(
+        "fn lamp_bulb_test() -> bool {\n",
+        "    let mut lamp = Lamp::new();\n",
+        "    lamp.bulb = unwrap_some!(kalloc::Box::try_new(Bulb::new()).ok());\n",
+        "    expect_true!(lamp.light());\n",
+        "    true\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_reset, rust_assign);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // The Rust stores into a different field: still reported.
+    let other_field = rust_assign.replace("lamp.bulb =", "lamp.lens =");
+    let issues = only_issues(cpp_reset, &other_field);
+    assert!(issues.iter().any(|m| m.contains("unwrap_some")), "{issues:?}");
+
+    // A type annotation is not part of the binding.
+    let typed = concat!(
+        "fn lamp_buffer_test() -> bool {\n",
+        "    let mut buffer: kalloc::Box<[u8]> =\n",
+        "        unwrap_some!(kalloc::Box::<[u8]>::try_new_zeroed_slice(LAMP_SIZE).ok());\n",
+        "    lamp_fill(&mut buffer, LAMP_SIZE);\n",
+        "    true\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp_test, typed);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // The Rust allocates into a different name: still reported.
+    let renamed = typed.replace("buffer", "data");
+    let issues = only_issues(cpp_test, &renamed);
+    assert!(issues.iter().any(|m| m.contains("make_unique")), "{issues:?}");
 }
 
 #[test]
