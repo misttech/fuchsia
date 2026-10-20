@@ -68,20 +68,9 @@
 
                 // TODO: https://fxbug.dev/566091911 - Label new sysfs nodes via
                 // `kernfs_init_security` when their parent has a `security.selinux` xattr.
-                // TODO: https://fxbug.dev/567514429 - The loop driver creates the `loop` sysfs
-                // attribute group at device creation rather than on `LOOP_SET_FD`.
-                // TODO: https://fxbug.dev/567481478 - `LOOP_CTL_REMOVE` fails after `LOOP_CLR_FD`
-                // on Starnix, failing the test teardown.
                 "SysFs/SysFsTest.SubdirectoryLabels/InheritsParentXattrLabel",
                 "SysFs/SysFsTest.SubdirectoryLabels/AppliesTypeTransitionWhenParentHasXattr",
                 "SysFs/SysFsTest.SubdirectoryLabels/UsesFscreateLabelWhenParentHasXattr",
-
-                // TODO: https://fxbug.dev/567514429 - The loop driver creates the `loop` sysfs
-                // attribute group at device creation rather than on `LOOP_SET_FD`.
-                // TODO: https://fxbug.dev/567481478 - `LOOP_CTL_REMOVE` fails after `LOOP_CLR_FD`
-                // on Starnix, failing the test teardown.
-                "SysFs/SysFsTest.SubdirectoryLabels/UsesDefaultLabelWhenParentHasNoXattr",
-                "SysFs/SysFsTest.SubdirectoryLabels/IgnoresFscreateLabelWhenParentHasNoXattr",
 
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",

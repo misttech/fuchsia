@@ -142,7 +142,7 @@ impl Device {
         self.subsystem.as_ref()
     }
 
-    pub(super) fn dir(&self) -> Option<Arc<SimpleDirectory>> {
+    pub fn dir(&self) -> Option<Arc<SimpleDirectory>> {
         self.dir.upgrade()
     }
 

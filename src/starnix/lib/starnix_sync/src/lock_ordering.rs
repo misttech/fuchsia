@@ -138,6 +138,7 @@ lock_ordering! {
     LoopDeviceStateLock => FsContextStateLock,
     LoopDeviceStateLock => FsNodeInfoLevel,
     LoopDeviceStateLock => RemoteBundleInnerLock,
+    LoopDeviceStateLock => SimpleDirectoryEntriesLock,
     LoopDevicesLock => DeviceRegistryStateLevel,
     LoopDevicesLock => DynamicThreadSpawnerLock,
     LoopDevicesLock => LoopDeviceStateLock,

@@ -8,7 +8,7 @@ use bitflags::bitflags;
 use starnix_core::device::DeviceMode;
 use starnix_core::device::block::canonicalize_ioctl_request;
 use starnix_core::device::kobject::{Device, DeviceMetadata};
-use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
+use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory, get_sysfs};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE, ProtectionFlags};
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
@@ -95,13 +95,27 @@ impl LoopDeviceState {
     fn set_backing_file(
         &mut self,
         current_task: &CurrentTask,
+        device: &Arc<LoopDevice>,
         backing_file: FileHandle,
     ) -> Result<(), Errno> {
         if self.backing_file.is_some() {
             return error!(EBUSY);
         }
+        let backing_stat = backing_file.node().stat(current_task)?;
         self.backing_file = Some(backing_file);
-        self.update_size_limit(current_task)?;
+        self.size_limit = backing_stat.st_size as u64;
+        if let Some(sysfs_dir) = self.k_device.as_ref().and_then(Device::dir) {
+            let device_weak = Arc::downgrade(device);
+            sysfs_dir.edit(&get_sysfs(current_task.kernel()), |dir| {
+                dir.subdir("loop", 0o755, |dir| {
+                    dir.entry(
+                        "backing_file",
+                        LoopDeviceBackingFile::new_node(device_weak),
+                        mode!(IFREG, 0o644),
+                    );
+                });
+            });
+        }
         Ok(())
     }
 
@@ -128,6 +142,9 @@ impl LoopDeviceState {
     }
 
     fn clear(&mut self) {
+        if let Some(sysfs_dir) = self.k_device.as_ref().and_then(Device::dir) {
+            sysfs_dir.remove(b"loop".into());
+        }
         *self = Self { k_device: self.k_device.take(), ..Default::default() };
     }
 }
@@ -183,17 +200,7 @@ impl LoopDevice {
             .with_devtype("disk"),
             /* parent = */ None,
             block_class,
-            |device, dir| {
-                let device_weak_clone = device_weak.clone();
-                build_block_device_directory(device, device_weak, dir);
-                dir.subdir("loop", 0o755, |dir| {
-                    dir.entry(
-                        "backing_file",
-                        LoopDeviceBackingFile::new_node(device_weak_clone),
-                        mode!(IFREG, 0o644),
-                    );
-                });
-            },
+            |k_device, dir| build_block_device_directory(k_device, device_weak, dir),
         )?;
         {
             let mut state = device.state.lock();
@@ -481,7 +488,7 @@ impl FileOps for LoopDeviceFile {
                 let fd = arg.into();
                 let backing_file = current_task.files().get(fd)?;
                 let mut state = self.device.state.lock();
-                state.set_backing_file(current_task, backing_file)?;
+                state.set_backing_file(current_task, &self.device, backing_file)?;
                 Ok(SUCCESS)
             }
             LOOP_CLR_FD => {
@@ -575,7 +582,7 @@ impl FileOps for LoopDeviceFile {
                 check_block_size(config.block_size)?;
                 let mut state = self.device.state.lock();
                 if let Ok(backing_file) = current_task.files().get(fd) {
-                    state.set_backing_file(current_task, backing_file)?;
+                    state.set_backing_file(current_task, &self.device, backing_file)?;
                 }
                 state.block_size = config.block_size;
                 state.set_info(&config.info);
