@@ -16,4 +16,9 @@ if (is_host) {
       "//zircon/system/ulib/zxtest",
     ]
   }
+} else {
+  group("tests") {
+    testonly = true
+    deps = [ ":tests($host_toolchain)" ]
+  }
 }

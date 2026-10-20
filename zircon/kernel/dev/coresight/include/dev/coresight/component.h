@@ -9,9 +9,18 @@
 
 #include <zircon/assert.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
+#include <utility>
 
 #include <hwreg/bitfields.h>
+
+extern "C" {
+uint32_t rust_coresight_device_type_from_raw(uint32_t reg_value);
+const char* rust_coresight_class_id_to_string(uint8_t raw_classid, size_t* out_len);
+const char* rust_coresight_device_type_to_string(uint32_t dev_type, size_t* out_len);
+}
 
 namespace coresight {
 
@@ -74,7 +83,11 @@ struct ComponentIdRegister : public hwreg::RegisterBase<ComponentIdRegister, uin
   static auto Get() { return hwreg::RegisterAddr<ComponentIdRegister>(0xff4); }
 };
 
-std::string_view ToString(ComponentIdRegister::Class classid);
+inline std::string_view ToString(ComponentIdRegister::Class classid) {
+  size_t len = 0;
+  const char* ptr = rust_coresight_class_id_to_string(std::to_underlying(classid), &len);
+  return std::string_view(ptr, len);
+}
 
 // B.2.2
 struct PeripheralId0Register : public hwreg::RegisterBase<PeripheralId0Register, uint32_t> {
@@ -165,8 +178,8 @@ struct DeviceTypeRegister : public hwreg::RegisterBase<DeviceTypeRegister, uint3
     kPerformanceMonitor = 0x6,
   };
 
-  enum class Type {
-    kUnknown,
+  enum class Type : uint32_t {
+    kUnknown = 0,
     kValidationComponent,
     kTracePort,
     kTraceBuffer,
@@ -199,12 +212,16 @@ struct DeviceTypeRegister : public hwreg::RegisterBase<DeviceTypeRegister, uint3
   DEF_ENUM_FIELD(MajorType, 3, 0, major);
 
   // The type encoded by `sub` and `major` fields.
-  Type type() const;
+  Type type() const { return static_cast<Type>(rust_coresight_device_type_from_raw(reg_value())); }
 
   static auto Get() { return hwreg::RegisterAddr<DeviceTypeRegister>(0xfcc); }
 };
 
-std::string_view ToString(DeviceTypeRegister::Type type);
+inline std::string_view ToString(DeviceTypeRegister::Type type) {
+  size_t len = 0;
+  const char* ptr = rust_coresight_device_type_to_string(std::to_underlying(type), &len);
+  return std::string_view(ptr, len);
+}
 
 }  // namespace coresight
 

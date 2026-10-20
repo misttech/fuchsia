@@ -246,6 +246,9 @@ pub mod test_mod;
 pub mod unused_rust;
 
 // Force linking of extern crates that provide C entry points:
+// Only arch/arm64 depends on coresight today.
+#[cfg(target_arch = "aarch64")]
+use coresight as _;
 // Only platform/pc depends on fixed_point today.
 #[cfg(target_arch = "x86_64")]
 use fixed_point as _;

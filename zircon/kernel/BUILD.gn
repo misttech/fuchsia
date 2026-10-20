@@ -68,7 +68,7 @@ group("tests") {
   testonly = true
   deps = [
     "arch/$zircon_cpu/user-copy:tests",
-    "dev/coresight/tests($host_toolchain)",
+    "dev/coresight:tests",
     "dev/iommu/arm_smmu/tests",
     "lib:tests",
     "phys:tests",

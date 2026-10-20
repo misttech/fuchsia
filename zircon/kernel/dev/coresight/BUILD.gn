@@ -1,17 +1,22 @@
 # Copyright 2020 The Fuchsia Authors
+#
 # Use of this source code is governed by a MIT-style
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/components.gni")
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_staticlib.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 
-static_library("coresight") {
-  public_deps = [ ":headers" ]
-
-  sources = [
-    "component.cc",
-    "rom_table.cc",
+group("coresight") {
+  public_deps = [
+    ":coresight-rs",
+    ":headers",
   ]
+  if (!is_kernel) {
+    public_deps += [ ":coresight-staticlib" ]
+  }
 }
 
 library_headers("headers") {
@@ -29,4 +34,49 @@ library_headers("headers") {
     # <dev/coresight/rom_table.h> has #include <lib/fit/result.h>.
     "//sdk/lib/fit",
   ]
+}
+
+kernel_rust_crate("coresight-rs") {
+  crate_name = "coresight"
+  source_root = "src/lib.rs"
+  sources = [
+    "src/component.rs",
+    "src/lib.rs",
+    "src/rom_table.rs",
+  ]
+  deps = [ "//src/lib/zr" ]
+
+  if (!is_kernel) {
+    with_unit_tests = true
+  }
+}
+
+if (!is_kernel) {
+  rustc_staticlib("coresight-staticlib") {
+    edition = "2024"
+    source_root = "src/lib.rs"
+    sources = [
+      "src/component.rs",
+      "src/lib.rs",
+      "src/rom_table.rs",
+    ]
+    features = [ "std" ]
+    deps = [ "//src/lib/zr" ]
+  }
+
+  fuchsia_unittest_package("coresight-rust-test-pkg") {
+    package_name = "coresight-rust-test"
+    deps = [ ":coresight-rs_test" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  if (!is_kernel) {
+    deps = [
+      ":coresight-rs_test($host_toolchain)",
+      ":coresight-rust-test-pkg",
+      "tests($host_toolchain)",
+    ]
+  }
 }
