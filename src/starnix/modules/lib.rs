@@ -60,6 +60,7 @@ use starnix_modules_selinuxfs::selinux_fs;
 use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
+use starnix_modules_usbfs::usbfs_init;
 use starnix_modules_wakeup_test::register_wakeup_test_device;
 use starnix_modules_zram::zram_device_init;
 use starnix_uapi::device_id::DeviceId;
@@ -99,6 +100,7 @@ pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
         | "power_residency"
         | "rtc"
         | "tun"
+        | "usbfs"
         | "wakeup_test"
         | "zram" => None,
         _ => bail!("unsupported module: {name}"),
@@ -202,6 +204,9 @@ impl Modules {
                     registry.objects.misc_class(),
                     simple_device_ops::<DevTun>,
                 )?;
+            }
+            "usbfs" => {
+                usbfs_init(kernel).context("Failed to initialize usbfs")?;
             }
             "wakeup_test" => register_wakeup_test_device(kernel)?,
             "zram" => zram_device_init(kernel)?,

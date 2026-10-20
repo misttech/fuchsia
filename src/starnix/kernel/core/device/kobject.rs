@@ -69,12 +69,14 @@ impl Bus {
 
 /// Subsystem with which a [`Device`] is associated.
 #[derive(Clone, Debug)]
-pub(super) enum Subsystem {
+pub enum DeviceSubsystem {
     Bus(Bus),
     Class(Class),
 }
 
-impl Subsystem {
+pub(super) type Subsystem = DeviceSubsystem;
+
+impl DeviceSubsystem {
     pub(super) fn name(&self) -> &FsStr {
         match self {
             Self::Bus(bus) => bus.name(),
@@ -83,13 +85,13 @@ impl Subsystem {
     }
 }
 
-impl From<Bus> for Subsystem {
+impl From<Bus> for DeviceSubsystem {
     fn from(bus: Bus) -> Self {
         Self::Bus(bus)
     }
 }
 
-impl From<Class> for Subsystem {
+impl From<Class> for DeviceSubsystem {
     fn from(class: Class) -> Self {
         Self::Class(class)
     }

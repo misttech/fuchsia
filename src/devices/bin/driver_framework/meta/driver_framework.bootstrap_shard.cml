@@ -672,6 +672,7 @@
                 "fuchsia.hardware.usb.device.Service",
                 "fuchsia.hardware.usb.peripheral.Service",
                 "fuchsia.hardware.usb.tester.Service",
+                "fuchsia.hardware.usb.UsbService",
                 "fuchsia.hardware.usb.virtualbustest.Service",
                 "fuchsia.input.report.Service",
                 "fuchsia.lowpan.spinel.Service",

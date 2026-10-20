@@ -44,6 +44,7 @@ pub enum Feature {
     NetworkManager,
     Perfetto,
     Thermal,
+    Usbfs,
     WakeupTest,
 
     // Container and kernel behavior features.
@@ -165,6 +166,7 @@ mod test {
             (Feature::MmcblkStub, "mmcblk_stub"),
             (Feature::AndroidUsb, "android_usb"),
             (Feature::GoogleOdpm, "google_odpm"),
+            (Feature::Usbfs, "usbfs"),
             // TODO(https://fxbug.dev/485370648) remove when unnecessary
             (Feature::FakeIon, "fake_ion"),
             (Feature::UnifiedTracing, "unified_tracing"),

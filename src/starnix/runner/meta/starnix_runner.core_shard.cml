@@ -234,6 +234,7 @@
                 "fuchsia.hardware.google.nanohub.StarnixDataChannelService",
                 "fuchsia.hardware.google.odpm.Service",
                 "fuchsia.hardware.power.stats.Service",
+                "fuchsia.hardware.usb.UsbService",
             ],
             from: "parent",
             to: [ "#starnix_runner" ],

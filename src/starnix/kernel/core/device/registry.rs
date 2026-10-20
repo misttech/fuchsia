@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::kobject::{Bus, Class, Device, DeviceMetadata, UEventAction, UEventContext};
+use crate::device::kobject::{
+    Bus, Class, Device, DeviceMetadata, DeviceSubsystem, UEventAction, UEventContext,
+};
 use crate::device::kobject_store::KObjectStore;
 use crate::fs::devtmpfs::{devtmpfs_create_device, devtmpfs_remove_path};
 use crate::fs::sysfs::build_device_directory;
@@ -481,14 +483,14 @@ impl DeviceRegistry {
         name: &FsStr,
         metadata: DeviceMetadata,
         parent: Option<Device>,
-        class: Class,
+        subsystem: impl Into<DeviceSubsystem>,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
     ) -> Result<Device, Errno> {
         self.devices(metadata.mode).get(metadata.devt).expect("device is registered");
         let device = self.objects.create_device(
             name,
             parent,
-            Some(class.into()),
+            Some(subsystem.into()),
             Some(metadata),
             build_directory,
         );

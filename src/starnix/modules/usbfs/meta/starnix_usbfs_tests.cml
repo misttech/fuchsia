@@ -1,0 +1,16 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [
+        "//sdk/lib/driver_test_realm/realm_builder/client.shard.cml",
+        "//src/sys/test_runners/starnix/unit_test.shard.cml",
+        "inspect/client.shard.cml",
+        "sys/component/realm_builder.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+    program: {
+        binary: "bin/starnix_modules_usbfs_lib_test",
+        is_shared_process: "true",
+    },
+}

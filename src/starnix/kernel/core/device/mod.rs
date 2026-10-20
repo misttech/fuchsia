@@ -6,6 +6,8 @@ mod registry;
 
 pub use registry::*;
 
+pub use kobject::DeviceSubsystem;
+
 pub mod block;
 pub mod kobject;
 pub mod kobject_store;

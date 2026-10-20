@@ -221,6 +221,7 @@
                 "fuchsia.hardware.qcom.hvdcpopti.Service",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureService",
                 "fuchsia.hardware.qualcomm.router.ClientService",
+                "fuchsia.hardware.usb.UsbService",
                 "fuchsia.power.battery.ChargerService",
             ],
             from: "parent",

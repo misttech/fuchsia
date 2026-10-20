@@ -242,6 +242,7 @@ pub fn parse_features(
                 | Feature::Nanohub
                 | Feature::NetworkManager
                 | Feature::Thermal
+                | Feature::Usbfs
                 | Feature::WakeupTest,
                 _,
             ) => modules.enable(&feature.to_string()),

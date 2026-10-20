@@ -31,6 +31,7 @@ group("tests") {
     "selinuxfs:tests",
     "syscalls:tests",
     "tracefs:tests",
+    "usbfs:tests",
   ]
 }
 
@@ -97,6 +98,7 @@ rustc_library("modules") {
     "//src/starnix/modules/touch_power_policy",
     "//src/starnix/modules/tracefs",
     "//src/starnix/modules/tun",
+    "//src/starnix/modules/usbfs",
     "//src/starnix/modules/wakeup_test",
     "//src/starnix/modules/zram",
     "//third_party/rust_crates:anyhow",
