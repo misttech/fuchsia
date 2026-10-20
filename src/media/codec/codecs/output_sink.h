@@ -138,6 +138,37 @@ class OutputSink {
   const thrd_t writer_thread_;
 
   BlockingMpscQueue<CodecPacket*> free_output_packets_;
+
+  // Storing raw pointers in `free_output_buffers_` (and `free_output_packets_`) without KeepAlive
+  // or zx::vmo handles is safe because:
+  //
+  // 1) `OutputSink` is only used by `CodecAdapter`s with `!IsSupportsDynamicBuffers()`. While an
+  //    output `buffer_lifetime_ordinal` is configured (prior to `EnsureBuffersNotConfigured`),
+  //    `CodecImpl` keeps every `CodecBuffer` (and `CodecPacket`) alive via
+  //    `CodecBuffer::until_remove_started_child_vmo_`, even when `AddOutputPacket` clears
+  //    `output_packet->SetBuffer(nullptr)`.
+  //
+  // 2) `CodecImpl::EnsureBuffersNotConfigured(kOutputPort)` only runs either:
+  //    (a) when no stream is active (before `CoreCodecStartStream()`, or after
+  //        `CoreCodecStopStream()` has called `StopAllWaits()` and stopped/drained the writer
+  //        thread), or
+  //    (b) during `onCoreCodecMidStreamOutputConstraintsChange`, where the `CodecAdapter` is
+  //        strictly required to pause/block the writer thread (so it cannot call `NextOutputBlock`
+  //        or `Flush`) before initiating the reconfiguration and keep it paused until
+  //        `CoreCodecMidStreamOutputBufferReConfigFinish()` (after `EnsureBuffersNotConfigured`
+  //        and `CompleteOutputBufferPartialSettings` have completed and new buffers are added).
+  //
+  // 3) During `EnsureBuffersNotConfigured(kOutputPort)`, `CodecImpl` calls
+  //    `CoreCodecEnsureBuffersNotConfigured(kOutputPort)` -> `OutputSink::Reset(false)` (clearing
+  //    `free_output_buffers_`, `free_output_packets_`, and `current_packet_`) before calling
+  //    `CodecBuffer::ResetUntilRemoveStartedChildVmo()` to allow old buffers/packets to be
+  //    deallocated. Because `!IsSupportsDynamicBuffers()`, `CodecImpl` never calls
+  //    `CoreCodecRecycleOutputPacket` (`AddOutputPacket`) for an old `buffer_lifetime_ordinal`
+  //    during or after `EnsureBuffersNotConfigured`.
+  //
+  // 4) Because the writer thread is guaranteed to be stopped or paused across the entire
+  //    `EnsureBuffersNotConfigured` / reconfiguration window, it cannot concurrently pop or
+  //    dereference stale pointers or race with `Reset(false)`.
   BlockingMpscQueue<const CodecBuffer*> free_output_buffers_;
 
   uint32_t buffer_count_;

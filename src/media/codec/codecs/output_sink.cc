@@ -15,6 +15,11 @@ void OutputSink::AddOutputPacket(CodecPacket* output_packet) {
   ZX_DEBUG_ASSERT(output_packet);
 
   if (output_packet->buffer()) {
+    // Safe to push the raw CodecBuffer* and release the packet's KeepAlive via SetBuffer(nullptr):
+    // for !IsSupportsDynamicBuffers(), CoreCodecRecycleOutputPacket (which calls AddOutputPacket)
+    // is only ever called by CodecImpl for the current buffer_lifetime_ordinal prior to
+    // EnsureBuffersNotConfigured(kOutputPort), while CodecImpl still holds
+    // CodecBuffer::until_remove_started_child_vmo_ open. See comment on free_output_buffers_.
     free_output_buffers_.Push(std::move(output_packet->buffer()));
     output_packet->SetBuffer(nullptr);
   }
@@ -108,6 +113,14 @@ bool OutputSink::HasPendingPacket() { return current_packet_ != nullptr; }
 uint32_t OutputSink::OutputBufferCount() { return buffer_count_; }
 
 OutputSink::Status OutputSink::SetNewPacketForWrite(size_t write_size) {
+  // It is safe to pop and read raw buffer/packet pointers here without KeepAlive/zx::vmo handles
+  // in the free queues because EnsureBuffersNotConfigured(kOutputPort) (which calls Reset(false)
+  // before releasing CodecBuffer::until_remove_started_child_vmo_) can only run when no stream is
+  // active (after CoreCodecStopStream() has stopped the writer thread) or during
+  // onCoreCodecMidStreamOutputConstraintsChange (which strictly requires the CodecAdapter to pause
+  // the writer thread before triggering the reconfig and keep it paused until
+  // CoreCodecMidStreamOutputBufferReConfigFinish()). Thus, the writer thread will never block or
+  // run here during EnsureBuffersNotConfigured(). See comment on free_output_buffers_.
   auto maybe_buffer = free_output_buffers_.WaitForElement();
   if (!maybe_buffer) {
     return kUserTerminatedWait;
