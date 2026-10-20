@@ -62,18 +62,6 @@ pub fn build_kernel_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
         // TODO(https://fxbug.dev/452096300"): Do not report any buffer for now.
         dir.subdir("buffers", dir_mode, |_| {});
     });
-    dir.subdir("ion", dir_mode, |dir| {
-        dir.entry(
-            "total_heaps_kb",
-            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-            mode!(IFREG, 0o444),
-        );
-        dir.entry(
-            "total_pools_kb",
-            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-            mode!(IFREG, 0o444),
-        );
-    });
     dir.subdir("mm", dir_mode, |dir| {
         dir.entry(
             "cma",
