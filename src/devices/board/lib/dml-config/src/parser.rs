@@ -77,10 +77,19 @@ pub fn add_rule_and_property(
 
 #[derive(Clone, Copy, Debug)]
 pub enum ValueSource {
+    /// Value of a given key within the constraint table.
     ConstraintKey(&'static str),
+
+    /// The `name` field of the DML service offer.
     ResourceName,
+
+    /// The target node name (the `to` field) of the DML service offer.
     ResourceNode,
+
+    /// A literal integer value.
     Integer(u32),
+
+    /// The `id` field of the provider (the `from` field) device in the DML.
     ProviderId,
 }
 
@@ -93,16 +102,32 @@ pub enum RuleValueType {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Destination {
+    /// Create a bind rule of the given key and value.
     BindRules,
+
+    /// Create a node property for the given key and value.
     Properties,
+
+    /// Create a node property and a bind rule for the given key and value.
     Both,
 }
 
+/// Defines how to create a node property or bind rule from a given DML service offer.
 #[derive(Clone, Copy, Debug)]
 pub struct PropertyRule {
+    /// Name of key for the node property or bind rule.
     pub bind_key: &'static str,
+
+    /// Candidates for the value of the node property or bind rule.
+    ///
+    /// Ordered by priority. If the first source exists it will be used, otherwise the next source
+    /// is checked and so on.
     pub sources: &'static [ValueSource],
+
+    /// The type of the node property's or bind rule's value.
     pub value_type: RuleValueType,
+
+    /// Where to add `bind_key` and its value in the composite node spec.
     pub destination: Destination,
 }
 
@@ -113,11 +138,23 @@ pub enum TransportType {
     Driver,
 }
 
+/// Defines how to convert a given DML service offer into a parent node of a composite node spec.
 #[derive(Clone, Copy, Debug)]
 pub struct ServiceBindConfig {
+    /// Which transport type to use.
     pub transport: TransportType,
+
+    /// Rules for creating node properties and bind rules for the parent node.
     pub rules: &'static [PropertyRule],
+
+    /// Candidates for the deduplication key of the parent node.
+    ///
+    /// Ordered by priority. If the first source exists it will be used, otherwise the next source
+    /// is checked and so on.
     pub parent_key_sources: &'static [ValueSource],
+
+    /// If true, adds a `fuchsia.ID` bind rule from the `"id"` constraint when not already set by
+    /// `rules`.
     pub bind_id: bool,
 }
 
@@ -135,6 +172,8 @@ pub struct DmlParserConfig {
     pub service_configs: phf::Map<&'static str, ServiceBindConfig>,
 }
 
+/// A list of instructions for how to convert common DML service offers into parent nodes
+/// of composite node specs.
 pub static STANDARD_SERVICE_CONFIGS: phf::Map<&'static str, ServiceBindConfig> = phf::phf_map! {
     "fuchsia.clock.Init" => ServiceBindConfig {
         transport: TransportType::None,
