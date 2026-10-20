@@ -203,7 +203,7 @@ class CxxLinkRemoteAction(object):
 
         # Note: --download_outputs=false is re-interpreted so that depfiles
         # will always be downloaded.
-        # Search in this file for 'translated_remote_options'.
+        # Search in this file for 'download_regex'.
 
         # TODO(b/285030257): This is a workaround to a problem where
         # download stubs need the appropriate execution permissions
@@ -449,20 +449,16 @@ class CxxLinkRemoteAction(object):
         # Interpret --download_outputs=false as a request to avoid
         # downloading the main linker output, but download everything else.
         # This will always fetch the depfile, which is needed by ninja.
-        translated_remote_options = []
-        for opt in remote_options:
-            if opt == "--download_outputs=false":
-                translated_remote_options.append(
-                    f"--download_regex=-{self.primary_output}$"
-                )
-            else:
-                translated_remote_options.append(opt)
+        if not self._main_args.download_outputs:
+            if not self._main_args.download_regex:
+                self._main_args.download_regex = f"-{self.primary_output}$"
+            self._main_args.download_outputs = True
 
-        self.vprintlist("rewrapper options", translated_remote_options)
+        self.vprintlist("rewrapper options", remote_options)
 
         self._remote_action = remote_action.remote_action_from_args(
             main_args=self._main_args,
-            remote_options=translated_remote_options,
+            remote_options=remote_options,
             command=remote_command,
             inputs=remote_inputs,
             output_files=remote_output_files,

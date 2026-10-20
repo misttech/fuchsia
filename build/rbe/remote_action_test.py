@@ -1051,6 +1051,8 @@ class RemoteActionMainParserTests(unittest.TestCase):
         self.assertFalse(main_args.diagnose_nonzero)
         self.assertEqual(main_args.command, ["echo", "hello"])
         self.assertIsNone(main_args.remote_debug_command)
+        self.assertTrue(main_args.download_outputs)
+        self.assertIsNone(main_args.download_regex)
 
     def test_cfg(self) -> None:
         p = self._make_main_parser()

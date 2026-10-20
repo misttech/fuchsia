@@ -904,19 +904,14 @@ class RustRemoteAction(object):
         # artifact).  In other words, always download *all* other outputs,
         # including the depfile and emitted llvm-ir (if applicable).
         # The depfile *must* be downloaded because it is consumed by ninja.
-
-        translated_remote_options: list[str] = []
-        for opt in self.remote_options:
-            if opt == "--download_outputs=false":
-                translated_remote_options.append(
-                    f"--download_regex=-{self.primary_output}$"
-                )
-            else:
-                translated_remote_options.append(opt)
+        if not self._main_args.download_outputs:
+            if not self._main_args.download_regex:
+                self._main_args.download_regex = f"-{self.primary_output}$"
+            self._main_args.download_outputs = True
 
         self._remote_action = remote_action.remote_action_from_args(
             main_args=self._main_args,
-            remote_options=translated_remote_options,
+            remote_options=self.remote_options,
             command=list(self.remote_compile_command()),
             local_only_command=list(self.local_compile_command()),
             inputs=remote_inputs,

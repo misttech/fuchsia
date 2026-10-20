@@ -1168,6 +1168,8 @@ class RemoteAction(object):
         output_files: Sequence[Path] | None = None,
         output_dirs: Sequence[Path] | None = None,
         platform: str | None = None,
+        download_outputs: bool = True,
+        download_regex: str | None = None,
         remote_worker_pool: str | None = None,
         disable: bool = False,
         verbose: bool = False,
@@ -1207,6 +1209,8 @@ class RemoteAction(object):
           output_dirs: directories to be fetched after remote execution, relative to the
             current working dir.
           platform: rewrapper --platform, containing remote execution parameters
+          download_outputs: rewrapper --download_outputs (optional).
+          download_regex: rewrapper --download_regex (optional).
           disable: if true, execute locally.
           verbose: if true, print more information about what is happening.
           compare_with_local: if true, also run locally and compare outputs.
@@ -1332,6 +1336,9 @@ class RemoteAction(object):
             self._output_files.append(self._fsatrace_remote_trace)
             if self._remote_fsatrace_method == "wrap":
                 self._inputs.append(self._fsatrace_remote_wrapper)
+
+        self._download_outputs = download_outputs
+        self._download_regex = download_regex
 
         self._cleanup_files: list[Path] = []
 
@@ -1498,6 +1505,12 @@ exec "${{cmd[@]}}"
             )
             yield f"--platform={platform_value}"
 
+        if not self.download_outputs:
+            yield "--download_outputs=false"
+
+        if self.download_regex:
+            yield f"--download_regex={self.download_regex}"
+
         yield from self._options
 
     @property
@@ -1515,11 +1528,11 @@ exec "${{cmd[@]}}"
 
     @property
     def download_regex(self) -> str | None:
-        return self._rewrapper_known_options.download_regex
+        return self._download_regex
 
     @property
     def download_outputs(self) -> bool:
-        return self._rewrapper_known_options.download_outputs
+        return self._download_outputs
 
     @property
     def platform(self) -> str | None:
@@ -2753,17 +2766,6 @@ def _rewrapper_arg_parser() -> argparse.ArgumentParser:
         type=cl_utils.bool_golang_flag,
         help="If true, remotely execute the command in a working dir location, that has the same depth as the actual build output dir relative to the exec_root.  This makes remote actions cacheable across different output dirs.",
     )
-    parser.add_argument(
-        "--download_outputs",
-        type=cl_utils.bool_golang_flag,
-        default=True,
-        help="Set to false to avoid downloading outputs after remote execution succeeds.  Each toolchain (Rust, C++) may decide how to apply this to its set of outputs by default.  For example, for Rust, this affects only the main -o output.  Prefer using --download_regex over this option.",
-    )
-    parser.add_argument(
-        "--download_regex",
-        type=str,
-        help="Use a regex to specify which outputs to download or not.  Prefix with '-' to exclude files matching the pattern from downloading.  This flag takes precedence over --download_outputs.  This wrapper only supports a single regex value.",
-    )
     return parser
 
 
@@ -2842,6 +2844,18 @@ def inherit_main_arg_parser_flags(
         "--platform",
         type=str,
         help="The rewrapper platform variable specifies remote execution parameters, such as OS type, image, worker constraints, etc.  The value specified in this wrapper is intercepted and merged with the value found in the --cfg.",
+    )
+    rewrapper_group.add_argument(
+        "--download_outputs",
+        type=cl_utils.bool_golang_flag,
+        default=True,
+        help="Set to false to avoid downloading outputs after remote execution succeeds.  Each toolchain (Rust, C++) may decide how to apply this to its set of outputs by default.  For example, for Rust, this affects only the main -o output.  Prefer using --download_regex over this option.",
+    )
+    rewrapper_group.add_argument(
+        "--download_regex",
+        type=str,
+        default=None,
+        help="Use a regex to specify which outputs to download or not.  Prefix with '-' to exclude files matching the pattern from downloading.  This flag takes precedence over --download_outputs.  This wrapper only supports a single regex value.",
     )
 
     main_group = parser.add_argument_group(
@@ -3032,6 +3046,8 @@ def remote_action_from_args(
         output_files=output_files,
         output_dirs=output_dirs,
         platform=main_args.platform,
+        download_outputs=main_args.download_outputs,
+        download_regex=main_args.download_regex,
         remote_worker_pool=main_args.remote_worker_pool,
         disable=main_args.local,
         verbose=main_args.verbose,
