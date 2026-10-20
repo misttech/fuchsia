@@ -99,49 +99,53 @@ struct CanaryTag;
   }                                                                                    \
   void on_zero_handles() final { prefix##_on_zero_handles(this); }
 
-#define DECLARE_DISPTAG(T, E, M)                     \
-  class T;                                           \
-  template <>                                        \
-  struct DispatchTag<T> {                            \
-    static constexpr zx_obj_type_t ID = E;           \
-  };                                                 \
+#define DECLARE_DISPTAG(T, E)              \
+  class T;                                 \
+  template <>                              \
+  struct DispatchTag<T> {                  \
+    static constexpr zx_obj_type_t ID = E; \
+  };
+
+#define DECLARE_SOLO_DISPTAG(T, E, M)                \
+  DECLARE_DISPTAG(T, E)                              \
   template <>                                        \
   struct CanaryTag<T> {                              \
     static constexpr uint32_t magic = fbl::magic(M); \
   };
 
-DECLARE_DISPTAG(ProcessDispatcher, ZX_OBJ_TYPE_PROCESS, "PROC")
-DECLARE_DISPTAG(ThreadDispatcher, ZX_OBJ_TYPE_THREAD, "THRD")
-DECLARE_DISPTAG(VmObjectDispatcher, ZX_OBJ_TYPE_VMO, "VMOD")
-DECLARE_DISPTAG(ChannelDispatcher, ZX_OBJ_TYPE_CHANNEL, "CHAN")
-DECLARE_DISPTAG(EventDispatcher, ZX_OBJ_TYPE_EVENT, "EVTD")
-DECLARE_DISPTAG(PortDispatcher, ZX_OBJ_TYPE_PORT, "PORT")
-DECLARE_DISPTAG(InterruptDispatcher, ZX_OBJ_TYPE_INTERRUPT, "INTD")
-DECLARE_DISPTAG(LogDispatcher, ZX_OBJ_TYPE_LOG, "LOGD")
-DECLARE_DISPTAG(SocketDispatcher, ZX_OBJ_TYPE_SOCKET, "SOCK")
-DECLARE_DISPTAG(ResourceDispatcher, ZX_OBJ_TYPE_RESOURCE, "RSRD")
-DECLARE_DISPTAG(EventPairDispatcher, ZX_OBJ_TYPE_EVENTPAIR, "EPAI")
-DECLARE_DISPTAG(JobDispatcher, ZX_OBJ_TYPE_JOB, "JOBD")
-DECLARE_DISPTAG(VmAddressRegionDispatcher, ZX_OBJ_TYPE_VMAR, "VARD")
-DECLARE_DISPTAG(FifoDispatcher, ZX_OBJ_TYPE_FIFO, "FIFO")
-DECLARE_DISPTAG(GuestDispatcher, ZX_OBJ_TYPE_GUEST, "GSTD")
-DECLARE_DISPTAG(VcpuDispatcher, ZX_OBJ_TYPE_VCPU, "VCPU")
-DECLARE_DISPTAG(TimerDispatcher, ZX_OBJ_TYPE_TIMER, "TIMR")
-DECLARE_DISPTAG(IommuDispatcher, ZX_OBJ_TYPE_IOMMU, "IOMM")
-DECLARE_DISPTAG(BusTransactionInitiatorDispatcher, ZX_OBJ_TYPE_BTI, "BTID")
-DECLARE_DISPTAG(ProfileDispatcher, ZX_OBJ_TYPE_PROFILE, "PROF")
-DECLARE_DISPTAG(PinnedMemoryTokenDispatcher, ZX_OBJ_TYPE_PMT, "PIMT")
-DECLARE_DISPTAG(SuspendTokenDispatcher, ZX_OBJ_TYPE_SUSPEND_TOKEN, "SUTD")
-DECLARE_DISPTAG(PagerDispatcher, ZX_OBJ_TYPE_PAGER, "PGRD")
-DECLARE_DISPTAG(ExceptionDispatcher, ZX_OBJ_TYPE_EXCEPTION, "EXCD")
-DECLARE_DISPTAG(ClockDispatcher, ZX_OBJ_TYPE_CLOCK, "CLOK")
-DECLARE_DISPTAG(StreamDispatcher, ZX_OBJ_TYPE_STREAM, "STRM")
-DECLARE_DISPTAG(MsiDispatcher, ZX_OBJ_TYPE_MSI, "MSID")
-DECLARE_DISPTAG(IoBufferDispatcher, ZX_OBJ_TYPE_IOB, "IOBD")
-DECLARE_DISPTAG(CounterDispatcher, ZX_OBJ_TYPE_COUNTER, "CNTD")
-DECLARE_DISPTAG(IoBufferSharedRegionDispatcher, ZX_OBJ_TYPE_IOB_SHARED_REGION, "IOSR")
-DECLARE_DISPTAG(SamplerDispatcher, ZX_OBJ_TYPE_SAMPLER, "SMPL")
+DECLARE_SOLO_DISPTAG(ProcessDispatcher, ZX_OBJ_TYPE_PROCESS, "PROC")
+DECLARE_DISPTAG(ThreadDispatcher, ZX_OBJ_TYPE_THREAD)
+DECLARE_DISPTAG(VmObjectDispatcher, ZX_OBJ_TYPE_VMO)
+DECLARE_DISPTAG(ChannelDispatcher, ZX_OBJ_TYPE_CHANNEL)
+DECLARE_DISPTAG(EventDispatcher, ZX_OBJ_TYPE_EVENT)
+DECLARE_SOLO_DISPTAG(PortDispatcher, ZX_OBJ_TYPE_PORT, "PORT")
+DECLARE_DISPTAG(InterruptDispatcher, ZX_OBJ_TYPE_INTERRUPT)
+DECLARE_DISPTAG(LogDispatcher, ZX_OBJ_TYPE_LOG)
+DECLARE_DISPTAG(SocketDispatcher, ZX_OBJ_TYPE_SOCKET)
+DECLARE_DISPTAG(ResourceDispatcher, ZX_OBJ_TYPE_RESOURCE)
+DECLARE_DISPTAG(EventPairDispatcher, ZX_OBJ_TYPE_EVENTPAIR)
+DECLARE_SOLO_DISPTAG(JobDispatcher, ZX_OBJ_TYPE_JOB, "JOBD")
+DECLARE_DISPTAG(VmAddressRegionDispatcher, ZX_OBJ_TYPE_VMAR)
+DECLARE_DISPTAG(FifoDispatcher, ZX_OBJ_TYPE_FIFO)
+DECLARE_DISPTAG(GuestDispatcher, ZX_OBJ_TYPE_GUEST)
+DECLARE_DISPTAG(VcpuDispatcher, ZX_OBJ_TYPE_VCPU)
+DECLARE_DISPTAG(TimerDispatcher, ZX_OBJ_TYPE_TIMER)
+DECLARE_DISPTAG(IommuDispatcher, ZX_OBJ_TYPE_IOMMU)
+DECLARE_DISPTAG(BusTransactionInitiatorDispatcher, ZX_OBJ_TYPE_BTI)
+DECLARE_DISPTAG(ProfileDispatcher, ZX_OBJ_TYPE_PROFILE)
+DECLARE_DISPTAG(PinnedMemoryTokenDispatcher, ZX_OBJ_TYPE_PMT)
+DECLARE_DISPTAG(SuspendTokenDispatcher, ZX_OBJ_TYPE_SUSPEND_TOKEN)
+DECLARE_DISPTAG(PagerDispatcher, ZX_OBJ_TYPE_PAGER)
+DECLARE_DISPTAG(ExceptionDispatcher, ZX_OBJ_TYPE_EXCEPTION)
+DECLARE_DISPTAG(ClockDispatcher, ZX_OBJ_TYPE_CLOCK)
+DECLARE_DISPTAG(StreamDispatcher, ZX_OBJ_TYPE_STREAM)
+DECLARE_DISPTAG(MsiDispatcher, ZX_OBJ_TYPE_MSI)
+DECLARE_DISPTAG(IoBufferDispatcher, ZX_OBJ_TYPE_IOB)
+DECLARE_DISPTAG(CounterDispatcher, ZX_OBJ_TYPE_COUNTER)
+DECLARE_DISPTAG(IoBufferSharedRegionDispatcher, ZX_OBJ_TYPE_IOB_SHARED_REGION)
+DECLARE_DISPTAG(SamplerDispatcher, ZX_OBJ_TYPE_SAMPLER)
 
+#undef DECLARE_SOLO_DISPTAG
 #undef DECLARE_DISPTAG
 
 extern "C" {
@@ -484,36 +488,12 @@ class SoloDispatcher : public Dispatcher {
 // RefPtr<Dispatcher> alone.  Must be called with a pointer to a valid
 // (non-null) dispatcher.
 
-// Note that the Dispatcher -> Dispatcher versions come up in generic
-// code, and so aren't totally vacuous.
-
 // Dispatcher -> FooDispatcher
 template <typename T>
 fbl::RefPtr<T> DownCastDispatcher(fbl::RefPtr<Dispatcher>* disp) {
   return (likely(DispatchTag<T>::ID == (*disp)->get_type()))
              ? fbl::RefPtr<T>::Downcast(ktl::move(*disp))
              : nullptr;
-}
-
-// Dispatcher -> Dispatcher
-template <>
-inline fbl::RefPtr<Dispatcher> DownCastDispatcher(fbl::RefPtr<Dispatcher>* disp) {
-  return ktl::move(*disp);
-}
-
-// const Dispatcher -> const FooDispatcher
-template <typename T>
-fbl::RefPtr<T> DownCastDispatcher(fbl::RefPtr<const Dispatcher>* disp) {
-  static_assert(ktl::is_const<T>::value, "");
-  return (likely(DispatchTag<typename ktl::remove_const<T>::type>::ID == (*disp)->get_type()))
-             ? fbl::RefPtr<T>::Downcast(ktl::move(*disp))
-             : nullptr;
-}
-
-// const Dispatcher -> const Dispatcher
-template <>
-inline fbl::RefPtr<const Dispatcher> DownCastDispatcher(fbl::RefPtr<const Dispatcher>* disp) {
-  return ktl::move(*disp);
 }
 
 // The same, but for Dispatcher* and FooDispatcher* instead of RefPtr.
@@ -524,12 +504,6 @@ T* DownCastDispatcher(Dispatcher* disp) {
   return (likely(DispatchTag<T>::ID == disp->get_type())) ? static_cast<T*>(disp) : nullptr;
 }
 
-// Dispatcher -> Dispatcher
-template <>
-inline Dispatcher* DownCastDispatcher(Dispatcher* disp) {
-  return disp;
-}
-
 // const Dispatcher -> const FooDispatcher
 template <typename T>
 const T* DownCastDispatcher(const Dispatcher* disp) {
@@ -537,12 +511,6 @@ const T* DownCastDispatcher(const Dispatcher* disp) {
   return (likely(DispatchTag<typename ktl::remove_const<T>::type>::ID == disp->get_type()))
              ? static_cast<const T*>(disp)
              : nullptr;
-}
-
-// const Dispatcher -> const Dispatcher
-template <>
-inline const Dispatcher* DownCastDispatcher(const Dispatcher* disp) {
-  return disp;
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_DISPATCHER_H_

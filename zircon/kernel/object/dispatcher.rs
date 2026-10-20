@@ -757,12 +757,6 @@ impl<T: fbl::IsOpaqueRefCounted> PeeredState<T> {
         self.peer_koid.load()
     }
 
-    /// Returns the peer KOID as `Option<NonZero<zx_koid_t>>`, or `None` if not yet initialized.
-    #[inline]
-    pub fn peer_koid_non_zero(&self) -> Option<core::num::NonZero<zx_types::zx_koid_t>> {
-        core::num::NonZero::new(self.peer_koid.load())
-    }
-
     /// Sets the peer KOID.
     #[inline]
     pub fn set_peer_koid(&self, koid: zx_types::zx_koid_t) {
