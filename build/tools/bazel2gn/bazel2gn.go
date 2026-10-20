@@ -57,11 +57,23 @@ func StmtToGN(stmt syntax.Stmt) ([]string, error) {
 
 	switch v := stmt.(type) {
 	case *syntax.LoadStmt:
+		if hasRawAttributeAnnotation(v) {
+			return nil, fmt.Errorf("found raw_attribute annotation in unexpected location, it should be right above a target definition to take effect")
+		}
 		// Load statements are ignored during conversion.
 		return nil, nil
 	case *syntax.ExprStmt:
+		if call, ok := v.X.(*syntax.CallExpr); ok {
+			return callExprToGN(call, v.Comments())
+		}
+		if hasRawAttributeAnnotation(v) {
+			return nil, fmt.Errorf("found raw_attribute annotation in unexpected location, it should be right above a target definition to take effect")
+		}
 		return exprToGN(v.X, nil)
 	case *syntax.AssignStmt:
+		if hasRawAttributeAnnotation(v) {
+			return nil, fmt.Errorf("found raw_attribute annotation in unexpected location, it should be right above a target definition to take effect")
+		}
 		return assignStmtToGN(v)
 	default:
 		return nil, fmt.Errorf("statement of type %T is not supported to be converted to GN, node details: %#v", stmt, stmt)
@@ -88,7 +100,7 @@ func exprToGN(expr syntax.Expr, transformers []transformer) ([]string, error) {
 		// NOTE: I'm not sure whether we need to plumb transformers here, so far it
 		// is not necessary. callExprToGN should be a top-level entry point for
 		// macro and rules.
-		return callExprToGN(v)
+		return callExprToGN(v, v.Comments())
 	case *syntax.BinaryExpr:
 		return binaryExprToGN(v, transformers)
 	case *syntax.Ident:
@@ -215,13 +227,22 @@ func targetCompatibleWithToGNConditions(expr syntax.Expr) ([]string, error) {
 // be macro or Bazel rules known to the converter.
 //
 // [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#function-and-method-calls
-func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
+func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]string, error) {
 	fn, ok := expr.Fn.(*syntax.Ident)
 	if !ok {
 		return nil, fmt.Errorf("expected identifier for call expression, got %T", expr.Fn)
 	}
 	bazelRule := fn.Name
+	start, _ := expr.Span()
+	rawAttrs, err := rawAttributesFromComments(start.Line, stmtComments, expr.Comments())
+	if err != nil {
+		return nil, err
+	}
+
 	if bazelRule == "rustc_check_cfg_build_flags" {
+		if len(rawAttrs) > 0 {
+			return nil, fmt.Errorf("raw_attribute annotation is not supported on %s", bazelRule)
+		}
 		return rustcCheckCfgBuildFlagsToGN(expr)
 	}
 	gnTemplateName, ok := bazelRuleToGNTemplate[bazelRule]
@@ -229,12 +250,11 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 		return nil, fmt.Errorf("%s is not a known Bazel rule to convert to GN", bazelRule)
 	}
 
-	if gnTemplateName == noGNEquivalent {
-		return nil, nil
-	}
-
 	// TODO(jayzhuang): Handle package level settings, e.g. visibility.
-	if bazelRule == "package" {
+	if gnTemplateName == noGNEquivalent || bazelRule == "package" {
+		if len(rawAttrs) > 0 {
+			return nil, fmt.Errorf("raw_attribute annotation is not supported on %s", bazelRule)
+		}
 		return nil, nil
 	}
 
@@ -257,6 +277,9 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 		}
 		if shouldSkip {
 			continue
+		}
+		if hasRawAttributeAnnotation(binaryExpr) {
+			return nil, fmt.Errorf("found raw_attribute annotation on attribute, it should be above the target definition to take effect")
 		}
 
 		ident, ok := binaryExpr.X.(*syntax.Ident)
@@ -331,6 +354,7 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 	if extra, ok := extraGnExpressionByRules[bazelRule]; ok {
 		ret = append(ret, indent([]string{extra}, 1)...)
 	}
+	ret = append(ret, indent(rawAttrs, 1)...)
 
 	ret = append(ret, "}")
 	if len(wrappingConditions) > 0 {
@@ -914,4 +938,68 @@ func transformersFromComments(comments *syntax.Comments) ([]transformer, error) 
 		return nil, err
 	}
 	return append(before, suffix...), nil
+}
+
+// rawAttributesFromComments extracts raw GN lines from `@bazel2gn:raw_attribute:`
+// comment annotations placed before a target definition.
+func rawAttributesFromComments(targetStartLine int32, commentsList ...*syntax.Comments) ([]string, error) {
+	var rawAttrs []string
+	seen := make(map[*syntax.Comments]bool)
+	for _, comments := range commentsList {
+		if comments == nil || seen[comments] {
+			continue
+		}
+		seen[comments] = true
+		seenRawAttr := false
+		for i, c := range comments.Before {
+			if after, ok := strings.CutPrefix(c.Text, rawAttributeAnnotationPrefix); ok {
+				expectedLine := targetStartLine - int32(len(comments.Before)-i)
+				if c.Start.Line != expectedLine {
+					return nil, fmt.Errorf("found raw_attribute annotation in unexpected location, it should be right above the target definition to take effect")
+				}
+				seenRawAttr = true
+				trimmed := strings.TrimSpace(after)
+				if trimmed == "" {
+					return nil, fmt.Errorf("empty %q annotation", rawAttributeAnnotationPrefix)
+				}
+				rawAttrs = append(rawAttrs, trimmed)
+			} else if seenRawAttr {
+				return nil, fmt.Errorf("found raw_attribute annotation in unexpected location, it should be right above the target definition to take effect")
+			}
+		}
+		for _, c := range append(comments.Suffix, comments.After...) {
+			if strings.HasPrefix(c.Text, rawAttributeAnnotationPrefix) {
+				return nil, fmt.Errorf("found raw_attribute annotation in unexpected location, it should be right above the target definition to take effect")
+			}
+		}
+	}
+	return rawAttrs, nil
+}
+
+// hasRawAttributeAnnotation reports whether any comment in the AST subtree
+// rooted at `node` starts with `rawAttributeAnnotationPrefix`.
+func hasRawAttributeAnnotation(node syntax.Node) bool {
+	if node == nil {
+		return false
+	}
+	var found bool
+	syntax.Walk(node, func(n syntax.Node) bool {
+		if n == nil {
+			return true
+		}
+		comments := n.Comments()
+		if comments == nil {
+			return true
+		}
+		for _, list := range [][]syntax.Comment{comments.Before, comments.Suffix, comments.After} {
+			for _, c := range list {
+				if strings.HasPrefix(c.Text, rawAttributeAnnotationPrefix) {
+					found = true
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return found
 }

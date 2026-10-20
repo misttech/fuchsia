@@ -299,6 +299,33 @@ source_set("foo") {
 }
 ```
 
+#### `@bazel2gn:raw_attribute:<value>`
+
+This annotation emits a raw GN attribute or statement inside the converted GN
+target. It is useful when a GN target needs an extra attribute or statement that
+has no counterpart in the Bazel target. This annotation must be placed right
+above the target definition it is annotating to take effect. Multiple
+`@bazel2gn:raw_attribute:` annotations may be stacked right above a target.
+
+**Example:**
+
+```bzl
+# @bazel2gn:raw_attribute:output_name = "far"
+cc_binary(
+    name = "bin",
+    srcs = ["main.cc"],
+)
+```
+
+**Converted GN:**
+
+```gn
+executable("bin") {
+  sources = [ "main.cc" ]
+  output_name = "far"
+}
+```
+
 #### `@bazel2gn:transformer=<transformer>`
 
 This annotation tells `bazel2gn` to apply a transformer to the annotated

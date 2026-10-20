@@ -44,7 +44,6 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 executable("bin") {
   sources = [ "main.cc" ]
-  output_name = "far"
   visibility = [
     ":*",
     "//build/packages:*",
@@ -55,6 +54,7 @@ executable("bin") {
     "//src/lib/fxl:fxl_cli",
     "//src/sys/pkg/lib/far/cpp:far",
   ]
+  output_name = "far"
 }
 if (is_host) {
   install_host_tools("host") {

@@ -7,6 +7,7 @@ load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:raw_attribute:if (!is_debug) { configs -= [ "//build/config:default_optimize" ] configs += [ "//build/config:optimize_speed", "//build/config/lto:lto-if-compatible" ] }
 rustc_library(
     name = "crypto",
     srcs = [
@@ -26,7 +27,7 @@ rustc_library(
     # TODO(https://fxbug.dev/571444250): Replace that with build_flags() labels.
     rustc_flags = [] if is_debug else [
         "-Copt-level=3",
-    ],  # @bazel2gn:raw_overwrite:[] if (!is_debug) { configs -= [ "//build/config:default_optimize" ] configs += [ "//build/config:optimize_speed", "//build/config/lto:lto-if-compatible" ] }
+    ],  # @bazel2gn:skip
     test_deps = [
         "//third_party/rust_crates/vendor:hex",
         "//third_party/rust_crates/vendor:rand",

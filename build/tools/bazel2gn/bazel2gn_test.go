@@ -2677,3 +2677,171 @@ func TestAspectHintsAndExpectIncludes(t *testing.T) {
 		})
 	}
 }
+
+func TestRawAttributeAnnotations(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "single raw_attribute on target",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "far"
+cc_binary(
+	name = "bin",
+	srcs = ["main.cc"],
+)`,
+			wantGN: `executable("bin") {
+	sources = [
+		"main.cc",
+	]
+	output_name = "far"
+}`,
+		},
+		{
+			name: "multiple raw_attribute annotations with preceding comment",
+			bazel: `# Regular comment explaining why raw attributes are needed.
+# @bazel2gn:raw_attribute:script = "kgsl_strings.rs.py"
+# @bazel2gn:raw_attribute:args = [ rebase_path("in.rs", root_build_dir) ]
+genrule(
+	name = "gen_strings",
+	srcs = ["in.rs"],
+	outs = ["out.rs"],
+	cmd = "python3 $(location :kgsl_strings.rs.py) $< $@",  # @bazel2gn:skip
+)`,
+			wantGN: `action("gen_strings") {
+	sources = [
+		"in.rs",
+	]
+	outputs = [
+		"out.rs",
+	]
+	script = "kgsl_strings.rs.py"
+	args = [ rebase_path("in.rs", root_build_dir) ]
+}`,
+		},
+		{
+			name: "raw_attribute with target_compatible_with",
+			bazel: `load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+# @bazel2gn:raw_attribute:output_name = "host_far"
+cc_binary(
+	name = "bin",
+	srcs = ["main.cc"],
+	target_compatible_with = HOST_CONSTRAINTS,
+)`,
+			wantGN: `if (is_host) {
+	executable("bin") {
+		sources = [
+			"main.cc",
+		]
+		output_name = "host_far"
+	}
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+func TestRawAttributeAnnotationErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bazel string
+	}{
+		{
+			name: "empty raw_attribute",
+			bazel: `# @bazel2gn:raw_attribute:
+cc_binary(
+	name = "bin",
+	srcs = ["main.cc"],
+)`,
+		},
+		{
+			name: "raw_attribute not immediately above target",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "far"
+# Unrelated comment between annotation and target.
+cc_binary(
+	name = "bin",
+	srcs = ["main.cc"],
+)`,
+		},
+		{
+			name: "raw_attribute on attribute instead of target",
+			bazel: `cc_binary(
+	name = "bin",
+	srcs = ["main.cc"],  # @bazel2gn:raw_attribute:output_name = "far"
+)`,
+		},
+		{
+			name: "raw_attribute on variable assignment",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "far"
+FOO = ["bar"]`,
+		},
+		{
+			name: "raw_attribute at bottom of target body before closing paren",
+			bazel: `cc_binary(
+	name = "bin1",
+	srcs = ["main.cc"],
+	# @bazel2gn:raw_attribute:output_name = "foo"
+)
+
+cc_binary(
+	name = "bin2",
+	srcs = ["other.cc"],
+)`,
+		},
+		{
+			name: "raw_attribute inside list attribute",
+			bazel: `cc_binary(
+	name = "bin",
+	srcs = [
+		# @bazel2gn:raw_attribute:output_name = "far"
+		"main.cc",
+	],
+)`,
+		},
+		{
+			name: "raw_attribute on rustc_check_cfg_build_flags",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "foo"
+rustc_check_cfg_build_flags(
+	name = "check_cfg",
+)`,
+		},
+		{
+			name: "raw_attribute on package",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "foo"
+package(default_applicable_licenses = ["//:license"])`,
+		},
+		{
+			name: "raw_attribute on no-op rule without GN equivalent",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "foo"
+exports_files(["foo.txt"])`,
+		},
+		{
+			name: "empty line between raw_attribute and target",
+			bazel: `# @bazel2gn:raw_attribute:output_name = "far"
+
+cc_binary(
+	name = "bin",
+	srcs = ["main.cc"],
+)`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			if _, err := bazelToGN(f); err == nil {
+				t.Errorf("Unexpected success converting Bazel targets. Bazel source:\n%s", tc.bazel)
+			}
+		})
+	}
+}

@@ -7,6 +7,7 @@ load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:raw_attribute:if (!is_debug) { configs -= [ "//build/config:default_optimize" ] configs += [ "//build/config:optimize_speed", "//build/config/lto:lto-if-compatible" ] }
 rustc_library(
     name = "storage_xts",
     srcs = ["src/lib.rs"],
@@ -15,7 +16,7 @@ rustc_library(
     # speed.
     rustc_flags = [] if is_debug else [
         "-Copt-level=3",
-    ],  # @bazel2gn:raw_overwrite:[] if (!is_debug) { configs -= [ "//build/config:default_optimize" ] configs += [ "//build/config:optimize_speed", "//build/config/lto:lto-if-compatible" ] }
+    ],  # @bazel2gn:skip
     test_deps = ["//third_party/rust_crates/vendor:test-case"],
     visibility = [
         "//src/storage/fvm:__pkg__",

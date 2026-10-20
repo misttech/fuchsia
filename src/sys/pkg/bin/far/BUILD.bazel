@@ -8,9 +8,10 @@ load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:raw_attribute:output_name = "far"
 cc_binary(
     name = "bin",
-    srcs = ["main.cc"],  # @bazel2gn:raw_overwrite:[ "main.cc" ] output_name = "far"
+    srcs = ["main.cc"],
     visibility = [
         "//build/packages:__pkg__",
         "//sdk:__pkg__",

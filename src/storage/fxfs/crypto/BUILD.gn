@@ -40,14 +40,6 @@ rustc_library("crypto") {
   crate_name = "fxfs_crypto"
   edition = "2024"
   proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
-  rustflags = []
-  if (!is_debug) {
-    configs -= [ "//build/config:default_optimize" ]
-    configs += [
-      "//build/config:optimize_speed",
-      "//build/config/lto:lto-if-compatible",
-    ]
-  }
   test_deps = [
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:rand",
@@ -84,4 +76,11 @@ rustc_library("crypto") {
     "//third_party/rust_crates:siphasher",
     "//third_party/rust_crates:zerocopy",
   ]
+  if (!is_debug) {
+    configs -= [ "//build/config:default_optimize" ]
+    configs += [
+      "//build/config:optimize_speed",
+      "//build/config/lto:lto-if-compatible",
+    ]
+  }
 }

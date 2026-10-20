@@ -44,14 +44,6 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 rustc_library("storage_xts") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
-  rustflags = []
-  if (!is_debug) {
-    configs -= [ "//build/config:default_optimize" ]
-    configs += [
-      "//build/config:optimize_speed",
-      "//build/config/lto:lto-if-compatible",
-    ]
-  }
   test_deps = [ "//third_party/rust_crates:test-case" ]
   visibility = [
     ":*",
@@ -66,4 +58,11 @@ rustc_library("storage_xts") {
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:zerocopy",
   ]
+  if (!is_debug) {
+    configs -= [ "//build/config:default_optimize" ]
+    configs += [
+      "//build/config:optimize_speed",
+      "//build/config/lto:lto-if-compatible",
+    ]
+  }
 }

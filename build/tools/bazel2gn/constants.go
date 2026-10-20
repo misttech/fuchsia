@@ -40,6 +40,10 @@ const pathOverwriteAnnotationPrefix = "# @bazel2gn:path_overwrite:"
 // overwritten with a raw GN expression.
 const rawOverwriteAnnotationPrefix = "# @bazel2gn:raw_overwrite:"
 
+// rawAttributeAnnotationPrefix is a comment annotation prefix that indicates a
+// raw GN attribute or statement should be emitted inside the annotated target.
+const rawAttributeAnnotationPrefix = "# @bazel2gn:raw_attribute:"
+
 // valueOverwriteAnnotationPrefix is a comment annotation prefix that indicates a value of a
 // dictionary entry should be overwritten in GN. In this case bazel2gn will ignore the value set
 // in the BUILD.bazel file and use the value specified in the annotation in the BUILD.gn file

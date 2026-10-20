@@ -6,6 +6,7 @@ load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:raw_attribute:non_rust_deps = [ ":copy_lib", ":gen_strings" ]
 rustc_library(
     name = "kgsl_strings",
     srcs = [
@@ -13,21 +14,20 @@ rustc_library(
         ":kgsl_strings.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/kgsl_strings.rs
     ],
     crate_root = "lib.rs",  # @bazel2gn:raw_overwrite:"$target_gen_dir/lib.rs"
-    data = [
-        ":gen_strings",
-    ],  # @bazel2gn:raw_overwrite:[ ":copy_lib", ":gen_strings" ]
     edition = "2024",
     deps = [
         "//src/starnix/lib/starnix_uapi",
     ],
 )
 
+# @bazel2gn:raw_attribute:script = "kgsl_strings.rs.py"
+# @bazel2gn:raw_attribute:args = [ rebase_path("//src/starnix/lib/linux_uapi/src/arm64.rs", root_build_dir), rebase_path("$target_gen_dir/kgsl_strings.rs", root_build_dir) ]
 genrule(
     name = "gen_strings",
     srcs = ["//src/starnix/lib/linux_uapi:src/arm64.rs"],
     outs = [
         "kgsl_strings.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/kgsl_strings.rs
     ],
-    cmd = "python3 $(location :kgsl_strings.rs.py) $< $@",  # @bazel2gn:raw_overwrite:0 not_needed(["cmd"]) script = "kgsl_strings.rs.py" args = [ rebase_path("//src/starnix/lib/linux_uapi/src/arm64.rs", root_build_dir), rebase_path("$target_gen_dir/kgsl_strings.rs", root_build_dir) ]
+    cmd = "python3 $(location :kgsl_strings.rs.py) $< $@",  # @bazel2gn:skip
     tools = [":kgsl_strings.rs.py"],
 )
