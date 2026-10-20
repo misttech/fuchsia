@@ -490,7 +490,32 @@ void SdmmcBlockDevice::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sy
   // partition.
   current_partition_ = UNKNOWN;
 
-  zx_status_t status = MmcDoSwitch(MMC_EXT_CSD_CMDQ_MODE_EN, 0);
+  // Ensure any interrupted transfer is stopped and the card is in the TRAN state before discarding
+  // queued tasks and disabling command queueing (JESD84-B51A Section 6.6.39.2 and Annex B.2.8).
+  zx_status_t status = WaitForTran();
+  if (status != ZX_OK) {
+    completer.buffer(arena).ReplyError(status);
+    return;
+  }
+
+  const sdmmc_req_t discard_queue = {
+      .cmd_idx = MMC_CMDQ_TASK_MGMT,
+      .cmd_flags = MMC_CMDQ_TASK_MGMT_FLAGS,
+      .arg = MMC_CMDQ_TASK_MGMT_DISCARD_QUEUE_ARG,
+  };
+  uint32_t unused_response[4] = {};
+  if ((status = sdmmc_->Request(&discard_queue, unused_response)) != ZX_OK) {
+    fdf::error("failed to discard CQHCI task queue (CMD48): {}", zx_status_get_string(status));
+    completer.buffer(arena).ReplyError(status);
+    return;
+  }
+
+  if ((status = WaitForTran()) != ZX_OK) {
+    completer.buffer(arena).ReplyError(status);
+    return;
+  }
+
+  status = MmcDoSwitch(MMC_EXT_CSD_CMDQ_MODE_EN, 0);
   if (status != ZX_OK) {
     completer.buffer(arena).ReplyError(status);
     return;
@@ -1277,7 +1302,8 @@ zx_status_t SdmmcBlockDevice::WaitForState(uint32_t state) {
     }
 
     current_state = MMC_STATUS_CURRENT_STATE(response);
-    if (current_state == MMC_STATUS_CURRENT_STATE_RECV) {
+    if (current_state == MMC_STATUS_CURRENT_STATE_RECV ||
+        current_state == MMC_STATUS_CURRENT_STATE_DATA) {
       st = sdmmc_->SdmmcStopTransmission();
       continue;
     } else if (current_state == state) {

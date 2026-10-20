@@ -3696,6 +3696,59 @@ TEST_P(SdmmcBlockDeviceTest, InlineCryptoDunOutOfRange) {
   });
 }
 
+TEST_P(SdmmcBlockDeviceTest, DisableCqhciDiscardsTaskQueue) {
+  if (!GetParam()) {
+    // CQHCI is only supported with FIDL SDMMC.
+    return;
+  }
+
+  ASSERT_OK(StartDriverForMmc());
+
+  auto [client_end, server_end] = fdf::Endpoints<fuchsia_hardware_cqhci::Cqhci>::Create();
+  driver_test_.RunInDriverContext([&](TestSdmmcRootDevice&) {
+    fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(server_end), block_device_);
+  });
+  fdf::WireSharedClient<fuchsia_hardware_cqhci::Cqhci> cqhci_client(
+      std::move(client_end), driver_test_.runtime().StartBackgroundDispatcher()->get());
+
+  // Simulate an active read data transfer on the card when DisableCqhci is invoked, and verify
+  // that the card's task queue is discarded via CMD48 before CMD6 clears CMDQ_MODE_EN.
+  bool in_data_state = true;
+  bool task_queue_discarded = false;
+  sdmmc_.set_command_callback(SDMMC_SEND_STATUS, [&](uint32_t out_response[4]) {
+    out_response[0] = in_data_state ? MMC_STATUS_CURRENT_STATE_DATA : MMC_STATUS_CURRENT_STATE_TRAN;
+  });
+  sdmmc_.set_command_callback(SDMMC_STOP_TRANSMISSION, [&](uint32_t out_response[4]) {
+    in_data_state = false;
+    out_response[0] = MMC_STATUS_CURRENT_STATE_TRAN;
+  });
+  sdmmc_.set_command_callback(MMC_CMDQ_TASK_MGMT, [&](const sdmmc_req_t& req) {
+    EXPECT_FALSE(in_data_state);
+    EXPECT_EQ(req.arg, uint32_t{MMC_CMDQ_TASK_MGMT_DISCARD_QUEUE_ARG});
+    task_queue_discarded = true;
+  });
+  sdmmc_.set_command_callback(MMC_SWITCH, [&](const sdmmc_req_t& req) -> zx_status_t {
+    const uint8_t index = (req.arg >> 16) & 0xff;
+    const uint8_t value = (req.arg >> 8) & 0xff;
+    if (index == MMC_EXT_CSD_CMDQ_MODE_EN && value == 0) {
+      if (!task_queue_discarded) {
+        return ZX_ERR_IO;
+      }
+    }
+    return ZX_OK;
+  });
+
+  driver_test_.runtime().PerformBlockingWork([&] {
+    fdf::Arena arena('TEST');
+    auto result = cqhci_client.sync().buffer(arena)->DisableCqhci();
+    ASSERT_OK(result.status());
+    EXPECT_TRUE(result->is_ok());
+  });
+
+  EXPECT_FALSE(in_data_state);
+  EXPECT_TRUE(task_queue_discarded);
+}
+
 INSTANTIATE_TEST_SUITE_P(SdmmcProtocolUsingFidlTest, SdmmcBlockDeviceTest, zxtest::Bool());
 
 }  // namespace sdmmc

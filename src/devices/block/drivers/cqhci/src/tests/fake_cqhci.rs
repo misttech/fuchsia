@@ -128,6 +128,11 @@ impl FakeCqhci {
     pub fn completed_tasks(&self) -> u32 {
         self.host.task_handler.completed_tasks.load(Ordering::Relaxed)
     }
+
+    /// Returns the number of times CLEAR_ALL_TASKS was issued.
+    pub fn cleared_tasks_count(&self) -> u32 {
+        self.host.task_handler.state.lock().cleared_tasks_count
+    }
 }
 
 struct MockRpmbServer {
@@ -407,6 +412,7 @@ struct FakeHardwareState {
     /// resets the hardware (by disabling CQE). While true, the driver must not attempt to submit
     /// new tasks.
     driver_in_recovery: bool,
+    cleared_tasks_count: u32,
 }
 
 impl FakeHardwareState {
@@ -539,11 +545,29 @@ impl mmio::Mmio for FakeMmio {
                     Ok(())
                 }
                 CQHCI_CQ_CTL_OFFSET => {
-                    if value & CqhciCqCtlRegister::HALT.bits() != 0 {
+                    let clear_all_tasks = value & CqhciCqCtlRegister::CLEAR_ALL_TASKS.bits() != 0;
+                    if clear_all_tasks {
+                        buf[CQHCI_CQ_TDBR_OFFSET / 4] = 0;
+                    }
+                    let cleared_value = value & !CqhciCqCtlRegister::CLEAR_ALL_TASKS.bits();
+                    let request_halt = if cleared_value & CqhciCqCtlRegister::HALT.bits() != 0 {
+                        if buf[idx] & CqhciCqCtlRegister::HALT.bits() != 0 {
+                            buf[idx] = cleared_value;
+                            false
+                        } else {
+                            true
+                        }
+                    } else {
+                        buf[idx] = cleared_value;
+                        false
+                    };
+                    if clear_all_tasks {
+                        state.tasks_in_progress = 0;
+                        state.cleared_tasks_count += 1;
+                    }
+                    if request_halt {
                         state.halt = true;
                         state.wake_event.notify(usize::MAX);
-                    } else {
-                        buf[idx] = value;
                     }
                     Ok(())
                 }
@@ -676,6 +700,7 @@ impl FakeTaskHandler {
                 active_partition: EmmcPartitionId::UserDataPartition as u32,
                 valid_crypto_slots: std::collections::HashSet::new(),
                 driver_in_recovery: false,
+                cleared_tasks_count: 0,
             })),
             bti,
             partition_vmos,

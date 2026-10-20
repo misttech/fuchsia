@@ -328,6 +328,7 @@ async fn test_error_recovery() {
     // clients (1 reader, 1 flusher), at most 2 tasks should fail (the one we explicitly failed,
     // and any which was already in-flight).
     assert!(state.lock().num_errors <= 2);
+    assert!(fixture.cleared_tasks_count() > 0);
 
     started_driver.stop_driver().await;
 }

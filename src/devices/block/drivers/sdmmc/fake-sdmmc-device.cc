@@ -548,10 +548,10 @@ void FakeSdmmcDevice::Request(RequestRequestView request, fdf::Arena& arena,
 }
 
 void FakeSdmmcDevice::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+  completer.buffer(arena).ReplySuccess();
 }
 void FakeSdmmcDevice::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) {
-  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+  completer.buffer(arena).ReplySuccess();
 }
 void FakeSdmmcDevice::InitializeCommandQueueing(
     InitializeCommandQueueingRequestView request, fdf::Arena& arena,

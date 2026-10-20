@@ -913,6 +913,7 @@ impl CommandQueueExcl {
     /// Disables the hardware.  NOTE: This does *not* change `state`.
     async fn disable(&mut self) {
         self.halt().await;
+        self.clear_all_tasks().await;
         {
             let mut inner = self.inner.lock();
             let mut cqcfg =
@@ -968,6 +969,46 @@ impl CommandQueueExcl {
             fasync::Timer::new(HALT_POLL_INTERVAL).await;
         }
         trace!("Halted");
+    }
+
+    /// Clears all pending tasks from the CQE host controller.
+    ///
+    /// Must only be called after [`CommandQueueExcl::halt`].
+    async fn clear_all_tasks(&mut self) {
+        {
+            let mut inner = self.inner.lock();
+            let cqcfg =
+                CqhciCqCfgRegister::from_bits_retain(inner.cqhci_mmio.load32(CQHCI_CQ_CFG_OFFSET));
+            if !cqcfg.contains(CqhciCqCfgRegister::CQE_ENABLE) {
+                return;
+            }
+            if inner.cqhci_mmio.load32(CQHCI_CQ_TDBR_OFFSET) == 0 && !inner.needs_recovery {
+                return;
+            }
+            let mut ctl =
+                CqhciCqCtlRegister::from_bits_retain(inner.cqhci_mmio.load32(CQHCI_CQ_CTL_OFFSET));
+            ctl.insert(CqhciCqCtlRegister::CLEAR_ALL_TASKS);
+            inner.cqhci_mmio.store32(CQHCI_CQ_CTL_OFFSET, ctl.bits());
+            inner.cqhci_mmio.write_barrier();
+        }
+        // Per JESD84-B51A B.4.3, CLEAR_ALL_TASKS is reset to 0 when all tasks have been cleared.
+        const CLEAR_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_micros(500);
+        const CLEAR_DEADLINE: std::time::Duration = std::time::Duration::from_millis(100);
+
+        let start = std::time::Instant::now();
+        loop {
+            let ctl = CqhciCqCtlRegister::from_bits_retain(
+                self.inner.lock().cqhci_mmio.load32(CQHCI_CQ_CTL_OFFSET),
+            );
+            if !ctl.contains(CqhciCqCtlRegister::CLEAR_ALL_TASKS) {
+                break;
+            } else if cfg!(not(test)) && start.elapsed() >= CLEAR_DEADLINE {
+                warn!("Failed to clear CQE tasks after deadline; assuming stalled");
+                break;
+            }
+            fasync::Timer::new(CLEAR_POLL_INTERVAL).await;
+        }
+        trace!("Cleared all tasks");
     }
 
     /// Executes a DCMD, waiting for its completion.
