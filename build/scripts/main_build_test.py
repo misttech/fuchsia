@@ -1435,7 +1435,7 @@ class BuildInvocationTest(MainBuildTestBase):
                         )
 
 
-class BuildCommandExecutionTest(unittest.TestCase):
+class BuildCommandExecutionTest(MainBuildTestBase):
     @mock.patch.object(main_build, "BuildLock")
     @mock.patch.object(subprocess, "Popen")
     @mock.patch.dict(os.environ, {"FX_BUILD_QUIET": "0"})
@@ -1552,6 +1552,69 @@ class BuildCommandExecutionTest(unittest.TestCase):
         # we forwarded --dry-run to the wrapper.
         mock_popen.assert_called_once()
         mock_lock.assert_called_once()
+
+    @mock.patch.object(signal_utils, "SignalManagedProcess")
+    def test_run_preflight_actions(self, mock_managed: mock.Mock) -> None:
+        context = self.create_context()
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+
+        calls: list[str] = []
+
+        def action(
+            name: str, status: main_build.PreflightStatus
+        ) -> main_build.PreflightAction:
+            def _run() -> main_build.PreflightStatus:
+                calls.append(name)
+                return status
+
+            return _run
+
+        def fake_run() -> int:
+            calls.append("build")
+            return 0
+
+        mock_managed.return_value.run.side_effect = fake_run
+
+        Status = main_build.PreflightStatus
+        for s1, s2, expected_rc, expected_calls in (
+            (Status.OK, Status.OK, 0, ["first", "second", "build"]),
+            (Status.ERROR, Status.OK, 1, ["first", "second"]),
+            (Status.FATAL, Status.OK, 1, ["first"]),
+        ):
+            calls.clear()
+            exec_info = main_build.BuildCommandExecution(
+                full_command=["cmd", "arg"],
+                env={"VAR": "VAL"},
+                invocation=invocation,
+                preflight_actions=[action("first", s1), action("second", s2)],
+            )
+            self.assertEqual(
+                exec_info._run_without_locking().return_code, expected_rc
+            )
+            self.assertEqual(calls, expected_calls)
+
+    @mock.patch.object(signal_utils, "SignalManagedProcess")
+    def test_run_dry_run_skips_preflight_actions(
+        self, mock_managed: mock.Mock
+    ) -> None:
+        context = self.create_context(dry_run=True)
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+
+        action = mock.Mock()
+        exec_info = main_build.BuildCommandExecution(
+            full_command=["cmd", "arg"],
+            env={"VAR": "VAL"},
+            invocation=invocation,
+            preflight_actions=[action],
+        )
+        mock_managed.return_value.run.return_value = 0
+
+        result = exec_info._run_without_locking()
+        self.assertEqual(result.return_code, 0)
+        action.assert_not_called()
+        mock_managed.return_value.run.assert_called_once()
 
 
 class BuildLockTest(unittest.TestCase):

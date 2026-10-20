@@ -20,6 +20,7 @@ Responsibilities are divided into the following classes:
 import argparse
 import dataclasses
 import datetime
+import enum
 import functools
 import getpass
 import json
@@ -32,7 +33,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any, TextIO
 
 # Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
@@ -49,6 +50,30 @@ _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
 JSONObject = dict[str, JSONValue]
 JSONArray = list[JSONValue]
+
+
+class PreflightStatus(enum.Enum):
+    """Outcome of a PreflightAction."""
+
+    # Action succeeded; continue with remaining actions and the build.
+    OK = "ok"
+    # Action failed; run remaining actions, then abort before the build.
+    ERROR = "error"
+    # Action failed fatally; abort immediately without running remaining actions.
+    FATAL = "fatal"
+
+
+# A preflight action is a callback that runs under the build lock immediately
+# before a build command is spawned. This is used for build-tool-specific setup
+# or health checks (e.g. checking if a persistent Ninja server is wedged and
+# killing it before Ninja runs; Bazel does not need this).
+#
+# - Attached to a BuildCommandExecution via BuildInvocation.new_build_command_execution(),
+#   not stored globally on FuchsiaBuildConfig.
+# - Skipped entirely during dry runs (--dry-run).
+# - Intended for build commands (is_build=True); non-build commands like queries
+#   do not register them.
+PreflightAction = Callable[[], PreflightStatus]
 
 _SCRIPT = pathlib.Path(__file__)
 
@@ -1519,8 +1544,17 @@ class BuildInvocation(object):
         command_type: str,
         build_command: list[str],
         is_build: bool = True,
+        preflight_actions: Sequence[PreflightAction] = (),
     ) -> "BuildCommandExecution":
-        """Creates a self-contained BuildCommandExecution."""
+        """Creates a self-contained BuildCommandExecution.
+
+        Args:
+          command_type: one of 'ninja', 'bazel' or 'other'.
+          build_command: the build tool command tokens.
+          is_build: whether this is a real build (vs. a query/tool command).
+          preflight_actions: optional build-tool-specific callables to run under
+            the build lock, just before the build command is spawned.
+        """
         build_env = self.get_build_env()
         context = self.context
 
@@ -1533,6 +1567,7 @@ class BuildInvocation(object):
                 env=build_env,
                 invocation=self,
                 is_build=is_build,
+                preflight_actions=preflight_actions,
             )
 
         top_cmd = list(self.top_build_command_prefix())
@@ -1584,6 +1619,7 @@ class BuildInvocation(object):
             env=build_env,
             invocation=self,
             is_build=is_build,
+            preflight_actions=preflight_actions,
         )
 
     def _inject_ninja_args(
@@ -1635,6 +1671,9 @@ class BuildCommandExecution(object):
       full_command: shell command tokens
       env: environment variables
       invocation: the build invocation this execution belongs to
+      is_build: whether this is a real build (vs. a query/tool command)
+      preflight_actions: tool-specific callables run under the build lock
+        just before the command is spawned (skipped in dry-run mode)
       cleanup_files: list of files to remove after execution
     """
 
@@ -1642,6 +1681,7 @@ class BuildCommandExecution(object):
     env: dict[str, str]
     invocation: BuildInvocation
     is_build: bool = True
+    preflight_actions: Sequence[PreflightAction] = ()
     cleanup_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
 
     def _run_without_locking(self) -> BuildResult:
@@ -1671,6 +1711,19 @@ class BuildCommandExecution(object):
         # but we have forwarded --dry-run to the top_build_wrapper, which
         # will skip the actual build execution. This allows for high-fidelity
         # verification of the entire wrapper orchestration stack.
+
+        # Run preflight actions here so they execute under BuildLock (acquired in
+        # run()) and cannot race a concurrent build of the same directory.
+        if not config.dry_run:
+            preflight_failed = False
+            for action in self.preflight_actions:
+                status = action()
+                if status == PreflightStatus.FATAL:
+                    return BuildResult(return_code=1)
+                if status == PreflightStatus.ERROR:
+                    preflight_failed = True
+            if preflight_failed:
+                return BuildResult(return_code=1)
 
         # If the TUI is enabled, we MUST NOT use a separate process group,
         # otherwise the TUI will be suspended when it tries to interact with
