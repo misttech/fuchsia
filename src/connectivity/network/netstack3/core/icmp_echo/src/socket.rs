@@ -56,16 +56,16 @@ impl<O: datagram::IpExt + IcmpIpExt + IpLayerIpExt> IpExt for O {}
 #[derivative(Default(bound = ""))]
 #[generic_over_ip(I, Ip)]
 pub struct IcmpSockets<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes> {
-    bound_and_id_allocator: RwLock<BoundSockets<I, D, BT>>,
+    bound_and_id_allocator: RwLock<BoundSockets<I, D, BT>, BT::RwLock>,
     // Destroy all_sockets last so the strong references in the demux are
     // dropped before the primary references in the set.
-    all_sockets: RwLock<IcmpSocketSet<I, D, BT>>,
+    all_sockets: RwLock<IcmpSocketSet<I, D, BT>, BT::RwLock>,
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes>
     OrderedLockAccess<BoundSockets<I, D, BT>> for IcmpSockets<I, D, BT>
 {
-    type Lock = RwLock<BoundSockets<I, D, BT>>;
+    type Lock = RwLock<BoundSockets<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.bound_and_id_allocator)
     }
@@ -74,7 +74,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes>
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes>
     OrderedLockAccess<IcmpSocketSet<I, D, BT>> for IcmpSockets<I, D, BT>
 {
-    type Lock = RwLock<IcmpSocketSet<I, D, BT>>;
+    type Lock = RwLock<IcmpSocketSet<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.all_sockets)
     }
