@@ -91,7 +91,6 @@ group("tests") {
     ":lib_test",
     "./connection_factory:tests",
     "./flash_manifest:tests",
-    "./interface:tests",
     "./transport/factory:tests",
     "./transport/interface:tests",
   ]

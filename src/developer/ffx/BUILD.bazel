@@ -34,6 +34,7 @@ test_suite(
         "//src/developer/ffx/lib/buildid:lib_test",
         "//src/developer/ffx/lib/compat_info:lib_test",
         "//src/developer/ffx/lib/errors:lib_test",
+        "//src/developer/ffx/lib/fastboot/interface:lib_test",
         "//src/developer/ffx/lib/isolate:lib_test",
         "//src/developer/ffx/lib/logging:lib_test",
         "//src/developer/ffx/lib/metrics:lib_test",
