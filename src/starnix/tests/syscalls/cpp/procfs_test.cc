@@ -541,6 +541,67 @@ TEST_F(ProcTaskDirTest, SelfStatIsNotEmpty) {
   ASSERT_TRUE(files::ReadFileToString("/proc/self/stat", &contents));
   ASSERT_THAT(contents.size(), testing::Gt(0));
 }
+
+std::optional<std::string> ExtractStatComm(const std::string& stat_contents) {
+  size_t open_paren = stat_contents.find('(');
+  size_t close_paren = stat_contents.rfind(')');
+  if (open_paren == std::string::npos || close_paren == std::string::npos ||
+      close_paren <= open_paren) {
+    return std::nullopt;
+  }
+  return stat_contents.substr(open_paren + 1, close_paren - open_paren - 1);
+}
+
+TEST_F(ProcTaskDirTest, SelfStatCommTruncatedToTaskCommLen) {
+  constexpr size_t kMaxCommLen = 15;  // TASK_COMM_LEN - 1
+
+  std::string stat_contents;
+  ASSERT_TRUE(files::ReadFileToString("/proc/self/stat", &stat_contents));
+  std::optional<std::string> stat_comm = ExtractStatComm(stat_contents);
+  ASSERT_TRUE(stat_comm.has_value()) << stat_contents;
+  EXPECT_LE(stat_comm->size(), kMaxCommLen) << *stat_comm;
+
+  std::string comm_contents;
+  ASSERT_TRUE(files::ReadFileToString("/proc/self/comm", &comm_contents));
+  if (!comm_contents.empty() && comm_contents.back() == '\n') {
+    comm_contents.pop_back();
+  }
+  EXPECT_EQ(*stat_comm, comm_contents);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Setting a 16-byte non-null string must truncate the comm field in /proc/self/stat to 15
+    // bytes.
+    ASSERT_THAT(prctl(PR_SET_NAME, "0123456789abcdef"), SyscallSucceeds());
+    std::string child_stat;
+    ASSERT_TRUE(files::ReadFileToString("/proc/self/stat", &child_stat));
+    std::optional<std::string> child_comm = ExtractStatComm(child_stat);
+    ASSERT_TRUE(child_comm.has_value()) << child_stat;
+    EXPECT_EQ(*child_comm, "0123456789abcde");
+
+    // Setting a multi-byte UTF-8 string whose codepoint straddles the 15-byte boundary must raw-
+    // truncate to 15 bytes rather than expanding invalid trailing UTF-8 into a 3-byte replacement
+    // character (\xef\xbf\xbd).
+    ASSERT_THAT(prctl(PR_SET_NAME, "0123456789abcd\xc3\xa9"), SyscallSucceeds());
+    ASSERT_TRUE(files::ReadFileToString("/proc/self/stat", &child_stat));
+    child_comm = ExtractStatComm(child_stat);
+    ASSERT_TRUE(child_comm.has_value()) << child_stat;
+    EXPECT_EQ(*child_comm, "0123456789abcd\xc3");
+    std::string child_comm_file;
+    ASSERT_TRUE(files::ReadFileToString("/proc/self/comm", &child_comm_file));
+    EXPECT_EQ(child_comm_file, "0123456789abcd\xc3\n");
+
+    // Setting a substring of argv[0] (which triggers TaskCommand::try_embed in Starnix) must still
+    // report only the comm name in /proc/self/stat rather than the full argv[0] basename.
+    ASSERT_THAT(prctl(PR_SET_NAME, "procfs_test"), SyscallSucceeds());
+    ASSERT_TRUE(files::ReadFileToString("/proc/self/stat", &child_stat));
+    child_comm = ExtractStatComm(child_stat);
+    ASSERT_TRUE(child_comm.has_value()) << child_stat;
+    EXPECT_EQ(*child_comm, "procfs_test");
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 TEST_F(ProcTaskDirTest, KthreadStatIsNotEmpty) {
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
