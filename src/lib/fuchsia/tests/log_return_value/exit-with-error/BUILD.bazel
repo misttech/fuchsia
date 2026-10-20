@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "exit-with-error-bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    crate_name = "exit_with_error_bin",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_packaged_binary(
+    name = "exit-with-error-bin_packaged_bin",
+    testonly = True,
+    binary = ":exit-with-error-bin",
+    binary_name = "exit_with_error_bin",
+)
+
+fx_component_manifest(
+    name = "component-manifest",
+    testonly = True,
+    component_name = "exit-with-error",
+    includes = [
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+    ],
+    manifest = "meta/exit-with-error.cml",
+)
+
+fx_component(
+    name = "component",
+    testonly = True,
+    compiled_manifest = ":component-manifest",
+    component_name = "exit-with-error",
+    deps = [":exit-with-error-bin_packaged_bin"],
+)
