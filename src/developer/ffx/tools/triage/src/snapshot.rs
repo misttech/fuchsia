@@ -14,7 +14,6 @@ use zip::ZipArchive;
 
 /// Creates new snapshot at given directory path and unzips it.
 pub async fn create_snapshot(
-    context: &EnvironmentContext,
     data_provider_proxy: DataProviderProxy,
     directory: &Path,
 ) -> Result<()> {
@@ -23,7 +22,7 @@ pub async fn create_snapshot(
         output_file: Some(directory.to_string_lossy().into()),
         upload: false,
     };
-    snapshot_impl(data_provider_proxy, cmd, context.clone())
+    snapshot_impl(data_provider_proxy, cmd, EnvironmentContext::default())
         .await
         .context("Unable to take snapshot of target.")?;
 

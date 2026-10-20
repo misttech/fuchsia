@@ -84,6 +84,22 @@ pub struct EnvironmentContext {
     pub(crate) no_environment: bool,
 }
 
+impl Default for EnvironmentContext {
+    fn default() -> Self {
+        Self {
+            kind: EnvironmentKind::NoContext,
+            exe_kind: ExecutableKind::Test,
+            env_vars: Default::default(),
+            runtime_args: Default::default(),
+            env_file_path: Default::default(),
+            config: Config::default(),
+            override_target_spec: None,
+            self_path: std::env::current_exe().unwrap(),
+            no_environment: false,
+        }
+    }
+}
+
 impl std::cmp::PartialEq for EnvironmentContext {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
@@ -461,8 +477,8 @@ impl EnvironmentContext {
     /// use ffx_config::BuildSelect;
     /// use ffx_config::SelectMode;
     ///
-    /// let env = ffx_config::test_env().build()?;
-    /// let query = env.context.build()
+    /// let ctx = EnvironmentContext::default();
+    /// let query = ctx.build()
     ///     .name("testing")
     ///     .level(Some(ConfigLevel::Build))
     ///     .build(Some(BuildSelect::Path("/tmp/build.json")))
@@ -479,9 +495,9 @@ impl EnvironmentContext {
     /// Example:
     ///
     /// ```no_run
-    /// let env = ffx_config::test_env().build()?;
-    /// env.context.query("a_key").get();
-    /// env.context.query(ffx_config::ConfigLevel::User).get();
+    /// let ctx = EnvironmentContext::default();
+    /// ctx.query("a_key").get();
+    /// ctx.query(ffx_config::ConfigLevel::User).get();
     /// ```
     pub fn query<'a>(&'a self, with: impl Into<ConfigQueryBuilder<'a>>) -> ConfigQueryBuilder<'a> {
         with.into()

@@ -378,9 +378,7 @@ impl<'a> From<ConfigLevel> for ConfigQueryBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::environment::{EnvironmentKind, ExecutableKind};
-    use crate::storage::Config;
-    use crate::{ConfigMap, EnvironmentContext};
+    use crate::ConfigMap;
     use std::path::PathBuf;
 
     #[test]
@@ -394,11 +392,9 @@ mod test {
                 "allowed_build": "$BUILD_DIR/output",
             }),
         );
-        let mut ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true)
-                .unwrap();
-        ctx.kind = EnvironmentKind::StrictContext;
-        ctx.config = Config::new(None, None, None, ConfigMap::new(), default_map);
+        let mut ctx = EnvironmentContext::default();
+        ctx.kind = crate::environment::EnvironmentKind::StrictContext;
+        ctx.config = crate::storage::Config::new(None, None, None, ConfigMap::new(), default_map);
 
         // 1. Disallowed env var in strict mode produces a descriptive BadValue error
         let q_env = ConfigQueryBuilder::from("test.disallowed_env").build();
@@ -460,11 +456,9 @@ mod test {
                 "all_disallowed": ["$XDG_RUNTIME_DIR/ffx", "$HOME/.ssh/id"],
             }),
         );
-        let mut ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true)
-                .unwrap();
-        ctx.kind = EnvironmentKind::StrictContext;
-        ctx.config = Config::new(None, None, None, ConfigMap::new(), default_map);
+        let mut ctx = EnvironmentContext::default();
+        ctx.kind = crate::environment::EnvironmentKind::StrictContext;
+        ctx.config = crate::storage::Config::new(None, None, None, ConfigMap::new(), default_map);
 
         // 1. Fallback array with a disallowed element drops the disallowed element and succeeds with the literal fallback
         let q_ctrl = ConfigQueryBuilder::from("ssh.controlmaster.dir").build();
@@ -495,10 +489,8 @@ mod test {
                 "string_val": "foobar",
             }),
         );
-        let mut ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true)
-                .unwrap();
-        ctx.config = Config::new(None, None, None, ConfigMap::new(), default_map);
+        let mut ctx = EnvironmentContext::default();
+        ctx.config = crate::storage::Config::new(None, None, None, ConfigMap::new(), default_map);
 
         let q = ConfigQueryBuilder::from("test.string_val").build();
         let res: Result<u64, ConfigError> = q.get(&ctx);

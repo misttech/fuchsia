@@ -435,13 +435,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_snaphot() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let annotations = Annotations::default();
         let data_provider_proxy = setup_fake_data_provider_server(client, annotations);
 
         let cmd = SnapshotCommand { output_file: None, dump_annotations: false, upload: false };
-        let result = snapshot_impl(data_provider_proxy, cmd, env.context.clone()).await;
+        let result = snapshot_impl(data_provider_proxy, cmd, EnvironmentContext::default()).await;
         assert!(result.is_ok());
         let output = result.expect("snapshot path");
         assert!(output.ends_with("snapshot.zip"));
@@ -449,7 +448,6 @@ mod test {
 
     #[fuchsia::test]
     async fn test_snaphot_machine() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let annotations = Annotations::default();
         let data_provider_proxy = setup_fake_data_provider_server(client, annotations);
@@ -462,7 +460,7 @@ mod test {
                 upload: false,
             },
             data_provider_proxy,
-            context: env.context.clone(),
+            context: EnvironmentContext::default(),
         };
         let buffers = TestBuffers::default();
         let writer = VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &buffers);
@@ -505,7 +503,6 @@ mod test {
 
     #[fuchsia::test]
     async fn test_snapshot_creates_missing_dir() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let annotations = Annotations::default();
         let data_provider_proxy = setup_fake_data_provider_server(client, annotations);
@@ -517,7 +514,7 @@ mod test {
             dump_annotations: false,
             upload: false,
         };
-        let result = snapshot_impl(data_provider_proxy, cmd, env.context.clone()).await;
+        let result = snapshot_impl(data_provider_proxy, cmd, EnvironmentContext::default()).await;
         let output = result.expect("snapshot path");
         assert_eq!(output, custom_dir.join("snapshot.zip"));
         assert!(output.is_file());
@@ -525,7 +522,6 @@ mod test {
 
     #[fuchsia::test]
     async fn test_snapshot_fails_when_dir_is_file() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let annotations = Annotations::default();
         let data_provider_proxy = setup_fake_data_provider_server(client, annotations);
@@ -538,7 +534,7 @@ mod test {
             dump_annotations: false,
             upload: false,
         };
-        let result = snapshot_impl(data_provider_proxy, cmd, env.context.clone()).await;
+        let result = snapshot_impl(data_provider_proxy, cmd, EnvironmentContext::default()).await;
         let err = result.expect_err("expected error when dir is a file");
         assert!(
             err.to_string().contains("Path provided is not a directory"),

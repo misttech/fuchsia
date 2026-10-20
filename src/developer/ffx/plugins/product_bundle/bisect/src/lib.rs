@@ -300,9 +300,7 @@ mod tests {
 
     #[test]
     fn test_find_fuchsia_dir_no_context() {
-        let ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true)
-                .expect("no context");
+        let ctx = EnvironmentContext::default();
         assert_eq!(find_fuchsia_dir(&ctx), None);
     }
 

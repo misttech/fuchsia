@@ -460,11 +460,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_cmd_impl() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
-        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
             target_behavior::setup_fake_resolution(None).await,
@@ -639,12 +638,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_verify_machine_schema() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let mut output =
             VerifiedMachineWriter::<TargetShowInfo>::new_test(Some(Format::JsonPretty), &buffers);
-        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
             target_behavior::setup_fake_resolution(None).await,
@@ -692,11 +690,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_cmd_impl_direct_connection() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
-        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
             target_behavior::setup_fake_resolution(None).await,
@@ -752,11 +749,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_rcs_host_identification_error() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
-        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
             target_behavior::setup_fake_resolution(None).await,
@@ -814,11 +810,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_cmd_impl_fidl_error() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
-        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
             target_behavior::setup_fake_resolution(None).await,
@@ -858,11 +853,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_cmd_impl_missing_services() {
-        let env = ffx_config::test_env().build().expect("test env");
         let client = fdomain_local::local_client_empty();
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
-        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
             target_behavior::setup_fake_resolution(None).await,

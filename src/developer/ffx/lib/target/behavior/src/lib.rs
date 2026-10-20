@@ -7,7 +7,6 @@ use discovery::DiscoverySources;
 use discovery::{DiscoveryBuilder, TargetEvent, TargetHandle, TargetState};
 use ffx_command_error::{Result, bug};
 use ffx_config::EnvironmentContext;
-use ffx_config::environment::ExecutableKind;
 use ffx_target::{
     DefaultTargetResolver, Resolution, build_discovery, build_discovery_builder_common,
     build_discovery_from_config,
@@ -43,12 +42,9 @@ pub struct DirectConnector(Arc<DirectConnectorInner>);
 
 impl DirectConnector {
     pub fn from_resolution_for_test(resolution: Resolution) -> Self {
-        let context =
-            EnvironmentContext::no_context(ExecutableKind::Test, Default::default(), None, true)
-                .expect("no_context test EnvironmentContext");
-        let discovery = build_discovery(DiscoverySources::empty(), &context);
+        let discovery = build_discovery(DiscoverySources::all(), &EnvironmentContext::default());
         DirectConnector(Arc::new(DirectConnectorInner {
-            context,
+            context: EnvironmentContext::default(),
             resolution: futures::lock::Mutex::new(Some(Arc::new(resolution))),
             resolver: futures::lock::Mutex::new(DefaultTargetResolver::new(discovery)),
         }))
@@ -366,6 +362,7 @@ pub fn target_interface(env: &fho::FhoEnvironment) -> FhoTargetEnvironment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffx_config::environment::ExecutableKind;
     use ffx_config::test_env;
     use std::str::FromStr;
 
