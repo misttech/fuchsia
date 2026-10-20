@@ -1100,15 +1100,15 @@ class BuildTestsJsonTest(unittest.TestCase):
         ]
         self.assertEqual(expected_tests, tests)
 
-    def test_product_bundle_test_group_no_environment_override(self) -> None:
+    def test_product_bundle_test_group_allowed_environments(self) -> None:
         vim3_env = {"dimensions": {"device_type": "Vim3"}}
         astro_env = {"dimensions": {"device_type": "Astro"}}
         aemu_env = {"dimensions": {"device_type": "AEMU"}}
 
         pb_tests = [
-            # No environments set: should inherit group's environments.
+            # No environments set: should inherit group's allowed_environments when default_environments is omitted.
             {"test": {"name": "default_pb_test", "cpu": "x64"}},
-            # Overlapping environments: should be intersected with group's environments.
+            # Overlapping environments: should be intersected with group's allowed_environments.
             {
                 "test": {"name": "subset_pb_test", "cpu": "x64"},
                 "environments": [vim3_env, aemu_env],
@@ -1125,8 +1125,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         test_groups = [
             {
                 "product_bundle_name": "my_pb",
-                "environments": [vim3_env, astro_env],
-                "override_test_environments": False,
+                "allowed_environments": [vim3_env, astro_env],
                 "tests_json": str(tests_json_path),
             }
         ]
@@ -1148,6 +1147,111 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "test": {"name": "disjoint_pb_test", "cpu": "x64"},
                 "build_only": True,
                 "environments": [],
+            },
+        ]
+        self.assertEqual(expected_tests, tests)
+
+    def test_product_bundle_test_group_default_environments_subset(
+        self,
+    ) -> None:
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+        nuc11_env = {"dimensions": {"device_type": "Intel NUC Kit NUC11TNHv5"}}
+        vim3_env = {"dimensions": {"device_type": "Vim3"}}
+
+        pb_tests = [
+            # No environments set: should only inherit group's default_environments ([aemu_env]).
+            {"test": {"name": "default_pb_test", "cpu": "x64"}},
+            # Explicitly specifies nuc11_env: allowed by allowed_environments ([aemu_env, nuc11_env]).
+            {
+                "test": {"name": "nuc11_pb_test", "cpu": "x64"},
+                "environments": [nuc11_env],
+            },
+            # Explicitly specifies vim3_env and nuc11_env: intersected with allowed_environments -> [nuc11_env].
+            {
+                "test": {"name": "mixed_pb_test", "cpu": "x64"},
+                "environments": [vim3_env, nuc11_env],
+            },
+            # Disjoint environments: becomes build_only = True with empty environments.
+            {
+                "test": {"name": "disjoint_pb_test", "cpu": "x64"},
+                "environments": [vim3_env],
+            },
+        ]
+        tests_json_path = self.build_dir / "pb_tests.json"
+        tests_json_path.write_text(json.dumps(pb_tests))
+
+        test_groups = [
+            {
+                "product_bundle_name": "my_pb",
+                "allowed_environments": [aemu_env, nuc11_env],
+                "default_environments": [aemu_env],
+                "tests_json": str(tests_json_path),
+            }
+        ]
+        product_bundles = [{"name": "my_pb"}]
+        (_, tests) = self._test([], test_groups, product_bundles)
+
+        expected_tests = [
+            {
+                "test": {"name": "default_pb_test-my_pb", "cpu": "x64"},
+                "product_bundle": "my_pb",
+                "environments": [aemu_env],
+            },
+            {
+                "test": {"name": "nuc11_pb_test-my_pb", "cpu": "x64"},
+                "product_bundle": "my_pb",
+                "environments": [nuc11_env],
+            },
+            {
+                "test": {"name": "mixed_pb_test-my_pb", "cpu": "x64"},
+                "product_bundle": "my_pb",
+                "environments": [nuc11_env],
+            },
+            {
+                "test": {"name": "disjoint_pb_test", "cpu": "x64"},
+                "build_only": True,
+                "environments": [],
+            },
+        ]
+        self.assertEqual(expected_tests, tests)
+
+    def test_product_bundle_test_group_empty_default_environments(self) -> None:
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+        nuc11_env = {"dimensions": {"device_type": "Intel NUC Kit NUC11TNHv5"}}
+
+        pb_tests = [
+            # No environments set: becomes build_only when default_environments is empty.
+            {"test": {"name": "default_pb_test", "cpu": "x64"}},
+            # Explicitly specifies nuc11_env: allowed by allowed_environments.
+            {
+                "test": {"name": "nuc11_pb_test", "cpu": "x64"},
+                "environments": [nuc11_env],
+            },
+        ]
+        tests_json_path = self.build_dir / "pb_tests.json"
+        tests_json_path.write_text(json.dumps(pb_tests))
+
+        test_groups = [
+            {
+                "product_bundle_name": "my_pb",
+                "allowed_environments": [aemu_env, nuc11_env],
+                "default_environments": [],
+                "tests_json": str(tests_json_path),
+            }
+        ]
+        product_bundles = [{"name": "my_pb"}]
+        (_, tests) = self._test([], test_groups, product_bundles)
+
+        expected_tests = [
+            {
+                "test": {"name": "default_pb_test", "cpu": "x64"},
+                "build_only": True,
+                "environments": [],
+            },
+            {
+                "test": {"name": "nuc11_pb_test-my_pb", "cpu": "x64"},
+                "product_bundle": "my_pb",
+                "environments": [nuc11_env],
             },
         ]
         self.assertEqual(expected_tests, tests)
@@ -1309,12 +1413,10 @@ class BuildTestsJsonTest(unittest.TestCase):
         test_groups = [
             {
                 "product_bundle_name": "my_pb",
-                "override_test_environments": False,
                 "tests_json": str(pb_tests_json_path_1),
             },
             {
                 "product_bundle_name": "my_other_pb",
-                "override_test_environments": False,
                 "tests_json": str(pb_tests_json_path_2),
             },
         ]
@@ -1340,12 +1442,10 @@ class BuildTestsJsonTest(unittest.TestCase):
         test_groups_B = [
             {
                 "product_bundle_name": "my_other_pb",
-                "override_test_environments": False,
                 "tests_json": str(pb_tests_json_path_2),
             },
             {
                 "product_bundle_name": "my_pb",
-                "override_test_environments": False,
                 "tests_json": str(pb_tests_json_path_1),
             },
         ]
@@ -1588,8 +1688,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         arm64_test_groups = [
             {
                 "product_bundle_name": "minimal.arm64",
-                "environments": [c4a_env],
-                "override_test_environments": False,
+                "allowed_environments": [c4a_env],
                 "tests_json": str(pb_tests_json_path),
             }
         ]
@@ -1644,8 +1743,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         x64_test_groups = [
             {
                 "product_bundle_name": "minimal.x64",
-                "environments": [aemu_env],
-                "override_test_environments": False,
+                "allowed_environments": [aemu_env],
                 "tests_json": str(pb_tests_json_path),
             },
             {
@@ -1701,9 +1799,6 @@ class BuildTestsJsonTest(unittest.TestCase):
         vim3_env = build_tests_json.Environment(
             dimensions=build_tests_json.Dimensions(device_type="Vim3")
         )
-        host_env = build_tests_json.Environment(
-            dimensions=build_tests_json.Dimensions(os="Linux", cpu="x64")
-        )
 
         # 1. General test mode
         test_basic: dict[str, T.Any] = {"test": {"name": "t1"}}
@@ -1720,7 +1815,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             [{"dimensions": {"device_type": "AEMU"}}],
         )
 
-        # 2. Product bundle test group mode with override_test_environments=True
+        # 2. Product bundle test group mode with mandatory environments
         test_pb_override: dict[str, T.Any] = {
             "test": {"name": "t2"},
             "environments": [{"dimensions": {"device_type": "AEMU"}}],
@@ -1734,7 +1829,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             [{"dimensions": {"device_type": "Vim3"}}],
         )
 
-        # 3. Product bundle test group mode with override_test_environments=False
+        # 3. Product bundle test group mode with allowed_envs and default_envs
         test_pb_no_override: dict[str, T.Any] = {
             "test": {"name": "t3"},
             "environments": [
@@ -1744,7 +1839,8 @@ class BuildTestsJsonTest(unittest.TestCase):
         }
         build_tests_json.resolve_product_bundle_test_environments(
             test_pb_no_override,
-            group_envs=[vim3_env],
+            allowed_envs=[vim3_env],
+            default_envs=[vim3_env],
             target_platforms=target_p,
             other_platforms=other_p,
         )

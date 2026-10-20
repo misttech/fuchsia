@@ -114,8 +114,7 @@ if (target_cpu == "arm64") {
     product_bundle_name = "minimal.arm64"
 
     if (is_postsubmit) {
-      environments = [ c4a_env ]
-      override_test_environments = false
+      allowed_environments = [ c4a_env ]
     } else {
       build_only = true
     }
@@ -135,8 +134,7 @@ if (target_cpu == "x64") {
     product_bundle_name = "minimal.x64"
 
     if (is_postsubmit) {
-      environments = [ aemu_env ]
-      override_test_environments = false
+      allowed_environments = [ aemu_env ]
     } else {
       build_only = true
     }
@@ -157,11 +155,10 @@ if (target_cpu == "x64") {
   if (is_debug) {
     product_bundle_test_group("core.x64-lacewing") {
       product_bundle_name = "core.x64"
-      environments = [
+      allowed_environments = [
         aemu_env,
         nuc11_env,
       ]
-      override_test_environments = false
       host_tests = [ "//src/testing/end_to_end:core_x64_stable_tests" ]
     }
   }
@@ -171,8 +168,7 @@ if (target_cpu == "riscv64") {
     product_bundle_name = "minimal.riscv64"
 
     if (is_postsubmit) {
-      environments = [ qemu_env ]
-      override_test_environments = false
+      allowed_environments = [ qemu_env ]
     } else {
       build_only = true
     }
@@ -205,8 +201,7 @@ if (target_cpu == "x64") {
     product_bundle_name = "workbench_eng.x64"
 
     if (is_postsubmit) {
-      environments = [ aemu_env ]
-      override_test_environments = false
+      allowed_environments = [ aemu_env ]
     } else {
       build_only = true
     }
@@ -219,11 +214,10 @@ if (target_cpu == "x64") {
   if (is_balanced) {
     product_bundle_test_group("workbench_eng.x64-lacewing") {
       product_bundle_name = "workbench_eng.x64"
-      environments = [
+      allowed_environments = [
         aemu_env,
         nuc11_env,
       ]
-      override_test_environments = false
       host_tests = [
         "//src/testing/end_to_end:workbench_x64_stable_tests",
         "//src/tests/end_to_end:workbench_x64_stable_tests",

@@ -42,18 +42,25 @@ import("//build/python/python_action.gni")
 #     [str] The name of the product bundle to assign the tests to.
 #     DEPRECATED: Use `product_bundle` instead.
 #
-#   environments (optional; default = [])
-#     [list of scopes] The environments to run these tests on.
+#   environments (optional)
+#     [list of scopes] The environments that all tests in this group must use,
+#     overriding any environments set by individual tests.
+#     Cannot be specified with `allowed_environments` or `default_environments`.
 #     See //docs/contribute/testing/environments.md.
+#
+#   allowed_environments (optional)
+#     [list of scopes] The environments that tests in this group may use if
+#     they explicitly specify environments.
+#     Cannot be specified with `environments`.
+#
+#   default_environments (optional; default = allowed_environments)
+#     [list of scopes] The environments that tests in this group will use as
+#     their default if they do not specify environments. Must be a subset of
+#     `allowed_environments`.
+#     Cannot be specified with `environments`.
 #
 #   build_only (optional; default = false)
 #     [bool] If true, the tests in this group are built but not run.
-#
-#   override_test_environments (optional; default = true)
-#     [bool] If true, override the environments set by individual tests with
-#     the environments specified for this group. If false, the group's
-#     environments are used as defaults for tests without explicit
-#     environments and intersected with explicit test environments.
 #
 template("product_bundle_test_group") {
   assert(defined(invoker.tests) || defined(invoker.target_tests) ||
@@ -86,20 +93,39 @@ template("product_bundle_test_group") {
     }
 
     _build_only = defined(invoker.build_only) && invoker.build_only
+    _environments = []
+    _allowed_environments = []
+    _default_environments = []
     if (_build_only) {
-      assert(!defined(invoker.environments),
-             "build_only test groups should not specify environments")
-      _environments = []
+      assert(
+          !defined(invoker.environments) &&
+              !defined(invoker.allowed_environments) &&
+              !defined(invoker.default_environments),
+          "build_only test groups should not specify environments, allowed_environments, or default_environments")
+    } else if (defined(invoker.environments)) {
+      assert(invoker.environments != [],
+             "'environments' cannot be empty if provided.")
+      assert(
+          !defined(invoker.allowed_environments) &&
+              !defined(invoker.default_environments),
+          "Cannot specify 'environments' with 'allowed_environments' or 'default_environments'")
+      _environments = invoker.environments
     } else {
-      _environments = []
-      if (defined(invoker.environments)) {
-        _environments = invoker.environments
+      if (defined(invoker.allowed_environments)) {
+        assert(invoker.allowed_environments != [],
+               "'allowed_environments' cannot be empty if provided.")
+        _allowed_environments = invoker.allowed_environments
       }
-    }
-
-    _override_test_environments = true
-    if (defined(invoker.override_test_environments)) {
-      _override_test_environments = invoker.override_test_environments
+      if (defined(invoker.default_environments)) {
+        assert(invoker.default_environments != [],
+               "'default_environments' cannot be empty if provided.")
+        _default_environments = invoker.default_environments
+        assert(_default_environments + _allowed_environments -
+                   _allowed_environments == [],
+               "default_environments must be a subset of allowed_environments")
+      } else {
+        _default_environments = _allowed_environments
+      }
     }
 
     _tests_json = "${target_out_dir}/${target_name}/tests.json"
@@ -156,7 +182,8 @@ template("product_bundle_test_group") {
             product_bundle_name = _product_bundle_name
             build_only = _build_only
             environments = _environments
-            override_test_environments = _override_test_environments
+            allowed_environments = _allowed_environments
+            default_environments = _default_environments
             tests_json = rebase_path(_tests_json, root_build_dir)
             bazel_target_test_suites =
                 rebase_path(_bazel_target_test_suites, root_build_dir)

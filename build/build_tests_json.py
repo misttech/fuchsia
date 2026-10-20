@@ -228,7 +228,7 @@ def validate_known_platform(
     env: Environment,
     target_platforms: set[Dimensions],
     other_platforms: set[Dimensions],
-) -> None:
+) -> Environment:
     """Validate that env matches at least one known platform (target or other)."""
     if not any(
         env.dimensions.is_subset_of(p)
@@ -238,6 +238,7 @@ def validate_known_platform(
             f"Could not match environment specifications: {env.to_dict()}\n"
             + "Consult //build/testing/platforms.gni for all allowable specifications"
         )
+    return env
 
 
 def matches_target_platform(
@@ -368,7 +369,7 @@ def override_product_bundle_test_environments(
     test: dict[str, Any],
     group_envs: list[Environment],
 ) -> None:
-    """Resolve environments for a product_bundle_test_group with override_test_environments=True."""
+    """Resolve environments for a product_bundle_test_group that specifies mandatory `environments`."""
 
     # Don't run purely host tests through this function
     assert not is_pure_host_test(test)
@@ -383,38 +384,39 @@ def override_product_bundle_test_environments(
 
 def resolve_product_bundle_test_environments(
     test: dict[str, Any],
-    group_envs: list[Environment],
+    allowed_envs: list[Environment],
+    default_envs: list[Environment],
     target_platforms: set[Dimensions],
     other_platforms: set[Dimensions],
 ) -> None:
-    """Resolve environments for a product_bundle_test_group with override_test_environments=False."""
+    """Resolve environments for a product_bundle_test_group using allowed and default environments."""
 
     # Don't run purely host tests through this function
     assert not is_pure_host_test(test)
 
     # Mark build_only tests as having no environments, or mark all tests as build_only if the
-    # group has no environments.
-    if test_is_build_only(test) or not group_envs:
+    # group has no allowed environments.
+    if test_is_build_only(test) or not allowed_envs:
         set_environments_for_test(test, [])
         return
 
-    # If the test does not specify any environments, use the group's environments.
+    # If the test does not specify any environments, use the group's default environments.
     raw_test_envs = test.get("environments")
     if not raw_test_envs:
-        set_environments_for_test(test, group_envs)
+        set_environments_for_test(test, default_envs)
         return
 
     # The environments specified by a test are a set of dimension requirements
     # for a match, rather than an exact match on all Environment fields (such as
     # tags or emulator configurations). A test environment matches if its
-    # dimensions are a subset of any of the group's environments' dimensions.
+    # dimensions are a subset of any of the group's allowed environments' dimensions.
     matched_envs: list[Environment] = []
     for e in raw_test_envs:
         env = instance_from_dict(Environment, e)
         validate_known_platform(env, target_platforms, other_platforms)
         if any(
-            env.dimensions.is_subset_of(group_env.dimensions)
-            for group_env in group_envs
+            env.dimensions.is_subset_of(allowed_env.dimensions)
+            for allowed_env in allowed_envs
         ):
             matched_envs.append(env)
     set_environments_for_test(test, matched_envs)
@@ -600,15 +602,43 @@ def build_tests_json(
         raw_group_envs: list[dict[str, JSONValue]] = (
             [] if group_build_only else test_group.get("environments", [])
         )
-        override_test_environments = test_group.get(
-            "override_test_environments", True
+        raw_allowed_envs: list[dict[str, JSONValue]] = (
+            []
+            if group_build_only
+            else test_group.get("allowed_environments", [])
         )
-        group_environments: list[Environment] = []
+        raw_default_envs: list[dict[str, JSONValue]] = (
+            []
+            if group_build_only
+            else test_group.get("default_environments", raw_allowed_envs)
+        )
+
         try:
-            for e in raw_group_envs:
-                env = instance_from_dict(Environment, e)
-                validate_known_platform(env, target_platforms, other_platforms)
-                group_environments.append(env)
+            group_environments: list[Environment] = [
+                validate_known_platform(
+                    instance_from_dict(Environment, e),
+                    target_platforms,
+                    other_platforms,
+                )
+                for e in raw_group_envs
+            ]
+            group_allowed_environments: list[Environment] = [
+                validate_known_platform(
+                    instance_from_dict(Environment, e),
+                    target_platforms,
+                    other_platforms,
+                )
+                for e in raw_allowed_envs
+            ]
+            group_default_environments: list[Environment] = [
+                validate_known_platform(
+                    instance_from_dict(Environment, e),
+                    target_platforms,
+                    other_platforms,
+                )
+                for e in raw_default_envs
+            ]
+
         except ValueError as err:
             validation_errors.append(
                 f"product_bundle_test_group:{product_bundle_name}: {err}"
@@ -649,7 +679,7 @@ def build_tests_json(
                         group_build_only,
                     )
                 else:
-                    if override_test_environments:
+                    if group_environments:
                         override_product_bundle_test_environments(
                             test,
                             group_environments,
@@ -657,7 +687,8 @@ def build_tests_json(
                     else:
                         resolve_product_bundle_test_environments(
                             test,
-                            group_environments,
+                            group_allowed_environments,
+                            group_default_environments,
                             target_platforms,
                             other_platforms,
                         )
