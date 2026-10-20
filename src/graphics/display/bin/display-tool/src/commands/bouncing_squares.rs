@@ -193,7 +193,7 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw::testing;
+    use crate::draw::{ByteCounts, testing};
     use googletest::{expect_eq, expect_true, gtest};
     use std::collections::HashSet;
 
@@ -263,14 +263,22 @@ mod tests {
                 .position(|(actual, expected)| actual != expected);
             expect_eq!(first_difference, None, "frame {}", frame_index);
 
-            // After the first render of each image, only the parts that changed are drawn.
-            let written = surface.take_byte_counts().written;
+            // After the first render of each image, only the parts that changed are drawn, and
+            // only written row segments are cleaned (each byte at most once).
+            let ByteCounts { written, cleaned } = surface.take_byte_counts();
             if frame_index >= 2 {
                 expect_true!(
-                    written < u64::from(width * height * 4),
+                    written < u64::from(width) * u64::from(height) * 4,
                     "frame {} written {}",
                     frame_index,
                     written
+                );
+                expect_true!(
+                    cleaned <= written,
+                    "frame {} written {} cleaned {}",
+                    frame_index,
+                    written,
+                    cleaned
                 );
             }
         }

@@ -14,6 +14,7 @@ use std::cell::Cell;
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::iter::Sum;
+use std::num::NonZero;
 use std::ops::{Add, Range};
 
 // TODO(armansito): Extend this to support different patterns and tiled image formats.
@@ -63,6 +64,84 @@ impl Frame {
     }
 }
 
+/// Where the pixels of a linear image are in its memory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SurfaceLayout {
+    /// Width of the image, in pixels.
+    pub width: NonZero<u32>,
+    /// Height of the image, in pixels.
+    pub height: NonZero<u32>,
+    /// Size of one pixel, in bytes.
+    pub pixel_width: NonZero<u32>,
+    /// Distance between the starts of two consecutive rows, in bytes.
+    pub row_bytes: NonZero<u32>,
+}
+
+impl SurfaceLayout {
+    /// Distance between the starts of two consecutive pixels in a row, in bytes.
+    fn pixel_stride(&self) -> u32 {
+        self.row_bytes.get() / self.width
+    }
+
+    /// Clips `frame` to the image bounds, the way [`Surface::fill_region`] does: an origin past
+    /// the right or bottom edge moves to the last column or row.
+    pub fn clip(&self, frame: &Frame) -> Frame {
+        let width = self.width.get();
+        let height = self.height.get();
+        let pos_x = min(width - 1, frame.pos_x);
+        let pos_y = min(height - 1, frame.pos_y);
+        Frame {
+            pos_x,
+            pos_y,
+            width: min(frame.width, width - pos_x),
+            height: min(frame.height, height - pos_y),
+        }
+    }
+
+    /// Returns the bytes that [`Surface::fill_region`] writes for any of `frames`, as offsets
+    /// into the image's memory.
+    ///
+    /// Each row of each clipped frame yields the range from the row's first written byte to its
+    /// last. The result is sorted, and ranges that overlap or touch are merged, so no byte is in
+    /// two ranges.
+    fn row_byte_ranges(&self, frames: &[Frame]) -> Vec<Range<usize>> {
+        let pixel_stride = self.pixel_stride() as usize;
+        let row_bytes = self.row_bytes.get() as usize;
+        let pixel_width = self.pixel_width.get() as usize;
+        let mut ranges: Vec<Range<usize>> = Vec::new();
+        for frame in frames {
+            let frame = self.clip(frame);
+            let (Some(frame_width), Some(frame_height)) =
+                (NonZero::new(frame.width), NonZero::new(frame.height))
+            else {
+                continue;
+            };
+            // `frame` is clipped to `self`, so `pos_x + frame_width <= width` and
+            // `pos_y + frame_height <= height`, and `pixel_stride * width <= row_bytes`.
+            // All values are `u32`s promoted to 64-bit `usize`, so none of the products or sums
+            // below can overflow.
+            let first_start =
+                row_bytes * frame.pos_y as usize + pixel_stride * frame.pos_x as usize;
+            let len = (frame_width.get() - 1) as usize * pixel_stride + pixel_width;
+            ranges.extend((0..frame_height.get() as usize).map(|row| {
+                let start = first_start + row_bytes * row;
+                start..start + len
+            }));
+        }
+        // Each frame's rows are already sorted, and the stable sort merges such runs in linear
+        // time.
+        ranges.sort_by_key(|range| range.start);
+        let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            match merged.last_mut() {
+                Some(last) if range.start <= last.end => last.end = max(last.end, range.end),
+                _ => merged.push(range),
+            }
+        }
+        merged
+    }
+}
+
 /// A CPU access to a [`Surface`]'s bytes, recorded by tests.
 #[cfg(test)]
 #[derive(Clone, Debug, PartialEq)]
@@ -84,7 +163,10 @@ impl Add for ByteCounts {
     type Output = ByteCounts;
 
     fn add(self, other: ByteCounts) -> ByteCounts {
-        ByteCounts { written: self.written + other.written, cleaned: self.cleaned + other.cleaned }
+        ByteCounts {
+            written: self.written.saturating_add(other.written),
+            cleaned: self.cleaned.saturating_add(other.cleaned),
+        }
     }
 }
 
@@ -99,12 +181,12 @@ impl Sum for ByteCounts {
 /// Holds no display resources, so drawing can be tested over any VMO.
 pub struct Surface {
     mapping: Mapping,
+    /// The address where `mapping` starts. Only used to clean caches with `zx_cache_flush`;
+    /// pixels are read and written through `mapping`.
+    base_addr: usize,
     /// The VMO behind `mapping`.
     vmo: zx::Vmo,
-    width: u32,
-    height: u32,
-    pixel_width: u32,
-    row_bytes: u32,
+    layout: SurfaceLayout,
 
     /// Time spent cleaning caches since the last [`Surface::take_clean_time`] call.
     clean_time: Cell<zx::MonotonicDuration>,
@@ -118,23 +200,34 @@ pub struct Surface {
 }
 
 impl Surface {
-    /// `mapping` must map all of `vmo`. `pixel_width` is the size of one pixel in bytes, and
-    /// `row_bytes` the distance between the starts of two consecutive rows.
-    pub fn new(
-        mapping: Mapping,
-        vmo: zx::Vmo,
-        width: u32,
-        height: u32,
-        pixel_width: u32,
-        row_bytes: u32,
-    ) -> Self {
+    /// `mapping` must map all of `vmo`, and `layout` must fit in it.
+    pub fn new(mut mapping: Mapping, vmo: zx::Vmo, layout: SurfaceLayout) -> Self {
+        assert!(
+            u64::from(layout.width.get()) * u64::from(layout.pixel_width.get())
+                <= u64::from(layout.row_bytes.get()),
+            "row of {} pixels of {} bytes exceeds row_bytes {}",
+            layout.width,
+            layout.pixel_width,
+            layout.row_bytes
+        );
+        assert!(
+            u64::from(layout.row_bytes.get()) * u64::from(layout.height.get())
+                <= mapping.len() as u64,
+            "surface of {} rows of {} bytes exceeds {} byte mapping",
+            layout.height,
+            layout.row_bytes,
+            mapping.len()
+        );
+        // `as_ptr_len()` documents that its pointer may only be used to free the memory, because
+        // reading or writing the memory through it would bypass `SharedBuffer`. The address is
+        // only ever passed to `zx_cache_flush`, which does not access the memory's contents (see
+        // `Surface::clean_rows`), and `mapping` stays usable.
+        let (base, _) = mapping.as_ptr_len();
         Surface {
             mapping,
+            base_addr: base as usize,
             vmo,
-            width,
-            height,
-            pixel_width,
-            row_bytes,
+            layout,
             clean_time: Cell::new(zx::MonotonicDuration::ZERO),
             byte_counts: Cell::new(ByteCounts::default()),
             #[cfg(test)]
@@ -145,26 +238,23 @@ impl Surface {
     /// Clips `frame` to the surface bounds, the way [`Surface::fill_region`] does: an origin past
     /// the right or bottom edge moves to the last column or row.
     pub fn clip(&self, frame: &Frame) -> Frame {
-        let pos_x = min(self.width - 1, frame.pos_x);
-        let pos_y = min(self.height - 1, frame.pos_y);
-        Frame {
-            pos_x,
-            pos_y,
-            width: min(frame.width, self.width - pos_x),
-            height: min(frame.height, self.height - pos_y),
-        }
+        self.layout.clip(frame)
     }
 
     fn record_write(&self, range: Range<usize>) {
-        self.byte_counts
-            .update(|counts| ByteCounts { written: counts.written + range.len() as u64, ..counts });
+        self.byte_counts.update(|counts| ByteCounts {
+            written: counts.written.saturating_add(range.len() as u64),
+            ..counts
+        });
         #[cfg(test)]
         self.log.borrow_mut().push(SurfaceOp::Write(range));
     }
 
     fn record_clean(&self, range: Range<usize>) {
-        self.byte_counts
-            .update(|counts| ByteCounts { cleaned: counts.cleaned + range.len() as u64, ..counts });
+        self.byte_counts.update(|counts| ByteCounts {
+            cleaned: counts.cleaned.saturating_add(range.len() as u64),
+            ..counts
+        });
         #[cfg(test)]
         self.log.borrow_mut().push(SurfaceOp::Clean(range));
     }
@@ -180,11 +270,12 @@ impl Surface {
     /// Fill the specified region of this surface with the specified color. The size and
     /// interpretation of the given color must match the underlying image format.
     pub fn fill_region(&self, color: &[u8], frame: &Frame) -> Result<()> {
-        if self.pixel_width != u32::try_from(color.len())? {
+        let layout = &self.layout;
+        if layout.pixel_width.get() != u32::try_from(color.len())? {
             return Err(format_err!(
                 "provided color width ({}) does not match expected pixel format width ({})",
                 color.len(),
-                self.pixel_width
+                layout.pixel_width
             ));
         }
 
@@ -192,25 +283,27 @@ impl Surface {
         let frame = self.clip(frame);
 
         // Color the pixels within the frame.
-        let pixel_stride = self.row_bytes / self.width;
-        if pixel_stride == self.pixel_width {
+        let pixel_stride = layout.pixel_stride();
+        let row_bytes = usize::try_from(layout.row_bytes.get())?;
+        let pixel_stride_usize = usize::try_from(pixel_stride)?;
+        let pos_x = usize::try_from(frame.pos_x)?;
+        let pos_y = usize::try_from(frame.pos_y)?;
+        let frame_width = usize::try_from(frame.width)?;
+        let frame_height = usize::try_from(frame.height)?;
+        if pixel_stride == layout.pixel_width.get() {
             // The pixels of each row of the frame are contiguous, so each row is written with a
             // single copy. This is much faster than one `write_at()` call per pixel.
-            let row = color.repeat(usize::try_from(frame.width)?);
-            let row_bytes = usize::try_from(self.row_bytes)?;
-            let first_row_offset = row_bytes * usize::try_from(frame.pos_y)?
-                + usize::try_from(pixel_stride)? * usize::try_from(frame.pos_x)?;
-            for row_index in 0..usize::try_from(frame.height)? {
+            let row = color.repeat(frame_width);
+            let first_row_offset = row_bytes * pos_y + pixel_stride_usize * pos_x;
+            for row_index in 0..frame_height {
                 let offset = first_row_offset + row_bytes * row_index;
                 self.mapping.write_at(offset, &row);
                 self.record_write(offset..offset + row.len());
             }
         } else {
-            for row in 0..frame.height {
-                for col in 0..frame.width {
-                    let idx =
-                        self.row_bytes * (row + frame.pos_y) + pixel_stride * (col + frame.pos_x);
-                    let idx: usize = idx.try_into()?;
+            for row in 0..frame_height {
+                for col in 0..frame_width {
+                    let idx = row_bytes * (row + pos_y) + pixel_stride_usize * (col + pos_x);
                     self.mapping.write_at(idx, color);
                     self.record_write(idx..idx + color.len());
                 }
@@ -230,44 +323,50 @@ impl Surface {
         Ok(())
     }
 
-    /// Returns the bytes from the first to the last byte that [`Surface::fill_region`] writes for
-    /// `frame`, or None if it writes nothing.
-    fn byte_range(&self, frame: &Frame) -> Option<Range<usize>> {
-        let frame = self.clip(frame);
-        if frame.width == 0 || frame.height == 0 {
-            return None;
-        }
-        let pixel_stride = (self.row_bytes / self.width) as usize;
-        let row_bytes = self.row_bytes as usize;
-        let start = row_bytes * frame.pos_y as usize + pixel_stride * frame.pos_x as usize;
-        let len = (frame.height as usize - 1) * row_bytes
-            + (frame.width as usize - 1) * pixel_stride
-            + self.pixel_width as usize;
-        Some(start..start + len)
-    }
-
     /// Clean (write back) data caches for every pixel that [`Surface::fill_region`] writes for
     /// any of `frames`.
     ///
-    /// Each frame cleans the whole band of rows from its first to its last pixel, as one range.
-    /// Overlapping ranges are merged, so no byte is cleaned twice.
+    /// Cleans each row of each frame from its first to its last pixel (see
+    /// [`SurfaceLayout::row_byte_ranges`]), in user space, so the bytes between the rows are not
+    /// cleaned. Rows of different frames that overlap are merged, so no byte is cleaned twice.
     pub fn cache_clean_regions(&self, frames: &[Frame]) -> Result<()> {
         let start = zx::MonotonicInstant::get();
-        let mut ranges: Vec<Range<usize>> =
-            frames.iter().filter_map(|frame| self.byte_range(frame)).collect();
-        ranges.sort_by_key(|range| range.start);
-        let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
-        for range in ranges {
-            match merged.last_mut() {
-                Some(last) if range.start <= last.end => last.end = max(last.end, range.end),
-                _ => merged.push(range),
-            }
-        }
-        for range in merged {
-            self.vmo.op_range(zx::VmoOp::CACHE_CLEAN, range.start as u64, range.len() as u64)?;
-            self.record_clean(range);
-        }
+        let ranges = self.layout.row_byte_ranges(frames);
+        let result = self.clean_rows(&ranges);
         self.clean_time.set(self.clean_time.get() + (zx::MonotonicInstant::get() - start));
+        result
+    }
+
+    /// Clean (write back) data caches for each of `ranges`, offsets into the surface's memory,
+    /// with one `zx_cache_flush` call per range.
+    ///
+    /// Panics if a range does not lie inside the mapping.
+    fn clean_rows(&self, ranges: &[Range<usize>]) -> Result<()> {
+        let mapping_len = self.mapping.len();
+        for range in ranges {
+            assert!(
+                range.start <= range.end && range.end <= mapping_len,
+                "clean range {:?} outside the {} byte mapping",
+                range,
+                mapping_len
+            );
+            // SAFETY: `zx_cache_flush` with `ZX_CACHE_FLUSH_DATA` is a vDSO routine that only
+            // performs cache maintenance (on arm64, `dc cvac` per line and a `dsb`) on the lines
+            // of the given address range. It does not change the memory's contents, so it cannot
+            // conflict with reads and writes through `self.mapping`. The range lies inside the
+            // mapping (asserted above), so `base_addr + range.end` does not overflow, and the
+            // range stays mapped while `self.mapping` exists, which outlives this call; so the
+            // cache operations cannot fault.
+            let status = unsafe {
+                zx::sys::zx_cache_flush(
+                    (self.base_addr + range.start) as *const u8,
+                    range.len(),
+                    zx::sys::ZX_CACHE_FLUSH_DATA,
+                )
+            };
+            zx::Status::ok(status).context("zx_cache_flush failed")?;
+            self.record_clean(range.clone());
+        }
         Ok(())
     }
 
@@ -299,7 +398,7 @@ impl Surface {
 
 impl MappedImage {
     pub fn create(image: Image) -> Result<MappedImage> {
-        let size: usize = *image.buffer_settings.size_bytes.as_ref().unwrap() as usize;
+        let size = usize::try_from(*image.buffer_settings.size_bytes.as_ref().unwrap())?;
         let vmo = image
             .vmo
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -311,20 +410,22 @@ impl MappedImage {
         )
         .context("failed to map VMO")?;
 
+        let width = NonZero::new(image.parameters.width)
+            .ok_or_else(|| format_err!("image width must be non-zero"))?;
+        let height = NonZero::new(image.parameters.height)
+            .ok_or_else(|| format_err!("image height must be non-zero"))?;
         let constraints = &image.format_constraints;
         let pixel_width = image_format_stride_bytes_per_width_pixel_2(
             *constraints.pixel_format.as_ref().unwrap(),
         )
         .unwrap();
+        let pixel_width =
+            NonZero::new(pixel_width).ok_or_else(|| format_err!("pixel width must be non-zero"))?;
         let row_bytes = image_format_minimum_row_bytes_2(constraints, image.parameters.width)?;
-        let surface = Surface::new(
-            mapping,
-            vmo,
-            image.parameters.width,
-            image.parameters.height,
-            pixel_width,
-            row_bytes,
-        );
+        let row_bytes =
+            NonZero::new(row_bytes).ok_or_else(|| format_err!("row bytes must be non-zero"))?;
+        let surface =
+            Surface::new(mapping, vmo, SurfaceLayout { width, height, pixel_width, row_bytes });
         Ok(MappedImage { image, surface })
     }
 
@@ -391,10 +492,32 @@ pub mod testing {
 
     /// Creates a surface of 4-byte pixels without row padding, all zero.
     pub fn new_surface(width: u32, height: u32) -> Surface {
+        let width = NonZero::new(width).expect("test surface width must be non-zero");
+        let height = NonZero::new(height).expect("test surface height must be non-zero");
+        let pixel_width = NonZero::new(4).unwrap();
+        let row_bytes = width.checked_mul(pixel_width).expect("row_bytes overflow");
         let page_size = zx::system_get_page_size() as usize;
-        let size = ((width * height * 4) as usize).next_multiple_of(page_size);
+        let size = (row_bytes.get() as usize * height.get() as usize).next_multiple_of(page_size);
         let (mapping, vmo) = Mapping::allocate(size).expect("allocate test VMO");
-        Surface::new(mapping, vmo, width, height, 4, width * 4)
+        Surface::new(mapping, vmo, SurfaceLayout { width, height, pixel_width, row_bytes })
+    }
+
+    /// For each byte of a surface, whether some ops wrote it and whether they cleaned it.
+    pub struct TouchedBytes {
+        pub written: Vec<bool>,
+        pub cleaned: Vec<bool>,
+    }
+
+    /// Returns which of the first `size` bytes of a surface `ops` writes and cleans.
+    pub fn touched_bytes(ops: &[SurfaceOp], size: usize) -> TouchedBytes {
+        let mut touched = TouchedBytes { written: vec![false; size], cleaned: vec![false; size] };
+        for op in ops {
+            match op {
+                SurfaceOp::Write(range) => touched.written[range.clone()].fill(true),
+                SurfaceOp::Clean(range) => touched.cleaned[range.clone()].fill(true),
+            }
+        }
+        touched
     }
 
     /// Checks that every byte written in `ops` is cleaned by a later op in `ops`.
@@ -434,20 +557,22 @@ mod tests {
     /// buffer. Results must match it byte for byte.
     fn reference_fill_region(
         buffer: &mut [u8],
-        width: u32,
-        height: u32,
-        row_bytes: u32,
+        layout: &SurfaceLayout,
         color: &[u8],
         frame: &Frame,
     ) {
+        let width = layout.width.get();
+        let height = layout.height.get();
+        let row_bytes = layout.row_bytes.get() as usize;
         let pos_x = min(width - 1, frame.pos_x);
         let pos_y = min(height - 1, frame.pos_y);
         let frame_width = min(frame.width, width - pos_x);
         let frame_height = min(frame.height, height - pos_y);
-        let pixel_stride = row_bytes / width;
+        let pixel_stride = layout.pixel_stride() as usize;
         for row in 0..frame_height {
             for col in 0..frame_width {
-                let idx = (row_bytes * (row + pos_y) + pixel_stride * (col + pos_x)) as usize;
+                let idx = row_bytes * (row as usize + pos_y as usize)
+                    + pixel_stride * (col as usize + pos_x as usize);
                 buffer[idx..idx + color.len()].copy_from_slice(color);
             }
         }
@@ -463,29 +588,24 @@ mod tests {
         /// Creates a surface whose bytes start out as a non-zero pattern, so writes to the wrong
         /// place and missing writes both show up as differences.
         fn new(width: u32, height: u32, pixel_width: u32, row_bytes: u32) -> Fixture {
+            let layout = SurfaceLayout {
+                width: NonZero::new(width).unwrap(),
+                height: NonZero::new(height).unwrap(),
+                pixel_width: NonZero::new(pixel_width).unwrap(),
+                row_bytes: NonZero::new(row_bytes).unwrap(),
+            };
             let page_size = zx::system_get_page_size() as usize;
-            let size = ((row_bytes * height) as usize).next_multiple_of(page_size);
+            let size = (row_bytes as usize * height as usize).next_multiple_of(page_size);
             let (mapping, vmo) = Mapping::allocate(size).expect("allocate test VMO");
             let expected: Vec<u8> = (0..size).map(|i| (i * 7 + 3) as u8).collect();
             mapping.write_at(0, &expected);
-            Fixture {
-                surface: Surface::new(mapping, vmo, width, height, pixel_width, row_bytes),
-                expected,
-            }
+            Fixture { surface: Surface::new(mapping, vmo, layout), expected }
         }
 
         /// Fills `frame` in the surface and in the expected bytes.
         fn fill_region(&mut self, color: &[u8], frame: Frame) {
             self.surface.fill_region(color, &frame).expect("fill_region");
-            let surface = &self.surface;
-            reference_fill_region(
-                &mut self.expected,
-                surface.width,
-                surface.height,
-                surface.row_bytes,
-                color,
-                &frame,
-            );
+            reference_fill_region(&mut self.expected, &self.surface.layout, color, &frame);
         }
 
         fn actual(&self) -> Vec<u8> {
@@ -509,9 +629,12 @@ mod tests {
         let mut buffer = vec![0u8; 18 * 3];
         reference_fill_region(
             &mut buffer,
-            4,
-            3,
-            18,
+            &SurfaceLayout {
+                width: NonZero::new(4).unwrap(),
+                height: NonZero::new(3).unwrap(),
+                pixel_width: NonZero::new(4).unwrap(),
+                row_bytes: NonZero::new(18).unwrap(),
+            },
             &COLOR,
             &Frame { pos_x: 1, pos_y: 1, width: 2, height: 1 },
         );
@@ -691,20 +814,19 @@ mod tests {
         expect_eq!(a.bounding_box(&a), a);
     }
 
-    /// Returns the smallest range that contains all the writes in `ops`.
-    fn written_span(ops: &[SurfaceOp]) -> Option<Range<usize>> {
-        ops.iter().fold(None, |span, op| match (span, op) {
-            (None, SurfaceOp::Write(range)) => Some(range.clone()),
-            (Some(span), SurfaceOp::Write(range)) => {
-                Some(min(span.start, range.start)..max(span.end, range.end))
-            }
-            (span, SurfaceOp::Clean(_)) => span,
-        })
+    /// Returns the total length of the cleans in `ops`.
+    fn cleaned_len(ops: &[SurfaceOp]) -> usize {
+        ops.iter()
+            .map(|op| match op {
+                SurfaceOp::Write(_) => 0,
+                SurfaceOp::Clean(range) => range.len(),
+            })
+            .sum()
     }
 
     #[gtest]
     #[fuchsia::test]
-    fn clean_region_covers_exactly_the_written_span() {
+    fn clean_region_covers_exactly_the_written_rows() {
         let frames = [
             Frame { pos_x: 5, pos_y: 7, width: 20, height: 11 },
             Frame { pos_x: 50, pos_y: 3, width: 30, height: 10 },
@@ -715,23 +837,95 @@ mod tests {
             Frame { pos_x: 17, pos_y: 9, width: 1, height: 1 },
             Frame { pos_x: 0, pos_y: 0, width: 64, height: 48 },
         ];
-        // Rows without padding, rows with padding, and a pixel stride wider than the pixel.
-        for (width, row_bytes) in [(64, 256), (64, 320), (10, 64)] {
+        // Rows without padding, rows with padding, and pixel strides wider than the pixel (5 bytes
+        // for 320-byte rows of 64 pixels, 6 bytes for 64-byte rows of 10 pixels).
+        for (width, row_bytes) in [(64, 256), (64, 288), (64, 320), (10, 64)] {
             for frame in &frames {
                 let fixture = Fixture::new(width, 48, 4, row_bytes);
                 fixture.surface.fill_region(&COLOR, frame).expect("fill_region");
                 fixture.surface.cache_clean_regions(&[*frame]).expect("cache_clean_regions");
                 let ops = fixture.surface.take_log();
-                let span = written_span(&ops).expect("frame writes pixels");
-                expect_eq!(
-                    ops.last(),
-                    Some(&SurfaceOp::Clean(span)),
+                expect_eq!(testing::first_uncleaned_byte(&ops), None);
+                // In each row, exactly the bytes from the first to the last written byte are
+                // cleaned, and none of them twice.
+                let testing::TouchedBytes { written, cleaned } =
+                    testing::touched_bytes(&ops, fixture.surface.mapping.len());
+                let mut expected_cleaned = vec![false; written.len()];
+                for row in
+                    written.chunks(row_bytes as usize).enumerate().filter_map(|(row_index, row)| {
+                        let first = row.iter().position(|w| *w)?;
+                        let last = row.iter().rposition(|w| *w)?;
+                        let row_start = row_index * row_bytes as usize;
+                        Some(row_start + first..row_start + last + 1)
+                    })
+                {
+                    expected_cleaned[row].fill(true);
+                }
+                expect_true!(
+                    cleaned == expected_cleaned,
                     "width {} row_bytes {} {:?}",
                     width,
                     row_bytes,
                     frame
                 );
-                expect_eq!(testing::first_uncleaned_byte(&ops), None);
+                expect_eq!(
+                    cleaned_len(&ops),
+                    cleaned.iter().filter(|c| **c).count(),
+                    "width {} row_bytes {} {:?}",
+                    width,
+                    row_bytes,
+                    frame
+                );
+            }
+        }
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn clean_regions_of_overlapping_frames_cleans_each_written_byte_once() {
+        // Pairs of frames like an old and a new square position, plus disjoint and touching ones.
+        let pairs = [
+            (
+                Frame { pos_x: 10, pos_y: 5, width: 20, height: 20 },
+                Frame { pos_x: 14, pos_y: 9, width: 20, height: 20 },
+            ),
+            (
+                Frame { pos_x: 30, pos_y: 20, width: 20, height: 20 },
+                Frame { pos_x: 26, pos_y: 16, width: 20, height: 20 },
+            ),
+            (
+                Frame { pos_x: 0, pos_y: 0, width: 5, height: 30 },
+                Frame { pos_x: 50, pos_y: 10, width: 5, height: 30 },
+            ),
+            (
+                Frame { pos_x: 0, pos_y: 0, width: 32, height: 10 },
+                Frame { pos_x: 32, pos_y: 0, width: 32, height: 10 },
+            ),
+            (
+                Frame { pos_x: 50, pos_y: 40, width: 30, height: 30 },
+                Frame { pos_x: 0, pos_y: 47, width: 64, height: 1 },
+            ),
+        ];
+        // Rows without and with padding; the pixels of a row are contiguous in both (320-byte
+        // rows of 64 pixels would give a pixel stride of 5 bytes).
+        for (width, row_bytes) in [(64, 256), (64, 288)] {
+            for (a, b) in &pairs {
+                let fixture = Fixture::new(width, 48, 4, row_bytes);
+                fixture.surface.fill_region(&COLOR, a).expect("fill_region");
+                fixture.surface.fill_region(&[1, 2, 3, 4], b).expect("fill_region");
+                fixture.surface.cache_clean_regions(&[*a, *b]).expect("cache_clean_regions");
+                let ops = fixture.surface.take_log();
+                let testing::TouchedBytes { written, cleaned } =
+                    testing::touched_bytes(&ops, fixture.surface.mapping.len());
+                expect_true!(cleaned == written, "row_bytes {} frames {:?} {:?}", row_bytes, a, b);
+                expect_eq!(
+                    cleaned_len(&ops),
+                    written.iter().filter(|w| **w).count(),
+                    "row_bytes {} frames {:?} {:?}",
+                    row_bytes,
+                    a,
+                    b
+                );
             }
         }
     }
@@ -752,7 +946,7 @@ mod tests {
 
     #[gtest]
     #[fuchsia::test]
-    fn clean_regions_merges_overlapping_ranges() {
+    fn clean_regions_cleans_each_row_in_order() {
         let fixture = Fixture::new(64, 48, 4, 256);
         fixture
             .surface
@@ -764,11 +958,152 @@ mod tests {
             .expect("cache_clean_regions");
         expect_eq!(
             fixture.surface.take_log(),
-            vec![SurfaceOp::Clean(0..8), SurfaceOp::Clean(10 * 256 + 160..13 * 256 + 8),]
+            vec![
+                SurfaceOp::Clean(0..8),
+                SurfaceOp::Clean(10 * 256 + 160..10 * 256 + 176),
+                SurfaceOp::Clean(11 * 256..11 * 256 + 8),
+                SurfaceOp::Clean(11 * 256 + 160..11 * 256 + 176),
+                SurfaceOp::Clean(12 * 256..12 * 256 + 8),
+                SurfaceOp::Clean(13 * 256..13 * 256 + 8),
+            ]
         );
         expect_eq!(
             fixture.surface.take_byte_counts(),
-            ByteCounts { written: 0, cleaned: 8 + 3 * 256 + 8 - 160 }
+            ByteCounts { written: 0, cleaned: 8 + 2 * 16 + 3 * 8 }
+        );
+    }
+
+    /// 64 x 48 pixels of 4 bytes, without row padding.
+    const LAYOUT: SurfaceLayout = SurfaceLayout {
+        width: NonZero::new(64).unwrap(),
+        height: NonZero::new(48).unwrap(),
+        pixel_width: NonZero::new(4).unwrap(),
+        row_bytes: NonZero::new(256).unwrap(),
+    };
+
+    /// [`LAYOUT`] with 32 bytes of padding after each row.
+    const PADDED_LAYOUT: SurfaceLayout =
+        SurfaceLayout { row_bytes: NonZero::new(288).unwrap(), ..LAYOUT };
+
+    #[gtest]
+    #[fuchsia::test]
+    fn row_byte_ranges_of_interior_frame() {
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[Frame { pos_x: 5, pos_y: 7, width: 20, height: 3 }]),
+            vec![
+                7 * 256 + 20..7 * 256 + 100,
+                8 * 256 + 20..8 * 256 + 100,
+                9 * 256 + 20..9 * 256 + 100,
+            ]
+        );
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn row_byte_ranges_of_clipped_frames() {
+        // Right edge: 14 of 30 columns remain.
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[Frame { pos_x: 50, pos_y: 3, width: 30, height: 2 }]),
+            vec![3 * 256 + 200..4 * 256, 4 * 256 + 200..5 * 256]
+        );
+        // Bottom edge: 2 of 10 rows remain.
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[Frame { pos_x: 3, pos_y: 46, width: 2, height: 10 }]),
+            vec![46 * 256 + 12..46 * 256 + 20, 47 * 256 + 12..47 * 256 + 20]
+        );
+        // Bottom-right corner, with padded rows: the padding is not cleaned.
+        expect_eq!(
+            PADDED_LAYOUT.row_byte_ranges(&[Frame {
+                pos_x: 62,
+                pos_y: 46,
+                width: u32::MAX,
+                height: u32::MAX
+            }]),
+            vec![46 * 288 + 248..46 * 288 + 256, 47 * 288 + 248..47 * 288 + 256]
+        );
+        // An origin past the edge moves to the last column or row.
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[Frame { pos_x: 100, pos_y: 5, width: 10, height: 1 }]),
+            vec![5 * 256 + 252..6 * 256]
+        );
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[Frame { pos_x: 5, pos_y: 100, width: 3, height: 10 }]),
+            vec![47 * 256 + 20..47 * 256 + 32]
+        );
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn row_byte_ranges_of_full_rows() {
+        // Without padding, consecutive full rows touch and become one range.
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[Frame { pos_x: 0, pos_y: 2, width: 64, height: 3 }]),
+            vec![2 * 256..5 * 256]
+        );
+        // With padding, they do not.
+        expect_eq!(
+            PADDED_LAYOUT.row_byte_ranges(&[Frame { pos_x: 0, pos_y: 2, width: 64, height: 2 }]),
+            vec![2 * 288..2 * 288 + 256, 3 * 288..3 * 288 + 256]
+        );
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn row_byte_ranges_with_pixel_stride_wider_than_pixel() {
+        // 64-byte rows of 10 pixels give a pixel stride of 6 bytes. The range ends at the last
+        // byte of the last pixel.
+        expect_eq!(
+            SurfaceLayout {
+                width: NonZero::new(10).unwrap(),
+                height: NonZero::new(6).unwrap(),
+                pixel_width: NonZero::new(4).unwrap(),
+                row_bytes: NonZero::new(64).unwrap(),
+            }
+            .row_byte_ranges(&[Frame { pos_x: 3, pos_y: 2, width: 4, height: 2 }]),
+            vec![2 * 64 + 18..2 * 64 + 40, 3 * 64 + 18..3 * 64 + 40]
+        );
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn row_byte_ranges_skips_empty_frames() {
+        expect_eq!(LAYOUT.row_byte_ranges(&[]), Vec::<Range<usize>>::new());
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[
+                Frame { pos_x: 5, pos_y: 5, width: 0, height: 10 },
+                Frame { pos_x: 5, pos_y: 5, width: 10, height: 0 },
+            ]),
+            Vec::<Range<usize>>::new()
+        );
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn row_byte_ranges_merges_overlapping_and_touching_rows() {
+        // Overlapping frames: their shared row is one range.
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[
+                Frame { pos_x: 12, pos_y: 1, width: 4, height: 2 },
+                Frame { pos_x: 10, pos_y: 0, width: 4, height: 2 },
+            ]),
+            vec![40..56, 256 + 40..256 + 64, 512 + 48..512 + 64]
+        );
+        // Disjoint frames on the same row stay separate; touching ones merge.
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[
+                Frame { pos_x: 10, pos_y: 0, width: 2, height: 1 },
+                Frame { pos_x: 0, pos_y: 0, width: 2, height: 1 },
+                Frame { pos_x: 2, pos_y: 0, width: 2, height: 1 },
+            ]),
+            vec![0..16, 40..48]
+        );
+        // A frame inside another adds nothing.
+        expect_eq!(
+            LAYOUT.row_byte_ranges(&[
+                Frame { pos_x: 10, pos_y: 10, width: 10, height: 1 },
+                Frame { pos_x: 12, pos_y: 10, width: 2, height: 1 },
+            ]),
+            vec![10 * 256 + 40..10 * 256 + 80]
         );
     }
 

@@ -350,6 +350,7 @@ mod tests {
             let presentation_index = frame_index % 2;
             for (layer_index, surface) in presentations[presentation_index].iter().enumerate() {
                 let image_id = ImageId((1 + presentation_index * layer_count + layer_index) as u64);
+                let old_frame = scene.drawn.get(&image_id).copied();
                 scene.render_layer(layer_index, image_id, surface).expect("render_layer");
 
                 // Every byte written must be cleaned before the image is
@@ -373,16 +374,21 @@ mod tests {
                 expect_eq!(first_difference, None, "frame {} layer {}", frame_index, layer_index);
 
                 // After the first render of each image, only the old and the
-                // new square are drawn, and only their rows are cleaned.
+                // new square are drawn, and exactly their pixels are cleaned,
+                // once each.
                 let ByteCounts { written, cleaned } = surface.take_byte_counts();
                 if frame_index >= 2 {
-                    let square_bytes = u64::from(square.frame.width * square.frame.height * 4);
+                    let area = |frame: &Frame| u64::from(frame.width) * u64::from(frame.height);
+                    let square_bytes = area(&square.frame) * 4;
                     expect_eq!(written, 2 * square_bytes, "frame {}", frame_index);
-                    expect_true!(
-                        cleaned < u64::from(width * height * 4),
-                        "frame {} cleaned {}",
+                    let old_frame = old_frame.expect("image was rendered before");
+                    let overlap = old_frame.intersection(&square.frame).map_or(0, |f| area(&f));
+                    expect_eq!(
+                        cleaned,
+                        (area(&old_frame) - overlap + area(&square.frame)) * 4,
+                        "frame {} layer {}",
                         frame_index,
-                        cleaned
+                        layer_index
                     );
                 }
             }
