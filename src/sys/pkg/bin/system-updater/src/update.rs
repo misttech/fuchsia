@@ -1067,21 +1067,8 @@ impl Attempt<'_> {
                 .chain(update_pkg.1),
             &self.env.retained_packages,
         )
-        .await
-        .unwrap_or_else(|e| {
-            error!(
-                "unable to replace retained packages set before gc in preparation \
-                    for fetching image packages listed in update package: {:#}",
-                anyhow!(e)
-            )
-        });
-
-        if let Err(e) = gc(&self.env.space_manager).await {
-            error!(
-                "unable to gc packages in preparation to write image packages: {:#}",
-                anyhow!(e)
-            );
-        }
+        .await;
+        let () = gc(&self.env.space_manager).await;
 
         info!("Images to write: {:?}", images_to_write.print_list());
         let desired_config = current_configuration.to_non_current_configuration();
@@ -1120,18 +1107,8 @@ impl Attempt<'_> {
             packages_to_fetch.iter().map(|url| url.hash()).chain(update_pkg),
             &self.env.retained_packages,
         )
-        .await
-        .unwrap_or_else(|e| {
-            error!(
-                "unable to replace retained packages set before gc in preparation \
-                 for fetching packages listed in update package: {:#}",
-                anyhow!(e)
-            )
-        });
-
-        if let Err(e) = gc(&self.env.space_manager).await {
-            error!("unable to gc packages during Fetch state: {:#}", anyhow!(e));
-        }
+        .await;
+        let () = gc(&self.env.space_manager).await;
 
         let mut package_dir_futs = futures::stream::iter(packages_to_fetch)
             .map(async |url| resolver::resolve_package(&self.env.pkg_resolver, &url.into()).await)
@@ -1384,18 +1361,8 @@ impl PackagelessAttempt<'_> {
                 .chain(manifest.blobs.iter().map(|blob| blob.fuchsia_merkle_root)),
             &self.env.retained_blobs,
         )
-        .await
-        .unwrap_or_else(|e| {
-            error!(
-                "unable to replace retained blobs set before gc in preparation \
-                    for fetching images listed in OTA manifest: {:#}",
-                anyhow!(e)
-            )
-        });
-
-        if let Err(e) = gc(&self.env.space_manager).await {
-            error!("unable to gc blobs in preparation to write image blobs: {:#}", anyhow!(e));
-        }
+        .await;
+        let () = gc(&self.env.space_manager).await;
 
         info!("Images to write: {:?}", manifest.images);
         let desired_config = current_configuration.to_non_current_configuration();
@@ -1407,18 +1374,8 @@ impl PackagelessAttempt<'_> {
                 manifest.images.iter().map(|image| image.blob.fuchsia_merkle_root),
                 &self.env.retained_blobs,
             )
-            .await
-            .unwrap_or_else(|e| {
-                error!(
-                    "while fetching images, unable to minimize retained blobs set \
-                     before second gc attempt: {:#}",
-                    anyhow!(e)
-                )
-            });
-
-            if let Err(e) = gc(&self.env.space_manager).await {
-                error!("unable to gc blobs before retry fetching blobs: {:#}", anyhow!(e));
-            }
+            .await;
+            let () = gc(&self.env.space_manager).await;
         }
         .shared();
 
@@ -1527,18 +1484,8 @@ impl PackagelessAttempt<'_> {
             manifest.blobs.iter().map(|blob| blob.fuchsia_merkle_root),
             &self.env.retained_blobs,
         )
-        .await
-        .unwrap_or_else(|e| {
-            error!(
-                "unable to replace retained blobs set before gc in preparation \
-                 for fetching blobs listed in update manifest: {:#}",
-                anyhow!(e)
-            )
-        });
-
-        if let Err(e) = gc(&self.env.space_manager).await {
-            error!("unable to gc blobs during Fetch state: {:#}", anyhow!(e));
-        }
+        .await;
+        let () = gc(&self.env.space_manager).await;
 
         let mut stream = futures::stream::iter(manifest.blobs.iter())
             .map(async |blob| {
@@ -1763,13 +1710,19 @@ async fn sync_package_cache(pkg_cache: &fpkg::PackageCacheProxy) -> Result<(), E
     .context("while flushing packages to persistent storage")
 }
 
-async fn gc(space_manager: &fpkg_gc::ManagerProxy) -> Result<(), Error> {
-    let () = space_manager
-        .gc()
-        .await
-        .context("while performing gc call")?
-        .map_err(|e| anyhow!("garbage collection responded with {:?}", e))?;
-    Ok(())
+async fn gc(space_manager: &fpkg_gc::ManagerProxy) {
+    if let Err(e) = async {
+        let () = space_manager
+            .gc()
+            .await
+            .context("while performing gc call")?
+            .map_err(|e| anyhow!("garbage collection responded with {e:?}"))?;
+        Ok::<_, anyhow::Error>(())
+    }
+    .await
+    {
+        error!("unable to gc packages: {:#}", anyhow!(e));
+    }
 }
 
 // Resolve and write the image packages to their appropriate partitions,
@@ -1794,19 +1747,8 @@ async fn write_image_packages(
     };
 
     let to_protect = images_to_write.get_url_hashes().into_iter().chain(update_pkg);
-    let () = replace_retained_packages(to_protect, retained_packages).await.unwrap_or_else(|e| {
-        error!(
-            "while resolving image packages, unable to minimize retained packages set before \
-                    second gc attempt: {:#}",
-            anyhow!(e)
-        )
-    });
-    if let Err(e) = gc(space_manager).await {
-        error!(
-            "unable to gc base packages before second image package write retry: {:#}",
-            anyhow!(e)
-        );
-    }
+    let () = replace_retained_packages(to_protect, retained_packages).await;
+    let () = gc(space_manager).await;
 
     images_to_write.write(pkg_resolver, target_config, data_sink, concurrent_package_resolves).await
 }
@@ -1826,9 +1768,7 @@ async fn resolve_update_package(
     }
 
     // If the first attempt fails with NoSpace, perform a GC and retry.
-    if let Err(e) = gc(space_manager).await {
-        error!("unable to gc packages before first resolve retry: {:#}", anyhow!(e));
-    }
+    let () = gc(space_manager).await;
     match resolver::resolve_update_package(pkg_resolver, update_url).await {
         Ok(update_pkg) => return Ok(update_pkg),
         Err(ResolveError::Error(fpkg_ext::ResolveError::NoSpace, _)) => (),
@@ -1838,28 +1778,13 @@ async fn resolve_update_package(
     // If the second attempt fails with NoSpace, remove packages we aren't sure we need from the
     // retained packages set, perform a GC and retry. If the third attempt fails,
     // return the error regardless of type.
-    let () = async {
-        if let Some(hash) = update_url.hash() {
-            let () = replace_retained_packages(std::iter::once(hash), retained_packages)
-                .await
-                .context("serve_blob_id_iterator")?;
-        } else {
-            let () = retained_packages.clear().await.context("calling RetainedPackages.Clear")?;
-        }
-        Ok(())
+    if let Some(hash) = update_url.hash() {
+        let () = replace_retained_packages(std::iter::once(hash), retained_packages).await;
+    } else if let Err(e) = retained_packages.clear().await {
+        error!("error calling RetainedPackages.Clear: {:#}", anyhow!(e));
     }
-    .await
-    .unwrap_or_else(|e: anyhow::Error| {
-        error!(
-            "while resolving update package, unable to minimize retained packages set before \
-             second gc attempt: {:#}",
-            anyhow!(e)
-        )
-    });
 
-    if let Err(e) = gc(space_manager).await {
-        error!("unable to gc packages before second resolve retry: {:#}", anyhow!(e));
-    }
+    let () = gc(space_manager).await;
     resolver::resolve_update_package(pkg_resolver, update_url).await
 }
 
@@ -1911,7 +1836,7 @@ fn validate_epoch(source_epoch_raw: &str, target: u64) -> Result<(), PrepareErro
 async fn replace_retained_packages(
     hashes: impl IntoIterator<Item = fuchsia_hash::Hash>,
     retained_packages: &fpkg::RetainedPackagesProxy,
-) -> Result<(), anyhow::Error> {
+) {
     let (client_end, stream) = fidl::endpoints::create_request_stream();
     let replace_resp = retained_packages.replace(client_end);
     let () = fpkg_ext::serve_fidl_iterator_from_slice(
@@ -1926,13 +1851,15 @@ async fn replace_retained_packages(
             anyhow!(e)
         )
     });
-    replace_resp.await.context("calling RetainedPackages.Replace")
+    if let Err(e) = replace_resp.await {
+        error!("error calling RetainedPackages.Replace: {:#}", anyhow!(e));
+    }
 }
 
 async fn replace_retained_blobs(
     hashes: impl IntoIterator<Item = fuchsia_hash::Hash>,
     retained_blobs: &fpkg::RetainedBlobsProxy,
-) -> Result<(), anyhow::Error> {
+) {
     let (client_end, stream) = fidl::endpoints::create_request_stream();
     let replace_resp = retained_blobs.replace(client_end);
     let () = fpkg_ext::serve_fidl_iterator_from_slice(
@@ -1943,7 +1870,9 @@ async fn replace_retained_blobs(
     .unwrap_or_else(|e| {
         error!("error serving {} protocol: {:#}", fpkg::RetainedBlobsMarker::DEBUG_NAME, anyhow!(e))
     });
-    replace_resp.await.context("calling RetainedBlobs.Replace")
+    if let Err(e) = replace_resp.await {
+        error!("error calling RetainedBlobs.Replace: {:#}", anyhow!(e));
+    }
 }
 
 fn is_transient_fetch_error(err: &fetch_url::errors::FetchUrlError) -> bool {
