@@ -5,8 +5,8 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
-driver_bind_rules("qemu-riscv64_bind") {
-  rules = "meta/qemu-riscv64.bind"
+driver_bind_rules("virt_bind") {
+  rules = "meta/virt.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -16,22 +16,22 @@ driver_bind_rules("qemu-riscv64_bind") {
 
 group("tests") {
   testonly = true
-  deps = [ ":qemu-riscv64_bind_test" ]
+  deps = [ ":virt_bind_test" ]
 }
 
-fuchsia_cc_driver("qemu-riscv64-driver") {
-  output_name = "qemu-riscv64"
+fuchsia_cc_driver("virt-driver") {
+  output_name = "virt"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
     "pciroot.cc",
-    "qemu-riscv64.cc",
     "rtc.cc",
+    "virt.cc",
   ]
   deps = [
-    ":qemu-riscv64_bind",
+    ":virt_bind",
     "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
     "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
@@ -51,14 +51,14 @@ fuchsia_cc_driver("qemu-riscv64-driver") {
   ]
 }
 
-fuchsia_driver_component("qemu-riscv64") {
-  component_name = "qemu-riscv64"
-  deps = [ ":qemu-riscv64-driver" ]
-  info = "meta/qemu-riscv64-info.json"
-  manifest = "meta/qemu-riscv64.cml"
+fuchsia_driver_component("virt") {
+  component_name = "virt"
+  deps = [ ":virt-driver" ]
+  info = "meta/virt-info.json"
+  manifest = "meta/virt.cml"
 }
 
 fuchsia_driver_package("package") {
-  package_name = "qemu-riscv64"
-  driver_components = [ ":qemu-riscv64" ]
+  package_name = "virt"
+  driver_components = [ ":virt" ]
 }

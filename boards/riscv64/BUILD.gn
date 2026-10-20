@@ -32,9 +32,9 @@ board_input_bundle("main_bundle") {
   }
   drivers = [
     {
-      package_target = "//src/devices/board/drivers/qemu-riscv64:package"
+      package_target = "//src/devices/board/drivers/virt:package"
       package_set = "bootfs"
-      driver_components = [ "meta/qemu-riscv64.cm" ]
+      driver_components = [ "meta/virt.cm" ]
     },
     {
       package_target = "//src/devices/rtc/drivers/goldfish-rtc:package"

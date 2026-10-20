@@ -23,9 +23,9 @@
 #include <cstring>
 
 namespace fpci = fuchsia_hardware_pci::wire;
-namespace board_qemu_riscv64 {
+namespace board_virt {
 
-zx_status_t QemuRiscv64Pciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti) {
+zx_status_t VirtPciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti) {
   // We are creating a fake iommu because we currently don't support a real one. This will
   // eventually need to change.
   zx_iommu_desc_stub_t desc{};
@@ -38,9 +38,8 @@ zx_status_t QemuRiscv64Pciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::
   return zx::bti::create(iommu, 0, bdf, bti);
 }
 
-zx_status_t QemuRiscv64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
+zx_status_t VirtPciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
   *info = {};
-
   zx::vmo ecam;
   if (zx_status_t status = ecam_.duplicate(ZX_RIGHT_SAME_RIGHTS, &ecam); status != ZX_OK) {
     fdf::error("couldn't duplicate ecam handle: {}", zx_status_get_string(status));
@@ -65,7 +64,6 @@ zx_status_t QemuRiscv64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* i
         .vector = static_cast<uint32_t>(kVirtPcieIrqBase + i),
     });
   }
-
   info->start_bus_num = kVirtPcieMcfg.start_bus_number;
   info->end_bus_num = kVirtPcieMcfg.end_bus_number;
   info->segment_group = kVirtPcieMcfg.pci_segment;
@@ -78,7 +76,7 @@ zx_status_t QemuRiscv64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* i
   return ZX_OK;
 }
 
-zx::result<> QemuRiscv64Pciroot::CreateInterrupts() {
+zx::result<> VirtPciroot::CreateInterrupts() {
   for (uint32_t vector_offset = 0; vector_offset < kVirtPcieIrqCount; vector_offset++) {
     zx::interrupt interrupt;
     zx_status_t status = zx::interrupt::create(irq_resource_,
@@ -105,4 +103,4 @@ zx::result<> QemuRiscv64Pciroot::CreateInterrupts() {
   return zx::ok();
 }
 
-}  // namespace board_qemu_riscv64
+}  // namespace board_virt

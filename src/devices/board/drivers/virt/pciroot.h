@@ -1,8 +1,8 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef SRC_DEVICES_BOARD_DRIVERS_QEMU_RISCV64_PCIROOT_H_
-#define SRC_DEVICES_BOARD_DRIVERS_QEMU_RISCV64_PCIROOT_H_
+#ifndef SRC_DEVICES_BOARD_DRIVERS_VIRT_PCIROOT_H_
+#define SRC_DEVICES_BOARD_DRIVERS_VIRT_PCIROOT_H_
 
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/c/banjo.h>
@@ -18,7 +18,7 @@
 
 #include <vector>
 
-namespace board_qemu_riscv64 {
+namespace board_virt {
 
 inline constexpr char kPcirootName[] = "PCI0";
 
@@ -40,11 +40,11 @@ inline constexpr McfgAllocation kVirtPcieMcfg = {
     .end_bus_number = kEndBusNumber,
 };
 
-class QemuRiscv64Pciroot : public PcirootBase, public ddk::PcirootProtocol<QemuRiscv64Pciroot> {
+class VirtPciroot : public PcirootBase, public ddk::PcirootProtocol<VirtPciroot> {
  public:
-  QemuRiscv64Pciroot() = delete;
-  QemuRiscv64Pciroot(PciRootHost* root_host, zx::vmo ecam, zx::resource irq_resource,
-                     zx::resource iommu_resource)
+  VirtPciroot() = delete;
+  VirtPciroot(PciRootHost* root_host, zx::vmo ecam, zx::resource irq_resource,
+              zx::resource iommu_resource)
       : PcirootBase(root_host),
         ecam_(std::move(ecam)),
         irq_resource_(std::move(irq_resource)),
@@ -52,7 +52,7 @@ class QemuRiscv64Pciroot : public PcirootBase, public ddk::PcirootProtocol<QemuR
     ZX_DEBUG_ASSERT(irq_resource_.is_valid());
     ZX_DEBUG_ASSERT(iommu_resource_.is_valid());
   }
-  ~QemuRiscv64Pciroot() override = default;
+  ~VirtPciroot() override = default;
 
   zx::result<> CreateInterrupts();
 
@@ -81,6 +81,6 @@ class QemuRiscv64Pciroot : public PcirootBase, public ddk::PcirootProtocol<QemuR
   std::vector<pci_irq_routing_entry_t> irq_routing_entries_;
 };
 
-}  // namespace board_qemu_riscv64
+}  // namespace board_virt
 
-#endif  // SRC_DEVICES_BOARD_DRIVERS_QEMU_RISCV64_PCIROOT_H_
+#endif  // SRC_DEVICES_BOARD_DRIVERS_VIRT_PCIROOT_H_

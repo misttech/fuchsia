@@ -8,12 +8,12 @@
 
 #include <bind/fuchsia/google/platform/cpp/bind.h>
 
-#include "qemu-riscv64.h"
+#include "virt.h"
 
 namespace fpbus = fuchsia_hardware_platform_bus;
-namespace board_qemu_riscv64 {
+namespace board_virt {
 
-zx::result<> QemuRiscv64::RtcInit() {
+zx::result<> Virt::RtcInit() {
   static const std::vector<fpbus::Mmio> kGoldfishRtcMmios{
       {{
           .base = kGoldfishRtcMmioBase,
@@ -42,4 +42,4 @@ zx::result<> QemuRiscv64::RtcInit() {
   return zx::ok();
 }
 
-}  // namespace board_qemu_riscv64
+}  // namespace board_virt

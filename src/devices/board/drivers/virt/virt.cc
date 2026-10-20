@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "qemu-riscv64.h"
+#include "virt.h"
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
@@ -20,7 +20,7 @@
 
 #include "pciroot.h"
 
-namespace board_qemu_riscv64 {
+namespace board_virt {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 namespace {
@@ -40,7 +40,7 @@ zx::result<zx::resource> GetResource(const fdf::Namespace& incoming) {
 
 }  // namespace
 
-void QemuRiscv64::SysinfoInit() {
+void Virt::SysinfoInit() {
   fdf::Arena arena('RISC');
   fpbus::BootloaderInfo bootloader_info;
   bootloader_info.vendor() = "<unknown>";
@@ -55,7 +55,7 @@ void QemuRiscv64::SysinfoInit() {
   }
 }
 
-zx::result<> QemuRiscv64::PcirootInit(fdf::DriverContext& context, const std::string& node_name) {
+zx::result<> Virt::PcirootInit(fdf::DriverContext& context, const std::string& node_name) {
   zx::result<zx::resource> msi = GetResource<fuchsia_kernel::MsiResource>(context.incoming());
   if (msi.is_error()) {
     fdf::error("Couldn't obtain MSI resource: {}", msi.status_string());
@@ -152,7 +152,7 @@ zx::result<> QemuRiscv64::PcirootInit(fdf::DriverContext& context, const std::st
   return zx::ok();
 }
 
-zx::result<> QemuRiscv64::Start(fdf::DriverContext context) {
+zx::result<> Virt::Start(fdf::DriverContext context) {
   auto node_name = context.node_name().value_or("");
 
   zx::result pbus =
@@ -179,6 +179,6 @@ zx::result<> QemuRiscv64::Start(fdf::DriverContext context) {
   return zx::ok();
 }
 
-}  // namespace board_qemu_riscv64
+}  // namespace board_virt
 
-FUCHSIA_DRIVER_EXPORT2(board_qemu_riscv64::QemuRiscv64);
+FUCHSIA_DRIVER_EXPORT2(board_virt::Virt);

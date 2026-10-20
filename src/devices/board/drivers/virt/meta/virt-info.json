@@ -1,5 +1,5 @@
 {
-    "short_description": "QEMU RISCV64 board driver",
+    "short_description": "QEMU virt board driver",
     "manufacturer": "",
     "families": [],
     "models": [],

@@ -18,7 +18,7 @@ group("tests") {
   }
 
   if (target_cpu == "riscv64") {
-    deps += [ "qemu-riscv64:tests" ]
+    deps += [ "virt:tests" ]
   }
 
   if (target_cpu == "x64") {

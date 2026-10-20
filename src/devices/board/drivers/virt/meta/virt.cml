@@ -9,8 +9,8 @@
     ],
     program: {
         runner: "driver",
-        binary: "driver/qemu-riscv64.so",
-        bind: "meta/bind/qemu-riscv64_bind.bindbc",
+        binary: "driver/virt.so",
+        bind: "meta/bind/virt_bind.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         colocate: "true",
     },

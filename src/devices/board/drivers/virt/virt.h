@@ -1,8 +1,8 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef SRC_DEVICES_BOARD_DRIVERS_QEMU_RISCV64_QEMU_RISCV64_H_
-#define SRC_DEVICES_BOARD_DRIVERS_QEMU_RISCV64_QEMU_RISCV64_H_
+#ifndef SRC_DEVICES_BOARD_DRIVERS_VIRT_VIRT_H_
+#define SRC_DEVICES_BOARD_DRIVERS_VIRT_VIRT_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/wire.h>
@@ -19,16 +19,16 @@
 
 #include "pciroot.h"
 
-namespace board_qemu_riscv64 {
+namespace board_virt {
 
 // From QEMU hw/riscv/virt.c's memmap[VIRT_RTC].
 constexpr zx_paddr_t kGoldfishRtcMmioBase = 0x101000;
 constexpr size_t kGoldfishRtcMmioSize = 0x1000;
 
-class QemuRiscv64 : public fdf::DriverBase2 {
+class Virt : public fdf::DriverBase2 {
  public:
-  explicit QemuRiscv64() : fdf::DriverBase2("qemu-riscv64") {}
-  ~QemuRiscv64() = default;
+  explicit Virt() : fdf::DriverBase2("virt") {}
+  ~Virt() = default;
 
   zx::result<> Start(fdf::DriverContext context) override;
 
@@ -39,7 +39,7 @@ class QemuRiscv64 : public fdf::DriverBase2 {
 
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
   std::optional<PciRootHost> pci_root_host_;
-  std::optional<QemuRiscv64Pciroot> pciroot_;
+  std::optional<VirtPciroot> pciroot_;
   std::optional<inspect::ComponentInspector> inspector_;
 
   std::optional<compat::BanjoServer> banjo_server_;
@@ -51,6 +51,6 @@ class QemuRiscv64 : public fdf::DriverBase2 {
   zx::resource ioport_resource_;
 };
 
-}  // namespace board_qemu_riscv64
+}  // namespace board_virt
 
-#endif  // SRC_DEVICES_BOARD_DRIVERS_QEMU_RISCV64_QEMU_RISCV64_H_
+#endif  // SRC_DEVICES_BOARD_DRIVERS_VIRT_VIRT_H_
