@@ -102,11 +102,9 @@ uintptr_t cpp_process_dispatcher_hw_trace_context_id(const ProcessDispatcher* pr
 #endif
 void* cpp_process_dispatcher_futex_context(const ProcessDispatcher* process);
 zx_status_t cpp_process_attach_aspace_to_thread(ProcessDispatcher* process, Thread* core_thread);
-zx_koid_t cpp_process_get_job_koid(const ProcessDispatcher* process);
 zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process, ThreadDispatcher* thread,
                                                bool ensure_initial_thread,
                                                const UserEntryState* entry);
-void cpp_process_remove_thread(ProcessDispatcher* process, ThreadDispatcher* thread);
 Exceptionate* cpp_process_dispatcher_exceptionate(ProcessDispatcher* process);
 Exceptionate* cpp_process_dispatcher_debug_exceptionate(ProcessDispatcher* process);
 ThreadDispatcher* cpp_process_dispatcher_lookup_thread_by_id(ProcessDispatcher* process,
@@ -221,11 +219,6 @@ class ProcessDispatcher final
     return shareable_state_->aspace()->arch_aspace().pt_phys();
   }
 #endif
-
-  uintptr_t arch_table_phys() const {
-    // TODO(https://fxbug.dev/42055932): Figure out how to make tracing works in restricted mode.
-    return shareable_state_->aspace()->arch_aspace().arch_table_phys();
-  }
 
   uintptr_t vdso_base_address() const { return shareable_state_->aspace()->vdso_base_address(); }
 
@@ -404,13 +397,12 @@ class ProcessDispatcher final
 
   // Thread lifecycle support.
   friend class ThreadDispatcher;
-  // The FFI shims below are the entry points used by the Rust ThreadDispatcher for the same
-  // thread lifecycle operations, so they need the same access ThreadDispatcher has.
+  // The FFI shim below is the entry point used by the Rust ThreadDispatcher for the same
+  // thread lifecycle operation, so it needs the same access ThreadDispatcher has.
   friend zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process,
                                                         ThreadDispatcher* thread,
                                                         bool ensure_initial_thread,
                                                         const UserEntryState* entry);
-  friend void cpp_process_remove_thread(ProcessDispatcher* process, ThreadDispatcher* thread);
   friend const ShareableProcessState* cpp_process_dispatcher_shareable_state(
       const ProcessDispatcher* process);
   // Takes the given ThreadDispatcher and transitions it from the INITIALIZED state to a runnable

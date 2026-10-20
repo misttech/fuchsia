@@ -29,8 +29,7 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_set_critical_to_job, cpp_process_dispatcher_set_debug_addr,
     cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_shareable_state,
     cpp_process_dispatcher_start, cpp_process_dispatcher_state, cpp_process_dispatcher_suspend,
-    cpp_process_dispatcher_vdso_base_address, cpp_process_get_job_koid, cpp_process_remove_thread,
-    cpp_shareable_process_state_aspace,
+    cpp_process_dispatcher_vdso_base_address, cpp_shareable_process_state_aspace,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
@@ -658,12 +657,6 @@ impl ProcessDispatcher {
         debug_assert_eq!(status, zx_types::ZX_OK);
     }
 
-    /// Returns the parent job koid.
-    pub fn job_koid(&self) -> zx_types::zx_koid_t {
-        // SAFETY: `self` is a valid `ProcessDispatcher`.
-        unsafe { cpp_process_get_job_koid(self.as_ffi()) }
-    }
-
     /// Transitions `thread` from the initialized state to a runnable state and adds it to the
     /// thread list of this process.
     ///
@@ -685,12 +678,6 @@ impl ProcessDispatcher {
             )
         };
         Status::ok(status)
-    }
-
-    /// Removes `thread` from the thread list of this process.
-    pub fn remove_thread(&self, thread: &ThreadDispatcher) {
-        // SAFETY: `self` and `thread` are valid references.
-        unsafe { cpp_process_remove_thread(self.as_ffi(), thread as *const _) }
     }
 
     /// Returns the process's normal `Exceptionate`.

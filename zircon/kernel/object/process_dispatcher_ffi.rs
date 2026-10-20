@@ -359,13 +359,6 @@ unsafe extern "C" {
         core_thread: *mut Thread,
     ) -> zx_status_t;
 
-    /// Returns the koid of the parent job of `process`.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher`.
-    pub(crate) fn cpp_process_get_job_koid(process: *const ProcessDispatcher) -> zx_koid_t;
-
     /// Makes `thread` runnable and adds it to the C++ thread list of `process`.
     ///
     /// Ownership of `thread` within the process thread list stays on the C++ side; this only
@@ -383,17 +376,6 @@ unsafe extern "C" {
         ensure_initial_thread: bool,
         entry: *const UserEntryState,
     ) -> zx_status_t;
-
-    /// Removes `thread` from the C++ thread list of `process`.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher` and `thread` must point to a valid
-    /// `ThreadDispatcher` that is in the thread list of `process`.
-    pub(crate) fn cpp_process_remove_thread(
-        process: *const ProcessDispatcher,
-        thread: *const ThreadDispatcher,
-    );
 
     /// Returns a pointer to the process's normal `Exceptionate`.
     ///
