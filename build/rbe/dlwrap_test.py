@@ -80,8 +80,8 @@ def _fake_download_fail(
 
 
 class DownloadArtifactsTests(unittest.TestCase):
-    def _stub_info(self, path: Path) -> remote_action.DownloadStubInfo:
-        return remote_action.DownloadStubInfo(
+    def _stub_info(self, path: Path) -> remote_action.Ext4DownloadStubInfo:
+        return remote_action.Ext4DownloadStubInfo(
             path=path,
             type="file",
             blob_digest="f33333df44444ce/124",

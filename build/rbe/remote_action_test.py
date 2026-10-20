@@ -108,7 +108,7 @@ def _paths(items: Collection[Any]) -> Collection[Path]:
 
 def _fake_download_output(
     packed_args: tuple[
-        remote_action.DownloadStubInfo,
+        remote_action.Ext4DownloadStubInfo,
         remotetool.RemoteTool,
         Path,
         bool,
@@ -124,7 +124,7 @@ def _fake_download_output(
 
 def _fake_download_output_fail(
     packed_args: tuple[
-        remote_action.DownloadStubInfo,
+        remote_action.Ext4DownloadStubInfo,
         remotetool.RemoteTool,
         Path,
         bool,
@@ -173,7 +173,7 @@ def _fake_download_input_fail(
 class PathToDownloadStubTests(unittest.TestCase):
     def test_is_stub(self) -> None:
         path = Path("obj/stubby.stub")
-        fake_stub_info = remote_action.DownloadStubInfo(
+        fake_stub_info = remote_action.Ext4DownloadStubInfo(
             path=path,
             type="file",
             blob_digest="0a97a6sbed/7711",
@@ -184,7 +184,7 @@ class PathToDownloadStubTests(unittest.TestCase):
             remote_action, "is_download_stub_file", return_value=True
         ) as mock_check_stub:
             with mock.patch.object(
-                remote_action.DownloadStubInfo,
+                remote_action.Ext4DownloadStubInfo,
                 "read_from_file",
                 return_value=fake_stub_info,
             ) as mock_read_stub:
@@ -208,7 +208,7 @@ class DownloadFileToPathTests(unittest.TestCase):
     def test_download(self) -> None:
         curdir = Path(os.curdir)
         with mock.patch.object(
-            remote_action.DownloadStubInfo,
+            remote_action.Ext4DownloadStubInfo,
             "download",
             return_value=cl_utils.SubprocessResult(0),
         ) as mock_download:
@@ -247,7 +247,7 @@ class DownloadFromStubPathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             tdp = Path(td)
             stub_path = tdp / "foo.exe"
-            stub_info = remote_action.DownloadStubInfo(
+            stub_info = remote_action.Ext4DownloadStubInfo(
                 path=Path("some/where/else"),
                 type="file",
                 blob_digest="8712fed1/44",
@@ -259,7 +259,7 @@ class DownloadFromStubPathTests(unittest.TestCase):
                 dest=stub_path,
             )
             with mock.patch.object(
-                remote_action.DownloadStubInfo,
+                remote_action.Ext4DownloadStubInfo,
                 "download",
                 return_value=cl_utils.SubprocessResult(0),
             ) as mock_download:
@@ -291,7 +291,7 @@ class DownloadFromStubPathTests(unittest.TestCase):
                 os, "access", return_value=False
             ) as mock_access:
                 with mock.patch.object(
-                    remote_action.DownloadStubInfo,
+                    remote_action.Ext4DownloadStubInfo,
                     "download",
                 ) as mock_download:
                     subprocess_result = remote_action.download_from_stub_path(
@@ -334,7 +334,7 @@ class UndownloadTests(unittest.TestCase):
 
     def test_undownload_restored(self) -> None:
         path = Path("foo/barf.baz")
-        stub = remote_action.DownloadStubInfo(
+        stub = remote_action.Ext4DownloadStubInfo(
             path=path,
             type="file",
             blob_digest="82828abf872/453",
@@ -396,7 +396,7 @@ class DownloadOutputStubInfosBatchTests(unittest.TestCase):
 
     def test_one_download_stub_downloaded_success(self) -> None:
         path = Path("foo/bar.o")
-        fake_stub_info = remote_action.DownloadStubInfo(
+        fake_stub_info = remote_action.Ext4DownloadStubInfo(
             path=path,
             type="file",
             blob_digest="1112313123/912",
@@ -416,7 +416,7 @@ class DownloadOutputStubInfosBatchTests(unittest.TestCase):
 
     def test_one_download_stub_downloaded_failure(self) -> None:
         path = Path("foo/bar.o")
-        fake_stub_info = remote_action.DownloadStubInfo(
+        fake_stub_info = remote_action.Ext4DownloadStubInfo(
             path=path,
             type="file",
             blob_digest="1112313123/912",
@@ -440,14 +440,14 @@ class DownloadOutputStubInfosBatchTests(unittest.TestCase):
         path1 = Path("foo/bar.o")
         path2 = Path("baz/quux.o")
         fake_stub_infos = [
-            remote_action.DownloadStubInfo(
+            remote_action.Ext4DownloadStubInfo(
                 path=path1,
                 type="file",
                 blob_digest="767676767a767/912",
                 action_digest="a7a77ed7f98/332",
                 build_id="random-id0010129",
             ),
-            remote_action.DownloadStubInfo(
+            remote_action.Ext4DownloadStubInfo(
                 path=path2,
                 type="file",
                 blob_digest="3e3e3e3e3e/712",
@@ -469,7 +469,7 @@ class DownloadOutputStubInfosBatchTests(unittest.TestCase):
 
     def test_single_stub_info_skips_multiprocessing_pool(self) -> None:
         path = Path("foo/bar.o")
-        fake_stub_info = remote_action.DownloadStubInfo(
+        fake_stub_info = remote_action.Ext4DownloadStubInfo(
             path=path,
             type="file",
             blob_digest="1112313123/912",
@@ -3276,10 +3276,10 @@ remote_metadata: {{
             stub_file = Path(td) / "testing.stub"
             _write_file_contents(stub_file, "#!/bin/sh\nnot a stub file\n")
             with self.assertRaises(remote_action.DownloadStubFormatError):
-                remote_action.DownloadStubInfo.read_from_file(stub_file)
+                remote_action.Ext4DownloadStubInfo.read_from_file(stub_file)
 
     def test_stub_write_read_match(self) -> None:
-        stub = remote_action.DownloadStubInfo(
+        stub = remote_action.Ext4DownloadStubInfo(
             path=Path("foo/bar.baz"),
             type="file",
             blob_digest="abc00101ef/240",
@@ -3289,13 +3289,15 @@ remote_metadata: {{
         with tempfile.TemporaryDirectory() as td:
             stub_file = Path(td) / "identity.stub"
             stub._write(stub_file)
-            new_stub = remote_action.DownloadStubInfo.read_from_file(stub_file)
+            new_stub = remote_action.Ext4DownloadStubInfo.read_from_file(
+                stub_file
+            )
 
         self.assertEqual(stub, new_stub)
 
     def test_create(self) -> None:
         path = Path("foo/goes/deeper/bar.baz")
-        stub = remote_action.DownloadStubInfo(
+        stub = remote_action.Ext4DownloadStubInfo(
             path=path,
             type="file",
             blob_digest="abc00101ef/240",
@@ -3306,12 +3308,14 @@ remote_metadata: {{
             full_path = td / path
             stub.create(working_dir_abs=Path(td))
             self.assertTrue(remote_action.is_download_stub_file(full_path))
-            read_back = remote_action.DownloadStubInfo.read_from_file(full_path)
+            read_back = remote_action.Ext4DownloadStubInfo.read_from_file(
+                full_path
+            )
             self.assertEqual(read_back, stub)
 
     def test_download_to_alt_dest(self) -> None:
         blob_digest = "00111ddeee000aa/24"
-        stub = remote_action.DownloadStubInfo(
+        stub = remote_action.Ext4DownloadStubInfo(
             path=Path("foo/bar.baz"),
             type="file",
             blob_digest=blob_digest,
@@ -3352,7 +3356,7 @@ remote_metadata: {{
 
     def test_download_to_alt_dest_preserving_backup_stub(self) -> None:
         blob_digest = "00111ddeee000aa/24"
-        stub = remote_action.DownloadStubInfo(
+        stub = remote_action.Ext4DownloadStubInfo(
             path=Path("foo/bar.baz"),
             type="file",
             blob_digest=blob_digest,
@@ -3402,7 +3406,7 @@ remote_metadata: {{
         )
 
     def test_download_fail(self) -> None:
-        stub = remote_action.DownloadStubInfo(
+        stub = remote_action.Ext4DownloadStubInfo(
             path=Path("foo/bar.baz"),
             type="file",
             blob_digest="abcef8712/24",
@@ -3611,7 +3615,7 @@ remote_metadata: {{
         )
         self.assertEqual(action.local_only_command, command)
 
-        fake_stub_info = remote_action.DownloadStubInfo(
+        fake_stub_info = remote_action.Ext4DownloadStubInfo(
             path=input_file,
             type="file",
             blob_digest="8760ad0b/992",
@@ -3881,7 +3885,7 @@ remote_metadata: {{
 
             # bypass the remote action running
             with mock.patch.object(
-                remote_action.DownloadStubInfo, "create"
+                remote_action.Ext4DownloadStubInfo, "create"
             ) as mock_create_stub:
                 action._update_stub(old_stub_info)
 
@@ -3908,7 +3912,7 @@ remote_metadata: {{
 
             # bypass the remote action running
             with mock.patch.object(
-                remote_action.DownloadStubInfo, "create"
+                remote_action.Ext4DownloadStubInfo, "create"
             ) as mock_create_stub:
                 action._update_stub(new_stub_info)
 
@@ -3942,7 +3946,7 @@ remote_metadata: {{
 
             # bypass the remote action running
             with mock.patch.object(
-                remote_action.DownloadStubInfo, "create"
+                remote_action.Ext4DownloadStubInfo, "create"
             ) as mock_create_stub:
                 with mock.patch.object(Path, "unlink") as mock_remove:
                     action._update_stub(old_stub_info)
@@ -3968,7 +3972,7 @@ remote_metadata: {{
 
             # bypass the remote action running
             with mock.patch.object(
-                remote_action.DownloadStubInfo, "create"
+                remote_action.Ext4DownloadStubInfo, "create"
             ) as mock_create_stub:
                 with mock.patch.object(Path, "unlink") as mock_remove:
                     action._update_stub(old_stub_info)
@@ -4017,7 +4021,7 @@ remote_metadata: {{
 
             # bypass the remote action running
             with mock.patch.object(
-                remote_action.DownloadStubInfo, "create"
+                remote_action.Ext4DownloadStubInfo, "create"
             ) as mock_create_stub:
                 with mock.patch.object(Path, "unlink") as mock_remove:
                     action._update_stub(new_stub_info)
@@ -4045,7 +4049,7 @@ remote_metadata: {{
 
             # bypass the remote action running
             with mock.patch.object(
-                remote_action.DownloadStubInfo, "create"
+                remote_action.Ext4DownloadStubInfo, "create"
             ) as mock_create_stub:
                 with mock.patch.object(Path, "unlink") as mock_remove:
                     action._update_stub(new_stub_info)
