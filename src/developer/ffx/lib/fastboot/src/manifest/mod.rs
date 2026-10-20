@@ -13,7 +13,6 @@ use crate::util::Event;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
 use assembly_partitions_config::UploadMethod;
-use async_trait::async_trait;
 use camino::Utf8Path;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
@@ -39,7 +38,6 @@ pub struct Image {
     // Ignore the rest of the fields
 }
 
-#[async_trait]
 impl Flash for FlashManifestVersion {
     async fn flash<F, T>(
         &self,
@@ -75,7 +73,6 @@ impl Flash for FlashManifestVersion {
     }
 }
 
-#[async_trait]
 impl Unlock for FlashManifestVersion {
     async fn unlock<F, T>(
         &self,
@@ -97,7 +94,6 @@ impl Unlock for FlashManifestVersion {
     }
 }
 
-#[async_trait]
 impl Boot for FlashManifestVersion {
     async fn boot<F, T>(
         &self,

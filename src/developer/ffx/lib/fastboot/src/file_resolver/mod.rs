@@ -4,20 +4,18 @@
 
 use crate::error::FfxFastbootError;
 type Result<T> = std::result::Result<T, FfxFastbootError>;
-use async_trait::async_trait;
+use std::future::Future;
 
 pub mod resolvers;
 
-#[async_trait]
 pub trait FileResolver {
-    async fn get_file(&mut self, file: &str) -> Result<String>;
+    fn get_file(&mut self, file: &str) -> impl Future<Output = Result<String>>;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // tests
 pub mod test {
     use super::*;
-    use async_trait::async_trait;
 
     pub struct TestResolver {}
 
@@ -27,7 +25,6 @@ pub mod test {
         }
     }
 
-    #[async_trait]
     impl FileResolver for TestResolver {
         async fn get_file(&mut self, file: &str) -> Result<String> {
             Ok(file.to_owned())

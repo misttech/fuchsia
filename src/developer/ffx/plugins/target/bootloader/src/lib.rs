@@ -160,7 +160,7 @@ Reboot the Target to the bootloader and re-run this command."
                 )
                 .await
                 .map_err(|e| anyhow::Error::from(e))?;
-                bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
+                Box::pin(bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer)).await
             }
             _ => {
                 ffx_bail!("This is unsupported")

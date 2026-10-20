@@ -9,14 +9,12 @@ use crate::util::Event;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
 use assembly_partitions_config::UploadMethod;
-use async_trait::async_trait;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::ManifestParams;
 use ffx_flash_manifest::v2::FlashManifest as FlashManifestV2;
 use ffx_flash_manifest::v3::FlashManifest;
 use tokio::sync::mpsc::Sender;
 
-#[async_trait]
 impl Flash for FlashManifest {
     async fn flash<F, T>(
         &self,
@@ -35,7 +33,6 @@ impl Flash for FlashManifest {
     }
 }
 
-#[async_trait]
 impl Unlock for FlashManifest {
     async fn unlock<F, T>(
         &self,
@@ -52,7 +49,6 @@ impl Unlock for FlashManifest {
     }
 }
 
-#[async_trait]
 impl Boot for FlashManifest {
     async fn boot<F, T>(
         &self,

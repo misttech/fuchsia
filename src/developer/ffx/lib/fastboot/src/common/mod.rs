@@ -15,7 +15,6 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 
 type Result<T> = std::result::Result<T, FfxFastbootError>;
 use assembly_partitions_config::UploadMethod;
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, RebootEvent, UploadProgress};
@@ -60,47 +59,44 @@ pub trait Product<P> {
     fn oem_files(&self) -> &Vec<OemFile>;
 }
 
-#[async_trait]
 pub trait Flash {
-    async fn flash<F, T>(
+    fn flash<F, T>(
         &self,
         messenger: &Sender<Event>,
         file_resolver: &mut F,
         fastboot_interface: &mut T,
         cmd: ManifestParams,
         ssh_key_upload_method: Option<&UploadMethod>,
-    ) -> Result<()>
+    ) -> impl Future<Output = Result<()>>
     where
         F: FileResolver + Sync + Send,
         T: FastbootInterface;
 }
 
-#[async_trait]
 pub trait Unlock {
-    async fn unlock<F, T>(
+    fn unlock<F, T>(
         &self,
         _messenger: &Sender<Event>,
         _file_resolver: &mut F,
         _fastboot_interface: &mut T,
-    ) -> Result<()>
+    ) -> impl Future<Output = Result<()>>
     where
         F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
-        return Err(FfxFastbootError::UnlockNotSupported);
+        async { Err(FfxFastbootError::UnlockNotSupported) }
     }
 }
 
-#[async_trait]
 pub trait Boot {
-    async fn boot<F, T>(
+    fn boot<F, T>(
         &self,
         messenger: Sender<Event>,
         file_resolver: &mut F,
         slot: String,
         fastboot_interface: &mut T,
         cmd: ManifestParams,
-    ) -> Result<()>
+    ) -> impl Future<Output = Result<()>>
     where
         F: FileResolver + Sync + Send,
         T: FastbootInterface;
@@ -1230,6 +1226,7 @@ mod test {
     use std::io::{Seek, SeekFrom, Write};
     use tempfile::NamedTempFile;
     use tokio::sync::mpsc;
+    use async_trait::async_trait;
 
     #[derive(Default, Debug, Clone)]
     struct TestTransportFactory {}
