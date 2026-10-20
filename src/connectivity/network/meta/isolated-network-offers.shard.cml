@@ -20,11 +20,5 @@
             from: "#netstack",
             to: "#dns_resolver",
         },
-        {
-            storage: "tmp",
-            from: "parent",
-            as: "cache",
-            to: "#netstack",
-        },
     ],
 }

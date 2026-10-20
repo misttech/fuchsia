@@ -36,14 +36,6 @@
     ],
     offer: [
         {
-            protocol: [
-                "fuchsia.scheduler.deprecated.ProfileProvider",
-                "fuchsia.scheduler.RoleManager",
-            ],
-            from: "parent",
-            to: [ "#netstack" ],
-        },
-        {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
             from: "parent",
             to: [ "#dns-resolver" ],
@@ -51,10 +43,7 @@
         {
             protocol: [ "fuchsia.stash.SecureStore" ],
             from: "parent",
-            to: [
-                "#dhcpd",
-                "#netstack",
-            ],
+            to: [ "#dhcpd" ],
         },
         {
             protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
@@ -166,12 +155,6 @@
             subdir: "netcfg",
         },
         {
-            directory: "config-data",
-            from: "parent",
-            to: "#netstack",
-            subdir: "netstack",
-        },
-        {
             directory: "root-ssl-certificates",
             from: "parent",
             to: [ "#http-client" ],
@@ -214,11 +197,6 @@
             config: "fuchsia.power.SuspendEnabled",
             from: "parent",
             to: "#netstack",
-        },
-        {
-            storage: "cache",
-            from: "parent",
-            to: [ "#netstack" ],
         },
         {
             storage: "data",
