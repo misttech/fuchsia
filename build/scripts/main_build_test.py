@@ -2403,16 +2403,23 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
         # Verify that the resolved Python binary path is absolute.
         self.assertTrue(main_build.PYTHON_BIN.is_absolute())
 
+        # Verify fint_build_cmd_prefix construction
+        self.assertEqual(
+            context.fint_build_cmd_prefix,
+            [
+                str(main_build.PYTHON_BIN),
+                "-S",
+                "-u",
+                str(context.fint_build_py),
+            ],
+        )
+
         # 2. Verify fint_build_cmd is empty when not specified
         self.assertEqual(list(context.fint_build_cmd()), [])
 
         # 3. Verify fint_build_cmd is fully populated when specified
         context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
-        expected_cmd = [
-            str(main_build.PYTHON_BIN),
-            "-S",
-            "-u",
-            str(context.fint_build_py),
+        expected_cmd = context.fint_build_cmd_prefix + [
             "--static",
             "/tmp/static.proto",
             "--build-dir",
@@ -2426,11 +2433,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
 
         # 4. Verify fint_build_cmd forwards context path when specified
         context.config.fint_context_path = pathlib.Path("/tmp/context.proto")
-        expected_cmd_with_context = [
-            str(main_build.PYTHON_BIN),
-            "-S",
-            "-u",
-            str(context.fint_build_py),
+        expected_cmd_with_context = context.fint_build_cmd_prefix + [
             "--static",
             "/tmp/static.proto",
             "--context",
@@ -2461,11 +2464,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             config=config,
         )
         context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
-        expected_cmd = [
-            str(main_build.PYTHON_BIN),
-            "-S",
-            "-u",
-            str(context.fint_build_py),
+        expected_cmd = context.fint_build_cmd_prefix + [
             "--static",
             "/tmp/static.proto",
             "--build-dir",
@@ -2497,11 +2496,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             config=config,
         )
         context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
-        expected_cmd = [
-            str(main_build.PYTHON_BIN),
-            "-S",
-            "-u",
-            str(context.fint_build_py),
+        expected_cmd = context.fint_build_cmd_prefix + [
             "--static",
             "/tmp/static.proto",
             "--build-dir",
@@ -3150,7 +3145,7 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
             )
 
 
-class CollectTimeoutMetadataTest(unittest.TestCase):
+class CollectTimeoutMetadataTest(MainBuildTestBase):
     def test_collect_timeout_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = pathlib.Path(tmpdir)
@@ -3161,13 +3156,69 @@ class CollectTimeoutMetadataTest(unittest.TestCase):
             )
 
             metadata = main_build._collect_timeout_metadata(log_dir)
-            self.assertEqual(metadata["log_dir"], str(timeout_dir.resolve()))
-            self.assertEqual(metadata["snapshots"], ["pstree_drain.json"])
+            self.assertIsNotNone(metadata)
+            assert metadata is not None
+            self.assertEqual(metadata.log_dir, str(timeout_dir.resolve()))
+            self.assertEqual(metadata.snapshots, ["pstree_drain.json"])
 
     def test_collect_timeout_metadata_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = pathlib.Path(tmpdir)
-            self.assertEqual(main_build._collect_timeout_metadata(log_dir), {})
+            self.assertIsNone(main_build._collect_timeout_metadata(log_dir))
+
+    def test_write_metadata_json_triggers_fint_ingest(self) -> None:
+        context = self.create_context()
+        context.config.fint_context_path = pathlib.Path("/path/to/context.pb")
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            with (
+                mock.patch.object(
+                    invocation, "_run_fint_ingest_timeout"
+                ) as mock_ingest,
+                tempfile.TemporaryDirectory() as tmpdir,
+            ):
+                timeout_meta = main_build.build_timeout.TimeoutMetadata(
+                    log_dir="/logs",
+                    snapshots=["pstree_stop.json"],
+                    active_processes=["[CPU] rustc (pid 1)"],
+                    total_leaf_processes=1,
+                )
+                with mock.patch.object(
+                    main_build,
+                    "_collect_timeout_metadata",
+                    return_value=timeout_meta,
+                ):
+                    out_path = pathlib.Path(tmpdir) / "output_metadata.json"
+                    invocation.write_metadata_json(out_path)
+                    mock_ingest.assert_called_once_with(out_path)
+
+    def test_run_fint_ingest_timeout(self) -> None:
+        """Verifies _run_fint_ingest_timeout invokes fint_build.py with expected arguments."""
+        context = self.create_context()
+        context.config.fint_context_path = pathlib.Path("/path/to/context.pb")
+        context.config.verbose = True
+        invocation = main_build.BuildInvocation(context)
+        with (
+            mock.patch.object(pathlib.Path, "exists", return_value=True),
+            mock.patch("subprocess.run") as mock_run,
+        ):
+            meta_path = pathlib.Path("/path/to/metadata.json")
+            invocation._run_fint_ingest_timeout(meta_path)
+            expected_cmd = context.fint_build_cmd_prefix + [
+                "--context",
+                "/path/to/context.pb",
+                "--ingest-timeout-metadata",
+                "/path/to/metadata.json",
+                "--verbose",
+            ]
+            mock_run.assert_called_once_with(
+                expected_cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=15.0,
+            )
 
 
 if __name__ == "__main__":

@@ -9,7 +9,9 @@ if (is_host) {
   python_library("main_build_lib") {
     sources = [ "main_build.py" ]
     library_deps = [
+      ":build_timeout",
       ":properties_lib",
+      ":pstree_lib",
       ":signal_utils_lib",
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
@@ -20,10 +22,7 @@ if (is_host) {
       "//build/rbe:rbe_settings",
       "//build/resultstore:rs_profile",
     ]
-    data_deps = [
-      ":build_timeout",
-      "//build/auth:select_auth_method",
-    ]
+    data_deps = [ "//build/auth:select_auth_method" ]
   }
 
   python_library("managed_process_lib") {

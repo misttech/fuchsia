@@ -59,7 +59,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Generator, Iterable, TextIO
 
-from build.scripts import signal_utils
+from build.scripts import build_timeout, signal_utils
 from google.protobuf import json_format, text_format
 from tools.integration.fint.proto import (
     build_artifacts_pb2,
@@ -1683,6 +1683,176 @@ def make_build_context(
     )
 
 
+def _load_timeout_metadata(
+    metadata_path: pathlib.Path, verbose: bool = False
+) -> build_timeout.TimeoutMetadata | None:
+    """Loads and deserializes TimeoutMetadata from output_metadata.json."""
+    if not metadata_path.exists():
+        ts_msg(
+            f"{metadata_path} does not exist; skipping timeout metadata ingestion.",
+            verbose,
+        )
+        return None
+
+    try:
+        metadata_text = metadata_path.read_text(encoding="utf-8")
+    except OSError as e:
+        msg(
+            f"Failed to read metadata JSON from {metadata_path}: {e}",
+            file=sys.stderr,
+        )
+        return None
+
+    try:
+        metadata_dict = json.loads(metadata_text)
+    except json.JSONDecodeError as e:
+        msg(
+            f"Failed to parse metadata JSON from {metadata_path}: {e}",
+            file=sys.stderr,
+        )
+        return None
+
+    timeout_dict = metadata_dict.get("timeout")
+    if not isinstance(timeout_dict, dict):
+        return None
+
+    try:
+        return build_timeout.TimeoutMetadata.from_dict(timeout_dict)
+    except (TypeError, ValueError, KeyError) as e:
+        msg(
+            f"Failed to deserialize TimeoutMetadata from {metadata_path}: {e}",
+            file=sys.stderr,
+        )
+        return None
+
+
+def _format_timeout_failure_summary_addon(
+    timeout_meta: build_timeout.TimeoutMetadata,
+) -> str:
+    """Formats active process lines to append to build failure summary."""
+    active_lines = [f"* {proc}" for proc in timeout_meta.active_processes]
+    # Use total_matching_processes to calculate remaining filtered culprits
+    # so excluded background daemons are not counted in the remaining summary.
+    matching_count = (
+        timeout_meta.total_matching_processes
+        if timeout_meta.total_matching_processes > 0
+        else timeout_meta.total_leaf_processes
+    )
+    if matching_count > len(timeout_meta.active_processes):
+        remaining = matching_count - len(timeout_meta.active_processes)
+        active_lines.append(f"... and {remaining} more (see pstree_stop.json)")
+    return "\n\nActive processes at timeout:\n" + "\n".join(active_lines)
+
+
+def _update_build_artifacts_failure_summary(
+    artifacts_path: pathlib.Path,
+    addon: str,
+    verbose: bool = False,
+) -> bool:
+    """Reads build_artifacts.json, appends addon to failure_summary, and writes back."""
+    artifacts = build_artifacts_pb2.BuildArtifacts()
+    if artifacts_path.exists():
+        try:
+            artifacts_text = artifacts_path.read_text(encoding="utf-8")
+        except OSError as e:
+            msg(f"Failed to read {artifacts_path}: {e}", file=sys.stderr)
+            return False
+
+        try:
+            json_format.Parse(
+                artifacts_text, artifacts, ignore_unknown_fields=True
+            )
+        except json_format.ParseError as e:
+            msg(
+                f"Failed to parse protobuf JSON from {artifacts_path}: {e}",
+                file=sys.stderr,
+            )
+            return False
+
+    artifacts.failure_summary = (artifacts.failure_summary + addon).strip()
+
+    try:
+        new_text = (
+            json_format.MessageToJson(
+                artifacts,
+                always_print_fields_with_no_presence=True,
+                indent=2,
+            )
+            + "\n"
+        )
+    except (TypeError, ValueError) as e:
+        msg(
+            f"Failed to serialize updated build_artifacts: {e}",
+            file=sys.stderr,
+        )
+        return False
+
+    try:
+        artifacts_path.write_text(new_text, encoding="utf-8")
+        ts_msg(
+            f"Successfully ingested timeout diagnostics into {artifacts_path}",
+            verbose,
+        )
+        return True
+    except OSError as e:
+        msg(
+            f"Failed to write updated build_artifacts to {artifacts_path}: {e}",
+            file=sys.stderr,
+        )
+        return False
+
+
+def ingest_timeout_metadata(
+    context_path: pathlib.Path,
+    metadata_path: pathlib.Path,
+    verbose: bool = False,
+) -> int:
+    """Ingests active process timeout diagnostics into failure_summary in build_artifacts.json.
+
+    Args:
+        context_path: Path to context spec textproto (used to resolve artifact_dir).
+        metadata_path: Path to output_metadata.json containing timeout metadata.
+        verbose: Whether to log diagnostic progress.
+
+    Returns:
+        0 on success (including clean early-exits when files are absent), non-zero on error.
+    """
+    if not context_path.exists():
+        ts_msg(
+            f"Context path {context_path} does not exist; skipping timeout metadata ingestion.",
+            verbose,
+        )
+        return 0
+
+    context_spec = load_context_spec(context_path)
+    if not context_spec.artifact_dir:
+        ts_msg(
+            "No artifact_dir configured in context spec; skipping timeout metadata ingestion.",
+            verbose,
+        )
+        return 0
+
+    artifacts_path = (
+        pathlib.Path(context_spec.artifact_dir) / BUILD_ARTIFACTS_JSON
+    )
+    if not artifacts_path.parent.is_dir():
+        ts_msg(
+            f"{artifacts_path.parent} does not exist; skipping timeout metadata ingestion.",
+            verbose,
+        )
+        return 0
+
+    timeout_meta = _load_timeout_metadata(metadata_path, verbose=verbose)
+    if not timeout_meta or not timeout_meta.active_processes:
+        return 0
+
+    addon = _format_timeout_failure_summary_addon(timeout_meta)
+    success = _update_build_artifacts_failure_summary(
+        artifacts_path, addon, verbose=verbose
+    )
+    return 0 if success else 1
+
+
 def _main_arg_parser() -> argparse.ArgumentParser:
     """Constructs and returns the command line argument parser."""
     parser = argparse.ArgumentParser(
@@ -1718,6 +1888,12 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         "--print-job-count",
         action="store_true",
         help="Print the resolved job_count from the context spec and exit.",
+    )
+    parser.add_argument(
+        "--ingest-timeout-metadata",
+        type=pathlib.Path,
+        default=None,
+        help="Path to output_metadata.json. Ingests active process timeout diagnostics into failure_summary in build_artifacts.json.",
     )
     parser.add_argument(
         "--verbose",
@@ -1788,6 +1964,17 @@ def main(argv: list[str]) -> int:
         context_spec = load_context_spec(args.context)
         print(context_spec.job_count)
         return 0
+
+    if args.ingest_timeout_metadata:
+        if not args.context:
+            msg(
+                "Error: --context is required with --ingest-timeout-metadata",
+                file=sys.stderr,
+            )
+            return 1
+        return ingest_timeout_metadata(
+            args.context, args.ingest_timeout_metadata, verbose=args.verbose
+        )
 
     # Ensure build execution requirements are satisfied if not querying
     is_static_valid = args.static and str(args.static) not in (".", "")

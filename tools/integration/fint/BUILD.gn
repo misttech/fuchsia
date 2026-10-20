@@ -50,10 +50,11 @@ if (is_host) {
 
   python_library("fint_build_lib") {
     sources = [ "fint_build.py" ]
-    deps = [
-      "proto",
+    library_deps = [
+      "//build/scripts:build_timeout",
       "//build/scripts:signal_utils_lib",
     ]
+    deps = [ "proto" ]
   }
 
   python_build_time_tests("fint_build_test") {

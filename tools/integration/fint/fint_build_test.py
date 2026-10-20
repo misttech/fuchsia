@@ -49,8 +49,12 @@ from unittest.mock import MagicMock
 
 import fint_build
 from build.scripts import signal_utils
-from google.protobuf import text_format
-from tools.integration.fint.proto import context_pb2, static_pb2
+from google.protobuf import json_format, text_format
+from tools.integration.fint.proto import (
+    build_artifacts_pb2,
+    context_pb2,
+    static_pb2,
+)
 
 
 class SpecificationsParserTest(unittest.TestCase):
@@ -2622,6 +2626,110 @@ class BuildDirResolutionTest(unittest.TestCase):
                 with mock.patch.object(fint_build, "fuchsia_root", fake_root):
                     resolved = fint_build.resolve_fallback_build_dir()
                     self.assertEqual(resolved, default_out.resolve())
+
+    def test_ingest_timeout_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            artifact_dir = tmp_path / "artifacts"
+            artifact_dir.mkdir(parents=True)
+
+            context_path = tmp_path / "context.textproto"
+            context_path.write_text(
+                f'artifact_dir: "{artifact_dir}"\n', encoding="utf-8"
+            )
+
+            artifacts_path = artifact_dir / fint_build.BUILD_ARTIFACTS_JSON
+            initial_artifacts = build_artifacts_pb2.BuildArtifacts(
+                failure_summary="Build failed: exit status 124"
+            )
+            artifacts_path.write_text(
+                json_format.MessageToJson(initial_artifacts), encoding="utf-8"
+            )
+
+            metadata_path = tmp_path / "output_metadata.json"
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "timeout": {
+                            "log_dir": "/path/to/timeout_logs",
+                            "snapshots": ["pstree_stop.json"],
+                            "active_processes": [
+                                "[CPU] rustc foo.rs (pid 1001)",
+                                "[DISK-WAIT] clang++ bar.cc (pid 1002)",
+                            ],
+                            "total_matching_processes": 3,
+                            "total_leaf_processes": 5,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            ret = fint_build.ingest_timeout_metadata(
+                context_path, metadata_path
+            )
+            self.assertEqual(ret, 0)
+
+            # Verify build_artifacts.json was updated with active processes
+            updated_artifacts = build_artifacts_pb2.BuildArtifacts()
+            json_format.Parse(
+                artifacts_path.read_text(encoding="utf-8"), updated_artifacts
+            )
+            summary = updated_artifacts.failure_summary
+            self.assertIn("Build failed: exit status 124", summary)
+            self.assertIn("Active processes at timeout:", summary)
+            self.assertIn("* [CPU] rustc foo.rs (pid 1001)", summary)
+            self.assertIn("* [DISK-WAIT] clang++ bar.cc (pid 1002)", summary)
+            self.assertIn("... and 1 more (see pstree_stop.json)", summary)
+
+    def test_ingest_timeout_metadata_initializes_fresh_artifacts_when_absent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            artifact_dir = tmp_path / "artifacts"
+            artifact_dir.mkdir(parents=True)
+
+            context_path = tmp_path / "context.textproto"
+            context_path.write_text(
+                f'artifact_dir: "{artifact_dir}"\n', encoding="utf-8"
+            )
+
+            # Note: build_artifacts.json does NOT exist yet!
+            artifacts_path = artifact_dir / fint_build.BUILD_ARTIFACTS_JSON
+
+            metadata_path = tmp_path / "output_metadata.json"
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "timeout": {
+                            "log_dir": "/path/to/timeout_logs",
+                            "snapshots": ["pstree_stop.json"],
+                            "active_processes": [
+                                "[CPU] rustc foo.rs (pid 1001)",
+                            ],
+                            "total_matching_processes": 1,
+                            "total_leaf_processes": 1,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            ret = fint_build.ingest_timeout_metadata(
+                context_path, metadata_path
+            )
+            self.assertEqual(ret, 0)
+
+            # Verify build_artifacts.json was created with active processes
+            self.assertTrue(artifacts_path.exists())
+            updated_artifacts = build_artifacts_pb2.BuildArtifacts()
+            json_format.Parse(
+                artifacts_path.read_text(encoding="utf-8"), updated_artifacts
+            )
+            summary = updated_artifacts.failure_summary
+            self.assertIn("Active processes at timeout:", summary)
+            self.assertIn("* [CPU] rustc foo.rs (pid 1001)", summary)
 
 
 if __name__ == "__main__":

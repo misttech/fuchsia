@@ -45,7 +45,7 @@ from build.auth import gcloud
 from build.profile import procfs
 from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
-from build.scripts import properties, signal_utils
+from build.scripts import build_timeout, properties, pstree, signal_utils
 
 _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
@@ -422,18 +422,36 @@ def _collect_bazel_metadata(log_dir: pathlib.Path) -> JSONObject:
     }
 
 
-def _collect_timeout_metadata(log_dir: pathlib.Path) -> JSONObject:
-    """Discovers diagnostic snapshots generated during build timeout."""
-    timeout_dir = log_dir / TIMEOUT_LOGS_DIR
-    if not timeout_dir.exists():
-        return {}
-    snapshots = sorted(f.name for f in timeout_dir.iterdir() if f.is_file())
-    if not snapshots:
-        return {}
-    return {
-        "log_dir": str(timeout_dir.resolve()),
-        "snapshots": snapshots,
+# Persistent background daemons that run throughout the entire build session.
+# These ambient IPC servers are naturally alive and waiting on pipes/sockets,
+# so excluding them prevents crowding out the actual hung build actions
+# (e.g. compilers, linkers, code generators) in at-a-glance timeout summaries.
+# Note: Raw process snapshots (pstree_*.json) and full ASCII trees still capture
+# these processes in their entirety for post-mortem forensics.
+DEFAULT_TIMEOUT_EXCLUDED_PROCESSES: frozenset[str] = frozenset(
+    {
+        # RBE (Remote Build Execution) client daemon handling remote caching and execution.
+        "reproxy",
+        # ResultStore streaming proxy daemon recording build telemetry events.
+        "rsproxy",
+        # C++ header dependency scanning server for remote compile actions.
+        "scandeps_server",
     }
+)
+
+
+def _collect_timeout_metadata(
+    log_dir: pathlib.Path,
+    filter_fn: Callable[[pstree.ProcessNode], bool] | None = None,
+    max_leaves: int = build_timeout.DEFAULT_METADATA_MAX_LEAVES,
+) -> build_timeout.TimeoutMetadata | None:
+    """Discovers diagnostic snapshots generated during build timeout and extracts active leaf processes."""
+    timeout_dir = log_dir / TIMEOUT_LOGS_DIR
+    if filter_fn is None:
+        filter_fn = lambda n: n.comm not in DEFAULT_TIMEOUT_EXCLUDED_PROCESSES
+    return build_timeout.TimeoutMetadata.collect(
+        timeout_dir, filter_fn=filter_fn, max_leaves=max_leaves
+    )
 
 
 def exists(path: pathlib.Path) -> bool:
@@ -942,6 +960,11 @@ class FuchsiaBuildContext(object):
         """Returns the path to the fint_build.py script."""
         return self.source_dir / FINT_BUILD_PY_RELATIVE_PATH
 
+    @property
+    def fint_build_cmd_prefix(self) -> list[str]:
+        """Returns the common command prefix to invoke fint_build.py under the active interpreter."""
+        return [str(PYTHON_BIN), "-S", "-u", str(self.fint_build_py)]
+
     def _fint_wrapper_cmd(
         self,
         static_path: pathlib.Path | None = None,
@@ -963,10 +986,7 @@ class FuchsiaBuildContext(object):
             ninja_error_logging_output: Path where Ninja should write its error logs (ninja_errors.json).
             ninja_action_metrics_output: Path where Ninja should write its action metrics (ninja_action_metrics.json).
         """
-        yield str(PYTHON_BIN)
-        yield "-S"
-        yield "-u"
-        yield str(self.fint_build_py)
+        yield from self.fint_build_cmd_prefix
 
         if static_path:
             yield "--static"
@@ -1291,7 +1311,7 @@ class BuildInvocation(object):
 
         timeout_metadata = _collect_timeout_metadata(log_dir)
         if timeout_metadata:
-            metadata["timeout"] = timeout_metadata
+            metadata["timeout"] = timeout_metadata.to_dict()
 
         try:
             mkdir(output_path.parent)
@@ -1301,8 +1321,51 @@ class BuildInvocation(object):
                 f"Failed to serialize or write metadata JSON: {e}",
                 file=sys.stderr,
             )
+            return
         except Exception as e:
             msg(f"Unexpected error writing metadata JSON: {e}", file=sys.stderr)
+            return
+
+        if timeout_metadata and timeout_metadata.active_processes:
+            self._run_fint_ingest_timeout(output_path)
+
+    def _run_fint_ingest_timeout(self, metadata_path: pathlib.Path) -> None:
+        """Invokes fint_build.py to ingest timeout diagnostics into build_artifacts.json."""
+        context_path = self.context.config.fint_context_path
+        if not context_path or not self.context.fint_build_py.exists():
+            return
+        cmd = self.context.fint_build_cmd_prefix + [
+            "--context",
+            str(context_path),
+            "--ingest-timeout-metadata",
+            str(metadata_path),
+        ]
+        if self.context.config.verbose:
+            cmd.append("--verbose")
+        try:
+            subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=15.0,
+            )
+        except subprocess.TimeoutExpired as e:
+            msg(
+                f"Timed out after {e.timeout}s ingesting timeout metadata into fint build artifacts",
+                file=sys.stderr,
+            )
+        except subprocess.CalledProcessError as e:
+            msg(
+                f"Failed to ingest timeout metadata into fint build artifacts: {e.stderr.strip()}",
+                file=sys.stderr,
+            )
+        except OSError as e:
+            msg(
+                f"Failed to execute fint timeout ingestion: {e}",
+                file=sys.stderr,
+            )
 
     @functools.cached_property
     def build_uuid(self) -> str:
@@ -1439,6 +1502,9 @@ class BuildInvocation(object):
             yield "--verbose"
         if context.config.tui:
             yield "--no-separate-pgrp"
+        for proc in sorted(DEFAULT_TIMEOUT_EXCLUDED_PROCESSES):
+            yield "--exclude-process-from-summary"
+            yield proc
 
         yield "--"
 
