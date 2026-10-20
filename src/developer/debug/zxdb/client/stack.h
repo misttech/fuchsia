@@ -58,6 +58,9 @@ class Stack {
     // when debug info from either an unstripped or split binary is insufficient to completely
     // unwind (which is difficult to detect automatically).
     bool remote_unwind = false;
+
+    // If set, use ONLY the specified unwinder implementation.
+    std::optional<debug_ipc::StackFrame::Trust> forced_unwinder = std::nullopt;
   };
 
   // Provides a way for this class to talk to the environment.
@@ -205,6 +208,10 @@ class Stack {
   // Set when a "forced" frame update is requested. This will clear any previous state when new
   // frames are available.
   bool force_update_in_progress_ = false;
+
+  // Set when the current frames were produced using a specific forced unwinder. A subsequent
+  // default unwind request must re-sync and replace these frames.
+  bool has_forced_unwinder_frames_ = false;
 
   // Number of frames to hide from size() and operator[] that are inline frames at the top of the
   // stack that shouldn't be exposed right now.

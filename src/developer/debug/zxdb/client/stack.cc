@@ -204,13 +204,15 @@ void Stack::SetHideAmbiguousInlineFrameCount(size_t hide_count) {
 }
 
 void Stack::SyncFrames(const SyncFrameOptions& opts, fit::callback<void(const Err&)> callback) {
-  if (opts.force_update)
+  if (opts.force_update || opts.forced_unwinder || has_forced_unwinder_frames_)
     force_update_in_progress_ = true;
+  has_forced_unwinder_frames_ = opts.forced_unwinder.has_value();
   delegate_->SyncFramesForStack(opts, std::move(callback));
 }
 
 void Stack::EnsureFrames(const SyncFrameOptions& opts, fit::callback<void(const Err&)> callback) {
-  if (!opts.force_update && has_all_frames()) {
+  if (!opts.force_update && !opts.forced_unwinder && !has_forced_unwinder_frames_ &&
+      has_all_frames()) {
     debug::MessageLoop::Current()->PostTask(
         FROM_HERE, [callback = std::move(callback)]() mutable { callback(Err()); });
     return;
@@ -286,6 +288,7 @@ void Stack::SetFramesForTest(std::vector<std::unique_ptr<Frame>> frames, bool ha
 
 void Stack::ClearFrames() {
   has_all_frames_ = false;
+  has_forced_unwinder_frames_ = false;
   hide_ambiguous_inline_frame_count_ = 0;
 
   if (frames_.empty())

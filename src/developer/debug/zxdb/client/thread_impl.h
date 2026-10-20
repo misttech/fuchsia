@@ -15,9 +15,7 @@
 #include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace unwinder {
-class Memory;
 class Registers;
-class AsyncUnwinder;
 }  // namespace unwinder
 
 namespace zxdb {
@@ -92,12 +90,14 @@ class ThreadImpl final : public Thread, public Stack::Delegate, public AsyncTask
   // Helper for when local unwinding using CFI fails (the local unwinder will only try to use CFI).
   // This function is called to perform the unwinding on the target which will have synchronous
   // access to the process's memory, making the unwinding logic much simpler.
-  void SyncFramesFromTarget(fit::callback<void(const Err&)> callback);
+  void SyncFramesFromTarget(const Stack::SyncFrameOptions& options,
+                            fit::callback<void(const Err&)> callback);
 
   // Uses the given registers to invoke the unwinder with the available local debug info. If
   // unwinding fails, falls back to unwinding on the target. |cb| is guaranteed to be issued
   // asynchronously from this function.
-  void UnwindWithRegisters(unwinder::Registers regs, fit::callback<void(const Err&)> cb);
+  void UnwindWithRegisters(const unwinder::Registers& regs, const Stack::SyncFrameOptions& options,
+                           fit::callback<void(const Err&)> cb);
 
   // Invalidates the thread state and cached frames. Used when we know that some operation has
   // invalidated our state but we aren't sure what the new state is yet.

@@ -137,6 +137,8 @@ static_library("client") {
     "process_symbol_data_provider.cc",
     "remote_api_impl.cc",
     "remote_api_impl.h",
+    "remote_unwinder.cc",
+    "remote_unwinder.h",
     "session.cc",
     "session.h",
     "session_observer.cc",

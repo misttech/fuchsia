@@ -543,4 +543,77 @@ TEST_F(StackTest, SymbolizeFrameAddress) {
   EXPECT_EQ(stack[1]->GetLocation().symbol().Get()->As<Function>(), lower_func.get());
 }
 
+TEST_F(StackTest, EnsureFramesWithForcedUnwinder) {
+  Session session;
+  MockStackDelegate delegate(&session);
+  Stack stack(&delegate);
+  delegate.set_stack(&stack);
+
+  stack.SetFrames(debug_ipc::ThreadRecord::StackAmount::kFull,
+                  {debug_ipc::StackFrame(0x1000, kTopSP, kMiddleSP),
+                   debug_ipc::StackFrame(0x1010, kMiddleSP, kBottomSP)});
+  ASSERT_TRUE(stack.has_all_frames());
+  ASSERT_EQ(2u, stack.size());
+  EXPECT_EQ(1, delegate.update_count());
+
+  // Without force_update or forced_unwinder, EnsureFrames does not re-sync when has_all_frames()
+  // is already true.
+  bool called = false;
+  stack.EnsureFrames({}, [&called](const Err& err) {
+    EXPECT_FALSE(err.has_error());
+    called = true;
+  });
+  loop().RunUntilNoTasks();
+  EXPECT_TRUE(called);
+  EXPECT_EQ(1, delegate.update_count());
+  EXPECT_EQ(2u, stack.size());
+
+  // With forced_unwinder set, EnsureFrames must re-sync and replace existing frames.
+  std::vector<std::unique_ptr<Frame>> forced_frames;
+  forced_frames.push_back(std::make_unique<MockFrame>(
+      &session, nullptr, Location(Location::State::kSymbolized, 0x1000), kTopSP, kMiddleSP));
+  delegate.SetAsyncFrames(std::move(forced_frames));
+
+  called = false;
+  stack.EnsureFrames({.forced_unwinder = debug_ipc::StackFrame::Trust::kFP},
+                     [&called](const Err& err) {
+                       EXPECT_FALSE(err.has_error());
+                       called = true;
+                     });
+  loop().RunUntilNoTasks();
+  EXPECT_TRUE(called);
+  EXPECT_EQ(2, delegate.update_count());
+  EXPECT_EQ(1u, stack.size());
+
+  // A subsequent default EnsureFrames call after a forced unwind must re-sync and replace the
+  // forced-unwinder frames with the default frames.
+  std::vector<std::unique_ptr<Frame>> default_frames;
+  default_frames.push_back(std::make_unique<MockFrame>(
+      &session, nullptr, Location(Location::State::kSymbolized, 0x1000), kTopSP, kMiddleSP));
+  default_frames.push_back(std::make_unique<MockFrame>(
+      &session, nullptr, Location(Location::State::kSymbolized, 0x1010), kMiddleSP, kBottomSP));
+  delegate.SetAsyncFrames(std::move(default_frames));
+
+  called = false;
+  stack.EnsureFrames({}, [&called](const Err& err) {
+    EXPECT_FALSE(err.has_error());
+    called = true;
+  });
+  loop().RunUntilNoTasks();
+  EXPECT_TRUE(called);
+  EXPECT_EQ(3, delegate.update_count());
+  EXPECT_EQ(2u, stack.size());
+
+  // Once default frames are restored, EnsureFrames({}) uses the cached frames without re-syncing.
+  called = false;
+  stack.EnsureFrames({}, [&called](const Err& err) {
+    EXPECT_FALSE(err.has_error());
+    called = true;
+  });
+  loop().RunUntilNoTasks();
+  EXPECT_TRUE(called);
+  EXPECT_EQ(3, delegate.update_count());
+  EXPECT_EQ(2u, stack.size());
+}
+
 }  // namespace zxdb

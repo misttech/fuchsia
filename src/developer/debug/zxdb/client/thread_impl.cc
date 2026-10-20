@@ -7,22 +7,17 @@
 #include <inttypes.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include <iostream>
-#include <limits>
-
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/ipc/unwinder_support.h"
-#include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/register_info.h"
-#include "src/developer/debug/shared/zx_status.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_observer.h"
-#include "src/developer/debug/zxdb/client/elf_memory_region.h"
 #include "src/developer/debug/zxdb/client/frame_impl.h"
 #include "src/developer/debug/zxdb/client/process_impl.h"
 #include "src/developer/debug/zxdb/client/remote_api.h"
+#include "src/developer/debug/zxdb/client/remote_unwinder.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
@@ -30,9 +25,7 @@
 #include "src/developer/debug/zxdb/common/join_callbacks.h"
 #include "src/developer/debug/zxdb/expr/cast.h"
 #include "src/developer/debug/zxdb/expr/expr.h"
-#include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/process_symbols.h"
-#include "src/lib/unwinder/unwind.h"
 
 namespace zxdb {
 
@@ -526,7 +519,7 @@ void ThreadImpl::ResolveConditionalBreakpoint(const std::string& cond, Breakpoin
 void ThreadImpl::SyncFramesForStack(const Stack::SyncFrameOptions& options,
                                     fit::callback<void(const Err&)> callback) {
   if (options.remote_unwind) {
-    return SyncFramesFromTarget(std::move(callback));
+    return SyncFramesFromTarget(options, std::move(callback));
   }
 
   debug_ipc::ReadRegistersRequest request;
@@ -537,7 +530,7 @@ void ThreadImpl::SyncFramesForStack(const Stack::SyncFrameOptions& options,
   // for all unwinding strategies so fetching them is a prerequisite. We'll try to use local
   // debug_info before deferring to the live process for unwinding.
   session()->remote_api()->ReadRegisters(
-      request, [weak_this = weak_factory_.GetWeakPtr(), cb = std::move(callback)](
+      request, [weak_this = weak_factory_.GetWeakPtr(), options, cb = std::move(callback)](
                    const Err& err, debug_ipc::ReadRegistersReply reply) mutable {
         if (!weak_this) {
           return cb(Err("Thread died while fetching registers"));
@@ -546,7 +539,7 @@ void ThreadImpl::SyncFramesForStack(const Stack::SyncFrameOptions& options,
         if (err.has_error() || reply.registers.empty()) {
           // This commonly happens for unit tests which historically expect the frames to only be
           // available remotely and/or don't necessarily provide registers.
-          return weak_this->SyncFramesFromTarget(std::move(cb));
+          return weak_this->SyncFramesFromTarget(options, std::move(cb));
         }
 
         if (weak_this->GetProcess()->GetSymbolStatus() == Process::SymbolStatus::kInProgress) {
@@ -554,73 +547,33 @@ void ThreadImpl::SyncFramesForStack(const Stack::SyncFrameOptions& options,
           // download in progress we have to wait until the download is finished before
           // continuing.
           return weak_this->session()->system().AddPostDownloadTask(
-              [weak_this, regs = reply.registers, cb = std::move(cb)]() mutable {
+              [weak_this, options, regs = reply.registers, cb = std::move(cb)]() mutable {
                 if (!weak_this) {
                   return cb(Err("Thread disappeared while waiting for downloads!"));
                 }
 
                 weak_this->UnwindWithRegisters(
-                    debug_ipc::ConvertRegisters(weak_this->session()->arch(), regs), std::move(cb));
+                    debug_ipc::ConvertRegisters(weak_this->session()->arch(), regs), options,
+                    std::move(cb));
               });
         }
 
         weak_this->UnwindWithRegisters(
-            debug_ipc::ConvertRegisters(weak_this->session()->arch(), reply.registers),
+            debug_ipc::ConvertRegisters(weak_this->session()->arch(), reply.registers), options,
             std::move(cb));
       });
 }
 
-void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<void(const Err&)> cb) {
-  std::vector<debug_ipc::StackFrame> frames;
+void ThreadImpl::UnwindWithRegisters(const unwinder::Registers& regs,
+                                     const Stack::SyncFrameOptions& options,
+                                     fit::callback<void(const Err&)> cb) {
+  RemoteUnwinder unwinder(this);
 
-  auto loaded_modules = GetProcess()->GetSymbols()->GetLoadedModuleSymbols();
-
-  std::vector<unwinder::Module> modules;
-  modules.reserve(loaded_modules.size());
-  std::vector<std::unique_ptr<unwinder::Memory>> unwinder_memory;
-  unwinder_memory.reserve(loaded_modules.size());
-
-  for (const auto& loaded_module : loaded_modules) {
-    auto build_id_entry = session()->system().GetSymbols()->build_id_index().EntryForBuildID(
-        loaded_module->build_id());
-
-    // It's unlikely, but possible that the (likely stripped) binary file has some debug sections
-    // present, so we should use the ElfMemoryRegion object which knows how to decompress debug
-    // sections when that's enabled.
-    std::unique_ptr<ElfMemoryRegion> binary_file_memory = nullptr;
-    std::unique_ptr<ElfMemoryRegion> debug_info_file_memory = nullptr;
-    if (!build_id_entry.binary.empty()) {
-      binary_file_memory =
-          std::make_unique<ElfMemoryRegion>(loaded_module->load_address(), build_id_entry.binary);
-    }
-
-    if (!build_id_entry.debug_info.empty()) {
-      debug_info_file_memory = std::make_unique<ElfMemoryRegion>(loaded_module->load_address(),
-                                                                 build_id_entry.debug_info);
-    }
-
-    modules.emplace_back(loaded_module->load_address(), binary_file_memory.get(),
-                         debug_info_file_memory.get(), unwinder::Module::AddressMode::kFile);
-
-    unwinder_memory.push_back(std::move(binary_file_memory));
-    unwinder_memory.push_back(std::move(debug_info_file_memory));
-  }
-
-  // This probably doesn't need to be configurable, when someone types "bt" or "frame", they
-  // want to see the whole stack, and the PrettyStackManager already does a good job of
-  // removing the less helpful frames. For right now this matches what DebugAgent sends to
-  // the unwinder for remote unwinds.
-  constexpr size_t kMaxDepth = 256;
-
-  // Here we try unwinding using local debug info before deferring to the target. This lets us use
-  // potentially better .debug_frame section that is not loaded in the target executable, if
-  // present, or deal with cases where the .eh_frame section has been stripped from the target but
-  // remains in an unstripped binary that we have access to on the host.
-  auto unwinder = std::make_unique<unwinder::AsyncUnwinder>(GetProcess(), modules);
-  unwinder->Unwind(
-      regs, kMaxDepth,
-      // Move the unwinder itself and the memory into the callback so they stay alive for the
-      // duration of unwinding.
+  unwinder.UnwindWithRegisters(
+      regs, options,
+      // RemoteUnwinder moves the underlying unwinder and module memory into its internal completion
+      // callback so they stay alive for the duration of unwinding.
+      //
       // In the typical case the reference counts for the unwinder drops to zero once unwinding
       // completes and the `fit::callback` is invoked, since `fit::callback`'s destructor is
       // automatically called after it's invoked once.
@@ -635,15 +588,13 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
       //  b. Even if this were to happen, developers typically debug one process per zxdb session,
       //     causing zxdb to exit after the process dies.
       //  c. Even if this were not the case, this memory leak would not cost a significant amount
-      //  of
-      //     memory on the developer's host machine.
-      [weak_this = weak_factory_.GetWeakPtr(), cb = std::move(cb), unwinder = std::move(unwinder),
-       unwinder_memory =
-           std::move(unwinder_memory)](std::vector<unwinder::Frame> unwinder_frames) mutable {
+      //     of memory on the developer's host machine.
+      [weak_this = weak_factory_.GetWeakPtr(), cb = std::move(cb),
+       options](std::vector<unwinder::Frame> unwinder_frames) mutable {
         // The unwinder's asynchronous API calls all callbacks reentrantly, so post a
         // task to the message loop to make sure we don't blow our own stack.
         debug::MessageLoop::Current()->PostTask(
-            FROM_HERE, [weak_this, unwinder_frames = std::move(unwinder_frames),
+            FROM_HERE, [weak_this, unwinder_frames = std::move(unwinder_frames), options,
                         cb = std::move(cb)]() mutable {
               if (!weak_this) {
                 if (cb) {
@@ -653,10 +604,21 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
                 return;
               }
 
-              // If something went wrong, the last frame will have an error condition.
-              // In the typical unwinding termination case, the error is cleared.
-              if (unwinder_frames.back().error.has_err()) {
-                weak_this->SyncFramesFromTarget(std::move(cb));
+              // In the typical hybrid unwinding termination case, the last frame's error is
+              // cleared because the entry point marks the return address as undefined. However,
+              // when a specific single-strategy unwinder is forced (such as FP, PLT, or
+              // SigReturn), unwinding terminates with an error on the last frame once that
+              // strategy can no longer step further. Only fall back to the target when hybrid
+              // unwinding reports an error, or when a forced unwinder fails on the initial context
+              // frame against a live target (such as in the vDSO or in unit tests without local
+              // symbols).
+              bool should_fallback =
+                  unwinder_frames.empty() ||
+                  (!options.forced_unwinder && unwinder_frames.back().error.has_err()) ||
+                  (options.forced_unwinder && !weak_this->session()->is_minidump() &&
+                   unwinder_frames.size() == 1 && unwinder_frames.back().error.has_err());
+              if (should_fallback) {
+                weak_this->SyncFramesFromTarget(options, std::move(cb));
                 return;
               }
 
@@ -670,9 +632,11 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
       });
 }
 
-void ThreadImpl::SyncFramesFromTarget(fit::callback<void(const Err&)> callback) {
+void ThreadImpl::SyncFramesFromTarget(const Stack::SyncFrameOptions& options,
+                                      fit::callback<void(const Err&)> callback) {
   debug_ipc::ThreadStatusRequest request;
   request.id = {.process = process_->GetKoid(), .thread = koid_};
+  request.forced_unwinder = options.forced_unwinder;
 
   session()->remote_api()->ThreadStatus(
       request, [callback = std::move(callback), thread = weak_factory_.GetWeakPtr()](
