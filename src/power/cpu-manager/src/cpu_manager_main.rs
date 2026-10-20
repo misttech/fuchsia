@@ -78,7 +78,7 @@ fn opp_to_max_freq_cap_level(opp_index: usize) -> fbroker::PowerLevel {
 }
 
 fn is_lease_open(token: &fbroker::LeaseToken) -> bool {
-    token.wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST).is_err()
+    token.wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO).is_err()
 }
 
 async fn register_power_element(
@@ -3732,13 +3732,7 @@ mod tests {
                     let Some(elem) = elems.get_mut(&elem_name) else {
                         return;
                     };
-                    elem.active_leases.retain(|(_, _, t)| {
-                        t.wait_one(
-                            zx::Signals::EVENTPAIR_PEER_CLOSED,
-                            zx::MonotonicInstant::INFINITE_PAST,
-                        )
-                        .is_err()
-                    });
+                    elem.active_leases.retain(|(_, _, t)| is_lease_open(t));
                     let max_level =
                         elem.active_leases.iter().map(|(_, l, _)| *l).max().unwrap_or(0);
                     (max_level != elem.current_level).then(|| (elem.runner.clone(), max_level))
@@ -3824,13 +3818,7 @@ mod tests {
                                     .iter_mut()
                                     .find(|(_, e)| e.dep_token_koid == koid)
                                     .expect("matching element for dependency token");
-                                elem.active_leases.retain(|(_, _, t)| {
-                                    t.wait_one(
-                                        zx::Signals::EVENTPAIR_PEER_CLOSED,
-                                        zx::MonotonicInstant::INFINITE_PAST,
-                                    )
-                                    .is_err()
-                                });
+                                elem.active_leases.retain(|(_, _, t)| is_lease_open(t));
                                 elem.active_leases.push((lease_name, level, lease_token));
                                 let max_level = elem
                                     .active_leases
