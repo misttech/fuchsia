@@ -323,18 +323,19 @@ pub struct EthernetDeviceState<BT: DeviceLayerTypes> {
         BT::TxMetadata,
         <EthernetLinkDevice as DeviceBufferSpec<BT>>::TxBuffer,
         <EthernetLinkDevice as DeviceBufferSpec<BT>>::TxAllocator,
+        BT,
     >,
-    ipv4_arp: Mutex<ArpState<EthernetLinkDevice, BT>>,
-    ipv6_nud: Mutex<NudState<Ipv6, EthernetLinkDevice, BT>>,
-    ipv4_nud_config: RwLock<IpMarked<Ipv4, NudUserConfig>>,
-    ipv6_nud_config: RwLock<IpMarked<Ipv6, NudUserConfig>>,
-    dynamic_state: RwLock<DynamicEthernetDeviceState>,
+    ipv4_arp: Mutex<ArpState<EthernetLinkDevice, BT>, BT::Mutex>,
+    ipv6_nud: Mutex<NudState<Ipv6, EthernetLinkDevice, BT>, BT::Mutex>,
+    ipv4_nud_config: RwLock<IpMarked<Ipv4, NudUserConfig>, BT::RwLock>,
+    ipv6_nud_config: RwLock<IpMarked<Ipv6, NudUserConfig>, BT::RwLock>,
+    dynamic_state: RwLock<DynamicEthernetDeviceState, BT::RwLock>,
 }
 
 impl<BT: DeviceLayerTypes, I: Ip> OrderedLockAccess<IpMarked<I, NudUserConfig>>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = RwLock<IpMarked<I, NudUserConfig>>;
+    type Lock = RwLock<IpMarked<I, NudUserConfig>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(I::map_ip(
             (),
@@ -347,7 +348,7 @@ impl<BT: DeviceLayerTypes, I: Ip> OrderedLockAccess<IpMarked<I, NudUserConfig>>
 impl<BT: DeviceLayerTypes> OrderedLockAccess<DynamicEthernetDeviceState>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = RwLock<DynamicEthernetDeviceState>;
+    type Lock = RwLock<DynamicEthernetDeviceState, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.dynamic_state)
     }
@@ -356,7 +357,7 @@ impl<BT: DeviceLayerTypes> OrderedLockAccess<DynamicEthernetDeviceState>
 impl<BT: DeviceLayerTypes> OrderedLockAccess<NudState<Ipv6, EthernetLinkDevice, BT>>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = Mutex<NudState<Ipv6, EthernetLinkDevice, BT>>;
+    type Lock = Mutex<NudState<Ipv6, EthernetLinkDevice, BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.ipv6_nud)
     }
@@ -365,7 +366,7 @@ impl<BT: DeviceLayerTypes> OrderedLockAccess<NudState<Ipv6, EthernetLinkDevice, 
 impl<BT: DeviceLayerTypes> OrderedLockAccess<ArpState<EthernetLinkDevice, BT>>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = Mutex<ArpState<EthernetLinkDevice, BT>>;
+    type Lock = Mutex<ArpState<EthernetLinkDevice, BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.ipv4_arp)
     }
@@ -375,7 +376,7 @@ impl<BT: DeviceLayerTypes>
     OrderedLockAccess<TransmitQueueState<BT::TxMetadata, BT::TxBuffer, BT::TxAllocator>>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = Mutex<TransmitQueueState<BT::TxMetadata, BT::TxBuffer, BT::TxAllocator>>;
+    type Lock = Mutex<TransmitQueueState<BT::TxMetadata, BT::TxBuffer, BT::TxAllocator>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.queue)
     }
@@ -384,7 +385,7 @@ impl<BT: DeviceLayerTypes>
 impl<BT: DeviceLayerTypes> OrderedLockAccess<DequeueState<BT::TxMetadata, BT::TxBuffer>>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = Mutex<DequeueState<BT::TxMetadata, BT::TxBuffer>>;
+    type Lock = Mutex<DequeueState<BT::TxMetadata, BT::TxBuffer>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.deque)
     }

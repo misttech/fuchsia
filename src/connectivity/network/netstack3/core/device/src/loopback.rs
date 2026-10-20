@@ -12,7 +12,7 @@ use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use log::trace;
 use net_types::ethernet::Mac;
 use net_types::ip::{Ipv4, Ipv6, Mtu};
-use netstack3_base::sync::Mutex;
+use netstack3_base::sync::{BindingsSyncTypes, Mutex};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, ChecksumOffloadSpec, ChecksumRxOffloading, CoreTimerContext, Device,
     DeviceIdAnyCompatContext, DeviceIdContext, FrameDestination, NetworkParsingContext,
@@ -121,18 +121,22 @@ pub struct LoopbackCreationProperties {
 }
 
 /// State for a loopback device.
-pub struct LoopbackDeviceState<D: WeakDeviceIdentifier, BT: TxMetadataBindingsTypes> {
+pub struct LoopbackDeviceState<
+    D: WeakDeviceIdentifier,
+    BT: TxMetadataBindingsTypes + BindingsSyncTypes,
+> {
     /// Loopback device counters.
     pub counters: EthernetDeviceCounters,
     /// The MTU this device was created with (immutable).
     pub mtu: Mtu,
     /// Loopback device receive queue.
-    pub rx_queue: ReceiveQueue<LoopbackRxQueueMeta<D, BT>, Buf<Vec<u8>>>,
+    pub rx_queue: ReceiveQueue<LoopbackRxQueueMeta<D, BT>, Buf<Vec<u8>>, BT>,
     /// Loopback device transmit queue.
     pub tx_queue: TransmitQueue<
         LoopbackTxQueueMeta<D, BT>,
         <LoopbackDevice as DeviceBufferSpec<BT>>::TxBuffer,
         <LoopbackDevice as DeviceBufferSpec<BT>>::TxAllocator,
+        BT,
     >,
 }
 
@@ -184,7 +188,10 @@ impl<BT: DeviceLayerTypes>
     OrderedLockAccess<ReceiveQueueState<LoopbackRxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>>
     for IpLinkDeviceState<LoopbackDevice, BT>
 {
-    type Lock = Mutex<ReceiveQueueState<LoopbackRxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>>;
+    type Lock = Mutex<
+        ReceiveQueueState<LoopbackRxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>,
+        BT::Mutex,
+    >;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.rx_queue.queue)
     }
@@ -194,7 +201,8 @@ impl<BT: DeviceLayerTypes>
     OrderedLockAccess<DequeueState<LoopbackRxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>>
     for IpLinkDeviceState<LoopbackDevice, BT>
 {
-    type Lock = Mutex<DequeueState<LoopbackRxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>>;
+    type Lock =
+        Mutex<DequeueState<LoopbackRxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.rx_queue.deque)
     }
@@ -215,6 +223,7 @@ impl<BT: DeviceLayerTypes>
             Buf<Vec<u8>>,
             BufVecU8Allocator,
         >,
+        BT::Mutex,
     >;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.queue)
@@ -225,7 +234,8 @@ impl<BT: DeviceLayerTypes>
     OrderedLockAccess<DequeueState<LoopbackTxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>>
     for IpLinkDeviceState<LoopbackDevice, BT>
 {
-    type Lock = Mutex<DequeueState<LoopbackTxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>>;
+    type Lock =
+        Mutex<DequeueState<LoopbackTxQueueMeta<WeakDeviceId<BT>, BT>, Buf<Vec<u8>>>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.deque)
     }

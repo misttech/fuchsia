@@ -7,7 +7,7 @@
 use core::fmt::Debug;
 
 use derivative::Derivative;
-use netstack3_base::sync::Mutex;
+use netstack3_base::sync::{BindingsSyncTypes, Mutex};
 use netstack3_base::{Device, DeviceIdContext};
 use packet::BufferMut;
 
@@ -55,16 +55,16 @@ pub trait ReceiveQueueBindingsContext<DeviceId> {
 /// Holds queue and dequeue state for the receive queue.
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
-pub struct ReceiveQueue<Meta, Buffer> {
+pub struct ReceiveQueue<Meta, Buffer, BT: BindingsSyncTypes> {
     /// The state for dequeued frames that will be handled.
     ///
     /// See `queue` for lock ordering.
-    pub(crate) deque: Mutex<DequeueState<Meta, Buffer>>,
+    pub(crate) deque: Mutex<DequeueState<Meta, Buffer>, BT::Mutex>,
     /// A queue of received frames protected by a lock.
     ///
     /// Lock ordering: `deque` must be locked before `queue` is locked when both
     /// are needed at the same time.
-    pub(crate) queue: Mutex<ReceiveQueueState<Meta, Buffer>>,
+    pub(crate) queue: Mutex<ReceiveQueueState<Meta, Buffer>, BT::Mutex>,
 }
 
 /// Defines opaque types for frames in the receive queue.

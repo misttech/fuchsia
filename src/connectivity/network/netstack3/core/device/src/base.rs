@@ -164,7 +164,7 @@ impl<BT: DeviceLayerTypes> Devices<BT> {
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct DeviceLayerState<BT: DeviceLayerTypes> {
-    devices: RwLock<Devices<BT>>,
+    devices: RwLock<Devices<BT>, BT::RwLock>,
     /// Device layer origin tracker.
     pub origin: OriginTracker,
     /// Collection of all device sockets.
@@ -195,7 +195,7 @@ impl<BT: DeviceLayerTypes> DeviceLayerState<BT> {
 }
 
 impl<BT: DeviceLayerTypes> OrderedLockAccess<Devices<BT>> for DeviceLayerState<BT> {
-    type Lock = RwLock<Devices<BT>>;
+    type Lock = RwLock<Devices<BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.devices)
     }

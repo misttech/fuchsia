@@ -13,7 +13,7 @@ use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use net_types::ethernet::Mac;
 use net_types::ip::IpVersion;
 use netstack3_base::socket::SocketCookie;
-use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
+use netstack3_base::sync::{BindingsSyncTypes, Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, ContextPair, Counter, Device, DeviceIdContext, FrameDestination, GsoInfo,
     Inspectable, Inspector, InspectorDeviceExt, InspectorExt, NetworkSerializer, PacketType,
@@ -62,7 +62,7 @@ pub struct SocketInfo<D> {
 
 /// Provides associated types for device sockets provided by the bindings
 /// context.
-pub trait DeviceSocketTypes {
+pub trait DeviceSocketTypes: BindingsSyncTypes {
     /// State for the socket held by core and exposed to bindings.
     type SocketState<D: Send + Sync + Debug>: Send + Sync + Debug;
 }
@@ -142,7 +142,7 @@ impl<D: Send + Sync + Debug, BT: DeviceSocketTypes> Debug for DeviceSocketId<D, 
 impl<D: Send + Sync + Debug, BT: DeviceSocketTypes> OrderedLockAccess<Target<D>>
     for DeviceSocketId<D, BT>
 {
-    type Lock = Mutex<Target<D>>;
+    type Lock = Mutex<Target<D>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         let Self(rc) = self;
         OrderedLockRef::new(&rc.target)
@@ -172,7 +172,7 @@ impl<D: Send + Sync + Debug, BT: DeviceSocketTypes> Debug for WeakDeviceSocketId
 pub struct Sockets<D: Send + Sync + Debug, BT: DeviceSocketTypes> {
     /// Holds strong (but not owning) references to sockets that aren't
     /// targeting a particular device.
-    any_device_sockets: RwLock<AnyDeviceSockets<D, BT>>,
+    any_device_sockets: RwLock<AnyDeviceSockets<D, BT>, BT::RwLock>,
 
     /// Table of all sockets in the system, regardless of target.
     ///
@@ -180,7 +180,7 @@ pub struct Sockets<D: Send + Sync + Debug, BT: DeviceSocketTypes> {
     // This needs to be after `any_device_sockets` so that when an instance of
     // this type is dropped, any strong IDs get dropped before their
     // corresponding primary IDs.
-    all_sockets: RwLock<AllSockets<D, BT>>,
+    all_sockets: RwLock<AllSockets<D, BT>, BT::RwLock>,
 }
 
 /// The set of sockets associated with a device.
@@ -198,14 +198,15 @@ pub struct AllSockets<D: Send + Sync + Debug, BT: DeviceSocketTypes>(
 );
 
 /// State held by a device socket.
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
 pub struct SocketState<D: Send + Sync + Debug, BT: DeviceSocketTypes> {
     /// State provided by bindings that is held in core.
     pub external_state: BT::SocketState<D>,
     /// The socket's target device and protocol.
     // TODO(https://fxbug.dev/42077026): Consider splitting up the state here to
     // improve performance.
-    target: Mutex<Target<D>>,
+    target: Mutex<Target<D>, BT::Mutex>,
     /// Statistics about the socket's usage.
     counters: DeviceSocketCounters,
 }
@@ -1017,7 +1018,7 @@ impl Inspectable for DeviceSocketCounters {
 impl<D: Send + Sync + Debug, BT: DeviceSocketTypes> OrderedLockAccess<AnyDeviceSockets<D, BT>>
     for Sockets<D, BT>
 {
-    type Lock = RwLock<AnyDeviceSockets<D, BT>>;
+    type Lock = RwLock<AnyDeviceSockets<D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.any_device_sockets)
     }
@@ -1026,7 +1027,7 @@ impl<D: Send + Sync + Debug, BT: DeviceSocketTypes> OrderedLockAccess<AnyDeviceS
 impl<D: Send + Sync + Debug, BT: DeviceSocketTypes> OrderedLockAccess<AllSockets<D, BT>>
     for Sockets<D, BT>
 {
-    type Lock = RwLock<AllSockets<D, BT>>;
+    type Lock = RwLock<AllSockets<D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.all_sockets)
     }
@@ -1062,7 +1063,9 @@ mod testutil {
 
     #[derive(Debug, Derivative)]
     #[derivative(Default(bound = ""))]
-    pub struct ExternalSocketState<D>(pub Mutex<RxQueue<D>>);
+    pub struct ExternalSocketState<D>(
+        pub Mutex<RxQueue<D>, netstack3_base::sync::lock_impl::RawMutex>,
+    );
 
     impl<TimerId, Event: Debug, State> DeviceSocketTypes
         for FakeBindingsCtx<TimerId, Event, State, ()>

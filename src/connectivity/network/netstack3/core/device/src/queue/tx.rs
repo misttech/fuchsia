@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 
 use derivative::Derivative;
 use log::trace;
-use netstack3_base::sync::Mutex;
+use netstack3_base::sync::{BindingsSyncTypes, Mutex};
 use netstack3_base::{
     ChecksumOffloadResult, ChecksumOffloadSpec, Device, DeviceIdContext, ErrorAndSerializer,
     NetworkSerializationContext, NetworkSerializer, TxMetadata,
@@ -31,19 +31,19 @@ pub struct TransmitQueueState<Meta, Buffer, Allocator> {
 }
 
 /// Holds queue and dequeue state for the transmit queue.
-pub struct TransmitQueue<Meta, Buffer, Allocator> {
+pub struct TransmitQueue<Meta, Buffer, Allocator, BT: BindingsSyncTypes> {
     /// The state for dequeued packets that will be handled.
     ///
     /// See `queue` for lock ordering.
-    pub(crate) deque: Mutex<DequeueState<Meta, Buffer>>,
+    pub(crate) deque: Mutex<DequeueState<Meta, Buffer>, BT::Mutex>,
     /// A queue of to-be-transmitted packets protected by a lock.
     ///
     /// Lock ordering: `deque` must be locked before `queue` is locked when both
     /// are needed at the same time.
-    pub(crate) queue: Mutex<TransmitQueueState<Meta, Buffer, Allocator>>,
+    pub(crate) queue: Mutex<TransmitQueueState<Meta, Buffer, Allocator>, BT::Mutex>,
 }
 
-impl<Meta, Buffer, Allocator> TransmitQueue<Meta, Buffer, Allocator> {
+impl<Meta, Buffer, Allocator, BT: BindingsSyncTypes> TransmitQueue<Meta, Buffer, Allocator, BT> {
     pub(crate) fn new(allocator: Allocator, checksum_offload_spec: ChecksumOffloadSpec) -> Self {
         Self {
             deque: Mutex::new(DequeueState::default()),

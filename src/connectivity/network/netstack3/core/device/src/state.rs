@@ -90,7 +90,7 @@ pub struct IpLinkDeviceStateInner<T, BT: DeviceLayerTypes> {
     /// The device's link state.
     pub link: T,
     pub(crate) origin: OriginTracker,
-    pub(super) sockets: RwLock<HeldDeviceSockets<BT>>,
+    pub(super) sockets: RwLock<HeldDeviceSockets<BT>, BT::RwLock>,
     /// Common device counters.
     pub counters: DeviceCounters,
 }
@@ -127,7 +127,7 @@ impl<T, BT: DeviceLayerTypes> AsRef<DualStackIpDeviceState<BT>> for IpLinkDevice
 impl<T, BT: DeviceLayerTypes> OrderedLockAccess<HeldDeviceSockets<BT>>
     for IpLinkDeviceStateInner<T, BT>
 {
-    type Lock = RwLock<HeldDeviceSockets<BT>>;
+    type Lock = RwLock<HeldDeviceSockets<BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.sockets)
     }

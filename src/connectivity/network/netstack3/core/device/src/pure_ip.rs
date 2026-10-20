@@ -96,12 +96,13 @@ pub struct PureIpHeaderParams {
 /// State for a pure IP device.
 pub struct PureIpDeviceState<BT: DeviceLayerTypes> {
     /// The device's dynamic state.
-    dynamic_state: RwLock<DynamicPureIpDeviceState>,
+    dynamic_state: RwLock<DynamicPureIpDeviceState, BT::RwLock>,
     /// The device's transmit queue.
     pub tx_queue: TransmitQueue<
         PureIpDeviceTxQueueFrameMetadata<BT>,
         <PureIpDevice as DeviceBufferSpec<BT>>::TxBuffer,
         <PureIpDevice as DeviceBufferSpec<BT>>::TxAllocator,
+        BT,
     >,
     /// Counters specific to pure IP devices.
     pub counters: PureIpDeviceCounters,
@@ -386,7 +387,7 @@ pub fn set_mtu<CC: PureIpDeviceStateContext>(
 impl<BT: DeviceLayerTypes> OrderedLockAccess<DynamicPureIpDeviceState>
     for IpLinkDeviceState<PureIpDevice, BT>
 {
-    type Lock = RwLock<DynamicPureIpDeviceState>;
+    type Lock = RwLock<DynamicPureIpDeviceState, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.dynamic_state)
     }
@@ -399,6 +400,7 @@ impl<BT: DeviceLayerTypes>
 {
     type Lock = Mutex<
         TransmitQueueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer, BT::TxAllocator>,
+        BT::Mutex,
     >;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.queue)
@@ -409,7 +411,7 @@ impl<BT: DeviceLayerTypes>
     OrderedLockAccess<DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer>>
     for IpLinkDeviceState<PureIpDevice, BT>
 {
-    type Lock = Mutex<DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer>>;
+    type Lock = Mutex<DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.deque)
     }
