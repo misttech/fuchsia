@@ -13,7 +13,10 @@ import("//build/testing/golden_files.gni")
 
 # Might as well always default to using the bleeding edge, just as we do with
 # our toolchain.
+# LINT.IfChange(default_bindgen_rust_version)
 default_bindgen_rust_version = "nightly"
+
+# LINT.ThenChange(//build/bazel/rules/rust/rustc_bindgen.bzl:default_bindgen_rust_version)
 
 # Defines a target that runs rust bindgen on C header files.
 #
@@ -418,12 +421,15 @@ template("rustc_bindgen") {
         }
       }
 
+      # LINT.IfChange(fuchsia_api_level)
       if (defined(invoker.fuchsia_api_level)) {
         # TODO(joshuaseaton): Revisit exposing this knob at all. Now that the
         # template inherits the toolchain-level configs, this is set by
         # default as HEAD and it is difficult to override it at this level.
         assert(invoker.fuchsia_api_level == "HEAD")
       }
+
+      # LINT.ThenChange(//build/bazel/rules/rust/rustc_bindgen.bzl:fuchsia_api_level)
 
       _clang_resource_dir =
           "${rebased_clang_dir}/${clang_target_toolchain_info.resource_dir}"

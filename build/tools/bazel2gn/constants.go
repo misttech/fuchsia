@@ -81,15 +81,16 @@ var bazelRuleToGNTemplate = map[string]string{
 	"py_binary":  "python_binary",
 
 	// Rust
-	"rust_binary":        "rustc_binary",
-	"rust_library":       "rustc_library",
-	"rustc_binary":       "rustc_binary",
-	"rustc_dylib":        "rustc_dylib",
-	"rustc_library":      "rustc_library",
-	"rustc_proc_macro":   "rustc_macro",
-	"rustc_test":         "rustc_test",
-	"rust_proc_macro":    "rustc_macro",
-	"rust_proto_library": "rust_proto_library",
+	"rust_binary":          "rustc_binary",
+	"rust_library":         "rustc_library",
+	"rustc_binary":         "rustc_binary",
+	"rustc_dylib":          "rustc_dylib",
+	"rustc_library":        "rustc_library",
+	"rustc_proc_macro":     "rustc_macro",
+	"rustc_test":           "rustc_test",
+	"rust_proc_macro":      "rustc_macro",
+	"rust_proto_library":   "rust_proto_library",
+	"rustc_bindgen_golden": "rustc_bindgen_golden",
 
 	// C++
 	"cc_library":            "static_library",

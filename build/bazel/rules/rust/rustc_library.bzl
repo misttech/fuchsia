@@ -23,6 +23,7 @@ def _rustc_library_impl(
         rustc_flags,
         build_flags,
         output_name,  # buildifier: disable=unused-variable
+        validations,
         visibility,
         **kwargs):
     # `output_name` is only consumed by the GN rustc_library() template
@@ -41,6 +42,14 @@ def _rustc_library_impl(
         test_lint_config = lint_config
 
     kwargs["tags"] = with_fuchsia_rust_tags(kwargs.get("tags"), disable_clippy)
+
+    # Validation targets only provide a `_validation` output group and no
+    # files, so listing them in `compile_data` adds no compile inputs. The
+    # dependency edge makes Bazel run their validation actions whenever this
+    # library is built, like GN `validations`.
+    if validations:
+        compile_data = kwargs.get("compile_data")
+        kwargs["compile_data"] = (compile_data if compile_data != None else []) + validations
     kwargs["rustc_flags"] = with_fuchsia_rustc_flags(rustc_flags)
 
     library_kwargs = wrap_rust_macro_args_with_build_flags(
@@ -119,6 +128,15 @@ See details in https://fxbug.dev/407441714.
         "disable_clippy": attr.bool(
             doc = "If true, disables clippy lints on this target.",
             default = False,
+            configurable = False,
+        ),
+        "validations": attr.label_list(
+            doc = """Targets whose validation actions run whenever this library is built.
+
+Equivalent to GN `validations`. The targets must only provide an
+`OutputGroupInfo` with a `_validation` output group and no default outputs,
+such as `rustc_bindgen_golden()` targets.""",
+            default = [],
             configurable = False,
         ),
         "output_name": attr.string(

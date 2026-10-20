@@ -604,7 +604,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 	switch attrName {
 	case "visibility":
 		transformers = append(transformers, bazelVisibilityToGN)
-	case "deps", "test_deps", "proc_macro_deps", "link_deps", "args_deps", "plugin_deps", "fidls", "non_rust_deps", "sdk_deps":
+	case "deps", "test_deps", "proc_macro_deps", "link_deps", "args_deps", "plugin_deps", "fidls", "non_rust_deps", "sdk_deps", "validations":
 		transformers = append(transformers, bazelDepToGN)
 	case "public_deps":
 		transformers = append(transformers, bazelDepToGN)
@@ -635,6 +635,12 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 		}
 	case "config_data":
 		if bazelRule == "ffx_plugin" {
+			transformers = append(transformers, bazelFilePathsToGN)
+		}
+	case "checked_in_source":
+		// `rustc_bindgen_golden()` takes a file label in Bazel and a file path
+		// in GN. Its `headers` are source paths in both.
+		if bazelRule == "rustc_bindgen_golden" {
 			transformers = append(transformers, bazelFilePathsToGN)
 		}
 	case "ldflags":

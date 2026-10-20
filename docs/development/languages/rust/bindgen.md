@@ -68,4 +68,38 @@ To update the checked-in file, you can either:
   After the build completes and updates the files, revert the `update_goldens` argument to `false`
   (or remove it) to ensure future mismatches are caught.
 
+## In Bazel
+
+`BUILD.bazel` files can use the `rustc_bindgen_golden()` macro from
+[`//build/bazel/rules/rust:rustc_bindgen.bzl`](/build/bazel/rules/rust/rustc_bindgen.bzl). Its
+attributes have the same names as the GN template's parameters, and `bazel2gn` converts it to the GN
+template. Add the target to the `validations` attribute of the `rustc_library()` that compiles the
+checked-in file:
+
+```bazel
+load("//build/bazel/rules/rust:rustc_bindgen.bzl", "rustc_bindgen_golden")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+rustc_bindgen_golden(
+    name = "my_bindings_golden",
+    checked_in_source = "src/bindings.rs",
+    headers = ["//sdk/lib/foo/include/lib/foo/foo.h"],
+    notice_year = 2026,
+    deps = ["//sdk/lib/foo"],
+)
+
+rustc_library(
+    name = "my_library",
+    srcs = [
+        "src/bindings.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    validations = [":my_bindings_golden"],
+)
+```
+
+Unlike in GN, `headers` must be headers of `deps`. They are source paths rather than labels, so the
+packages that own them don't need to export them.
+
 [`bindgen`]: https://github.com/rust-lang/rust-bindgen

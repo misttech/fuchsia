@@ -1627,6 +1627,84 @@ cc_source_library_zx(
 	}
 }
 
+func TestRustBindgenGoldenConversion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "rustc_bindgen_golden",
+			bazel: `load("//build/bazel/rules/rust:rustc_bindgen.bzl", "rustc_bindgen_golden")
+
+rustc_bindgen_golden(
+    name = "foo_bindgen_golden",
+    checked_in_source = "src/bindings.rs",
+    expect_lints = ["non_camel_case_types"],
+    function_allowlist = ["foo_.*"],
+    headers = [
+        "//sdk/lib/foo/include/lib/foo/foo.h",
+        "//sdk/lib/foo/include/lib/foo/bar.h",
+    ],
+    layout_tests = True,
+    notice_year = 2026,
+    deps = ["//sdk/lib/foo"],
+)
+`,
+			wantGN: `rustc_bindgen_golden("foo_bindgen_golden") {
+	checked_in_source = "src/bindings.rs"
+	expect_lints = [
+		"non_camel_case_types",
+	]
+	function_allowlist = [
+		"foo_.*",
+	]
+	headers = [
+		"//sdk/lib/foo/include/lib/foo/foo.h",
+		"//sdk/lib/foo/include/lib/foo/bar.h",
+	]
+	layout_tests = true
+	notice_year = 2026
+	deps = [
+		"//sdk/lib/foo",
+	]
+}`,
+		},
+		{
+			name: "rustc_library with validations",
+			bazel: `load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+rustc_library(
+    name = "foo-sys",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    validations = [":foo_bindgen_golden"],
+)
+`,
+			wantGN: `rustc_library("foo-sys") {
+	sources = [
+		"src/lib.rs",
+	]
+	edition = "2024"
+	validations = [
+		":foo_bindgen_golden",
+	]
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
 func TestSkipAnnotationError(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
