@@ -1538,4 +1538,44 @@ TEST(SocketTest, GetInfoSocketWithoutInspectRightReturnsAccessDenied) {
                 ZX_ERR_ACCESS_DENIED);
 }
 
+TEST(SocketTest, DatagramReadFromFullSocketIntoBadBufferRestoresWritable) {
+  zx::socket a, b;
+  ASSERT_OK(zx::socket::create(ZX_SOCKET_DATAGRAM, &a, &b));
+
+  zx_info_socket_t info{};
+  ASSERT_OK(a.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr));
+  ASSERT_GT(info.tx_buf_max, 0u);
+
+  constexpr size_t kChunkSize = 32 * 1024;
+  std::vector<char> buffer(kChunkSize, 'A');
+  size_t total_written = 0;
+  while (total_written + kChunkSize <= info.tx_buf_max) {
+    size_t actual = 0;
+    ASSERT_OK(b.write(0, buffer.data(), kChunkSize, &actual));
+    ASSERT_EQ(actual, kChunkSize);
+    total_written += actual;
+  }
+  const size_t remaining = info.tx_buf_max - total_written;
+  if (remaining > 0) {
+    size_t actual = 0;
+    ASSERT_OK(b.write(0, buffer.data(), remaining, &actual));
+    ASSERT_EQ(actual, remaining);
+  }
+
+  // Validate that the socket is readable, but not writable.
+  EXPECT_TRUE(GetSignals(a) & ZX_SOCKET_READABLE);
+  EXPECT_FALSE(GetSignals(b) & ZX_SOCKET_WRITABLE);
+  size_t actual = 0;
+  ASSERT_STATUS(b.write(0, buffer.data(), 1, &actual), ZX_ERR_SHOULD_WAIT);
+
+  // Consuming read into a bad buffer fails with ZX_ERR_INVALID_ARGS and drops the first
+  // datagram, which frees buffer space and must re-assert ZX_SOCKET_WRITABLE on the peer.
+  void* bad_ptr = reinterpret_cast<void*>(1);
+  ASSERT_STATUS(a.read(0, bad_ptr, 1, &actual), ZX_ERR_INVALID_ARGS);
+
+  EXPECT_TRUE(GetSignals(b) & ZX_SOCKET_WRITABLE);
+  ASSERT_OK(b.write(0, buffer.data(), 1, &actual));
+  EXPECT_EQ(actual, 1u);
+}
+
 }  // namespace

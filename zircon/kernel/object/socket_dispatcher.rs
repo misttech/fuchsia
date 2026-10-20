@@ -511,7 +511,7 @@ impl SocketDispatcher {
             {
                 peer_set |= ZX_SOCKET_WRITE_THRESHOLD;
             }
-            if was_full && actual > 0 {
+            if was_full && !guard_mu.data().is_full() {
                 peer_set |= ZX_SOCKET_WRITABLE;
             }
             if peer_set != 0 {
@@ -1256,6 +1256,50 @@ mod tests {
             for (i, &val) in b.iter().enumerate() {
                 expect_eq!(val, (i & 0xff) as u8);
             }
+        }
+    }
+
+    /// Tests ZX_SOCKET_WRITABLE recovery when a failed datagram read drops a packet.
+    #[test]
+    fn test_datagram_full_read_bad_buffer_restores_writable() {
+        let (h0, h1, _) =
+            SocketDispatcher::create(ZX_SOCKET_DATAGRAM).expect("failed to create datagram socket");
+        let d0 = h0.dispatcher();
+        let d1 = h1.dispatcher();
+
+        let capacity = d0.get_info().rx_buf_max;
+        const CHUNK: usize = 32 * 1024;
+        let (_in_mem, in_ptr) = make_user_in_pattern(CHUNK, |i| (i & 0xff) as u8).unwrap();
+        let mut total_written = 0usize;
+        while total_written + CHUNK <= capacity {
+            let w = d0.write(in_ptr, CHUNK).expect("write datagram chunk");
+            expect_eq!(w, CHUNK);
+            total_written += w;
+        }
+        let rem = capacity - total_written;
+        if rem > 0 {
+            let (_rem_mem, rem_ptr) = make_user_in_pattern(rem, |_| 0xaa).unwrap();
+            let w = d0.write(rem_ptr, rem).expect("write remaining datagram");
+            expect_eq!(w, rem);
+        }
+
+        // Socket is now full; writer (d0) has ZX_SOCKET_WRITABLE deasserted.
+        {
+            ksync::lock!(let guard0 = d0.state().peered.lock());
+            let sigs0 = d0.signals_state_locked(guard0.token());
+            expect_eq!(sigs0 & ZX_SOCKET_WRITABLE, 0);
+        }
+
+        // Consuming read into a null user pointer fails with INVALID_ARGS and drops the front
+        // datagram, freeing space in the buffer and re-asserting ZX_SOCKET_WRITABLE on d0.
+        let bad_out = UserOutPtr::<c_char>::new(core::ptr::null_mut());
+        let res = d1.read(ReadType::Consume, bad_out, 1);
+        expect_true!(res == Err(Status::INVALID_ARGS));
+
+        {
+            ksync::lock!(let guard0 = d0.state().peered.lock());
+            let sigs0 = d0.signals_state_locked(guard0.token());
+            expect_true!((sigs0 & ZX_SOCKET_WRITABLE) != 0);
         }
     }
 }
