@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "inspect_testing",
+    testonly = True,
+    srcs = [
+        "src/lib.rs",
+        "src/table.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/diagnostics/archivist/tests/integration/realm_factory/puppet:__pkg__",
+        "//src/diagnostics/iquery/test/test_component:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
+        "//src/lib/diagnostics/inspect/runtime/rust:lib",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/runtime/rust
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:clap",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

@@ -160,6 +160,7 @@ rustc_library("lib") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   visibility = [
     ":*",
+    "//src/lib/diagnostics/inspect/rust/testing:*",
     "//src/sys/pkg/bin/system-update-configurator:*",
   ]
   deps = []
