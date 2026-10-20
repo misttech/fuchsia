@@ -700,10 +700,24 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   UberStructLayer::SolidColorModeProperties* GetFacadeLayerSolidColorContent(
       TransformHandle content_handle);
 
-  // The set of link operations that are pending a call to Present(). Unlike other operations,
-  // whose effects are only visible when a new UberStruct is published, Link destruction operations
-  // result in immediate changes in the LinkSystem. To avoid having these changes visible before
-  // Present() is called, the actual destruction of Links happens in the following Present().
+  // Queues `operation` to run in the next `Present()`'s `fence_queue_` task once acquire fences
+  // signal, after the `UberStruct` is pushed and before `ScheduleUpdateForSession()`, and marks
+  // `view_tree_dirty_` so the `ViewTree` is recomputed.
+  //
+  // `operation` must release its captured links when invoked because the closure is destroyed only
+  // after `ScheduleUpdateForSession()`. At teardown, `operation` either runs in `~Flatland()` or is
+  // destroyed uninvoked if its `fence_queue_` task has not yet signaled.
+  void DeferLinkDestruction(fit::function<void()> operation) {
+    pending_link_operations_.push_back(std::move(operation));
+    view_tree_dirty_ = true;
+  }
+
+  // Link destruction operations queued by `DeferLinkDestruction()` and awaiting the next
+  // `Present()`. Because destroying a link mutates `LinkSystem` immediately, link destruction is
+  // deferred until `Present()` pushes the new `UberStruct` (see `DeferLinkDestruction()`). At
+  // teardown in `~Flatland()`, un-presented operations run directly, while operations already moved
+  // into un-signaled `fence_queue_` tasks are dropped by `fence_queue_.reset()` without running,
+  // relying on closure destruction to release their captured links.
   std::vector<fit::function<void()>> pending_link_operations_;
 
   // Fences that signal when an image creation operation has completed.

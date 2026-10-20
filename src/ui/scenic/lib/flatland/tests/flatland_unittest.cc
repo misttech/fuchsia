@@ -14627,6 +14627,246 @@ TEST_F(FlatlandTest, TransformGraphMutatorsSetDirtySignal) {
   }
 }
 
+TEST_F(FlatlandTest, LinkReleaseMutatorsSetViewTreeDirtySignal) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  const ContentId kViewportId1{1};
+  const ContentId kViewportId2{2};
+  auto create_viewport = [&](ContentId viewport_id) {
+    auto [view_token, viewport_token] = scenic::cpp::ViewCreationTokenPair::New();
+    fidl::Arena arena;
+    auto props = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                     .logical_size({100, 100})
+                     .Build();
+    auto [watcher_client, watcher_server] = fidl::Endpoints<ChildViewWatcher>::Create();
+    flatland->CreateViewport(viewport_id, ToWire(std::move(viewport_token)), props,
+                             std::move(watcher_server));
+  };
+  auto create_view = [&] {
+    auto [view_token, viewport_token] = scenic::cpp::ViewCreationTokenPair::New();
+    auto [watcher_client, watcher_server] = fidl::Endpoints<ParentViewportWatcher>::Create();
+    flatland->CreateView2(ToWire(std::move(view_token)), NewWireViewIdentityOnCreation(),
+                          NoViewProtocols(), std::move(watcher_server));
+  };
+
+  // 1. Releasing the last child viewport empties `links_to_children_` before `Present()`, so
+  // `ReleaseViewport()` must explicitly set `view_tree_dirty_`.
+  create_viewport(kViewportId1);
+  create_viewport(kViewportId2);
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  // Releasing a non-last child viewport keeps `links_to_children_` non-empty.
+  flatland->ReleaseViewport(kViewportId1, [](auto) {});
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  // Releasing the session's last child viewport empties `links_to_children_` before `Present()`,
+  // relying on `view_tree_dirty_` set by `ReleaseViewport()`.
+  flatland->ReleaseViewport(kViewportId2, [](auto) {});
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  // Subsequent Present with no child viewports leaves `MustRecomputeViewTree()` false.
+  Present(flatland, true);
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  // 2. Releasing a leaf view (with no child viewports) sets `view_tree_dirty_`.
+  create_view();
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  Present(flatland, true);
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  flatland->ReleaseView();
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  // 3. `Clear()` sets `view_tree_dirty_` only when clearing a view or child viewport; an empty
+  // `Clear()` leaves `MustRecomputeViewTree()` false.
+  flatland->Clear();
+  Present(flatland, true);
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  create_view();
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  flatland->Clear();
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  create_viewport(kViewportId1);
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+
+  flatland->Clear();
+  Present(flatland, true);
+  EXPECT_TRUE(uber_struct_system_->MustRecomputeViewTree());
+  EXPECT_FALSE(uber_struct_system_->MustRecomputeViewTree());
+}
+
+TEST_F(FlatlandTest, PresentExecutesLinkOperationsBeforeScheduleUpdateForSession) {
+  std::shared_ptr<Flatland> parent = CreateFlatland();
+  std::shared_ptr<Flatland> child = CreateFlatland();
+
+  const ContentId kViewportId{1};
+  auto connect_parent_and_child = [&] {
+    auto [child_view_watcher_client, child_view_watcher_server] =
+        fidl::Endpoints<ChildViewWatcher>::Create();
+    auto [parent_viewport_watcher_client, parent_viewport_watcher_server] =
+        fidl::Endpoints<ParentViewportWatcher>::Create();
+    CreateViewport(parent.get(), child.get(), kViewportId, std::move(child_view_watcher_server),
+                   std::move(parent_viewport_watcher_server));
+
+    GlobalTopologyData::LinkTopologyMap links;
+    link_system_->GetResolvedTopologyLinks(links);
+    EXPECT_EQ(links.size(), 1u);
+  };
+
+  auto present_and_verify_links_destroyed_before_schedule =
+      [&](const std::shared_ptr<Flatland>& session, fit::function<void()> extra_check = nullptr) {
+        bool schedule_called = false;
+        EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _))
+            .WillOnce(::testing::Invoke(
+                [&](zx::time requested_presentation_time, scheduling::SchedulingIdPair id_pair,
+                    bool unsquashable, std::vector<zx::event> release_fences,
+                    std::vector<zx::counter> release_counters,
+                    std::vector<zx::counter> present_fences, bool schedule_asap) {
+                  schedule_called = true;
+                  if (extra_check) {
+                    extra_check();
+                  }
+                  GlobalTopologyData::LinkTopologyMap links;
+                  link_system_->GetResolvedTopologyLinks(links);
+                  EXPECT_TRUE(links.empty());
+                  pending_instance_updates_[id_pair.session_id] = id_pair.present_id;
+                }));
+        fuchsia_ui_composition::wire::PresentArgs present_args;
+        session->Present(present_args);
+        RunLoopUntilIdle();
+        EXPECT_TRUE(schedule_called);
+        ApplySessionUpdatesAndSignalFences();
+        session->OnNextFrameBegin(1, {});
+      };
+
+  // 1. `ReleaseView()` link destruction executes before `ScheduleUpdateForSession()`.
+  connect_parent_and_child();
+  child->ReleaseView();
+  present_and_verify_links_destroyed_before_schedule(child);
+  // Release `kViewportId` on `parent` so the next `connect_parent_and_child()` can reuse that ID.
+  parent->ReleaseViewport(kViewportId, [](auto) {});
+  Present(parent, true);
+
+  // 2. `ReleaseViewport()` link destruction executes before `ScheduleUpdateForSession()`.
+  connect_parent_and_child();
+  bool release_viewport_completed = false;
+  parent->ReleaseViewport(kViewportId, [&](auto) { release_viewport_completed = true; });
+  present_and_verify_links_destroyed_before_schedule(
+      parent, [&] { EXPECT_TRUE(release_viewport_completed); });
+  // Clear `child`'s view state so the next `connect_parent_and_child()` can call `CreateView()`.
+  child->ReleaseView();
+  Present(child, true);
+
+  // 3. `Clear()` link destruction executes before `ScheduleUpdateForSession()`.
+  connect_parent_and_child();
+  parent->Clear();
+  present_and_verify_links_destroyed_before_schedule(parent);
+}
+
+TEST_F(FlatlandTest, DestructorDestroysLinksBeforeRemoveSession) {
+  const ContentId kViewportId{1};
+
+  auto create_connected_parent_and_child = [&] {
+    std::shared_ptr<Flatland> parent = CreateFlatland();
+    std::shared_ptr<Flatland> child = CreateFlatland();
+    auto [child_view_watcher_client, child_view_watcher_server] =
+        fidl::Endpoints<ChildViewWatcher>::Create();
+    auto [parent_viewport_watcher_client, parent_viewport_watcher_server] =
+        fidl::Endpoints<ParentViewportWatcher>::Create();
+    CreateViewport(parent.get(), child.get(), kViewportId, std::move(child_view_watcher_server),
+                   std::move(parent_viewport_watcher_server));
+
+    GlobalTopologyData::LinkTopologyMap links;
+    link_system_->GetResolvedTopologyLinks(links);
+    EXPECT_EQ(links.size(), 1u);
+    return std::make_pair(std::move(parent), std::move(child));
+  };
+
+  auto destroy_and_verify_links_cleared_before_remove_session =
+      [&](std::shared_ptr<Flatland>& session_to_destroy,
+          std::shared_ptr<Flatland>& remaining_session) {
+        const auto session_id = session_to_destroy->GetSessionId();
+        bool remove_session_called = false;
+        EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(session_id, _, _))
+            .WillOnce(::testing::Invoke(
+                [&](scheduling::SessionId, std::vector<zx::event>, std::vector<zx::counter>) {
+                  remove_session_called = true;
+                  GlobalTopologyData::LinkTopologyMap current_links;
+                  link_system_->GetResolvedTopologyLinks(current_links);
+                  EXPECT_TRUE(current_links.empty());
+                }));
+        session_to_destroy.reset();
+        EXPECT_TRUE(remove_session_called);
+
+        EXPECT_CALL(*mock_flatland_presenter_,
+                    RemoveSession(remaining_session->GetSessionId(), _, _))
+            .Times(1);
+        remaining_session.reset();
+      };
+
+  // 1. Tearing down a session with a pending link operation queued by `ReleaseView()` executes it
+  // before `RemoveSession()`.
+  {
+    auto [parent, child] = create_connected_parent_and_child();
+    child->ReleaseView();
+    destroy_and_verify_links_cleared_before_remove_session(child, parent);
+  }
+
+  // 2. Tearing down a session with an un-signaled `Present()` task in `fence_queue_` destroys the
+  // queued link operations before `RemoveSession()`.
+  {
+    auto [parent, child] = create_connected_parent_and_child();
+    child->ReleaseView();
+
+    // Queue a `Present()` with an un-signaled acquire fence so its `link_operations` stay in
+    // `fence_queue_`.
+    PresentArgs args;
+    args.acquire_fences = utils::CreateEventArray(1);
+    PresentWithArgs(child, std::move(args), true);
+
+    GlobalTopologyData::LinkTopologyMap links;
+    link_system_->GetResolvedTopologyLinks(links);
+    EXPECT_EQ(links.size(), 1u);
+
+    destroy_and_verify_links_cleared_before_remove_session(child, parent);
+  }
+
+  // 3. Tearing down a child session while still linked to its parent (without calling
+  // `ReleaseView()` first) queues and runs link destruction via `Clear()` before `RemoveSession()`.
+  {
+    auto [parent, child] = create_connected_parent_and_child();
+    destroy_and_verify_links_cleared_before_remove_session(child, parent);
+  }
+
+  // 4. Tearing down a parent session while still linked to its child (without calling
+  // `ReleaseViewport()` first) queues and runs link destruction via `Clear()` before
+  // `RemoveSession()`.
+  {
+    auto [parent, child] = create_connected_parent_and_child();
+    destroy_and_verify_links_cleared_before_remove_session(parent, child);
+  }
+}
+
 // Verifies that every mutator in the "Leaves it clear" classification table leaves
 // `Flatland::scene_state_dirty_` clear (`MustRecomputeSceneState() == false`) on an
 // otherwise-unchanged transform graph.

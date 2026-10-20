@@ -278,9 +278,30 @@ void Flatland::BindingData::CloseConnection(FlatlandError error) {
 Flatland::~Flatland() {
   // TODO(https://fxbug.dev/42132996): consider if Link tokens should be returned or not.
 
-  // Clear the scene graph and process dead transforms (they're all dead after clearing).
-  // This guarantees that all images will be available to release.
+  // Clear the scene graph so all transforms become dead and all links are queued for teardown.
   Clear();
+
+  // Execute any deferred link destructions (including those queued by `Clear()` above) before
+  // `RemoveSession()` posts the cleanup frame to the main thread, preventing stale link topology
+  // races during session cleanup.
+  for (auto& operation : pending_link_operations_) {
+    operation();
+  }
+  pending_link_operations_.clear();
+
+  // Destroy any present tasks waiting on fences before `RemoveSession()` posts the cleanup frame.
+  // Note that link operations captured in those queued tasks are dropped without running (which
+  // abandons any captured `ReleaseViewport()` async completer), and their captured
+  // `release_fences` and `release_counters` are destroyed unsignaled rather than being handed to
+  // `RemoveSession()`.
+  // TODO(https://fxbug.dev/573627264): Restructure `pending_link_operations_` into a member queue
+  // with one batch per `Present()`, popped and run by the task, with any leftover link operations
+  // run by `~Flatland()` and any leftover `release_fences` and `release_counters` handed to
+  // `RemoveSession()`.
+  fence_queue_.reset();
+
+  // Process dead transforms (they're all dead after `Clear()`) so all images will be available to
+  // release.
   auto data = transform_graph_.ComputeAndCleanup(GetRoot(), std::numeric_limits<uint64_t>::max());
   ProcessDeadTransforms(data);
   FX_CHECK(image_objects_.empty());
@@ -667,21 +688,22 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
                                TA_UINT64(session_id_), "present_id", TA_UINT64(present_id));
         }
 
-        // Push the UberStruct, then schedule the associated Present that will eventually publish
-        // it to the InstanceMap used for rendering.
+        // Push the UberStruct, then finalize Link destruction operations before scheduling the
+        // associated Present on the main thread.
+        //
+        // Finalizing Link destruction after pushing the new UberStruct ensures that any local
+        // Transforms referenced by the to-be-deleted Links are already removed from the pushed
+        // UberStruct. Doing so before `ScheduleUpdateForSession()` ensures `LinkSystem` state
+        // is updated before the frame renders.
         uber_struct_queue_->Push(present_id, std::move(uber_struct), recompute_view_tree,
                                  recompute_scene_state);
+        for (auto& operation : link_operations) {
+          operation();
+        }
         flatland_presenter_->ScheduleUpdateForSession(
             zx::time(requested_presentation_time), {session_id_, present_id}, unsquashable,
             std::move(release_fences), std::move(release_counters), std::move(present_fences),
             config_.schedule_asap);
-
-        // Finalize Link destruction operations after publishing the new UberStruct. This
-        // ensures that any local Transforms referenced by the to-be-deleted Links are already
-        // removed from the now-published UberStruct.
-        for (auto& operation : link_operations) {
-          operation();
-        }
       };
 
   // Append pending creation fences to acquire fences to ensure `CreateImage()` completes
@@ -805,7 +827,7 @@ void Flatland::CreateViewHelper(
     FX_DCHECK(transform_released);
 
     // Delay the destruction of the previous parent link until the next Present().
-    pending_link_operations_.push_back([old_link_to_parent = std::move(link_to_parent_)]() mutable {
+    DeferLinkDestruction([old_link_to_parent = std::move(link_to_parent_)]() mutable {
       old_link_to_parent.reset();
     });
   }
@@ -893,11 +915,13 @@ void Flatland::ReleaseView() {
   // Move the old parent link into the delayed operation so that it isn't taken into account when
   // computing the local topology, but doesn't get deleted until after the new UberStruct is
   // published.
-  auto old_link_to_parent = std::move(link_to_parent_.value());
+  auto old_link_to_parent = std::move(link_to_parent_);
   link_to_parent_.reset();
 
   // Delay the actual destruction of the Link until the next Present().
-  pending_link_operations_.push_back([old_link_to_parent = std::move(old_link_to_parent)]() {});
+  DeferLinkDestruction([old_link_to_parent = std::move(old_link_to_parent)]() mutable {
+    old_link_to_parent.reset();
+  });
   scene_state_dirty_ = true;
 }
 
@@ -924,16 +948,16 @@ void Flatland::Clear() {
     auto local_link = std::move(link_to_parent_);
     link_to_parent_.reset();
 
-    pending_link_operations_.push_back(
-        [local_link = std::move(local_link)]() mutable { local_link.reset(); });
+    DeferLinkDestruction([local_link = std::move(local_link)]() mutable { local_link.reset(); });
   }
 
   // Delay destruction of all child Links until Present().
-  auto local_links = std::move(links_to_children_);
-  links_to_children_.clear();
+  if (!links_to_children_.empty()) {
+    auto local_links = std::move(links_to_children_);
+    links_to_children_.clear();
 
-  pending_link_operations_.push_back(
-      [local_links = std::move(local_links)]() mutable { local_links.clear(); });
+    DeferLinkDestruction([local_links = std::move(local_links)]() mutable { local_links.clear(); });
+  }
 
   debug_name_.clear();
   scene_state_dirty_ = true;
@@ -2641,17 +2665,17 @@ void Flatland::ReleaseViewportHelper(
   // Move the old child link into the delayed operation so that the ViewportId/ContentId is
   // immediately free for reuse, but it doesn't get deleted until after the new UberStruct is
   // published.
-  auto link_to_child = std::move(link_data);
+  auto link_to_child = std::optional<LinkToChildData>(std::move(link_data));
   links_to_children_.erase(viewport_handle);
 
   // Delay the actual destruction of the link until the next Present().
-  pending_link_operations_.push_back(
+  DeferLinkDestruction(
       [link_to_child = std::move(link_to_child), completer = std::move(completer)]() mutable {
         fuchsia_ui_views::wire::ViewportCreationToken return_token;
 
         // If the link is still valid, return the original token. If not, create an orphaned
         // zx::channel and return it since the ObjectLinker does not retain the orphaned token.
-        auto link_token = link_to_child.link.importer.ReleaseToken();
+        auto link_token = link_to_child->link.importer.ReleaseToken();
         if (link_token.has_value()) {
           return_token.value = zx::channel(std::move(link_token.value()));
         } else {
@@ -2659,6 +2683,7 @@ void Flatland::ReleaseViewportHelper(
           zx::channel peer_token;
           zx::channel::create(0, &return_token.value, &peer_token);
         }
+        link_to_child.reset();
 
         completer(std::move(return_token));
       });
