@@ -63,7 +63,6 @@ group("tests") {
     "lib/mlme/rust:wlan-mlme-tests",
     "lib/rsn:wlan-rsn-tests",
     "lib/sme:wlan-sme-tests",
-    "lib/statemachine:wlan-statemachine-tests",
     "lib/storage:wlan-storage-tests",
     "lib/telemetry:wlan-telemetry-tests",
     "lib/wep_deprecated:wep-deprecated-tests",

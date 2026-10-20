@@ -11,6 +11,7 @@ test_suite(
         "//src/connectivity/wlan/lib/ieee80211:ieee80211-tests",
         "//src/connectivity/wlan/lib/ieee80211-testutils:ieee80211-testutils-tests",
         "//src/connectivity/wlan/lib/power_manager:wlan-power-manager-tests",
+        "//src/connectivity/wlan/lib/statemachine:wlan-statemachine-tests",
         "//src/connectivity/wlan/lib/trace:wlan-trace-tests",
     ],
 )
