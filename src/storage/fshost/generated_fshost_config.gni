@@ -78,6 +78,7 @@ template("generated_fshost_config") {
       inline_crypto = false
       provision_fxfs = false
       use_driver_blob_paging = false
+      startup_profiling_seconds = 0
 
       if (defined(invoker.options)) {
         forward_variables_from(invoker.options, "*")

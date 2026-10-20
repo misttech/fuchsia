@@ -179,6 +179,9 @@ pub(crate) mod for_tests {
                         .capability(Capability::configuration(
                             "fuchsia.pkgcache.UseDriverBlobPaging",
                         ))
+                        .capability(Capability::configuration(
+                            "fuchsia.fshost.StartupProfilingSeconds",
+                        ))
                         .from(Ref::void())
                         .to(&pkg_cache),
                 )

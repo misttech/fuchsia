@@ -391,10 +391,14 @@ impl Component {
             "Mounted"
         );
 
-        if let Some(profile_time) = options.startup_profiling_seconds {
+        if let Some(profile_time) = options.startup_profiling_seconds.filter(|&t| t > 0) {
             // Unwrap ok, shouldn't have anything else recording or replaying this early in startup.
             volumes
-                .record_and_replay_profile(None, ".boot".to_owned(), profile_time)
+                .record_and_replay_profile(
+                    None,
+                    storage_profile::BOOT_PROFILE_NAME.to_owned(),
+                    profile_time,
+                )
                 .await
                 .unwrap();
         }

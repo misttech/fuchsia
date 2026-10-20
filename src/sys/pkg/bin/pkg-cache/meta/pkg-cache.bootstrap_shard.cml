@@ -29,6 +29,12 @@
             to: "#pkg-cache",
         },
         {
+            config: [ "fuchsia.fshost.StartupProfilingSeconds" ],
+            from: "parent",
+            to: "#pkg-cache",
+            availability: "optional",
+        },
+        {
             config: [
                 "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
                 "fuchsia.pkgcache.BlobFetchConcurrencyLimit",

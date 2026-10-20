@@ -18,6 +18,7 @@ async fn driver_blob_paging_enabled() {
             "driver_blob_paging_status": "active",
             "structured_config": contains {
                 "use_driver_blob_paging": true,
+                "startup_profiling_seconds": 0u64,
             }
         }
     );

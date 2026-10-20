@@ -12,6 +12,9 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 
+/// Profile name used for startup profile recording and replay.
+pub const BOOT_PROFILE_NAME: &str = ".boot";
+
 /// Sentinel offset used by Fxfs to record that a file or blob was opened during a recording window.
 pub const FILE_OPEN_MARKER: u64 = u64::MAX;
 

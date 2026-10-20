@@ -762,6 +762,7 @@ where
             ),
             ("fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit", 50u32.into()),
             ("fuchsia.pkgcache.UseDriverBlobPaging", self.use_driver_blob_paging.into()),
+            ("fuchsia.fshost.StartupProfilingSeconds", 0u32.into()),
         ] {
             builder
                 .add_capability(

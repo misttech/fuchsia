@@ -33,7 +33,10 @@
             to: "#bootstrap",
         },
         {
-            config: [ "fuchsia.fshost.DisableAutomount" ],
+            config: [
+                "fuchsia.fshost.DisableAutomount",
+                "fuchsia.fshost.StartupProfilingSeconds",
+            ],
             from: "#config",
             to: "#bootstrap",
             availability: "optional",

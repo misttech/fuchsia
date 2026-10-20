@@ -43,6 +43,7 @@ pub use delivery::{
     DeliveryQueueProcessor, DeliveryQueueProvider, TestVmoProvider, UnverifiedPages,
 };
 pub use profile::ProfileRecording;
+pub use storage_profile::BOOT_PROFILE_NAME;
 
 use anyhow::{Context, Error, anyhow, bail};
 use event_listener as _;

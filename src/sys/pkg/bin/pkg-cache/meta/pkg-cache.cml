@@ -182,6 +182,15 @@
             default: false,
         },
         {
+            // Duration in seconds to record and replay the `.boot` blob profile on startup when
+            // driver blob paging is enabled. If 0, startup profiling is disabled.
+            config: "fuchsia.fshost.StartupProfilingSeconds",
+            key: "startup_profiling_seconds",
+            type: "uint32",
+            availability: "optional",
+            default: 0,
+        },
+        {
             config: "fuchsia.zircon.system.pkgfs.cmd",
             key: "system_image_hash",
             type: "string",

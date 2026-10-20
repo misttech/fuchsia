@@ -181,6 +181,7 @@ impl FshostBuilder {
             ("inline_crypto", "fuchsia.fshost.InlineCrypto"),
             ("provision_fxfs", "fuchsia.fshost.ProvisionFxfs"),
             ("use_driver_blob_paging", "fuchsia.pkgcache.UseDriverBlobPaging"),
+            ("startup_profiling_seconds", "fuchsia.fshost.StartupProfilingSeconds"),
         ]);
 
         if self.create_starnix_volume_crypt {

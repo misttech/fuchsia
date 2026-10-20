@@ -176,6 +176,7 @@ async fn main_inner() -> Result<(), Error> {
         blob_network_body_timeout_seconds,
         blob_download_resumption_attempts_limit,
         use_driver_blob_paging,
+        startup_profiling_seconds,
     } = config;
     let mut blobfs_builder = blobfs::Client::builder().readable().writable().executable();
     let mut blob_verifier = None;
@@ -195,13 +196,14 @@ async fn main_inner() -> Result<(), Error> {
             Ok(verifier) => {
                 info!("Using driver blob paging");
                 inspector.root().record_string("driver_blob_paging_status", "active");
-                // Matches the `".boot"` profile name in Fxfs and `startup_profiling_seconds` in
-                // fshost.
-                // LINT.IfChange(startup_profiling)
-                verifier
-                    .record_and_replay_profile(".boot", zx::MonotonicDuration::from_seconds(60))
-                    .await;
-                // LINT.ThenChange(/src/storage/fshost/src/environment.rs:startup_profiling)
+                if startup_profiling_seconds > 0 {
+                    verifier
+                        .record_and_replay_profile(
+                            blob_pager_and_verifier::BOOT_PROFILE_NAME,
+                            zx::MonotonicDuration::from_seconds(startup_profiling_seconds.into()),
+                        )
+                        .await;
+                }
                 let verifier = Arc::new(verifier);
                 blobfs_builder = blobfs_builder.reader(DriverBlobReader(verifier.clone()));
                 blob_verifier = Some(verifier);

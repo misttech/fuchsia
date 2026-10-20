@@ -173,5 +173,14 @@
             availability: "optional",
             default: false,
         },
+        {
+            /// Duration in seconds to record and replay startup profiles on volumes after
+            /// mounting. If 0, startup profiling is disabled.
+            config: "fuchsia.fshost.StartupProfilingSeconds",
+            key: "startup_profiling_seconds",
+            type: "uint32",
+            availability: "optional",
+            default: 0,
+        },
     ],
 }

@@ -33,6 +33,7 @@
         },
         {
             config: [
+                "fuchsia.fshost.StartupProfilingSeconds",
                 "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
                 "fuchsia.pkgcache.BlobFetchConcurrencyLimit",
                 "fuchsia.pkgcache.BlobNetworkBodyTimeoutSeconds",

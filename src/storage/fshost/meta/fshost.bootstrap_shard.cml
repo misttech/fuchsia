@@ -113,6 +113,7 @@
         {
             config: [
                 "fuchsia.fshost.DisableAutomount",
+                "fuchsia.fshost.StartupProfilingSeconds",
                 "fuchsia.pkgcache.UseDriverBlobPaging",
             ],
             from: "parent",

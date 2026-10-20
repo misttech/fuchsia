@@ -300,6 +300,10 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             ("fuchsia.fshost.InlineCrypto", inline_crypto),
             ("fuchsia.fshost.ProvisionFxfs", Config::new_bool(provision_fxfs)),
             (
+                "fuchsia.fshost.StartupProfilingSeconds",
+                Config::new(ConfigValueType::Uint32, 60.into()),
+            ),
+            (
                 "fuchsia.storage.SdmmcCommandQueueingEnabled",
                 Config::new_bool(sdmmc_command_queueing),
             ),

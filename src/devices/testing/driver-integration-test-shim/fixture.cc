@@ -185,6 +185,7 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       .capabilities =
           {
               Config{.name = "fuchsia.fshost.DisableAutomount"},
+              Config{.name = "fuchsia.fshost.StartupProfilingSeconds"},
               Config{.name = "fuchsia.pkgcache.UseDriverBlobPaging"},
           },
       .source = {VoidRef()},
