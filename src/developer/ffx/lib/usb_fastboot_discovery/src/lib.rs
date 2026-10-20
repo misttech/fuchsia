@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use fuchsia_async::{Task, TimeoutExt, Timer, unblock};
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -427,19 +429,51 @@ async fn find_serial_numbers() -> Vec<String> {
     return serials;
 }
 
-fn find_fastboot_serial_in_sysfs(target_serial: &str, sysfs_dir: &Path) -> Option<String> {
+/// Returns all USB device directories in `sysfs_dir` that match the Fastboot vendor and
+/// interface descriptors (`idVendor == 0x18d1`, `ff/42/03`).
+///
+/// In the Linux kernel, reading `idVendor` and `bInterface*` reads cached descriptors in memory.
+/// These reads do not acquire the per-device `usb_lock_device` mutex.
+fn candidate_fastboot_sysfs_paths(sysfs_dir: &Path) -> Option<Vec<PathBuf>> {
     let entries = std::fs::read_dir(sysfs_dir).ok()?;
-    for path in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
-        if let Some(name) = path.file_name().and_then(|n| n.to_str())
-            && name.contains(':')
-        {
-            continue;
-        }
-        if let Ok(dev_serial) = std::fs::read_to_string(path.join("serial"))
-            && dev_serial.trim() == target_serial
-            && is_fastboot_sysfs_path(&path)
-        {
-            return Some(target_serial.to_string());
+    let paths = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_dir()
+                && !p.file_name().and_then(|n| n.to_str()).is_some_and(|name| name.contains(':'))
+                && is_fastboot_sysfs_path(p)
+        })
+        .collect();
+    Some(paths)
+}
+
+fn sysfs_path_matches_serial(path: &Path, target_serial: &str) -> bool {
+    std::fs::read_to_string(path.join("serial"))
+        .is_ok_and(|dev_serial| dev_serial.trim() == target_serial)
+}
+
+async fn find_fastboot_sysfs_path_async(target_serial: &str, sysfs_dir: &Path) -> Option<PathBuf> {
+    let sysfs_dir_owned = sysfs_dir.to_path_buf();
+    let candidates = unblock(move || candidate_fastboot_sysfs_paths(&sysfs_dir_owned))
+        .on_timeout(SCAN_TIMEOUT, || None)
+        .await?;
+
+    let mut tasks: FuturesUnordered<_> = candidates
+        .into_iter()
+        .map(|path| {
+            let serial = target_serial.to_string();
+            async move {
+                unblock(move || sysfs_path_matches_serial(&path, &serial).then_some(path))
+                    .on_timeout(SCAN_TIMEOUT, || None)
+                    .await
+            }
+        })
+        .collect();
+
+    while let Some(res) = tasks.next().await {
+        if let Some(matched_path) = res {
+            return Some(matched_path);
         }
     }
     None
@@ -447,35 +481,43 @@ fn find_fastboot_serial_in_sysfs(target_serial: &str, sysfs_dir: &Path) -> Optio
 
 async fn find_target_serial_in_sysfs(target_serial: &str, sysfs_dir: &Path) -> Vec<String> {
     log::debug!("finding target serial number: {}", target_serial);
-    let serial = target_serial.to_string();
-    let sysfs_dir = sysfs_dir.to_path_buf();
-    let check_fut = unblock(move || {
-        // Fast path: inspect sysfs directly for the target serial without full bus enumeration
-        if let Some(matched) = find_fastboot_serial_in_sysfs(&serial, &sysfs_dir) {
-            return Some(matched);
-        }
-
-        if let Ok(Some(device)) = usb_rs::find_device_by_serial(&serial)
-            && is_fastboot_device(&device)
-        {
-            return Some(serial);
-        }
-
-        // Fallback (e.g. unit tests with fake USB environment):
-        if let Ok(devices) = enumerate_devices() {
-            for device in devices {
-                if device.serial().as_deref() == Some(&serial) && is_fastboot_device(&device) {
-                    return Some(serial);
-                }
-            }
-        }
-        None
-    });
-
-    match check_fut.on_timeout(SCAN_TIMEOUT, || None).await {
-        Some(s) => vec![s],
-        None => vec![],
+    if find_fastboot_sysfs_path_async(target_serial, sysfs_dir).await.is_some() {
+        return vec![target_serial.to_string()];
     }
+
+    // Fallback (for example, unit tests with a fake USB environment):
+    let candidates = unblock(|| {
+        enumerate_devices()
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter(|d| is_fastboot_sysfs_match(d) != Some(false))
+            .collect::<Vec<_>>()
+    })
+    .on_timeout(SCAN_TIMEOUT, Vec::new)
+    .await;
+
+    let mut tasks: FuturesUnordered<_> = candidates
+        .into_iter()
+        .map(|device| {
+            let serial = target_serial.to_string();
+            async move {
+                unblock(move || {
+                    (is_fastboot_device(&device) && device.serial().as_deref() == Some(&serial))
+                        .then_some(serial)
+                })
+                .on_timeout(SCAN_TIMEOUT, || None)
+                .await
+            }
+        })
+        .collect();
+
+    while let Some(res) = tasks.next().await {
+        if let Some(matched) = res {
+            return vec![matched];
+        }
+    }
+    vec![]
 }
 
 fn check_and_log_usb_speed(device: &usb_rs::DeviceHandle, target_serial: &str) {
@@ -510,23 +552,74 @@ fn device_to_interface(device: &usb_rs::DeviceHandle) -> Result<Interface, UsbDi
         })
 }
 
+fn find_matching_serial_blocking<T, F>(
+    candidates: Vec<T>,
+    target_serial: &str,
+    matches_serial: F,
+) -> Option<T>
+where
+    T: Send + 'static,
+    F: Fn(&T, &str) -> bool + Copy + Send + 'static,
+{
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    for candidate in candidates {
+        let tx = tx.clone();
+        let serial = target_serial.to_string();
+        std::thread::spawn(move || {
+            let matched = matches_serial(&candidate, &serial).then_some(candidate);
+            let _ = tx.send(matched);
+        });
+    }
+    drop(tx);
+
+    let deadline = std::time::Instant::now() + SCAN_TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        match rx.recv_timeout(remaining) {
+            Ok(Some(matched)) => return Some(matched),
+            Ok(None) => continue,
+            Err(_) => return None,
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn find_fastboot_sysfs_path_blocking(target_serial: &str, sysfs_dir: &Path) -> Option<PathBuf> {
+    let candidates = candidate_fastboot_sysfs_paths(sysfs_dir)?;
+    find_matching_serial_blocking(candidates, target_serial, |path, serial| {
+        sysfs_path_matches_serial(path, serial)
+    })
+}
+
 pub fn open_interface_with_serial<P>(serial: P) -> Result<Interface, UsbDiscoveryError>
 where
     P: AsRef<str>,
 {
     let target_serial = serial.as_ref();
 
-    // Fast path: find the device directly in sysfs without full bus enumeration
-    if let Ok(Some(device)) = usb_rs::find_device_by_serial(target_serial) {
+    #[cfg(target_os = "linux")]
+    if let Some(sysfs_path) =
+        find_fastboot_sysfs_path_blocking(target_serial, Path::new("/sys/bus/usb/devices"))
+        && let Ok(Some(device)) =
+            usb_rs::DeviceHandle::from_sysfs_path(sysfs_path, target_serial.to_string())
+    {
         check_and_log_usb_speed(&device, target_serial);
         return device_to_interface(&device);
     }
 
-    // Fallback path (e.g. unit tests with fake USB devices):
-    let device = enumerate_devices()?
+    // Fallback path (for example, unit tests with fake USB devices):
+    let candidates: Vec<_> = enumerate_devices()?
         .into_iter()
-        .find(|d| d.serial().as_deref() == Some(target_serial))
-        .ok_or(UsbDiscoveryError::InterfaceNotFound)?;
+        .filter(|d| is_fastboot_sysfs_match(d) != Some(false))
+        .collect();
+    let device = find_matching_serial_blocking(candidates, target_serial, |d, target| {
+        is_fastboot_device(d) && d.serial().as_deref() == Some(target)
+    })
+    .ok_or(UsbDiscoveryError::InterfaceNotFound)?;
     check_and_log_usb_speed(&device, target_serial);
     device_to_interface(&device)
 }
@@ -762,5 +855,154 @@ mod test {
             find_target_serial_in_sysfs("target-serial-456", &sysfs_root).await,
             vec!["target-serial-456".to_string()]
         );
+    }
+
+    #[cfg(unix)]
+    fn write_sysfs_descriptors(dev_dir: &Path, iface_name: &str, protocol: u8) {
+        let iface_dir = dev_dir.join(iface_name);
+        std::fs::create_dir_all(&iface_dir).unwrap();
+        std::fs::write(dev_dir.join("idVendor"), format!("{:04x}\n", USB_DEV_VENDOR)).unwrap();
+        std::fs::write(
+            iface_dir.join("bInterfaceClass"),
+            format!("{:02x}\n", FASTBOOT_USB_INTERFACE_CLASS),
+        )
+        .unwrap();
+        std::fs::write(
+            iface_dir.join("bInterfaceSubClass"),
+            format!("{:02x}\n", FASTBOOT_USB_INTERFACE_SUBCLASS),
+        )
+        .unwrap();
+        std::fs::write(iface_dir.join("bInterfaceProtocol"), format!("{:02x}\n", protocol))
+            .unwrap();
+    }
+
+    #[cfg(unix)]
+    struct BlockingFifoGuard {
+        fifo_path: PathBuf,
+        holder: Option<std::fs::File>,
+    }
+
+    #[cfg(unix)]
+    impl BlockingFifoGuard {
+        fn new(fifo_path: PathBuf) -> Self {
+            let status = std::process::Command::new("mkfifo")
+                .arg(&fifo_path)
+                .status()
+                .expect("failed to execute mkfifo");
+            assert!(status.success(), "mkfifo failed");
+            // Keep one O_RDWR descriptor open. A reader's open(O_RDONLY) call succeeds
+            // immediately, and its read(2) call blocks until this guard drops.
+            let holder = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&fifo_path)
+                .expect("failed to open FIFO O_RDWR");
+            Self { fifo_path, holder: Some(holder) }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for BlockingFifoGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.fifo_path);
+            drop(self.holder.take());
+        }
+    }
+
+    #[cfg(unix)]
+    #[fuchsia::test]
+    async fn test_target_serial_finder_skips_blocking_non_fastboot_sibling() {
+        struct TempSysfsDir(PathBuf);
+        impl Drop for TempSysfsDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let sysfs_root = std::env::temp_dir().join(format!(
+            "usb_fastboot_non_fb_fifo_sysfs_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let _guard = TempSysfsDir(sysfs_root.clone());
+
+        std::fs::create_dir_all(sysfs_root.join("1-1")).unwrap();
+        std::fs::create_dir_all(sysfs_root.join("1-2")).unwrap();
+
+        // Check the directory iteration order so the test places the blocked sibling in the
+        // first entry.
+        let dirs: Vec<PathBuf> =
+            std::fs::read_dir(&sysfs_root).unwrap().flatten().map(|e| e.path()).collect();
+        let (first_dir, second_dir) = (&dirs[0], &dirs[1]);
+        let first_name = first_dir.file_name().unwrap().to_str().unwrap();
+        let second_name = second_dir.file_name().unwrap().to_str().unwrap();
+
+        // First directory: non-Fastboot interface (protocol 0x01) with a blocking FIFO serial file.
+        write_sysfs_descriptors(first_dir, &format!("{first_name}:1.0"), 0x01);
+        let _fifo = BlockingFifoGuard::new(first_dir.join("serial"));
+
+        // Second directory: working Fastboot interface (protocol 0x03).
+        write_sysfs_descriptors(
+            second_dir,
+            &format!("{second_name}:1.0"),
+            FASTBOOT_USB_INTERFACE_PROTOCOL,
+        );
+        std::fs::write(second_dir.join("serial"), "fastboot-device-123\n").unwrap();
+
+        let results = find_target_serial_in_sysfs("fastboot-device-123", &sysfs_root).await;
+        assert_eq!(results, vec!["fastboot-device-123".to_string()]);
+
+        let blocking_path = find_fastboot_sysfs_path_blocking("fastboot-device-123", &sysfs_root);
+        assert_eq!(blocking_path.as_deref(), Some(second_dir.as_path()));
+    }
+
+    #[cfg(unix)]
+    #[fuchsia::test]
+    async fn test_target_serial_finder_does_not_block_on_hung_fastboot_sibling() {
+        struct TempSysfsDir(PathBuf);
+        impl Drop for TempSysfsDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let sysfs_root = std::env::temp_dir().join(format!(
+            "usb_fastboot_fb_fifo_sysfs_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let _guard = TempSysfsDir(sysfs_root.clone());
+
+        std::fs::create_dir_all(sysfs_root.join("1-1")).unwrap();
+        std::fs::create_dir_all(sysfs_root.join("1-2")).unwrap();
+
+        let dirs: Vec<PathBuf> =
+            std::fs::read_dir(&sysfs_root).unwrap().flatten().map(|e| e.path()).collect();
+        let (first_dir, second_dir) = (&dirs[0], &dirs[1]);
+        let first_name = first_dir.file_name().unwrap().to_str().unwrap();
+        let second_name = second_dir.file_name().unwrap().to_str().unwrap();
+
+        // First directory: Fastboot interface with a blocked `serial` attribute
+        // (for example, a sibling port that holds `usb_lock_device(udev)`).
+        write_sysfs_descriptors(
+            first_dir,
+            &format!("{first_name}:1.0"),
+            FASTBOOT_USB_INTERFACE_PROTOCOL,
+        );
+        let _fifo = BlockingFifoGuard::new(first_dir.join("serial"));
+
+        // Second directory: working target Fastboot device.
+        write_sysfs_descriptors(
+            second_dir,
+            &format!("{second_name}:1.0"),
+            FASTBOOT_USB_INTERFACE_PROTOCOL,
+        );
+        std::fs::write(second_dir.join("serial"), "fastboot-device-123\n").unwrap();
+
+        let results = find_target_serial_in_sysfs("fastboot-device-123", &sysfs_root).await;
+        assert_eq!(results, vec!["fastboot-device-123".to_string()]);
+
+        let blocking_path = find_fastboot_sysfs_path_blocking("fastboot-device-123", &sysfs_root);
+        assert_eq!(blocking_path.as_deref(), Some(second_dir.as_path()));
     }
 }

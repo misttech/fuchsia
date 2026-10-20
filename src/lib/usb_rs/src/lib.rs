@@ -41,6 +41,11 @@ impl DeviceHandle {
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Self {
         DeviceHandle(usb_plat::DeviceHandleInner::new(path.as_ref().to_string_lossy().into_owned()))
     }
+
+    /// Resolves a USB [`DeviceHandle`] directly from a known sysfs device directory and serial number.
+    pub fn from_sysfs_path(sysfs_path: std::path::PathBuf, serial: String) -> Result<Option<Self>> {
+        usb_plat::device_from_sysfs_path(sysfs_path, serial)
+    }
 }
 
 impl DeviceHandle {

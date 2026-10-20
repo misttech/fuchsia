@@ -6,8 +6,11 @@ use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::Stream;
 use notify::Watcher;
 use notify::event::{CreateKind, Event, EventKind, ModifyKind};
+use std::fs::{metadata, read_to_string};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
+use std::str::FromStr;
 use std::task::{Context, Poll, ready};
 
 use super::DeviceHandleInner;
@@ -90,19 +93,49 @@ pub fn find_device_by_serial(serial: &str) -> Result<Option<DeviceHandle>> {
     find_device_by_serial_in_sysfs(serial, Path::new("/sys/bus/usb/devices"))
 }
 
-pub(crate) fn find_device_by_serial_in_sysfs(
-    serial: &str,
-    sysfs_dir: &Path,
-) -> Result<Option<DeviceHandle>> {
-    use std::fs::{metadata, read_to_string};
-    use std::os::unix::fs::MetadataExt;
-    use std::str::FromStr;
-
+/// Resolves a USB [`DeviceHandle`] directly from a known sysfs device directory and serial number.
+pub fn device_from_sysfs_path(sysfs_path: PathBuf, serial: String) -> Result<Option<DeviceHandle>> {
     fn file_val<F: FromStr>(path: &Path, filename: &str) -> Option<F> {
         let val = read_to_string(path.join(filename)).ok()?;
         val.trim().parse::<F>().ok()
     }
 
+    // Fast path: find the device directly from busnum and devnum attributes
+    if let (Some(busnum), Some(devnum)) =
+        (file_val::<u32>(&sysfs_path, "busnum"), file_val::<u32>(&sysfs_path, "devnum"))
+    {
+        let dev_path = format!("{}/{:03}/{:03}", USB_FS_DIR, busnum, devnum);
+        return Ok(Some(DeviceHandleInner::new_with_sysfs(dev_path, serial, sysfs_path).into()));
+    }
+
+    // Fallback: parse dev file major:minor and match against enumerated devices
+    if let Ok(content) = read_to_string(sysfs_path.join("dev"))
+        && let Some((major_str, minor_str)) = content.trim().split_once(':')
+    {
+        if let (Ok(major), Ok(minor)) = (major_str.parse::<u32>(), minor_str.parse::<u32>()) {
+            let devices = enumerate_devices()?;
+            for dev in devices {
+                if metadata(&dev.debug_name())
+                    .map(|m| (libc::major(m.rdev()), libc::minor(m.rdev())))
+                    .ok()
+                    == Some((major, minor))
+                {
+                    return Ok(Some(
+                        DeviceHandleInner::new_with_sysfs(dev.debug_name(), serial, sysfs_path)
+                            .into(),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+pub(crate) fn find_device_by_serial_in_sysfs(
+    serial: &str,
+    sysfs_dir: &Path,
+) -> Result<Option<DeviceHandle>> {
     let Ok(entries) = std::fs::read_dir(sysfs_dir) else {
         return Ok(None);
     };
@@ -117,42 +150,9 @@ pub(crate) fn find_device_by_serial_in_sysfs(
         let serial_path = path.join("serial");
         if let Ok(dev_serial) = read_to_string(serial_path)
             && dev_serial.trim() == serial
+            && let Some(dev) = device_from_sysfs_path(path, serial.to_string())?
         {
-            // Fast path: find the device directly from busnum and devnum attributes
-            if let (Some(busnum), Some(devnum)) =
-                (file_val::<u32>(&path, "busnum"), file_val::<u32>(&path, "devnum"))
-            {
-                let dev_path = format!("{}/{:03}/{:03}", USB_FS_DIR, busnum, devnum);
-                return Ok(Some(
-                    DeviceHandleInner::new_with_sysfs(dev_path, serial.to_string(), path).into(),
-                ));
-            }
-
-            // Fallback: parse dev file major:minor and match against enumerated devices
-            if let Ok(content) = read_to_string(path.join("dev"))
-                && let Some((major_str, minor_str)) = content.trim().split_once(':')
-            {
-                if let (Ok(major), Ok(minor)) = (major_str.parse::<u32>(), minor_str.parse::<u32>())
-                {
-                    let devices = enumerate_devices()?;
-                    for dev in devices {
-                        if metadata(&dev.debug_name())
-                            .map(|m| (libc::major(m.rdev()), libc::minor(m.rdev())))
-                            .ok()
-                            == Some((major, minor))
-                        {
-                            return Ok(Some(
-                                DeviceHandleInner::new_with_sysfs(
-                                    dev.debug_name(),
-                                    serial.to_string(),
-                                    path,
-                                )
-                                .into(),
-                            ));
-                        }
-                    }
-                }
-            }
+            return Ok(Some(dev));
         }
     }
 

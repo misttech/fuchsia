@@ -6,7 +6,9 @@ mod usbdevice_fs;
 use futures::lock::Mutex as AsyncMutex;
 use usbdevice_fs::*;
 mod discovery;
-pub use discovery::{enumerate_devices, find_device_by_serial, wait_for_devices};
+pub use discovery::{
+    device_from_sysfs_path, enumerate_devices, find_device_by_serial, wait_for_devices,
+};
 
 use fuchsia_sync::Mutex;
 use futures::future::poll_fn;
