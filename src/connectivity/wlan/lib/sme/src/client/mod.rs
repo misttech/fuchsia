@@ -374,36 +374,6 @@ pub enum ConnectFailure {
 }
 
 impl ConnectFailure {
-    // TODO(https://fxbug.dev/42163244): ConnectFailure::is_timeout is not useful, remove it
-    #[allow(clippy::collapsible_match, reason = "mass allow for https://fxbug.dev/381896734")]
-    #[allow(
-        clippy::match_like_matches_macro,
-        reason = "mass allow for https://fxbug.dev/381896734"
-    )]
-    pub fn is_timeout(&self) -> bool {
-        // Note: For association, we don't have a failure type for timeout, so cannot deduce
-        //       whether an association failure is due to timeout.
-        match self {
-            ConnectFailure::AuthenticationFailure(failure) => match failure {
-                fidl_ieee80211::StatusCode::RejectedSequenceTimeout
-                | fidl_ieee80211::StatusCode::ResponseTimeout => true,
-                _ => false,
-            },
-            ConnectFailure::EstablishRsnaFailure(failure) => match failure {
-                EstablishRsnaFailure {
-                    reason: EstablishRsnaFailureReason::RsnaResponseTimeout(_),
-                    ..
-                }
-                | EstablishRsnaFailure {
-                    reason: EstablishRsnaFailureReason::RsnaCompletionTimeout(_),
-                    ..
-                } => true,
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-
     /// Returns true if failure was likely caused by rejected
     /// credentials. In some cases, we cannot be 100% certain that
     /// credentials were rejected, but it's worth noting when we
