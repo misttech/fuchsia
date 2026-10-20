@@ -272,94 +272,13 @@ pub trait TargetResolver {
         source: Option<TargetSource>,
     ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
         async move {
-            // In strict mode, explicit `-t <addr>` queries have already returned in
-            // `resolve_target_address()`, so reaching here means `-t` is a symbolic query
-            // (`id:<serial>` or `<nodename>`). Resolve it from the registered targets file
-            // (`target.registered_targets`, defaulting to `$SHARED_DATA/targets.json`),
-            // including on reconnection (`use_cache == false`).
-            //
-            // TODO(b/571246542): Once `botanist` (`force_ffx_usb`) is updated
-            // to populate `$SHARED_DATA/targets.json` via `ffx target list --register` before
-            // invoking `ffx --strict -t id:<serial>`, remove the fallback to
-            // `discover_matching_targets()` below and return `TargetNotFound` whenever
-            // `targets.json` is missing.
-            if env_context.is_strict() {
-                match crate::registry::targets_file_path(env_context)
-                    .and_then(|path| crate::registry::load_registered_targets(&path))
-                {
-                    Ok(targets) => {
-                        let matched = match_target_infos_to_resolutions(targets, target_spec);
-                        return expect_single_target(target_spec, matched, source)
-                            .or_else_maybe_analytics(|e| {
-                                target_error_to_analytics(e).map(Into::into)
-                            })
-                            .await;
-                    }
-                    Err(crate::registry::RegistryError::Store(err)) if err.is_not_found() => {
-                        log::debug!(
-                            "Registered targets file not found in strict mode; temporarily falling back to discovery (b/571246542)"
-                        );
-                    }
-                    Err(crate::registry::RegistryError::SharedData(_)) => {
-                        log::debug!(
-                            "Shared data path not configured in strict mode; temporarily falling back to discovery (b/571246542)"
-                        );
-                    }
-                    Err(e) => {
-                        log::warn!("Loading registered targets failed: {e:?}");
-                        return expect_single_target(target_spec, Vec::<Resolution>::new(), source)
-                            .or_else_maybe_analytics(|e| {
-                                target_error_to_analytics(e).map(Into::into)
-                            })
-                            .await;
-                    }
-                }
-
-                let resolutions = self
-                    .discover_matching_targets(target_spec, env_context, source.clone())
-                    .await?;
-                return expect_single_target(target_spec, resolutions, source)
-                    .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
-                    .await;
-            }
-
-            let query_tag = target_spec.to_analytics_tag();
-            let mut resolutions: Option<Vec<Resolution>> = None;
-            if use_cache {
-                if let Some(cache_file) = crate::cache::get_discovery_cache_file(env_context) {
-                    match crate::cache::Cache::load(&cache_file) {
-                        Ok(cache) => {
-                            let matched =
-                                match_target_infos_to_resolutions(cache.targets, target_spec);
-                            if matched.is_empty() {
-                                // If the cache has no matches, leave `resolutions` as `None`
-                                // so that target resolution falls back to active discovery.
-                                emit_cache_event("cache_miss", &query_tag).await;
-                            } else {
-                                emit_cache_event("cache_hit", &query_tag).await;
-                                resolutions = Some(matched);
-                            }
-                        }
-                        Err(crate::cache::CacheError::Store(err)) if err.is_not_found() => {
-                            emit_cache_event("no_cache_file", &query_tag).await;
-                        }
-                        Err(crate::cache::CacheError::Expired(_)) => {
-                            emit_cache_event("cache_expired", &query_tag).await;
-                        }
-                        Err(e) => {
-                            emit_cache_event("cache_invalid", &query_tag).await;
-                            log::warn!("Cache loading failed: {e:?}");
-                        }
-                    }
-                } else {
-                    emit_cache_event("no_cache_file", &query_tag).await;
-                }
+            let cached = if env_context.is_strict() {
+                lookup_registered_targets(target_spec, env_context)
             } else {
-                emit_cache_event("cache_disabled", &query_tag).await;
-            }
-
-            let resolutions = match resolutions {
-                Some(rs) => rs,
+                lookup_discovery_cache(target_spec, use_cache, env_context).await
+            };
+            let resolutions = match cached {
+                Some(resolutions) => resolutions,
                 None => {
                     self.discover_matching_targets(target_spec, env_context, source.clone()).await?
                 }
@@ -382,6 +301,63 @@ fn match_target_infos_to_resolutions(
         .filter(|ti| ti.match_query(target_spec))
         .filter_map(|ti| ResolutionTarget::from_target_info(&ti).map(Resolution::from_target))
         .collect()
+}
+
+// Looks up `target_spec` in `$SHARED_DATA/targets.json`, returning `None` if unconfigured or missing.
+// TODO(b/571246542): Stop returning `None` once `botanist` (`force_ffx_usb`) populates `targets.json`.
+fn lookup_registered_targets(
+    target_spec: &TargetInfoQuery,
+    env_context: &EnvironmentContext,
+) -> Option<Vec<Resolution>> {
+    match crate::registry::targets_file_path(env_context)
+        .and_then(|path| crate::registry::load_registered_targets(&path))
+    {
+        Ok(targets) => Some(match_target_infos_to_resolutions(targets, target_spec)),
+        Err(crate::registry::RegistryError::SharedData(_)) => None,
+        Err(crate::registry::RegistryError::Store(err)) if err.is_not_found() => None,
+        Err(e) => {
+            log::warn!("Loading registered targets failed: {e:?}");
+            Some(Vec::new())
+        }
+    }
+}
+
+// Looks up `target_spec` in the non-strict discovery cache when `use_cache` is true.
+async fn lookup_discovery_cache(
+    target_spec: &TargetInfoQuery,
+    use_cache: bool,
+    env_context: &EnvironmentContext,
+) -> Option<Vec<Resolution>> {
+    let query_tag = target_spec.to_analytics_tag();
+    if !use_cache {
+        emit_cache_event("cache_disabled", &query_tag).await;
+        return None;
+    }
+    let Some(cache_file) = crate::cache::get_discovery_cache_file(env_context) else {
+        emit_cache_event("no_cache_file", &query_tag).await;
+        return None;
+    };
+    match crate::cache::Cache::load(&cache_file) {
+        Ok(cache) => {
+            let resolutions = match_target_infos_to_resolutions(cache.targets, target_spec);
+            let status = if resolutions.is_empty() { "cache_miss" } else { "cache_hit" };
+            emit_cache_event(status, &query_tag).await;
+            (!resolutions.is_empty()).then_some(resolutions)
+        }
+        Err(crate::cache::CacheError::Store(err)) if err.is_not_found() => {
+            emit_cache_event("no_cache_file", &query_tag).await;
+            None
+        }
+        Err(crate::cache::CacheError::Expired(_)) => {
+            emit_cache_event("cache_expired", &query_tag).await;
+            None
+        }
+        Err(e) => {
+            emit_cache_event("cache_invalid", &query_tag).await;
+            log::warn!("Cache loading failed: {e:?}");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -797,6 +773,7 @@ impl Resolution {
             identify_host_response: Mutex::new(None),
         }
     }
+
     fn from_addr(sa: SocketAddr) -> Self {
         let scope_id = if let SocketAddr::V6(addr) = sa { addr.scope_id() } else { 0 };
         let port = match sa.port() {
@@ -1793,7 +1770,6 @@ mod test {
             "Resolution should be marked unusable if get_connection is cancelled by a timeout"
         );
     }
-
     #[fuchsia::test]
     async fn test_usb_connect_error_to_non_fatal_command_error() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1818,5 +1794,27 @@ mod test {
         let resolution = Resolution::from_target_handle(handle).unwrap();
         let err = resolution.get_connection(&test_env.context).await.unwrap_err();
         assert!(err.into_command_error().downcast_non_fatal().is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_lookup_discovery_cache_skips_non_product_targets_as_miss() {
+        let dir = tempfile::tempdir().unwrap();
+        let test_env = ffx_config::test_env()
+            .user_config(
+                ffx_config::keys::DISCOVERY_CACHE_DIR_CONFIG,
+                serde_json::json!(dir.path().to_str().unwrap()),
+            )
+            .build()
+            .unwrap();
+        let cache_file = crate::cache::get_discovery_cache_file(&test_env.context).unwrap();
+
+        let mut fastboot_target = TargetInfo::default();
+        fastboot_target.nodename = Some("fb-node".to_string());
+        fastboot_target.target_state = info::TargetState::Fastboot;
+        fastboot_target.addresses = vec!["192.168.1.50:22".parse::<SocketAddr>().unwrap().into()];
+        crate::cache::Cache::new(vec![fastboot_target]).save(&cache_file).unwrap();
+
+        let query = TargetInfoQuery::try_from("fb-node").unwrap();
+        assert!(lookup_discovery_cache(&query, true, &test_env.context).await.is_none());
     }
 }

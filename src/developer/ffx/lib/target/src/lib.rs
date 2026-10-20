@@ -403,13 +403,8 @@ pub(crate) async fn knock_target_impl(
     let knock_timeout = knock_timeout.unwrap_or(DEFAULT_RCS_KNOCK_TIMEOUT * 2);
     let res_future = async {
         log::debug!("resolving target spec address from {target_spec:?}");
-        let source = target_source_for_query(target_spec, context);
-        let discovery = build_discovery_from_config(context);
-        let resolver = resolve::DefaultTargetResolver::new(discovery);
-        let res = resolver
-            .resolve_target_address(target_spec, use_cache, context, source)
-            .await
-            .map_err(|e| match e {
+        let res = resolve_target_address(target_spec, use_cache, context).await.map_err(|e| {
+            match e {
                 // When knocking, it's not critical if we have not yet found the target. The caller should just retry
                 FfxTargetError::OpenTargetError {
                     err: ffx::OpenTargetError::TargetNotFound,
@@ -418,7 +413,8 @@ pub(crate) async fn knock_target_impl(
                     target: format!("{:?}", target_spec),
                 }),
                 _ => KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e))),
-            })?;
+            }
+        })?;
 
         if let Some(ever_found) = ever_found {
             ever_found.store(true, std::sync::atomic::Ordering::Relaxed);
