@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "gcs_test_client_bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    crate_name = "gcs_test_client",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/gcs:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-hyper",
+        "//src/lib/gcs",
+        "//src/lib/structured_ui",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+    ],
+)
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "gcs_test_client_bin_test",
+    crate = ":gcs_test_client_bin",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib:__pkg__"],
+)

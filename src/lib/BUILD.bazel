@@ -14,6 +14,7 @@ test_suite(
     tests = [
         "//src/lib/fuchsia-emulated-handle:fuchsia-emulated-handle-shutdown-test",
         "//src/lib/fuchsia-emulated-handle:fuchsia-emulated-handle_test",
+        "//src/lib/gcs/test:gcs_test_client_bin_test",
     ],
 )
 
