@@ -11,6 +11,9 @@
 #include <arch/regs.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/gparena.h>
+#include <ktl/atomic.h>
+
+#include <ktl/enforce.h>
 
 using fbl::GPArena;
 
@@ -178,6 +181,90 @@ static bool committed_monotonic() {
   END_TEST;
 }
 
+// Allocates every object in an arena, then frees them all and allocates them all again. This checks
+// that the free list can refer to every object in the arena, including for object sizes that are
+// not a power of two.
+template <size_t P, size_t O>
+static bool alloc_all() {
+  BEGIN_TEST;
+
+  // Use enough objects that the arena has to grow several times, and that fill a whole number of
+  // pages, so that the arena holds exactly this many objects.
+  constexpr size_t kCount = 16 * kPageSize / O;
+  static_assert(RoundUpPageSize(kCount * O) / O == kCount);
+
+  GPArena<P, O> arena;
+  ASSERT_EQ(arena.Init("test", kCount), ZX_OK);
+
+  fbl::AllocChecker ac;
+  ktl::unique_ptr<void*[]> allocs = ktl::make_unique<void*[]>(&ac, kCount);
+  ASSERT_TRUE(ac.check());
+
+  // Objects are initially allocated in address order.
+  for (size_t i = 0; i < kCount; i++) {
+    allocs[i] = arena.Alloc();
+    ASSERT_NONNULL(allocs[i]);
+    EXPECT_EQ(base_offset(arena, i * O), allocs[i]);
+  }
+  EXPECT_NULL(arena.Alloc());
+
+  // Free the objects in an order other than address order: first the objects with an even index,
+  // then those with an odd index.
+  constexpr size_t kEvens = (kCount + 1) / 2;
+  auto free_order = [](size_t n) { return n < kEvens ? 2 * n : 2 * (n - kEvens) + 1; };
+  for (size_t n = 0; n < kCount; n++) {
+    arena.Free(allocs[free_order(n)]);
+  }
+
+  // As the free list is LIFO, the objects should be reallocated in the reverse of that order.
+  for (size_t n = kCount; n-- > 0;) {
+    EXPECT_EQ(allocs[free_order(n)], arena.Alloc());
+  }
+  EXPECT_NULL(arena.Alloc());
+
+  // Cleanup.
+  for (size_t i = 0; i < kCount; i++) {
+    arena.Free(allocs[i]);
+  }
+
+  END_TEST;
+}
+
+static bool init_max_count() {
+  BEGIN_TEST;
+
+  using Arena = GPArena<0, 8>;
+  constexpr size_t kMaxCount = Arena::MaxCount();
+  constexpr size_t kObjectsPerPage = kPageSize / 8;
+  static_assert(kMaxCount % kObjectsPerPage != 0);
+
+  // More objects than the free list can refer to.
+  {
+    Arena arena;
+    EXPECT_EQ(arena.Init("test", kMaxCount + 1), ZX_ERR_OUT_OF_RANGE);
+  }
+
+  // Not more objects than the free list can refer to, but rounding up to a whole number of pages
+  // would make room for more objects than that.
+  {
+    Arena arena;
+    EXPECT_EQ(arena.Init("test", kMaxCount), ZX_ERR_OUT_OF_RANGE);
+  }
+
+  // The largest number of objects that both fills a whole number of pages and does not exceed
+  // kMaxCount. Nothing is committed until objects are allocated, so this only reserves address
+  // space.
+  {
+    Arena arena;
+    ASSERT_EQ(arena.Init("test", kMaxCount / kObjectsPerPage * kObjectsPerPage), ZX_OK);
+    void* object = arena.Alloc();
+    EXPECT_EQ(arena.Base(), object);
+    arena.Free(object);
+  }
+
+  END_TEST;
+}
+
 // A helper that continuously allocates and frees a single object.
 template <size_t P, size_t O>
 struct ArenaAllocFixture {
@@ -232,6 +319,92 @@ static bool parallel_alloc() {
   EXPECT_EQ(status, ZX_OK);
   status = t2->Join(nullptr, current_mono_time() + ZX_SEC(5));
   EXPECT_EQ(status, ZX_OK);
+
+  END_TEST;
+}
+
+// A helper that continuously allocates a few objects at a time, tags each object with a value
+// unique to that allocation, and checks that the tags are unchanged before freeing the objects. If
+// the arena ever hands out an object that is already allocated, such as due to an ABA race in the
+// free list, a tag will be overwritten.
+template <size_t P, size_t O>
+struct ArenaExclusiveFixture {
+  static_assert(O % sizeof(uint64_t) == 0, "Objects must be able to hold an aligned tag");
+
+  // Holding more than one object at a time allows other threads to rearrange the free list while a
+  // thread is popping from it, which is the race that the free list's generation count prevents.
+  static constexpr size_t kObjectsPerThread = 3;
+
+  GPArena<P, O> arena;
+  ktl::atomic<bool> stop_requested{};
+  ktl::atomic<uint64_t> thread_count{};
+
+  // A thread_start_routine for use with Thread::Create.
+  static int run(void* arg) { return static_cast<ArenaExclusiveFixture<P, O>*>(arg)->Run(); }
+  int Run() {
+    // Start each thread's tags in a different range, so that tags are unique across threads.
+    uint64_t next_tag = (thread_count.fetch_add(1, ktl::memory_order_relaxed) + 1) << 48u;
+    for (unsigned int iterations = 1;; iterations++) {
+      void* objects[kObjectsPerThread] = {};
+      uint64_t tags[kObjectsPerThread] = {};
+      int result = 0;
+      for (size_t i = 0; i < kObjectsPerThread; i++) {
+        objects[i] = arena.Alloc();
+        if (objects[i] == nullptr) {
+          result = -1;
+          break;
+        }
+        tags[i] = next_tag++;
+        Tag(objects[i]).store(tags[i], ktl::memory_order_relaxed);
+      }
+      // Free every object we allocated, even if there was an error, so the arena can be destroyed.
+      for (size_t i = 0; i < kObjectsPerThread && objects[i] != nullptr; i++) {
+        if (Tag(objects[i]).load(ktl::memory_order_relaxed) != tags[i]) {
+          result = -2;
+        }
+        arena.Free(objects[i]);
+      }
+      if (result != 0) {
+        return result;
+      }
+      // Check every so often if someone is trying to stop us.
+      if (iterations % 100 == 0 && stop_requested.load(ktl::memory_order_relaxed)) {
+        return 0;
+      }
+    }
+  }
+
+  // Tags are accessed atomically, as multiple threads may access the same object if the arena is
+  // broken.
+  static ktl::atomic_ref<uint64_t> Tag(void* object) {
+    return ktl::atomic_ref<uint64_t>(*static_cast<uint64_t*>(object));
+  }
+};
+
+static bool parallel_alloc_exclusive() {
+  BEGIN_TEST;
+
+  using Fixture = ArenaExclusiveFixture<0, 8>;
+  Fixture fixture;
+  // Use more threads than most test environments have CPUs, so that threads are sometimes
+  // preempted part way through updating the free list, as well as racing with each other.
+  constexpr size_t kNumThreads = 8;
+  ASSERT_EQ(fixture.arena.Init("test", kNumThreads * Fixture::kObjectsPerThread), ZX_OK);
+
+  Thread* threads[kNumThreads];
+  for (Thread*& thread : threads) {
+    thread = Thread::Create("gparena worker", Fixture::run, &fixture, DEFAULT_PRIORITY);
+    thread->Resume();
+  }
+
+  // Let the threads run for a bit, then stop them and check that none of them found an error.
+  Thread::Current::SleepRelative(ZX_MSEC(500));
+  fixture.stop_requested.store(true, ktl::memory_order_relaxed);
+  for (Thread* thread : threads) {
+    int retcode = -1;
+    EXPECT_EQ(thread->Join(&retcode, current_mono_time() + ZX_SEC(5)), ZX_OK);
+    EXPECT_EQ(retcode, 0);
+  }
 
   END_TEST;
 }
@@ -323,7 +496,11 @@ GPARENA_UNITTEST(basic_lifo)
 GPARENA_UNITTEST(out_of_memory)
 GPARENA_UNITTEST(does_preserve)
 GPARENA_UNITTEST(committed_monotonic)
+UNITTEST("alloc_all<0, 8>", (alloc_all<0, 8>))
+UNITTEST("alloc_all<24, 40>", (alloc_all<24, 40>))
+GPARENA_UNITTEST(init_max_count)
 GPARENA_UNITTEST(parallel_alloc)
+GPARENA_UNITTEST(parallel_alloc_exclusive)
 GPARENA_UNITTEST(parallel_grow_memory)
 GPARENA_UNITTEST(test_confine)
 UNITTEST_END_TESTCASE(gparena_tests, "gparena_tests", "GPArena test")

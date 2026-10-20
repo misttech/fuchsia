@@ -13,6 +13,7 @@
 
 #include <fbl/confine_array_index.h>
 #include <kernel/mutex.h>
+#include <ktl/atomic.h>
 #include <vm/vm_address_region.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object_paged.h>
@@ -20,110 +21,124 @@
 namespace fbl {
 
 // A simple lock-free list for use by GPArena.
-template <typename Node>
+//
+// Rather than by address, the list refers to nodes by their 1-based index in an array of
+// |SlotSize|-byte slots that starts at the address passed to Init, with index 0 meaning "no node".
+// This makes the head of the list, which pairs the index of the first node with a generation
+// count, small enough to fit in 64 bits, so that it can be updated with 8-byte atomic operations.
+// Unlike 16-byte atomic operations, these are lock-free on all supported architectures.
+//
+// |Node| must have a naturally aligned uint32_t |next| member, which holds the index of the next
+// node in the list while the node is in the list, and which the list accesses atomically.
+template <typename Node, size_t SlotSize>
 class LockFreeList {
  public:
-  // Push |node| onto the list. public:
+  // The head of the list holds the index of the first node in its low kIndexBits bits, and the
+  // generation count in its high kGenerationBits bits. See |head_| for why kGenerationBits is
+  // enough.
+  static constexpr uint32_t kGenerationBits = 40;
+  static constexpr uint32_t kIndexBits = 64 - kGenerationBits;
+
+  // The maximum number of slots, and therefore nodes, that the list can refer to.
+  static constexpr size_t kMaxNodes = (uint64_t{1} << kIndexBits) - 1;
+
+  // Set the address of the first slot. Must be called before any node is pushed.
+  void Init(uintptr_t base) { base_ = base; }
+
+  // Push |node| onto the list.
   void Push(Node* node) {
-    // Take a local copy/snapshot of the current head node.
-    HeadNode head_node = head_node_.load(ktl::memory_order_relaxed);
-    HeadNode next_head_node;
+    const uint64_t index = ToIndex(node);
+    DEBUG_ASSERT(index - 1 < kMaxNodes && ToNode(index) == node);
+    // Take a local copy/snapshot of the current head.
+    uint64_t head = head_.load(ktl::memory_order_relaxed);
+    uint64_t next_head;
     do {
-      // Every time the compare_exchange below fails head_node becomes the current value and so
-      // we need to reset our intended next pointer every iteration.
-      node->next = head_node.head;
-      // Build our candidate next head node.
-      next_head_node = HeadNode{.head = node, .gen = head_node.gen + 1};
+      // Every time the compare_exchange below fails head becomes the current value and so
+      // we need to reset our intended next index every iteration.
+      Next(node).store(static_cast<uint32_t>(HeadIndex(head)), ktl::memory_order_relaxed);
+      // Build our candidate next head.
+      next_head = NextGeneration(head) | index;
       // Use release semantics so that any writes to the Persist area, and our write to
       // node->next, are visible before the node can be seen in the free list and reused.
-    } while (!head_node_.compare_exchange_strong(
-        head_node, next_head_node, ktl::memory_order_release, ktl::memory_order_relaxed));
+    } while (!head_.compare_exchange_strong(head, next_head, ktl::memory_order_release,
+                                            ktl::memory_order_relaxed));
   }
 
   // Pop a node from the list.  Returns nullptr if empty.
   Node* Pop() {
-    // Take a local copy/snapshot of the current head node.
+    // Take a local copy/snapshot of the current head.
     // Use an acquire to match with the release in Push.
-    HeadNode head_node = head_node_.load(ktl::memory_order_acquire);
-    while (head_node.head) {
-      const HeadNode next_head_node{
-          .head = head_node.head->next,
-          .gen = head_node.gen + 1,
-      };
-      if (head_node_.compare_exchange_strong(head_node, next_head_node, ktl::memory_order_acquire,
-                                             ktl::memory_order_acquire)) {
-        return head_node.head;
+    uint64_t head = head_.load(ktl::memory_order_acquire);
+    while (HeadIndex(head) != 0) {
+      Node* const node = ToNode(HeadIndex(head));
+      // This read is speculative: if another thread pops |node| before we do, it may then
+      // overwrite node->next, so this may read garbage. If so, the generation count will have
+      // changed, so the compare_exchange below will fail and the garbage will be discarded. Mask
+      // the value regardless, so that garbage can never alter the generation count in next_head,
+      // which must only ever advance by one.
+      //
+      // WARNING: If another thread popped |node|, this read formally races with its new owner's
+      // plain stores, and no store or fence before handing out nodes can order the two. This is
+      // benign: the arena's memory stays mapped for the life of the arena, so the read can't
+      // fault, and as described above, whatever it returns is masked and then discarded.
+      const uint64_t next = Next(node).load(ktl::memory_order_relaxed);
+      const uint64_t next_head = NextGeneration(head) | (next & kIndexMask);
+      if (head_.compare_exchange_strong(head, next_head, ktl::memory_order_acquire,
+                                        ktl::memory_order_acquire)) {
+        return node;
       }
       // There is no pause here as we don't need to wait for anyone before trying again,
       // rather the sooner we retry the *more* likely we are to succeed given that we just
-      // received the most up to date copy of head_node.
+      // received the most up to date copy of head.
     }
     return nullptr;
   }
 
  private:
-  // Stores the current head pointer and a generation count. The generation count prevents races
-  // where one thread is modifying the list whilst another thread rapidly adds and removes. Every
-  // time a HeadNode is modified the generation count should be incremented to generate a unique
-  // value.
+  static constexpr uint64_t kIndexMask = (uint64_t{1} << kIndexBits) - 1;
+  static_assert(kIndexBits <= 32, "Node::next must be able to hold any index");
+
+  static constexpr uint64_t HeadIndex(uint64_t head) { return head & kIndexMask; }
+
+  // Returns |head| with its index cleared and its generation count incremented. The generation
+  // count wraps around to 0 when it overflows.
+  static constexpr uint64_t NextGeneration(uint64_t head) { return (head | kIndexMask) + 1; }
+
+  uint64_t ToIndex(const Node* node) const {
+    return (reinterpret_cast<uintptr_t>(node) - base_) / SlotSize + 1;
+  }
+
+  Node* ToNode(uint64_t index) const {
+    return reinterpret_cast<Node*>(base_ + (index - 1) * SlotSize);
+  }
+
+  // Returns a reference for atomically accessing |node|'s next index. Pop reads the next index of
+  // the head node speculatively, without first taking ownership of the node, which can race with
+  // other threads writing to it, such as one pushing the same node. Relaxed accesses suffice, as
+  // the release and acquire operations on |head_| order the accesses that matter.
+  static ktl::atomic_ref<uint32_t> Next(Node* node) {
+    return ktl::atomic_ref<uint32_t>(node->next);
+  }
+
+  // Stores the index of the current head node and a generation count. The generation count
+  // prevents races where one thread is modifying the list whilst another thread rapidly adds and
+  // removes. Every time the head is modified the generation count is incremented to generate a
+  // unique value.
   //
-  // It is important that the count not wrap past an existing value that is still in use. The
-  // generation is currently 64-bit number and shouldn't ever wrap back to 0 to begin with.
-  // Although even if it should it is incredibly unlikely a thread was stalled for 2^64 operations
-  // to cause a generation collision.
-  struct alignas(16) HeadNode {
-    Node* head = nullptr;
-    uint64_t gen = 0;
-  };
-  ktl::atomic<HeadNode> head_node_{};
-#if defined(__clang__)
-  static_assert(ktl::atomic<HeadNode>::is_always_lock_free, "atomic<HeadNode> not lock free");
-#else
-  // For gcc we have a custom libatomic implementation that *is* lock free, but
-  // the compiler doesn't know that at this point. Instead we ensure HeadNode
-  // is 16 bytes and has 16 byte alignment to make sure our atomics will be
-  // used.
-  static_assert(sizeof(HeadNode) == 16, "HeadNode must be 16 bytes");
-  static_assert(alignof(HeadNode) == 16, "HeadNode must have 16-byte alignment");
-#endif
+  // It is important that the count not wrap past an existing value that is still in use. That
+  // could only happen if a thread stalled in Pop, between loading the head and the
+  // compare_exchange, while the head was modified an exact multiple of 2^kGenerationBits times,
+  // leaving the same node at the head of the list. Every modification is a successful
+  // compare_exchange of |head_|, and these are serialized, so even at a sustained rate of 10^8
+  // modifications per second, which is faster than any real workload, 2^40 modifications take over
+  // 3 hours. No thread could plausibly be stalled for that long (by comparison, 2^32 modifications
+  // could take less than a minute).
+  ktl::atomic<uint64_t> head_ = 0;
+  static_assert(ktl::atomic<uint64_t>::is_always_lock_free, "atomic<uint64_t> not lock free");
+
+  // The address of the slot with index 1.
+  uintptr_t base_ = 0;
 };
-
-// A spinlock protected list for use by GPArena (when LockFreeList is unavailable).
-template <typename Node>
-class SpinlockList {
- public:
-  // Push |node| onto the list.
-  void Push(Node* node) {
-    Guard<SpinLock, IrqSave> guard{&lock_};
-    node->next = head_;
-    head_ = node;
-  }
-
-  // Pop a node from the list.  Returns nullptr if empty.
-  Node* Pop() {
-    Guard<SpinLock, IrqSave> guard{&lock_};
-    if (head_ == nullptr) {
-      return nullptr;
-    }
-    Node* result = head_;
-    head_ = head_->next;
-    return result;
-  }
-
- private:
-  DECLARE_SPINLOCK(SpinlockList) lock_;
-  Node* head_ TA_GUARDED(&lock_){};
-};
-
-// LockFreeList is not supported when 16-byte atomics are not available so use
-// the spin-lock-based list instead.
-#if HAVE_ATOMIC_128
-template <typename Node>
-using Fast16List = LockFreeList<Node>;
-#else
-template <typename Node>
-using Fast16List = SpinlockList<Node>;
-#endif
 
 // Growable Persistent Arena (GPArena) is an arena that allows for fast allocation and
 // deallocation of a single kind of object. Compared to other arena style allocators it
@@ -147,6 +162,12 @@ class __OWNER(void) GPArena {
     vmo_.reset();
   }
 
+  // The maximum number of objects that an arena can hold.
+  static constexpr size_t MaxCount() { return FreeList::kMaxNodes; }
+
+  // Reserves space for at least |max_count| objects, or more if they fit in the space left over
+  // from rounding up to a whole number of pages. Fails with ZX_ERR_OUT_OF_RANGE if that would be
+  // more than MaxCount() objects.
   zx_status_t Init(const char* name, size_t max_count) {
     if (!max_count) {
       return ZX_ERR_INVALID_ARGS;
@@ -157,8 +178,19 @@ class __OWNER(void) GPArena {
       return ZX_ERR_BAD_STATE;
     }
 
+    // Check this before using max_count to compute mem_sz, so that the computation cannot overflow.
+    if (max_count > MaxCount()) {
+      return ZX_ERR_OUT_OF_RANGE;
+    }
+
     // Carve out some memory from the kernel root VMAR
     const size_t mem_sz = RoundUpPageSize(max_count * ObjectSize);
+
+    // Alloc hands out every object that fits in mem_sz, which may be more than max_count, and the
+    // free list must be able to refer to all of them.
+    if (mem_sz / ObjectSize > MaxCount()) {
+      return ZX_ERR_OUT_OF_RANGE;
+    }
 
     fbl::RefPtr<VmObjectPaged> vmo;
     zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, mem_sz, &vmo);
@@ -205,6 +237,7 @@ class __OWNER(void) GPArena {
     vmo_ = ktl::move(vmo);
     top_ = committed_ = start_ = map_result->base;
     end_ = start_ + mem_sz;
+    free_list_.Init(start_);
 
     DEBUG_ASSERT(IsPageRounded(start_));
     DEBUG_ASSERT(IsPageRounded(end_));
@@ -365,17 +398,17 @@ class __OWNER(void) GPArena {
 
   struct FreeNode {
     char data[PersistSize];
-    // This struct is explicitly not packed to allow for the next field to be naturally aligned.
-    // As a result we *may* preserve more than PersistSize, but that is fine. This is not an
-    // atomic as reads and writes will be serialized with our updates to head_node_, which acts
-    // like a lock.
-    FreeNode* next;
+    // While this node is in the free list, |next| holds the index of the next node in the list (see
+    // LockFreeList). This struct is explicitly not packed to allow for the next field to be
+    // naturally aligned, as LockFreeList accesses it atomically. As a result we *may* preserve
+    // more than PersistSize, but that is fine.
+    uint32_t next;
   };
   static_assert(sizeof(FreeNode) <= ObjectSize, "Not enough free space in object");
   static_assert((ObjectSize % alignof(FreeNode)) == 0,
                 "ObjectSize must be common alignment multiple");
 
-  using FreeList = Fast16List<FreeNode>;
+  using FreeList = LockFreeList<FreeNode, ObjectSize>;
 
   FreeList free_list_;
 };
