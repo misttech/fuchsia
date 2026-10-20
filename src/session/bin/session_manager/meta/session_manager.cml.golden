@@ -134,6 +134,7 @@
                 "fuchsia.hwinfo.Board",
                 "fuchsia.hwinfo.Device",
                 "fuchsia.hwinfo.Product",
+                "fuchsia.kernel.Stats",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.lightsensor.Sensor",
                 "fuchsia.location.namedplace.RegulatoryRegionConfigurator",
@@ -594,6 +595,7 @@
         // Window manager configs.
         {
             config: [
+                "fuchsia.session.EnableDebugShortcut",
                 "fuchsia.session.window.Collection",
                 "fuchsia.session.window.InitialElementUrl",
                 "fuchsia.session.window.InitialViewIdAnnotation",

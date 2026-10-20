@@ -262,6 +262,7 @@
                 "fuchsia.device.NameProvider",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+                "fuchsia.kernel.Stats",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.power.button.Monitor",
                 "fuchsia.power.CollaborativeRebootInitiator",
