@@ -49,8 +49,8 @@ following bind properties for each parent:
 | Property | Optional | Purpose |
 | -------- | -------- | ------- |
 | `fuchsia.hardware.spmi.TargetService` | N | The SPMI target service. |
-| `fuchsia.spmi.TARGET_ID` | N | The SPMI target ID. |
-| `fuchsia.spmi.TARGET_NAME` | Y | A string name for the target. On devicetree platforms, this is generated from the target node's `reg-names` property. If multiple targets are defined, the corresponding name from `reg-names` is used. |
+| `fuchsia.ID` | N | The SPMI target ID. |
+| `fuchsia.NAME` | Y | A string name for the target. On devicetree platforms, this is generated from the target node's `reg-names` property. If multiple targets are defined, the corresponding name from `reg-names` is used. |
 
 ### Sub-target device
 
@@ -112,10 +112,8 @@ sub-target or reference property with the following bind properties:
 | Property | Optional | Purpose |
 | -------- | -------- | ------- |
 | `fuchsia.hardware.spmi.SubTargetService` | N | The SPMI sub-target service. |
-| `fuchsia.spmi.TARGET_ID` | N | The ID of the target that contains this sub-target. |
-| `fuchsia.spmi.TARGET_NAME` | Y | A string name for the target that contains this sub-target. On devicetree platforms, this is generated from the target node's `reg-names` property. |
-| `fuchsia.spmi.SUB_TARGET_ADDRESS` | N | The starting address for this sub-target within the target. |
-| `fuchsia.spmi.SUB_TARGET_NAME` | Y | A string name for the sub-target. On devicetree platforms, this is generated from the sub-target node's `reg-names` property. |
+| `fuchsia.ID` | N | The SPMI sub-target global ID. |
+| `fuchsia.NAME` | Y | A string name for the sub-target. On devicetree platforms, this is generated from the sub-target node's `reg-names` property. |
 
 Register accesses through [fuchsia.hardware.spmi.Device][spmi.fidl] will be
 mapped to the sub-target's starting address, and limited to the range assigned
@@ -154,8 +152,8 @@ properties:
 | Property | Value |
 | -------- | ----- |
 | `fuchsia.spmi.CONTROLLER_ID` | `id` in `ControllerInfo` (if specified) |
-| `fuchsia.spmi.TARGET_ID` | `id` in `TargetInfo` |
-| `fuchsia.spmi.TARGET_NAME` | `name` in `TargetInfo` (if specified) |
+| `fuchsia.ID` | `id` in `TargetInfo` |
+| `fuchsia.NAME` | `name` in `TargetInfo` (if specified) |
 
 ### Sub-target devices
 
@@ -166,11 +164,8 @@ properties:
 
 | Property | Value |
 | -------- | ----- |
-| `fuchsia.spmi.CONTROLLER_ID` | `id` in `ControllerInfo` (if specified) |
-| `fuchsia.spmi.TARGET_ID` | `id` in `TargetInfo` |
-| `fuchsia.spmi.TARGET_NAME` | `name` in `TargetInfo` (if specified) |
-| `fuchsia.spmi.SUB_TARGET_ADDRESS` | `address` in `SubTargetInfo` |
-| `fuchsia.spmi.SUB_TARGET_NAME` | `name` in `SubTargetInfo` (if specified) |
+| `fuchsia.ID` | `global_id` in `SubTargetInfo` |
+| `fuchsia.NAME` | `name` in `SubTargetInfo` (if specified) |
 
 The controller driver should restrict register accesses to sub-targets to the
 range [0, `size`) and offset them by `address`.

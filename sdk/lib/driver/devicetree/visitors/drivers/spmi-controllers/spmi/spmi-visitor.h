@@ -45,7 +45,6 @@ class SpmiVisitor : public fdf_devicetree::Visitor {
                                                             std::optional<std::string> target_name,
                                                             fdf_devicetree::ChildNode& node);
   zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> ParseSubTarget(
-      uint32_t controller_id, const fuchsia_hardware_spmi::TargetInfo& parent,
       fdf_devicetree::ChildNode& node);
 
   static zx::result<> FinalizeSpmiNode(const SpmiNode& spmi_node, fdf_devicetree::Node& node);
@@ -58,6 +57,7 @@ class SpmiVisitor : public fdf_devicetree::Visitor {
   // Maps the ID of a node containing a reference property to all of the IDs of the SPMI nodes
   // that were referenced.
   std::map<uint32_t, std::set<uint32_t>> spmi_references_;
+  uint32_t next_sub_target_global_id_ = 0;
 };
 
 }  // namespace spmi_dt

@@ -18,6 +18,8 @@ type SubTargetInfo = table {
     3: name string:MAX_SPMI_NAME_LEN;
     /// A human-readable name for this sub-target. Optional.
     4: display_name string:MAX;
+    /// Globally unique ID across all SPMI sub-targets. Required.
+    5: global_id uint32;
 };
 
 type TargetInfo = table {

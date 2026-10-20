@@ -289,7 +289,7 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
   std::vector<fuchsia_hardware_spmi::SubTargetInfo> sub_targets_info;
   for (fdf_devicetree::ChildNode& child : node.GetNode()->children()) {
     zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> sub_target_regions =
-        ParseSubTarget(controller_id, target, child);
+        ParseSubTarget(child);
     if (sub_target_regions.is_error()) {
       return sub_target_regions.take_error();
     }
@@ -302,10 +302,7 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
 }
 
 zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> SpmiVisitor::ParseSubTarget(
-    uint32_t controller_id, const fuchsia_hardware_spmi::TargetInfo& parent,
     fdf_devicetree::ChildNode& node) {
-  ZX_DEBUG_ASSERT(parent.id());
-
   node.set_register_type(fdf_devicetree::RegisterType::kSpmi);
 
   auto reg = node.GetProperty<std::vector<uint32_t>>("reg");
@@ -345,10 +342,13 @@ zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> SpmiVisitor::Parse
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
+    const uint32_t global_id = next_sub_target_global_id_++;
+
     fuchsia_hardware_spmi::SubTargetInfo sub_target{{
         .address = static_cast<uint16_t>(address),
         .size = size,
         .display_name = node.fdf_name(),
+        .global_id = global_id,
     }};
 
     fuchsia_driver_framework::ParentSpec2 sub_target_spec{{
@@ -356,17 +356,12 @@ zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> SpmiVisitor::Parse
             {
                 fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
                                         "fuchsia.hardware.spmi.SubTargetService"),
-                fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-                fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID,
-                                        static_cast<uint32_t>(*parent.id())),
-                fdf::MakeAcceptBindRule(bind_fuchsia::ID, address),
+                fdf::MakeAcceptBindRule(bind_fuchsia::ID, global_id),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
-                fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID,
-                                   static_cast<uint32_t>(*parent.id())),
-                fdf::MakeProperty2(bind_fuchsia::ID, address),
+                fdf::MakeProperty2(bind_fuchsia::ID, global_id),
             },
     }};
 
