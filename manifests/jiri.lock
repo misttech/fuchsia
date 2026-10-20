@@ -365,6 +365,16 @@
         "instance_id": "0DB2KkRL60dyNj8HS5PwA0QDILX_KApknBqlICDq0_MC"
     },
     {
+        "package": "fuchsia/third_party/3pp/ruff/linux-amd64",
+        "version": "version:2@0.17.1.2",
+        "instance_id": "H0F1UH6xCaiMywwlTQPDi2444ssVtEwMgXrG2K2yNiEC"
+    },
+    {
+        "package": "fuchsia/third_party/3pp/ruff/linux-arm64",
+        "version": "version:2@0.17.1.2",
+        "instance_id": "WGh3PHMCk-RiLE2GNfMoTtvhU6FdjpkLEYEJLHaK7MgC"
+    },
+    {
         "package": "fuchsia/third_party/android/aemu/release-gfxstream/linux-amd64",
         "version": "bid:16641118",
         "instance_id": "pXP3S97OeF-IF2Xq_Zvxvz3_Sy_gOLJDS4a2W1RB4NUC"
@@ -593,26 +603,6 @@
         "package": "fuchsia/third_party/qemu/linux-arm64",
         "version": "git_revision:e545d8bb9d63e9dd61542b88463183314cff9482",
         "instance_id": "go4qfwROMthoOfAh-G1240ysyEx07kIuWBqqkXENA7AC"
-    },
-    {
-        "package": "fuchsia/third_party/ruff/linux-amd64",
-        "version": "version:2@0.9.4.1",
-        "instance_id": "ukUcSTOQkPhiF_Aq19P304CbJOmBjE8GiOuhz0JBgJwC"
-    },
-    {
-        "package": "fuchsia/third_party/ruff/linux-arm64",
-        "version": "version:2@0.9.4.1",
-        "instance_id": "JSXeJDEWBv02mCauVsDjzZorlrinQL7Af5byP4_1XqAC"
-    },
-    {
-        "package": "fuchsia/third_party/ruff/mac-amd64",
-        "version": "version:2@0.9.4.1",
-        "instance_id": "gpwLGlizXjrFyW1btbIaev-cudr8nnAmfFBj-zpPPm0C"
-    },
-    {
-        "package": "fuchsia/third_party/ruff/mac-arm64",
-        "version": "version:2@0.9.4.1",
-        "instance_id": "sqBGHO0z6KEXn9pLiIUy0NSSU8PXm59q6B8OZjkYgVEC"
     },
     {
         "package": "fuchsia/third_party/rust-analyzer/linux-amd64",
