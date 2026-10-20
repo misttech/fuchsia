@@ -94,6 +94,7 @@ if (is_fuchsia) {
       ":*",
       "//src/storage/benchmarks/fuchsia:*",
       "//src/storage/gpt/component:*",
+      "//src/storage/lib/fs_management/rust:*",
       "//src/storage/lib/storage_device:*",
       "//vendor/google/*",
     ]
