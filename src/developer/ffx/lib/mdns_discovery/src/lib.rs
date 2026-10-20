@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use async_lock::Mutex;
-use async_trait::async_trait;
 use fuchsia_async::{Task, Timer};
 use futures::FutureExt;
 use mdns::protocol as dns;
@@ -205,14 +204,12 @@ async fn propagate_bind_event(sock: &UdpSocket, svc: &Weak<MdnsProtocol>) -> u16
     port
 }
 
-#[async_trait]
 pub trait MdnsEnabledChecker: Send + Sync {
-    async fn enabled(&self) -> bool;
+    fn enabled(&self) -> impl std::future::Future<Output = bool> + Send;
 }
 
 struct MdnsEnabled;
 
-#[async_trait]
 impl MdnsEnabledChecker for MdnsEnabled {
     async fn enabled(&self) -> bool {
         true
