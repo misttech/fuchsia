@@ -4,90 +4,59 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/ktrace.h>
+#include <lib/zircon-internal/thread_annotations.h>
+#include <stdint.h>
 
-#include <arch/ops.h>
 #include <arch/spinlock.h>
-#include <kernel/spin_tracing.h>
+#include <kernel/cpu.h>
+#include <kernel/ffi.h>
+#include <kernel/spin_tracing_config.h>
 #include <ktl/atomic.h>
 
-// Make sure the spin_lock is functionally a uint32_t since the inline assembly in this file
-// operates that way.
+// Implemented in Rust (src/spinlock.rs). Each takes the lock's |value|, and has no thread
+// safety annotations of its own: only the arch_spin_* functions below call them.
+extern "C" {
+
+void rust_arch_spin_lock_non_instrumented(ktl::atomic<cpu_num_t>* lock);
+void rust_arch_spin_lock_trace_instrumented(ktl::atomic<cpu_num_t>* lock, uint64_t encoded_lock_id);
+// Returns false if the lock was acquired, as arch_spin_trylock() does.
+bool rust_arch_spin_trylock(ktl::atomic<cpu_num_t>* lock);
+void rust_arch_spin_unlock(ktl::atomic<cpu_num_t>* lock);
+
+}  // extern "C"
+
+// Make sure the spin_lock is functionally a uint32_t since the Rust code and its inline
+// assembly operate on its value as an AtomicU32.
 static_assert(sizeof(arch_spin_lock_t) == sizeof(cpu_num_t));
 static_assert(sizeof(arch_spin_lock_t) == sizeof(uint32_t));
+static_assert(alignof(arch_spin_lock_t) == alignof(uint32_t));
 
 namespace {
 
-void on_lock_acquired(arch_spin_lock_t* lock) TA_ASSERT(lock) {
-  WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) + 1);
-}
-
-inline void arch_spin_lock_core(arch_spin_lock_t* lock, cpu_num_t val) TA_ACQ(lock) {
-  cpu_num_t temp;
-
-  __asm__ volatile(
-      "sevl;"
-      "1: wfe;"
-      "2: ldaxr   %w[temp], [%[lock]];"
-      "cbnz    %w[temp], 1b;"
-      "stxr    %w[temp], %w[val], [%[lock]];"
-      "cbnz    %w[temp], 2b;"
-      : [temp] "=&r"(temp)
-      : [lock] "r"(&lock->value), [val] "r"(val)
-      : "cc", "memory");
-
-  on_lock_acquired(lock);
-}
+// Called right after a Rust call that acquires |lock|, to tell the thread safety analysis so.
+void on_lock_acquired(arch_spin_lock_t* lock) TA_ASSERT(lock) {}
 
 }  // namespace
 
-void arch_spin_lock_non_instrumented(arch_spin_lock_t* lock) TA_ACQ(lock) {
-  cpu_num_t val = arch_curr_cpu_num() + 1;
-  arch_spin_lock_core(lock, val);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void arch_spin_lock_non_instrumented(arch_spin_lock_t* lock) TA_ACQ(lock) {
+  rust_arch_spin_lock_non_instrumented(&lock->value);
+  on_lock_acquired(lock);
 }
 
-void arch_spin_lock_trace_instrumented(arch_spin_lock_t* lock,
-                                       spin_tracing::EncodedLockId encoded_lock_id) TA_ACQ(lock) {
-  cpu_num_t val = arch_curr_cpu_num() + 1;
-  cpu_num_t expected = 0;
-
-  if (lock->value.compare_exchange_strong(expected, val, ktl::memory_order_acquire,
-                                          ktl::memory_order_relaxed)) {
-    on_lock_acquired(lock);
-    return;
-  }
-
-  spin_tracing::Tracer<true> spin_tracer;
-  arch_spin_lock_core(lock, val);
-  spin_tracer.Finish(spin_tracing::FinishType::kLockAcquired, encoded_lock_id);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void arch_spin_lock_trace_instrumented(
+    arch_spin_lock_t* lock, spin_tracing::EncodedLockId encoded_lock_id) TA_ACQ(lock) {
+  rust_arch_spin_lock_trace_instrumented(&lock->value, encoded_lock_id.value());
+  on_lock_acquired(lock);
 }
 
-bool arch_spin_trylock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
-  cpu_num_t val = arch_curr_cpu_num() + 1;
-  cpu_num_t out;
-  __asm__ volatile(
-      "1:"
-      "ldaxr   %w[out], [%[lock]];"
-      "cbnz    %w[out], 2f;"
-      "stxr    %w[out], %w[val], [%[lock]];"
-      // Even though this is a try lock, if the store on acquire fails we try
-      // again. This is to prevent spurious failures from misleading the caller
-      // into thinking the lock is held by another thread. See
-      // https://fxbug.dev/42164720 for details.
-      "cbnz    %w[out], 1b;"
-      "2:"
-      "clrex;"
-      : [out] "=&r"(out)
-      : [lock] "r"(&lock->value), [val] "r"(val)
-      : "cc", "memory");
-
-  if (out == 0) {
-    WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) + 1);
-  }
-  return out;
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool arch_spin_trylock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return rust_arch_spin_trylock(&lock->value);
 }
 
-void arch_spin_unlock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
-  WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) - 1);
-  lock->value.store(0, ktl::memory_order_release);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void arch_spin_unlock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
+  rust_arch_spin_unlock(&lock->value);
 }

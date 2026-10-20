@@ -198,6 +198,24 @@ if (toolchain_environment == "kernel.phys" ||
     notice_year = 2026
   }
 
+  kernel_bindgen_crate("arm64-mp-bindings") {
+    headers = [ "include/arch/arm64/mp.h" ]
+    cpp = true
+    non_rust_deps = [
+      ":headers",
+      "//zircon/kernel/lib/ktl:headers",
+    ]
+    notice_year = 2026
+    raw_lines = [ "#![no_std]" ]
+    explicit_padding = false
+    type_allowlist = [ "arm64_percpu" ]
+    var_allowlist = [ "PERCPU_IN_RESTRICTED_MODE" ]
+    expect_lints = [
+      "non_camel_case_types",
+      "non_upper_case_globals",
+    ]
+  }
+
   kernel_bindgen_crate("arm64-restricted-bindings") {
     headers = [ "include/arch/restricted.h" ]
     cpp = true
@@ -220,13 +238,16 @@ if (toolchain_environment == "kernel.phys" ||
     sources = [
       "src/cache.rs",
       "src/mod.rs",
+      "src/mp.rs",
       "src/restricted.rs",
+      "src/spinlock.rs",
       "src/sysreg.rs",
       "src/vm.rs",
     ]
     deps = [
       ":arch-arm64-aspace-bindings",
       ":arch-arm64-vm-bindings",
+      ":arm64-mp-bindings",
       ":arm64-restricted-bindings",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",

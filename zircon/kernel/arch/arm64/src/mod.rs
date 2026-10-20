@@ -5,7 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 pub mod cache;
+mod mp;
 pub mod restricted;
+mod spinlock;
 #[cfg(console_enabled)]
 mod sysreg;
 pub mod vm;
