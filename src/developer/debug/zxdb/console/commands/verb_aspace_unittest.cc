@@ -81,8 +81,6 @@ constexpr std::vector<debug_ipc::AddressRegion> GetCommonMappings() {
   };
 }
 
-}  // namespace
-
 TEST_F(VerbAspace, Aspace) {
   debug_ipc::AddressSpaceReply reply;
   reply.map = GetCommonMappings();
@@ -193,5 +191,26 @@ TEST_F(VerbAspace, AspaceLimit) {
   ASSERT_TRUE(std::getline(output_text, line));
   ASSERT_FALSE(std::getline(output_text, line));
 }
+
+TEST_F(VerbAspace, AspaceOfflineCommandContext) {
+  debug_ipc::AddressSpaceReply reply;
+  reply.map = GetCommonMappings();
+  mock_remote_api()->set_address_space_reply(reply);
+
+  std::string captured_output;
+  console().ProcessInputLine(
+      "aspace", fxl::MakeRefCounted<OfflineCommandContext>(
+                    &console(),
+                    [&captured_output](const OutputBuffer& output, const std::vector<Err>& errors) {
+                      EXPECT_TRUE(errors.empty());
+                      captured_output = output.AsString();
+                    }));
+  loop().RunUntilNoTasks();
+
+  EXPECT_TRUE(debug::StringContains(captured_output, "Start"));
+  EXPECT_TRUE(debug::StringContains(captured_output, "blob-1234"));
+}
+
+}  // namespace
 
 }  // namespace zxdb

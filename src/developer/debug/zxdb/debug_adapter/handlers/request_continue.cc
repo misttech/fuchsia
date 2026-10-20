@@ -19,12 +19,13 @@ dap::ResponseOrError<dap::ContinueResponse> OnRequestContinue(DebugAdapterContex
     return dap::Error("Invalid thread ID");
   }
 
-  // Continue without enabling forward exceptions.
-  if (request.singleThread) {
-    thread->Continue(false);
+  // dap::optional::operator bool() checks presence rather than the underlying
+  // boolean, so use .value(false). Continue without forwarding exceptions.
+  if (request.singleThread.value(false)) {
+    thread->Continue(/*forward_exception=*/false);
     response.allThreadsContinued = false;
   } else {
-    ctx->session()->system().Continue(false);
+    ctx->session()->system().Continue(/*forward=*/false);
   }
 
   return response;

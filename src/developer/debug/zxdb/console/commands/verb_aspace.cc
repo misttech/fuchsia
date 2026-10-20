@@ -10,7 +10,7 @@
 #include "src/developer/debug/zxdb/common/string_util.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
-#include "src/developer/debug/zxdb/console/console.h"
+#include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/format_table.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/expr/number_parser.h"
@@ -101,44 +101,46 @@ std::string PrintRegionMmuFlags(const debug_ipc::AddressRegion& region, bool has
   return str;
 }
 
-void OnAspaceComplete(fxl::RefPtr<CommandContext> cmd_context, const Err& err,
-                      std::vector<debug_ipc::AddressRegion> map, bool print_totals,
+void OnAspaceComplete(const fxl::RefPtr<CommandContext>& cmd_context, const Err& err,
+                      const std::vector<debug_ipc::AddressRegion>& map, bool print_totals,
                       std::optional<uint64_t> addr_limit) {
-  Console* console = Console::get();
   if (err.has_error()) {
-    console->Output(err);
+    cmd_context->ReportError(err);
     return;
   }
 
   if (map.empty()) {
-    console->Output("Region not mapped.");
+    cmd_context->Output("Region not mapped.");
+    return;
+  }
+
+  ConsoleContext* console_context = cmd_context->GetConsoleContext();
+  if (!console_context) {
     return;
   }
 
   uint64_t total_mapped = 0;
   uint64_t total_committed = 0;
 
-  const uint64_t page_size = console->context().session()->arch_info().page_size();
-  debug::Platform platform = cmd_context->GetConsoleContext()->session()->platform();
+  const uint64_t page_size = console_context->session()->arch_info().page_size();
+  debug::Platform platform = console_context->session()->platform();
 
   // Only Linux has the shared bit.
   bool has_shared = platform == debug::Platform::kLinux;
 
   std::vector<std::vector<std::string>> rows;
   for (const auto& region : map) {
-    std::vector<std::string> row;
-
-    if (addr_limit && region.base > addr_limit)
+    if (addr_limit && region.base > addr_limit) {
       break;
+    }
 
+    std::vector<std::string> row;
     row.push_back(to_hex_string(region.base));
     row.push_back(to_hex_string(region.base + region.size));
     row.push_back(PrintRegionMmuFlags(region, has_shared));
     row.push_back(PrintRegionSize(region.size));
 
     if (platform == debug::Platform::kFuchsia) {
-      // Fuchsia-specific parts.
-
       // Only show VMO information for regions which have a VMO koid. Regions with no VMO will be
       // VMARs and showing offset and committed pages is misleading.
       bool has_koid = region.vmo_koid != 0;
@@ -160,18 +162,18 @@ void OnAspaceComplete(fxl::RefPtr<CommandContext> cmd_context, const Err& err,
   }
 
   std::vector<ColSpec> colspec;
-  colspec.push_back(ColSpec(Align::kRight, 0, "Start", 2));
-  colspec.push_back(ColSpec(Align::kRight, 0, "End", 2));
-  colspec.push_back(ColSpec(Align::kLeft, 0, "Prot", 1));
-  colspec.push_back(ColSpec(Align::kRight, 0, "Size", 1));
+  colspec.emplace_back(Align::kRight, /*max_width=*/0, "Start", /*pad_left=*/2);
+  colspec.emplace_back(Align::kRight, /*max_width=*/0, "End", /*pad_left=*/2);
+  colspec.emplace_back(Align::kLeft, /*max_width=*/0, "Prot", /*pad_left=*/1);
+  colspec.emplace_back(Align::kRight, /*max_width=*/0, "Size", /*pad_left=*/1);
   if (platform == debug::Platform::kFuchsia) {
-    colspec.push_back(ColSpec(Align::kRight, 0, "Koid", 1));
-    colspec.push_back(ColSpec(Align::kRight, 0, "Offset", 1));
-    colspec.push_back(ColSpec(Align::kRight, 0, "Cmt.Pgs", 1));
+    colspec.emplace_back(Align::kRight, /*max_width=*/0, "Koid", /*pad_left=*/1);
+    colspec.emplace_back(Align::kRight, /*max_width=*/0, "Offset", /*pad_left=*/1);
+    colspec.emplace_back(Align::kRight, /*max_width=*/0, "Cmt.Pgs", /*pad_left=*/1);
   } else {
-    colspec.push_back(ColSpec(Align::kRight, 0, "Offset", 1));
+    colspec.emplace_back(Align::kRight, /*max_width=*/0, "Offset", /*pad_left=*/1);
   }
-  colspec.push_back(ColSpec(Align::kLeft, 0, "Name", 1));
+  colspec.emplace_back(Align::kLeft, /*max_width=*/0, "Name", /*pad_left=*/1);
 
   OutputBuffer out;
   FormatTable(colspec, rows, &out);
@@ -194,35 +196,41 @@ void OnAspaceComplete(fxl::RefPtr<CommandContext> cmd_context, const Err& err,
     out.Append("                         (See \"help aspace\" for what committed pages mean.)\n");
   }
 
-  console->Output(out);
+  cmd_context->Output(out);
 }
 
-void RunVerbAspace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
+void RunVerbAspace(const Command& cmd, const fxl::RefPtr<CommandContext>& cmd_context) {
   // Only a process can be specified.
-  if (Err err = cmd.ValidateNouns({Noun::kProcess}); err.has_error())
-    return cmd_context->ReportError(err);
+  if (Err err = cmd.ValidateNouns({Noun::kProcess}); err.has_error()) {
+    cmd_context->ReportError(err);
+    return;
+  }
 
   bool print_totals = true;
   uint64_t address = 0;
   if (cmd.args().size() == 1) {
-    if (Err err = ReadUint64Arg(cmd, 0, "address", &address); err.has_error())
-      return cmd_context->ReportError(err);
+    if (Err err = ReadUint64Arg(cmd, 0, "address", &address); err.has_error()) {
+      cmd_context->ReportError(err);
+      return;
+    }
     print_totals = false;  // Adding up totals for a subregion is misleading.
   } else if (cmd.args().size() > 1) {
-    return cmd_context->ReportError(
-        Err(ErrType::kInput, "\"aspace\" takes zero or one parameter."));
+    cmd_context->ReportError(Err(ErrType::kInput, "\"aspace\" takes zero or one parameter."));
+    return;
   }
 
   std::optional<uint64_t> addr_limit;
   if (cmd.HasSwitch(kAddressLimitSwitch)) {
     auto err_or = StringToNumber(ExprLanguage::kC, cmd.GetSwitchValue(kAddressLimitSwitch));
     if (err_or.has_error()) {
-      return cmd_context->ReportError(err_or.err());
+      cmd_context->ReportError(err_or.err());
+      return;
     }
 
     uint64_t limit = 0;
     if (auto err = err_or.value().PromoteTo64(&limit); err.has_error()) {
-      return cmd_context->ReportError(err);
+      cmd_context->ReportError(err);
+      return;
     }
 
     addr_limit = limit;
@@ -230,12 +238,14 @@ void RunVerbAspace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
   }
 
   if (Err err = AssertRunningTarget(cmd_context->GetConsoleContext(), "aspace", cmd.target());
-      err.has_error())
-    return cmd_context->ReportError(err);
+      err.has_error()) {
+    cmd_context->ReportError(err);
+    return;
+  }
 
   cmd.target()->GetProcess()->GetAspace(
-      address, [cmd_context, print_totals, addr_limit](const Err& err,
-                                                       std::vector<debug_ipc::AddressRegion> map) {
+      address, [cmd_context, print_totals, addr_limit](
+                   const Err& err, const std::vector<debug_ipc::AddressRegion>& map) {
         OnAspaceComplete(cmd_context, err, map, print_totals, addr_limit);
       });
 }
@@ -245,7 +255,7 @@ void RunVerbAspace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
 VerbRecord GetAspaceVerbRecord() {
   auto record = VerbRecord(&RunVerbAspace, {"aspace", "as"}, kAspaceShortHelp, kAspaceUsage,
                            kAspaceHelp, CommandGroup::kQuery);
-  record.switches.push_back(SwitchRecord(kAddressLimitSwitch, true, "limit", 'l'));
+  record.switches.emplace_back(kAddressLimitSwitch, true, "limit", 'l');
   return record;
 }
 

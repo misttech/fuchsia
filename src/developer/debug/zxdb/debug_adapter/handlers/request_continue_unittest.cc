@@ -42,8 +42,6 @@ class RequestContinueTest : public DebugAdapterContextTest {
   FakeRemoteAPI* remote_api_;
 };
 
-}  // namespace
-
 TEST_F(RequestContinueTest, ContinueSystem) {
   InitializeDebugging();
 
@@ -130,5 +128,40 @@ TEST_F(RequestContinueTest, ContinueSingleThread) {
   EXPECT_FALSE(got.error);
   EXPECT_FALSE(got.response.allThreadsContinued.value(true));
 }
+
+TEST_F(RequestContinueTest, ContinueSingleThreadExplicitFalse) {
+  InitializeDebugging();
+
+  InjectProcess(kProcessKoid);
+  // Run client to receive process started events.
+  RunClient();
+
+  InjectThread(kProcessKoid, kThreadKoid);
+  InjectThread(kProcessKoid, kThreadKoid + 1);
+  // Run client to receive thread started events.
+  RunClient();
+  RunClient();
+
+  // Send continue request from the client.
+  dap::ContinueRequest request = {};
+  request.threadId = kThreadKoid;
+  request.singleThread = false;
+  auto response = client().send(request);
+
+  // Read request and process it in server.
+  context().OnStreamReadable();
+
+  // Verify both threads are resumed.
+  const auto& resume_requests = remote_api()->resume_requests();
+  EXPECT_EQ(2u, resume_requests.size());
+
+  // Run client to receive continue response.
+  RunClient();
+  auto got = response.get();
+  EXPECT_FALSE(got.error);
+  EXPECT_TRUE(got.response.allThreadsContinued.value(true));
+}
+
+}  // namespace
 
 }  // namespace zxdb
