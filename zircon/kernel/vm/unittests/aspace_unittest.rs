@@ -2625,3 +2625,312 @@ mod aspace_rs {
         }
     }
 }
+
+/// MMU unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "mmu_rust")]
+mod mmu_rs {
+    use crate::kernel::deadline::DurationMono;
+    use crate::kernel::thread;
+    use crate::platform_rs::timer::InstantMono;
+    use crate::vm::arch_vm_aspace::{
+        ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ARCH_UNMAP_OPTION_NONE, ArchMmuFlags,
+    };
+    use crate::vm::scanner::AutoVmScannerDisable;
+    use crate::vm::vm_aspace::{Type, VmAspace};
+    use crate::vm::vm_object_paged::VmObjectPaged;
+    use crate::vm::{pmm, vm_address_region as vmar};
+    use core::ffi::c_void;
+    use core::ptr::from_ref;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use page::SIZE as PAGE_SIZE_USIZE;
+    use unittest::{assert_ok, expect_err, expect_ok, unwrap_ok, unwrap_some};
+    use zx_status::Status;
+
+    const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
+    const PGTABLE_L2_SHIFT: usize = page::SHIFT + (page::SHIFT - 3);
+
+    /// splitting a large page is atomic
+    #[test]
+    fn test_large_page_atomic_split() {
+        // Attempts to validate that unmapping part of a large page will not cause parallel threads
+        // accessing other parts of the page to fault. This test is only probabilistic and is
+        // heavily timing and micro architectural dependent, but could serve as a canary.
+        if VmAspace::kernel_aspace().arch_aspace().unmap_only_enlarge_on_oom() {
+            // Force a large page.
+            const ALLOC_SIZE: usize = 1usize << PGTABLE_L2_SHIFT;
+
+            const TARGET_OFFSETS: [usize; 6] = [
+                0,
+                PAGE_SIZE_USIZE,
+                2 * PAGE_SIZE_USIZE,
+                ALLOC_SIZE - 3 * PAGE_SIZE_USIZE,
+                ALLOC_SIZE - 2 * PAGE_SIZE_USIZE,
+                ALLOC_SIZE - PAGE_SIZE_USIZE,
+            ];
+
+            for (i, &target_offset) in TARGET_OFFSETS.iter().enumerate() {
+                // Allocate a large page in the current kernel aspace. Need to allocate in the
+                // current aspace and not a test aspace so that we can directly access the mappings.
+                let kaspace = VmAspace::kernel_aspace();
+                let vmar = kaspace.root_vmar().unwrap();
+
+                let vmo = unwrap_ok!(VmObjectPaged::create(
+                    pmm::ALLOC_FLAG_ANY,
+                    VmObjectPaged::ALWAYS_PINNED,
+                    ALLOC_SIZE as u64,
+                ));
+
+                let arch_rw_flags: ArchMmuFlags =
+                    ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+
+                let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+                    0,
+                    ALLOC_SIZE,
+                    0,
+                    vmar::flag::CAN_MAP_READ
+                        | vmar::flag::CAN_MAP_WRITE
+                        | vmar::flag::DEBUG_DYNAMIC_KERNEL_MAPPING,
+                    VmObjectPaged::into_vm_object(vmo),
+                    0,
+                    arch_rw_flags,
+                    b"test",
+                ));
+
+                assert_ok!(mapping_result.mapping.map_range(0, ALLOC_SIZE, false, false));
+
+                let va = mapping_result.base;
+                let mapping = mapping_result.mapping;
+
+                let _cleanup_mapping = zr::defer(|| {
+                    let _ = mapping.destroy();
+                });
+
+                // Spin up a thread to start touching pages in the mapping.
+                struct State {
+                    va: usize,
+                    current_offset: usize,
+                    running: AtomicBool,
+                }
+                let state = State { va, current_offset: i, running: AtomicBool::new(true) };
+
+                extern "C" fn thread_body(arg: *mut c_void) -> i32 {
+                    // SAFETY: `arg` points to `state` on the stack, which outlives this thread.
+                    let state = unsafe { arg.cast::<State>().as_ref_unchecked() };
+
+                    while state.running.load(Ordering::SeqCst) {
+                        for (i, &offset) in TARGET_OFFSETS.iter().enumerate() {
+                            if state.current_offset == i {
+                                continue;
+                            }
+                            let addr = core::ptr::with_exposed_provenance::<u64>(state.va + offset);
+                            // Force read from the address
+                            // SAFETY: `addr` points to a mapped page in the kernel mapping that is
+                            // not unmapped while this thread runs.
+                            let _ = unsafe { core::ptr::read_volatile(addr) };
+                        }
+                    }
+                    0
+                }
+
+                let arg = from_ref(&state).cast_mut().cast::<c_void>();
+                // SAFETY: `thread_body` and `arg` are valid for the lifetime of the thread.
+                let thread = unwrap_ok!(unsafe {
+                    thread::create_with_priority(
+                        c"test-thread".as_ptr(),
+                        thread_body,
+                        arg,
+                        thread::DEFAULT_PRIORITY,
+                    )
+                });
+                // SAFETY: `thread` was just created and has not been resumed yet.
+                unsafe { thread.resume() };
+
+                let _cleanup_thread = zr::defer(|| {
+                    state.running.store(false, Ordering::SeqCst);
+                    // SAFETY: `thread` is valid and joined once.
+                    let _ = unsafe { thread.join(InstantMono::INFINITE) };
+                });
+
+                // Wait a moment to let the other thread start touching.
+                let _ = thread::sleep_relative(DurationMono::from_millis(50));
+
+                // Unmap a single page.
+                // SAFETY: Unmapping a single test page from the kernel test mapping.
+                let status = unsafe {
+                    kaspace.arch_aspace().unmap(va + target_offset, 1, ARCH_UNMAP_OPTION_NONE)
+                };
+                expect_ok!(status, "unmap single page");
+
+                // If the other thread didn't cause a kernel panic by having a page fault, then
+                // success.
+            }
+        }
+    }
+
+    /// test that unmap ignores pinned pages
+    #[test]
+    fn test_unmap_ignores_pinned_pages() {
+        // Test that RangeChangeUpdateLocked ignores pinned pages.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let aspace = unwrap_some!(VmAspace::create(Type::User, b"test aspace"));
+        let _cleanup_aspace = zr::defer(|| {
+            aspace.destroy().unwrap();
+        });
+
+        let arch_aspace = aspace.arch_aspace();
+        let arch_rw_flags: ArchMmuFlags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+
+        let vmar = aspace.root_vmar().unwrap();
+
+        {
+            // Ensure an unpinned range gets completely unmapped.
+            let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 4 * PAGE_SIZE));
+            assert_ok!(vmo.commit_range(0, 4 * PAGE_SIZE));
+
+            let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+                0,
+                4 * PAGE_SIZE_USIZE,
+                0,
+                vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+                VmObjectPaged::into_vm_object(vmo.clone()),
+                0,
+                arch_rw_flags,
+                b"test",
+            ));
+            assert_ok!(mapping_result.mapping.map_range(0, 4 * PAGE_SIZE_USIZE, false, false));
+            let mapping = mapping_result.mapping;
+            let _cleanup_mapping = zr::defer(|| {
+                mapping.destroy().unwrap();
+            });
+
+            let va = mapping_result.base;
+
+            for i in 0..4 {
+                expect_ok!(arch_aspace.query(va + i * PAGE_SIZE_USIZE).map(|_| ()));
+            }
+
+            vmo.unmap_pages_and_call(0, 4 * PAGE_SIZE, || {});
+
+            for i in 0..4 {
+                expect_err!(arch_aspace.query(va + i * PAGE_SIZE_USIZE), Status::NOT_FOUND);
+            }
+        }
+
+        {
+            // Ensure a fully pinned range doesn't get unmapped.
+            let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 4 * PAGE_SIZE));
+            assert_ok!(vmo.commit_range_pinned(0, 4 * PAGE_SIZE, false));
+            let vmo_for_unpin = vmo.clone();
+            let _unpin = zr::defer(|| {
+                vmo_for_unpin.unpin(0, 4 * PAGE_SIZE);
+            });
+
+            let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+                0,
+                4 * PAGE_SIZE_USIZE,
+                0,
+                vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+                VmObjectPaged::into_vm_object(vmo.clone()),
+                0,
+                arch_rw_flags,
+                b"test",
+            ));
+            assert_ok!(mapping_result.mapping.map_range(0, 4 * PAGE_SIZE_USIZE, false, false));
+            let mapping = mapping_result.mapping;
+            let _cleanup_mapping = zr::defer(|| {
+                mapping.destroy().unwrap();
+            });
+
+            let va = mapping_result.base;
+
+            vmo.unmap_pages_and_call(0, 4 * PAGE_SIZE, || {});
+
+            for i in 0..4 {
+                expect_ok!(arch_aspace.query(va + i * PAGE_SIZE_USIZE).map(|_| ()));
+            }
+        }
+
+        {
+            // Unmap a greater range than exists in the VMO or in the mapping.
+            let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 4 * PAGE_SIZE));
+            assert_ok!(vmo.commit_range(0, 4 * PAGE_SIZE));
+            assert_ok!(vmo.commit_range_pinned(PAGE_SIZE, 2 * PAGE_SIZE, false));
+            let vmo_for_unpin = vmo.clone();
+            let _unpin = zr::defer(|| {
+                vmo_for_unpin.unpin(PAGE_SIZE, 2 * PAGE_SIZE);
+            });
+
+            let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+                0,
+                4 * PAGE_SIZE_USIZE,
+                0,
+                vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+                VmObjectPaged::into_vm_object(vmo.clone()),
+                0,
+                arch_rw_flags,
+                b"test",
+            ));
+            assert_ok!(mapping_result.mapping.map_range(0, 4 * PAGE_SIZE_USIZE, false, false));
+            let mapping = mapping_result.mapping;
+            let _cleanup_mapping = zr::defer(|| {
+                mapping.destroy().unwrap();
+            });
+
+            let va = mapping_result.base;
+
+            // Note: Large len here. This is okay.
+            vmo.unmap_pages_and_call(0, 100 * PAGE_SIZE, || {});
+
+            expect_err!(arch_aspace.query(va), Status::NOT_FOUND);
+            expect_ok!(arch_aspace.query(va + PAGE_SIZE_USIZE).map(|_| ()));
+            expect_ok!(arch_aspace.query(va + 2 * PAGE_SIZE_USIZE).map(|_| ()));
+            expect_err!(arch_aspace.query(va + 3 * PAGE_SIZE_USIZE), Status::NOT_FOUND);
+        }
+
+        {
+            // Alternating pinned pages.
+            let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 20 * PAGE_SIZE));
+            assert_ok!(vmo.commit_range(0, 20 * PAGE_SIZE));
+
+            for i in (0..20).step_by(2) {
+                assert_ok!(vmo.commit_range_pinned(i * PAGE_SIZE, PAGE_SIZE, false));
+            }
+            let vmo_for_unpin = vmo.clone();
+            let _unpin = zr::defer(|| {
+                for i in (0..20).step_by(2) {
+                    vmo_for_unpin.unpin(i * PAGE_SIZE, PAGE_SIZE);
+                }
+            });
+
+            let mapping_result = unwrap_ok!(vmar.create_vm_mapping(
+                0,
+                20 * PAGE_SIZE_USIZE,
+                0,
+                vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
+                VmObjectPaged::into_vm_object(vmo.clone()),
+                0,
+                arch_rw_flags,
+                b"test",
+            ));
+            assert_ok!(mapping_result.mapping.map_range(0, 20 * PAGE_SIZE_USIZE, false, false));
+            let mapping = mapping_result.mapping;
+            let _cleanup_mapping = zr::defer(|| {
+                mapping.destroy().unwrap();
+            });
+
+            let va = mapping_result.base;
+
+            vmo.unmap_pages_and_call(0, 20 * PAGE_SIZE, || {});
+
+            for i in 0..20 {
+                if i % 2 == 0 {
+                    expect_ok!(arch_aspace.query(va + i * PAGE_SIZE_USIZE).map(|_| ()));
+                } else {
+                    expect_err!(arch_aspace.query(va + i * PAGE_SIZE_USIZE), Status::NOT_FOUND);
+                }
+            }
+        }
+    }
+}
