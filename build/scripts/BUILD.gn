@@ -7,12 +7,10 @@ import("//build/testing/python_build_time_tests.gni")
 
 if (is_host) {
   python_library("main_build_lib") {
-    sources = [
-      "main_build.py",
-      "properties.py",
-    ]
-    deps = [ ":signal_utils_lib" ]
+    sources = [ "main_build.py" ]
     library_deps = [
+      ":properties_lib",
+      ":signal_utils_lib",
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
       "//build/rbe:build_summary",
@@ -37,7 +35,7 @@ if (is_host) {
 
   python_library("signal_utils_lib") {
     sources = [ "signal_utils.py" ]
-    deps = [ ":managed_process_lib" ]
+    library_deps = [ ":managed_process_lib" ]
   }
 
   python_library("pstree_lib") {
@@ -47,16 +45,16 @@ if (is_host) {
 
   python_library("graceful_timeout_lib") {
     sources = [ "graceful_timeout.py" ]
-    library_deps = [ "//build/python/modules/serialization" ]
-    deps = [
+    library_deps = [
       ":managed_process_lib",
       ":signal_utils_lib",
+      "//build/python/modules/serialization",
     ]
   }
 
   python_library("build_timeout") {
     sources = [ "build_timeout.py" ]
-    deps = [
+    library_deps = [
       ":graceful_timeout_lib",
       ":managed_process_lib",
       ":pstree_lib",

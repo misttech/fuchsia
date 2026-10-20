@@ -247,7 +247,11 @@ class ScheduleStep(BaseStep):
                     f"Step '{self.label}' min_duration ({min_sec:g}s) cannot exceed max_duration ({max_sec:g}s)."
                 )
         else:
-            if parse_duration_to_seconds(self.duration) < 0:  # type: ignore[arg-type]
+            if self.duration is None:
+                raise ValueError(
+                    f"Step '{self.label}' must specify either duration or scale."
+                )
+            if parse_duration_to_seconds(self.duration) < 0:
                 raise ValueError(
                     f"Step '{self.label}' duration cannot be negative."
                 )
@@ -272,13 +276,17 @@ class ScheduleStep(BaseStep):
     def resolve_duration(self, hard_timeout: float | None = None) -> float:
         """Calculates effective duration in seconds, scaling with hard_timeout if configured."""
         if self.scale is not None:
-            min_sec = parse_duration_to_seconds(self.min_duration)  # type: ignore[arg-type]
-            max_sec = parse_duration_to_seconds(self.max_duration)  # type: ignore[arg-type]
+            assert (
+                self.min_duration is not None and self.max_duration is not None
+            )
+            min_sec = parse_duration_to_seconds(self.min_duration)
+            max_sec = parse_duration_to_seconds(self.max_duration)
             if hard_timeout is not None:
                 scaled = hard_timeout * self.scale
                 return min(max(scaled, min_sec), max_sec)
             return min_sec
-        return parse_duration_to_seconds(self.duration)  # type: ignore[arg-type]
+        assert self.duration is not None
+        return parse_duration_to_seconds(self.duration)
 
 
 @dataclass(frozen=True)
