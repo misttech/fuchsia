@@ -1,0 +1,91 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "atomic-storage",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+rustc_test(
+    name = "atomic_storage_lib_test",
+    crate = ":atomic-storage",
+    edition = "2024",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_packaged_binary(
+    name = "atomic_storage_lib_test_packaged_bin",
+    testonly = True,
+    binary = ":atomic_storage_lib_test",
+    binary_name = "atomic_storage_lib_test",
+    visibility = ["//visibility:private"],
+)
+
+fx_component_manifest(
+    name = "atomic-storage-tests-manifest",
+    testonly = True,
+    component_name = "atomic-storage-tests",
+    includes = [
+        "//sdk/lib/sys/testing:rust_test_runner.shard.cml",
+        "//sdk/lib/syslog:client.shard.cml",
+        "//sdk/lib/syslog:offer.shard.cml",
+        "//sdk/lib/syslog:use.shard.cml",
+    ],
+    manifest = "meta/atomic-storage-tests.cml",
+    visibility = ["//visibility:private"],
+)
+
+fx_test_component(
+    name = "atomic-storage-tests-component",
+    compiled_manifest = ":atomic-storage-tests-manifest",
+    component_name = "atomic-storage-tests",
+    visibility = ["//visibility:private"],
+    deps = [":atomic_storage_lib_test_packaged_bin"],
+)
+
+fx_package(
+    name = "atomic-storage-tests-package",
+    package_name = "atomic-storage-tests",
+    test_components = [":atomic-storage-tests-component"],
+    visibility = ["//visibility:private"],
+)
+
+fx_test(
+    name = "atomic-storage-tests",
+    package = ":atomic-storage-tests-package",
+    visibility = ["//src/lib:__pkg__"],
+)

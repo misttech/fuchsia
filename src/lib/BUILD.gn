@@ -13,7 +13,6 @@ group("tests") {
     "analytics:tests",
     "android:tests",
     "async-utils:tests",
-    "atomic-storage:tests",
     "bitrs:tests",
     "buf-read-ext:tests",
     "captive-thread:tests",

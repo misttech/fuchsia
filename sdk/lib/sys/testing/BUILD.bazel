@@ -24,3 +24,10 @@ fx_runner_shard(
     shard = "elf_test_runner.shard.cml",
     visibility = ["//visibility:public"],
 )
+
+exports_files(
+    [
+        "rust_test_runner.shard.cml",
+    ],
+    visibility = ["//src/lib/atomic-storage:__pkg__"],
+)
