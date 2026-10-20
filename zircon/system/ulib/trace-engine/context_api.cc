@@ -1313,6 +1313,13 @@ EXPORT_NO_DDK void* trace_context_alloc_record(trace_context_t* context, size_t 
   return context->AllocRecord(num_bytes);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+EXPORT_NO_DDK void trace_context_mark_records_dropped(trace_context_t* context, size_t count)
+    ZX_AVAILABLE_SINCE(NEXT) {
+  context->MarkRecordsDropped(count);
+}
+#endif
+
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 EXPORT_NO_DDK void* trace_context_alloc_durable_record(trace_context_t* context, size_t num_bytes)
     ZX_AVAILABLE_SINCE(HEAD) {

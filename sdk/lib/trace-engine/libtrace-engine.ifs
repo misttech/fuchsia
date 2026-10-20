@@ -14,6 +14,7 @@ Symbols:
   - { Name: trace_context_get_buffering_mode, Type: Func }
   - { Name: trace_context_is_category_bytestring_enabled, Type: Func }
   - { Name: trace_context_is_category_enabled, Type: Func }
+  - { Name: trace_context_mark_records_dropped, Type: Func }
   - { Name: trace_context_register_bytestring, Type: Func }
   - { Name: trace_context_register_category_bytestring, Type: Func }
   - { Name: trace_context_register_category_literal, Type: Func }

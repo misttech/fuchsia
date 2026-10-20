@@ -667,6 +667,17 @@ void trace_context_write_thread_record(trace_context_t* context, trace_thread_in
 // This function is thread-safe, fail-fast, and lock-free.
 void* trace_context_alloc_record(trace_context_t* context, size_t num_bytes);
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+// Records that |count| trace records were dropped by the caller before they
+// could be written to the trace buffer.
+//
+// |context| must be a valid trace context reference.
+//
+// This function is thread-safe, fail-fast, and lock-free.
+void trace_context_mark_records_dropped(trace_context_t* context, size_t count)
+    ZX_AVAILABLE_SINCE(NEXT);
+#endif
+
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 // Allocates space for a durable record in the trace buffer.
 //

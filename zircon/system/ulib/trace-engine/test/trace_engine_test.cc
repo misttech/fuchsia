@@ -723,3 +723,35 @@ TEST(TraceEngineTest, RegisterVThreadDeduplicatesAcrossThreadsAndCacheOverflow) 
   trace_engine_terminate();
   loop.RunUntilIdle();
 }
+
+TEST(TraceEngineTest, MarkRecordsDroppedUpdatesCounterAndHeader) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  alignas(uint64_t) char buffer[4096];
+  trace_handler_t handler{&ops};
+  zx_status_t init = trace_engine_initialize(loop.dispatcher(), &handler,
+                                             TRACE_BUFFERING_MODE_ONESHOT, buffer, sizeof(buffer));
+  ASSERT_EQ(init, ZX_OK);
+  loop.RunUntilIdle();
+
+  zx_status_t start = trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER);
+  ASSERT_EQ(start, ZX_OK);
+  loop.RunUntilIdle();
+
+  trace_context_t* context = trace_acquire_context();
+  ASSERT_TRUE(context);
+  EXPECT_EQ(reinterpret_cast<trace_context*>(context)->num_records_dropped(), 0u);
+
+  trace_context_mark_records_dropped(context, 5);
+  EXPECT_EQ(reinterpret_cast<trace_context*>(context)->num_records_dropped(), 5u);
+
+  trace_context_mark_records_dropped(context, 3);
+  EXPECT_EQ(reinterpret_cast<trace_context*>(context)->num_records_dropped(), 8u);
+  trace_release_context(context);
+
+  trace_engine_stop(ZX_OK);
+  trace_engine_terminate();
+  loop.RunUntilIdle();
+
+  const auto* header = reinterpret_cast<const trace::internal::trace_buffer_header*>(buffer);
+  EXPECT_EQ(header->num_records_dropped, 8u);
+}

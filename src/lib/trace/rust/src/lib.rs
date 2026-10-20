@@ -2448,6 +2448,15 @@ impl Context {
         Some(buffer.len())
     }
 
+    /// Records that `count` trace records were dropped before they could be written to the
+    /// trace buffer.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub fn mark_records_dropped(&self, count: usize) {
+        // SAFETY: `self.raw` is a valid `trace_context_t` pointer acquired from
+        // `trace_acquire_context` and kept live until `Drop` calls `trace_release_context`.
+        unsafe { sys::trace_context_mark_records_dropped(self.raw, count) };
+    }
+
     pub fn buffering_mode(&self) -> BufferingMode {
         match unsafe { sys::trace_context_get_buffering_mode(self.raw) } {
             sys::TRACE_BUFFERING_MODE_ONESHOT => BufferingMode::OneShot,
@@ -2886,6 +2895,12 @@ mod sys {
             context: *const trace_context_t,
             num_bytes: libc::size_t,
         ) -> *mut libc::c_void;
+
+        #[cfg(fuchsia_api_level_at_least = "HEAD")]
+        pub fn trace_context_mark_records_dropped(
+            context: *const trace_context_t,
+            count: libc::size_t,
+        );
 
         // From trace-engine/instrumentation.h
         pub fn trace_state() -> trace_state_t;

@@ -81,7 +81,10 @@ struct trace_context {
   // Return true if at least one record was dropped.
   bool WasRecordDropped() const { return num_records_dropped() != 0u; }
 
-  void MarkRecordDropped() { num_records_dropped_.fetch_add(1, std::memory_order_relaxed); }
+  void MarkRecordsDropped(size_t count) {
+    num_records_dropped_.fetch_add(count, std::memory_order_relaxed);
+  }
+  void MarkRecordDropped() { MarkRecordsDropped(1); }
 
   void ResetRollingBufferPointers();
   void ResetBufferPointers();
