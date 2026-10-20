@@ -340,7 +340,6 @@ mod test {
     use super::*;
     use crate::{ManualTargetsError, Mock};
 
-    use async_trait::async_trait;
     use futures::channel::mpsc::unbounded;
     use pretty_assertions::assert_eq;
     use serde_json::{Map, Value, json};
@@ -353,7 +352,6 @@ mod test {
         is_empty: Arc<Mutex<bool>>,
     }
 
-    #[async_trait(?Send)]
     impl ManualTargets for TestManualTargets {
         async fn storage_set(
             &self,

@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use async_lock::Mutex;
-use async_trait::async_trait;
 
 use ffx_config::environment::EnvironmentError;
 use ffx_config::{ConfigError, ConfigLevel, EnvironmentContext};
 use serde_json::{Map, Value, json};
+use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(thiserror::Error, Debug)]
@@ -36,36 +36,50 @@ pub(crate) const MANUAL_TARGETS: &'static str = "targets.manual";
 /// Configuration key containing the list of manual targets
 const MANUAL_TARGETS: &'static str = "targets.manual";
 
-#[async_trait(?Send)]
 pub trait ManualTargets: Sync {
-    async fn storage_set(&self, targets: Value) -> Result<(), ManualTargetsError>;
-    async fn storage_get(&self) -> Result<Value, ManualTargetsError>;
+    fn storage_set(
+        &self,
+        targets: Value,
+    ) -> impl Future<Output = Result<(), ManualTargetsError>>;
+    fn storage_get(&self) -> impl Future<Output = Result<Value, ManualTargetsError>>;
 
-    async fn get(&self) -> Result<Value, ManualTargetsError> {
-        self.storage_get().await
+    fn get(&self) -> impl Future<Output = Result<Value, ManualTargetsError>> {
+        async { self.storage_get().await }
     }
 
-    async fn get_or_default(&self) -> Map<String, Value> {
-        self.get()
-            .await
-            .unwrap_or_else(|_| Value::default())
-            .as_object()
-            .cloned()
-            .unwrap_or_default()
+    fn get_or_default(&self) -> impl Future<Output = Map<String, Value>> {
+        async {
+            self.get()
+                .await
+                .unwrap_or_else(|_| Value::default())
+                .as_object()
+                .cloned()
+                .unwrap_or_default()
+        }
     }
 
-    async fn add(&self, target: String) -> Result<(), ManualTargetsError> {
-        let mut targets = self.get_or_default().await;
-        // We always insert None so that we retain backwards-compatibility for manual targets,
-        // which previously were stored as a map of addr->expiration-time
-        targets.insert(target, json!(None::<Option<u64>>));
-        self.storage_set(targets.into()).await
+    fn add(
+        &self,
+        target: String,
+    ) -> impl Future<Output = Result<(), ManualTargetsError>> {
+        async move {
+            let mut targets = self.get_or_default().await;
+            // We always insert None so that we retain backwards-compatibility for manual targets,
+            // which previously were stored as a map of addr->expiration-time
+            targets.insert(target, json!(None::<Option<u64>>));
+            self.storage_set(targets.into()).await
+        }
     }
 
-    async fn remove(&self, target: String) -> Result<(), ManualTargetsError> {
-        let mut targets = self.get_or_default().await;
-        targets.remove(&target);
-        self.storage_set(targets.into()).await
+    fn remove(
+        &self,
+        target: String,
+    ) -> impl Future<Output = Result<(), ManualTargetsError>> {
+        async move {
+            let mut targets = self.get_or_default().await;
+            targets.remove(&target);
+            self.storage_set(targets.into()).await
+        }
     }
 }
 
@@ -79,7 +93,6 @@ impl Config {
     }
 }
 
-#[async_trait(?Send)]
 impl ManualTargets for Config {
     async fn storage_get(&self) -> Result<Value, ManualTargetsError> {
         let env = self.context.load()?;
@@ -104,7 +117,6 @@ pub struct Mock {
     set_count: AtomicUsize,
 }
 
-#[async_trait(?Send)]
 impl ManualTargets for Mock {
     async fn storage_get(&self) -> Result<Value, ManualTargetsError> {
         self.targets.lock().await.clone().ok_or(ManualTargetsError::MockValueMissing)
