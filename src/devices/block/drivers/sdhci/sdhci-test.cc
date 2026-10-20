@@ -74,6 +74,12 @@ class TestSdhci : public Sdhci {
   void TriggerCardInterrupt() { card_interrupt_ = true; }
   void InjectTransferError() { inject_error_ = true; }
   void InjectCryptoError() { inject_crypto_error_ = true; }
+  InterruptSignalEnable last_interrupt_signal_enable() const {
+    return InterruptSignalEnable::Get().FromValue(last_interrupt_signal_enable_.load());
+  }
+  InterruptStatusEnable last_interrupt_status_enable() const {
+    return InterruptStatusEnable::Get().FromValue(last_interrupt_status_enable_.load());
+  }
 
   zx_status_t BeginIrqAckWait(zx::unowned_interrupt irq) {
     irq_ack_wait_.set_object(irq->get());
@@ -118,6 +124,10 @@ class TestSdhci : public Sdhci {
 
     switch (GetRequestStatus()) {
       case RequestStatus::COMMAND:
+        last_interrupt_signal_enable_ =
+            InterruptSignalEnable::Get().ReadFrom(&*regs_mmio_buffer_).reg_value();
+        last_interrupt_status_enable_ =
+            InterruptStatusEnable::Get().ReadFrom(&*regs_mmio_buffer_).reg_value();
         interrupt_status.set_command_complete(1).WriteTo(&*regs_mmio_buffer_);
         return;
       case RequestStatus::TRANSFER_DATA_DMA:
@@ -167,6 +177,8 @@ class TestSdhci : public Sdhci {
   std::atomic<bool> card_interrupt_ = false;
   std::atomic<bool> inject_error_ = false;
   std::atomic<bool> inject_crypto_error_ = false;
+  std::atomic<uint32_t> last_interrupt_signal_enable_ = 0;
+  std::atomic<uint32_t> last_interrupt_status_enable_ = 0;
   async::WaitMethod<TestSdhci, &TestSdhci::InterruptAck> irq_ack_wait_;
 };
 
@@ -2522,6 +2534,31 @@ TEST_F(SdhciTest, TransferCryptoError) {
   driver_test().runtime().RunUntilIdle();
 
   EXPECT_NE(driver_test().driver()->reset_mask(), 0);
+  EXPECT_EQ(driver_test().driver()->last_interrupt_signal_enable().cqhci_interrupt(), 1u);
+  EXPECT_EQ(driver_test().driver()->last_interrupt_status_enable().cqhci_interrupt(), 1u);
+
+  // A non-crypto request on the same controller should not enable the CQHCI interrupt bit.
+  // Use a command-only request (SEND_STATUS) because inject_crypto_error_ is sticky for DMA data
+  // transfers in the test fixture.
+  fuchsia_hardware_sdmmc::wire::SdmmcReq non_crypto_request = {
+      .cmd_idx = SDMMC_SEND_STATUS,
+      .cmd_flags = SDMMC_SEND_STATUS_FLAGS,
+      .arg = 0,
+      .suppress_error_messages = false,
+      .client_id = 0,
+      .use_inline_crypto = false,
+  };
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(
+          &non_crypto_request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
+  EXPECT_EQ(driver_test().driver()->last_interrupt_signal_enable().cqhci_interrupt(), 0u);
+  EXPECT_EQ(driver_test().driver()->last_interrupt_status_enable().cqhci_interrupt(), 0u);
 
   ASSERT_OK(StopDriver());
 }

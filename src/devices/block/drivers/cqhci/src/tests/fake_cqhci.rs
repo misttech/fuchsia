@@ -111,6 +111,10 @@ impl FakeCqhci {
         self.host.task_handler.fail_next_crypto_gce(count);
     }
 
+    pub fn inject_device_exception_event_next(&self, count: u32) {
+        self.host.task_handler.inject_device_exception_event_next(count);
+    }
+
     pub fn invalidate_crypto_slot(&self, slot: u8) {
         self.host.task_handler.state.lock().valid_crypto_slots.remove(&slot);
     }
@@ -391,6 +395,7 @@ struct FakeHardwareState {
     sd_data: Vec<u32>,
     requests_to_fail: u32,
     requests_to_fail_crypto_gce: u32,
+    requests_to_inject_device_exception_event: u32,
     rpmb_active: bool,
     wake_event: event_listener::Event,
     erase_group_start: Option<u32>,
@@ -662,6 +667,7 @@ impl FakeTaskHandler {
                 sd_data: vec![0; 0x400],
                 requests_to_fail: 0,
                 requests_to_fail_crypto_gce: 0,
+                requests_to_inject_device_exception_event: 0,
                 rpmb_active: false,
                 wake_event: event_listener::Event::new(),
                 erase_group_start: None,
@@ -696,6 +702,10 @@ impl FakeTaskHandler {
 
     fn fail_next_crypto_gce(&self, count: u32) {
         self.state.lock().requests_to_fail_crypto_gce = count;
+    }
+
+    fn inject_device_exception_event_next(&self, count: u32) {
+        self.state.lock().requests_to_inject_device_exception_event = count;
     }
 
     async fn poll(self: &Arc<Self>) {
@@ -952,6 +962,10 @@ impl FakeTaskHandler {
                 terri.set_response_mode_error_fields_valid(true);
                 state.store32(MmioRegionType::Cqhci, CQHCI_CQ_TERRI_OFFSET as usize, terri.0);
             } else {
+                if state.requests_to_inject_device_exception_event > 0 {
+                    state.requests_to_inject_device_exception_event -= 1;
+                    cqhci_irq_status.set_device_exception_event(true);
+                }
                 cqhci_irq_status.set_task_complete(true);
                 let current_tcn = state.load32(MmioRegionType::Cqhci, CQHCI_CQ_TCN_OFFSET as usize);
                 let new_tcn = current_tcn | (1 << task_id);

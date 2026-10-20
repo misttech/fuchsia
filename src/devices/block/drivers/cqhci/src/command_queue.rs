@@ -915,7 +915,6 @@ impl CommandQueueExcl {
         self.halt().await;
         {
             let mut inner = self.inner.lock();
-            inner.disable_interrupts();
             let mut cqcfg =
                 CqhciCqCfgRegister::from_bits_retain(inner.cqhci_mmio.load32(CQHCI_CQ_CFG_OFFSET));
             cqcfg.remove(CqhciCqCfgRegister::CQE_ENABLE);
@@ -936,6 +935,11 @@ impl CommandQueueExcl {
         {
             let mut inner = self.inner.lock();
             inner.disable_interrupts();
+            let cqcfg =
+                CqhciCqCfgRegister::from_bits_retain(inner.cqhci_mmio.load32(CQHCI_CQ_CFG_OFFSET));
+            if !cqcfg.contains(CqhciCqCfgRegister::CQE_ENABLE) {
+                return;
+            }
             let mut ctl =
                 CqhciCqCtlRegister::from_bits_retain(inner.cqhci_mmio.load32(CQHCI_CQ_CTL_OFFSET));
             ctl.insert(CqhciCqCtlRegister::HALT);

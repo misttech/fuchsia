@@ -231,7 +231,7 @@ class Sdhci : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_s
            !(quirks_ & fuchsia_hardware_sdhci::Quirk::kNoDma);
   }
 
-  void EnableInterrupts() TA_REQ(mtx_);
+  void EnableInterrupts(bool enable_cqhci_interrupt) TA_REQ(mtx_);
   void DisableInterrupts() TA_REQ(mtx_);
 
   zx_status_t WaitForInhibit(PresentState mask) const;

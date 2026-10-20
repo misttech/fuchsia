@@ -553,7 +553,6 @@ impl CqhciCqInterruptStatusRegister {
         self.response_error_detected()
             || self.general_crypto_error()
             || self.invalid_crypto_config_error()
-            || self.device_exception_event()
             || self.host_controller_fatal_error()
     }
     pub fn raw(&self) -> u32 {
@@ -583,7 +582,12 @@ impl CqhciCqInterruptStatusEnableRegister {
         Self(0)
     }
     pub fn enabled() -> Self {
-        Self(0xff)
+        let mut this = Self(0xff);
+        // Device Exception Event (R1 bit 6, EXT_CSD[55:54] EXCEPTION_EVENTS_STATUS such as
+        // URGENT_BKOPS) is an informational device notification, not a transfer error. Do not
+        // enable an interrupt for it unless background exception events are handled.
+        this.set_device_exception_event(false);
+        this
     }
     pub fn raw(&self) -> u32 {
         self.0
@@ -612,7 +616,10 @@ impl CqhciCqInterruptSignalEnableRegister {
         Self(0)
     }
     pub fn enabled() -> Self {
-        Self(0xff)
+        let mut this = Self(0xff);
+        // See CqhciCqInterruptStatusEnableRegister::enabled().
+        this.set_device_exception_event(false);
+        this
     }
     pub fn raw(&self) -> u32 {
         self.0

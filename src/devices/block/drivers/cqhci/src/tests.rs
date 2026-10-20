@@ -333,6 +333,30 @@ async fn test_error_recovery() {
 }
 
 #[fuchsia::test]
+async fn test_device_exception_event_ignored() {
+    let (fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    assert!(!sdmmc_spec::CqhciCqInterruptStatusEnableRegister::enabled().device_exception_event());
+    assert!(!sdmmc_spec::CqhciCqInterruptSignalEnableRegister::enabled().device_exception_event());
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+    fixture.inject_device_exception_event_next(2);
+
+    let buf = vec![0x5Au8; 512];
+    block_client.write_at(BufferSlice::from(&buf[..]), 0).await.expect("write failed");
+
+    let mut read_buf = vec![0u8; 512];
+    block_client
+        .read_at(MutableBufferSlice::from(&mut read_buf[..]), 0)
+        .await
+        .expect("read failed");
+    assert_eq!(read_buf, buf);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
 async fn test_crypto_icce_recovery() {
     let (fixture, mut harness) = FakeCqhci::new(None);
     let started_driver = harness.start_driver().await.expect("failed to start driver");

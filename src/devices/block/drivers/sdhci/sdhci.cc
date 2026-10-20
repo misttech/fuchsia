@@ -131,19 +131,25 @@ zx_status_t Sdhci::WaitForReset(const SoftwareReset mask) {
   return ZX_ERR_TIMED_OUT;
 }
 
-void Sdhci::EnableInterrupts() {
+void Sdhci::EnableInterrupts(bool enable_cqhci_interrupt) {
+  // When CQHCI owns the physical IRQ (virtual_irq_ is valid), CQHCI's interrupt handler consumes
+  // the cqhci_interrupt bit in SDHCI_IS and only forwards non-CQHCI interrupts over virtual_irq_,
+  // so SDHCI cannot observe non-queue crypto interrupts (CRNQIS) in that mode and must not re-arm
+  // cqhci_interrupt while CQE is halted/disabled.
+  const uint32_t cqhci_interrupt =
+      (enable_cqhci_interrupt && supports_inline_crypto_ && !virtual_irq_.is_valid()) ? 1 : 0;
   InterruptSignalEnable::Get()
       .FromValue(0)
       .EnableErrorInterrupts()
       .EnableNormalInterrupts()
-      .set_cqhci_interrupt(supports_inline_crypto_ ? 1 : 0)
+      .set_cqhci_interrupt(cqhci_interrupt)
       .set_card_interrupt(interrupt_cb_.is_valid() ? 1 : 0)
       .WriteTo(&*regs_mmio_buffer_);
   InterruptStatusEnable::Get()
       .FromValue(0)
       .EnableErrorInterrupts()
       .EnableNormalInterrupts()
-      .set_cqhci_interrupt(supports_inline_crypto_ ? 1 : 0)
+      .set_cqhci_interrupt(cqhci_interrupt)
       .set_card_interrupt((interrupt_cb_.is_valid() && !card_interrupt_masked_) ? 1 : 0)
       .WriteTo(&*regs_mmio_buffer_);
 }
@@ -318,7 +324,7 @@ void Sdhci::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_st
 
   std::lock_guard<std::mutex> lock(mtx_);
   auto crypto_interrupt_status = CryptoNonQueueInterruptStatus::Get().FromValue(0);
-  if (interrupt_status.cqhci_interrupt() && supports_inline_crypto_) {
+  if (interrupt_status.cqhci_interrupt() && supports_inline_crypto_ && !virtual_irq_.is_valid()) {
     crypto_interrupt_status.ReadFrom(&*regs_cqhci_mmio_buffer_).WriteTo(&*regs_cqhci_mmio_buffer_);
   }
   if (pending_request_ && !pending_request_->request_complete) {
@@ -519,6 +525,7 @@ void Sdhci::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& complet
   InterruptStatusEnable::Get()
       .ReadFrom(&*regs_mmio_buffer_)
       .set_cqhci_interrupt(0)
+      .set_command_complete(1)
       .EnableErrorInterrupts()
       .WriteTo(&*regs_mmio_buffer_);
   // Command complete bit is latched during CQE command transfers, so be sure to clear the interrupt
@@ -669,6 +676,12 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
       if (!supports_inline_crypto_) {
         return zx::error(ZX_ERR_NOT_SUPPORTED);
       }
+      if (virtual_irq_.is_valid()) {
+        // When CQHCI owns the physical IRQ, it consumes cqhci_interrupt and only forwards
+        // non-CQHCI interrupts over virtual_irq_, so non-queue inline crypto errors (CRNQIS)
+        // cannot be detected by SDHCI.
+        return zx::error(ZX_ERR_BAD_STATE);
+      }
       CryptoNonQueueParameters::Get()
           .FromValue(0)
           .set_crypto_config_idx(request.slot)
@@ -794,7 +807,7 @@ zx::result<Sdhci::PendingRequest> Sdhci::StartRequest(
   InterruptStatus::Get().FromValue(irq_mask.reg_value()).WriteTo(&*regs_mmio_buffer_);
 
   // Unmask and enable interrupts
-  EnableInterrupts();
+  EnableInterrupts(request.use_inline_crypto);
 
   // Start command
   transfer_mode.WriteTo(&*regs_mmio_buffer_);
