@@ -16,7 +16,7 @@ use core::ops::DerefMut;
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use netstack3_base::Inspector;
-use netstack3_base::sync::Mutex;
+use netstack3_base::sync::{BindingsSyncTypes, Mutex};
 use netstack3_hashmap::HashMap;
 
 /// A change that occurred on an [`AcceptQueue`].
@@ -46,12 +46,14 @@ pub trait ListenerNotifier {
 /// [`AcceptQueue`] implements all necessary locking internally and can be
 /// safely shared between a listener and the connected sockets generated from
 /// it.
-#[derive(Debug, Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct AcceptQueue<S, R, N>(Arc<Mutex<AcceptQueueInner<S, R, N>>>);
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Debug(bound = "S: Debug, R: Debug, N: Debug"))]
+pub struct AcceptQueue<S, R, N, BT: BindingsSyncTypes>(
+    Arc<Mutex<AcceptQueueInner<S, R, N>, BT::Mutex>>,
+);
 
 #[cfg(test)]
-impl<S, R, N> PartialEq for AcceptQueue<S, R, N>
+impl<S, R, N, BT: BindingsSyncTypes> PartialEq for AcceptQueue<S, R, N, BT>
 where
     AcceptQueueInner<S, R, N>: PartialEq,
 {
@@ -67,7 +69,7 @@ where
 }
 
 #[cfg(test)]
-impl<S, R, N> Eq for AcceptQueue<S, R, N> where Self: PartialEq {}
+impl<S, R, N, BT: BindingsSyncTypes> Eq for AcceptQueue<S, R, N, BT> where Self: PartialEq {}
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
@@ -88,7 +90,7 @@ struct AcceptQueueInner<S, R, N> {
     notifier: Option<N>,
 }
 
-impl<S, R, N> AcceptQueue<S, R, N>
+impl<S, R, N, BT: BindingsSyncTypes> AcceptQueue<S, R, N, BT>
 where
     S: Hash + Clone + Eq + PartialEq + Debug,
     N: ListenerNotifier,
@@ -165,7 +167,7 @@ where
     /// notifier.
     ///
     /// Panics if the queue is already closed.
-    pub(crate) fn close(&self) -> (impl Iterator<Item = S> + use<S, R, N>, N) {
+    pub(crate) fn close(&self) -> (impl Iterator<Item = S> + use<S, R, N, BT>, N) {
         self.lock().close()
     }
 

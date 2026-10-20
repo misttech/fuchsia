@@ -279,10 +279,11 @@ pub(crate) mod testutil {
     use core::cmp;
 
     use either::Either;
-    use netstack3_base::sync::Mutex;
     use netstack3_base::{FragmentedPayload, PayloadLen, WindowSize};
 
     use crate::internal::socket::accept_queue::{AcceptQueueChange, ListenerNotifier};
+
+    type Mutex<T> = netstack3_base::sync::Mutex<T, netstack3_base::sync::lock_impl::RawMutex>;
 
     /// A circular buffer implementation.
     ///

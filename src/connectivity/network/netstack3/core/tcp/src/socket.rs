@@ -50,7 +50,7 @@ use netstack3_base::socket::{
     SocketZonedAddrExt as _, UpdateSharingError,
 };
 use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged as _};
-use netstack3_base::sync::{Mutex, RwLock};
+use netstack3_base::sync::{BindingsSyncTypes, Mutex, RwLock};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter as _, ContextPair, Control, CoreTimerContext,
     CoreTxMetadataContext, CtxPair, DeferredResourceRemovalContext, DeviceIdContext,
@@ -174,6 +174,7 @@ pub trait DualStackBaseIpExt:
             TcpSocketId<Self, D, BT>,
             BT::ReturnedBuffers,
             BT::ListenerNotifierOrProvidedBuffers,
+            BT,
         >,
     >
     where
@@ -244,6 +245,7 @@ impl DualStackBaseIpExt for Ipv4 {
             TcpSocketId<Self, D, BT>,
             BT::ReturnedBuffers,
             BT::ListenerNotifierOrProvidedBuffers,
+            BT,
         >,
     > {
         &mut conn.accept_queue
@@ -351,6 +353,7 @@ impl DualStackBaseIpExt for Ipv6 {
             TcpSocketId<Self, D, BT>,
             BT::ReturnedBuffers,
             BT::ListenerNotifierOrProvidedBuffers,
+            BT,
         >,
     > {
         match conn_and_addr {
@@ -471,7 +474,12 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 /// +-------------------------------+
 
 pub trait TcpBindingsTypes:
-    InstantBindingsTypes + TimerBindingsTypes + TxMetadataBindingsTypes + MatcherBindingsTypes + 'static
+    InstantBindingsTypes
+    + TimerBindingsTypes
+    + TxMetadataBindingsTypes
+    + MatcherBindingsTypes
+    + BindingsSyncTypes
+    + 'static
 {
     /// Receive buffer used by TCP.
     type ReceiveBuffer: ReceiveBuffer + Send + Sync;
@@ -1602,16 +1610,16 @@ pub struct DemuxState<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBinding
 
 /// Holds all the TCP socket states.
 pub struct Sockets<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> {
-    demux: RwLock<DemuxState<I, D, BT>>,
+    demux: RwLock<DemuxState<I, D, BT>, BT::RwLock>,
     // Destroy all_sockets last so the strong references in the demux are
     // dropped before the primary references in the set.
-    all_sockets: RwLock<TcpSocketSet<I, D, BT>>,
+    all_sockets: RwLock<TcpSocketSet<I, D, BT>, BT::RwLock>,
 }
 
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     OrderedLockAccess<DemuxState<I, D, BT>> for Sockets<I, D, BT>
 {
-    type Lock = RwLock<DemuxState<I, D, BT>>;
+    type Lock = RwLock<DemuxState<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.demux)
     }
@@ -1620,7 +1628,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     OrderedLockAccess<TcpSocketSet<I, D, BT>> for Sockets<I, D, BT>
 {
-    type Lock = RwLock<TcpSocketSet<I, D, BT>>;
+    type Lock = RwLock<TcpSocketSet<I, D, BT>, BT::RwLock>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.all_sockets)
     }
@@ -1632,7 +1640,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 pub struct ReferenceState<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> {
     // TCP state doesn't have a meaningful difference between readers and
     // writers to justify an RwLock, so we use a simple lock.
-    locked_state: Mutex<TcpSocketState<I, D, BT>>,
+    locked_state: Mutex<TcpSocketState<I, D, BT>, BT::Mutex>,
     counters: TcpCountersWithSocket<I>,
 }
 
@@ -1750,6 +1758,7 @@ pub struct Connection<
             TcpSocketId<SockI, D, BT>,
             BT::ReturnedBuffers,
             BT::ListenerNotifierOrProvidedBuffers,
+            BT,
         >,
     >,
     state: State<
@@ -1816,6 +1825,7 @@ pub struct Listener<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsT
         TcpSocketId<I, D, BT>,
         BT::ReturnedBuffers,
         BT::ListenerNotifierOrProvidedBuffers,
+        BT,
     >,
     buffer_sizes: BufferSizes,
     // If ip sockets can be half-specified so that only the local address
@@ -2018,7 +2028,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> WeakTcpSo
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     OrderedLockAccess<TcpSocketState<I, D, BT>> for TcpSocketId<I, D, BT>
 {
-    type Lock = Mutex<TcpSocketState<I, D, BT>>;
+    type Lock = Mutex<TcpSocketState<I, D, BT>, BT::Mutex>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         let Self(rc) = self;
         OrderedLockRef::new(&rc.locked_state)
@@ -5821,7 +5831,7 @@ mod tests {
     use net_declare::{net_ip_v4, net_ip_v6};
     use net_types::ip::{Ip, IpAddr, IpVersion, Ipv4, Ipv4SourceAddr, Ipv6, Ipv6SourceAddr, Mtu};
     use net_types::{LinkLocalAddr, Witness};
-    use netstack3_base::sync::{DynDebugReferences, Mutex};
+    use netstack3_base::sync::DynDebugReferences;
     use netstack3_base::testutil::{
         AlwaysDefaultsSettingsContext, FakeAtomicInstant, FakeCoreCtx, FakeCryptoRng, FakeDeviceId,
         FakeInstant, FakeNetwork, FakeNetworkSpec, FakeStrongDeviceId, FakeTimerCtx, FakeTimerId,
@@ -6077,6 +6087,14 @@ mod tests {
     pub(crate) struct TcpBindingsCtx<D: FakeStrongDeviceId> {
         rng: FakeCryptoRng,
         timers: FakeTimerCtx<TcpTimerId<D::Weak, Self>>,
+    }
+
+    type Mutex<T> = netstack3_base::sync::Mutex<T, netstack3_base::sync::lock_impl::RawMutex>;
+
+    impl<D: FakeStrongDeviceId> BindingsSyncTypes for TcpBindingsCtx<D> {
+        type Mutex = netstack3_base::sync::lock_impl::RawMutex;
+        type RwLock = netstack3_base::sync::lock_impl::RawRwLock;
+        type Once = netstack3_base::sync::lock_impl::Once;
     }
 
     impl<D: FakeStrongDeviceId> ContextProvider for TcpBindingsCtx<D> {
