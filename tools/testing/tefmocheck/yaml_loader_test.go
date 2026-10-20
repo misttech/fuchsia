@@ -214,6 +214,16 @@ func TestFastbootAndHealthCheckOrdering(t *testing.T) {
 			log:      "2026-10-16 21:55:00.000000 botanist: run.go:919: botanist ERROR: botanist failed: failed to reconnect to target: failed to resolve IP: context deadline exceeded\n",
 			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/botanist_ERROR:_failed_to_reconnect_to_target",
 		},
+		{
+			name:     "could_not_resolve_target_ip_address_before_botanist_failed",
+			log:      "2026-10-17 17:19:50.123456 botanist: run.go:938: botanist ERROR: botanist failed: could not resolve target IP address for fuchsia-5254-0063-5e7a: context deadline exceeded after 14m0.002325799s\n",
+			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/botanist_ERROR:_could_not_resolve_target_IP_address",
+		},
+		{
+			name:     "cannot_connect_to_address_before_botanist_failed",
+			log:      "2026-10-17 07:06:18.654321 botanist: run.go:938: botanist ERROR: botanist failed: cannot connect to address \"192.168.42.18:22\": ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain\n",
+			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/botanist_ERROR:_cannot_connect_to_address",
+		},
 	}
 
 	for _, tc := range tests {

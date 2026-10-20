@@ -698,6 +698,11 @@ failure_mode_checks:
   string: "botanist ERROR: timed out trying to connect to ssh"
   log_types: ["swarmingOutputType"]
 
+# For https://fxbug.dev/527997914.
+- kind: "string_in_log"
+  string: "botanist ERROR: cannot connect to address"
+  log_types: ["swarmingOutputType"]
+
 # For https://fxbug.dev/42139705.
 - kind: "string_in_log"
   string: "syslog: context cancelled while trying to reconnect over SSH"

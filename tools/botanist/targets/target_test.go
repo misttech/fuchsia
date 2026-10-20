@@ -6,11 +6,14 @@ package targets
 
 import (
 	"context"
+	"errors"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"go.fuchsia.dev/fuchsia/tools/botanist/constants"
 )
 
 func TestAddressLogic(t *testing.T) {
@@ -218,5 +221,25 @@ func TestParseFFXForwardTarget(t *testing.T) {
 				t.Errorf("parseFFXForwardTarget(%q) = %q, want %q", test.line, got, test.want)
 			}
 		})
+	}
+}
+
+func TestResolveIPWrapsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	target := &genericFuchsiaTarget{
+		targetCtx: ctx,
+		nodename:  "fuchsia-test-node",
+	}
+	err := target.ResolveIP()
+	if err == nil {
+		t.Fatal("expected error from ResolveIP with canceled context, got nil")
+	}
+	wantPrefix := constants.FailedToResolveIPErrorMsg + " for fuchsia-test-node:"
+	if !strings.HasPrefix(err.Error(), wantPrefix) {
+		t.Errorf("ResolveIP() error = %q, want prefix %q", err.Error(), wantPrefix)
+	}
+	if errors.Unwrap(err) == nil {
+		t.Errorf("ResolveIP() error is not wrapped: %v", err)
 	}
 }

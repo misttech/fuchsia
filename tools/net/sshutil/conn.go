@@ -122,7 +122,7 @@ func connect(ctx context.Context, resolver Resolver, config *ssh.ClientConfig, b
 		duration := time.Now().Sub(startTime).Truncate(time.Second)
 		return nil, ConnectionError{fmt.Errorf("%s after %v: %w", constants.TimedOutConnectingMsg, duration, err)}
 	} else if err != nil {
-		return nil, ConnectionError{fmt.Errorf("cannot connect to address %q: %w", addr, err)}
+		return nil, ConnectionError{fmt.Errorf("%s %q: %w", constants.CannotConnectToAddressMsg, addr, err)}
 	}
 
 	c := Conn{

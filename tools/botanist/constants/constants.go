@@ -7,6 +7,7 @@ package constants
 const (
 	FailedToStartTargetMsg         = "start target error"
 	ReadConfigFileErrorMsg         = "could not open config file"
+	FailedToResolveIPErrorMsg      = "could not resolve target IP address"
 	SerialReadErrorMsg             = "error reading serial log line"
 	CommandExceededTimeoutMsg      = "Command exceeded timeout"
 	FailedToServeMsg               = "[package server] failed to serve"

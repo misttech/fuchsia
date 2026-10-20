@@ -6,6 +6,7 @@ package constants
 
 const (
 	TimedOutConnectingMsg      = "timed out trying to connect to ssh"
+	CannotConnectToAddressMsg  = "cannot connect to address"
 	ProcessTerminatedMsg       = "process terminated with abnormal return code url=fuchsia-pkg://fuchsia.com/sshd-host#meta/sshd.cm"
 	FailedToStartSshSessionMsg = "failed to start ssh session"
 )

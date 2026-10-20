@@ -270,7 +270,7 @@ func (t *genericFuchsiaTarget) ResolveIP() error {
 	defer cancel()
 	ipv4, ipv6, err := ResolveIP(ctx, t.nodename)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s for %s: %w", constants.FailedToResolveIPErrorMsg, t.nodename, err)
 	}
 	t.ipv4 = ipv4
 	t.ipv6 = &ipv6
