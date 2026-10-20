@@ -69,16 +69,16 @@ async fn main() -> Result<(), Error> {
     let pager = Arc::new(kernel_manager::pager::Pager::new()?);
     pager.start_threads();
 
-    match fuchsia_component::client::connect_to_protocol::<fattribution::PageRefaultSinkMarker>() {
-        Ok(sink) => match pager.page_refault_counter().readonly_vmo() {
+    match fuchsia_component::client::connect_to_protocol::<fattribution::PagerStatsSinkMarker>() {
+        Ok(sink) => match pager.page_fault_counter().readonly_vmo() {
             Ok(vmo) => {
-                if let Err(e) = sink.send_page_refault_count(vmo) {
-                    info!(e:%; "Failed to send page refault VMO to PageRefaultSink");
+                if let Err(e) = sink.send_pager_stats(vmo) {
+                    info!(e:%; "Failed to send pager stats VMO to PagerStatsSink");
                 }
             }
-            Err(e) => info!(e:%; "Failed to duplicate page refault VMO"),
+            Err(e) => info!(e:%; "Failed to duplicate pager stats VMO"),
         },
-        Err(e) => info!(e:%; "Failed to connect to PageRefaultSink"),
+        Err(e) => info!(e:%; "Failed to connect to PagerStatsSink"),
     }
 
     let suspend_context_for_loop = suspend_context.clone();

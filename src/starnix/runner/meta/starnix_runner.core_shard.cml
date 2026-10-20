@@ -136,7 +136,7 @@
             source_availability: "unknown",
         },
         {
-            protocol: [ "fuchsia.memory.attribution.PageRefaultSink" ],
+            protocol: [ "fuchsia.memory.attribution.PagerStatsSink" ],
             from: "#memory_monitor2",
             to: "#starnix_runner",
             availability: "optional",

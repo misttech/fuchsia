@@ -14,7 +14,7 @@
     capabilities: [
         {
             protocol: [
-                "fuchsia.memory.attribution.PageRefaultSink",
+                "fuchsia.memory.attribution.PagerStatsSink",
                 "fuchsia.memory.attribution.plugin.MemoryMonitor",
             ],
         },
@@ -61,7 +61,7 @@
             from: "self",
         },
         {
-            protocol: [ "fuchsia.memory.attribution.PageRefaultSink" ],
+            protocol: [ "fuchsia.memory.attribution.PagerStatsSink" ],
             from: "self",
         },
     ],

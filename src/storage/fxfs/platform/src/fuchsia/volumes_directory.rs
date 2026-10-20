@@ -33,7 +33,7 @@ use fxfs::object_store::{
 };
 use fxfs_crypto::Crypt;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
-use refaults_vmo::PageRefaultCounter;
+use refaults_vmo::PageFaultCounter;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
@@ -58,7 +58,7 @@ pub struct VolumesDirectory {
     mounted_volumes: futures::lock::Mutex<HashMap<u64, MountedVolume>>,
     inspect_tree: Weak<FsInspectTree>,
     mem_monitor: Option<MemoryPressureMonitor>,
-    blob_resupplied_count: Arc<PageRefaultCounter>,
+    page_fault_counter: Arc<PageFaultCounter>,
     // The state of profile recordings. Should be locked *after* mounted_volumes.
     profiling_state: futures::lock::Mutex<Option<ProfileState>>,
 
@@ -234,7 +234,7 @@ impl MountedVolumesGuard<'_> {
             store,
             unique_id.koid().unwrap().raw_koid(),
             name.to_owned(),
-            self.volumes_directory.blob_resupplied_count.clone(),
+            self.volumes_directory.page_fault_counter.clone(),
             self.volumes_directory.memory_pressure_config,
         )
         .await?;
@@ -388,7 +388,7 @@ impl VolumesDirectory {
         root_volume: RootVolume,
         inspect_tree: Weak<FsInspectTree>,
         mem_monitor: Option<MemoryPressureMonitor>,
-        blob_resupplied_count: Arc<PageRefaultCounter>,
+        page_fault_counter: Arc<PageFaultCounter>,
         memory_pressure_config: MemoryPressureConfig,
     ) -> Result<Arc<Self>, Error> {
         let layer_set = root_volume.volume_directory().store().tree().layer_set();
@@ -399,7 +399,7 @@ impl VolumesDirectory {
             mounted_volumes: futures::lock::Mutex::new(HashMap::default()),
             inspect_tree,
             mem_monitor,
-            blob_resupplied_count,
+            page_fault_counter,
             profiling_state: futures::lock::Mutex::new(None),
             pager_dirty_bytes_count: PagerDirtyByteCount::new(),
             max_dirty_bytes_when_critical: AtomicU64::new(zx::system_get_physmem() / 100),
@@ -1271,7 +1271,7 @@ mod tests {
     use fxfs::object_store::{AttributeId, AttributeKey, ObjectDescriptor, ObjectKey, ObjectValue};
     use fxfs_crypto::Crypt;
     use fxfs_insecure_crypto::new_insecure_crypt;
-    use refaults_vmo::PageRefaultCounter;
+    use refaults_vmo::PageFaultCounter;
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
     use std::time::Duration;
@@ -1316,13 +1316,13 @@ mod tests {
     async fn test_volume_creation() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1348,13 +1348,13 @@ mod tests {
         let device = filesystem.take_device().await;
         device.reopen(false);
         let filesystem = FxFilesystem::open(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1377,13 +1377,13 @@ mod tests {
     async fn test_dirty_pages_accumulate_in_parent() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1431,13 +1431,13 @@ mod tests {
     async fn test_volume_reopen() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1463,13 +1463,13 @@ mod tests {
         let device = filesystem.take_device().await;
         device.reopen(false);
         let filesystem = FxFilesystem::open(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1492,13 +1492,13 @@ mod tests {
     async fn test_volume_creation_unencrypted() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1518,13 +1518,13 @@ mod tests {
         let device = filesystem.take_device().await;
         device.reopen(false);
         let filesystem = FxFilesystem::open(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1546,13 +1546,13 @@ mod tests {
     async fn test_volume_reopen_unencrypted() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1572,13 +1572,13 @@ mod tests {
         let device = filesystem.take_device().await;
         device.reopen(false);
         let filesystem = FxFilesystem::open(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1601,13 +1601,13 @@ mod tests {
     async fn test_volume_enumeration() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1641,13 +1641,13 @@ mod tests {
         let device = filesystem.take_device().await;
         device.reopen(false);
         let filesystem = FxFilesystem::open(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1691,13 +1691,13 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         let root_volume = root_volume(filesystem.clone()).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume,
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1728,13 +1728,13 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1767,13 +1767,13 @@ mod tests {
     async fn test_mount_volume_using_volume_protocol() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -1885,13 +1885,13 @@ mod tests {
     async fn test_volume_dir_races() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -2046,13 +2046,13 @@ mod tests {
     async fn test_shutdown_volume() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -2085,13 +2085,13 @@ mod tests {
     async fn test_volume_debug_clear_caches() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -2193,13 +2193,13 @@ mod tests {
         let mut device = DeviceHolder::new(FakeDevice::new(8192, 512));
         {
             let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-            let blob_resupplied_count =
-                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let page_fault_counter =
+                Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
-                blob_resupplied_count,
+                page_fault_counter,
                 MemoryPressureConfig::default(),
             )
             .await
@@ -2237,13 +2237,13 @@ mod tests {
         {
             let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
             fsck(filesystem.clone()).await.expect("Fsck");
-            let blob_resupplied_count =
-                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let page_fault_counter =
+                Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
-                blob_resupplied_count,
+                page_fault_counter,
                 MemoryPressureConfig::default(),
             )
             .await
@@ -2323,13 +2323,13 @@ mod tests {
         const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         let device = DeviceHolder::new(FakeDevice::new(8192, BLOCK_SIZE.get() as u32));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -2409,13 +2409,13 @@ mod tests {
         const BLOCK_COUNT: u64 = 8192;
         let device = DeviceHolder::new(FakeDevice::new(BLOCK_COUNT, BLOCK_SIZE.get() as u32));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -2514,13 +2514,13 @@ mod tests {
         let device = {
             let device = DeviceHolder::new(FakeDevice::new(8192, 512));
             let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-            let blob_resupplied_count =
-                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let page_fault_counter =
+                Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
-                blob_resupplied_count,
+                page_fault_counter,
                 MemoryPressureConfig::default(),
             )
             .await
@@ -2560,13 +2560,13 @@ mod tests {
         device.reopen(false);
         let device = {
             let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
-            let blob_resupplied_count =
-                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let page_fault_counter =
+                Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
-                blob_resupplied_count,
+                page_fault_counter,
                 MemoryPressureConfig::default(),
             )
             .await
@@ -2623,13 +2623,13 @@ mod tests {
         device.reopen(false);
         let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
         {
-            let blob_resupplied_count =
-                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let page_fault_counter =
+                Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
-                blob_resupplied_count,
+                page_fault_counter,
                 MemoryPressureConfig::default(),
             )
             .await
@@ -2700,13 +2700,13 @@ mod tests {
     async fn test_profile_stop() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -2738,13 +2738,13 @@ mod tests {
     async fn test_delete_profile() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -3346,13 +3346,13 @@ mod tests {
     async fn test_delete_volume_while_flushing() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -3500,13 +3500,13 @@ mod tests {
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         let store_id;
         {
-            let blob_resupplied_count =
-                Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+            let page_fault_counter =
+                Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
-                blob_resupplied_count,
+                page_fault_counter,
                 MemoryPressureConfig::default(),
             )
             .await
@@ -3727,15 +3727,15 @@ mod tests {
     async fn test_create_with_low_32_bit_ids() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
 
         {
             let volumes_directory = VolumesDirectory::new(
                 root_volume(filesystem.clone()).await.unwrap(),
                 Weak::new(),
                 None,
-                blob_resupplied_count,
+                page_fault_counter,
                 MemoryPressureConfig::default(),
             )
             .await
@@ -3787,13 +3787,13 @@ mod tests {
         let device = filesystem.take_device().await;
         device.reopen(false);
         let filesystem = FxFilesystem::open(device).await.unwrap();
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await
@@ -3841,12 +3841,12 @@ mod tests {
     async fn test_race_unmount_and_flush_with_crypt_error() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let blob_resupplied_count = Arc::new(PageRefaultCounter::new().unwrap());
+        let page_fault_counter = Arc::new(PageFaultCounter::new().unwrap());
         let volumes_directory = VolumesDirectory::new(
             root_volume(filesystem.clone()).await.unwrap(),
             Weak::new(),
             None,
-            blob_resupplied_count,
+            page_fault_counter,
             MemoryPressureConfig::default(),
         )
         .await

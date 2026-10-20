@@ -6,10 +6,10 @@ use fuchsia_async::{Interval, MonotonicDuration};
 use fuchsia_trace::{category_enabled, counter};
 use fuchsia_trace_observer::TraceObserver;
 use futures::future::FutureExt;
-use futures::{StreamExt, select};
+use futures::{StreamExt, select, try_join};
 use log::debug;
 use stalls::StallProvider;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use std::ffi::CStr;
 
 const CATEGORY_MEMORY_KERNEL: &'static CStr = c"memory:kernel";
@@ -23,7 +23,7 @@ const SAMPLE_INTERVAL: MonotonicDuration = MonotonicDuration::from_millis(200);
 pub async fn serve_forever(
     kernel_stats: impl fidl_fuchsia_kernel::StatsProxyInterface + Send + 'static,
     stall_provider: impl StallProvider + Send + 'static,
-    page_refault_tracker: impl RefaultProvider + Send + 'static,
+    page_fault_tracker: impl PageFaultProvider + Send + 'static,
 ) {
     let (tx, rx) = futures::channel::oneshot::channel::<()>();
     std::thread::Builder::new()
@@ -33,7 +33,7 @@ pub async fn serve_forever(
             executor.run_singlethreaded(serve_forever_loop(
                 kernel_stats,
                 stall_provider,
-                page_refault_tracker,
+                page_fault_tracker,
             ));
             // The task failed, send a message.
             let _ = tx.send(());
@@ -47,7 +47,7 @@ pub async fn serve_forever(
 pub async fn serve_forever_loop(
     kernel_stats: impl fidl_fuchsia_kernel::StatsProxyInterface,
     stall_provider: impl StallProvider,
-    page_refault_tracker: impl RefaultProvider,
+    page_fault_tracker: impl PageFaultProvider,
 ) {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
     fuchsia_trace_provider::trace_provider_wait_for_init();
@@ -59,7 +59,7 @@ pub async fn serve_forever_loop(
             if let Err(err) = publish_one_sample(
                 &kernel_stats,
                 stall_provider.clone(),
-                page_refault_tracker.clone(),
+                page_fault_tracker.clone(),
             )
             .await
             {
@@ -80,10 +80,11 @@ pub async fn serve_forever_loop(
 async fn publish_one_sample(
     kernel_stats: &impl fidl_fuchsia_kernel::StatsProxyInterface,
     stall_provider: impl StallProvider,
-    page_refault_tracker: impl RefaultProvider,
+    page_fault_tracker: impl PageFaultProvider,
 ) -> Result<()> {
     debug!("Publish trace records for category {:?}", CATEGORY_MEMORY_KERNEL);
-    let mem_stats = kernel_stats.get_memory_stats().await?;
+    let (mem_stats, cmp_stats) =
+        try_join!(kernel_stats.get_memory_stats(), kernel_stats.get_memory_stats_compression(),)?;
     // Statistics are split into two records to comply with the 15-argument limit.
     counter!(CATEGORY_MEMORY_KERNEL, c"kmem_stats_a",0,
         "total_bytes"=>mem_stats.total_bytes.unwrap_or_default(),
@@ -108,7 +109,6 @@ async fn publish_one_sample(
         "vmo_discardable_locked_bytes"=>mem_stats.vmo_discardable_locked_bytes.unwrap_or_default(),
         "vmo_discardable_unlocked_bytes"=>mem_stats.vmo_discardable_unlocked_bytes.unwrap_or_default()
     );
-    let cmp_stats = kernel_stats.get_memory_stats_compression().await?;
     counter!(CATEGORY_MEMORY_KERNEL, c"kmem_stats_compression", 0,
         "uncompressed_storage_bytes"=>cmp_stats.uncompressed_storage_bytes.unwrap_or_default(),
         "compressed_storage_bytes"=>cmp_stats.compressed_storage_bytes.unwrap_or_default(),
@@ -140,13 +140,18 @@ async fn publish_one_sample(
         );
     }
 
+    // Both `page_refaults` and `page_faults` are reported by userspace pager components, and count
+    // the number of pages supplied by user pagers including readahead. `page_faults` counts all
+    // pages supplied (major faults), whereas `page_refaults` counts the subset of pages supplied
+    // that had previously been supplied and evicted.
     let stall_info = stall_provider.get_stall_info()?;
     counter!(
         CATEGORY_MEMORY_KERNEL,
         c"memory_stall",0,
         "stall_time_some_ns"=>u64::try_from(stall_info.some.as_nanos())?,
         "stall_time_full_ns"=>u64::try_from(stall_info.full.as_nanos())?,
-        "page_refaults"=>page_refault_tracker.get_count()
+        "page_refaults"=>page_fault_tracker.get_refault_count(),
+        "page_faults"=>page_fault_tracker.get_fault_count()
     );
 
     Ok(())

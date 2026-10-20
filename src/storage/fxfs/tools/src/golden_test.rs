@@ -28,7 +28,7 @@ use fxfs_make_blob_image::BLOB_VOLUME_NAME;
 use fxfs_platform::fuchsia::fxblob::BlobDirectory;
 use fxfs_platform::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig};
 use fxfs_platform::fuchsia::volumes_directory::VolumesDirectory;
-use refaults_vmo::PageRefaultCounter;
+use refaults_vmo::PageFaultCounter;
 use std::path::Path;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
@@ -409,7 +409,7 @@ async fn check_image(path: &Path) -> Result<(), Error> {
             root_volume(fs.clone()).await.expect("Root volume creation"),
             Weak::new(),
             None,
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter")),
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter")),
             MemoryPressureConfig::default(),
         )
         .await
@@ -467,7 +467,7 @@ async fn check_image(path: &Path) -> Result<(), Error> {
             root_volume(fs.clone()).await.expect("Root volume creation"),
             Weak::new(),
             None,
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter")),
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter")),
             MemoryPressureConfig::default(),
         )
         .await

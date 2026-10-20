@@ -8,7 +8,7 @@ use fuchsia_inspect::Node;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use memory_metrics_registry::cobalt_registry;
 use serde::Deserialize;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use zx::MonotonicInstant;
 
 pub const DEFAULT_POLLING_INTERVAL_SECONDS: u64 = 60;
@@ -47,20 +47,20 @@ fn parse_config<R: std::io::Read>(reader: R) -> ThrashingConfig {
     serde_json::from_reader(reader).unwrap_or_default()
 }
 
-pub struct ThrashingDetector<P: RefaultProvider> {
+pub struct ThrashingDetector<P: PageFaultProvider> {
     config: ThrashingConfig,
     _events_node_parent: Node,
     events_node: BoundedListNode,
-    refault_provider: P,
+    page_fault_provider: P,
     metric_logger: fmetrics::MetricEventLoggerProxy,
     last_refaults: Option<u64>,
 }
 
-impl<P: RefaultProvider> ThrashingDetector<P> {
+impl<P: PageFaultProvider> ThrashingDetector<P> {
     pub fn new(
         config: ThrashingConfig,
         node: Node,
-        refault_provider: P,
+        page_fault_provider: P,
         metric_logger: fmetrics::MetricEventLoggerProxy,
     ) -> Self {
         // Create a bounded list node to store the last 50 thrashing events.
@@ -74,14 +74,14 @@ impl<P: RefaultProvider> ThrashingDetector<P> {
             config,
             _events_node_parent: node,
             events_node,
-            refault_provider,
+            page_fault_provider,
             metric_logger,
             last_refaults: None,
         }
     }
 
     pub async fn run_one_iteration(&mut self) -> Result<()> {
-        let current_refaults = self.refault_provider.get_count();
+        let current_refaults = self.page_fault_provider.get_refault_count();
 
         if let Some(last) = self.last_refaults {
             // Calculate deltas
@@ -116,13 +116,17 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[derive(Clone)]
-    struct MockRefaultProvider {
+    struct MockPageFaultProvider {
         count: Arc<AtomicU64>,
     }
 
-    impl RefaultProvider for MockRefaultProvider {
-        fn get_count(&self) -> u64 {
+    impl PageFaultProvider for MockPageFaultProvider {
+        fn get_refault_count(&self) -> u64 {
             self.count.load(Ordering::Relaxed)
+        }
+
+        fn get_fault_count(&self) -> u64 {
+            0
         }
     }
 
@@ -141,7 +145,7 @@ mod tests {
         let config = ThrashingConfig { polling_interval_seconds: 60, page_refault_threshold: 100 };
 
         let refaults = Arc::new(AtomicU64::new(0));
-        let provider = MockRefaultProvider { count: refaults.clone() };
+        let provider = MockPageFaultProvider { count: refaults.clone() };
 
         let (metric_event_logger, mut metric_event_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();
@@ -203,7 +207,7 @@ mod tests {
         let config = ThrashingConfig { polling_interval_seconds: 60, page_refault_threshold: 100 };
 
         let refaults = Arc::new(AtomicU64::new(0));
-        let provider = MockRefaultProvider { count: refaults.clone() };
+        let provider = MockPageFaultProvider { count: refaults.clone() };
 
         let (metric_event_logger, mut metric_event_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();

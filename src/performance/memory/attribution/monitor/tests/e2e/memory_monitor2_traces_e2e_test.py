@@ -85,6 +85,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         for event in events:
             if event.name == "memory_stall":
                 asserts.assert_in("page_refaults", event.args.keys())
+                asserts.assert_in("page_faults", event.args.keys())
 
 
 if __name__ == "__main__":

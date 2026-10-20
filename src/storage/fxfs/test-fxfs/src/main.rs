@@ -29,7 +29,7 @@ use fxfs_platform::component::new_block_client;
 use fxfs_platform::fuchsia::RemoteCrypt;
 use fxfs_platform::volume::MemoryPressureConfig;
 use fxfs_platform::volumes_directory::VolumesDirectory;
-use refaults_vmo::PageRefaultCounter;
+use refaults_vmo::PageFaultCounter;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
@@ -348,8 +348,8 @@ async fn main() -> Result<(), Error> {
             .into(),
     ));
 
-    let blob_resupplied_count =
-        Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+    let page_fault_counter =
+        Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
 
     let mut mp_config = MemoryPressureConfig::default();
     mp_config.mem_normal.cache_size_limit = config.dirent_cache_limit as usize;
@@ -360,7 +360,7 @@ async fn main() -> Result<(), Error> {
         root_volume(filesystem.clone()).await.context("root_volume failed")?,
         Weak::new(),
         None,
-        blob_resupplied_count,
+        page_fault_counter,
         mp_config,
     )
     .await

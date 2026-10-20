@@ -24,7 +24,7 @@ use fxfs::object_store::{NewChildStoreOptions, StoreOptions};
 use fxfs_crypt_common::CryptBase;
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
-use refaults_vmo::PageRefaultCounter;
+use refaults_vmo::PageFaultCounter;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
@@ -113,8 +113,8 @@ impl TestFixture {
         let mem_pressure = MemoryPressureMonitor::try_from(watcher_server)
             .expect("Failed to create MemoryPressureMonitor");
 
-        let blob_resupplied_count =
-            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let page_fault_counter =
+            Arc::new(PageFaultCounter::new().expect("Failed to create PageFaultCounter"));
         let volume_name = if options.as_blob { "blob" } else { "vol" };
         let (filesystem, volume, volumes_directory) = if options.format {
             let mut builder = FxFilesystemBuilder::new()
@@ -144,7 +144,7 @@ impl TestFixture {
                 root_volume,
                 Weak::new(),
                 Some(mem_pressure),
-                blob_resupplied_count.clone(),
+                page_fault_counter.clone(),
                 MemoryPressureConfig::default(),
             )
             .await
@@ -155,7 +155,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     volume_name.to_owned(),
-                    blob_resupplied_count.clone(),
+                    page_fault_counter.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )
                 .await
@@ -166,7 +166,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     volume_name.to_owned(),
-                    blob_resupplied_count.clone(),
+                    page_fault_counter.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )
                 .await
@@ -195,7 +195,7 @@ impl TestFixture {
                 root_volume,
                 Weak::new(),
                 Some(mem_pressure),
-                blob_resupplied_count.clone(),
+                page_fault_counter.clone(),
                 MemoryPressureConfig::default(),
             )
             .await
@@ -206,7 +206,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     volume_name.to_owned(),
-                    blob_resupplied_count.clone(),
+                    page_fault_counter.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )
                 .await
@@ -217,7 +217,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     volume_name.to_owned(),
-                    blob_resupplied_count.clone(),
+                    page_fault_counter.clone(),
                     *volumes_directory.memory_pressure_config(),
                 )
                 .await

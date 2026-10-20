@@ -12,7 +12,7 @@ use fuchsia_trace::duration;
 use futures::{TryFutureExt, join, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
 use stalls::StallProvider;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use traces::CATEGORY_MEMORY_CAPTURE;
 
 use fidl_fuchsia_kernel as fkernel;
@@ -28,7 +28,7 @@ pub async fn periodic_monitoring(
     kernel_stats_proxy: fkernel::StatsProxy,
     attribution_data_service: &impl AttributionDataProvider,
     stall_provider: &impl StallProvider,
-    refault_provider: &impl RefaultProvider,
+    page_fault_provider: &impl PageFaultProvider,
     metric_event_logger: &fmetrics::MetricEventLoggerProxy,
     bucket_definitions: &[BucketDefinition],
     inspect_root: Node,
@@ -84,7 +84,7 @@ pub async fn periodic_monitoring(
                 timestamp,
                 &digest,
                 stall_provider,
-                refault_provider,
+                page_fault_provider,
                 &mut bucket_list_node,
                 &inspect_root,
             )?;
@@ -115,13 +115,14 @@ fn update_inspect_history(
     timestamp: zx::BootInstant,
     digest: &Digest,
     stall_provider: &impl StallProvider,
-    refault_provider: &impl RefaultProvider,
+    page_fault_provider: &impl PageFaultProvider,
     bucket_list_node: &mut std::cell::OnceCell<BoundedListNode>,
     inspect_root: &Node,
 ) -> Result<()> {
     let stall_values =
         stall_provider.get_stall_info().with_context(|| "Unable to retrieve stall information")?;
-    let page_refaults = refault_provider.get_count();
+    let page_faults = page_fault_provider.get_fault_count();
+    let page_refaults = page_fault_provider.get_refault_count();
     // Add an entry for the current aggregation.
     let _ = bucket_list_node
         .get_or_init(|| BoundedListNode::new(inspect_root.create_child("measurements"), 100));
@@ -148,6 +149,10 @@ fn update_inspect_history(
                 "full_ms",
                 stall_values.full.as_millis().try_into().unwrap_or(u64::MAX),
             );
+        });
+
+        n.record_child("faults", |child| {
+            child.record_uint("count", page_faults);
         });
 
         n.record_child("refaults", |child| {
@@ -329,13 +334,18 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct FakeRefaultProvider {
-        count: u64,
+    struct FakePageFaultProvider {
+        refault_count: u64,
+        fault_count: u64,
     }
 
-    impl RefaultProvider for FakeRefaultProvider {
-        fn get_count(&self) -> u64 {
-            self.count
+    impl PageFaultProvider for FakePageFaultProvider {
+        fn get_refault_count(&self) -> u64 {
+            self.refault_count
+        }
+
+        fn get_fault_count(&self) -> u64 {
+            self.fault_count
         }
     }
 
@@ -361,7 +371,7 @@ mod tests {
             timestamp,
             &digest,
             &FakeStallProvider {},
-            &FakeRefaultProvider { count: 300 },
+            &FakePageFaultProvider { refault_count: 300, fault_count: 400 },
             &mut bucket_list_node,
             &digest_node,
         )?;
@@ -370,7 +380,7 @@ mod tests {
             timestamp,
             &digest,
             &FakeStallProvider {},
-            &FakeRefaultProvider { count: 700 },
+            &FakePageFaultProvider { refault_count: 700, fault_count: 800 },
             &mut bucket_list_node,
             &digest_node,
         )?;
@@ -415,6 +425,9 @@ mod tests {
                             some_ms: 10u64,
                             full_ms: 20u64,
                         },
+                        faults: {
+                            count: 400u64,
+                        },
                         refaults: {
                             count: 300u64,
                         },
@@ -455,6 +468,9 @@ mod tests {
                         stalls: {
                             some_ms: 10u64,
                             full_ms: 20u64,
+                        },
+                        faults: {
+                            count: 800u64,
                         },
                         refaults: {
                             count: 700u64,

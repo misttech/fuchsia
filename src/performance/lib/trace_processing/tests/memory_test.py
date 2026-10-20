@@ -27,6 +27,7 @@ class MemoryTest(unittest.TestCase):
                         "free_bytes": 200 + i,
                         "stall_time_some_ns": 10 + i,
                         "page_refaults": 100 + i,
+                        "page_faults": 300 + i,
                     },
                 }
             )
@@ -123,6 +124,12 @@ class MemoryTest(unittest.TestCase):
                     values=(99,),
                 ),
                 reporting_metrics.TestCaseResult(
+                    label="Memory/System/PageFaults/Major",
+                    unit=reporting_metrics.Unit.count,
+                    direction=reporting_metrics.Direction.smallerIsBetter,
+                    values=(99,),
+                ),
+                reporting_metrics.TestCaseResult(
                     label="Memory/System/ManagementTime",
                     unit=reporting_metrics.Unit.milliseconds,
                     values=(0.5,),
@@ -169,6 +176,10 @@ class MemoryTest(unittest.TestCase):
                         "Delta": 99,
                         "Rate": 0.001,
                     },
+                    "page_faults": {
+                        "Delta": 99,
+                        "Rate": 0.001,
+                    },
                 }
             },
         )
@@ -206,6 +217,7 @@ class MemoryTest(unittest.TestCase):
                     },
                     "stall_time_some_ns": {"Delta": 0, "Rate": None},
                     "page_refaults": {"Delta": 0, "Rate": None},
+                    "page_faults": {"Delta": 0, "Rate": None},
                 }
             },
         )

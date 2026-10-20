@@ -20,7 +20,7 @@ use periodic_monitoring::periodic_monitoring;
 use resources::Job;
 use snapshot::AttributionSnapshot;
 use stalls::StallProvider;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use std::sync::Arc;
 use traces::CATEGORY_MEMORY_CAPTURE;
 use zx::{BootInstant, MonotonicInstant};
@@ -42,8 +42,8 @@ mod thrashing;
 enum Service {
     /// The `fuchsia.memory.attribution.plugin.MemoryMonitor` protocol.
     MemoryMonitor(fattribution_plugin::MemoryMonitorRequestStream),
-    /// The `fuchsia.memory.attribution.PageRefaultSink` protocol.
-    PageRefaultSink(fattribution::PageRefaultSinkRequestStream),
+    /// The `fuchsia.memory.attribution.PagerStatsSink` protocol.
+    PagerStatsSink(fattribution::PagerStatsSinkRequestStream),
 }
 
 const INTROSPECTOR_PATH: &str = "/svc/fuchsia.component.Introspector.root";
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
         connect_to_protocol::<fkernel::StallResourceMarker>()?.get().await?,
     ))?;
 
-    let page_refault_tracker = stalls::refaults::RefaultProviderImpl::default();
+    let page_fault_tracker = stalls::refaults::PageFaultProviderImpl::default();
 
     let root_node = fuchsia_inspect::component::inspector().root();
     let task_health_node = root_node.create_child("task health");
@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
     let mut kernel_trace_service = fuchsia_async::Task::spawn(traces::kernel::serve_forever(
         kernel_stats.clone(),
         stall_provider.clone(),
-        page_refault_tracker.clone(),
+        page_fault_tracker.clone(),
     ))
     .fuse();
     let kernel_trace_health = task_health_node.create_string("kernel_trace_service", "ok");
@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
     let mut inspect_nodes_service = fuchsia_async::Task::spawn(inspect_nodes::serve(
         kernel_stats.clone(),
         stall_provider.clone(),
-        page_refault_tracker.clone(),
+        page_fault_tracker.clone(),
     )?)
     .fuse();
     let metric_event_logger = create_metric_event_logger(connect_to_protocol::<
@@ -128,7 +128,7 @@ async fn main() -> Result<()> {
     let mut periodic_collection = fuchsia_async::Task::local({
         let attribution_data_provider = fast_attribution_data_provider.clone();
         let stall_provider = stall_provider.clone();
-        let page_refault_tracker = page_refault_tracker.clone();
+        let page_fault_tracker = page_fault_tracker.clone();
         let kernel_stats = kernel_stats.clone();
         let metric_event_logger = metric_event_logger.clone();
         let bucket_definitions = bucket_definitions.clone();
@@ -137,7 +137,7 @@ async fn main() -> Result<()> {
                 kernel_stats,
                 &*attribution_data_provider,
                 &stall_provider,
-                &page_refault_tracker,
+                &page_fault_tracker,
                 &metric_event_logger,
                 &*bucket_definitions,
                 root_node.create_child("logger"),
@@ -153,9 +153,9 @@ async fn main() -> Result<()> {
 
     let mut collect_stalls_task = fuchsia_async::Task::spawn({
         let stall_provider = stall_provider.clone();
-        let page_refault_tracker = page_refault_tracker.clone();
+        let page_fault_tracker = page_fault_tracker.clone();
         let metric_event_logger = metric_event_logger.clone();
-        collect_stalls_forever(stall_provider, page_refault_tracker, metric_event_logger)
+        collect_stalls_forever(stall_provider, page_fault_tracker, metric_event_logger)
     })
     .fuse();
     let collect_stalls_health = task_health_node.create_string("collect_stalls_health", "ok");
@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
     let mut thrashing_detector = thrashing::ThrashingDetector::new(
         thrashing_config.clone(),
         root_node.create_child("thrashing"),
-        page_refault_tracker.clone(),
+        page_fault_tracker.clone(),
         metric_event_logger.clone(),
     );
     let mut thrashing_loop = fuchsia_async::Task::spawn(async move {
@@ -189,7 +189,7 @@ async fn main() -> Result<()> {
         service_fs
             .dir("svc")
             .add_fidl_service(Service::MemoryMonitor)
-            .add_fidl_service(Service::PageRefaultSink);
+            .add_fidl_service(Service::PagerStatsSink);
         service_fs.take_and_serve_directory_handle()?;
         service_fs.for_each_concurrent(None, |stream| async {
             let _ = match stream {
@@ -201,15 +201,15 @@ async fn main() -> Result<()> {
                         &*fast_attribution_data_provider.clone(),
                         kernel_stats.clone(),
                         stall_provider.clone(),
-                        page_refault_tracker.clone(),
+                        page_fault_tracker.clone(),
                     )
                     .inspect_err(|error| warn!(error:%; ""))
                     .await
                 }
-                Service::PageRefaultSink(stream) => {
-                    page_refault_tracker
-                        .listen_to_page_refaults(stream)
-                        .inspect_err(|e| warn!("PageRefaultSink disconnected: {:?}", e))
+                Service::PagerStatsSink(stream) => {
+                    page_fault_tracker
+                        .listen_to_page_faults(stream)
+                        .inspect_err(|e| warn!("PagerStatsSink disconnected: {:?}", e))
                         .await
                 }
             };
@@ -255,7 +255,7 @@ async fn serve_client_stream(
     fast_attribution_data_provider: &impl AttributionDataProvider,
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
-    refault_tracker: impl RefaultProvider,
+    page_fault_tracker: impl PageFaultProvider,
 ) -> Result<()> {
     while let Some(request) = stream.next().await.transpose()? {
         match request {
@@ -264,7 +264,7 @@ async fn serve_client_stream(
                     attribution_data_provider,
                     kernel_stats_proxy.clone(),
                     stall_provider.clone(),
-                    refault_tracker.clone(),
+                    page_fault_tracker.clone(),
                     bucket_definitions,
                     snapshot,
                 )
@@ -279,7 +279,7 @@ async fn serve_client_stream(
                 if let Err(err) = provide_statistics(
                     kernel_stats_proxy.clone(),
                     stall_provider.clone(),
-                    refault_tracker.clone(),
+                    page_fault_tracker.clone(),
                     responder,
                 )
                 .await
@@ -295,7 +295,7 @@ async fn serve_client_stream(
                     fast_attribution_data_provider,
                     kernel_stats_proxy.clone(),
                     stall_provider.clone(),
-                    refault_tracker.clone(),
+                    page_fault_tracker.clone(),
                     bucket_definitions,
                     snapshot,
                 )
@@ -319,7 +319,7 @@ async fn provide_snapshot(
     attribution_data_provider: &impl AttributionDataProvider,
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
-    refault_tracker: impl RefaultProvider,
+    page_fault_tracker: impl PageFaultProvider,
     bucket_definitions: &[BucketDefinition],
     snapshot: zx::Socket,
 ) -> Result<()> {
@@ -337,7 +337,7 @@ async fn provide_snapshot(
         attribution_data,
         kernel_stats,
         memory_stalls,
-        refault_tracker,
+        page_fault_tracker,
         bucket_definitions,
     );
     attribution_snapshot.serve(snapshot).await
@@ -363,7 +363,7 @@ fn read_bucket_definitions() -> Vec<BucketDefinition> {
 async fn provide_statistics(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
-    refault_tracker: impl RefaultProvider,
+    page_fault_tracker: impl PageFaultProvider,
     responder: fattribution_plugin::MemoryMonitorGetSystemStatisticsResponder,
 ) -> Result<()> {
     let kernel_stats = fattribution_plugin::KernelStatistics {
@@ -373,7 +373,7 @@ async fn provide_statistics(
     };
 
     let memory_stalls = stall_provider.get_stall_info()?;
-    let refaults = refault_tracker.get_count();
+    let refaults = page_fault_tracker.get_refault_count();
 
     responder.send(&fattribution_plugin::MemoryStatistics {
         time: Some(fattribution_plugin::Time {

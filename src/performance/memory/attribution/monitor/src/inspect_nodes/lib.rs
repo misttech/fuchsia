@@ -9,14 +9,14 @@ use fuchsia_inspect::{ArrayProperty, Inspector};
 use futures::FutureExt;
 use log::debug;
 use stalls::StallProvider;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use std::future::Future;
 
 /// Serve the inspect tree, and return an object holding the server's resources.
 pub fn serve(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
-    refault_provider: impl RefaultProvider,
+    page_fault_provider: impl PageFaultProvider,
 ) -> Result<impl Future<Output = ()>> {
     debug!("Start serving inspect tree.");
 
@@ -29,14 +29,14 @@ pub fn serve(
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
             .ok_or_else(|| anyhow!("Failed to serve server handling `fuchsia.inspect.Tree`"))?;
 
-    build_inspect_tree(kernel_stats_proxy, stall_provider, refault_provider, inspector);
+    build_inspect_tree(kernel_stats_proxy, stall_provider, page_fault_provider, inspector);
     Ok(inspect_controller)
 }
 
 fn build_inspect_tree(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
-    refault_provider: impl RefaultProvider,
+    page_fault_provider: impl PageFaultProvider,
     inspector: &Inspector,
 ) {
     // Lazy evaluation is unregistered when the `LazyNode` is dropped.
@@ -171,10 +171,24 @@ fn build_inspect_tree(
     }
 
     {
-        inspector.root().record_lazy_child("refaults", move || {
-            let refault_provider = refault_provider.clone();
+        let page_fault_provider = page_fault_provider.clone();
+        inspector.root().record_lazy_child("faults", move || {
+            let page_fault_provider = page_fault_provider.clone();
             async move {
-                let refault_info = refault_provider.get_count();
+                let fault_info = page_fault_provider.get_fault_count();
+                let inspector = Inspector::default();
+                inspector.root().record_uint("count", fault_info);
+                Ok(inspector)
+            }
+            .boxed()
+        });
+    }
+
+    {
+        inspector.root().record_lazy_child("refaults", move || {
+            let page_fault_provider = page_fault_provider.clone();
+            async move {
+                let refault_info = page_fault_provider.get_refault_count();
                 let inspector = Inspector::default();
                 inspector.root().record_uint("count", refault_info);
                 Ok(inspector)
@@ -270,10 +284,14 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct FakeRefaultProvider {}
-    impl RefaultProvider for FakeRefaultProvider {
-        fn get_count(&self) -> u64 {
+    struct FakePageFaultProvider {}
+    impl PageFaultProvider for FakePageFaultProvider {
+        fn get_refault_count(&self) -> u64 {
             1000
+        }
+
+        fn get_fault_count(&self) -> u64 {
+            2000
         }
     }
 
@@ -293,7 +311,7 @@ mod tests {
         build_inspect_tree(
             stats_provider,
             FakeStallProvider {},
-            FakeRefaultProvider {},
+            FakePageFaultProvider {},
             &inspector,
         );
 
@@ -344,6 +362,9 @@ mod tests {
             stalls: {
                 some_ms: 10u64,
                 full_ms: 20u64,
+            },
+            faults: {
+                count: 2000u64,
             },
             refaults: {
                 count: 1000u64,

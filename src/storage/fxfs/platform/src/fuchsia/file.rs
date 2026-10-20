@@ -861,6 +861,11 @@ impl PagerBacked for FxFile {
 
     #[trace("len" => (range.end - range.start))]
     async fn aligned_read(&self, range: Range<u64>) -> Result<buffer::Buffer<'_>, Error> {
+        // TODO(https://fxbug.dev/571622248): Consider tracking page faults and refaults for
+        // `FxFile` in `page_fault_counter()`. Unlike immutable `FxBlob`s, `FxFile` is mutable,
+        // making refault tracking non-trivial. Total faults are not tracked either so as to keep
+        // page_faults consistent with page_refaults (both 0) for `FxFile`.
+        // https://fxrev.dev/1884420 adds refault tracking so we can revisit once that lands.
         let buffer = self.handle.read_uncached(range).await?;
         Ok(buffer)
     }

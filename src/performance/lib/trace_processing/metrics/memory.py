@@ -46,6 +46,7 @@ _CUMULATIVE_METRIC_NAMES = frozenset(
         "stall_time_some_ns",
         "stall_time_full_ns",
         "page_refaults",
+        "page_faults",
     }
 )
 
@@ -72,8 +73,15 @@ _STRUCTURED_METRIC_NAMES = {
     "decompression_time": _StructuredMetricName(
         "Memory/System/DecompressionTime", metrics.Unit.nanoseconds
     ),
+    # Both page_refaults and page_faults are measured in pages supplied by
+    # userspace pagers (including readahead).
     "page_refaults": _StructuredMetricName(
         "Memory/System/PageRefaults",
+        metrics.Unit.count,
+        metrics.Direction.smallerIsBetter,
+    ),
+    "page_faults": _StructuredMetricName(
+        "Memory/System/PageFaults/Major",
         metrics.Unit.count,
         metrics.Direction.smallerIsBetter,
     ),

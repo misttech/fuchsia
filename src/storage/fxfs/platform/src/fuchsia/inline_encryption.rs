@@ -22,7 +22,7 @@ mod tests {
     use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::{HandleOptions, NewChildStoreOptions, ObjectStore, StoreOptions};
     use fxfs_crypto::Crypt;
-    use refaults_vmo::PageRefaultCounter;
+    use refaults_vmo::PageFaultCounter;
     use std::sync::{Arc, Weak};
     use storage_device::DeviceHolder;
     use storage_device::block_device::BlockDevice;
@@ -499,7 +499,7 @@ mod tests {
                     starnix_vol.clone(),
                     starnix_vol.store_object_id(),
                     "starnix-vol".to_owned(),
-                    Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
+                    Arc::new(PageFaultCounter::new().expect("PageFaultCounter::new failed")),
                     MemoryPressureConfig::default(),
                 )
                 .expect("FxVolume::new failed"),
@@ -679,7 +679,7 @@ mod tests {
                 store.clone(),
                 store.store_object_id(),
                 "starnix-vol".to_owned(),
-                Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
+                Arc::new(PageFaultCounter::new().expect("PageFaultCounter::new failed")),
                 MemoryPressureConfig::default(),
             )
             .expect("FxVolume::new failed"),

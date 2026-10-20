@@ -11,10 +11,13 @@ const VMO_MAP_READONLY_RIGHTS zx.Rights
 
 /// Protocol used by user pagers to publish memory attribution statistics.
 @discoverable
-protocol PageRefaultSink {
-    /// Sends a VMO containing a shared count of the number of page refaults of a pager. The shared
-    /// count is a single atomic 64-bit unsigned integer.
-    SendPageRefaultCount(resource struct {
-        page_refaults_vmo zx.Handle:<VMO, VMO_MAP_READONLY_RIGHTS>;
+protocol PagerStatsSink {
+    /// Sends a VMO containing shared counts of page refaults and total page faults, both measured
+    /// in pages supplied by the pager including readahead. The shared counts are stored as two
+    /// canonical monotonic atomic 64-bit unsigned integers from the start of the VMO:
+    /// - Offset 0: `page_refaults` (pages supplied that had already been supplied before)
+    /// - Offset 8: `page_faults` (total pages supplied by the user pager)
+    SendPagerStats(resource struct {
+        pager_stats_vmo zx.Handle:<VMO, VMO_MAP_READONLY_RIGHTS>;
     });
 };

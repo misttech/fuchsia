@@ -9,7 +9,7 @@ use fidl_fuchsia_memory_attribution_plugin as fplugin;
 use fuchsia_trace::duration;
 use futures::AsyncWriteExt;
 use stalls::MemoryStallMetrics;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use traces::CATEGORY_MEMORY_CAPTURE;
 use zstd::stream::raw::CParameter::ChecksumFlag;
 
@@ -22,7 +22,7 @@ impl AttributionSnapshot {
         attribution_data: AttributionData,
         kernel_statistics: fplugin::KernelStatistics,
         memory_stalls: MemoryStallMetrics,
-        refault_provider: impl RefaultProvider,
+        page_fault_provider: impl PageFaultProvider,
         bucket_definitions: &[BucketDefinition],
     ) -> AttributionSnapshot {
         AttributionSnapshot(fplugin::Snapshot {
@@ -40,7 +40,7 @@ impl AttributionSnapshot {
             performance_metrics: Some(fplugin::PerformanceImpactMetrics {
                 some_memory_stalls_ns: memory_stalls.some.as_nanos().try_into().ok(),
                 full_memory_stalls_ns: memory_stalls.full.as_nanos().try_into().ok(),
-                page_refaults: Some(refault_provider.get_count()),
+                page_refaults: Some(page_fault_provider.get_refault_count()),
                 ..Default::default()
             }),
             bucket_definitions: Some(

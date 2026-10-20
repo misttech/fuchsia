@@ -1649,7 +1649,7 @@ mod tests {
     use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
     use fxfs::object_store::NewChildStoreOptions;
     use fxfs::object_store::volume::root_volume;
-    use refaults_vmo::PageRefaultCounter;
+    use refaults_vmo::PageFaultCounter;
     use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
     use std::sync::{Weak, mpsc};
     use std::time::Duration;
@@ -1703,7 +1703,7 @@ mod tests {
             store,
             store_object_id,
             "vol".to_owned(),
-            Arc::new(PageRefaultCounter::new().unwrap()),
+            Arc::new(PageFaultCounter::new().unwrap()),
             MemoryPressureConfig::default(),
         )
         .await

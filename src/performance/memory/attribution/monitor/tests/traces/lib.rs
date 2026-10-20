@@ -6,7 +6,7 @@ use fidl_fuchsia_kernel::{
     CpuStats, MemoryStats, MemoryStatsCompression, MemoryStatsExtended, StatsProxyInterface,
 };
 use stalls::StallProvider;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use std::future::{self, Ready};
 use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -31,11 +31,15 @@ impl StallProvider for FakeStallProvider {
 }
 
 #[derive(Default, Clone)]
-struct FakeRefaultTracker {}
+struct FakePageFaultTracker {}
 
-impl RefaultProvider for FakeRefaultTracker {
-    fn get_count(&self) -> u64 {
+impl PageFaultProvider for FakePageFaultTracker {
+    fn get_refault_count(&self) -> u64 {
         128
+    }
+
+    fn get_fault_count(&self) -> u64 {
+        48
     }
 }
 
@@ -126,8 +130,8 @@ impl StatsProxyInterface for FakeStatsProxy {
 async fn actual_main() {
     let stall_provider = FakeStallProvider {};
     let kernel_stats = FakeStatsProxy::new();
-    let page_refaults_tracker = FakeRefaultTracker::default();
-    traces::kernel::serve_forever_loop(kernel_stats, stall_provider, page_refaults_tracker).await;
+    let page_fault_tracker = FakePageFaultTracker::default();
+    traces::kernel::serve_forever_loop(kernel_stats, stall_provider, page_fault_tracker).await;
 }
 
 static LOGGER_ONCE: Once = Once::new();

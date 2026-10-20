@@ -35,6 +35,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, MutableBufferRef};
+use storage_units::page_size;
 use zx::Status;
 
 /// The extent mappings for a blob's data and merkle attributes.
@@ -305,7 +306,15 @@ impl FxBlob {
 
     fn record_page_fault_metric(&self, range: &Range<u64>) {
         let pager_state = self.pager_state();
-        let page_size = zx::system_get_page_size() as u64;
+        let page_size = page_size();
+        let total_pages = (range.end - range.start) / page_size;
+        if total_pages > 0 {
+            self.handle
+                .owner()
+                .page_fault_counter()
+                .increment_faults(total_pages, Ordering::Relaxed);
+        }
+
         let chunk_size: u64 = min_chunk_size(&pager_state.compression_info);
         let pages_per_chunk = chunk_size / page_size;
 
@@ -327,8 +336,8 @@ impl FxBlob {
         if supplied_pages > 0 {
             self.handle
                 .owner()
-                .blob_resupplied_count()
-                .increment(supplied_pages, Ordering::Relaxed);
+                .page_fault_counter()
+                .increment_refaults(supplied_pages, Ordering::Relaxed);
         }
     }
 
@@ -681,7 +690,6 @@ mod tests {
     use fxfs_make_blob_image::FxBlobBuilder;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-    use storage_units::page_size;
 
     const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
     const CHUNK_SIZE: usize = 32 * 1024;
@@ -1281,7 +1289,12 @@ mod tests {
             assert_eq!(&blob.pager_state().chunks_supplied.to_vec(4), &[true, false, true, true]);
 
             // We have loaded pages, but only once each.
-            assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 0);
+            let pages_per_chunk = READ_AHEAD_SIZE / page_size();
+            assert_eq!(volume.page_fault_counter().read_refaults(Ordering::SeqCst), 0);
+            assert_eq!(
+                volume.page_fault_counter().read_faults(Ordering::SeqCst),
+                3 * pages_per_chunk - 1
+            );
 
             // Re-read some pages.
 
@@ -1296,10 +1309,13 @@ mod tests {
 
             // Two chunks were resupplied (one full chunk and the last chunk which is one page
             // short), and the counter is expressed in pages.
-            let pages_per_chunk = READ_AHEAD_SIZE / zx::system_get_page_size() as u64;
             assert_eq!(
-                volume.blob_resupplied_count().read(Ordering::SeqCst),
+                volume.page_fault_counter().read_refaults(Ordering::SeqCst),
                 2 * pages_per_chunk - 1
+            );
+            assert_eq!(
+                volume.page_fault_counter().read_faults(Ordering::SeqCst),
+                5 * pages_per_chunk - 2
             );
         }
 

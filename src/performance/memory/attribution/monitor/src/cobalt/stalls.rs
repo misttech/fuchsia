@@ -7,7 +7,7 @@ use cobalt_client::traits::AsEventCode;
 use fidl_fuchsia_metrics as fmetrics;
 use futures::StreamExt;
 use memory_metrics_registry::cobalt_registry;
-use stalls::refaults::RefaultProvider;
+use stalls::refaults::PageFaultProvider;
 use stalls::{MemoryStallMetrics, StallProvider};
 use zx::MonotonicInstant;
 
@@ -16,7 +16,7 @@ use crate::error_from_metrics_error;
 /// Collect and publish to Cobalt memory stall and page refault increase rates, every hour.
 pub async fn collect_stalls_forever(
     stalls_provider: impl StallProvider,
-    refault_provider: impl RefaultProvider,
+    page_fault_provider: impl PageFaultProvider,
     metric_event_logger: fmetrics::MetricEventLoggerProxy,
 ) -> Result<()> {
     let mut last_stall = MemoryStallMetrics::default();
@@ -29,7 +29,7 @@ pub async fn collect_stalls_forever(
     let mut timer = fuchsia_async::Interval::new(zx::Duration::from_hours(1));
     loop {
         let new_stall = stalls_provider.get_stall_info()?;
-        let new_refaults = refault_provider.get_count();
+        let new_refaults = page_fault_provider.get_refault_count();
 
         // The Cobalt metrics for stalls expect milliseconds, as defined in the Cobalt registry.
         let stall_some_event = fmetrics::MetricEvent {
@@ -105,14 +105,14 @@ mod tests {
         FakeStallProvider::default()
     }
 
-    fn get_refault_provider() -> impl RefaultProvider {
+    fn get_page_fault_provider() -> impl PageFaultProvider {
         #[derive(Clone, Default)]
-        struct FakeRefaultProvider {
+        struct FakePageFaultProvider {
             calls: Arc<AtomicU64>,
         }
 
-        impl RefaultProvider for FakeRefaultProvider {
-            fn get_count(&self) -> u64 {
+        impl PageFaultProvider for FakePageFaultProvider {
+            fn get_refault_count(&self) -> u64 {
                 // Return 100 at hour 1 (delta = 100) and 350 at hour 2 (delta = 250) so that
                 // the two intervals produce distinct deltas.
                 match self.calls.fetch_add(1, Ordering::Relaxed) {
@@ -120,9 +120,13 @@ mod tests {
                     _ => 350,
                 }
             }
+
+            fn get_fault_count(&self) -> u64 {
+                0
+            }
         }
 
-        FakeRefaultProvider::default()
+        FakePageFaultProvider::default()
     }
 
     #[test]
@@ -132,7 +136,7 @@ mod tests {
 
         // Setup mock data providers.
         let data_provider = get_stall_provider();
-        let refault_provider = get_refault_provider();
+        let page_fault_provider = get_page_fault_provider();
 
         // Setup test proxy to observe emitted events from the service.
         let (metric_event_logger, metric_event_request_stream) =
@@ -144,7 +148,7 @@ mod tests {
         );
         // Service under test.
         let mut stalls_collector = fuchsia_async::Task::spawn(async move {
-            collect_stalls_forever(data_provider, refault_provider, metric_event_logger).await
+            collect_stalls_forever(data_provider, page_fault_provider, metric_event_logger).await
         });
 
         // Give the service the opportunity to run.

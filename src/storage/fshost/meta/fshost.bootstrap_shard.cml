@@ -46,7 +46,7 @@
             availability: "optional",
         },
         {
-            protocol: "fuchsia.memory.attribution.PageRefaultSink",
+            protocol: "fuchsia.memory.attribution.PagerStatsSink",
             from: "parent",
             to: "#fshost",
             dependency: "weak",
