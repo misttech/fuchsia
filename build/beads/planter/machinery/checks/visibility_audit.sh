@@ -836,6 +836,26 @@ for rel_path in sorted(candidate_files):
         for val, lineno in entries:
             if val in preexisting_vis:
                 continue
+            if val == "//visibility:private":
+                # Check redundant //visibility:private when package has no default_visibility.
+                if not has_pkg_default_vis:
+                    findings.append({
+                        "source": "visibility_audit",
+                        "category": "redundant_private_visibility",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": lineno,
+                        "message": (
+                            f"Target '{target_name}' specifies redundant "
+                            "`visibility = [\"//visibility:private\"]`, which is already the "
+                            "Bazel default when `default_visibility` is not set."
+                        ),
+                        "remediation": (
+                            f"Remove `visibility = [\"//visibility:private\"]` from '{target_name}' "
+                            f"in '{rel_path}'."
+                        ),
+                    })
+                continue
             if val == "//visibility:public":
                 if rel_path.startswith("build/bazel_sdk/"):
                     continue

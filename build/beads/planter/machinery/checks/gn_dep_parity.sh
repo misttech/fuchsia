@@ -138,8 +138,12 @@ def closing(code, i):
 
 
 def gn_targets(text):
-    """{name: {"tmpl", "start", "line", "bodies"}} for every `tmpl("name") { ... }` block."""
+    """{name: {"tmpl", "start", "line", "bodies", "vars"}} for every `tmpl("name") { ... }` block."""
     code = gn_code(text)
+    gn_vars = {}
+    for vm in re.finditer(r"(?m)^\s*([A-Za-z_]\w*)\s*=\s*\[", code):
+        b_idx = vm.end() - 1
+        gn_vars[vm.group(1)] = GN_STRING.findall(code[b_idx + 1 : closing(code, b_idx)])
     targets = {}
     for m in GN_TARGET.finditer(code):
         if m.group(1) in NOT_TARGETS:
@@ -147,7 +151,13 @@ def gn_targets(text):
         brace = m.end() - 1
         t = targets.setdefault(
             m.group(2),
-            {"tmpl": m.group(1), "start": m.start(), "line": code.count("\n", 0, m.start()) + 1, "bodies": []},
+            {
+                "tmpl": m.group(1),
+                "start": m.start(),
+                "line": code.count("\n", 0, m.start()) + 1,
+                "bodies": [],
+                "vars": gn_vars,
+            },
         )
         t["bodies"].append(code[brace + 1 : closing(code, brace)])
     return targets
@@ -165,12 +175,36 @@ def parsed(rel, version):
     return _parsed[key]
 
 
-def gn_lists(body, attrs):
-    """{attr: [string literals]} of `attr = [...]` / `attr += [...]` assignments in body."""
+def gn_lists(body, attrs, gn_vars=None):
+    """{attr: [string literals]} of `attr = ...` / `attr += ...` assignments in body."""
+    gn_vars = gn_vars or {}
     res = {}
-    for m in re.finditer(r"(?<![\w.])(%s)\s*\+?=\s*\[" % "|".join(attrs), body):
-        bracket = m.end() - 1
-        res.setdefault(m.group(1), []).extend(GN_STRING.findall(body[bracket + 1 : closing(body, bracket)]))
+    n = len(body)
+    for m in re.finditer(r"(?<![\w.])(%s)\s*\+?=\s*" % "|".join(attrs), body):
+        attr = m.group(1)
+        idx = m.end()
+        items = res.setdefault(attr, [])
+        while idx < n:
+            while idx < n and body[idx].isspace():
+                idx += 1
+            if idx >= n:
+                break
+            if body[idx] == "[":
+                end_b = closing(body, idx)
+                items.extend(GN_STRING.findall(body[idx + 1 : end_b]))
+                idx = end_b + 1
+            else:
+                id_m = re.match(r"[A-Za-z_]\w*", body[idx:])
+                if not id_m:
+                    break
+                items.extend(gn_vars.get(id_m.group(0), ()))
+                idx += id_m.end()
+            while idx < n and body[idx].isspace():
+                idx += 1
+            if idx < n and body[idx] == "+":
+                idx += 1
+            else:
+                break
     return res
 
 
@@ -197,8 +231,9 @@ def normalize(raw, pkg):
 def gn_deps(target, pkg):
     """{attr: set(labels)} over all the blocks defining a GN target."""
     res = {}
+    gn_vars = target.get("vars") or {}
     for body in target["bodies"]:
-        for attr, items in gn_lists(body, GN_DEP_ATTRS).items():
+        for attr, items in gn_lists(body, GN_DEP_ATTRS, gn_vars).items():
             res.setdefault(attr, set()).update(l for l in (normalize(s, pkg) for s in items) if l)
     return res
 

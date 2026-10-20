@@ -797,6 +797,65 @@ for rel in sorted(changed):
                                 f"with `# LINT.IfChange` and `# LINT.ThenChange(//{exp_decl})`.",
                             )
 
+# 6. Check IFTTT LINT markers on dual-maintained build_flags() and GN config() definitions.
+def check_build_flags_ifttt_lint():
+    """Verify build_flags() mirroring a hand-maintained GN config() has LINT.IfChange/ThenChange."""
+    for rel in sorted(changed):
+        if os.path.basename(rel) not in BAZEL_BUILD_FILES:
+            continue
+        pkg = os.path.dirname(rel)
+        gn_rel = os.path.join(pkg, "BUILD.gn") if pkg else "BUILD.gn"
+        gn_text = read(gn_rel)
+        bz_text = read(rel)
+        if not gn_text or not bz_text:
+            continue
+        above_sentinel = gn_text.split("BAZEL2GN SENTINEL")[0] if SENTINEL_RE.search(gn_text) else gn_text
+        gn_configs = {
+            m.group(1)
+            for m in re.finditer(r'^\s*config\(\s*"([^"]+)"\s*\)', above_sentinel, re.M)
+        }
+        if not gn_configs:
+            continue
+        tree = parse(bz_text, rel)
+        if tree is None:
+            continue
+        for name, (rule, call) in sorted(targets(tree).items()):
+            if rule != "build_flags" or name not in gn_configs:
+                continue
+            has_bz_if = bool(re.search(r"LINT\.IfChange\(\s*" + re.escape(name) + r"\s*\)", bz_text))
+            has_bz_then = bool(
+                re.search(
+                    r"LINT\.ThenChange\(\s*(?://" + re.escape(gn_rel) + r"|BUILD\.gn):"
+                    + re.escape(name) + r"\s*\)",
+                    bz_text,
+                )
+            )
+            has_gn_if = bool(re.search(r"LINT\.IfChange\(\s*" + re.escape(name) + r"\s*\)", above_sentinel))
+            has_gn_then = bool(
+                re.search(
+                    r"LINT\.ThenChange\(\s*(?://" + re.escape(rel) + r"|BUILD\.bazel):"
+                    + re.escape(name) + r"\s*\)",
+                    above_sentinel,
+                )
+            )
+            if not (has_bz_if and has_bz_then and has_gn_if and has_gn_then):
+                emit(
+                    "missing_build_flags_lint_ifttt",
+                    "error",
+                    rel,
+                    call.lineno,
+                    f"`build_flags(name = \"{name}\")` in '{rel}' mirrors hand-maintained "
+                    f"`config(\"{name}\")` in '{gn_rel}', but lacks bidirectional "
+                    f"`# LINT.IfChange({name})` / `# LINT.ThenChange(...)` comments.",
+                    f"Wrap `build_flags(name = \"{name}\")` in '{rel}' with "
+                    f"`# LINT.IfChange({name})` and `# LINT.ThenChange(//{gn_rel}:{name})`, "
+                    f"and wrap `config(\"{name}\")` in '{gn_rel}' with "
+                    f"`# LINT.IfChange({name})` and `# LINT.ThenChange(//{rel}:{name})`.",
+                )
+
+
+check_build_flags_ifttt_lint()
+
 unique, seen = [], set()
 for f in findings:
     key = (f["category"], f["file"], f["line"], f["message"])

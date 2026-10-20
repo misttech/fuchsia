@@ -51,9 +51,6 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
 - `load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")` or
   `load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")`
 - `load("@fuchsia_rules_common//packages:resources.bzl", "resource")`
-- Load each symbol from the `.bzl` file that defines it; use a `defs.bzl` only if the symbol is
-  first defined there; never load from `private/`; e.g. `//build/bazel/rules/rust:rustc_test.bzl`
-  rather than `//build/bazel/rules/rust:defs.bzl`.
 1. **Manifest & shard includes (`fx_component_manifest`)**:
    - Declare `fx_component_manifest(name = "<c>-manifest", component_name = "<comp_name>", includes = [...], manifest = "meta/<m>.cml")`.
    - **`component_name` parity**: in `fuchsia_component("<n>")`, `component_name` defaults to
@@ -97,12 +94,10 @@ translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only thro
 `bazel_test_suite()` wired into `group("tests")`.
 - **Nothing test-related is generated into BUILD.gn.** In a dual-build BUILD.bazel, put
   `# @bazel2gn:skip` on every test target (`fx_cc_binary(testonly)`, `rustc_test`,
+  `host_*_test`, `wrap_host_rust_test`, `fx_unittest_package`, `fx_unittest_component`,
   `fx_packaged_binary`, `fx_component_manifest`, `fx_test_component`, `fx_package`, `fx_test`,
-  `test_suite`, `go_test`) and on the `with_unit_tests`, `test_deps` (and any other
-  test-only) attributes of a `rustc_library`/`rustc_binary`/`rustc_proc_macro`, so the generated
-  GN target has no `with_unit_tests`. `host_*_test` rules (`host_go_test`, `host_rustc_test`,
-  `host_py_test`, ...) need no annotation: bazel2gn always skips them. Delete the GN test targets (`fuchsia_unittest_package`,
-  `fuchsia_test_package`, `fuchsia_*_component` for tests, test `executable`/`test`, `rustc_test`).
+  `test_suite`, `go_test`) and on any `with_unit_tests`/`test_deps` attributes of `rustc_*`
+  targets. Delete the migrated GN test targets from BUILD.gn.
 - **Default to `fx_unittest_package` (or `fx_unittest_component`) for unit tests without a custom manifest.**
   For a `fuchsia_unittest_package` (or `fuchsia_unittest_component`) that had no custom `.cml`
   manifest or extra capability shards, you MUST use `fx_unittest_package` from
@@ -305,18 +300,19 @@ fuchsia and host). Do NOT run full product builds by hand as well. From `$PLANTE
    `fx bazel build --config=fuchsia_platform //<dir>:all` and runs with `fx test <package_name>`
    only when a device or emulator is available. `build_verification` runs the exported host tests.
 3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit
-   0 (unless a blocking check finding is STILL failing and is a false positive or contradicts
-   `coder.md`/playbooks/Bazel rules, in which case leave the intended code in place and report the
-   failing finding in `disputed_findings`). Do NOT list check findings that already pass or
-   non-blocking INFO notes in `disputed_findings`. Planter reuses that passing result when the
-   working tree is unchanged, so do not edit anything after it. Only if `coder.md`, a playbook, a
-   helper tool, or a check remediation gave contradictory instructions that forced a workaround,
-   report it with `"category": "machinery_conflict"` in `disputed_findings`.
+   0 (unless a blocking finding is STILL failing as a false positive or rule conflict, in which
+   case keep the intended code and list it in `disputed_findings`). Never list passing checks or
+   INFO notes in `disputed_findings`. Do not edit anything after `run_checks.sh` passes so planter
+   reuses the result. Report contradictory instructions (or `remediation_validation` requiring
+   file edits when review comments only target `/COMMIT_MSG`) with
+   `"category": "machinery_conflict"` in `disputed_findings`.
 4. Record in `test_footers` (and any commit `Test:` footer) ONLY commands you ran that exited 0,
    at most 3 lines (`commit_message_format` reports the expected footer form).
-5. Commit messages and `summary` must be ASCII-only with no internal paths/domains/emails/names,
-   body/summary lines `<= 72` chars, and commit subject `<= 65` chars. Include the result of your
-   final `run_checks.sh` run in `summary`.
+5. All paths in `modified_files`, `summary`, and commit messages must be relative to
+   `$PLANTER_WORKDIR` (`<dir>/BUILD.bazel` or `//<dir>`, never `.jiri_root/worktrees/<name>/...`
+   or host paths). Commit messages and `summary` must be ASCII-only with no internal
+   paths/domains/emails/names, body/summary lines `<= 72` chars, and commit subject `<= 65` chars.
+   Include the final `run_checks.sh` result in `summary`.
 
 Always output a final JSON block matching CoderReport:
 {"summary": "...", "modified_files": ["..."], "migration_case": "case1_full_removal|case2_dual_build", "test_footers": ["..."], "disputed_findings": []}

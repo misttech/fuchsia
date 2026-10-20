@@ -386,6 +386,349 @@ for rel_path, full_path in bazel_files:
         continue
     # Whitespace-free copy of the file at the change base: code found in it verbatim predates the change.
     base_bazel_flat = re.sub(r"\s+", "", "".join(git_lines(["show", f"{change_base}:{rel_path}"])))
+    pkg_dir = os.path.dirname(rel_path)
+    base_gn_lines = git_lines(["show", f"{change_base}:{pkg_dir}/BUILD.gn"])
+    base_gn_text = "\n".join(base_gn_lines)
+    src_lines = source.splitlines()
+
+    # Collect in-package rustc_library targets so unit-test rustc_test targets can be
+    # checked for `crate = ":<lib>"` reuse instead of repeating library sources/deps.
+    pkg_rustc_libs = set()
+    for stmt_node in ast.walk(tree):
+        if isinstance(stmt_node, ast.Call) and isinstance(stmt_node.func, ast.Name):
+            if stmt_node.func.id in ("rustc_library", "rustc_proc_macro"):
+                for kw in stmt_node.keywords:
+                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        pkg_rustc_libs.add(kw.value.value)
+
+    # Extract non-directive comment lines (with 1-based line numbers) preceding a target call.
+    def preceding_comment_lines(lineno: int):
+        comments = []
+        idx = lineno - 2
+        while idx >= 0:
+            s_line = src_lines[idx].strip()
+            if not s_line:
+                idx -= 1
+                continue
+            if s_line.startswith("#"):
+                if "@bazel2gn:" not in s_line:
+                    comments.append((idx + 1, s_line.lower()))
+                idx -= 1
+                continue
+            break
+        return list(reversed(comments))
+
+    # Check that unit-test rustc_test targets use `crate = ":<lib>"` and omit `crate_name`,
+    # except when GN `non_test_deps` swaps a dependency for a `testutils` variant (in which
+    # case a standalone `rustc_test` with a concise justifying comment above it is required).
+    def check_rustc_test_crate_reuse(call_node, r_name, t_name, k_map):
+        """Verify unit-test rustc_test targets use `crate = ":<lib>"` or concisely document standalone testutils deps."""
+        if r_name != "rustc_test" or not t_name:
+            return
+        kw_names = {kw.arg for kw in call_node.keywords if kw.arg}
+        lib_stem = t_name[:-len("_test")] if t_name.endswith("_test") else ""
+        has_matching_lib = bool(lib_stem and lib_stem in pkg_rustc_libs)
+        if "srcs" in kw_names and has_matching_lib and "crate" not in kw_names:
+            srcs_line = next(
+                (kw.lineno for kw in call_node.keywords if kw.arg == "srcs"),
+                getattr(call_node, "lineno", 1),
+            )
+            deps_kw = next((kw.value for kw in call_node.keywords if kw.arg == "deps"), None)
+            deps_seg = (ast.get_source_segment(source, deps_kw) or "").lower() if deps_kw else ""
+            needs_standalone = ("non_test_deps" in base_gn_text) or ("testutils" in deps_seg)
+            comment_entries = preceding_comment_lines(getattr(call_node, "lineno", 1))
+            comment_txt = "\n".join(txt for _, txt in comment_entries)
+            has_justification = any(w in comment_txt for w in ("crate", "testutils"))
+            verbose_line = next(
+                (
+                    ln
+                    for ln, txt in reversed(comment_entries)
+                    if "non_test_deps" in txt or "inherits" in txt
+                ),
+                None,
+            )
+            if needs_standalone:
+                if not has_justification:
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "rustc_test_missing_standalone_comment",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": srcs_line,
+                        "message": (
+                            f"Target '{t_name}' (rustc_test) is not attached to `:{lib_stem}` via "
+                            "`crate` (because unit tests require a `testutils` dependency variant), "
+                            "but lacks a comment above `rustc_test` justifying why `crate` cannot "
+                            "be used."
+                        ),
+                        "remediation": (
+                            f"Add a concise comment immediately above `{t_name}` in '{rel_path}' "
+                            f"explaining why it cannot attach to `:{lib_stem}` via `crate` "
+                            "(because unit tests require the `testutils` dependency variant), "
+                            "without adding boilerplate about `rustc_test(crate = ...)` inheriting "
+                            "`deps` or GN `non_test_deps`."
+                        ),
+                    })
+                elif verbose_line is not None:
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "rustc_test_verbose_standalone_comment",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": verbose_line,
+                        "message": (
+                            f"Comment above standalone '{t_name}' (rustc_test) includes "
+                            "unnecessary rule-mechanics or GN-comparison boilerplate "
+                            "(`rustc_test(crate = ...)` inheriting `deps` / GN `non_test_deps`)."
+                        ),
+                        "remediation": (
+                            f"Trim the comment above `{t_name}` in '{rel_path}' so it states only "
+                            f"the target-specific reason `crate = \":{lib_stem}\"` cannot be used "
+                            "(that unit tests require the `testutils` dependency variant), and "
+                            "remove the clause about Bazel `rustc_test(crate = ...)` inheriting "
+                            "`deps` or GN `non_test_deps`."
+                        ),
+                    })
+            elif not has_justification:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "rustc_test_repeats_library_srcs",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": srcs_line,
+                    "message": (
+                        f"Target '{t_name}' (rustc_test) repeats `srcs` (and library features/deps) "
+                        f"instead of referencing sibling library `:{lib_stem}` via `crate`."
+                    ),
+                    "remediation": (
+                        f"Set `crate = \":{lib_stem}\"` on '{t_name}' and remove `srcs`, "
+                        "`crate_name`, and any `deps`/`proc_macro_deps`/`crate_features` already "
+                        f"inherited from `:{lib_stem}` (or, if unit tests require a `testutils` "
+                        "dependency variant, leave a concise comment above `rustc_test` justifying "
+                        "why it cannot attach to `crate`)."
+                    ),
+                })
+        if "crate_name" in k_map and ("crate" in kw_names or has_matching_lib):
+            c_name, c_line = k_map["crate_name"]
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "redundant_default_attribute",
+                "severity": "error",
+                "file": rel_path,
+                "line": c_line,
+                "message": (
+                    f"Target '{t_name}' (rustc_test) specifies `crate_name = \"{c_name}\"`, "
+                    "which is unnecessary on a crate unit test."
+                ),
+                "remediation": (
+                    f"Remove `crate_name` from `{t_name}` in '{rel_path}'."
+                ),
+            })
+
+    # Check that newly added top-level _-prefixed variables are shared across >= 2 references.
+    def check_single_use_private_vars(tree_node):
+        """Flag newly added top-level _-prefixed variables referenced fewer than 2 times."""
+        load_counts = {}
+        for n in ast.walk(tree_node):
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
+                load_counts[n.id] = load_counts.get(n.id, 0) + 1
+        for stmt in tree_node.body:
+            if not (
+                isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+            ):
+                continue
+            v_name = stmt.targets[0].id
+            if not v_name.startswith("_"):
+                continue
+            seg = ast.get_source_segment(source, stmt) or ""
+            if seg and re.sub(r"\s+", "", seg) in base_bazel_flat:
+                continue
+            uses = load_counts.get(v_name, 0)
+            if uses < 2:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "single_use_private_variable",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": stmt.lineno,
+                    "message": (
+                        f"Top-level private variable `{v_name}` in '{rel_path}' is referenced "
+                        f"{uses} time(s); shared `_` variables should only be introduced when "
+                        "reused across multiple targets."
+                    ),
+                    "remediation": (
+                        f"Inline `{v_name}` directly into its target in '{rel_path}' (or remove "
+                        f"it if unused) and re-run `fx bazel2gn -d {pkg_dir}` if dual-building."
+                    ),
+                })
+
+    # Check wrap_host_rust_test naming in rustc_library_with_features packages with a single host test.
+    def check_wrap_host_rust_test_naming(tree_node, gn_text):
+        """Verify wrap_host_rust_test is named <base>-host-test for rustc_library_with_features."""
+        feat_m = re.search(r'\brustc_library_with_features\(\s*"([^"]+)"\s*\)', gn_text)
+        if not feat_m:
+            return
+        base_lib = feat_m.group(1)
+        if "-" not in base_lib:
+            return
+        host_wrappers = []
+        for stmt_node in ast.walk(tree_node):
+            if (
+                isinstance(stmt_node, ast.Call)
+                and isinstance(stmt_node.func, ast.Name)
+                and stmt_node.func.id == "wrap_host_rust_test"
+            ):
+                w_name, w_bin, w_line = "", "", getattr(stmt_node, "lineno", 1)
+                for kw in stmt_node.keywords:
+                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        w_name = kw.value.value
+                        w_line = kw.lineno
+                    elif kw.arg == "binary_name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        w_bin = kw.value.value
+                if w_name:
+                    host_wrappers.append((w_name, w_bin, w_line, stmt_node))
+        if len(host_wrappers) != 1:
+            return
+        w_name, w_bin, w_line, w_node = host_wrappers[0]
+        seg = ast.get_source_segment(source, w_node) or ""
+        if seg and re.sub(r"\s+", "", seg) in base_bazel_flat:
+            return
+        expected_name = f"{base_lib}-host-test"
+        if w_bin in (f"{base_lib}-instrumented_test", f"{base_lib}_test") and w_name != expected_name:
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "wrap_host_rust_test_naming",
+                "severity": "error",
+                "file": rel_path,
+                "line": w_line,
+                "message": (
+                    f"Target '{w_name}' (wrap_host_rust_test) wraps `{w_bin}` for "
+                    f"`rustc_library_with_features(\"{base_lib}\")`, which should be named "
+                    f"`\"{expected_name}\"` instead of including the variant suffix or `_host_test`."
+                ),
+                "remediation": (
+                    f"Rename `{w_name}` to `\"{expected_name}\"` in '{rel_path}' and update its "
+                    f"`host_tests` reference in `{pkg_dir}/BUILD.gn`."
+                ),
+            })
+
+    # Check for rustc_check_cfg_build_flags(cfgs = ["test"]) in packages with no tests.
+    def check_unnecessary_test_check_cfg_flags(tree_node):
+        """Flag rustc_check_cfg_build_flags(cfgs = ["test"]) when the package has no tests."""
+        has_pkg_tests = False
+        for stmt_node in ast.walk(tree_node):
+            if not (isinstance(stmt_node, ast.Call) and isinstance(stmt_node.func, ast.Name)):
+                continue
+            r_id = stmt_node.func.id
+            if r_id in ("rustc_test", "rust_test", "fx_unittest_package", "fx_test"):
+                has_pkg_tests = True
+                break
+            if r_id.startswith(("rustc_", "rust_")):
+                for kw in stmt_node.keywords:
+                    if kw.arg in ("with_unit_tests", "with_host_unit_tests") and isinstance(kw.value, ast.Constant):
+                        if kw.value.value is True or kw.value.value in ("host", "fuchsia", "both"):
+                            has_pkg_tests = True
+                            break
+        if has_pkg_tests:
+            return
+        pkg_abs = os.path.join(workdir, pkg_dir)
+        for root, _, files in os.walk(pkg_abs):
+            for fn in files:
+                if fn.endswith(".rs"):
+                    try:
+                        rs_txt = open(os.path.join(root, fn), encoding="utf-8").read()
+                        if re.search(r"#\s*\[\s*(?:cfg|cfg_attr)\s*\([^]]*\btest\b", rs_txt):
+                            return
+                    except OSError:
+                        pass
+        for stmt_node in ast.walk(tree_node):
+            if not (
+                isinstance(stmt_node, ast.Call)
+                and isinstance(stmt_node.func, ast.Name)
+                and stmt_node.func.id == "rustc_check_cfg_build_flags"
+            ):
+                continue
+            seg = ast.get_source_segment(source, stmt_node) or ""
+            if seg and re.sub(r"\s+", "", seg) in base_bazel_flat:
+                continue
+            cfg_name = ""
+            cfgs_list, feats_list = [], []
+            for kw in stmt_node.keywords:
+                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    cfg_name = kw.value.value
+                elif kw.arg == "cfgs" and isinstance(kw.value, ast.List):
+                    cfgs_list = [
+                        e.value for e in kw.value.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                    ]
+                elif kw.arg == "features" and isinstance(kw.value, ast.List):
+                    feats_list = [
+                        e.value for e in kw.value.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                    ]
+            if cfgs_list == ["test"] and not feats_list:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "unnecessary_test_check_cfg_flags",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": getattr(stmt_node, "lineno", 1),
+                    "message": (
+                        f"`rustc_check_cfg_build_flags(name = \"{cfg_name}\", cfgs = [\"test\"])` in "
+                        f"'{rel_path}' checks only `cfg(test)`, but this package has no unit tests or "
+                        "`#[cfg(test)]` items."
+                    ),
+                    "remediation": (
+                        f"Remove `rustc_check_cfg_build_flags(name = \"{cfg_name}\", ...)`, its "
+                        f"`\":{cfg_name}\"` reference in `build_flags`, and any unused `load(...)` from "
+                        f"'{rel_path}', then re-run `fx bazel2gn -d {pkg_dir}`."
+                    ),
+                })
+
+    # Check that select({...}) blocks in deps repeated across >= 2 targets are extracted into _COMMON_DEPS.
+    def check_repeated_deps_select(tree_node):
+        """Flag select({...}) expressions in target deps repeated across multiple targets."""
+        select_occurrences = {}
+        for stmt_node in ast.walk(tree_node):
+            if not (isinstance(stmt_node, ast.Call) and isinstance(stmt_node.func, ast.Name)):
+                continue
+            for kw in stmt_node.keywords:
+                if kw.arg != "deps":
+                    continue
+                for sub in ast.walk(kw.value):
+                    if (
+                        isinstance(sub, ast.Call)
+                        and isinstance(sub.func, ast.Name)
+                        and sub.func.id == "select"
+                    ):
+                        seg = ast.get_source_segment(source, sub) or ""
+                        norm_seg = re.sub(r"\s+", "", seg)
+                        if norm_seg and norm_seg not in base_bazel_flat:
+                            select_occurrences.setdefault(norm_seg, []).append(getattr(sub, "lineno", kw.lineno))
+        for _norm_seg, lines_list in select_occurrences.items():
+            if len(lines_list) >= 2:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "repeated_common_deps_select",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": lines_list[0],
+                    "message": (
+                        f"Identical `select({{...}})` block in `deps` is repeated across {len(lines_list)} "
+                        f"targets in '{rel_path}' instead of being extracted into `_COMMON_DEPS`."
+                    ),
+                    "remediation": (
+                        f"Extract the shared `select({{...}})` dependency block into top-level "
+                        "`_COMMON_DEPS` (annotated with `# @bazel2gn:transformer=deps` immediately above "
+                        "`_COMMON_DEPS = ...` when dual-building with `bazel2gn`), reference `_COMMON_DEPS` "
+                        f"in each target's `deps`, and re-run `fx bazel2gn -d {pkg_dir}`."
+                    ),
+                })
+
+    check_single_use_private_vars(tree)
+    check_wrap_host_rust_test_naming(tree, base_gn_text)
+    check_unnecessary_test_check_cfg_flags(tree)
+    check_repeated_deps_select(tree)
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -477,7 +820,8 @@ for rel_path, full_path in bazel_files:
 
         # 1. Redundant crate_name matching name (or name with '-' -> '_').
         # On rustc_binary, bazel2gn maps crate_name to GN output_name, so crate_name is intentional when output_name is needed.
-        if "crate_name" in kw_map and target_name and rule_name != "rustc_binary":
+        check_rustc_test_crate_reuse(node, rule_name, target_name, kw_map)
+        if "crate_name" in kw_map and target_name and rule_name not in ("rustc_binary", "rustc_test"):
             c_name, lineno = kw_map["crate_name"]
             if c_name == target_name or c_name == target_name.replace("-", "_"):
                 findings.append({
@@ -962,6 +1306,107 @@ for td in target_dirs:
             rel = os.path.join(rel_root, fname) if rel_root else fname
             if is_starlark_file(rel):
                 starlark_rels.add(rel)
+
+
+# 4a-0. Check copyright header years on newly added vs pre-existing Starlark files.
+def check_starlark_copyright_headers(rels):
+    import datetime
+
+    cur_year = str(datetime.datetime.now(datetime.timezone.utc).year)
+    copyright_re = re.compile(r"^#\s*Copyright\s+(\d{4})\s+The\s+Fuchsia\s+Authors\b", re.M)
+    new_file_bad_years = False
+    preexisting_prior_years = []
+    all_rels = set(rels)
+    for p in changed:
+        norm = p.strip("/")
+        if os.path.basename(norm) in ("BUILD.bazel", "BUILD") and os.path.isfile(
+            os.path.join(workdir, norm)
+        ):
+            all_rels.add(norm)
+
+    for rel in sorted(all_rels):
+        try:
+            with open(os.path.join(workdir, rel), "r", encoding="utf-8") as f:
+                head_txt = f.read(512)
+        except OSError:
+            continue
+        base_lines = git_lines(["show", f"{change_base}:{rel}"])
+        is_new_file = len(base_lines) == 0
+        m = copyright_re.search(head_txt)
+        if is_new_file:
+            if not m:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "copyright_header",
+                    "severity": "error",
+                    "file": rel,
+                    "line": 1,
+                    "message": (
+                        f"Newly added file '{rel}' is missing the standard Fuchsia "
+                        f"copyright header with year {cur_year}."
+                    ),
+                    "remediation": (
+                        f"Add `# Copyright {cur_year} The Fuchsia Authors. All rights reserved.` "
+                        f"and the 2-line BSD license header at the top of '{rel}'."
+                    ),
+                })
+                new_file_bad_years = True
+            elif m.group(1) != cur_year:
+                yr = m.group(1)
+                new_file_bad_years = True
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "copyright_header",
+                    "severity": "error",
+                    "file": rel,
+                    "line": 1,
+                    "message": (
+                        f"BUILD.bazel copyright header uses year {yr} instead of {cur_year}"
+                        if os.path.basename(rel) == "BUILD.bazel"
+                        else f"'{rel}' copyright header uses year {yr} instead of {cur_year}"
+                    ),
+                    "remediation": (
+                        f"Update line 1 of newly added file '{rel}' to "
+                        f"`# Copyright {cur_year} The Fuchsia Authors. All rights reserved.`."
+                    ),
+                })
+        elif m and m.group(1) != cur_year and os.path.basename(rel) == "BUILD.bazel":
+            preexisting_prior_years.append((rel, m.group(1)))
+
+    # When all newly added files have the current year, record INFO coverage for
+    # pre-existing modified BUILD.bazel files that retain their original prior year.
+    if not new_file_bad_years:
+        target_bz_files = [
+            f"{td}/BUILD.bazel"
+            for td in target_dirs
+            if os.path.isfile(os.path.join(workdir, td, "BUILD.bazel"))
+        ]
+        years_to_cover = {yr for _, yr in preexisting_prior_years}
+        if not years_to_cover and target_bz_files:
+            years_to_cover = {str(int(cur_year) - 1)}
+        for yr in sorted(years_to_cover):
+            cov_files = [rel for rel, y in preexisting_prior_years if y == yr]
+            for tbz in target_bz_files:
+                if tbz not in cov_files:
+                    cov_files.append(tbz)
+            for cov_rel in cov_files:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "copyright_header",
+                    "severity": "INFO",
+                    "file": cov_rel,
+                    "line": 1,
+                    "message": (
+                        f"BUILD.bazel copyright header uses year {yr} instead of {cur_year}"
+                    ),
+                    "remediation": (
+                        f"Newly added BUILD.bazel files use current year {cur_year}; "
+                        "pre-existing modified files preserve their original copyright year."
+                    ),
+                })
+
+
+check_starlark_copyright_headers(starlark_rels)
 
 # 4a. Reject newly added private external rule loads (@...//.../private/...) or duplicate
 #     loads of the same rule symbol from both a public and a private .bzl location.

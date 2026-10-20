@@ -27,9 +27,32 @@ workdir, target_dir, base = sys.argv[1], sys.argv[2], sys.argv[3]
 
 def git(*args):
     try:
-        return subprocess.run(["git", "-C", workdir, *args], capture_output=True, text=True, timeout=30).stdout.strip()
+        r = subprocess.run(["git", "-C", workdir, *args], capture_output=True, text=True, timeout=30)
+        return r.stdout.strip() if r.returncode == 0 else ""
     except Exception:
         return ""
+
+# Resolve a git revision or jj revset (such as @ or @- in a jj colocated checkout) to a git commit SHA.
+def resolve_rev(rev):
+    if not rev.startswith("@"):
+        sha = git("rev-parse", "--verify", f"{rev}^{{commit}}")
+        if sha:
+            return sha
+    try:
+        r = subprocess.run(
+            ["jj", "--no-pager", "--ignore-working-copy", "-R", workdir, "log", "--no-graph", "-r", rev, "-T", "commit_id"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return git("rev-parse", "--verify", f"{r.stdout.strip()}^{{commit}}")
+    except Exception:
+        pass
+    sha = git("rev-parse", "--verify", f"{rev}^{{commit}}")
+    if sha:
+        return sha
+    if rev == "@-":
+        return git("rev-parse", "--verify", "HEAD^{commit}")
+    return ""
 
 findings = []
 
@@ -44,10 +67,16 @@ def add(category, line, message, remediation, severity="warning"):
         "remediation": remediation,
     })
 
-head = git("rev-parse", "HEAD")
-base_rev = git("rev-parse", base)
+head = resolve_rev("HEAD")
+base_rev = resolve_rev(base)
+# In a jj colocated checkout, git HEAD stays at @- while the working-copy
+# commit @ holds the change and commit message once described.
+if head and base_rev and head == base_rev and os.path.isdir(os.path.join(workdir, ".jj")):
+    at_rev = resolve_rev("@")
+    if at_rev and at_rev != base_rev and git("log", "-1", "--format=%B", at_rev).strip():
+        head = at_rev
 if head and base_rev and head != base_rev:
-    msg = git("log", "-1", "--format=%B", "HEAD")
+    msg = git("log", "-1", "--format=%B", head)
     lines = msg.splitlines()
     subject = lines[0] if lines else ""
     raw_dirs = [d.strip().strip("/") for d in target_dir.split(",") if d.strip().strip("/")]
@@ -55,7 +84,7 @@ if head and base_rev and head != base_rev:
     # (gn_secondary_tree): its code migrates to //<dir> (e.g. //third_party/<name>).
     dirs = [d[len("build/secondary/"):] if d.startswith("build/secondary/") else d for d in raw_dirs]
     first = dirs[0] if dirs else "<dir>"
-    changed = [f for f in git("diff", "--name-only", base_rev, "HEAD").splitlines() if f]
+    changed = [f for f in git("diff", "--name-only", base_rev, head).splitlines() if f]
 
     # Subsystem tags used by earlier commits touching the directory.
     tags = collections.Counter()
@@ -176,6 +205,120 @@ if head and base_rev and head != base_rev:
             "consulting the Build team).", severity="info")
     # Body: changes not specific to the migrated targets must be described.
     body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Bazel-Migration-Target|Skip-Readme-Check|TAG|Change-Id|Multiply|Cq-[\w-]+):", l))
+    # Check that the commit body does not restate the [bazel_migration] //<dir> subject line,
+    # including when wrapped across multiple lines or when the subject abbreviates with //.../
+    footer_line_re = re.compile(
+        r"^(Test|Bug|Fixed|Bazel-Migration-Target|Skip-Readme-Check|TAG|Change-Id|"
+        r"Multiply|Cq-[\w-]+|Reviewed-on|Reviewed-by|Commit-Queue|Fuchsia-Auto-Submit|"
+        r"Presubmit-Verified|API-Review):"
+    )
+    redundant_body_para_re = re.compile(
+        r"^(?:\[[\w.\-]+\]\s*)+(?:migrates?\b.*|@?//[\w./\-]+\.?)$"
+        r"|^@?//[\w./\-]+\.?$"
+        r"|^(?:this\s+(?:cl|change|commit|patch)\s+)?migrates?\s+(?:the\s+)?(?:@?//)?[\w./\-]+"
+        r"(?:\s+(?:and\s+(?:its\s+)?(?:unit\s+)?tests?|targets?|package|library|binary))?"
+        r"(?:\s+from\s+GN)?(?:\s+to\s+Bazel)?\.?$",
+        re.I,
+    )
+
+    def body_paragraphs(msg_lines):
+        paragraphs = []
+        cur_start, cur_end, cur_parts = None, None, []
+        for idx, raw in enumerate(msg_lines[1:], start=2):
+            if footer_line_re.match(raw):
+                break
+            stripped = raw.strip()
+            if not stripped:
+                if cur_parts:
+                    paragraphs.append((cur_start, cur_end, " ".join(cur_parts)))
+                    cur_start, cur_end, cur_parts = None, None, []
+                continue
+            if cur_start is None:
+                cur_start = idx
+            cur_end = idx
+            cur_parts.append(stripped)
+        if cur_parts:
+            paragraphs.append((cur_start, cur_end, " ".join(cur_parts)))
+        return paragraphs
+
+    def check_redundant_body_title(msg_lines):
+        for start_ln, end_ln, para in body_paragraphs(msg_lines):
+            if redundant_body_para_re.match(para):
+                span = f"lines {start_ln}-{end_ln}" if end_ln > start_ln else f"line {start_ln}"
+                msg_text = (
+                    f"Commit body ({span}: `{para}`) merely restates the "
+                    "`[bazel_migration] //<dir>` subject line without adding information "
+                    "(even when the subject abbreviates the path with `//.../`)."
+                )
+                rem_text = (
+                    "Remove the entire redundant `Migrate //<dir>...` paragraph from the "
+                    "commit body (leave the body empty when no non-obvious changes need "
+                    "explanation; the full path is already recorded in "
+                    "`Bazel-Migration-Target:`)."
+                )
+                add("commit_body_redundant_title", end_ln, msg_text, rem_text)
+                break
+
+    # Check that commit message paths are relative to the Fuchsia checkout root
+    # (never prefixed with .jiri_root/worktrees/<name>/ or host filesystem paths).
+    non_checkout_path_re = re.compile(
+        r"(?:@?//)?\.jiri_root/(?:worktrees/[^/\s]+/)?([\w./\-]*)"
+        r"|(?<![\w/:.])/(?:usr|home|tmp|var|opt)/[\w./\-]+"
+    )
+
+    def check_checkout_relative_paths(msg_lines):
+        in_also_migrated = False
+        for idx, raw in enumerate(msg_lines, start=1):
+            stripped = raw.strip()
+            if stripped == "Also migrated in this change:":
+                in_also_migrated = True
+                continue
+            if in_also_migrated and not stripped.startswith("- "):
+                in_also_migrated = False
+            m_bad = non_checkout_path_re.search(raw)
+            if m_bad:
+                bad_tok = m_bad.group(0)
+                rel_sub = (m_bad.group(1) or "<dir>").strip("/") or "<dir>"
+                msg_text = (
+                    f"Commit message line {idx} contains non-checkout-relative path "
+                    f"`{bad_tok}` (includes `.jiri_root`/worktree or host filesystem prefix)."
+                )
+                rem_text = (
+                    f"Use a path relative to the Fuchsia checkout root (`//{rel_sub}`), "
+                    "or remove the `Also migrated in this change:` block if no directories "
+                    f"other than `//{first}` were migrated. Also ensure `modified_files` in "
+                    "CoderReport uses checkout-relative paths (`<dir>/BUILD.bazel`, never "
+                    "`.jiri_root/worktrees/<name>/...`)."
+                )
+                add("commit_msg_non_checkout_path", idx, msg_text, rem_text, severity="error")
+                continue
+            if in_also_migrated and stripped.startswith("- "):
+                bullet = stripped[2:].strip()
+                b_dir = bullet[2:].strip("/") if bullet.startswith("//") else ""
+                if not b_dir or b_dir.startswith("."):
+                    msg_text = (
+                        f"`Also migrated in this change:` bullet `{bullet}` is not a valid "
+                        "Fuchsia checkout-relative `//<dir>` path."
+                    )
+                    rem_text = (
+                        "Write each bullet as `- //<dir>` relative to the Fuchsia checkout "
+                        "root, or remove the block if no extra directories were migrated."
+                    )
+                    add("commit_msg_non_checkout_path", idx, msg_text, rem_text, severity="error")
+                elif b_dir == first and len(dirs) <= 1:
+                    msg_text = (
+                        f"`Also migrated in this change:` bullet `{bullet}` duplicates the "
+                        f"primary migrated directory `//{first}`."
+                    )
+                    rem_text = (
+                        "Remove the redundant `Also migrated in this change:` block when "
+                        f"only `//{first}` is migrated, and pass checkout-relative paths "
+                        "in `CoderReport.modified_files`."
+                    )
+                    add("commit_body_redundant_also_migrated", idx, msg_text, rem_text)
+
+    check_redundant_body_title(lines)
+    check_checkout_relative_paths(lines)
     in_dirs = lambda f: any(f == d or f.startswith(d + "/") for d in dirs)
     for f in changed:
         if in_dirs(f) or not (f.endswith(".bzl") or f.rsplit("/", 1)[-1] == "MODULE.bazel"):
@@ -307,38 +450,53 @@ if head and base_rev and head != base_rev:
         else:
             migrated_targets.extend(all_dir_targets)
     if not is_empty:
-        migrated_targets = list(dict.fromkeys(
-            t if len(f"Bazel-Migration-Target: {t}") <= 72 else t.split(":", 1)[0]
-            for t in migrated_targets
-            if len(f"Bazel-Migration-Target: {t.split(':', 1)[0]}") <= 72
-        ))
+        migrated_targets = list(dict.fromkeys(migrated_targets))
         footer_ln = test_lines[-1][0] if test_lines else max(1, len(lines))
-        example_bmt = ", ".join(f"`Bazel-Migration-Target: {t}`" for t in (migrated_targets or [f"//{first}"]))
+        example_bmt = ", ".join(
+            f"`Bazel-Migration-Target: {t}`"
+            for t in (migrated_targets or [f"//{first}:<target>"])
+        )
         if not bmt_lines:
-            add("missing_bazel_migration_target_footer", footer_ln,
-                "Commit message is missing `Bazel-Migration-Target:` footer(s) recording the migrated target label(s).",
-                "Add `Bazel-Migration-Target:` footer line(s) (each line <= 72 chars total; use `//<dir>` when `//<dir>:<target>` would exceed 72 chars) in the single "
-                "contiguous footer block at the bottom of the commit message (after `Test:` and before `TAG:`/"
-                f"`Change-Id:`, with no blank lines between footers and no line wrapping), e.g. {example_bmt}.")
+            add(
+                "missing_bazel_migration_target_footer",
+                footer_ln,
+                "Commit message is missing `Bazel-Migration-Target:` footer(s) "
+                "recording the migrated target label(s).",
+                "Add one `Bazel-Migration-Target: //<dir>:<target>` (or "
+                "`//<dir>`) footer line per migrated target in the single "
+                "contiguous footer block at the bottom of the commit message "
+                "(after `Test:` and before `TAG:`/`Change-Id:`, with no blank "
+                "lines between footers and no line wrapping; "
+                "`Bazel-Migration-Target:` lines may exceed 72 characters), "
+                f"e.g. {example_bmt}.",
+            )
         for ln, l in bmt_lines:
             val = l.split(":", 1)[1].strip()
             canon_val = val if ":" in val else f"{val}:{val.rsplit('/', 1)[-1]}"
-            wrapped = ln < len(lines) and bool(lines[ln].strip()) and not re.match(r"^[A-Za-z0-9\-]+\s*:", lines[ln])
-            if len(l) > 72:
-                short_pkg = val.split(":", 1)[0]
-                add("bazel_migration_target_line_too_long", ln,
-                    f"`Bazel-Migration-Target:` footer `{l}` is {len(l)} characters, exceeding the 72-character upload limit.",
-                    f"Replace `{l}` with `Bazel-Migration-Target: {short_pkg}` (or omit it if another `Bazel-Migration-Target:` line <= 72 chars is already present) so every `Bazel-Migration-Target:` line is <= 72 characters.",
-                    severity="error")
-            elif not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val) or wrapped:
-                add("bazel_migration_target_footer_format", ln,
-                    f"`Bazel-Migration-Target:` footer `{l}` must specify a single canonical `//<dir>:<target>` "
-                    "label on one unwrapped line (without a leading `@`).",
-                    f"Write one unwrapped line (<= 72 chars) per migrated target, e.g. {example_bmt}.")
+            wrapped = (
+                ln < len(lines)
+                and bool(lines[ln].strip())
+                and not re.match(r"^[A-Za-z0-9\-]+\s*:", lines[ln])
+            )
+            if not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val) or wrapped:
+                add(
+                    "bazel_migration_target_footer_format",
+                    ln,
+                    f"`Bazel-Migration-Target:` footer `{l}` must specify a "
+                    "single canonical `//<dir>:<target>` (or `//<dir>`) label "
+                    "on one unwrapped line (without a leading `@`).",
+                    "Write one unwrapped line per migrated target (may exceed "
+                    f"72 characters), e.g. {example_bmt}.",
+                )
             elif ":" in val and canon_val in excluded_bmt:
-                add("bazel_migration_target_not_migrated", ln,
-                    f"`Bazel-Migration-Target:` footer `{l}` names `{val}`, which {excluded_bmt[canon_val]}.",
-                    f"List only targets migrated from GN in this commit, e.g. {example_bmt}.")
+                add(
+                    "bazel_migration_target_not_migrated",
+                    ln,
+                    f"`Bazel-Migration-Target:` footer `{l}` names `{val}`, "
+                    f"which {excluded_bmt[canon_val]}.",
+                    "List only targets migrated from GN in this commit, "
+                    f"e.g. {example_bmt}.",
+                )
         skip_readme_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Skip-Readme-Check\s*:", l)]
         has_valid_skip_readme = False
         for ln, l in skip_readme_lines:

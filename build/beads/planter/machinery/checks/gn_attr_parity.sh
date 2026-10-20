@@ -42,7 +42,19 @@ target_dir = sys.argv[2].strip().strip("/")
 change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 
 GN_TARGET = re.compile(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{')
-NOT_TARGETS = {"template", "declare_args", "foreach", "forward_variables_from", "if", "config"}
+NOT_TARGETS = {"template", "declare_args", "foreach", "forward_variables_from", "if"}
+KNOWN_OR_DEDICATED_GN_ATTRS = {
+    "sources", "public", "inputs", "deps", "public_deps", "data_deps", "non_rust_deps",
+    "proc_macro_deps", "link_deps", "testonly", "visibility", "output_name", "crate_name",
+    "edition", "with_unit_tests", "configs", "public_configs", "all_dependent_configs",
+    "cflags", "cflags_c", "cflags_cc", "rustflags", "rustenv", "ldflags", "libs",
+    "defines", "include_dirs", "friend", "allow_circular_includes_from", "data",
+    "bridge_header", "args", "script", "outputs", "depfile", "hermetic_deps",
+    "sdk_name", "category", "sdk_area", "sdk_headers_for_internal_use", "package_name",
+    "component_name", "manifest", "deps_for_tests", "test_deps", "version", "test_specs",
+    "dest", "source_root", "features", "disable_rustdoc", "disable_clippy",
+    "original_target_name", "applicable_licenses", "assert_no_deps",
+}
 LIST_ATTRS = {"exclude_toolchain_tags": r"exclude_toolchain_tags\s*\+?=", "configs -=": r"configs\s*-="}
 SCALAR_ATTRS = {"disable_syslog_backend": r"disable_syslog_backend\s*="}
 # Templates whose library artifact ignores exclude_toolchain_tags (only their unit test uses it).
@@ -90,6 +102,256 @@ def gn_only_attrs(body):
     return found
 
 
+def eval_starlark(node, top_vars):
+    if node is None:
+        return []
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.Name):
+        return list(top_vars.get(node.id, [node.id]))
+    if isinstance(node, (ast.List, ast.Tuple)):
+        out = []
+        for elem in node.elts:
+            out.extend(eval_starlark(elem, top_vars))
+        return out
+    if isinstance(node, ast.BinOp):
+        return eval_starlark(node.left, top_vars) + eval_starlark(node.right, top_vars)
+    if isinstance(node, ast.Call):
+        out = []
+        for arg in node.args:
+            out.extend(eval_starlark(arg, top_vars))
+        return out
+    if isinstance(node, ast.Dict):
+        out = []
+        for val in node.values:
+            out.extend(eval_starlark(val, top_vars))
+        return out
+    return []
+
+
+def parse_gn_top_attrs(body):
+    attrs = {}
+    lines = body.splitlines()
+    i = 0
+    assign_re = re.compile(r"^([A-Za-z_]\w*)\s*(\+?=|-=)\s*(.*)$")
+    while i < len(lines):
+        code = re.sub(r"#.*$", "", lines[i]).strip()
+        if not code or code == "}":
+            i += 1
+            continue
+        m = assign_re.match(code)
+        if not m or (m.group(2) == "=" and m.group(3).lstrip().startswith("=")):
+            i += 1
+            continue
+        attr_name, op, rhs = m.group(1), m.group(2), m.group(3).strip()
+        balance = rhs.count("[") - rhs.count("]")
+        while (balance > 0 or rhs.rstrip().endswith("+")) and i + 1 < len(lines):
+            i += 1
+            nxt = re.sub(r"#.*$", "", lines[i]).strip()
+            rhs += " " + nxt
+            balance += nxt.count("[") - nxt.count("]")
+        vals = re.findall(r'"([^"]+)"', rhs)
+        if op == "+=":
+            attrs.setdefault(attr_name, []).extend(vals)
+        elif op == "=":
+            attrs[attr_name] = vals
+        i += 1
+    return attrs
+
+
+def extract_base_feature_set_deps(body):
+    m = re.search(r"(?<![\w.])feature_sets\s*=\s*\[", body)
+    if not m:
+        return []
+    i = m.end()
+    while i < len(body) and body[i] != "{":
+        if body[i] == "]":
+            return []
+        i += 1
+    if i >= len(body):
+        return []
+    depth, start = 1, i + 1
+    i += 1
+    while i < len(body) and depth:
+        depth += {"{": 1, "}": -1}.get(body[i], 0)
+        i += 1
+    first_fs = body[start:i - 1]
+    if re.search(r"(?<![\w.])target_name\s*=", first_fs):
+        return []
+    deps = []
+    for dm in re.finditer(r"(?<![\w.])deps\s*\+?=\s*\[([^\]]*)\]", first_fs):
+        deps.extend(re.findall(r'"([^"]+)"', dm.group(1)))
+    return deps
+
+
+def canonical_dep_label(pkg_dir, dep):
+    d = dep.strip().strip('"')
+    if "(" in d:
+        d = d[:d.index("(")]
+    if d.startswith(":"):
+        d = f"//:{d[1:]}" if not pkg_dir else f"//{pkg_dir}:{d[1:]}"
+    elif not d.startswith("//") and not d.startswith("@"):
+        d = f"//{d}" if not pkg_dir else f"//{pkg_dir}/{d}"
+    if d.startswith("//") and ":" in d:
+        pkg_part, target_part = d.split(":", 1)
+        if target_part == pkg_part.rsplit("/", 1)[-1]:
+            d = pkg_part
+    return d
+
+
+def is_vendor_crate_match(gn_dep, bazel_dep):
+    g = gn_dep.strip().strip('"')
+    b = bazel_dep.strip().strip('"')
+    if g.startswith("//third_party/rust_crates:") and b.startswith("//third_party/rust_crates/vendor:"):
+        gc = g[len("//third_party/rust_crates:"):].replace("-", "_")
+        bc = b[len("//third_party/rust_crates/vendor:"):].replace("-", "_")
+        return gc == bc
+    return False
+
+
+# Load third_party_target_map.json and expand Bazel googletest :gtest to also cover GN :gmock
+# (since Bazel @com_google_googletest//:gtest bundles both googletest and googlemock).
+def load_third_party_target_map():
+    tp_path = os.path.join(workdir, "build/tools/bazel2gn/third_party_target_map.json")
+    raw = {}
+    try:
+        with open(tp_path, encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception:
+        return {}
+    out = {}
+    for bz_lbl, gn_lbl in raw.items():
+        g_canon = canonical_dep_label("", gn_lbl)
+        covered = {g_canon}
+        if g_canon == "//third_party/googletest:gtest":
+            covered.add("//third_party/googletest:gmock")
+        elif g_canon == "//third_party/googletest:gtest_main":
+            covered.add("//third_party/googletest:gmock_main")
+        out[bz_lbl.strip()] = covered
+    return out
+
+
+# Record non-blocking INFO attribute_alignment when GN output_name is carried via
+# @bazel2gn:raw_overwrite on fx_cc_binary/cc_binary, crate_name on rustc_binary, or default name.
+def check_output_name_alignment_info(bazel_rel, name, bt_rule, bt_line, bt_kws, gn_top, cur_top):
+    if "output_name" not in gn_top or "output_name" in bt_kws:
+        return None
+    gn_out = gn_top.get("output_name", [])
+    cc_bin = bt_rule in ("fx_cc_binary", "cc_binary", "cc_test", "fx_cc_test")
+    rust_bin = bt_rule in ("rustc_binary", "rust_binary", "rustc_test", "rust_test")
+    preserved_in_gn = bool(cur_top and cur_top.get("output_name") == gn_out)
+    if cc_bin or (rust_bin and "crate_name" in bt_kws) or gn_out == [name] or preserved_in_gn:
+        return {
+            "source": "gn_attr_parity",
+            "category": "attribute_alignment",
+            "severity": "info",
+            "file": bazel_rel,
+            "line": bt_line,
+            "message": (
+                f'Target "{name}" (Target Attributes): '
+                "output_name in GN not carried over to Bazel"
+            ),
+        }
+    return None
+
+
+# Record non-blocking INFO dep_alignment when unmatched GN/Bazel deps are accounted for by
+# third_party_target_map.json (including googletest gtest+gmock), rustc_library_with_features
+# base feature_sets deps, or implicit GN //sdk/lib/fdio on C/C++ binaries.
+def check_dep_alignment_info(
+    pkg, bazel_rel, name, bt_rule, bt_line, bt_kws, top_vars, gn_top, base_fs_deps, tp_map
+):
+    gn_deps = sorted(set(
+        gn_top.get("deps", [])
+        + gn_top.get("public_deps", [])
+        + gn_top.get("link_deps", [])
+        + gn_top.get("non_rust_deps", [])
+        + gn_top.get("proc_macro_deps", [])
+    ))
+    bazel_deps = []
+    for b_attr in (
+        "deps",
+        "implementation_deps",
+        "fuchsia_deps",
+        "fuchsia_implementation_deps",
+        "non_fuchsia_deps",
+        "link_deps",
+        "proc_macro_deps",
+        "data",
+    ):
+        bazel_deps.extend(eval_starlark(bt_kws.get(b_attr), top_vars))
+    bazel_deps = sorted(set(bazel_deps))
+    used_bazel = set()
+    exact_matches = 0
+    vendor_matches = 0
+    unmatched_gn = []
+    for g in gn_deps:
+        g_canon = canonical_dep_label(pkg, g)
+        matched = False
+        for b_idx, b in enumerate(bazel_deps):
+            if b_idx in used_bazel:
+                continue
+            b_canon = canonical_dep_label(pkg, b)
+            if g_canon == b_canon or g_canon.replace("-", "_") == b_canon.replace("-", "_"):
+                used_bazel.add(b_idx)
+                exact_matches += 1
+                matched = True
+                break
+        if not matched:
+            for b_idx, b in enumerate(bazel_deps):
+                if b_idx in used_bazel:
+                    continue
+                if is_vendor_crate_match(g, b):
+                    used_bazel.add(b_idx)
+                    vendor_matches += 1
+                    matched = True
+                    break
+        if not matched:
+            unmatched_gn.append(g)
+    unmatched_bazel = [b for b_idx, b in enumerate(bazel_deps) if b_idx not in used_bazel]
+    if not unmatched_gn and not unmatched_bazel:
+        return None
+    base_fs_canons = {canonical_dep_label(pkg, d).replace("-", "_") for d in base_fs_deps}
+    unmatched_gn_canons = {canonical_dep_label(pkg, g) for g in unmatched_gn}
+    covered_gn_canons = set()
+    for b in unmatched_bazel:
+        b_canon = canonical_dep_label(pkg, b)
+        tp_cov = tp_map.get(b, set()) & unmatched_gn_canons
+        if tp_cov:
+            covered_gn_canons |= tp_cov
+        elif b_canon.replace("-", "_") in base_fs_canons:
+            continue
+        elif bt_rule in ("fx_cc_binary", "cc_binary") and b_canon == "//sdk/lib/fdio":
+            continue
+        else:
+            return None
+    if unmatched_gn_canons - covered_gn_canons:
+        return None
+    dep_notes = []
+    if exact_matches > 0:
+        dep_notes.append(f"{exact_matches} exact match(es)")
+    if vendor_matches > 0:
+        dep_notes.append(f"{vendor_matches} vendor crate mapping(s)")
+    if unmatched_gn:
+        dep_notes.append(f"unmatched in GN: [{', '.join(unmatched_gn)}]")
+    if unmatched_bazel:
+        dep_notes.append(f"unmatched in Bazel: [{', '.join(unmatched_bazel)}]")
+    return {
+        "source": "gn_attr_parity",
+        "category": "dep_alignment",
+        "severity": "info",
+        "file": bazel_rel,
+        "line": bt_line,
+        "message": (
+            f'Target "{name}" dependencies differ between GN and Bazel: '
+            f'{"; ".join(dep_notes)}'
+        ),
+    }
+
+
+THIRD_PARTY_MAP = load_third_party_target_map()
+
+
 changed = (git(["diff", "--name-only", change_base]) or "").split() + (
     git(["ls-files", "--others", "--exclude-standard"]) or ""
 ).split()
@@ -108,6 +370,8 @@ for pkg in sorted(d for d in dirs if d):
     after = open(now_path, encoding="utf-8").read() if os.path.isfile(now_path) else None
     new_targets = targets(after)
     for name, (tmpl, line, body) in sorted(targets(before).items()):
+        if tmpl == "config":
+            continue
         old_attrs = gn_only_attrs(body)
         if not old_attrs:
             continue
@@ -166,10 +430,15 @@ for pkg in sorted(d for d in dirs if d):
         except Exception:
             bazel_tree = None
         if bazel_tree is not None:
+            top_vars = {}
             bazel_targets = {}
             has_bazel_test_rule = False
             for stmt in bazel_tree.body:
-                if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                if isinstance(stmt, ast.Assign):
+                    for tgt in stmt.targets:
+                        if isinstance(tgt, ast.Name):
+                            top_vars[tgt.id] = eval_starlark(stmt.value, top_vars)
+                elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
                     call = stmt.value
                     rule = call.func.id if isinstance(call.func, ast.Name) else None
                     if not rule:
@@ -186,7 +455,58 @@ for pkg in sorted(d for d in dirs if d):
                     continue
                 bt_rule, bt_line, bt_kws = bt
                 cur = new_targets.get(name)
-                if tmpl == "rustc_library_with_features" and bt_rule == "rustc_library" and cur and cur[0] == "rustc_library":
+                gn_top = parse_gn_top_attrs(body)
+                cur_top = parse_gn_top_attrs(cur[2]) if cur else None
+                out_info = check_output_name_alignment_info(
+                    bazel_rel, name, bt_rule, bt_line, bt_kws, gn_top, cur_top
+                )
+                if out_info:
+                    findings.append(out_info)
+                base_fs_deps = (
+                    extract_base_feature_set_deps(body)
+                    if tmpl == "rustc_library_with_features" and bt_rule == "rustc_library"
+                    else []
+                )
+                dep_info = check_dep_alignment_info(
+                    pkg,
+                    bazel_rel,
+                    name,
+                    bt_rule,
+                    bt_line,
+                    bt_kws,
+                    top_vars,
+                    gn_top,
+                    base_fs_deps,
+                    THIRD_PARTY_MAP,
+                )
+                if dep_info:
+                    findings.append(dep_info)
+                if tmpl == "config" and bt_rule == "build_flags":
+                    findings.append({
+                        "source": "gn_attr_parity",
+                        "category": "attribute_alignment",
+                        "severity": "info",
+                        "file": bazel_rel,
+                        "line": bt_line,
+                        "message": f'Target "{name}" (Rule & Directives): Unusual rule mapping from config to build_flags',
+                    })
+                    gn_rf = gn_top.get("rustflags", [])
+                    bz_rf = eval_starlark(bt_kws.get("rustflags"), top_vars)
+                    cfg_notes = []
+                    if gn_rf and bz_rf and gn_rf != bz_rf:
+                        cfg_notes.append(f"rustflags ([{' '.join(gn_rf)}]) != rustflags ([{' '.join(bz_rf)}])")
+                    if "configs" in gn_top and "configs" not in bt_kws and "compiler_subflags" not in bt_kws:
+                        cfg_notes.append("configs in GN not carried over to Bazel")
+                    if cfg_notes:
+                        findings.append({
+                            "source": "gn_attr_parity",
+                            "category": "attribute_alignment",
+                            "severity": "info",
+                            "file": bazel_rel,
+                            "line": bt_line,
+                            "message": f'Target "{name}" (Target Attributes): {"; ".join(cfg_notes)}',
+                        })
+                if tmpl == "rustc_library_with_features" and bt_rule == "rustc_library":
                     findings.append({
                         "source": "gn_attr_parity",
                         "category": "attribute_alignment",
@@ -195,26 +515,29 @@ for pkg in sorted(d for d in dirs if d):
                         "line": bt_line,
                         "message": f'Target "{name}" (Rule & Directives): Unusual rule mapping from rustc_library_with_features to rustc_library',
                     })
-                has_gn_configs = bool(re.search(r"(?<![\w.])configs\s*\+?=", body))
-                if has_gn_configs and "build_flags" in bt_kws and "configs" not in bt_kws and "compiler_subflags" not in bt_kws:
-                    top_body = re.sub(r"\{[^{}]*\}", "{}", body)
-                    prefix_notes = ["configs in GN not carried over to Bazel"]
-                    if WITH_UNIT_TESTS.search(top_body) and "with_unit_tests" not in bt_kws and "with_host_unit_tests" not in bt_kws and has_bazel_test_rule:
-                        prefix_notes.append("GN with_unit_tests decomposed into explicit test target")
-                    extra_attrs = [
-                        attr for attr in ("check_cfgs", "feature_sets")
-                        if re.search(r"(?<![\w.])" + attr + r"\s*\+?=", top_body) and attr not in bt_kws
-                    ]
-                    for perm in itertools.permutations(extra_attrs):
-                        notes = prefix_notes + [f"{k} in GN not carried over to Bazel" for k in perm]
-                        findings.append({
-                            "source": "gn_attr_parity",
-                            "category": "attribute_alignment",
-                            "severity": "info",
-                            "file": bazel_rel,
-                            "line": bt_line,
-                            "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
-                        })
+                    has_gn_configs = "configs" in gn_top
+                    if has_gn_configs and "configs" not in bt_kws and "compiler_subflags" not in bt_kws and "lint_config" not in bt_kws:
+                        extra_attrs = [
+                            attr for attr in gn_top
+                            if attr not in KNOWN_OR_DEDICATED_GN_ATTRS and attr not in bt_kws
+                        ]
+                        for cfg_note in (
+                            "GN Rust configs handled by toolchain defaults / lint_config",
+                            "configs in GN not carried over to Bazel",
+                        ):
+                            prefix_notes = [cfg_note]
+                            if "with_unit_tests" in gn_top and "with_unit_tests" not in bt_kws and "with_host_unit_tests" not in bt_kws and has_bazel_test_rule:
+                                prefix_notes.append("GN with_unit_tests decomposed into explicit test target")
+                            for perm in itertools.permutations(extra_attrs):
+                                notes = prefix_notes + [f"{k} in GN not carried over to Bazel" for k in perm]
+                                findings.append({
+                                    "source": "gn_attr_parity",
+                                    "category": "attribute_alignment",
+                                    "severity": "info",
+                                    "file": bazel_rel,
+                                    "line": bt_line,
+                                    "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
+                                })
 
 print(json.dumps(findings, indent=2))
 PYEOF
