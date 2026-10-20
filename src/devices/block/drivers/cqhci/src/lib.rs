@@ -28,7 +28,6 @@ use futures::StreamExt as _;
 use log::{debug, error, info, warn};
 
 mod command_queue;
-mod dma_buffer;
 mod partition;
 mod transfer_manager;
 
@@ -246,11 +245,6 @@ impl Driver for CqhciDriver {
             (get_cqhci_client(&service)?, rpmb, inline_crypto)
         };
 
-        let vmar =
-            context.vmar().duplicate_handle(zx::Rights::SAME_RIGHTS).inspect_err(|status| {
-                error!(status:?; "Failed to duplicate VMAR");
-            })?;
-
         let host_info = cqhci.info().await.inspect_err(|status| {
             error!(status:?; "Failed to get host info");
         })?;
@@ -264,9 +258,10 @@ impl Driver for CqhciDriver {
 
         let mut fs = ServiceFs::new();
         let scope = Scope::new();
+        let vmar = context.vmar();
 
         let (command_queue, partitions_by_id) = CommandQueue::initialize(
-            vmar,
+            &vmar,
             cqhci,
             rpmb,
             host_info,

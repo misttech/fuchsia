@@ -48,8 +48,8 @@ use sdmmc_spec::{
     SdhciInterruptStatusEnableRegister, SdhciInterruptStatusRegister,
 };
 
-use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
 use crate::transfer_manager::{Transfer, TransferManager, TransferOptions};
+use dma_buffer::{ContiguousBuffer, PagedBuffer};
 use storage_device::buffer::OwnedBuffer;
 
 const IRQ_PORT_IRQ_KEY: u64 = 1;
@@ -1346,7 +1346,7 @@ impl CommandQueue {
     /// constraints apply as for [`Arc::new_cyclic`]; in particular, the `&Weak<Self>` cannot be
     /// upgraded from within the callback.
     pub async fn initialize<T, P>(
-        vmar: zx::Vmar,
+        vmar: &zx::Vmar,
         host: Box<dyn CommandQueueHost>,
         rpmb: fidl_next::Client<rpmb::DriverRpmb, DriverChannel>,
         mut host_info: cqhci::CqhciHostInfo,
@@ -1375,17 +1375,15 @@ impl CommandQueue {
         info!("Initializing CQHCI.  Version {version:04x} caps {capabilities:?}");
 
         // Allocate DMA buffers.
-        let vmar_duplicate =
-            vmar.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate vmar")?;
         let tdl_buffer =
-            ContiguousDmaBuffer::new(vmar_duplicate, &bti, CQHCI_TASK_DESCRIPTOR_LIST_SIZE)
+            ContiguousBuffer::new_with_vmar(&bti, vmar, CQHCI_TASK_DESCRIPTOR_LIST_SIZE)
                 .context("Failed to create TDL DMA buffer")?;
-        debug!("Allocated TDL buffer {} @ 0x{:x}", tdl_buffer.size(), tdl_buffer.phys_address());
+        debug!("Allocated TDL buffer {} @ 0x{:x}", tdl_buffer.size(), tdl_buffer.phys());
 
         let (extra_descriptors_buffer_size, max_transfer_blocks) =
             TransferManager::extra_descriptors_dimensions();
         let extra_descriptors_buffer =
-            DiscontiguousDmaBuffer::new(vmar, &bti, extra_descriptors_buffer_size)
+            PagedBuffer::new_with_vmar(&bti, vmar, extra_descriptors_buffer_size)
                 .context("Failed to create descriptor DMA buffer")?;
         host_info.sdmmc_host_info.max_transfer_size = max_transfer_blocks * MMC_BLOCK_SIZE as u32;
         debug!(

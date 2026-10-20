@@ -35,7 +35,6 @@ fuchsia_rust_driver("driver") {
   edition = "2024"
   sources = [
     "src/command_queue.rs",
-    "src/dma_buffer.rs",
     "src/lib.rs",
     "src/partition.rs",
     "src/tests.rs",
@@ -61,11 +60,11 @@ fuchsia_rust_driver("driver") {
     "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//src/devices/block/drivers/cqhci/spec",
+    "//src/devices/lib/dma-buffer/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//src/storage/lib/block_server",

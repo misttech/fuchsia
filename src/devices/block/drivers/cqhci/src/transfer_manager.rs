@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::dma_buffer::{
-    ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer as _, WriteOnlySlice,
-};
+use dma_buffer::{ContiguousBuffer, PagedBuffer, PhysIter};
 use log::warn;
 use sdmmc_spec::{
     CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CommandQueueTDLDirectCmdEntry, CommandQueueTDLEntry,
@@ -12,147 +10,20 @@ use sdmmc_spec::{
     TransferBytes,
 };
 use std::num::NonZeroU16;
-use std::ops::Range;
 use std::sync::Arc;
 use storage_device::buffer::OwnedBuffer;
 use zx::sys::zx_paddr_t;
 
-type ContiguousPages = Range<zx_paddr_t>;
-
 fn round_down(value: u64, modulus: u64) -> u64 {
     value - (value % modulus)
-}
-
-/// Compresses a sequence of equally-sized page ranges into as few contiguous ranges as possible,
-/// each of which is no longer than a maximum length.
-///
-/// The iterator will emit less than or equal to the number of input ranges in most cases, except
-/// when the maximum length is smaller than the size of the input ranges.
-///
-/// For example, with input ranges [0..10, 10..20, 30..40], the iterator would emit:
-///   - [0..20, 30..40] if the maximum length is >= 20,
-///   - [0..15, 15..20, 30..40] if the maximum length is 15,
-///   - [0..5, 5..10, 10..15, 15..20, 30..35, 35..40] if the maximum length is 5.
-struct ContiguousPagesIterParams<'a> {
-    /// A list of physical addresses.  Each address represents the start of a pinned region of
-    /// `granularity` bytes.
-    pub addresses: &'a [zx_paddr_t],
-    /// The length, in bytes, of each pinned region.
-    pub granularity: usize,
-    /// The maximum length, in bytes, of contiguous ranges that the iterator will emit.  Input
-    /// ranges which exceed this will be split as needed.
-    pub max_contiguity: usize,
-    /// The initial offset into the first pinned region.  The first output region will point to the
-    /// start of the first region plus this offset, and the rest of the regions will proceed from
-    /// there.
-    ///
-    /// This field has no specific alignment requirements, but must be less than `granularity`.
-    pub offset: usize,
-    /// The size, in bytes, of the desired length to emit from the iterator.
-    ///
-    /// This field has no specific alignment requirements, but `output_offset + output_length` must
-    /// not exceed the length described by `addresses` and `granularity`.
-    pub length: usize,
-}
-
-#[derive(Debug)]
-struct ContiguousPagesIter<'a> {
-    addresses: &'a [zx_paddr_t],
-    granularity: usize,
-    // The maximum size of contiguous regions to emit.
-    max_contiguity: usize,
-    // The index into `addresses` which we're emitting from.
-    index: usize,
-    // The byte offset into the region at `addresses[index]` which we've already emitted up to.
-    offset_from_index: usize,
-    // The total number of output bytes remaining.
-    output_bytes_left: usize,
-}
-
-impl<'a> ContiguousPagesIter<'a> {
-    fn new(params: ContiguousPagesIterParams<'a>) -> Self {
-        assert!(params.offset < params.granularity);
-        assert!(params.offset + params.length <= params.addresses.len() * params.granularity);
-        assert!(params.granularity > 0);
-        assert!(params.max_contiguity > 0);
-        Self {
-            addresses: params.addresses,
-            granularity: params.granularity,
-            max_contiguity: params.max_contiguity,
-            index: 0,
-            offset_from_index: params.offset,
-            output_bytes_left: params.length,
-        }
-    }
-
-    // Returns the start and end of the output chunk starting at `offset` bytes into the
-    // `addresses[idx]`.
-    fn range_of(&self, idx: usize, offset: usize) -> (zx_paddr_t, zx_paddr_t) {
-        let start = self.addresses[idx];
-        let limit = std::cmp::min(self.max_contiguity, self.output_bytes_left);
-        let end = std::cmp::min(start + self.granularity, start + offset + limit);
-        (start + offset, end)
-    }
-}
-
-impl<'a> Iterator for ContiguousPagesIter<'a> {
-    type Item = ContiguousPages;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.output_bytes_left == 0 {
-            return None;
-        }
-        if self.index == self.addresses.len() {
-            return None;
-        }
-
-        let (start, mut end) = self.range_of(self.index, self.offset_from_index);
-        let limit = std::cmp::min(self.max_contiguity, self.output_bytes_left);
-        if end - start == limit {
-            // We're emitting as much as we can.
-            self.offset_from_index += limit;
-            self.output_bytes_left -= limit;
-            if self.offset_from_index >= self.granularity {
-                self.offset_from_index = 0;
-                self.index += 1;
-            }
-            return Some(start..end);
-        }
-        // We emitted less than the limit, so see if we can coalesce any contiguous ranges.
-        self.offset_from_index = 0;
-        self.index += 1;
-        while self.index < self.addresses.len() && end - start < limit {
-            let (next, next_end) = self.range_of(self.index, 0);
-            if end != next {
-                // Not contiguous
-                break;
-            }
-            let new_end = std::cmp::min(start + limit, next_end);
-            let added = new_end - end;
-            if added == 0 {
-                break;
-            }
-            end = new_end;
-            if end < next_end {
-                self.offset_from_index = added;
-                break;
-            } else {
-                self.offset_from_index = 0;
-                self.index += 1;
-            }
-        }
-
-        self.output_bytes_left -= end - start;
-        Some(start..end)
-    }
 }
 
 /// TransferManager is responsible for keeping track of in-flight CQHCI requests.  It maintains the
 /// state of the Task Descriptor List and other transfer descriptors, and interacts with the CQE via
 /// registers to submit tasks.
 pub struct TransferManager {
-    tdl_buffer: ContiguousDmaBuffer,
-    extra_descriptors_buffer: DiscontiguousDmaBuffer,
+    tdl_buffer: ContiguousBuffer,
+    extra_descriptors_buffer: PagedBuffer,
     bti: zx::Bti,
     minimum_contiguity: u64,
     max_transfer_blocks: u32,
@@ -183,8 +54,8 @@ impl TransferManager {
     }
 
     pub fn new(
-        tdl_buffer: ContiguousDmaBuffer,
-        extra_descriptors_buffer: DiscontiguousDmaBuffer,
+        tdl_buffer: ContiguousBuffer,
+        extra_descriptors_buffer: PagedBuffer,
         bti: zx::Bti,
     ) -> Self {
         let (extra_descriptor_size, max_transfer_blocks) = Self::extra_descriptors_dimensions();
@@ -208,7 +79,7 @@ impl TransferManager {
     ///
     /// This MUST NOT be called while CQE is enabled, as this will unpin memory that might be
     /// accessed by the CQE.
-    pub unsafe fn unpin_buffers(mut self) {
+    pub unsafe fn unpin_buffers(self) {
         if let Err(status) = unsafe { self.tdl_buffer.unpin() } {
             warn!(status:?; "Failed to unpin TDL");
         }
@@ -218,7 +89,7 @@ impl TransferManager {
     }
 
     pub fn tdl_address(&self) -> u64 {
-        self.tdl_buffer.phys_address() as u64
+        self.tdl_buffer.phys() as u64
     }
 
     /// Initializes the TDL entry for a DCMD.
@@ -307,13 +178,14 @@ impl TransferManager {
                 vmo.op_range(zx::VmoOp::CACHE_CLEAN, vmo_offset, length)?;
             }
         };
-        let contig_ranges = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &paddrs[..],
-            granularity: contiguity as usize,
-            max_contiguity: TransferBytes::MAX_BYTES,
-            offset: (vmo_offset - aligned_vmo_offset) as usize,
-            length: length as usize,
-        });
+        let contig_ranges = PhysIter::new_with_options(
+            &paddrs[..],
+            contiguity as usize,
+            (vmo_offset - aligned_vmo_offset) as usize,
+            length as usize,
+            TransferBytes::MAX_BYTES,
+            true,
+        );
         self.commit_transfer_task(
             &mut transfer,
             block_offset,
@@ -380,13 +252,14 @@ impl TransferManager {
             data_direction: Direction::Read,
         };
 
-        let contig_ranges = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: paddrs,
-            granularity: contiguity,
-            max_contiguity: TransferBytes::MAX_BYTES,
+        let contig_ranges = PhysIter::new_with_options(
+            paddrs,
+            contiguity,
             offset,
             length,
-        });
+            TransferBytes::MAX_BYTES,
+            true,
+        );
         self.commit_transfer_task(
             &mut transfer,
             block_offset,
@@ -402,15 +275,15 @@ impl TransferManager {
         transfer: &mut Transfer,
         block_offset: u32,
         block_count: NonZeroU16,
-        contig_regions: ContiguousPagesIter<'_>,
+        contig_regions: PhysIter<'_>,
         transfer_options: TransferOptions,
     ) -> Result<(), zx::Status> {
-        let offset = transfer.tdl_slot() as usize * zx::system_get_page_size() as usize;
-        let max_descriptors = zx::system_get_page_size() as usize
-            / std::mem::size_of::<CommandQueueTransferDescriptor>();
-        let mut num_descriptors = 0;
+        let page_size = zx::system_get_page_size() as usize;
+        let slot = transfer.tdl_slot() as usize;
+        let offset = slot * page_size;
+        let max_descriptors = page_size / std::mem::size_of::<CommandQueueTransferDescriptor>();
         let mut contig_regions = contig_regions.peekable();
-        let first_region = contig_regions.next().unwrap();
+        let (first_addr, first_len) = contig_regions.next().ok_or(zx::Status::INVALID_ARGS)?;
         let crypto_params = if transfer_options.inline_crypto.is_enabled {
             let dun = u32::try_from(transfer_options.inline_crypto.dun)
                 .map_err(|_| zx::Status::OUT_OF_RANGE)?;
@@ -419,59 +292,43 @@ impl TransferManager {
             None
         };
         let tdl_entry = if contig_regions.peek().is_none() {
-            transfer.buffers = TransferBuffers::Single(first_region.start);
+            transfer.buffers = TransferBuffers::Single(first_addr);
             CommandQueueTDLEntry::single_buffer(
                 transfer.data_direction,
                 block_offset,
                 block_count,
-                first_region.start as u64,
+                first_addr as u64,
                 transfer_options.queue_barrier,
                 crypto_params,
             )
             .unwrap() // Unwrap OK, we already checked `block_count` is valid in the caller
         } else {
-            // SAFETY: We have exclusive access to the slot, and each slot has a separate page
-            // reserved for extra descriptors.
-            unsafe {
-                self.extra_descriptors_buffer.write(
-                    offset,
-                    max_descriptors,
-                    |mut slice: WriteOnlySlice<'_, CommandQueueTransferDescriptor>| {
-                        let mut i = 0;
-                        let mut region = first_region;
-                        while let Some(next) = contig_regions.next() {
-                            debug_assert!(i < max_descriptors);
-                            // Unwrap is OK since ContiguousPagesIter ensured that the ranges are
-                            // not too big.
-                            let length =
-                                TransferBytes::try_from(region.end - region.start).unwrap();
-                            slice.set(
-                                i,
-                                CommandQueueTransferDescriptor::transfer(
-                                    region.start as u64,
-                                    length,
-                                    false,
-                                ),
-                            );
-                            i += 1;
-                            region = next;
-                        }
-                        // Unwrap is OK since ContiguousPagesIter ensured that the ranges are not
-                        // too big.
-                        let length = TransferBytes::try_from(region.end - region.start).unwrap();
-                        slice.set(
-                            i,
-                            CommandQueueTransferDescriptor::transfer(
-                                region.start as u64,
-                                length,
-                                true,
-                            ),
-                        );
-                        num_descriptors = i + 1;
-                    },
-                )?;
+            let base_index = slot * max_descriptors;
+            let mut i = 0;
+            let mut region = (first_addr, first_len);
+            while let Some(next) = contig_regions.next() {
+                debug_assert!(i < max_descriptors);
+                // Unwrap is OK since PhysIter ensured that the ranges are not too big.
+                let length = TransferBytes::try_from(region.1).unwrap();
+                self.extra_descriptors_buffer.write_element(
+                    base_index + i,
+                    &CommandQueueTransferDescriptor::transfer(region.0 as u64, length, false),
+                );
+                i += 1;
+                region = next;
             }
-            let phys_address = self.extra_descriptors_buffer.phys_address_for(offset);
+            // Unwrap is OK since PhysIter ensured that the ranges are not too big.
+            let length = TransferBytes::try_from(region.1).unwrap();
+            self.extra_descriptors_buffer.write_element(
+                base_index + i,
+                &CommandQueueTransferDescriptor::transfer(region.0 as u64, length, true),
+            );
+            let num_descriptors = i + 1;
+            self.extra_descriptors_buffer.cache_flush(
+                offset,
+                num_descriptors * std::mem::size_of::<CommandQueueTransferDescriptor>(),
+            )?;
+            let phys_address = self.extra_descriptors_buffer.phys()[slot];
             transfer.buffers = TransferBuffers::ScatterGatherList(phys_address, num_descriptors);
             CommandQueueTDLEntry::scatter_gather_buffers(
                 transfer.data_direction,
@@ -492,16 +349,7 @@ impl TransferManager {
         tdl_slot: u8,
         tdl_entry: T,
     ) -> Result<(), zx::Status> {
-        // SAFETY: We have exclusive access to the slot.
-        unsafe {
-            self.tdl_buffer.write(
-                tdl_slot as usize * std::mem::size_of::<T>(),
-                1,
-                |mut slice: WriteOnlySlice<'_, T>| {
-                    slice.set(0, tdl_entry);
-                },
-            )
-        }
+        self.tdl_buffer.write_struct(tdl_slot as usize * std::mem::size_of::<T>(), &tdl_entry)
     }
 }
 
@@ -666,23 +514,16 @@ mod tests {
             paddrs.push(EXTRA_DESCRIPTORS_BASE + i * page_size);
         }
         bti.set_paddrs(&paddrs[..]);
-        let vmar = fuchsia_runtime::vmar_root_self()
-            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .expect("duplicate_handle failed");
-        let tdl_buffer = ContiguousDmaBuffer::new(vmar, &*bti, CQHCI_TASK_DESCRIPTOR_LIST_SIZE)
+        let tdl_buffer = ContiguousBuffer::new(&bti, CQHCI_TASK_DESCRIPTOR_LIST_SIZE)
             .expect("Failed to create TDL DMA buffer");
-        assert_eq!(tdl_buffer.phys_address(), TDL_BASE);
+        assert_eq!(tdl_buffer.phys(), TDL_BASE);
 
-        let extra_desriptors_size =
+        let extra_descriptors_size =
             zx::system_get_page_size() as usize * CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT as usize;
-        let vmar = fuchsia_runtime::vmar_root_self()
-            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .expect("duplicate_handle failed");
-        let extra_descriptors_buffer =
-            DiscontiguousDmaBuffer::new(vmar, &*bti, extra_desriptors_size)
-                .expect("Failed to create descriptor DMA buffer");
-        assert_eq!(extra_descriptors_buffer.phys_address_for(0), EXTRA_DESCRIPTORS_BASE);
-        assert_eq!(extra_descriptors_buffer.phys_address_for(4096), EXTRA_DESCRIPTORS_BASE + 4096);
+        let extra_descriptors_buffer = PagedBuffer::new(&bti, extra_descriptors_size)
+            .expect("Failed to create descriptor DMA buffer");
+        assert_eq!(extra_descriptors_buffer.phys()[0], EXTRA_DESCRIPTORS_BASE);
+        assert_eq!(extra_descriptors_buffer.phys()[1], EXTRA_DESCRIPTORS_BASE + 4096);
 
         bti.set_paddrs(&[]);
         (
@@ -1033,152 +874,6 @@ mod tests {
         unsafe {
             Arc::try_unwrap(manager).expect("TransferManager still referenced").unpin_buffers()
         };
-    }
-
-    #[test]
-    fn contiguous_pages_iter_empty() {
-        let addresses = [];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 8192,
-            offset: 0,
-            length: 0,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_single_small() {
-        let addresses = [0x1000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 8192,
-            offset: 0,
-            length: 4096,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![0x1000..0x2000]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_multiple_contiguous() {
-        let addresses = [0x1000, 0x2000, 0x3000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 16384,
-            offset: 0,
-            length: 3 * 4096,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![0x1000..0x4000]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_multiple_non_contiguous() {
-        let addresses = [0x1000, 0x3000, 0x5000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 16384,
-            offset: 0,
-            length: 3 * 4096,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![0x1000..0x2000, 0x3000..0x4000, 0x5000..0x6000]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_partial_last_page() {
-        let addresses = [0x1000, 0x2000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 8192,
-            offset: 0,
-            length: 4096 + 1024,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![0x1000..0x2400]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_split_max_length() {
-        let addresses = [0x1000, 0x2000, 0x3000, 0x4000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 8192,
-            offset: 0,
-            length: 4 * 4096,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![0x1000..0x3000, 0x3000..0x5000]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_split_single_page() {
-        let addresses = [0x0, 0x1000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 2048,
-            offset: 0,
-            length: 2 * 4096,
-        });
-        assert_eq!(
-            iter.collect::<Vec<_>>(),
-            vec![0x0..0x800, 0x800..0x1000, 0x1000..0x1800, 0x1800..0x2000]
-        );
-    }
-
-    #[test]
-    fn contiguous_pages_iter_split_across_pages() {
-        let addresses = [0, 10];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 10,
-            max_contiguity: 8,
-            offset: 0,
-            length: 20,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![0..8, 8..16, 16..20]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_start_from_offset() {
-        let addresses = [0, 10];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 10,
-            max_contiguity: 8,
-            offset: 1,
-            length: 14,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![1..9, 9..15]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_exact_limit_match() {
-        let addresses = [0x1000, 0x2000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 8192,
-            offset: 0,
-            length: 8192,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![0x1000..0x3000]);
-    }
-
-    #[test]
-    fn contiguous_pages_iter_unaligned_offset_and_length() {
-        let addresses = [0x0, 0x1000];
-        let iter = ContiguousPagesIter::new(ContiguousPagesIterParams {
-            addresses: &addresses,
-            granularity: 4096,
-            max_contiguity: 8192,
-            offset: 10,
-            length: 4090,
-        });
-        assert_eq!(iter.collect::<Vec<_>>(), vec![10..4100]);
     }
 
     #[fuchsia::test]
