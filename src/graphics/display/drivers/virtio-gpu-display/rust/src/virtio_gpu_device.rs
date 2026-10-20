@@ -6,12 +6,9 @@ use crate::virtio::{
     VirtioMemoryRange, VirtioMemoryRangeAccess, VirtioPciDevice, VirtioPciDeviceBuilder,
 };
 use crate::virtio_gpu_abi as abi;
-use fuchsia_runtime;
+use dma_buffer::ContiguousBuffer;
 use std::num::NonZero;
-use std::ptr::NonNull;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
-use zx;
-use zx_sys::zx_paddr_t;
 
 /// Index of the virtqueue that carries 2D commands and their responses.
 // @cite(virtio): sec="5.7.2" title="Virtqueues"
@@ -24,27 +21,9 @@ const CONTROL_QUEUE_INDEX: u16 = 0;
 /// that is contiguous in the device's physical address space. Instances own one
 /// page of such memory, split into a command area and a response area.
 struct ControlQueueBuffer {
-    /// Keeps the buffer pinned in the device's physical address space.
-    ///
     /// Emptied by [`Self::drop()`].
-    pinned_memory_token: Option<zx::Pmt>,
-
-    /// Points to the command area in this process' address space.
-    command_ptr: NonNull<u8>,
-
-    /// Points to the response area in this process' address space.
-    response_ptr: NonNull<u8>,
-
-    /// Device-accessible physical address of the command area.
-    command_physical_address: u64,
-
-    /// Device-accessible physical address of the response area.
-    response_physical_address: u64,
+    buffer: Option<ContiguousBuffer>,
 }
-
-// SAFETY: Instances own the memory that they point into, so they are
-// conceptually equivalent to any other Rust type that owns its data.
-unsafe impl Send for ControlQueueBuffer {}
 
 impl ControlQueueBuffer {
     /// Number of bytes in the command area, and in the response area.
@@ -65,54 +44,26 @@ impl ControlQueueBuffer {
     fn new(bti: &zx::Bti) -> Result<Self, zx::Status> {
         debug_assert!(!bti.is_invalid());
 
-        let vmo = zx::Vmo::create_contiguous(bti, Self::SIZE_BYTES, 0).map_err(|status| {
+        let buffer = ContiguousBuffer::new(bti, Self::SIZE_BYTES).map_err(|status| {
             log::warn!("Failed to allocate the virtio-gpu control queue buffer: {:?}", status);
             status
         })?;
 
-        let mut physical_addresses: [zx_paddr_t; 1] = [0];
-        let pinned_memory_token = bti
-            .pin(
-                zx::BtiOptions::PERM_READ | zx::BtiOptions::PERM_WRITE | zx::BtiOptions::CONTIGUOUS,
-                &vmo,
-                0,
-                Self::SIZE_BYTES as u64,
-                &mut physical_addresses,
-            )
-            .map_err(|status| {
-                log::warn!("Failed to pin the virtio-gpu control queue buffer: {:?}", status);
-                status
-            })?;
+        Ok(Self { buffer: Some(buffer) })
+    }
 
-        let mapped_address = fuchsia_runtime::vmar_root_self()
-            .map(
-                0,
-                &vmo,
-                0,
-                Self::SIZE_BYTES,
-                zx::VmarFlags::PERM_READ
-                    | zx::VmarFlags::PERM_WRITE
-                    | zx::VmarFlags::REQUIRE_NON_RESIZABLE,
-            )
-            .map_err(|status| {
-                log::warn!("Failed to map the virtio-gpu control queue buffer: {:?}", status);
-                status
-            })?;
-        let command_ptr = NonNull::new(std::ptr::with_exposed_provenance_mut::<u8>(mapped_address))
-            .expect("zx::vmar::map() returned a null address");
+    fn buffer(&self) -> &ContiguousBuffer {
+        self.buffer.as_ref().expect("buffer accessed after drop")
+    }
 
-        // SAFETY: The mapping covers the command area followed by the response
-        // area, and each area is [`Self::AREA_SIZE_BYTES`] long.
-        let response_ptr = unsafe { command_ptr.byte_add(Self::AREA_SIZE_BYTES) };
+    /// Device-accessible physical address of the command area.
+    fn command_physical_address(&self) -> u64 {
+        self.buffer().phys() as u64
+    }
 
-        let command_physical_address = physical_addresses[0] as u64;
-        Ok(Self {
-            pinned_memory_token: Some(pinned_memory_token),
-            command_ptr,
-            response_ptr,
-            command_physical_address,
-            response_physical_address: command_physical_address + Self::AREA_SIZE_BYTES as u64,
-        })
+    /// Device-accessible physical address of the response area.
+    fn response_physical_address(&self) -> u64 {
+        self.buffer().phys() as u64 + Self::AREA_SIZE_BYTES as u64
     }
 }
 
@@ -120,23 +71,14 @@ impl Drop for ControlQueueBuffer {
     fn drop(&mut self) {
         // TODO(https://fxbug.dev/547974944): Reset the virtio device before
         // unpinning memory that the device may still access.
-        if let Some(pinned_memory_token) = self.pinned_memory_token.take() {
+        if let Some(buffer) = self.buffer.take() {
             // SAFETY: The driver only drops the buffer while it is shutting
             // down, after the device returned all the submitted buffers.
             //
             // Intentionally ignoring the failure. There is nothing the driver
             // can do about it while shutting down.
-            let _ = unsafe { pinned_memory_token.unpin() };
+            let _ = unsafe { buffer.unpin() };
         }
-
-        // SAFETY: The mapping was created by [`Self::new()`], and the buffer
-        // areas are not referenced anymore.
-        //
-        // Intentionally ignoring the failure, for the reason above.
-        let _ = unsafe {
-            fuchsia_runtime::vmar_root_self()
-                .unmap(self.command_ptr.as_ptr() as usize, Self::SIZE_BYTES)
-        };
     }
 }
 
@@ -436,21 +378,11 @@ impl VirtioGpuDevice {
         let response_size_bytes = NonZero::<u32>::new(response_bytes.len() as u32)
             .expect("virtio-gpu responses are not empty");
 
-        // SAFETY: The checks above ensure that the writes stay inside the
-        // command area and the response area. The device does not own the
-        // areas, because the buffer is submitted below.
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                command_bytes.as_ptr(),
-                self.control_queue_buffer.command_ptr.as_ptr(),
-                command_bytes.len(),
-            );
-            std::ptr::write_bytes(
-                self.control_queue_buffer.response_ptr.as_ptr(),
-                0,
-                response_bytes.len(),
-            );
-        }
+        response_bytes.fill(0);
+        self.control_queue_buffer.buffer().write(0, command_bytes)?;
+        self.control_queue_buffer
+            .buffer()
+            .write(ControlQueueBuffer::AREA_SIZE_BYTES, response_bytes)?;
 
         // SAFETY: The ranges cover pinned memory that is contiguous in the
         // device's physical address space. No Rust reference points into the
@@ -458,12 +390,12 @@ impl VirtioGpuDevice {
         let buffer = unsafe {
             [
                 VirtioMemoryRange::new(
-                    self.control_queue_buffer.command_physical_address,
+                    self.control_queue_buffer.command_physical_address(),
                     command_size_bytes,
                     VirtioMemoryRangeAccess::Input,
                 ),
                 VirtioMemoryRange::new(
-                    self.control_queue_buffer.response_physical_address,
+                    self.control_queue_buffer.response_physical_address(),
                     response_size_bytes,
                     VirtioMemoryRangeAccess::Output,
                 ),
@@ -471,16 +403,9 @@ impl VirtioGpuDevice {
         };
         self.device.submit_and_wait_for_buffer(CONTROL_QUEUE_INDEX, &buffer).await?;
 
-        // SAFETY: The device returned the buffer, so it no longer accesses the
-        // response area. The check above ensures that the read stays inside the
-        // response area.
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                self.control_queue_buffer.response_ptr.as_ptr(),
-                response_bytes.as_mut_ptr(),
-                response_bytes.len(),
-            );
-        }
+        self.control_queue_buffer
+            .buffer()
+            .read(ControlQueueBuffer::AREA_SIZE_BYTES, response_bytes)?;
 
         Ok(())
     }
