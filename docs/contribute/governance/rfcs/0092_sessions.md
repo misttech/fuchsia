@@ -126,8 +126,8 @@ The `session_manager` component has been implemented and can be found in the
 
 Some simple example sessions can be found in [examples][examples].
 
-The session used by reference Fuchsia products can be found at
-[tiles-session][tiles-session].
+The sessions used by reference Fuchsia products can be found at
+[workbench_session][workbench_session] and [terminal_session][terminal_session].
 
 ## Performance
 
@@ -196,7 +196,8 @@ number of offered protocols.
 ## Prior art and references
 
 [examples]: /src/session/examples
-[tiles-session]: /src/ui/bin/tiles-session
+[workbench_session]: /products/workbench/workbench_session
+[terminal_session]: /products/terminal/terminal_session
 [session_manager]: /src/session/bin/session_manager
 [rfc_0089]: /docs/contribute/governance/rfcs/0089_core_realm_variations.md
 [rfc_0194]: /docs/contribute/governance/rfcs/0194_addendum_sessions.md

@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
+import("//build/components.gni")
+
+fuchsia_component_manifest("terminal_session_component_manifest") {
+  manifest = "meta/terminal_session.cml"
+  component_name = "terminal_session"
+}
+
+fuchsia_component("terminal_session_component") {
+  cm_label = ":terminal_session_component_manifest"
+}
+
+fuchsia_package("terminal_session") {
+  package_name = "terminal_session"
+  subpackages = [
+    "//src/session/bin/element_manager",
+    "//src/ui/bin/tiling_wm",
+  ]
+  deps = [ ":terminal_session_component" ]
+}
+
+export_fuchsia_package_to_bazel("terminal_session.bazel_input") {
+  package = ":terminal_session"
+}

@@ -14,8 +14,8 @@ common_bazel_inputs = [
   "//src/fonts/asset_providers:open-fonts-collection-bazel",
 
   # Cache packages.
+  "//products/terminal/terminal_session:terminal_session.bazel_input",
   "//src/ui/bin/terminal:terminal.bazel_input",
-  "//src/ui/bin/tiles-session:tiles-session.bazel_input",
   "//src/graphics/display/testing/fake-display-stack-host:fake-display-stack-host.bazel_input",
   "//src/diagnostics/validator/inspect:validator.bazel_input",
   "//src/tests/fidl/dynsuite/client_suite/harness:harness.bazel_input",

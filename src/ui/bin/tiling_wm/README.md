@@ -1,9 +1,9 @@
 # Overview
 
 `tiling_wm` is a simple window management component for use with in-tree product sessions such as
-`workbench_session`. It presents all views adjacent to one another, in a tiled, mosaic layout.
-Views can be added to and removed from the session and focus transfers when the user interacts with
-a new view.
+`workbench_session` and `terminal_session`. It presents all views adjacent to one another, in a
+tiled, mosaic layout. Views can be added to and removed from the session and focus transfers when
+the user interacts with a new view.
 
 ## Usage
 

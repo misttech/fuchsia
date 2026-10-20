@@ -32,8 +32,8 @@ class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
     Attributes:
         dut: FuchsiaDevice object.
 
-    This test traces graphic performance in tile-session
-    (src/ui/bin/tiles-session) and flatland-rainbow-example
+    This test traces graphic performance in tiling_wm
+    (src/ui/bin/tiling_wm) and flatland-rainbow-example
     (src/ui/examples/flatland-rainbow).
     """
 

@@ -8,6 +8,7 @@ load(
     "BUILD_TYPES",
     "INPUT_DEVICE_TYPE",
     "fuchsia_elf_sizes",
+    "fuchsia_prebuilt_package",
     "fuchsia_product",
     "fuchsia_product_bundle",
     "fuchsia_product_configuration",
@@ -82,7 +83,7 @@ _PRODUCT_CONFIG_BASE_JSON = {
             "name": "terminal",
         },
         "session": {
-            "url": "fuchsia-pkg://fuchsia.com/tiles-session#meta/tiles-session.cm",
+            "url": "fuchsia-pkg://fuchsia.com/terminal_session#meta/terminal_session.cm",
         },
     },
 }
@@ -92,8 +93,8 @@ _PRODUCT_BASE_PACKAGES = [
 ]
 
 _PRODUCT_CACHE_PACKAGES = [
+    ":terminal_session",
     "//src/ui/bin/terminal",
-    "//src/ui/bin/tiles-session",
     # Used to mock out display hardware in UI integration tests.
     "//src/graphics/display/testing/fake-display-stack-host",
     # Add validator package for use in tests.
@@ -332,4 +333,9 @@ fuchsia_product_bundle(
         "//build/bazel/assembly/virtual_devices:arm64-emu-min",
         "//build/bazel/assembly/virtual_devices:arm64-emu-extra-large",
     ],
+)
+
+fuchsia_prebuilt_package(
+    name = "terminal_session",
+    archive = "@gn_targets//products/terminal/terminal_session:terminal_session",
 )

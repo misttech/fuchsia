@@ -40,7 +40,7 @@ $ ffx trace stop
 ```
 ## Play with clients
 
-You can use [`tiles-session`](/src/ui/bin/tiles-session/README.md) to manually run and
+You can use [`tiling_wm`](/src/ui/bin/tiling_wm/README.md) to manually run and
 interact with any of the child clients under test.
 
 ### Play with the C++ Flatland client
