@@ -129,7 +129,7 @@ if (is_host) {
       sorrel_env,
       iris_env,
     ]
-    timeout_secs = 900
+    timeout_secs = 635
   }
 
   python_mobly_test("usb_fastboot_loop_test") {
