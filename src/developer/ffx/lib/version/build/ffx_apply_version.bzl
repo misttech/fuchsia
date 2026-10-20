@@ -23,7 +23,8 @@ load("@rules_cc//cc:find_cc_toolchain.bzl", "CC_TOOLCHAIN_ATTRS", "find_cc_toolc
 def _ffx_apply_version_impl(ctx):
     cc_toolchain = find_cc_toolchain(ctx)
     unversioned = ctx.file.unversioned_binary
-    versioned = ctx.actions.declare_file(ctx.attr.name)
+    output_name = ctx.attr.output_name or ctx.attr.name
+    versioned = ctx.actions.declare_file(output_name)
 
     args = ctx.actions.args()
 
@@ -45,8 +46,16 @@ def _ffx_apply_version_impl(ctx):
         progress_message = "Applying version to %s" % ctx.label,
     )
 
+    runfiles = ctx.runfiles(files = ctx.files.runtime_files).merge(
+        ctx.attr.unversioned_binary[DefaultInfo].default_runfiles,
+    )
+
     return [
-        DefaultInfo(files = depset([versioned]), executable = versioned),
+        DefaultInfo(
+            files = depset([versioned]),
+            executable = versioned,
+            runfiles = runfiles,
+        ),
     ]
 
 ffx_apply_version = rule(
@@ -57,6 +66,15 @@ ffx_apply_version = rule(
             doc = "Unversioned binary",
             mandatory = True,
             allow_single_file = True,
+        ),
+        "output_name": attr.string(
+            doc = "Name of the output versioned binary. Defaults to the target name.",
+            default = "",
+        ),
+        "runtime_files": attr.label_list(
+            doc = "Additional files required at runtime (exposed in DefaultInfo.runfiles).",
+            default = [],
+            allow_files = True,
         ),
         "_version_info": attr.label(
             doc = "Version info binary file",

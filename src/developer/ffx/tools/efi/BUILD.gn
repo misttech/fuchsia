@@ -25,7 +25,7 @@ group("tests") {
 
 bazel_host_tool("ffx-efi_bazel_unversioned") {
   bazel_target = ":ffx-efi"
-  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
+  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi_unversioned"
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
