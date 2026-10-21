@@ -164,10 +164,6 @@ VmMapping::AttributionCounts VmMapping::GetAttributedMemory() const {
   return GetAttributedMemoryLocked(guard);
 }
 
-void VmMapping::DumpLockedImpl(uint depth, bool verbose) const {
-  rust_vm_mapping_dump_locked(this, depth, verbose);
-}
-
 using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
 // static
@@ -1034,8 +1030,6 @@ zx_status_t VmMapping::DecommitRange(size_t offset, size_t len) {
   return rust_vm_mapping_decommit_range(this, offset, len);
 }
 
-zx_status_t VmMapping::DestroyLockedImpl() { return rust_vm_mapping_destroy_locked(this); }
-
 zx_status_t VmMapping::DestroyLockedObject(DestroyUnmap unmap,
                                            DestroyRemoveFromParent remove_region) {
   return rust_vm_mapping_destroy_locked_object(this, unmap, remove_region);
@@ -1292,8 +1286,6 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const ui
 
 void VmMapping::ActivateNoInsertLocked() { rust_vm_mapping_activate_no_insert_locked(this); }
 
-zx_status_t VmMapping::ActivateImpl() { return rust_vm_mapping_activate(this); }
-
 fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate)
     TA_NO_THREAD_SAFETY_ANALYSIS {
   // Take a reference to ourself, so that we do not get destructed if we drop the last reference to
@@ -1512,10 +1504,6 @@ void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject() {
 }
 template void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject<false>();
 template void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject<true>();
-
-void VmMapping::CommitHighMemoryPriorityImpl() {
-  rust_vm_mapping_commit_high_memory_priority(this);
-}
 
 zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
   AssertCanary();

@@ -37,33 +37,19 @@ VmAddressRegionOrMapping::~VmAddressRegionOrMapping() {
 }
 
 zx_status_t VmAddressRegionOrMapping::DestroyLocked() {
-  if (is_mapping()) {
-    return static_cast<VmMapping*>(this)->DestroyLockedImpl();
-  }
-  return static_cast<VmAddressRegion*>(this)->DestroyLockedImpl();
+  return rust_vm_address_region_or_mapping_destroy_locked(this);
 }
 
 zx_status_t VmAddressRegionOrMapping::Activate() {
-  if (is_mapping()) {
-    return static_cast<VmMapping*>(this)->ActivateImpl();
-  }
-  return static_cast<VmAddressRegion*>(this)->ActivateImpl();
+  return rust_vm_address_region_or_mapping_activate(this);
 }
 
 void VmAddressRegionOrMapping::DumpLocked(uint depth, bool verbose) const {
-  if (is_mapping()) {
-    static_cast<const VmMapping*>(this)->DumpLockedImpl(depth, verbose);
-  } else {
-    static_cast<const VmAddressRegion*>(this)->DumpLockedImpl(depth, verbose);
-  }
+  rust_vm_address_region_or_mapping_dump_locked(this, depth, verbose);
 }
 
 void VmAddressRegionOrMapping::CommitHighMemoryPriority() {
-  if (is_mapping()) {
-    static_cast<VmMapping*>(this)->CommitHighMemoryPriorityImpl();
-  } else {
-    static_cast<VmAddressRegion*>(this)->CommitHighMemoryPriorityImpl();
-  }
+  rust_vm_address_region_or_mapping_commit_high_memory_priority(this);
 }
 
 void VmAddressRegionOrMapping::fbl_recycle() {

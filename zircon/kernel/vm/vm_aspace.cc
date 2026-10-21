@@ -314,7 +314,7 @@ zx_status_t VmAspace::Destroy() {
   if (root_vmar_) {
     AssertHeld(root_vmar_->region_lock_ref());
     AssertHeld(root_vmar_->lock_ref());
-    zx_status_t status = root_vmar_->DestroyLockedImpl();
+    zx_status_t status = root_vmar_->DestroyLocked();
     if (status != ZX_OK && status != ZX_ERR_BAD_STATE) {
       return status;
     }

@@ -432,6 +432,7 @@ impl VmMapping {
         Status::ok(status)
     }
 
+    #[inline(never)]
     pub(super) fn dump_locked(
         &self,
         _region_token: &LockToken<'_, VmAspaceRegionLockClass>,
@@ -494,7 +495,7 @@ impl VmMapping {
     ///
     /// No child of the parent has the same base as `self`, and `self` is kept alive by another
     /// owning reference for the duration of the call.
-    unsafe fn activate(
+    pub(super) unsafe fn activate(
         &self,
         region_token: &mut LockToken<'_, VmAspaceRegionLockClass>,
         aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
@@ -828,7 +829,7 @@ impl VmMapping {
     /// priority are user pager backed pages and any compressed or loaned pages. Anonymous pages and
     /// copy-on-write pages do not allocated / committed. This method has no return value as it is
     /// entirely best effort and no part of its operation is needed for correctness.
-    fn commit_high_memory_priority(&self) {
+    pub(super) fn commit_high_memory_priority(&self) {
         let vmo;
         let offset;
         let len;
@@ -1157,18 +1158,6 @@ pub unsafe extern "C" fn rust_vm_mapping_trimmed_object_range_locked(
 
 /// # Safety
 ///
-/// The region lock and the aspace lock are held.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_mapping_dump_locked(this: &VmMapping, depth: u32, verbose: bool) {
-    // SAFETY: The region lock is held by the caller.
-    let region_token = unsafe { LockToken::new() };
-    // SAFETY: The aspace lock is held by the caller.
-    let token = unsafe { LockToken::new() };
-    this.dump_locked(&region_token, &token, depth, verbose);
-}
-
-/// # Safety
-///
 /// The aspace lock is held and the object lock is not held.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_locked(
@@ -1253,27 +1242,6 @@ pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_high_already_positive_
     );
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_vm_mapping_commit_high_memory_priority(this: &VmMapping) {
-    this.commit_high_memory_priority();
-}
-
-/// # Safety
-///
-/// The region lock and the aspace lock are held and the object lock is not held, the children of
-/// the parent are not being iterated, no child of the parent has the same base as `this`, and
-/// `this` is kept alive by another owning reference for the duration of the call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_mapping_activate(this: &VmMapping) -> zx_status_t {
-    // SAFETY: The region lock is held by the caller.
-    let mut region_token = unsafe { LockToken::new() };
-    // SAFETY: The aspace lock is held by the caller.
-    let mut aspace_token = unsafe { LockToken::new() };
-    // SAFETY: No child of the parent has the same base as `this`, and `this` is kept alive by
-    // another owning reference for the duration of the call.
-    Status::result_into_raw(unsafe { this.activate(&mut region_token, &mut aspace_token) })
-}
-
 /// # Safety
 ///
 /// The region lock, the aspace lock and the object lock are held.
@@ -1286,21 +1254,6 @@ pub unsafe extern "C" fn rust_vm_mapping_activate_no_insert_locked(this: &VmMapp
     // SAFETY: The object lock is held by the caller.
     let mut object_token = unsafe { LockToken::new() };
     this.activate_no_insert_locked(&mut region_token, &mut aspace_token, &mut object_token);
-}
-
-/// # Safety
-///
-/// `this` points to a live `VmMapping`. The region lock and the aspace lock are held and the object
-/// lock is not held, and the children of the parent are not being iterated.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_mapping_destroy_locked(this: *const VmMapping) -> zx_status_t {
-    // SAFETY: `this` points to a live `VmMapping`.
-    let this = RefPtr::from_ref(unsafe { &*this });
-    // SAFETY: The region lock is held by the caller.
-    let mut region_token = unsafe { LockToken::new() };
-    // SAFETY: The aspace lock is held by the caller.
-    let mut aspace_token = unsafe { LockToken::new() };
-    Status::result_into_raw(VmMapping::destroy_locked(this, &mut region_token, &mut aspace_token))
 }
 
 /// # Safety

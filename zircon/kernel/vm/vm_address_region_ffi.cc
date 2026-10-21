@@ -64,6 +64,9 @@ FFI_ALWAYS_INLINE VmMapping* cpp_vm_address_region_or_mapping_as_vm_mapping(
     VmAddressRegionOrMapping* region_or_mapping) {
   return static_cast<VmMapping*>(region_or_mapping);
 }
+FFI_ALWAYS_INLINE void cpp_vm_address_region_commit_high_memory_priority(VmAddressRegion* vmar) {
+  vmar->CommitHighMemoryPriorityImpl();
+}
 FFI_ALWAYS_INLINE bool cpp_vm_address_region_subregions_is_empty(const VmAddressRegion* vmar)
     TA_NO_THREAD_SAFETY_ANALYSIS {
   return vmar->subregions_.IsEmpty();

@@ -767,6 +767,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "VMAR_CAN_RWX_FLAGS",
   ]
   function_allowlist = [
+    "cpp_vm_address_region_commit_high_memory_priority",
     "cpp_vm_address_region_create_sub_vmar",
     "cpp_vm_address_region_create_vm_mapping",
     "cpp_vm_address_region_enumerator_construct",

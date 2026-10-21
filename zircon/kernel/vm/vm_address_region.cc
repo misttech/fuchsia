@@ -392,7 +392,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
 
   AssertHeld(vmar->lock_ref());
   AssertHeld(vmar->region_lock_ref());
-  status = vmar->ActivateImpl();
+  status = vmar->Activate();
   if (status != ZX_OK) {
     // Activation can fail if an allocation needed to happen. Nothing can be done to rollback here
     // so the only option is to propagate the ZX_ERR_NO_MEMORY up. If this is happening in response
@@ -408,10 +408,6 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
 
   *out = fbl::RefPtr<VmAddressRegionOrMapping>(vmar.get());
   return ZX_OK;
-}
-
-zx_status_t VmAddressRegion::DestroyLockedImpl() {
-  return rust_vm_address_region_destroy_locked(this);
 }
 
 fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegion(vaddr_t addr) {
@@ -554,12 +550,6 @@ zx_status_t VmAddressRegion::EnumerateChildren(VmEnumerator* ve) {
   }
   return ZX_OK;
 }
-
-void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
-  rust_vm_address_region_dump_locked(this, depth, verbose);
-}
-
-zx_status_t VmAddressRegion::ActivateImpl() { return rust_vm_address_region_activate(this); }
 
 zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
                                      VmAddressRegionOpChildren op_children,
@@ -1175,7 +1165,7 @@ void VmAddressRegion::CommitHighMemoryPriorityImpl() {
     }
     enumerator.pause();
     guard.CallUnlocked(
-        [mapping = ktl::move(mapping)]() mutable { mapping->CommitHighMemoryPriorityImpl(); });
+        [mapping = ktl::move(mapping)]() mutable { mapping->CommitHighMemoryPriority(); });
     // Since the lock was dropped we must re-validate before doing anything else.
     if (!validate()) {
       return;
