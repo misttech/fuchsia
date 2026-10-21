@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "parse_starnix_inspect",
+    testonly = True,
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints",
+    visibility = [
+        "//src/starnix/tests/diagnostics/coredumps:__pkg__",
+        "//src/starnix/tests/diagnostics/correct_pid:__pkg__",
+    ],
+    deps = ["//src/lib/diagnostics/data/rust"],
+)
