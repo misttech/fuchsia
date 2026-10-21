@@ -240,6 +240,7 @@
 
                 // TODO: https://fxbug.dev/287114492 - maybe we'll implement sched_setattr?
                 "sched_setattr01", // https://fxbug.dev/287114492
+                "sched_setattr02", // https://fxbug.dev/287114492
                 "send02",
                 "setitimer01",
                 "setitimer02",
