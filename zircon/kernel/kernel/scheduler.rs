@@ -49,6 +49,50 @@ impl ThreadName {
     }
 }
 
+/// Logs the critical deadline utilization warning emitted by `Scheduler::insert`.
+///
+/// Kept out of line and cold so that the formatting state does not occupy the
+/// stack frame of the hot insert path.
+#[cold]
+#[inline(never)]
+fn warn_critical_deadline_utilization_exceeded(utilization: SchedUtilization, cpu: CpuNum) {
+    debug::dprintf!(
+        CRITICAL,
+        "SCHEDULER WARNING: Critical deadline utilization ({}) exceeds limit ({}) on CPU {}\n",
+        utilization,
+        K_CPU_UTILIZATION_LIMIT,
+        cpu,
+    );
+}
+
+/// Reports a thread with no CPU available to run on; see `Scheduler::find_target_cpu`.
+///
+/// Kept out of line and cold so that the formatting state does not occupy the
+/// stack frame of the hot wakeup path.
+///
+/// # Safety
+/// `thread` must point to a valid `Thread`.
+#[cold]
+#[inline(never)]
+unsafe fn panic_no_available_cpu(
+    thread: *const Thread,
+    hard_affinity: CpuMask,
+    soft_affinity: CpuMask,
+    active_mask: CpuMask,
+) -> ! {
+    panic!(
+        "thread={} affinity={:#x} soft_affinity={:#x} active={:#x} idle={:#x} \
+         arch_ints_disabled={}",
+        // SAFETY: `thread` is valid per the caller's contract.
+        unsafe { thread_name(thread) }.as_str(),
+        hard_affinity,
+        soft_affinity,
+        active_mask,
+        peek_idle_mask(),
+        crate::arch_rs::ints_disabled(),
+    );
+}
+
 /// Copies the thread's name into a stack-allocated buffer using volatile reads
 /// so that concurrent calls to `Thread::set_name` (which does not synchronize
 /// with scheduler locks) cannot cause a data race or out-of-bounds read.
@@ -611,6 +655,141 @@ pub struct RustRescheduleResult {
     pub next_thread: *mut Thread,
 }
 
+/// A utility result type to help avoid missing updates to a thread's
+/// start/finish times when dequeuing from a run queue with a variable
+/// timeline.
+#[repr(C)]
+#[derive(Debug)]
+pub struct EvaluateResult {
+    pub status: EvaluateStatus,
+    pub thread: *mut Thread,
+    pub mono_start_time_ns: SchedTime,
+    pub mono_finish_time_ns: SchedTime,
+}
+
+impl EvaluateResult {
+    /// Constructs an empty result.
+    pub fn empty() -> Self {
+        Self {
+            status: EvaluateStatus::Idle,
+            thread: core::ptr::null_mut(),
+            mono_start_time_ns: SchedTime::from_raw(0),
+            mono_finish_time_ns: SchedTime::from_raw(0),
+        }
+    }
+
+    /// Constructs a selected result from a `DequeueResult`, preserving any
+    /// pending update to start/finish times.
+    pub fn selected(mut res: DequeueResult) -> Self {
+        let out = Self {
+            status: EvaluateStatus::Selected,
+            thread: res.thread,
+            mono_start_time_ns: res.mono_start_time_ns,
+            mono_finish_time_ns: res.mono_finish_time_ns,
+        };
+        res.mono_start_time_ns = SchedTime::from_raw(0);
+        res.mono_finish_time_ns = SchedTime::from_raw(0);
+        out
+    }
+
+    /// Updates the thread's start/finish times while holding the thread's lock.
+    /// May be called unconditionally and more than once, whether or not there
+    /// are pending updates.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `self.thread` is a valid `Thread` pointer and its lock is held.
+    pub unsafe fn update_thread_timeline(&mut self) {
+        if self.is_updated_pending() {
+            // SAFETY: `self.thread` is valid and its lock is held exclusively by the caller.
+            let state = unsafe { &mut *cpp_thread_get_scheduler_state(self.thread) };
+            state.start_time = self.mono_start_time_ns;
+            state.finish_time = self.mono_finish_time_ns;
+            self.mono_start_time_ns = SchedTime::from_raw(0);
+            self.mono_finish_time_ns = SchedTime::from_raw(0);
+        }
+    }
+
+    /// Returns true if the thread's timeline needs to be updated by calling
+    /// `update_thread_timeline`.
+    pub fn is_updated_pending(&self) -> bool {
+        self.mono_start_time_ns.raw_value() != 0 || self.mono_finish_time_ns.raw_value() != 0
+    }
+
+    pub fn steal_work() -> Self {
+        Self {
+            status: EvaluateStatus::StealWork,
+            thread: core::ptr::null_mut(),
+            mono_start_time_ns: SchedTime::from_raw(0),
+            mono_finish_time_ns: SchedTime::from_raw(0),
+        }
+    }
+}
+
+impl Drop for EvaluateResult {
+    fn drop(&mut self) {
+        debug_assert!(
+            !self.is_updated_pending(),
+            "Destroyed an EvaluateResult with a pending timeline update!"
+        );
+    }
+}
+
+/// A utility result type to help avoid missing updates to a thread's
+/// start/finish times when dequeuing from a run queue with a variable
+/// timeline.
+#[repr(C)]
+#[derive(Debug)]
+pub struct DequeueResult {
+    pub thread: *mut Thread,
+    pub mono_start_time_ns: SchedTime,
+    pub mono_finish_time_ns: SchedTime,
+}
+
+impl DequeueResult {
+    /// Constructs an empty result.
+    pub fn empty() -> Self {
+        Self {
+            thread: core::ptr::null_mut(),
+            mono_start_time_ns: SchedTime::from_raw(0),
+            mono_finish_time_ns: SchedTime::from_raw(0),
+        }
+    }
+
+    /// Updates the thread's start/finish times while holding the thread's lock.
+    /// May be called unconditionally and more than once, whether or not there
+    /// are pending updates.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `self.thread` is a valid `Thread` pointer and its lock is held.
+    pub unsafe fn update_thread_timeline(&mut self) {
+        if self.is_updated_pending() {
+            // SAFETY: `self.thread` is valid and its lock is held exclusively by the caller.
+            let state = unsafe { &mut *cpp_thread_get_scheduler_state(self.thread) };
+            state.start_time = self.mono_start_time_ns;
+            state.finish_time = self.mono_finish_time_ns;
+            self.mono_start_time_ns = SchedTime::from_raw(0);
+            self.mono_finish_time_ns = SchedTime::from_raw(0);
+        }
+    }
+
+    /// Returns true if the thread's timeline needs to be updated by calling
+    /// `update_thread_timeline`.
+    pub fn is_updated_pending(&self) -> bool {
+        self.mono_start_time_ns.raw_value() != 0 || self.mono_finish_time_ns.raw_value() != 0
+    }
+}
+
+impl Drop for DequeueResult {
+    fn drop(&mut self) {
+        debug_assert!(
+            !self.is_updated_pending(),
+            "Destroyed a DequeueResult with a pending timeline update!"
+        );
+    }
+}
+
 /// Fixed-point type of the `Affine` slope.
 pub type Slope = FastFixed<i64, { Affine::K_PRECISION_BITS }>;
 
@@ -1038,12 +1217,15 @@ pub struct SubtreeInvariants {
 /// node, and `subtree_invariants`) are guarded by the owning scheduler's
 /// `queue_lock_`, while `base_profile`, `inherited_profile_values`, and the
 /// `effective_profile` dirty flags are written under the thread's lock alone.
-/// Forming a `&SchedulerState` over a thread in a run queue with only
-/// `queue_lock_` held is the accepted idiom in this file for reading the
-/// queue-guarded fields and the stable `effective_profile` parameters, as the
-/// C++ `MarkHasOwnedThreadAccess` idiom permits: no field read through such a
-/// reference can be concurrently written. Use `EffectiveProfile::discipline_raw`
-/// where the extra invariant validation fields may be written concurrently.
+/// A `&SchedulerState` (or `&EffectiveProfile`) may therefore only be formed
+/// while the thread's lock is held; with only `queue_lock_` held, read the
+/// queue-guarded fields and the stable `effective_profile` parameters through
+/// a raw pointer (`(*state_ptr).field`, `EffectiveProfile::discipline_raw`,
+/// `EffectiveProfile::deadline_raw`, `SchedulerState::get_effective_cpu_mask_raw`),
+/// since another CPU holding the thread's lock may concurrently write the
+/// thread-locked fields of the same object. This is the Rust counterpart of
+/// the C++ `MarkHasOwnedThreadAccess` idiom, with the reference restriction
+/// that Rust's aliasing rules additionally require.
 #[repr(C)]
 pub struct SchedulerState {
     /// The start time of the thread's current bandwidth request. This is the
@@ -1336,13 +1518,31 @@ impl SchedulerState {
     /// Returns the effective mask of CPUs a thread may run on, based on the
     /// thread's affinity masks and CPUs currently active on the system.
     pub fn get_effective_cpu_mask(&self, active_mask: CpuMask) -> CpuMask {
+        // SAFETY: `self` is a valid reference, so the affinity fields are stable.
+        unsafe { Self::get_effective_cpu_mask_raw(self, active_mask) }
+    }
+
+    /// Returns the effective CPU mask of the state at `this` without forming a
+    /// reference to it, for use when only the owning scheduler's `queue_lock_` is
+    /// held and other fields may be concurrently written by a CPU holding the
+    /// thread's lock (see `EffectiveProfile::discipline_raw`).
+    ///
+    /// # Safety
+    /// `this` must point to a valid `SchedulerState` whose `hard_affinity` and
+    /// `soft_affinity` are stable for the duration of the call.
+    pub unsafe fn get_effective_cpu_mask_raw(this: *const Self, active_mask: CpuMask) -> CpuMask {
+        // SAFETY: Reading the affinity fields through the raw pointer per the
+        // caller's contract does not create a reference to the whole state.
+        let (hard_affinity, soft_affinity) =
+            unsafe { ((*this).hard_affinity, (*this).soft_affinity) };
+
         // The thread may run on any active CPU allowed by both its hard and
         // soft CPU affinity.
-        let available_mask = self.hard_affinity & self.soft_affinity & active_mask;
+        let available_mask = hard_affinity & soft_affinity & active_mask;
 
         // Return the mask honoring soft affinity if it is viable, otherwise ignore
         // soft affinity and honor only hard affinity.
-        if available_mask != 0 { available_mask } else { self.hard_affinity & active_mask }
+        if available_mask != 0 { available_mask } else { hard_affinity & active_mask }
     }
 }
 
@@ -2683,6 +2883,13 @@ zr::static_assert!(
     core::mem::align_of::<Scheduler>() == core::mem::align_of::<percpu_bindings::Scheduler>()
 );
 
+// DequeueResult layout parity
+zr::static_assert!(core::mem::size_of::<DequeueResult>() == 24);
+zr::static_assert!(core::mem::align_of::<DequeueResult>() == 8);
+zr::static_assert!(core::mem::offset_of!(DequeueResult, thread) == 0);
+zr::static_assert!(core::mem::offset_of!(DequeueResult, mono_start_time_ns) == 8);
+zr::static_assert!(core::mem::offset_of!(DequeueResult, mono_finish_time_ns) == 16);
+
 /// Returns a tracing string ref for the given placement value.
 fn placement_to_str(placement: Placement) -> &'static ktrace_rs::InternedString {
     match placement {
@@ -2695,6 +2902,81 @@ fn placement_to_str(placement: Placement) -> &'static ktrace_rs::InternedString 
 }
 
 impl Scheduler {
+    /// Emits queue event traces for trace-based scheduler performance analysis.
+    ///
+    /// Records details about the threads entering/exiting the run queues for various
+    /// CPUs, as well as which task on each CPU is currently active. These events are
+    /// used for trace analysis to compute statistics about overall utilization,
+    /// taking CPU affinity into account.
+    ///
+    /// # Safety
+    /// `thread` must point to a valid `Thread` associated with this scheduler, and
+    /// the caller must hold `queue_lock_`.
+    unsafe fn trace_thread_queue_event(
+        &self,
+        name: &'static ktrace_rs::InternedString,
+        thread: *const Thread,
+    ) {
+        // Traces marking the end of a queue/dequeue operation have arguments encoded
+        // as follows:
+        //
+        // arg0[ 0..64] : TID
+        //
+        // arg1[ 0..15] : CPU availability mask.
+        // arg1[16..19] : CPU_ID of the affected queue.
+        // arg1[20..27] : Number of runnable tasks on this CPU after the queue event.
+        // arg1[28..28] : 1 == fair, 0 == deadline
+        // arg1[29..29] : 1 == eligible, 0 == ineligible
+        // arg1[30..30] : 1 == idle thread, 0 == normal thread
+        //
+        if SCHEDULER_QUEUE_TRACING_ENABLED {
+            // SAFETY: `thread` is associated with this scheduler and `queue_lock_` is held.
+            // We project fields through raw pointers rather than forming `&SchedulerState` or
+            // `&EffectiveProfile` because `steal_work` calls this under `queue_lock_` alone
+            // while `dirty_flags` may be modified under `thread`'s lock alone.
+            unsafe {
+                // TODO(johngro): plumb this in from above
+                let now = crate::platform_rs::timer::current_mono_time().0;
+                let state_ptr = cpp_thread_get_scheduler_state(thread.cast_mut());
+                let ep_ptr = &raw const (*state_ptr).effective_profile;
+                let is_fair = EffectiveProfile::discipline_raw(ep_ptr) == SchedDiscipline::Fair;
+                let eligible = is_fair || ((*state_ptr).start_time.raw_value() <= now);
+
+                let sched_state = self.state.get();
+                let active_thread = (*sched_state).active_thread;
+                let active_is_not_idle =
+                    !active_thread.is_null() && !cpp_thread_is_idle(active_thread);
+
+                let cnt = (*sched_state).fair_run_queue.len()
+                    + (*sched_state).critical_deadline_run_queue.len()
+                    + (*sched_state).deadline_run_queue.len()
+                    + (if active_is_not_idle { 1 } else { 0 });
+
+                let effective_cpu_mask =
+                    SchedulerState::get_effective_cpu_mask_raw(state_ptr, peek_active_mask())
+                        as u64;
+                let this_cpu = self.this_cpu() as u64;
+                let is_idle = cpp_thread_is_idle(thread);
+
+                let arg0 = cpp_thread_get_tid(thread);
+                let arg1 = (effective_cpu_mask & 0xFFFF)
+                    | (core::cmp::min(this_cpu, 0xF) << 16)
+                    | ((core::cmp::min(cnt as u64, 0xFF)) << 20)
+                    | ((if is_fair { 1u64 } else { 0u64 }) << 28)
+                    | ((if eligible { 1u64 } else { 0u64 }) << 29)
+                    | ((if is_idle { 1u64 } else { 0u64 }) << 30);
+
+                ktrace_rs::instant!(
+                    "kernel:probe",
+                    name,
+                    ktrace_rs::Context::Cpu,
+                    "arg0" => arg0,
+                    "arg1" => arg1
+                );
+            }
+        }
+    }
+
     /// Returns a new flow id when flow tracing is enabled, zero otherwise.
     fn next_flow_id(&self) -> u64 {
         if local_ktrace_level_enabled!(FLOW) { flow_id::generate() } else { 0 }
@@ -3459,9 +3741,214 @@ impl Scheduler {
             }
         }
     }
+    /// Removes the thread from this CPU's scheduler to move it to another CPU
+    /// (i.e. stealing or migration). This method does not require the thread to be
+    /// locked exclusively, and consequently leaves a stale value for the thread's
+    /// current CPU id. The stale value is later corrected when the thread is
+    /// locked exclusively and added to the new target CPU by calling `insert`.
+    ///
+    /// # Safety
+    /// `thread` must point to a valid `Thread` associated with this scheduler, and
+    /// the caller must hold `queue_lock_`.
+    unsafe fn remove(&self, now: SchedTime, thread: *mut Thread, stolen_by: CpuNum) {
+        let _trace = local_ktrace_begin_scope!(DETAILED, "remove");
+        // SAFETY: `thread` is associated with this scheduler and `queue_lock_` is held.
+        // We project `SchedulerState` and `EffectiveProfile` fields via raw pointers
+        // rather than forming `&mut SchedulerState` or `&EffectiveProfile` because
+        // `steal_work` calls `remove` under `queue_lock_` alone while another CPU
+        // may hold `thread`'s lock.
+        unsafe {
+            let queue_state = &mut *cpp_thread_get_queue_state(thread);
+            let state_ptr = cpp_thread_get_scheduler_state(thread);
+            let ep_ptr = &raw const (*state_ptr).effective_profile;
 
+            debug_assert!(!cpp_thread_is_idle(thread));
+            debug_assert!(!queue_state.in_queue());
+
+            // Ensure that removal happens only once, even if block() is called multiple times.
+            if queue_state.on_remove(stolen_by) {
+                let expected_runtime_ns = (*state_ptr).expected_runtime_ns;
+                let delta = SchedDuration::from_raw(-expected_runtime_ns.raw_value());
+                self.update_total_expected_runtime(delta);
+
+                let discipline = EffectiveProfile::discipline_raw(ep_ptr);
+                if discipline == SchedDiscipline::Fair {
+                    let mut weight_total = self.weight_total();
+                    weight_total -= (*ep_ptr).weight;
+                    debug_assert!(weight_total.raw_value() >= 0);
+                    self.set_weight_total(weight_total);
+                    self.update_fair_bandwidth_period(now);
+                } else {
+                    // Add the thread to the bandwidth demand cache and adjust the total
+                    // demand if there was an eviction of another active entry. If the thread
+                    // is being stolen, simply remove its demand from the total demand, since
+                    // its influence is migrating to another CPU.
+                    let deadline = EffectiveProfile::deadline_raw(ep_ptr);
+                    let mut utilization_to_remove = deadline.utilization;
+                    if self.power_level_control_is_enabled() && stolen_by == INVALID_CPU {
+                        utilization_to_remove = self.bandwidth_reservation_cache_add(
+                            cpp_thread_get_tid(thread),
+                            (*state_ptr).finish_time,
+                            utilization_to_remove,
+                        );
+                    }
+
+                    if self.is_critical_deadline_thread(thread) {
+                        let mut critical_deadline_utilization =
+                            self.critical_deadline_utilization();
+                        critical_deadline_utilization -= deadline.utilization;
+                        debug_assert!(critical_deadline_utilization.raw_value() >= 0);
+                        self.set_critical_deadline_utilization(critical_deadline_utilization);
+                    }
+
+                    let delta_util = SchedUtilization::from_raw(-utilization_to_remove.raw_value());
+                    self.update_total_deadline_utilization(delta_util);
+                }
+
+                let runnable_task_count = self.runnable_task_count();
+                debug_assert!(runnable_task_count > 0);
+                self.set_runnable_task_count(runnable_task_count - 1);
+                self.trace_total_runnable_threads();
+            }
+        }
+    }
     fn arch_yield() {
         core::hint::spin_loop()
+    }
+    /// Makes a thread active on this CPU's scheduler and inserts it into the
+    /// run queue tree.
+    ///
+    /// # Safety
+    /// `thread` must point to a valid `Thread`, and the caller must hold both
+    /// `queue_lock_` and `thread`'s lock exclusively.
+    unsafe fn insert(&self, now: SchedTime, thread: *mut Thread, placement: Placement) {
+        // SAFETY: `thread` is valid and both `queue_lock_` and `thread`'s lock are held
+        // exclusively. We use `state_ptr` rather than holding a long-lived `&mut SchedulerState`
+        // across `adjust_fair_bandwidth`, `update_activation`, and `queue_thread`, which
+        // themselves borrow `thread`'s `SchedulerState`.
+        unsafe {
+            let queue_state = &mut *cpp_thread_get_queue_state(thread);
+            let state_ptr = cpp_thread_get_scheduler_state(thread);
+            let start_time = (*state_ptr).start_time;
+            let finish_time = (*state_ptr).finish_time;
+
+            let _trace = local_ktrace_begin_scope!(
+                DETAILED,
+                "insert",
+                "start time" => start_time,
+                "finish time" => finish_time,
+                "expired finish time" => now >= finish_time,
+            );
+
+            debug_assert_eq!((*state_ptr).state, ThreadState::Ready);
+            debug_assert!(!cpp_thread_is_idle(thread));
+            debug_assert!(self.is_scheduler_active_locked());
+
+            // Ensure insertion happens only once, even if unblock is called multiple times.
+            if queue_state.on_insert() {
+                // Insertion can happen from a different CPU. Set the thread's current
+                // CPU to the one this scheduler instance services.
+                (*state_ptr).curr_cpu = self.this_cpu();
+                self.update_total_expected_runtime((*state_ptr).expected_runtime_ns);
+
+                if (*state_ptr).effective_profile.is_fair() {
+                    let mut weight_total = self.weight_total();
+                    weight_total += (*state_ptr).effective_profile.weight;
+                    debug_assert!(weight_total.raw_value() > 0);
+                    self.set_weight_total(weight_total);
+
+                    self.update_fair_bandwidth_period(now);
+
+                    // If the thread is unblocking, set the start and finish time using the new
+                    // period.
+                    // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
+                    // when unblocking once we solve races higher in the stack.
+                    let enable_new_wakeup = enable_new_wakeup_accounting();
+                    if !enable_new_wakeup && placement == Placement::Insertion {
+                        let period = (*state_ptr).effective_period();
+                        (*state_ptr).start_time = now;
+                        (*state_ptr).finish_time = now + period;
+                    }
+                    let remaining_ns = (*state_ptr).remaining_time_slice_ns();
+                    if remaining_ns.raw_value() > 0 && (*state_ptr).finish_time > now {
+                        self.adjust_fair_bandwidth(thread, now);
+                        // If we're unblocking, update the start and finish time again now that
+                        // we've adjusted the fair bandwidth.
+                        // TODO(https://fxbug.dev/322207536): Stop resetting start and finish
+                        // times when unblocking once we solve races higher in the stack.
+                        if !enable_new_wakeup && placement == Placement::Insertion {
+                            let period = (*state_ptr).effective_period();
+                            (*state_ptr).start_time = now;
+                            (*state_ptr).finish_time = now + period;
+                        }
+                    }
+                } else {
+                    // Remove the thread from the bandwidth demand cache, if present, and
+                    // subtract any cached utilization that is still reflected in the
+                    // total demand. This value may be different than the thread's current
+                    // bandwidth demand due to bandwidth inheritance or a profile change since
+                    // last blocking.
+                    // TODO(eieio): Optimize based on placement type?
+                    let utilization_to_remove = if self.power_level_control_is_enabled() {
+                        self.bandwidth_reservation_cache_remove(cpp_thread_get_tid(thread))
+                    } else {
+                        SchedUtilization::from_raw(0)
+                    };
+
+                    let deadline_util = (*state_ptr).effective_profile.deadline().utilization;
+                    if (*state_ptr).effective_profile.is_deadline()
+                        && (*state_ptr).effective_profile.critical
+                    {
+                        let mut critical_deadline_utilization =
+                            self.critical_deadline_utilization();
+                        critical_deadline_utilization += deadline_util;
+                        self.set_critical_deadline_utilization(critical_deadline_utilization);
+                        if critical_deadline_utilization > K_CPU_UTILIZATION_LIMIT {
+                            static LAST_LOG_TIME_NS: core::sync::atomic::AtomicI64 =
+                                core::sync::atomic::AtomicI64::new(0);
+                            let last_ns =
+                                LAST_LOG_TIME_NS.load(core::sync::atomic::Ordering::Relaxed);
+                            if now.raw_value() - last_ns >= sched_s(1).raw_value()
+                                && LAST_LOG_TIME_NS
+                                    .compare_exchange(
+                                        last_ns,
+                                        now.raw_value(),
+                                        core::sync::atomic::Ordering::Relaxed,
+                                        core::sync::atomic::Ordering::Relaxed,
+                                    )
+                                    .is_ok()
+                            {
+                                warn_critical_deadline_utilization_exceeded(
+                                    critical_deadline_utilization,
+                                    self.this_cpu(),
+                                );
+                            }
+                        }
+                    }
+
+                    self.update_total_deadline_utilization(deadline_util - utilization_to_remove);
+                }
+
+                // Increase the processing rate when the required utilization increases
+                // beyond the current rate, accounting for current limits.
+                self.power_level_control_update_rate();
+
+                let runnable_task_count = self.runnable_task_count() + 1;
+                debug_assert!(runnable_task_count > 0);
+                self.set_runnable_task_count(runnable_task_count);
+                self.trace_total_runnable_threads();
+
+                // Start a new activation, if necessary.
+                self.update_activation(thread, now);
+
+                if placement != Placement::Association {
+                    self.queue_thread(thread, placement, now);
+                } else {
+                    // Connect the flow into the previous queue to the new queue.
+                    local_ktrace_flow_step!(FLOW, "sched_latency", (*state_ptr).flow_id);
+                }
+            }
+        }
     }
 
     /// # Safety
@@ -4655,6 +5142,153 @@ impl Scheduler {
             (*state).effective_profile.critical
         }
     }
+
+    /// Reports a violated start/finish time invariant in `queue_thread`.
+    ///
+    /// Kept out of line and cold so that the formatting state does not occupy the
+    /// stack frame of the hot queue path. The message is matched by tefmocheck.
+    ///
+    /// # Safety
+    /// `state_ptr` must be valid and the caller must hold `queue_lock_`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn panic_start_time_not_before_finish_time(
+        &self,
+        now: SchedTime,
+        state_ptr: *const SchedulerState,
+    ) -> ! {
+        // SAFETY: Forwarded from the caller.
+        unsafe {
+            // LINT.IfChange(scheduler_start_finish_time)
+            panic!(
+                "state.start_time < state.finish_time: now={} start={} finish={} \
+                 remaining_time_slice={} fair_period={} mono_ref={} var_ref={} slope={}\n",
+                now.raw_value(),
+                (*state_ptr).start_time.raw_value(),
+                (*state_ptr).finish_time.raw_value(),
+                (*state_ptr).remaining_time_slice_ns().raw_value(),
+                self.fair_period().raw_value(),
+                (*self.state.get()).fair_affine_transform.monotonic_reference_time.raw_value(),
+                (*self.state.get()).fair_affine_transform.variable_reference_time.raw_value(),
+                (*self.state.get()).fair_affine_transform.slope,
+            );
+            // LINT.ThenChange(//tools/testing/tefmocheck/check-configs.yaml:scheduler_start_finish_time)
+        }
+    }
+
+    /// Adds a thread to the run queue tree. The thread must be active on this
+    /// CPU.
+    ///
+    /// # Safety
+    /// `thread` must point to a valid `Thread`, and the caller must hold both
+    /// `queue_lock_` and `thread`'s lock exclusively.
+    unsafe fn queue_thread(&self, thread: *mut Thread, placement: Placement, now: SchedTime) {
+        let trace = local_ktrace_begin_scope!(
+            DETAILED,
+            "queue_thread",
+            "placement" => placement_to_str(placement),
+        );
+        // SAFETY: `thread` is valid and both `queue_lock_` and `thread`'s lock are held
+        // exclusively. We use `state_ptr` rather than holding `&mut SchedulerState` across
+        // `insert_raw` (whose WAVLTree observer hooks borrow `thread`'s `SchedulerState`)
+        // and `trace_thread_queue_event`.
+        unsafe {
+            let state_ptr = cpp_thread_get_scheduler_state(thread);
+
+            debug_assert_eq!((*state_ptr).state, ThreadState::Ready);
+            debug_assert!(!cpp_thread_is_idle(thread));
+            debug_assert!(placement != Placement::Association);
+
+            // Check the consistency of the start and finish times before adding the
+            // thread to the run queue.
+            if cfg!(debug_assertions) && (*state_ptr).start_time >= (*state_ptr).finish_time {
+                self.panic_start_time_not_before_finish_time(now, state_ptr);
+            }
+
+            // Only update the enqueue time and emit a flow event if this is an insertion,
+            // preemption, or migration. In contrast, an adjustment only changes the queue
+            // position in the same queue due to a parameter change and should not perform
+            // these actions.
+            if !matches!(placement, Placement::Adjustment) {
+                if matches!(placement, Placement::Migration) {
+                    // Connect the flow into the previous queue to the new queue.
+                    local_ktrace_flow_step!(FLOW, "sched_latency", (*state_ptr).flow_id);
+                } else {
+                    // Reuse this member to track the time the thread enters the run queue. It
+                    // is not read outside of the scheduler unless the thread state is
+                    // THREAD_RUNNING.
+                    (*state_ptr).last_started_running = now;
+                    let flow_id = self.next_flow_id();
+                    (*state_ptr).flow_id = flow_id;
+                    local_ktrace_flow_begin!(FLOW, "sched_latency", flow_id);
+                }
+            }
+
+            let is_fair = (*state_ptr).effective_profile.is_fair();
+            let is_critical = (*state_ptr).effective_profile.critical;
+
+            // Insert the thread into the appropriate run queue.
+            if is_fair {
+                // Convert start and finish times to variable time before inserting.
+                // TODO(eieio): Convert from standard period to local period.
+                self.monotonic_to_variable_in_place(&mut (*state_ptr).start_time);
+                self.monotonic_to_variable_in_place(&mut (*state_ptr).finish_time);
+
+                let fair_queue = self.fair_run_queue_mut();
+                (*fair_queue).insert_raw(thread);
+            } else {
+                let queue = if is_critical {
+                    self.critical_deadline_queue_mut()
+                } else {
+                    self.deadline_queue_mut()
+                };
+                (*queue).insert_raw(thread);
+            }
+
+            if !matches!(placement, Placement::Adjustment) {
+                self.trace_thread_queue_event(ktrace_rs::resolve_string!("tqe_enque"), thread);
+            }
+
+            ktrace_rs::end_scope!(
+                trace,
+                "start time" => (*state_ptr).start_time,
+                "finish time" => (*state_ptr).finish_time,
+            );
+        }
+    }
+
+    /// Removes a specific thread from its current `RunQueue`. Note that the thread
+    /// must currently exist in its queue, it is an error otherwise.
+    ///
+    /// # Safety
+    /// `thread` must point to a valid `Thread`, and the caller must hold both
+    /// `queue_lock_` and `thread`'s lock exclusively.
+    unsafe fn erase_from_queue(&self, thread: *mut Thread) {
+        // SAFETY: `thread` is valid and both `queue_lock_` and `thread`'s lock are held
+        // exclusively. We use `state_ptr` rather than holding `&mut SchedulerState` across
+        // `erase_raw` (whose WAVLTree observer hooks borrow `thread`'s `SchedulerState`).
+        unsafe {
+            debug_assert!((*cpp_thread_get_queue_state(thread)).in_queue());
+            let state_ptr = cpp_thread_get_scheduler_state(thread);
+            let is_fair = (*state_ptr).effective_profile.is_fair();
+            let is_critical = (*state_ptr).effective_profile.critical;
+
+            let queue = if is_fair {
+                self.fair_run_queue_mut()
+            } else if is_critical {
+                self.critical_deadline_queue_mut()
+            } else {
+                self.deadline_queue_mut()
+            };
+
+            (*queue).erase_raw(thread);
+
+            if is_fair {
+                self.variable_to_monotonic_in_place(&mut (*state_ptr).start_time);
+                self.variable_to_monotonic_in_place(&mut (*state_ptr).finish_time);
+            }
+        }
+    }
     /// Scales a duration value by the reciprocal of the processing rate.
     ///
     /// # Safety
@@ -5009,6 +5643,22 @@ impl Scheduler {
             CpuStatsSegmentType::Idle
         } else {
             CpuStatsSegmentType::Busy
+        }
+    }
+
+    /// Removes the thread from this CPU's scheduler and updates the current CPU
+    /// id. The thread must not be in the run queue.
+    ///
+    /// # Safety
+    /// The caller must ensure that:
+    /// - `thread` points to a valid, initialized `Thread` structure.
+    /// - Both the scheduler's `queue_lock_` and `thread`'s lock are held exclusively.
+    unsafe fn remove_thread_locked(&self, now: SchedTime, thread: *mut Thread) {
+        // SAFETY: `thread` is valid and `queue_lock_` is held.
+        unsafe { self.remove(now, thread, INVALID_CPU) };
+        // SAFETY: `thread` is valid and its lock is held exclusively by the caller.
+        unsafe {
+            (*cpp_thread_get_scheduler_state(thread)).curr_cpu = INVALID_CPU;
         }
     }
 
@@ -5721,6 +6371,106 @@ pub extern "C" fn rust_scheduler_peak_decay_delta(
     Scheduler::peak_decay_delta(value, sample)
 }
 
+fn placement_from_raw(raw: i32) -> Placement {
+    match raw {
+        0 => Placement::Insertion,
+        1 => Placement::Adjustment,
+        2 => Placement::Preemption,
+        3 => Placement::Migration,
+        4 => Placement::Association,
+        _ => unreachable!(),
+    }
+}
+
+/// # Safety
+/// `thread` must be valid and locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_find_target_cpu(
+    thread: *mut Thread,
+    unblock_type: i32,
+) -> CpuNum {
+    let ut = if unblock_type == 0 { UnblockType::Normal } else { UnblockType::Synchronous };
+    // SAFETY: Forwarded from the caller.
+    unsafe { Scheduler::find_target_cpu(thread, ut) }
+}
+
+/// # Safety
+/// `sched` and `out_result` must be valid pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_steal_work(
+    sched: *const Scheduler,
+    now: SchedTime,
+    processing_rate: SchedProcessingRate,
+    out_result: *mut DequeueResult,
+) {
+    // SAFETY: Forwarded from the caller.
+    let res = unsafe { (*sched).steal_work(now, processing_rate) };
+    // SAFETY: `out_result` points to valid memory for a `DequeueResult`.
+    unsafe { out_result.write(res) };
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid and locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_insert(
+    sched: *const Scheduler,
+    now: SchedTime,
+    thread: *mut Thread,
+    placement: i32,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).insert(now, thread, placement_from_raw(placement)) };
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid and locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_remove(
+    sched: *const Scheduler,
+    now: SchedTime,
+    thread: *mut Thread,
+    stolen_by: CpuNum,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).remove(now, thread, stolen_by) };
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid and locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_remove_thread_locked(
+    sched: *const Scheduler,
+    now: SchedTime,
+    thread: *mut Thread,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).remove_thread_locked(now, thread) };
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid and locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_queue_thread(
+    sched: *const Scheduler,
+    thread: *mut Thread,
+    placement: i32,
+    now: SchedTime,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).queue_thread(thread, placement_from_raw(placement), now) };
+}
+
+/// # Safety
+/// `sched` and `thread` must be valid and locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_erase_from_queue(
+    sched: *const Scheduler,
+    thread: *mut Thread,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).erase_from_queue(thread) };
+}
+
 /// Initializes a run queue in-place.
 ///
 /// # Safety
@@ -5863,6 +6613,438 @@ pub enum UnblockType {
     /// compatible conditions, the woken thread can replace the current thread on
     /// a CPU as it blocks in the same reschedule operation.
     Synchronous = 1,
+}
+
+// The threshold for early termination when searching for a CPU to place a
+// task. Queues with an estimated runtime below this value are sufficiently
+// unloaded. In a performance-balanced system, this tunable value approximates
+// the cost of intra-cluster migration due to cache misses, assuming a task
+// has high cache affinity with the last CPU it ran on. This tunable may be
+// increased to limit intra-cluster spill over.
+const INTRA_CLUSTER_THRESHOLD: SchedDuration = sched_us(25);
+
+// The threshold for cross-cluster work stealing. Queues with an estimated
+// runtime below this value are not stolen from if the target and destination
+// CPUs are in different logical clusters. In a performance-balanced system,
+// this tunable value approximates the cost of cross-cluster migration due to
+// cache misses, assuming a task has high cache affinity in its current
+// cluster. This tunable may be increased to limit cross-cluster spill over.
+const INTER_CLUSTER_THRESHOLD: SchedDuration = sched_ms(2);
+
+// Utility type that tracks values related to the thread being placed when
+// finding a target CPU for a waking or migrating thread.
+struct ThreadDemand {
+    woken_thread_utilization: SchedUtilization,
+    current_thread_utilization: SchedUtilization,
+    woken_thread_finish_time: SchedTime,
+    woken_thread_last_cpu: CpuNum,
+    current_thread_cpu: CpuNum,
+    is_fair: bool,
+}
+
+impl ThreadDemand {
+    /// Returns the thread demand parameters for the given thread and unblock type.
+    /// When the unblock type is synchronous, values from the current thread are
+    /// also considered.
+    ///
+    /// # Safety
+    /// `woken_thread` must point to a valid `Thread` whose lock is held by the
+    /// caller, and interrupts must be disabled.
+    unsafe fn get(woken_thread: *const Thread, unblock_type: UnblockType) -> Self {
+        // SAFETY: `woken_thread` is valid and its lock is held by the caller.
+        let woken_state = unsafe { &*cpp_thread_get_scheduler_state(woken_thread.cast_mut()) };
+        let woken_thread_finish_time = woken_state.finish_time;
+        let woken_utilization = if woken_state.effective_profile.is_deadline() {
+            woken_state.effective_profile.deadline().utilization
+        } else {
+            SchedUtilization::from_raw(0)
+        };
+
+        // Bandwidth demand is based only on the woken thread for the normal
+        // unblock type.
+        if unblock_type == UnblockType::Normal {
+            let demand = Self {
+                woken_thread_utilization: woken_utilization,
+                current_thread_utilization: SchedUtilization::from_raw(0),
+                woken_thread_finish_time,
+                woken_thread_last_cpu: woken_state.last_cpu,
+                current_thread_cpu: INVALID_CPU,
+                is_fair: woken_state.effective_profile.is_fair(),
+            };
+            local_ktrace_instant!(
+                QUEUE,
+                "ThreadDemand::Get",
+                "woken_thread_finish_time" => demand.woken_thread_finish_time,
+                "woken_thread_last_cpu" => demand.woken_thread_last_cpu,
+                "woken_thread_utilization" => demand.woken_thread_utilization,
+                "current_thread_utilization" => demand.current_thread_utilization,
+            );
+            return demand;
+        }
+
+        // Bandwidth demand depends on both the woken and current threads for the
+        // synchronous unblock type.
+        let current_thread = super::thread::current_get();
+        // SAFETY: The current CPU's scheduler is initialized.
+        let scheduler = unsafe { cpp_scheduler_get(crate::arch_rs::curr_cpu_num()) };
+
+        // Briefly acquire the queue lock for the current scheduler, where the
+        // current thread is running, to allow read-only access to the relevant
+        // scheduler state.
+        // SAFETY: `scheduler` is valid, interrupts are disabled, and `queue_lock_`
+        // is not already held. We project `current_thread`'s `SchedulerState` and
+        // `EffectiveProfile` via raw pointers because `current_thread`'s lock is not
+        // held here.
+        let (current_utilization, current_thread_cpu, current_is_fair) = unsafe {
+            let _guard = QueueLockGuard::acquire(scheduler);
+            (*scheduler).assert_in_scheduler(current_thread);
+            let current_state_ptr = cpp_thread_get_scheduler_state(current_thread);
+            let current_ep_ptr = &raw const (*current_state_ptr).effective_profile;
+            debug_assert_eq!((*current_state_ptr).curr_cpu, (*scheduler).this_cpu());
+
+            let curr_discipline = EffectiveProfile::discipline_raw(current_ep_ptr);
+            let util = if curr_discipline == SchedDiscipline::Deadline {
+                EffectiveProfile::deadline_raw(current_ep_ptr).utilization
+            } else {
+                SchedUtilization::from_raw(0)
+            };
+            let cpu = (*current_state_ptr).curr_cpu;
+            let is_fair = curr_discipline == SchedDiscipline::Fair;
+            (util, cpu, is_fair)
+        };
+
+        let demand = Self {
+            woken_thread_utilization: woken_utilization,
+            current_thread_utilization: current_utilization,
+            woken_thread_finish_time,
+            woken_thread_last_cpu: woken_state.last_cpu,
+            current_thread_cpu,
+            is_fair: woken_state.effective_profile.is_fair() && current_is_fair,
+        };
+        local_ktrace_instant!(
+            QUEUE,
+            "ThreadDemand::Get",
+            "woken_thread_finish_time" => demand.woken_thread_finish_time,
+            "woken_thread_last_cpu" => demand.woken_thread_last_cpu,
+            "woken_thread_utilization" => demand.woken_thread_utilization,
+            "current_thread_utilization" => demand.current_thread_utilization,
+        );
+        demand
+    }
+
+    /// Returns the effective demand the thread would place on the given CPU,
+    /// accounting for cached demand by the woken thread.
+    fn get_effective_utilization(
+        &self,
+        cpu_num: CpuNum,
+        power_level_control_enabled: bool,
+    ) -> SchedUtilization {
+        // If power level control is enabled, and thus demand caching is being
+        // performed, the expiration of the woken thread's finish time is considered
+        // to avoid double counting demand cached on the last CPU it ran on. Note
+        // that the expiration of the finish time is compared with the current time
+        // here to maximize the accuracy of the prediction of the cached state,
+        // which could change in parallel with the overall CPU placement operation.
+        let woken_thread_demand_likely_cached = power_level_control_enabled
+            && cpu_num == self.woken_thread_last_cpu
+            && self.woken_thread_finish_time
+                > SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+
+        // Return the additional demand that the woken thread would contribute to
+        // the given CPU, accounting for demand caching. The demand of the current
+        // thread, if contributing to the total demand, is already accounted for on
+        // the CPU it is running on.
+        let total_utilization = (if !woken_thread_demand_likely_cached {
+            self.woken_thread_utilization
+        } else {
+            SchedUtilization::from_raw(0)
+        }) + (if cpu_num != self.current_thread_cpu {
+            self.current_thread_utilization
+        } else {
+            SchedUtilization::from_raw(0)
+        });
+
+        core::cmp::min(total_utilization, K_THREAD_UTILIZATION_MAX)
+    }
+
+    fn initial_cpu(&self) -> CpuNum {
+        if self.current_thread_cpu != INVALID_CPU {
+            self.current_thread_cpu
+        } else {
+            self.woken_thread_last_cpu
+        }
+    }
+}
+
+/// Latches a potential candidate placement for the thread and essential values
+/// for making comparisons with other candidates. Dynamic values are exposed by
+/// each `Scheduler` instance as relaxed atomics to avoid queue lock contention,
+/// since these values are subject to change as soon as the queue lock is
+/// dropped, and the comparisons only require approximate consistency. Latching
+/// the values ensures that each comparison of a particular candidate with other
+/// candidates uses the same values.
+#[derive(Clone, Copy)]
+struct CandidatePlacement {
+    is_valid: bool,
+    cpu: CpuNum,
+    cluster: usize,
+    queue_time_ns: SchedDuration,
+    processing_rate: SchedProcessingRate,
+    max_processing_rate: SchedProcessingRate,
+    required_processing_rate: SchedProcessingRate,
+    deadline_utilization: SchedUtilization,
+    estimated_power_delta_nw: u64,
+}
+
+impl CandidatePlacement {
+    fn empty() -> Self {
+        Self {
+            is_valid: false,
+            cpu: INVALID_CPU,
+            cluster: 0,
+            queue_time_ns: SchedDuration::from_raw(0),
+            processing_rate: SchedProcessingRate::from_raw(0),
+            max_processing_rate: SchedProcessingRate::from_raw(0),
+            required_processing_rate: SchedProcessingRate::from_raw(0),
+            deadline_utilization: SchedUtilization::from_raw(0),
+            estimated_power_delta_nw: 0,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        cpu: CpuNum,
+        cluster: usize,
+        queue_time_ns: SchedDuration,
+        processing_rate: SchedProcessingRate,
+        max_processing_rate: SchedProcessingRate,
+        required_processing_rate: SchedProcessingRate,
+        deadline_utilization: SchedUtilization,
+        estimated_power_delta_nw: u64,
+    ) -> Self {
+        Self {
+            is_valid: true,
+            cpu,
+            cluster,
+            queue_time_ns,
+            processing_rate,
+            max_processing_rate,
+            required_processing_rate,
+            deadline_utilization,
+            estimated_power_delta_nw,
+        }
+    }
+
+    /// Latches key values from the given CPU, demand, and power domain set.
+    ///
+    /// # Safety
+    /// `cpu_num` must be a valid CPU number, and `local_scheduler` must point to
+    /// the current CPU's `Scheduler` with its `queue_lock_` held.
+    unsafe fn evaluate(
+        cpu_num: CpuNum,
+        demand: &ThreadDemand,
+        local_scheduler: *const Scheduler,
+        power_level_control_enabled: bool,
+    ) -> Self {
+        // SAFETY: `cpu_num` is a valid CPU number.
+        let scheduler = unsafe { cpp_scheduler_get(cpu_num) };
+        let sched_state = unsafe { (*scheduler).state.get() };
+        // SAFETY: `cluster` is immutable after init, and `exported_*` fields are
+        // `RelaxedAtomicI64` safe for concurrent cross-CPU reads without `scheduler`'s lock.
+        let (
+            cpu_queue_time_ns,
+            cpu_processing_rate,
+            cpu_max_processing_rate,
+            cpu_deadline_utilization,
+            cluster,
+        ) = unsafe {
+            (
+                SchedDuration::from_raw((*sched_state).exported_queue_time_ns.load()),
+                SchedProcessingRate::from_raw((*sched_state).exported_processing_rate.load()),
+                SchedProcessingRate::from_raw((*sched_state).exported_max_processing_rate.load()),
+                SchedUtilization::from_raw((*sched_state).exported_deadline_utilization.load()),
+                (*sched_state).cluster,
+            )
+        };
+
+        // TODO(https://fxbug.dev/448195120): Factor in estimated utilization for
+        // variable/fair bandwidth workloads, modulated by the variable/fair
+        // bandwidth limit, if any. For now, just use constant/deadline bandwidth as
+        // the primary input for the requirement.
+        let current_required_processing_rate = cpu_deadline_utilization;
+
+        // Start with the basic requirements common to all threads.
+        let mut new_required_processing_rate = current_required_processing_rate;
+        let mut estimated_power_delta_nw = 0;
+
+        // Add the bandwidth demand for the thread.
+        new_required_processing_rate +=
+            demand.get_effective_utilization(cpu_num, power_level_control_enabled);
+
+        // Estimated energy cost comparisons are only necessary in heterogeneous /
+        // multi-domain systems. In strict SMP systems, where all CPUs have the same
+        // power / performance characteristics and operating point changes affect
+        // all CPUs simultaneously, only demand and processing rate requirements
+        // need to be considered for task placement and admission control. However,
+        // this condition may change to track and maintain deeper idle states in the
+        // future.
+        // TODO(eieio): Account for deeper idle states when making task placement
+        // decisions.
+        // SAFETY: `local_scheduler` is valid and its `queue_lock_` is held by the caller.
+        let power_domain_count =
+            unsafe { cpp_scheduler_get_power_domain_set_count(local_scheduler) };
+        if power_domain_count > 1 {
+            // Compute the power delta if there is a change in the required processing
+            // rate. The addition of deadline / constant bandwidth demand will always
+            // increase the required processing rate, but fair / variable bandwidth
+            // demand may or may not increase the required processing rate.
+            let required_processing_rate_delta =
+                new_required_processing_rate - current_required_processing_rate;
+            if required_processing_rate_delta != SchedProcessingRate::from_raw(0) {
+                // The current power cost for each individual processor in the power
+                // domain, including this candidate placement.
+                // SAFETY: `local_scheduler` is valid with `queue_lock_` held, and `cpu_num` is valid.
+                let current_power_cost = unsafe {
+                    cpp_scheduler_lookup_power_cost(local_scheduler, cpu_num, cpu_processing_rate)
+                };
+
+                // If the task fits on the candidate without changing the processing rate,
+                // estimate the power delta based only on the new demand. Otherwise, if the
+                // candidate will become oversubscribed at the current rate, a higher
+                // compatible rate must be selected, if one exists, and the estimated power
+                // delta must include the effect on the entire domain.
+                if new_required_processing_rate <= cpu_processing_rate {
+                    let power_cost = FastFixed::<i64, 0>::from_raw(current_power_cost as i64);
+                    estimated_power_delta_nw =
+                        FastFixed::<i64, 0>::from(required_processing_rate_delta * power_cost)
+                            .raw_value() as u64;
+                } else {
+                    // SAFETY: `local_scheduler` is valid with `queue_lock_` held, and `cpu_num` is valid.
+                    let domain_utilization = unsafe {
+                        cpp_scheduler_lookup_total_normalized_utilization(local_scheduler, cpu_num)
+                    };
+                    // SAFETY: `local_scheduler` is valid with `queue_lock_` held, and `cpu_num` is valid.
+                    let new_power_cost = unsafe {
+                        cpp_scheduler_lookup_power_cost(
+                            local_scheduler,
+                            cpu_num,
+                            new_required_processing_rate,
+                        )
+                    };
+
+                    let new_power_cost = FastFixed::<i64, 0>::from_raw(new_power_cost as i64);
+                    let current_power_cost =
+                        FastFixed::<i64, 0>::from_raw(current_power_cost as i64);
+                    estimated_power_delta_nw = FastFixed::<i64, 0>::from(
+                        (domain_utilization + required_processing_rate_delta) * new_power_cost
+                            - domain_utilization * current_power_cost,
+                    )
+                    .raw_value() as u64;
+                }
+            }
+        }
+
+        local_ktrace_instant!(
+            QUEUE,
+            "evaluate",
+            "cpu" => cpu_num,
+            "queue time" => cpu_queue_time_ns,
+            "actual rate" => cpu_processing_rate,
+            "max rate" => cpu_max_processing_rate,
+            "current required rate" => current_required_processing_rate,
+            "new required rate" => new_required_processing_rate,
+            "estimated power delta nw" => estimated_power_delta_nw,
+        );
+
+        Self::new(
+            cpu_num,
+            cluster,
+            cpu_queue_time_ns,
+            cpu_processing_rate,
+            cpu_max_processing_rate,
+            new_required_processing_rate,
+            cpu_deadline_utilization,
+            estimated_power_delta_nw,
+        )
+    }
+
+    fn is_admissible(&self) -> bool {
+        self.required_processing_rate <= self.max_processing_rate
+    }
+
+    fn capacity_shortfall(&self) -> SchedProcessingRate {
+        if self.is_admissible() {
+            SchedProcessingRate::from_raw(0)
+        } else {
+            self.required_processing_rate - self.max_processing_rate
+        }
+    }
+
+    /// Returns true if the load balancing objectives and constraints are
+    /// sufficiently met that candidate selection can stop on this candidate.
+    fn is_sufficient(&self, demand: &ThreadDemand) -> bool {
+        // If the estimated power is non-zero (i.e. there is an active energy model),
+        // don't stop searching early, even if the other criteria are met. This
+        // results in the search converging on the lowest power candidate that also
+        // meets the admission control criteria.
+        // TODO(https://fxbug.dev/448196664): Consider adding a configurable
+        // threshold to terminate the search if the estimated power cost is
+        // acceptably low.
+        let migration_unnecessary_condition =
+            self.estimated_power_delta_nw == 0 && self.queue_time_ns <= INTRA_CLUSTER_THRESHOLD;
+
+        // Bypass the migration condition for synchronous wakeups. For normal
+        // wakeups, the current thread's CPU will be INVALID_CPU to indicate that it
+        // should not affect the placement decision.
+        let synchronous_condition = self.cpu == demand.current_thread_cpu;
+
+        // If this is a synchronous wake up or migration is unnecessary, then stop
+        // searching for a better placement if the demand is admissible.
+        (synchronous_condition || migration_unnecessary_condition) && self.is_admissible()
+    }
+
+    /// Returns true if this candidate is a better alternative than the current target.
+    fn is_better_than(&self, current_target: &Self, demand: &ThreadDemand) -> bool {
+        local_ktrace_instant!(
+            QUEUE,
+            "compare",
+            "Current queue time" => current_target.queue_time_ns,
+            "Current cluster" => current_target.cluster as u64,
+            "Current deadline utilization" => current_target.deadline_utilization,
+            "Candidate queue time" => self.queue_time_ns,
+            "Candidate cluster" => self.cluster as u64,
+            "Candidate deadline utilization" => self.deadline_utilization,
+        );
+
+        if demand.is_fair {
+            // CPUs in the same logical cluster are considered equivalent in terms of
+            // cache affinity. Choose the least loaded among the members of a cluster.
+            if self.cluster == current_target.cluster {
+                return (self.queue_time_ns, self.deadline_utilization)
+                    < (current_target.queue_time_ns, current_target.deadline_utilization);
+            }
+
+            // Only consider crossing cluster boundaries if the current candidate is
+            // above the threshold.
+            return current_target.queue_time_ns > INTER_CLUSTER_THRESHOLD
+                && self.queue_time_ns < current_target.queue_time_ns;
+        }
+
+        let candidate_criteria = (
+            self.capacity_shortfall(),
+            self.estimated_power_delta_nw,
+            self.deadline_utilization,
+            self.queue_time_ns,
+        );
+        let current_criteria = (
+            current_target.capacity_shortfall(),
+            current_target.estimated_power_delta_nw,
+            current_target.deadline_utilization,
+            current_target.queue_time_ns,
+        );
+
+        candidate_criteria < current_criteria
+    }
 }
 
 const IDLE_WEIGHT: i32 = i32::MIN;
@@ -6025,6 +7207,387 @@ impl Scheduler {
         unsafe { (*scheduler).set_is_active(is_active) };
     }
 
+    /// A helper function used by `find_active_scheduler_for_thread`. Returns a CPU to
+    /// run the given thread on, but does not lock that scheduler, meaning that the
+    /// selected scheduler can become deactivated before the caller can lock it.
+    ///
+    /// Typically, users will want to use `find_active_scheduler_for_thread` instead,
+    /// which will supply a locked scheduler which is guaranteed to be active.
+    ///
+    /// # Safety
+    /// The caller must ensure `thread` points to a valid initialized `Thread` whose
+    /// lock is held at least shared, that interrupts are disabled, and that no
+    /// scheduler's `queue_lock_` is held.
+    pub unsafe fn find_target_cpu(thread: *mut Thread, unblock_type: UnblockType) -> CpuNum {
+        let trace = local_ktrace_begin_scope!(COMMON, "find_target");
+
+        // Determine the set of CPUs the thread is allowed to run on.
+        let current_cpu = crate::arch_rs::curr_cpu_num();
+        let active_mask = peek_active_mask();
+        // SAFETY: `thread` is valid and its lock is held by the caller.
+        let (available_mask, hard_affinity, soft_affinity) = unsafe {
+            let thread_state = &*cpp_thread_get_scheduler_state(thread);
+            (
+                thread_state.get_effective_cpu_mask(active_mask),
+                thread_state.hard_affinity,
+                thread_state.soft_affinity,
+            )
+        };
+
+        if cfg!(debug_assertions) && available_mask == 0 {
+            // SAFETY: `thread` is valid.
+            unsafe { panic_no_available_cpu(thread, hard_affinity, soft_affinity, active_mask) };
+        }
+
+        local_ktrace_instant!(
+            DETAILED,
+            "target_mask",
+            "online" => super::mp::get_online_mask(),
+            "active" => active_mask,
+        );
+
+        // Evaluate the bandwidth demand of the woken thread, which will include the
+        // bandwidth of the current thread for synchronous wakeups.
+        // SAFETY: `thread` is valid and its lock is held by the caller.
+        let demand = unsafe { ThreadDemand::get(thread, unblock_type) };
+
+        // Find a suitable target CPU, usually starting at the last CPU the task ran
+        // on, if any. Candidates are considered in order of best to worst potential
+        // cache affinity.
+        let last_cpu = demand.initial_cpu();
+        let starting_cpu = if last_cpu != INVALID_CPU { last_cpu } else { current_cpu };
+
+        // Loop over the search set for CPU the task last ran on to find a suitable
+        // target.
+        let mut target_queue = CandidatePlacement::empty();
+
+        // Acquire the queue lock of the current CPU to ensure that the power domain
+        // set for the current CPU doesn't change until the search is complete.
+        // TODO(https://fxbug.dev/448191466): Move the energy model into the ZBI and
+        // allocate power domain data structures only during early init, removing
+        // the need for locking or snapshotting.
+        // SAFETY: `current_cpu` is a valid CPU number.
+        let scheduler = unsafe { cpp_scheduler_get(current_cpu) };
+        // SAFETY: `scheduler` is valid, interrupts are disabled, and its `queue_lock_`
+        // is not already held.
+        let guard = unsafe { QueueLockGuard::acquire(scheduler) };
+
+        // SAFETY: `scheduler` is valid and `guard` holds its `queue_lock_`.
+        let power_level_control_enabled = unsafe { (*scheduler).power_level_control_is_enabled() };
+
+        // SAFETY: `starting_cpu` is a valid CPU number, and the CPU search set is
+        // initialized during boot topology setup.
+        let (count, entries_ptr) = unsafe {
+            (
+                cpp_get_cpu_search_set_count(starting_cpu),
+                cpp_get_cpu_search_set_entries(starting_cpu),
+            )
+        };
+        let entries = if count == 0 || entries_ptr.is_null() {
+            &[][..]
+        } else {
+            // SAFETY: `entries_ptr` points to `count` valid `CpuSearchSetEntry` elements.
+            unsafe { core::slice::from_raw_parts(entries_ptr, count) }
+        };
+
+        for entry in entries {
+            let candidate_cpu = entry.cpu;
+            let candidate_available = (available_mask & cpu_num_to_mask(candidate_cpu)) != 0;
+
+            if candidate_available {
+                // SAFETY: `candidate_cpu` is valid, and `scheduler`'s `queue_lock_` is held by `_guard`.
+                let candidate_queue = unsafe {
+                    CandidatePlacement::evaluate(
+                        candidate_cpu,
+                        &demand,
+                        scheduler,
+                        power_level_control_enabled,
+                    )
+                };
+
+                if !target_queue.is_valid || candidate_queue.is_better_than(&target_queue, &demand)
+                {
+                    target_queue = candidate_queue;
+
+                    // Stop searching when the load balancing criteria have been sufficiently met.
+                    if target_queue.is_sufficient(&demand) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        drop(guard);
+
+        debug_assert!(target_queue.cpu != INVALID_CPU);
+
+        let is_local = if unblock_type == UnblockType::Normal {
+            last_cpu == target_queue.cpu
+        } else {
+            demand.current_thread_cpu == target_queue.cpu
+        };
+        counter_wakeup_add(unblock_type == UnblockType::Synchronous, is_local);
+
+        ktrace_rs::end_scope!(
+            trace,
+            "last_cpu" => last_cpu,
+            "target_cpu" => target_queue.cpu,
+        );
+
+        target_queue.cpu
+    }
+
+    /// Attempts to steal work from other busy CPUs and move it to the local run
+    /// queues. Returns a pointer to the stolen thread that is now associated with
+    /// the local `Scheduler` instance, or a null thread pointer if no work was
+    /// stolen.
+    ///
+    /// # Safety
+    /// The caller must ensure `self` is the current CPU's `Scheduler`, that
+    /// interrupts are disabled, and that `self`'s `queue_lock_` is NOT held.
+    pub unsafe fn steal_work(
+        &self,
+        now: SchedTime,
+        processing_rate: SchedProcessingRate,
+    ) -> DequeueResult {
+        let _trace = local_ktrace_begin_scope!(DETAILED, "StealWork");
+        // SAFETY: `this_cpu` is initialized during early boot.
+        let current_cpu = unsafe { self.this_cpu() };
+        let current_cpu_mask = cpu_num_to_mask(current_cpu);
+        let active_cpu_mask = peek_active_mask();
+
+        // SAFETY: `current_cpu` is valid and the CPU search set is initialized during boot.
+        let (count, entries_ptr) = unsafe {
+            (cpp_get_cpu_search_set_count(current_cpu), cpp_get_cpu_search_set_entries(current_cpu))
+        };
+        let entries = if count == 0 || entries_ptr.is_null() {
+            &[][..]
+        } else {
+            // SAFETY: `entries_ptr` points to `count` valid `CpuSearchSetEntry` elements.
+            unsafe { core::slice::from_raw_parts(entries_ptr, count) }
+        };
+
+        for entry in entries {
+            if entry.cpu != current_cpu && (active_cpu_mask & cpu_num_to_mask(entry.cpu)) != 0 {
+                // SAFETY: `entry.cpu` is a valid CPU number.
+                let scheduler = unsafe { cpp_scheduler_get(entry.cpu) };
+
+                // Only steal across clusters if the target is above the load threshold.
+                // SAFETY: `cluster` is immutable after init, and `exported_queue_time_ns` is an
+                // atomic shadow value readable without `queue_lock_`.
+                let (cluster, target_queue_time) = unsafe {
+                    (
+                        (*self.state.get()).cluster,
+                        SchedDuration::from_raw(
+                            (*(*scheduler).state.get()).exported_queue_time_ns.load(),
+                        ),
+                    )
+                };
+                if cluster != entry.cluster && target_queue_time <= INTER_CLUSTER_THRESHOLD {
+                    continue;
+                }
+
+                // SAFETY: `scheduler` is valid, interrupts are disabled, and no `queue_lock_` is held.
+                let _guard = unsafe { QueueLockGuard::acquire(scheduler) };
+
+                // Check if the scheduler is still active. If it's not, ignore it because
+                // `migrate_unpinned_threads` will move the threads off of it.
+                // SAFETY: `scheduler` is valid and `_guard` holds its `queue_lock_`.
+                if !unsafe { (*scheduler).is_scheduler_active_locked() } {
+                    continue;
+                }
+
+                // TODO(b/430139320): Disabled until root cause of x64 pessimization is
+                // understood and addressed.
+                //
+                // Only attempt to steal from CPUs that have more than one task, avoiding
+                // unnecessary overhead when a task was just added to an idle CPU but the
+                // CPU has not started running the new task (i.e. when this CPU wins the
+                // race to acquire the target CPU's queue lock after the singular task is
+                // queued).
+                //
+                // if unsafe { (*scheduler).runnable_task_count() } <= 1 {
+                //     continue;
+                // }
+
+                // Returns true if the given thread can run on this CPU. We only need R/O
+                // access to the thread's scheduler state, which we have because we are
+                // holding the queue lock for a thread which belongs to that queue.
+                let check_affinity = |thread: *mut Thread| -> bool {
+                    // SAFETY: `thread` is enqueued in `scheduler`, whose `queue_lock_` is held,
+                    // so its affinity masks are stable; the raw accessor avoids forming a
+                    // reference because `thread`'s lock is not held.
+                    let effective_cpu_mask = unsafe {
+                        SchedulerState::get_effective_cpu_mask_raw(
+                            cpp_thread_get_scheduler_state(thread),
+                            active_cpu_mask,
+                        )
+                    };
+                    (current_cpu_mask & effective_cpu_mask) != 0
+                };
+
+                // Common routine for stealing from a run queue.
+                let steal_from_queue = |run_queue: *mut RunQueue,
+                                        is_fair: bool,
+                                        predicate: &dyn Fn(*mut Thread) -> bool|
+                 -> Option<DequeueResult> {
+                    let _trace_steal = local_ktrace_begin_scope!(COMMON, "sched_steal");
+
+                    // Convert the monotonic eligible time to variable time and potentially
+                    // snap the virtual timeline forward when stealing from the fair queue.
+                    let mut eligible_time = now;
+                    if is_fair {
+                        // SAFETY: `scheduler`'s `queue_lock_` is held by `_guard`, which also
+                        // synchronizes access to `run_queue`.
+                        let front_opt = unsafe {
+                            eligible_time = (*scheduler).monotonic_to_variable(eligible_time);
+                            (*run_queue).front()
+                        };
+                        if let Some(earliest_thread) = front_opt {
+                            // SAFETY: `earliest_thread` is enqueued in `scheduler`, whose
+                            // `queue_lock_` is held. Project `start_time` via raw pointer.
+                            let earliest_start = unsafe {
+                                (*cpp_thread_get_scheduler_state(
+                                    core::ptr::from_ref(earliest_thread).cast_mut(),
+                                ))
+                                .start_time
+                            };
+                            if eligible_time < earliest_start {
+                                COUNTER_FAIR_TIMELINE_SNAP_COUNT.add(1);
+                                let snap_time = earliest_start - eligible_time;
+                                COUNTER_FAIR_TIMELINE_SNAP_TIME
+                                    .add(snap_time.into_fixed().raw_value());
+
+                                // SAFETY: `scheduler`'s `queue_lock_` is held by `_guard`.
+                                unsafe {
+                                    (*(*scheduler).state.get())
+                                        .fair_affine_transform
+                                        .snap(now, earliest_start);
+                                }
+                                eligible_time = earliest_start;
+                            }
+                        }
+                    }
+
+                    // SAFETY: `run_queue` belongs to `scheduler`, whose `queue_lock_` is held.
+                    let thread = unsafe {
+                        find_earliest_eligible_thread(&*run_queue, eligible_time, predicate)
+                    };
+                    if thread.is_null() {
+                        return None;
+                    }
+
+                    // Remove the thread from the source run queue and record that it was
+                    // stolen by this CPU.
+                    // SAFETY: `thread` is enqueued in `run_queue` and `scheduler`'s `queue_lock_`
+                    // is held by `_guard`.
+                    unsafe {
+                        debug_assert!(check_affinity(thread));
+                        debug_assert!(!cpp_thread_has_migrate_fn(thread));
+                        debug_assert_eq!(
+                            (*cpp_thread_get_queue_state(thread)).disposition(),
+                            QueueDisposition::Enqueued
+                        );
+                        (*run_queue).erase_raw(thread);
+                        (*scheduler).remove(now, thread, current_cpu);
+                        debug_assert_eq!(
+                            (*cpp_thread_get_queue_state(thread)).disposition(),
+                            QueueDisposition::Stolen
+                        );
+                        (*scheduler).trace_thread_queue_event(
+                            ktrace_rs::resolve_string!("tqe_deque_steal_work"),
+                            thread,
+                        );
+                    }
+
+                    if is_fair {
+                        // SAFETY: `thread` was just stolen under `scheduler`'s `queue_lock_`.
+                        // Project `start_time` and `finish_time` via raw pointer.
+                        let (start_time, finish_time) = unsafe {
+                            let state_ptr = cpp_thread_get_scheduler_state(thread);
+                            ((*state_ptr).start_time, (*state_ptr).finish_time)
+                        };
+                        // SAFETY: `scheduler`'s `queue_lock_` is held by `_guard`.
+                        let (mono_start, mono_finish) = unsafe {
+                            (
+                                (*scheduler).variable_to_monotonic(start_time),
+                                (*scheduler).variable_to_monotonic(finish_time),
+                            )
+                        };
+                        return Some(DequeueResult {
+                            thread,
+                            mono_start_time_ns: mono_start,
+                            mono_finish_time_ns: mono_finish,
+                        });
+                    }
+
+                    Some(DequeueResult {
+                        thread,
+                        mono_start_time_ns: SchedTime::from_raw(0),
+                        mono_finish_time_ns: SchedTime::from_raw(0),
+                    })
+                };
+
+                // Returns true if the given thread in the run queue meets the criteria to
+                // run on this CPU. Don't attempt to steal any threads which are
+                // currently in the process of being scheduled.
+                let deadline_predicate = |thread: *mut Thread| -> bool {
+                    // SAFETY: `thread` is enqueued in `scheduler`, whose `queue_lock_` is held.
+                    // We use `EffectiveProfile::deadline_raw` to avoid forming `&EffectiveProfile`
+                    // without `thread`'s lock.
+                    let is_scheduleable = unsafe {
+                        let state_ptr = cpp_thread_get_scheduler_state(thread);
+                        let ep_ptr = &raw const (*state_ptr).effective_profile;
+                        EffectiveProfile::deadline_raw(ep_ptr).utilization <= processing_rate
+                    };
+                    // SAFETY: `thread` is valid and `scheduler`'s `queue_lock_` is held.
+                    check_affinity(thread)
+                        && is_scheduleable
+                        && !unsafe { cpp_thread_has_migrate_fn(thread) }
+                };
+
+                // Returns true if the given thread in the run queue meets the criteria to
+                // run on this CPU.
+                let fair_predicate = |thread: *mut Thread| -> bool {
+                    // SAFETY: `thread` is valid and `scheduler`'s `queue_lock_` is held.
+                    check_affinity(thread) && !unsafe { cpp_thread_has_migrate_fn(thread) }
+                };
+
+                // Attempt to find a critical deadline thread that can run on this CPU.
+                // SAFETY: `scheduler`'s `queue_lock_` is held by `_guard`.
+                if let Some(res) = steal_from_queue(
+                    unsafe { (*scheduler).critical_deadline_queue_mut() },
+                    false,
+                    &deadline_predicate,
+                ) {
+                    return res;
+                }
+
+                // Attempt to find a deadline thread that can run on this CPU.
+                // SAFETY: `scheduler`'s `queue_lock_` is held by `_guard`.
+                if let Some(res) = steal_from_queue(
+                    unsafe { (*scheduler).deadline_queue_mut() },
+                    false,
+                    &deadline_predicate,
+                ) {
+                    return res;
+                }
+
+                // Attempt to find a fair thread that can run on this CPU.
+                // SAFETY: `scheduler`'s `queue_lock_` is held by `_guard`.
+                if let Some(res) = steal_from_queue(
+                    unsafe { (*scheduler).fair_run_queue_mut() },
+                    true,
+                    &fair_predicate,
+                ) {
+                    return res;
+                }
+            }
+        }
+
+        DequeueResult::empty()
+    }
+
     /// Checks to see if `self` scheduler is currently active while holding its
     /// `queue_lock`, ensuring that it will stay in its current state until after we
     /// drop the lock.
@@ -6060,6 +7623,40 @@ impl Scheduler {
         let scheduler = &super::percpu::PerCpu::get(which_cpu).scheduler;
         ksync::lock!(let _queue_guard = scheduler.queue_lock().lock_with(ksync::source_tag!()));
         callable(scheduler)
+    }
+
+    /// Finds an appropriate CPU for a thread to run on, then locks that scheduler,
+    /// confirms that it is still active, and invokes the user-supplied callback with
+    /// the scheduler's `queue_lock` held.
+    ///
+    /// This method may need to search for a target CPU for the thread more than
+    /// once if the initially chosen scheduler becomes deactivated after it was
+    /// selected, but before it was locked.
+    ///
+    /// # Safety
+    /// The caller must ensure `thread` points to a valid initialized `Thread` whose
+    /// lock is held at least shared, that interrupts are disabled, and that no
+    /// scheduler's `queue_lock_` is held.
+    pub unsafe fn find_active_scheduler_for_thread<F>(thread: *mut Thread, mut action: F) -> CpuNum
+    where
+        F: FnMut(*mut Thread, &Scheduler),
+    {
+        loop {
+            // SAFETY: `thread` is valid and locked per caller contract. `target_ptr` points to
+            // a valid per-CPU `Scheduler` whose `queue_lock_` is held by `_target_queue_guard`
+            // while `target` is borrowed and passed to `action`.
+            unsafe {
+                let target_cpu = Self::find_target_cpu(thread, UnblockType::Normal);
+                let target_ptr = cpp_scheduler_get(target_cpu);
+                let _target_queue_guard = QueueLockGuard::acquire(target_ptr);
+                let target = &*target_ptr;
+                if target.is_scheduler_active_locked() {
+                    action(thread, target);
+                    return target_cpu;
+                }
+            }
+            COUNTER_FIND_TARGET_CPU_RETRIES.add(1);
+        }
     }
 }
 

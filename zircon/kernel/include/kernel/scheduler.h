@@ -17,6 +17,7 @@
 #include <lib/sched/affine.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <zircon/syscalls/scheduler.h>
 #include <zircon/syscalls/system.h>
@@ -40,6 +41,7 @@
 #include <ktl/atomic.h>
 #include <ktl/optional.h>
 #include <ktl/span.h>
+#include <ktl/type_traits.h>
 #include <ktl/utility.h>
 
 // Forward declarations.
@@ -307,6 +309,17 @@ void rust_scheduler_update_estimated_energy_consumption(const Scheduler* sched,
                                                         zx_instant_boot_ticks_t boot_ticks,
                                                         SchedDuration actual_runtime_ns);
 SchedDuration rust_scheduler_peak_decay_delta(SchedDuration value, SchedDuration sample);
+cpu_num_t rust_scheduler_find_target_cpu(Thread* thread, int32_t unblock_type);
+void rust_scheduler_steal_work(const Scheduler* sched, SchedTime now,
+                               SchedProcessingRate processing_rate, void* out_result);
+void rust_scheduler_insert(const Scheduler* sched, SchedTime now, Thread* thread,
+                           int32_t placement);
+void rust_scheduler_remove(const Scheduler* sched, SchedTime now, Thread* thread,
+                           cpu_num_t stolen_by);
+void rust_scheduler_remove_thread_locked(const Scheduler* sched, SchedTime now, Thread* thread);
+void rust_scheduler_queue_thread(const Scheduler* sched, Thread* thread, int32_t placement,
+                                 SchedTime now);
+void rust_scheduler_erase_from_queue(const Scheduler* sched, Thread* thread);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.
@@ -1281,6 +1294,18 @@ class Scheduler {
     const Thread* thread() const { return thread_; }
 
    private:
+    // The Rust side (`rust_scheduler_*`) produces `DequeueResult` values by
+    // writing the `#[repr(C)]` Rust definition in place; keep both layouts in
+    // sync. Checked in a member function so the class is complete and the
+    // private members are accessible to `offsetof`.
+    static void StaticAssertLayout() {
+      static_assert(sizeof(DequeueResult) == 24 && alignof(DequeueResult) == 8);
+      static_assert(ktl::is_standard_layout_v<DequeueResult>);
+      static_assert(offsetof(DequeueResult, thread_) == 0);
+      static_assert(offsetof(DequeueResult, mono_start_time_ns_) == 8);
+      static_assert(offsetof(DequeueResult, mono_finish_time_ns_) == 16);
+    }
+
     Thread* thread_{nullptr};
     SchedTime mono_start_time_ns_{0};
     SchedTime mono_finish_time_ns_{0};
@@ -1422,20 +1447,7 @@ class Scheduler {
   // must currently exist in its queue, it is an error otherwise.
   void EraseFromQueue(Thread* thread) TA_REQ(queue_lock_, thread->get_scheduler_variable_lock())
       TA_REQ(thread->get_lock()) {
-    DEBUG_ASSERT(thread->scheduler_queue_state().in_queue());
-    SchedulerState& state = thread->scheduler_state();
-
-    const bool is_fair = state.discipline() == SchedDiscipline::Fair;
-    const bool is_critical = state.effective_profile().is_critical();
-    RunQueue& queue = is_fair ? rust_state_.fair_run_queue
-                              : (is_critical ? rust_state_.critical_deadline_run_queue
-                                             : rust_state_.deadline_run_queue);
-    queue.erase(*thread);
-
-    if (is_fair) {
-      VariableToMonotonicInPlace(state.start_time_);
-      VariableToMonotonicInPlace(state.finish_time_);
-    }
+    rust_scheduler_erase_from_queue(this, thread);
   }
 
   // Adjusts the given fair thread's bandwidth and dynamic parameters for

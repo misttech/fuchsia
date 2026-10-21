@@ -459,10 +459,10 @@ failure_mode_checks:
 # TODO(https://fxbug.dev/448121736): Remove once cause of panic is resolved.
 # LINT.IfChange(scheduler_start_finish_time)
 - kind: "string_in_log"
-  string: "state->start_time() < state->finish_time()"
+  string: "state.start_time < state.finish_time"
   log_types: ["serialLogType", "swarmingOutputType", "syslogType"]
   attribute_to_test: true
-# LINT.ThenChange(//zircon/kernel/kernel/scheduler.cc:scheduler_start_finish_time)
+# LINT.ThenChange(//zircon/kernel/kernel/scheduler.rs:scheduler_start_finish_time)
 
 - kind: "string_in_log"
   string: "ZIRCON KERNEL PANIC"
