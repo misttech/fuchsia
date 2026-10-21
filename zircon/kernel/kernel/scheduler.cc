@@ -320,6 +320,101 @@ FFI_ALWAYS_INLINE void cpp_scheduler_unblock_list(Thread::UnblockList* list)
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_thread_base_profile_changed(Thread* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(thread != nullptr);
+  Scheduler::ThreadBaseProfileChanged(*thread);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_upstream_thread_base_profile_changed_thread(
+    const Thread* upstream, Thread* target) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::UpstreamThreadBaseProfileChanged(*upstream, *target);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_upstream_thread_base_profile_changed_owq(
+    const Thread* upstream, OwnedWaitQueue* target) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::UpstreamThreadBaseProfileChanged(*upstream, *target);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_join_node_to_pi_graph_thread_thread(
+    const Thread* upstream, Thread* target,
+    ForceInheritance force_inheritance) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::JoinNodeToPiGraph(*upstream, *target, force_inheritance);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_join_node_to_pi_graph_thread_owq(
+    const Thread* upstream, OwnedWaitQueue* target,
+    ForceInheritance force_inheritance) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::JoinNodeToPiGraph(*upstream, *target, force_inheritance);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_join_node_to_pi_graph_owq_thread(
+    const OwnedWaitQueue* upstream, Thread* target,
+    ForceInheritance force_inheritance) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::JoinNodeToPiGraph(*upstream, *target, force_inheritance);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_join_node_to_pi_graph_owq_owq(
+    const OwnedWaitQueue* upstream, OwnedWaitQueue* target,
+    ForceInheritance force_inheritance) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::JoinNodeToPiGraph(*upstream, *target, force_inheritance);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_split_node_from_pi_graph_thread_thread(
+    Thread* upstream, Thread* target,
+    const SchedulerState::EffectiveProfile* old_target_ep) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::SplitNodeFromPiGraph(*upstream, *target, old_target_ep);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_split_node_from_pi_graph_thread_owq(
+    Thread* upstream, OwnedWaitQueue* target,
+    const SchedulerState::EffectiveProfile* old_target_ep) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::SplitNodeFromPiGraph(*upstream, *target, old_target_ep);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_split_node_from_pi_graph_owq_thread(
+    OwnedWaitQueue* upstream, Thread* target,
+    const SchedulerState::EffectiveProfile* old_target_ep) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::SplitNodeFromPiGraph(*upstream, *target, old_target_ep);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scheduler_split_node_from_pi_graph_owq_owq(
+    OwnedWaitQueue* upstream, OwnedWaitQueue* target,
+    const SchedulerState::EffectiveProfile* old_target_ep) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(upstream != nullptr);
+  DEBUG_ASSERT(target != nullptr);
+  Scheduler::SplitNodeFromPiGraph(*upstream, *target, old_target_ep);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE cpu_stats* cpp_get_cpu_stats(cpu_num_t cpu_num) TA_NO_THREAD_SAFETY_ANALYSIS {
   return &percpu::Get(cpu_num).stats;
 }

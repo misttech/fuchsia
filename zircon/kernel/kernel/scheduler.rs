@@ -1942,6 +1942,55 @@ unsafe extern "C" {
     fn cpp_scheduler_block(current_thread: *mut Thread);
     fn cpp_scheduler_unblock(thread: *mut Thread);
     fn cpp_scheduler_unblock_list(list: *mut core::ffi::c_void);
+    fn cpp_scheduler_thread_base_profile_changed(thread: *mut Thread);
+    fn cpp_scheduler_upstream_thread_base_profile_changed_thread(
+        upstream: *const Thread,
+        target: *mut Thread,
+    );
+    fn cpp_scheduler_upstream_thread_base_profile_changed_owq(
+        upstream: *const Thread,
+        target: *mut OwnedWaitQueue,
+    );
+    fn cpp_scheduler_join_node_to_pi_graph_thread_thread(
+        upstream: *const Thread,
+        target: *mut Thread,
+        force_inheritance: super::wait_queue::ForceInheritance,
+    );
+    fn cpp_scheduler_join_node_to_pi_graph_thread_owq(
+        upstream: *const Thread,
+        target: *mut OwnedWaitQueue,
+        force_inheritance: super::wait_queue::ForceInheritance,
+    );
+    fn cpp_scheduler_join_node_to_pi_graph_owq_thread(
+        upstream: *const OwnedWaitQueue,
+        target: *mut Thread,
+        force_inheritance: super::wait_queue::ForceInheritance,
+    );
+    fn cpp_scheduler_join_node_to_pi_graph_owq_owq(
+        upstream: *const OwnedWaitQueue,
+        target: *mut OwnedWaitQueue,
+        force_inheritance: super::wait_queue::ForceInheritance,
+    );
+    fn cpp_scheduler_split_node_from_pi_graph_thread_thread(
+        upstream: *mut Thread,
+        target: *mut Thread,
+        old_target_ep: *const EffectiveProfile,
+    );
+    fn cpp_scheduler_split_node_from_pi_graph_thread_owq(
+        upstream: *mut Thread,
+        target: *mut OwnedWaitQueue,
+        old_target_ep: *const EffectiveProfile,
+    );
+    fn cpp_scheduler_split_node_from_pi_graph_owq_thread(
+        upstream: *mut OwnedWaitQueue,
+        target: *mut Thread,
+        old_target_ep: *const EffectiveProfile,
+    );
+    fn cpp_scheduler_split_node_from_pi_graph_owq_owq(
+        upstream: *mut OwnedWaitQueue,
+        target: *mut OwnedWaitQueue,
+        old_target_ep: *const EffectiveProfile,
+    );
 }
 
 /// Returns a pointer to the `ChainLock` embedded in `thread`.
@@ -6627,6 +6676,201 @@ pub unsafe fn unblock_list(
     // of `list` in-place, leaving `list` as a valid empty `Thread::UnblockList`.
     unsafe {
         cpp_scheduler_unblock_list(list.as_raw().cast());
+    }
+}
+
+/// A reference to a node in a PI graph, which is either a [`Thread`] or an [`OwnedWaitQueue`].
+#[derive(Clone, Copy)]
+pub enum PiNodeRef<'a> {
+    /// A [`Thread`] node.
+    Thread(&'a Thread),
+    /// An [`OwnedWaitQueue`] node.
+    OwnedWaitQueue(&'a OwnedWaitQueue),
+}
+
+/// Implemented by the types which may be nodes in a PI graph ([`Thread`] and [`OwnedWaitQueue`]).
+///
+/// # Safety
+///
+/// [`PiNode::pi_node_ref`] must return a reference to `self` (and [`PiNode::IS_THREAD`] must be
+/// `true` exactly when it returns [`PiNodeRef::Thread`]); unsafe code relies on this to operate
+/// on the nodes whose locks its callers hold.
+pub unsafe trait PiNode {
+    /// `true` if `Self` is [`Thread`].
+    const IS_THREAD: bool;
+
+    /// Returns `self` as a [`PiNodeRef`].
+    fn pi_node_ref(&self) -> PiNodeRef<'_>;
+}
+
+// SAFETY: `pi_node_ref` returns `self` as a `PiNodeRef::Thread`.
+unsafe impl PiNode for Thread {
+    const IS_THREAD: bool = true;
+
+    #[inline]
+    fn pi_node_ref(&self) -> PiNodeRef<'_> {
+        PiNodeRef::Thread(self)
+    }
+}
+
+// SAFETY: `pi_node_ref` returns `self` as a `PiNodeRef::OwnedWaitQueue`.
+unsafe impl PiNode for OwnedWaitQueue {
+    const IS_THREAD: bool = false;
+
+    #[inline]
+    fn pi_node_ref(&self) -> PiNodeRef<'_> {
+        PiNodeRef::OwnedWaitQueue(self)
+    }
+}
+
+/// Updates a thread's effective profile and position in its container at the start of a base
+/// profile update operation, regardless of whether or not the target thread is currently blocked
+/// or currently assigned to a scheduler.
+///
+/// # Safety
+///
+/// The caller must ensure that `thread`'s lock, and every lock in the PI chain downstream of
+/// `thread`, is held by the active transaction, that preemption is disabled, and that `thread`'s
+/// base profile has just been changed and marked dirty.
+#[inline]
+pub unsafe fn thread_base_profile_changed(thread: &Thread, clt_token: &ChainLockTransactionToken) {
+    assert_transaction_active(clt_token);
+    // SAFETY: The caller guarantees `thread`'s PI chain is locked and its base profile is dirty.
+    unsafe {
+        cpp_scheduler_thread_base_profile_changed(thread.as_raw());
+    }
+}
+
+/// Called when a thread in a graph whose target is either an [`OwnedWaitQueue`] or a different
+/// [`Thread`] changes its base profile in order update the target's new effective profile,
+/// position in container, and dynamic scheduling parameters.
+///
+/// # Safety
+///
+/// The caller must ensure that the locks of `upstream`, `target`, and every node in the PI chain
+/// downstream of `target` are held by the active transaction, and that preemption is disabled.
+#[inline]
+pub unsafe fn upstream_thread_base_profile_changed<T: PiNode>(
+    upstream: &Thread,
+    target: &T,
+    clt_token: &ChainLockTransactionToken,
+) {
+    assert_transaction_active(clt_token);
+    // SAFETY: The caller guarantees that the required PI chain locks are held. The `*mut` derived
+    // from `&OwnedWaitQueue` is only written by C++ through `UnsafeCell`-backed fields (the
+    // `KCell` collection) or through the thread-owned inherited scheduler state storage.
+    unsafe {
+        match target.pi_node_ref() {
+            PiNodeRef::Thread(t) => {
+                cpp_scheduler_upstream_thread_base_profile_changed_thread(upstream, t.as_raw())
+            }
+            PiNodeRef::OwnedWaitQueue(t) => cpp_scheduler_upstream_thread_base_profile_changed_owq(
+                upstream,
+                core::ptr::from_ref(t).cast_mut(),
+            ),
+        }
+    }
+}
+
+/// Called when a new edge is added connecting the target of one PI graph (the upstream node) to a
+/// different PI graph.
+///
+/// # Safety
+///
+/// The caller must ensure that the locks of `upstream`, `target`, and every node in the PI chain
+/// downstream of `target` are held by the active transaction, and that preemption is disabled.
+/// (The transaction need not be finalized; `OwnedWaitQueue::assign_owner` propagates before
+/// finalizing, as in C++.)
+#[inline]
+pub unsafe fn join_node_to_pi_graph<U: PiNode, T: PiNode>(
+    upstream: &U,
+    target: &T,
+    force_inheritance: super::wait_queue::ForceInheritance,
+    clt_token: &ChainLockTransactionToken,
+) {
+    assert_transaction_active(clt_token);
+    // SAFETY: The caller guarantees that the required PI chain locks are held. Each `*mut`
+    // derived from `&OwnedWaitQueue` is only written by C++ through `UnsafeCell`-backed fields
+    // (the `KCell` collection) or through the thread-owned inherited scheduler state storage.
+    unsafe {
+        match (upstream.pi_node_ref(), target.pi_node_ref()) {
+            (PiNodeRef::Thread(u), PiNodeRef::Thread(t)) => {
+                cpp_scheduler_join_node_to_pi_graph_thread_thread(u, t.as_raw(), force_inheritance)
+            }
+            (PiNodeRef::Thread(u), PiNodeRef::OwnedWaitQueue(t)) => {
+                cpp_scheduler_join_node_to_pi_graph_thread_owq(
+                    u,
+                    core::ptr::from_ref(t).cast_mut(),
+                    force_inheritance,
+                )
+            }
+            (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::Thread(t)) => {
+                cpp_scheduler_join_node_to_pi_graph_owq_thread(u, t.as_raw(), force_inheritance)
+            }
+            (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::OwnedWaitQueue(t)) => {
+                cpp_scheduler_join_node_to_pi_graph_owq_owq(
+                    u,
+                    core::ptr::from_ref(t).cast_mut(),
+                    force_inheritance,
+                )
+            }
+        }
+    }
+}
+
+/// Called when an upstream node has its downstream edge removed, splitting it from the PI graph it
+/// was a member of and becoming the target of a new graph in the process.
+///
+/// # Safety
+///
+/// The caller must ensure that the locks of `upstream`, `target`, and every node in the PI chain
+/// downstream of `target` are held by the active transaction, and that preemption is disabled.
+/// (The transaction need not be finalized; `OwnedWaitQueue::assign_owner` propagates before
+/// finalizing, as in C++.)
+#[inline]
+pub unsafe fn split_node_from_pi_graph<U: PiNode, T: PiNode>(
+    upstream: &U,
+    target: &T,
+    old_target_ep: Option<&EffectiveProfile>,
+    clt_token: &ChainLockTransactionToken,
+) {
+    assert_transaction_active(clt_token);
+    let old_target_ep = old_target_ep.map_or(core::ptr::null(), core::ptr::from_ref);
+    // SAFETY: The caller guarantees that the required PI chain locks are held. Each `*mut`
+    // derived from `&OwnedWaitQueue` is only written by C++ through `UnsafeCell`-backed fields
+    // (the `KCell` collection) or through the thread-owned inherited scheduler state storage
+    // (for example, the upstream queue's dynamic scheduling parameters).
+    unsafe {
+        match (upstream.pi_node_ref(), target.pi_node_ref()) {
+            (PiNodeRef::Thread(u), PiNodeRef::Thread(t)) => {
+                cpp_scheduler_split_node_from_pi_graph_thread_thread(
+                    u.as_raw(),
+                    t.as_raw(),
+                    old_target_ep,
+                )
+            }
+            (PiNodeRef::Thread(u), PiNodeRef::OwnedWaitQueue(t)) => {
+                cpp_scheduler_split_node_from_pi_graph_thread_owq(
+                    u.as_raw(),
+                    core::ptr::from_ref(t).cast_mut(),
+                    old_target_ep,
+                )
+            }
+            (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::Thread(t)) => {
+                cpp_scheduler_split_node_from_pi_graph_owq_thread(
+                    core::ptr::from_ref(u).cast_mut(),
+                    t.as_raw(),
+                    old_target_ep,
+                )
+            }
+            (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::OwnedWaitQueue(t)) => {
+                cpp_scheduler_split_node_from_pi_graph_owq_owq(
+                    core::ptr::from_ref(u).cast_mut(),
+                    core::ptr::from_ref(t).cast_mut(),
+                    old_target_ep,
+                )
+            }
+        }
     }
 }
 
