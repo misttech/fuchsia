@@ -69,7 +69,7 @@ pub struct AccessQueryArgs {
     pub target_class: KernelClass,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct XpermsAccessQueryArgs {
     xperms_kind: XpermsKind,
     source_sid: SecurityId,

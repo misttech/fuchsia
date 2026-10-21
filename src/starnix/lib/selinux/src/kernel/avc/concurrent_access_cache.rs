@@ -7,7 +7,6 @@ use super::{AccessQueryArgs, XpermsAccessQueryArgs};
 use crate::SecurityId;
 use crate::kernel::{ClassPermission, KernelAccessDecision, KernelXpermsAccessDecision};
 use crate::policy::{XpermsBitmap, XpermsKind};
-use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use zerocopy::IntoBytes;
 
@@ -158,6 +157,24 @@ impl XpermsAccessCacheStorage {
     const XPERMS_KIND_BIT_INDEX: usize = 5;
     const PERMISSIVE_BIT_INDEX: usize = 6;
     const HAS_TODO_BIT_INDEX: usize = 7;
+
+    #[inline(always)]
+    fn pack_key(key: &XpermsAccessQueryArgs) -> (u64, u16, u8) {
+        let source_sid = key.source_sid.0.get() as u64;
+        let target_sid = key.target_sid.0.get() as u64;
+        let class = key.permission.class() as u16;
+        let xperms_prefix = key.xperms_prefix as u16;
+        let permission_id = key.permission.id() as u8;
+        let xperms_kind_bit = match key.xperms_kind {
+            XpermsKind::Ioctl => 0,
+            XpermsKind::Nlmsg => 1,
+        };
+        (
+            source_sid | (target_sid << 32),
+            class | (xperms_prefix << 8),
+            permission_id | (xperms_kind_bit << Self::XPERMS_KIND_BIT_INDEX),
+        )
+    }
 }
 
 /// Xperms storage: we store the two sids (4 bytes each) in a u64, the class and xperms_prefix in a
@@ -177,9 +194,10 @@ impl
 
     #[inline(always)]
     fn hash_key(&self, key: &Self::Key) -> u64 {
-        let mut hasher = rapidhash::RapidInlineHasher::default();
-        key.hash(&mut hasher);
-        hasher.finish()
+        let (sids, class_and_prefix, perm_and_kind) = Self::pack_key(key);
+        let details = (class_and_prefix as u64) | ((perm_and_kind as u64) << 16);
+        let bytes = ((sids as u128) | ((details as u128) << 64)).to_ne_bytes();
+        rapidhash::rapidhash(&bytes)
     }
 
     #[inline(always)]
@@ -192,24 +210,14 @@ impl
         inline_u8s: &[AtomicU8; 1],
         _out_of_line_u64s: &[AtomicU64; 8],
     ) -> bool {
-        let source_sid = key.source_sid.0.get() as u64;
-        let target_sid = key.target_sid.0.get() as u64;
-        let class = key.permission.class() as u16;
-        let xperms_prefix = key.xperms_prefix as u16;
-        let permission_id = key.permission.id() as u8;
-        let xperms_kind_bit = match key.xperms_kind {
-            XpermsKind::Ioctl => 0,
-            XpermsKind::Nlmsg => 1,
-        };
+        let (u64_0, u16_0, u8_0_key) = Self::pack_key(key);
 
-        let u64_0_matches =
-            inline_u64s[0].load(Ordering::Relaxed) == (source_sid | (target_sid << 32));
-        let u16_0_matches =
-            inline_u16s[0].load(Ordering::Relaxed) == (class | (xperms_prefix << 8));
+        let u64_0_matches = inline_u64s[0].load(Ordering::Relaxed) == u64_0;
+        let u16_0_matches = inline_u16s[0].load(Ordering::Relaxed) == u16_0;
         let u8_0_val = inline_u8s[0].load(Ordering::Relaxed);
         let u8_0_matches = (u8_0_val
             & (Self::PERMISSION_ID_MASK | (1u8 << Self::XPERMS_KIND_BIT_INDEX)))
-            == (permission_id | (xperms_kind_bit << Self::XPERMS_KIND_BIT_INDEX));
+            == u8_0_key;
 
         u64_0_matches && u16_0_matches && u8_0_matches
     }
@@ -245,20 +253,8 @@ impl
         inline_u8s: &[AtomicU8; 1],
         out_of_line_u64s: &[AtomicU64; 8],
     ) {
-        let source_sid = key.source_sid.0.get() as u64;
-        let target_sid = key.target_sid.0.get() as u64;
-        let class = key.permission.class() as u16;
-        let xperms_prefix = key.xperms_prefix as u16;
-        let permission_id = key.permission.id() as u8;
-        let xperms_kind_bit = match key.xperms_kind {
-            XpermsKind::Ioctl => 0,
-            XpermsKind::Nlmsg => 1,
-        };
-
-        let u64_0 = source_sid | (target_sid << 32);
-        let u16_0 = class | (xperms_prefix << 8);
-        let u8_0 = permission_id
-            | (xperms_kind_bit << Self::XPERMS_KIND_BIT_INDEX)
+        let (u64_0, u16_0, u8_0_key) = Self::pack_key(key);
+        let u8_0 = u8_0_key
             | ((value.permissive as u8) << Self::PERMISSIVE_BIT_INDEX)
             | ((value.has_todo as u8) << Self::HAS_TODO_BIT_INDEX);
 
