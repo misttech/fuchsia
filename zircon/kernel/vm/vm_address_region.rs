@@ -19,7 +19,7 @@ use super::vm_object::{VmObject, VmObjectLockClass};
 use crate::kernel::types::VAddr;
 use crate::user_copy::UserInOutPtr;
 use core::cell::UnsafeCell;
-use core::ffi::{CStr, c_char, c_void};
+use core::ffi::{CStr, c_char};
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::pin::Pin;
@@ -651,16 +651,7 @@ impl VmAddressRegion {
         if self.state_locked(token) != LifeCycleState::Alive {
             return None;
         }
-        // SAFETY: The aspace lock is held, proven by `token`.
-        let raw = unsafe {
-            bindings::cpp_vm_address_region_subregions_find_region(self.as_ffi_ptr(), addr.0)
-        };
-        if raw.is_null() {
-            return None;
-        }
-        // SAFETY: `raw` points to an alive `VmAddressRegionOrMapping`.
-        let region = unsafe { &*raw.cast::<VmAddressRegionOrMapping>() };
-        Some(RefPtr::from_ref(region))
+        region_list::find_region(self, token, addr).map(RefPtr::from_ref)
     }
 
     /// Recursively traverses the regions for a given virtual address and returns a reference to a
@@ -668,7 +659,7 @@ impl VmAddressRegion {
     /// remains held.
     pub fn find_mapping_locked<'a>(
         &'a self,
-        _token: &'a LockToken<'_, VmAspaceLockClass>,
+        token: &'a LockToken<'_, VmAspaceLockClass>,
         va: VAddr,
     ) -> Option<&'a VmMapping> {
         self.state().canary.assert();
@@ -676,15 +667,7 @@ impl VmAddressRegion {
         let mut vmar = self;
         debug_assert!(vmar.lock_is_held());
         loop {
-            // SAFETY: The aspace lock is held, proven by `_token`.
-            let next_raw = unsafe {
-                bindings::cpp_vm_address_region_subregions_find_region(vmar.as_ffi_ptr(), va.0)
-            };
-            if next_raw.is_null() {
-                return None;
-            }
-            // SAFETY: `next_raw` points to a child of `vmar`.
-            let next = unsafe { &*next_raw.cast::<VmAddressRegionOrMapping>() };
+            let next = region_list::find_region(vmar, token, va)?;
             if let Some(mapping) = next.as_vm_mapping_ptr() {
                 return Some(mapping);
             }
@@ -697,8 +680,8 @@ impl VmAddressRegion {
     /// On error no state is changed and no references are added.
     fn activate(
         &self,
-        region_token: &LockToken<'_, VmAspaceRegionLockClass>,
-        aspace_token: &LockToken<'_, VmAspaceLockClass>,
+        region_token: &mut LockToken<'_, VmAspaceRegionLockClass>,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
     ) -> Result<(), Status> {
         debug_assert!(self.state_locked(aspace_token) == LifeCycleState::NotReady);
 
@@ -713,29 +696,13 @@ impl VmAddressRegion {
 
         // Look for a region in the parent starting from our desired base. If any region is found,
         // make sure we do not intersect with it.
-        // SAFETY: The aspace lock is held, proven by `aspace_token`.
-        let candidate = unsafe {
-            bindings::cpp_vm_address_region_subregions_include_or_higher(
-                parent.as_ffi_ptr(),
-                self.base().0,
-            )
-        };
-        if !candidate.is_null() {
-            // SAFETY: `candidate` points to an alive child of `parent`.
-            let candidate = unsafe { &*candidate.cast::<VmAddressRegionOrMapping>() };
+        if let Some(candidate) = region_list::include_or_higher(parent, aspace_token, self.base()) {
             debug_assert!(candidate.lock_is_held());
             assert!(candidate.base().0 >= self.base().0.wrapping_add(self.size()));
         }
 
-        // SAFETY: The region and aspace locks are held, proven by `region_token` and
-        // `aspace_token`.
-        let status = unsafe {
-            bindings::cpp_vm_address_region_subregions_insert_region(
-                parent.as_ffi_ptr(),
-                (**self).raw.get(),
-            )
-        };
-        Status::ok(status)?;
+        // SAFETY: No child of `parent` has the same base as `self`.
+        unsafe { region_list::insert_region(parent, region_token, aspace_token, self)? };
         self.set_state_locked(region_token, aspace_token, LifeCycleState::Alive);
         Ok(())
     }
@@ -751,9 +718,7 @@ impl VmAddressRegion {
         for _ in 0..depth {
             kprint!("  ");
         }
-        // SAFETY: The aspace lock is held, proven by `token`.
-        let subregions_size =
-            unsafe { bindings::cpp_vm_address_region_subregions_size_slow(self.as_ffi_ptr()) };
+        let subregions_size = region_list::size_slow(self, token);
         kprint!(
             "vmar {:p} [{:#x} {:#x}] sz {:#x} ref {} state {} '{:cs}' subregions {}\n",
             self as *const _,
@@ -766,47 +731,18 @@ impl VmAddressRegion {
             subregions_size,
         );
 
-        struct Ctx<'a, 'b> {
-            region_token: &'a LockToken<'b, VmAspaceRegionLockClass>,
-            token: &'a LockToken<'b, VmAspaceLockClass>,
-            depth: u32,
-            verbose: bool,
-        }
-
-        /// # Safety
-        ///
-        /// `ctx` points to a live `Ctx`, and `child` points to a live `VmAddressRegionOrMapping`
-        /// whose region and aspace locks are held.
-        unsafe extern "C" fn callback_shim(
-            child: *mut bindings::VmAddressRegionOrMapping,
-            ctx: *mut c_void,
-        ) {
-            // SAFETY: `ctx` points to the live `Ctx` passed by caller.
-            let ctx = unsafe { &*ctx.cast::<Ctx<'_, '_>>() };
-            // SAFETY: `child` is valid for reads.
-            let child = unsafe { &*child.cast::<VmAddressRegionOrMapping>() };
+        region_list::for_each(self, region_token, token, move |child| {
             debug_assert!(child.lock_is_held());
             debug_assert!(child.region_lock_is_held());
             match child.downcast() {
                 RegionOrMapping::Mapping(mapping) => {
-                    mapping.dump_locked(ctx.region_token, ctx.token, ctx.depth + 1, ctx.verbose)
+                    mapping.dump_locked(region_token, token, depth + 1, verbose)
                 }
                 RegionOrMapping::Region(region) => {
-                    region.dump_locked(ctx.region_token, ctx.token, ctx.depth + 1, ctx.verbose)
+                    region.dump_locked(region_token, token, depth + 1, verbose)
                 }
             }
-        }
-
-        let ctx = Ctx { region_token, token, depth, verbose };
-        let ctx_ptr: *mut c_void = (&raw const ctx).cast_mut().cast();
-        // SAFETY: The aspace lock is held and `ctx_ptr` outlives the call.
-        unsafe {
-            bindings::cpp_vm_address_region_subregions_for_each(
-                self.as_ffi_ptr(),
-                Some(callback_shim),
-                ctx_ptr,
-            );
-        }
+        });
     }
 
     /// Applies the given memory priority to this region and all subregions.
@@ -980,6 +916,137 @@ pub trait VmEnumerator {
         _guard: Pin<&mut VmAspaceGuard<'_>>,
     ) -> Status {
         Status::NEXT
+    }
+}
+
+/// A list of regions ordered by virtual address.
+///
+/// TODO(https://fxbug.dev/503042881): The RegionList API is quite object reference focused, instead
+/// of iterator focused, and this leads to a lot of theoretically redundant 'find' operations on the
+/// btree. These APIs, and the VMAR logic using them, should be re-designed to be more iterator
+/// based.
+pub(super) mod region_list {
+    use super::super::vm_aspace::{VmAspaceLockClass, VmAspaceRegionLockClass};
+    use super::{VmAddressRegion, VmAddressRegionOrMapping, bindings};
+    use crate::kernel::types::VAddr;
+    use core::ffi::c_void;
+    use ksync::LockToken;
+    use zx_status::Status;
+
+    /// Find the region that covers `addr`, returns `None` if not found.
+    #[inline]
+    pub(in crate::vm) fn find_region<'a>(
+        vmar: &'a VmAddressRegion,
+        _token: &'a LockToken<'_, VmAspaceLockClass>,
+        addr: VAddr,
+    ) -> Option<&'a VmAddressRegionOrMapping> {
+        // SAFETY: `vmar` is live and the aspace lock is held.
+        let raw = unsafe {
+            bindings::cpp_vm_address_region_subregions_find_region(vmar.as_ffi_ptr(), addr.0)
+        };
+        // SAFETY: `raw` is null or points to a child of `vmar` that is live for `'a`.
+        unsafe { raw.cast::<VmAddressRegionOrMapping>().as_ref() }
+    }
+
+    /// Find the region that contains `base`, or if that doesn't exist, the first region that
+    /// contains an address greater than `base`.
+    #[inline]
+    pub(in crate::vm) fn include_or_higher<'a>(
+        vmar: &'a VmAddressRegion,
+        _token: &'a LockToken<'_, VmAspaceLockClass>,
+        base: VAddr,
+    ) -> Option<&'a VmAddressRegionOrMapping> {
+        // SAFETY: `vmar` is live and the aspace lock is held.
+        let raw = unsafe {
+            bindings::cpp_vm_address_region_subregions_include_or_higher(vmar.as_ffi_ptr(), base.0)
+        };
+        // SAFETY: `raw` is null or points to a child of `vmar` that is live for `'a`.
+        unsafe { raw.cast::<VmAddressRegionOrMapping>().as_ref() }
+    }
+
+    /// Insert `region` to the region list. On failure the region list is unmodified.
+    ///
+    /// # Safety
+    ///
+    /// No child of `vmar` has the same base as `region`.
+    #[inline]
+    pub(in crate::vm) unsafe fn insert_region(
+        vmar: &VmAddressRegion,
+        _region_token: &mut LockToken<'_, VmAspaceRegionLockClass>,
+        _token: &mut LockToken<'_, VmAspaceLockClass>,
+        region: &VmAddressRegionOrMapping,
+    ) -> Result<(), Status> {
+        // SAFETY: `vmar` and `region` are live, no child of `vmar` has the same base as `region`,
+        // and the region and aspace locks are held.
+        Status::ok(unsafe {
+            bindings::cpp_vm_address_region_subregions_insert_region(
+                vmar.as_ffi_ptr(),
+                region.raw.get(),
+            )
+        })
+    }
+
+    /// Remove `region` from the list.
+    ///
+    /// # Safety
+    ///
+    /// `region` is a child of `vmar` and is kept alive by another owning reference for the
+    /// duration of the call.
+    #[inline]
+    pub(in crate::vm) unsafe fn remove_region(
+        vmar: &VmAddressRegion,
+        _region_token: &mut LockToken<'_, VmAspaceRegionLockClass>,
+        _token: &mut LockToken<'_, VmAspaceLockClass>,
+        region: &VmAddressRegionOrMapping,
+    ) {
+        // SAFETY: `vmar` is live, `region` is a child of `vmar` that is kept alive by another
+        // owning reference for the duration of the call, and the region and aspace locks are
+        // held.
+        unsafe {
+            bindings::cpp_vm_address_region_subregions_remove_region(
+                vmar.as_ffi_ptr(),
+                region.raw.get(),
+            )
+        }
+    }
+
+    #[inline]
+    pub(in crate::vm) fn size_slow(
+        vmar: &VmAddressRegion,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> usize {
+        // SAFETY: `vmar` is live and the aspace lock is held.
+        unsafe { bindings::cpp_vm_address_region_subregions_size_slow(vmar.as_ffi_ptr()) }
+    }
+
+    #[inline]
+    pub(in crate::vm) fn for_each<F: FnMut(&VmAddressRegionOrMapping)>(
+        vmar: &VmAddressRegion,
+        _region_token: &LockToken<'_, VmAspaceRegionLockClass>,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+        mut f: F,
+    ) {
+        /// # Safety
+        ///
+        /// `child` points to a live `VmAddressRegionOrMapping` and `f` points to an `F`.
+        #[inline]
+        unsafe extern "C" fn call<F: FnMut(&VmAddressRegionOrMapping)>(
+            child: *mut bindings::VmAddressRegionOrMapping,
+            f: *mut c_void,
+        ) {
+            // SAFETY: `f` points to a valid `F` and is exclusively referenced for the call, and
+            // `child` points to a live `VmAddressRegionOrMapping`.
+            unsafe { (*f.cast::<F>())(&*child.cast::<VmAddressRegionOrMapping>()) }
+        }
+
+        // SAFETY: `vmar` is live, the region and aspace locks are held, and `f` outlives the call.
+        unsafe {
+            bindings::cpp_vm_address_region_subregions_for_each(
+                vmar.as_ffi_ptr(),
+                Some(call::<F>),
+                (&raw mut f).cast(),
+            )
+        }
     }
 }
 
@@ -1242,14 +1309,15 @@ pub unsafe extern "C" fn rust_vm_address_region_find_mapping_locked(
 
 /// # Safety
 ///
-/// The region lock and the aspace lock are held.
+/// The region lock and the aspace lock are held, and the children of the parent are not being
+/// iterated.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_address_region_activate(this: &VmAddressRegion) -> zx_status_t {
     // SAFETY: The region lock is held by the caller.
-    let region_token = unsafe { LockToken::new() };
+    let mut region_token = unsafe { LockToken::new() };
     // SAFETY: The aspace lock is held by the caller.
-    let aspace_token = unsafe { LockToken::new() };
-    Status::result_into_raw(this.activate(&region_token, &aspace_token))
+    let mut aspace_token = unsafe { LockToken::new() };
+    Status::result_into_raw(this.activate(&mut region_token, &mut aspace_token))
 }
 
 /// # Safety
