@@ -31,10 +31,18 @@
             type: "uint32",
             value: 60,
         },
+        {
+            config: "fuchsia.power.broker.RebootOnSetLevelTimeout",
+            type: "bool",
+            value: true,
+        },
     ],
     use: [
         {
-            protocol: [ "fuchsia.feedback.CrashReporter" ],
+            protocol: [
+                "fuchsia.feedback.CrashReporter",
+                "fuchsia.hardware.power.statecontrol.Admin",
+            ],
             availability: "optional",
         },
 
@@ -45,6 +53,12 @@
             from: "self",
             key: "set_level_timeout_seconds",
             type: "uint32",
+        },
+        {
+            config: "fuchsia.power.broker.RebootOnSetLevelTimeout",
+            from: "self",
+            key: "reboot_on_set_level_timeout",
+            type: "bool",
         },
     ],
     expose: [

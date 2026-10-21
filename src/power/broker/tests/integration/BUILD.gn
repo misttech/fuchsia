@@ -24,6 +24,7 @@ rustc_test("bin") {
   name = "power_broker_test"
   deps = [
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",

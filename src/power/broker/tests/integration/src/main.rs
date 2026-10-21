@@ -6,6 +6,7 @@ use anyhow::{Error, Result};
 use assert_matches::assert_matches;
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fidl_fuchsia_feedback as ffeedback;
+use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
 use fidl_fuchsia_power_broker::{
     self as fpb, BinaryPowerLevel, ElementSchema, LeaseStatus, LevelDependency, StatusMarker,
     TopologyMarker, TopologyProxy,
@@ -46,6 +47,9 @@ mod tests {
     use fuchsia_async::TimeoutExt;
     use futures_util::stream::TryNext;
     use test_case::test_case;
+
+    const CRASH_REPORT_TIMEOUT_SECONDS: i64 = 20;
+    const REBOOT_TIMEOUT_SECONDS: i64 = 20;
 
     async fn handle_set_level(
         next: TryNext<'_, ElementRunnerRequestStream>,
@@ -3223,10 +3227,14 @@ mod tests {
         Ok(())
     }
 
-    #[test_case(1; "enabled")]
-    #[test_case(0; "disabled")]
+    #[test_case(1, true; "reboot")]
+    #[test_case(1, false; "no_reboot")]
+    #[test_case(0, false; "disabled")]
     #[fuchsia::test]
-    async fn test_set_level_timeout_integration(timeout_seconds: u32) -> Result<(), Error> {
+    async fn test_set_level_timeout_integration(
+        timeout_seconds: u32,
+        reboot_enabled: bool,
+    ) -> Result<(), Error> {
         let builder = RealmBuilder::new().await?;
 
         // Add Power Broker component.
@@ -3240,6 +3248,12 @@ mod tests {
                 if config_decl.name.as_str() == "fuchsia.power.broker.SetLevelTimeoutSeconds" {
                     config_decl.value = cm_rust::ConfigValue::Single(
                         cm_rust::ConfigSingleValue::Uint32(timeout_seconds),
+                    );
+                } else if config_decl.name.as_str()
+                    == "fuchsia.power.broker.RebootOnSetLevelTimeout"
+                {
+                    config_decl.value = cm_rust::ConfigValue::Single(
+                        cm_rust::ConfigSingleValue::Bool(reboot_enabled),
                     );
                 }
             }
@@ -3285,12 +3299,59 @@ mod tests {
             )
             .await?;
 
+        // Add mock Admin.
+        let (reboot_tx, mut rx_reboot) = futures::channel::mpsc::unbounded();
+        let admin_mock = builder
+            .add_local_child(
+                "admin",
+                move |handles: LocalComponentHandles| {
+                    let reboot_tx = reboot_tx.clone();
+                    Box::pin(async move {
+                        let mut fs = fuchsia_component::server::ServiceFs::new();
+                        fs.dir("svc")
+                            .add_fidl_service(|stream: fstatecontrol::AdminRequestStream| stream);
+                        fs.serve_connection(handles.outgoing_dir).unwrap();
+                        fs.for_each_concurrent(None, move |mut stream| {
+                            let reboot_tx = reboot_tx.clone();
+                            async move {
+                                while let Ok(Some(request)) = stream.try_next().await {
+                                    match request {
+                                        fstatecontrol::AdminRequest::Shutdown {
+                                            options,
+                                            responder,
+                                        } => {
+                                            log::info!("Mock Admin received shutdown");
+                                            let _ = reboot_tx.unbounded_send(options);
+                                            let _ = responder.send(Ok(()));
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        })
+                        .await;
+                        Ok(())
+                    })
+                },
+                ChildOptions::new(),
+            )
+            .await?;
+
         // Route protocols.
         builder
             .add_route(
                 Route::new()
                     .capability(Capability::protocol::<ffeedback::CrashReporterMarker>())
                     .from(&crash_reporter_mock)
+                    .to(&power_broker),
+            )
+            .await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fstatecontrol::AdminMarker>())
+                    .from(&admin_mock)
                     .to(&power_broker),
             )
             .await?;
@@ -3337,22 +3398,50 @@ mod tests {
             // Wait for crash report.
             let report = rx_crash
                 .next()
-                .on_timeout(fasync::MonotonicDuration::from_seconds(20), || None)
+                .on_timeout(
+                    fasync::MonotonicDuration::from_seconds(CRASH_REPORT_TIMEOUT_SECONDS),
+                    || None,
+                )
                 .await
-                .expect("Did not receive crash report");
+                .ok_or_else(|| anyhow::anyhow!("Did not receive crash report"))?;
             assert_eq!(report.program_name, Some("power-broker".to_string()));
             assert_eq!(
                 report.crash_signature,
                 Some("fuchsia-power-broker-set-level-stuck-stuck_element".to_string())
             );
             assert_eq!(report.is_fatal, Some(false));
+
+            if reboot_enabled {
+                let options = rx_reboot
+                    .next()
+                    .on_timeout(
+                        fasync::MonotonicDuration::from_seconds(REBOOT_TIMEOUT_SECONDS),
+                        || None,
+                    )
+                    .await
+                    .ok_or_else(|| anyhow::anyhow!("Did not receive reboot request"))?;
+                assert_eq!(options.action, Some(fstatecontrol::ShutdownAction::Reboot));
+                assert_eq!(
+                    options.reasons,
+                    Some(vec![fstatecontrol::ShutdownReason::PowerLevelTransitionStuck])
+                );
+            } else {
+                // Verify that NO reboot request was received.
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    fasync::MonotonicDuration::from_millis(500),
+                ))
+                .await;
+                assert!(rx_reboot.next().now_or_never().is_none());
+            }
         } else {
-            // Since timeout is disabled (0), wait to confirm no crash report is dispatched.
+            // Since timeout is disabled (0), wait to confirm no crash report or reboot request
+            // is dispatched (unlike the 1s timeout tests).
             fasync::Timer::new(fasync::MonotonicInstant::after(
                 fasync::MonotonicDuration::from_seconds(2),
             ))
             .await;
             assert!(rx_crash.next().now_or_never().is_none());
+            assert!(rx_reboot.next().now_or_never().is_none());
 
             // Verify Power Broker is still responsive.
             let (second_runner_client, _second_runner_server) =

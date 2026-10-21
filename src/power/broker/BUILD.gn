@@ -44,6 +44,7 @@ rustc_binary("bin") {
   deps = [
     ":broker_config",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/rust/zx",
     "//src/lib/async-utils",
@@ -70,6 +71,7 @@ rustc_binary("bin") {
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/power/broker/client",
+    "//third_party/rust_crates:test-case",
   ]
 
   sources = [
@@ -94,4 +96,9 @@ fuchsia_package("package") {
 # Run with `fx test power-broker-unittests`.
 fuchsia_unittest_package("power-broker-unittests") {
   deps = [ ":bin_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

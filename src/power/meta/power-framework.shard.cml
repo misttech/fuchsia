@@ -64,7 +64,10 @@
         {
             protocol: [ "fuchsia.hardware.power.statecontrol.Admin" ],
             from: "#shutdown_shim",
-            to: "#power_manager",
+            to: [
+                "#power-broker",
+                "#power_manager",
+            ],
         },
         {
             protocol: [ "fuchsia.feedback.CrashReporter" ],
