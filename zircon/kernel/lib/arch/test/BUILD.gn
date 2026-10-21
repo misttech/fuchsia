@@ -5,14 +5,12 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/test.gni")
-import("//build/toolchain/hermetic_source_set.gni")
 import("//build/zircon/c_utils.gni")
 
 group("tests") {
   testonly = true
   deps = [
     ":arch-tests($host_toolchain)",
-    ":asm-call-graph-test",
     ":asm-stack-sizes-test",
   ]
 }
@@ -81,39 +79,5 @@ toolchain_utils_action("asm-stack-sizes-test") {
     "--output=" + rebase_path(outputs[0], root_build_dir),
     "--depfile=" + rebase_path(depfile, root_build_dir),
     "--rspfile=" + rebase_path(sources[0], root_build_dir),
-  ]
-}
-
-hermetic_source_set("asm-call-graph-test-code") {
-  visibility = [ ":*" ]
-  testonly = true
-  sources = [ "asm-call-graph-test.S" ]
-  deps = [ "//zircon/kernel/lib/arch" ]
-  global_symbols = [
-    "NoCallGraph",
-    "DirectNoCalls",
-    "DirectCalls",
-    "DirectAndIndirectCalls",
-    "Indirectable",
-  ]
-  undefined_symbols = [
-    "Callee1",
-    "Callee2",
-    "Callee3",
-  ]
-}
-
-toolchain_utils_action("asm-call-graph-test") {
-  testonly = true
-  script = "asm-call-graph-test.py"
-  utils = [ "llvm-readelf" ]
-  deps = [ ":asm-call-graph-test-code.objfile" ]
-  sources = get_target_outputs(deps[0])
-  outputs = [ "$target_out_dir/$target_name.txt" ]
-  depfile = "$target_gen_dir/$target_name.d"
-  args = [
-    "--output=" + rebase_path(outputs[0], root_build_dir),
-    "--depfile=" + rebase_path(depfile, root_build_dir),
-    "--objfile=" + rebase_path(sources[0], root_build_dir),
   ]
 }

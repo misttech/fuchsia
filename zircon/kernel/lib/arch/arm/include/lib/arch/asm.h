@@ -134,16 +134,6 @@ pcrel.bias = 8
   .endr
 .endm
 
-.macro callgraph.call target
-  .llvm.callgraph.callee \target
-  bl \target
-.endm
-
-.macro callgraph.tail target
-  .llvm.callgraph.callee \target
-  b \target
-.endm
-
 #endif  // clang-format on
 
 #endif  // ZIRCON_KERNEL_LIB_ARCH_ARM_INCLUDE_LIB_ARCH_ASM_H_

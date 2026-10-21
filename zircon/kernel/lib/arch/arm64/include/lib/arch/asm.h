@@ -220,16 +220,6 @@ movk \reg, #(((\literal) >> 48) & 0xffff), lsl #48
   isb
 .endm // speculation_postfence
 
-.macro callgraph.call target
-  .llvm.callgraph.callee \target
-  bl \target
-.endm
-
-.macro callgraph.tail target
-  .llvm.callgraph.callee \target
-  b \target
-.endm
-
 #endif  // clang-format on
 
 #endif  // ZIRCON_KERNEL_LIB_ARCH_ARM64_INCLUDE_LIB_ARCH_ASM_H_

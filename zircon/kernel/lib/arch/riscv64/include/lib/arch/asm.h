@@ -153,16 +153,6 @@
 #endif
 .endm
 
-.macro callgraph.call target
-  .llvm.callgraph.callee \target
-  call \target
-.endm
-
-.macro callgraph.tail target
-  .llvm.callgraph.callee \target
-  tail \target
-.endm
-
 #endif  // clang-format on
 
 #endif  // ZIRCON_KERNEL_LIB_ARCH_RISCV64_INCLUDE_LIB_ARCH_ASM_H_

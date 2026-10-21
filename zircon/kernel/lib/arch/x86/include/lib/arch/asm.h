@@ -88,16 +88,6 @@
   .cfi_same_value \reg
 .endm
 
-.macro callgraph.call target
-  .llvm.callgraph.callee \target
-  call \target
-.endm
-
-.macro callgraph.tail target
-  .llvm.callgraph.callee \target
-  jmp \target
-.endm
-
 #endif  // clang-format on
 
 #endif  // ZIRCON_KERNEL_LIB_ARCH_X86_INCLUDE_LIB_ARCH_ASM_H_
