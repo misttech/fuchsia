@@ -324,11 +324,13 @@ pub fn check_with(
                 let u = &rust.units[j];
                 let moved =
                     find_moved(u, &cpp.units, &unmatched_c).map(|i| cpp.units[i].start_line);
-                // Safety comments, doc comments on `pub` functions, and plumbing
-                // are expected additions, not findings.
+                // Safety comments, doc comments on `pub` functions, a test's
+                // name, and plumbing are expected additions, not findings.
                 let expected = claimed.contains(&j)
                     || u.kind == UnitKind::Comment
-                        && (u.features.safety || rust.is_pub && new_doc(rust, j))
+                        && (u.features.safety
+                            || rust.is_pub && new_doc(rust, j)
+                            || names_test(rust, j, cpp))
                     || u.features.lock_plumbing
                     || u.features.plumbing;
                 // A doc comment for a C++ function that had none is new
@@ -1326,6 +1328,28 @@ fn has_doc(f: &Function) -> bool {
         .iter()
         .take_while(|u| u.kind != UnitKind::Signature)
         .any(|u| u.kind == UnitKind::Comment)
+}
+
+/// Whether the unit at `j` is the whole doc comment of a `#[test]`
+/// function and is just the C++ test's name, which unittest-rs shows as
+/// the test's name.
+fn names_test(rust: &Function, j: usize, cpp: &Function) -> bool {
+    let (Some(name), Some(sig)) = (&cpp.test_name, rust.units.get(j + 1)) else {
+        return false;
+    };
+    let u = &rust.units[j];
+    let alone = (j == 0 || rust.units[j - 1].kind != UnitKind::Comment)
+        && sig.kind == UnitKind::Signature
+        && u.start_line == u.end_line;
+    // Only attributes, one of them `#[test]` (perhaps followed by the `fn`
+    // on its line), between the doc and the `fn`.
+    let attrs: Vec<&str> = (u.end_line + 1..=sig.start_line)
+        .map(|l| rust.line(l).trim())
+        .take_while(|l| l.starts_with("#["))
+        .collect();
+    alone
+        && attrs.iter().any(|l| l.split_whitespace().next() == Some("#[test]"))
+        && rust.line(u.start_line).trim().strip_prefix("///").map(str::trim) == Some(name.trim())
 }
 
 /// The findings of a list of rows, in row order.

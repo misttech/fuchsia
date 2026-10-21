@@ -31,7 +31,32 @@ pub fn extract(path: &str, src: &str) -> CppFile {
         CppFile { functions: Vec::new(), decl_comments: HashMap::new(), bases: HashMap::new() };
     let ctx = Ctx { path, src: src.as_bytes(), lines: &lines };
     ctx.walk_scope(tree.root_node(), &[], &mut out);
+    test_names(&mut out.functions, &lines);
     out
+}
+
+/// Records the test name of each test function: the name its
+/// `UNITTEST("name", Fn)` registration gives it, or `Name` in a
+/// `TEST(Suite, Name)` definition.
+fn test_names(functions: &mut [Function], lines: &[String]) {
+    static UNITTEST: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"\bUNITTEST\s*\(\s*"([^"]*)"\s*,\s*(\w+)\s*\)"#).unwrap());
+    static TEST: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^\s*(?:TEST|TEST_F|TEST_P)\s*\(\s*\w+\s*,\s*(\w+)\s*\)").unwrap()
+    });
+    let registered: HashMap<&str, &str> = lines
+        .iter()
+        .flat_map(|l| UNITTEST.captures_iter(l))
+        .map(|c| (c.get(2).unwrap().as_str(), c.get(1).unwrap().as_str()))
+        .collect();
+    for f in functions.iter_mut().filter(|f| f.class.is_none()) {
+        let sig = f.units.iter().find(|u| u.kind == UnitKind::Signature);
+        let defined = sig.and_then(|u| TEST.captures(f.line(u.start_line)));
+        f.test_name = match defined {
+            Some(c) => Some(c[1].to_string()),
+            None => registered.get(f.base.as_str()).map(|s| s.to_string()),
+        };
+    }
 }
 
 struct Ctx<'a> {
@@ -225,6 +250,7 @@ impl<'a> Ctx<'a> {
             is_ffi: false,
             is_pub: false,
             test_only: false,
+            test_name: None,
         });
     }
 
@@ -433,6 +459,7 @@ impl<'a> Ctx<'a> {
             is_ffi: false,
             is_pub: false,
             test_only: false,
+            test_name: None,
         })
     }
 
@@ -1374,6 +1401,32 @@ mod tests {
         // Array subscripts and plain captures are left alone.
         let plain = "a[i] = b[j]; auto g = [&x](int y) { return y; };";
         assert_eq!(super::rewrite_init_captures(plain), plain);
+    }
+
+    // Test functions take their name from a `UNITTEST` registration or a
+    // `TEST` definition; other functions have none.
+    #[test]
+    fn extracts_test_names() {
+        let src = r#"
+bool NoGlowTest() {
+  BEGIN_TEST;
+  END_TEST;
+}
+bool Helper() { return true; }
+UNITTEST_START_TESTCASE(lamp_tests)
+UNITTEST("No glow", NoGlowTest)
+UNITTEST_END_TESTCASE(lamp_tests, "lamp", "lamp tests")
+TEST(LampTest, Glows) {
+  EXPECT_TRUE(Glow());
+}
+"#;
+        let file = super::extract("lamp_test.cc", src);
+        let names: Vec<(&str, Option<&str>)> =
+            file.functions.iter().map(|f| (f.base.as_str(), f.test_name.as_deref())).collect();
+        assert_eq!(
+            names,
+            [("NoGlowTest", Some("No glow")), ("Helper", None), ("TEST", Some("Glows"))]
+        );
     }
 
     #[test]

@@ -239,6 +239,9 @@ pub struct Function {
     /// Rust inside a `#[cfg(test)]` (or `ktest`) or `tests` module: test
     /// code, never the port of production C++.
     pub test_only: bool,
+    /// C++ test: the name the test runner shows for it, the first argument
+    /// of `UNITTEST("name", Fn)` or `Name` in `TEST(Suite, Name)`.
+    pub test_name: Option<String>,
 }
 
 impl Function {

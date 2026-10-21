@@ -221,6 +221,7 @@ impl<'a> Ctx<'a> {
             is_ffi,
             is_pub,
             test_only: false,
+            test_name: None,
         })
     }
 

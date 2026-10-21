@@ -1667,6 +1667,52 @@ impl Lamp {
     assert_eq!(only_issues(cpp_with_doc, dropped_doc), ["comment only in C++"]);
 }
 
+const LAMP_UNITTEST_CPP: &str = r#"
+namespace {
+bool NoGlowTest() {
+  BEGIN_TEST;
+  lamp_off();
+  END_TEST;
+}
+}  // namespace
+
+UNITTEST_START_TESTCASE(lamp_tests)
+UNITTEST("NoGlow", NoGlowTest)
+UNITTEST_END_TESTCASE(lamp_tests, "lamp", "lamp tests")
+"#;
+
+const DOC_ADDED: &str = "doc comment added in Rust where the C++ function has none; \
+                         a conversion adds no comments other than SAFETY";
+
+// A doc comment on a `#[test]` that repeats the C++ test's name, as
+// unittest-rs shows it, is expected; any other doc comment is reported.
+#[test]
+fn test_name_doc_comments_are_expected_additions() {
+    let rust = |doc: &str, attrs: &str| {
+        format!("{doc}\n{attrs}fn no_glow_test() {{\n    lamp_off();\n}}\n")
+    };
+    let gtest = "TEST(LampTest, NoGlow) {\n  lamp_off();\n}\n";
+    for (cpp, attrs) in [
+        (LAMP_UNITTEST_CPP, "#[test]\n"),
+        (LAMP_UNITTEST_CPP, "#[test]\n#[allow(unused)]\n"),
+        (LAMP_UNITTEST_CPP, "#[test] "),
+        (gtest, "#[test]\n"),
+    ] {
+        let issues = only_issues(cpp, &rust("/// NoGlow", attrs));
+        assert!(issues.is_empty(), "{attrs}: {issues:?}");
+    }
+
+    // Other text, more than the name, or a function that is not a test.
+    for (doc, attrs) in [
+        ("/// No glow", "#[test]\n"),
+        ("/// NoGlow\n///\n/// Turns the lamp off.", "#[test]\n"),
+        ("/// NoGlow", ""),
+        ("/// NoGlow", "#[test_case] "),
+    ] {
+        assert_eq!(only_issues(LAMP_UNITTEST_CPP, &rust(doc, attrs)), [DOC_ADDED], "{doc}");
+    }
+}
+
 #[test]
 fn parse_cl_formats_in_golden() {
     assert_eq!(babeldiff::cl::parse_cl_spec("1885120"), Ok(("1885120".into(), None)));

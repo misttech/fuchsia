@@ -536,7 +536,7 @@ fn undecorated(shim: &str) -> String {
 
 /// What an FFI shim forwards to.
 enum Target {
-    One(Function),
+    One(Box<Function>),
     /// Several functions fit equally well.
     Ambiguous(Vec<String>),
     None,
@@ -617,7 +617,7 @@ fn shim_target(shim: &Function, rust: &[Function]) -> Target {
         .map(|(_, r)| *r)
         .collect();
     match top.as_slice() {
-        [one] => Target::One((*one).clone()),
+        [one] => Target::One(Box::new((*one).clone())),
         many => Target::Ambiguous(many.iter().map(|r| r.name.clone()).collect()),
     }
 }
@@ -788,7 +788,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
                 .iter()
                 .any(|r| r.path == t.path && r.start_line == t.start_line)
             {
-                rust_pool.push(t.clone());
+                rust_pool.push((**t).clone());
             }
         }
     }
@@ -872,7 +872,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
                     shim
                 }
                 Target::One(t) if stub_of(c, t) => shim,
-                Target::One(t) => t,
+                Target::One(t) => &**t,
                 Target::None => shim,
                 Target::Ambiguous(_) if body_len(shim) > 3 => shim,
                 // Leave it to the similarity pass rather than guess.
