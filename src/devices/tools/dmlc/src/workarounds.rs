@@ -38,25 +38,25 @@ pub fn deduplicate_metadata_resources(metadata_id: &str, resources: &mut Vec<Val
     }
 }
 
-/// Attempts to generate a special bind rule for known init steps.
+/// Attempts to generate a special bind rule for init steps.
 ///
 /// Returns `Some(bind_rule_string)` if the service is a known init step,
 /// or `None` if it should use standard service binding.
-///
-/// TODO(https://fxbug.dev/536121419): Make init step bind rules generic.
 pub fn try_generate_init_step_bind_rule(service_name: &str) -> Option<String> {
-    match service_name {
-        "fuchsia.clock.Init" => {
-            Some("  fuchsia.BIND_INIT_STEP == fuchsia.clock.BIND_INIT_STEP.CLOCK;\n".to_string())
+    if service_name.ends_with(".Init") {
+        let namespace = service_name.trim_end_matches(".Init");
+        if !namespace.is_empty()
+            && let Some(short_name) = namespace.split('.').next_back()
+            && !short_name.is_empty()
+        {
+            return Some(format!(
+                "  fuchsia.BIND_INIT_STEP == {}.BIND_INIT_STEP.{};\n",
+                namespace,
+                short_name.to_uppercase()
+            ));
         }
-        "fuchsia.pwm.Init" => {
-            Some("  fuchsia.BIND_INIT_STEP == fuchsia.pwm.BIND_INIT_STEP.PWM;\n".to_string())
-        }
-        "fuchsia.gpio.Init" => {
-            Some("  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;\n".to_string())
-        }
-        _ => None,
     }
+    None
 }
 
 /// Manages auto-incrementing fields in resource constraints.
@@ -100,5 +100,36 @@ impl AutoIncrementer {
             *counter += 1;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_try_generate_init_step_bind_rule() {
+        assert_eq!(
+            try_generate_init_step_bind_rule("fuchsia.gpio.Init").as_deref(),
+            Some("  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;\n")
+        );
+        assert_eq!(
+            try_generate_init_step_bind_rule("fuchsia.clock.Init").as_deref(),
+            Some("  fuchsia.BIND_INIT_STEP == fuchsia.clock.BIND_INIT_STEP.CLOCK;\n")
+        );
+        assert_eq!(
+            try_generate_init_step_bind_rule("fuchsia.pwm.Init").as_deref(),
+            Some("  fuchsia.BIND_INIT_STEP == fuchsia.pwm.BIND_INIT_STEP.PWM;\n")
+        );
+        assert_eq!(
+            try_generate_init_step_bind_rule("fuchsia.power.Init").as_deref(),
+            Some("  fuchsia.BIND_INIT_STEP == fuchsia.power.BIND_INIT_STEP.POWER;\n")
+        );
+
+        // Non-init services should return None
+        assert_eq!(try_generate_init_step_bind_rule("fuchsia.hardware.gpio.Service"), None);
+        assert_eq!(try_generate_init_step_bind_rule("fuchsia.gpio"), None);
+        assert_eq!(try_generate_init_step_bind_rule("Init"), None);
+        assert_eq!(try_generate_init_step_bind_rule(".Init"), None);
     }
 }
