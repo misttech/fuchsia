@@ -43,4 +43,9 @@ FFI_ALWAYS_INLINE void cpp_dlog_panic_start() { dlog_panic_start(); }
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_dlog_bluescreen_init() { dlog_bluescreen_init(); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE size_t cpp_dlog_render_to_crashlog(char* ptr, size_t len) {
+  return dlog_render_to_crashlog({ptr, len});
+}
+
 }  // extern "C"

@@ -9,6 +9,7 @@
 use crate::console::{CMD_AVAIL_ALWAYS, CMD_FLAG_PANIC, CmdArgs, static_command};
 use crate::pdev_watchdog::{hw_watchdog_pet, hw_watchdog_set_enabled};
 use crate::persistent_debuglog_rs::persistent_dlog_invalidate;
+use crate::platform_rs::timer::InstantBoot;
 use boot_options::BootOptions;
 #[cfg(console_enabled)]
 use core::ffi::{CStr, c_int};
@@ -80,6 +81,27 @@ pub enum ZirconCrashReason {
     UserspaceRootJobTermination = 6,
 }
 
+impl TryFrom<u32> for ZirconCrashReason {
+    type Error = u32;
+
+    /// Converts a raw `zircon_crash_reason_t` value, returning it as the error if it does not name
+    /// a known reason.
+    fn try_from(raw: u32) -> Result<Self, Self::Error> {
+        match raw {
+            x if x == Self::Invalid as u32 => Ok(Self::Invalid),
+            x if x == Self::Unknown as u32 => Ok(Self::Unknown),
+            x if x == Self::NoCrash as u32 => Ok(Self::NoCrash),
+            x if x == Self::Oom as u32 => Ok(Self::Oom),
+            x if x == Self::Panic as u32 => Ok(Self::Panic),
+            x if x == Self::SoftwareWatchdog as u32 => Ok(Self::SoftwareWatchdog),
+            x if x == Self::UserspaceRootJobTermination as u32 => {
+                Ok(Self::UserspaceRootJobTermination)
+            }
+            _ => Err(raw),
+        }
+    }
+}
+
 unsafe extern "C" {
     fn cpp_platform_specific_halt(
         suggested_action: PlatformHaltAction,
@@ -108,12 +130,24 @@ unsafe extern "C" {
     ) -> usize;
     fn cpp_jtrace_invalidate();
     fn cpp_platform_serial_is_suspended() -> bool;
+    fn cpp_platform_serial_suspended_at() -> InstantBoot;
 }
 
+/// Returns whether kernel access to the debug UART has been suspended (or a suspend operation is
+/// in progress) via `platform_serial_suspend`.
 #[inline]
-fn platform_serial_is_suspended() -> bool {
+pub fn platform_serial_is_suspended() -> bool {
     // SAFETY: `platform_serial_is_suspended` is safe to call from any context, including panic.
     unsafe { cpp_platform_serial_is_suspended() }
+}
+
+/// Returns the boot time at which the debug UART was most recently suspended via
+/// `platform_serial_suspend`. The value is only meaningful when [`platform_serial_is_suspended`]
+/// returns `true`.
+#[inline]
+pub fn platform_serial_suspended_at() -> InstantBoot {
+    // SAFETY: `platform_serial_suspended_at` is safe to call from any context, including panic.
+    unsafe { cpp_platform_serial_suspended_at() }
 }
 
 struct PlatformCrashlog;

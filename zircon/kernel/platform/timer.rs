@@ -280,6 +280,7 @@ unsafe extern "C" {
     fn cpp_current_boot_time() -> InstantBoot;
     fn cpp_timer_get_ticks_to_time_ratio() -> Ratio;
     fn cpp_timer_get_mono_ticks_offset() -> i64;
+    fn cpp_timer_get_boot_ticks_offset() -> i64;
     fn cpp_timer_current_mono_and_boot_ticks() -> CurrentTicksObservation;
     fn cpp_timer_set_ticks_to_time_ratio(ticks_to_time: Ratio);
     fn cpp_timer_set_initial_ticks(ticks: u64);
@@ -339,6 +340,13 @@ pub fn timer_get_ticks_to_time_ratio() -> Ratio {
 pub fn timer_get_mono_ticks_offset() -> i64 {
     // SAFETY: Calling this FFI function has no preconditions and safely returns the offset.
     unsafe { cpp_timer_get_mono_ticks_offset() }
+}
+
+/// Access the offset from the raw ticks timeline to the boot ticks timeline.
+#[inline]
+pub fn timer_get_boot_ticks_offset() -> i64 {
+    // SAFETY: Calling this FFI function has no preconditions; it just loads an atomic.
+    unsafe { cpp_timer_get_boot_ticks_offset() }
 }
 
 /// Performs a coherent read of both the mono and boot timelines and returns a tuple with the

@@ -50,4 +50,9 @@ FFI_ALWAYS_INLINE void cpp_platform_halt_cpu() { platform_halt_cpu(); }
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_platform_serial_is_suspended() { return platform_serial_is_suspended(); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_instant_boot_t cpp_platform_serial_suspended_at() {
+  return platform_serial_suspended_at();
+}
+
 }  // extern "C"

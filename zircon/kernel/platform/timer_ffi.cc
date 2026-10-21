@@ -39,6 +39,11 @@ FFI_ALWAYS_INLINE zx_ticks_t cpp_timer_get_mono_ticks_offset() {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_ticks_t cpp_timer_get_boot_ticks_offset() {
+  return timer_get_boot_ticks_offset();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE CurrentTicksObservation cpp_timer_current_mono_and_boot_ticks() {
   return timer_current_mono_and_boot_ticks();
 }

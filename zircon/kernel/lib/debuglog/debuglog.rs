@@ -34,6 +34,7 @@ unsafe extern "C" {
     fn cpp_dlog_sync();
     fn cpp_dlog_panic_start();
     fn cpp_dlog_bluescreen_init();
+    fn cpp_dlog_render_to_crashlog(ptr: *mut c_char, len: usize) -> usize;
 }
 
 /// Shutdown the debuglog subsystem.
@@ -86,6 +87,15 @@ pub fn dlog_panic_start() {
 pub fn dlog_bluescreen_init() {
     // SAFETY: takes no arguments; the debuglog owns all the state it changes.
     unsafe { cpp_dlog_bluescreen_init() }
+}
+
+/// Renders as many of the recent debug log entries as will fit into `target`. Returns the number
+/// of bytes of `target` which were filled.
+pub fn dlog_render_to_crashlog(target: &mut [u8]) -> usize {
+    let len = target.len();
+    // SAFETY: `target` is valid for writes of `len` bytes for the duration of the call;
+    // the callee writes only within that range and does not retain the pointer.
+    unsafe { cpp_dlog_render_to_crashlog(target.as_mut_ptr().cast::<c_char>(), len) }
 }
 
 #[repr(C, align(8))]

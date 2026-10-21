@@ -256,6 +256,7 @@ extern "C" bool cpp_platform_serial_is_suspended();
 //
 // Safe to call from any context, including during a panic.
 zx_instant_boot_t platform_serial_suspended_at();
+extern "C" zx_instant_boot_t cpp_platform_serial_suspended_at();
 
 // platform_panic_start informs the system that a panic message is about
 // to be printed and that platform_halt will be called shortly.  The

@@ -315,7 +315,7 @@ zr::static_assert!(size_of::<ChannelDispatcher>() == 0);
 impl ChannelDispatcher {
     /// Returns the number of times a channel reached the max pending message count,
     /// [`MAX_PENDING_MESSAGE_COUNT`].
-    pub(super) fn get_channel_full_count() -> i64 {
+    pub(crate) fn get_channel_full_count() -> i64 {
         CHANNEL_FULL.sum_across_all_cpus()
     }
 

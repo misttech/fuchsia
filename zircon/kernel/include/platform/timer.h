@@ -372,6 +372,8 @@ struct CppRatio {
 };
 zx_instant_mono_ticks_t cpp_timer_current_mono_ticks();
 zx_instant_boot_ticks_t cpp_timer_current_boot_ticks();
+zx_ticks_t cpp_timer_get_mono_ticks_offset();
+zx_ticks_t cpp_timer_get_boot_ticks_offset();
 zx_instant_mono_t cpp_current_mono_time();
 zx_instant_boot_t cpp_current_boot_time();
 CppRatio cpp_timer_get_ticks_to_time_ratio();
