@@ -245,7 +245,7 @@ void DebugAdapterContext::Init() {
 
   dap_->registerHandler(
       [this](const dap::StackTraceRequestZxdb& req,
-             std::function<void(dap::ResponseOrError<dap::StackTraceResponse>)> callback) {
+             std::function<void(dap::ResponseOrError<dap::StackTraceResponseZxdb>)> callback) {
         DEBUG_LOG(DebugAdapter) << "StackTraceRequest received";
         OnRequestStackTrace(this, req, callback);
       });

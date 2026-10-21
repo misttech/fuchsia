@@ -9,6 +9,7 @@
 #include "dap/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
+#include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/common/scoped_temp_file.h"
 #include "src/developer/debug/zxdb/debug_adapter/context_test.h"
@@ -555,11 +556,13 @@ TEST_F(RequestStackTraceTest, ArgValidate) {
               std::make_shared<DebugAdapterWriter>(pipe.end2()));
 
   dap::optional<dap::boolean> remoteUnwind;
+  dap::optional<dap::string> unwinder;
   bool is_called = false;
   s2->registerHandler([&](const dap::StackTraceRequestZxdb& req) {
     remoteUnwind = req.remoteUnwind;
+    unwinder = req.unwinder;
     is_called = true;
-    return dap::StackTraceResponse();
+    return dap::StackTraceResponseZxdb();
   });
 
   auto run_s2_payload = [&s2]() {
@@ -575,6 +578,7 @@ TEST_F(RequestStackTraceTest, ArgValidate) {
     run_s2_payload();
     EXPECT_TRUE(is_called);
     EXPECT_FALSE(remoteUnwind.has_value());
+    EXPECT_FALSE(unwinder.has_value());
   }
 
   {
@@ -587,11 +591,13 @@ TEST_F(RequestStackTraceTest, ArgValidate) {
     EXPECT_TRUE(is_called);
     EXPECT_TRUE(remoteUnwind.has_value());
     EXPECT_TRUE(remoteUnwind.value());
+    EXPECT_FALSE(unwinder.has_value());
   }
 
   {
     dap::StackTraceRequestZxdb request_with_remote_unwind{
         .remoteUnwind = false,
+        .unwinder = "fp",
     };
     auto res = s1->send(request_with_remote_unwind);
     is_called = false;
@@ -599,6 +605,112 @@ TEST_F(RequestStackTraceTest, ArgValidate) {
     EXPECT_TRUE(is_called);
     EXPECT_TRUE(remoteUnwind.has_value());
     EXPECT_FALSE(remoteUnwind.value());
+    EXPECT_TRUE(unwinder.has_value());
+    EXPECT_EQ(unwinder.value(), "fp");
+  }
+}
+
+TEST_F(RequestStackTraceTest, FrameTrustAndUnwinderValidation) {
+  InitializeDebugging();
+
+  InjectProcessWithModule(kProcessKoid, 0x1000);
+  RunClient();
+  auto thread = InjectThread(kProcessKoid, kThreadKoid);
+  RunClient();
+
+  ScopedTempFile temp_file;
+  fxl::RefPtr<Function> function1(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
+  function1->set_assigned_name("test_func1");
+  function1->set_code_ranges(AddressRanges(AddressRange(0x10000, 0x10020)));
+  auto location1 = Location(0x10010, FileLine(temp_file.name(), 23), 10,
+                            SymbolContext::ForRelativeAddresses(), function1);
+
+  fxl::RefPtr<Function> function2(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
+  function2->set_assigned_name("test_func2");
+  function2->set_code_ranges(AddressRanges(AddressRange(0x10024, 0x10060)));
+  auto location2 =
+      Location(0x10040, FileLine("", 0), 0, SymbolContext::ForRelativeAddresses(), function2);
+
+  std::vector<std::unique_ptr<Frame>> frames;
+  auto frame1 = std::make_unique<MockFrame>(&session(), thread, location1, 0x2000);
+  frame1->SetTrust(debug_ipc::StackFrame::Trust::kContext);
+  auto frame2 = std::make_unique<MockFrame>(&session(), thread, location2, 0x2020);
+  frame2->SetTrust(debug_ipc::StackFrame::Trust::kFP);
+  frames.push_back(std::move(frame1));
+  frames.push_back(std::move(frame2));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), true);
+  RunClient();
+
+  {
+    dap::StackTraceRequestZxdb request = {};
+    request.threadId = kThreadKoid;
+    auto response = client().send(request);
+
+    context().OnStreamReadable();
+    loop().RunUntilNoTasks();
+    RunClient();
+
+    auto got = response.get();
+    ASSERT_FALSE(got.error);
+    ASSERT_EQ(got.response.stackFrames.size(), 2u);
+    EXPECT_EQ(got.response.stackFrames[0].trust.value(""), "Context");
+    EXPECT_EQ(got.response.stackFrames[1].trust.value(""), "FP");
+  }
+
+  {
+    debug_ipc::ThreadStatusReply reply;
+    reply.record.id = {.process = kProcessKoid, .thread = kThreadKoid};
+    reply.record.state = debug_ipc::ThreadRecord::State::kBlocked;
+    reply.record.stack_amount = debug_ipc::ThreadRecord::StackAmount::kFull;
+    reply.record.frames.emplace_back(0x10010, 0x2000, 0x2020, debug_ipc::StackFrame::Trust::kSCS);
+    mock_remote_api()->set_thread_status_reply(reply);
+
+    dap::StackTraceRequestZxdb unwinder_request = {};
+    unwinder_request.threadId = kThreadKoid;
+    unwinder_request.unwinder = "scs";
+    auto response = client().send(unwinder_request);
+
+    context().OnStreamReadable();
+    loop().RunUntilNoTasks();
+    RunClient();
+
+    auto got = response.get();
+    ASSERT_FALSE(got.error);
+    ASSERT_EQ(got.response.stackFrames.size(), 1u);
+    EXPECT_EQ(got.response.stackFrames[0].trust.value(""), "SCS");
+
+    // Verify a subsequent default stackTrace request re-syncs instead of
+    // returning cached forced-unwinder frames.
+    reply.record.frames[0].trust = debug_ipc::StackFrame::Trust::kCFI;
+    mock_remote_api()->set_thread_status_reply(reply);
+
+    dap::StackTraceRequestZxdb default_request = {};
+    default_request.threadId = kThreadKoid;
+    auto default_response = client().send(default_request);
+
+    context().OnStreamReadable();
+    loop().RunUntilNoTasks();
+    RunClient();
+
+    auto default_got = default_response.get();
+    ASSERT_FALSE(default_got.error);
+    ASSERT_EQ(default_got.response.stackFrames.size(), 1u);
+    EXPECT_EQ(default_got.response.stackFrames[0].trust.value(""), "CFI");
+  }
+
+  {
+    dap::StackTraceRequestZxdb invalid_request = {};
+    invalid_request.threadId = kThreadKoid;
+    invalid_request.unwinder = "invalid_unwinder";
+    auto response = client().send(invalid_request);
+
+    context().OnStreamReadable();
+    loop().RunUntilNoTasks();
+    RunClient();
+
+    auto got = response.get();
+    EXPECT_TRUE(got.error);
   }
 }
 
