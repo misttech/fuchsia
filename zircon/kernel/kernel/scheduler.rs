@@ -844,6 +844,14 @@ pub struct InheritedProfileValues {
 }
 
 impl InheritedProfileValues {
+    /// Returns `true` if these values carry either some fair weight, some deadline utilization,
+    /// or both.
+    #[inline]
+    pub fn is_consequential(&self) -> bool {
+        self.total_weight != SchedWeight::from_raw(0)
+            || self.uncapped_utilization != SchedUtilization::from_raw(0)
+    }
+
     pub fn assert_consistency(&self) {
         debug_assert!(self.total_weight >= SchedWeight::from_raw(0));
         debug_assert!(self.uncapped_utilization >= SchedUtilization::from_raw(0));
@@ -852,6 +860,18 @@ impl InheritedProfileValues {
             self.uncapped_utilization == SchedUtilization::from_raw(0)
                 || self.min_deadline < SchedDuration::from_raw(i64::MAX)
         );
+    }
+}
+
+impl Default for InheritedProfileValues {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            total_weight: SchedWeight::from_raw(0),
+            uncapped_utilization: SchedUtilization::from_raw(0),
+            min_deadline: SchedDuration::from_raw(i64::MAX),
+            critical_count: 0,
+        }
     }
 }
 
@@ -1117,6 +1137,21 @@ pub const K_MAX_DEADLINE_WEIGHT: SchedWeight = SchedWeight::from_raw(-1);
 /// values of the deadline parameters are valid. Directly reading the weight
 /// is not allowed.
 pub const K_MAX_DIAGNOSTIC_WEIGHT: SchedWeight = SchedWeight::from_raw(-10_001);
+
+impl Default for EffectiveProfile {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            weight: SchedWeight::from_raw(0),
+            capacity_ns: SchedCompactDuration::from_raw(0),
+            deadline_ns: SchedCompactDuration::from_raw(0),
+            utilization: SchedUtilization::from_raw(0),
+            critical: false,
+            #[cfg(scheduler_extra_invariant_validation)]
+            dirty_flags: Self::DIRTY_FLAG_CLEAN,
+        }
+    }
+}
 
 impl EffectiveProfile {
     pub fn new(base_profile: &BaseProfile) -> Self {
@@ -1561,6 +1596,7 @@ impl SchedulerQueueState {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct WaitQueueInheritedSchedulerState {
     pub ipvs: InheritedProfileValues,
     pub start_time: SchedTime, // TODO(johngro): Do we need this?
@@ -1570,6 +1606,65 @@ pub struct WaitQueueInheritedSchedulerState {
 }
 
 impl WaitQueueInheritedSchedulerState {
+    /// Resets this state to its default (newly constructed) values.
+    #[inline]
+    pub fn reset(&mut self) {
+        self.ipvs = InheritedProfileValues::default();
+        self.start_time = SchedTime::from_raw(0);
+        self.finish_time = SchedTime::from_raw(0);
+        self.time_slice_ns = SchedDuration::from_raw(0);
+        self.time_slice_used_ns = SchedDuration::from_raw(0);
+    }
+
+    /// If we have extra validation enabled, and this queue is no longer
+    /// inheriting any deadline pressure (even if there are still waiters),
+    /// then reset the dynamic parameters as well.
+    ///
+    /// The dynamic parameters (start time, finish time, time slice) are
+    /// technically undefined when we are not inheriting any utilization.  Fair
+    /// thread do not have defined dynamic parameters when they are blocked.
+    ///
+    /// In a production build with no extra validation checks, it should not be
+    /// necessary to ever touch them once they become undefined. Their values
+    /// will be overwritten later on if/when they do finally become defined
+    /// again.  In a build with extra checks enabled, however, it can be
+    /// beneficial to reset them to known default values when they are in the
+    /// "undefined" state, in order to make it easier to catch an accidental use
+    /// of the parameters when they have no defined meaning.
+    #[inline]
+    pub fn reset_dynamic_parameters(&mut self) {
+        if cfg!(scheduler_extra_invariant_validation) {
+            assert!(self.ipvs.uncapped_utilization == SchedUtilization::from_raw(0));
+            assert!(self.ipvs.min_deadline == SchedDuration::from_raw(i64::MAX));
+            self.start_time = SchedTime::from_raw(0);
+            self.finish_time = SchedTime::from_raw(0);
+            self.time_slice_ns = SchedDuration::from_raw(0);
+            self.time_slice_used_ns = SchedDuration::from_raw(0);
+        }
+    }
+
+    /// Asserts (when extra validation is enabled) that the dynamic parameters are reset.
+    #[inline]
+    pub fn assert_dynamic_parameters_are_reset(&self) {
+        if cfg!(scheduler_extra_invariant_validation) {
+            assert!(self.ipvs.uncapped_utilization == SchedUtilization::from_raw(0));
+            assert!(self.ipvs.min_deadline == SchedDuration::from_raw(i64::MAX));
+            assert!(self.start_time == SchedTime::from_raw(0));
+            assert!(self.finish_time == SchedTime::from_raw(0));
+            assert!(self.time_slice_ns == SchedDuration::from_raw(0));
+            assert!(self.time_slice_used_ns == SchedDuration::from_raw(0));
+        }
+    }
+
+    /// Asserts (when extra validation is enabled) that this state is reset.
+    #[inline]
+    pub fn assert_is_reset(&self) {
+        if cfg!(scheduler_extra_invariant_validation) {
+            assert!(self.ipvs.total_weight == SchedWeight::from_raw(0));
+            self.assert_dynamic_parameters_are_reset();
+        }
+    }
+
     /// Get the effective profile of an `OwnedWaitQueue`. The effective profile of an
     /// `OwnedWaitQueue` is the composition of the effective profiles of all the
     /// threads currently waiting in that queue. As such, the effective profile may
