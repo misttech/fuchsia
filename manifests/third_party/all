@@ -115,7 +115,7 @@
              path="third_party/curl/src"
              remote="https://fuchsia.googlesource.com/third_party/curl"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="01346829096c61b372692f6dc43ffa778c6caccd"/>
+             revision="3163ec065643ba20709f190111f42c3e1fe95273"/>
     <project name="third_party/github.com/google/emboss"
              path="third_party/github.com/google/emboss/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/emboss"

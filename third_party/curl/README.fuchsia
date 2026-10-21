@@ -1,13 +1,13 @@
 Name: curl
 URL: https://github.com/curl/curl
-Version: 8.22.0
-Revision: 01346829096c61b372692f6dc43ffa778c6caccd
+Version: 8.23.0
+Revision: 3163ec065643ba20709f190111f42c3e1fe95273
 License: MIT/X derivate
 License File: src/COPYING
 CPEPrefix: cpe:/a:haxx:curl
 Description: Curl is a command-line tool for transferring data specified with URL
 syntax.
-Revision is from `git merge-base JIRI_HEAD curl-8_22_0`.
+Revision is from `git merge-base JIRI_HEAD curl-8_23_0`.
 Original URL: https://curl.haxx.se/
 How to upgrade the version of curl:
   Note: All paths and terminal commands below assume execution from the
