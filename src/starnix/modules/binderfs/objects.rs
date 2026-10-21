@@ -289,14 +289,12 @@ impl ObjectReferenceCount {
     }
 
     /// Decrements the reference count of the object.
-    /// Returns true if the client has a reference and the reference count reached zero.
-    fn dec_deferred(&mut self) -> bool {
+    fn dec_deferred(&mut self) {
         let (Self::NoRef(x) | Self::WaitingAck(x) | Self::HasRef(x)) = self;
         if *x == 0 {
             panic!("dec called with no reference");
         } else {
             *x -= 1;
-            *self == Self::HasRef(0)
         }
     }
 
@@ -428,9 +426,8 @@ pub struct StrongRefReleaser {}
 impl RefReleaser for StrongRefReleaser {
     /// Decrements the strong reference count of the binder object.
     fn dec_ref(binder_object: &Arc<BinderObject>, actions: &mut RefCountActions) {
-        if binder_object.lock().strong_count.dec_deferred() {
-            actions.insert(ArcKey(binder_object.clone()));
-        }
+        binder_object.lock().strong_count.dec_deferred();
+        actions.insert(ArcKey(binder_object.clone()));
     }
 }
 
@@ -441,9 +438,8 @@ pub struct WeakRefReleaser {}
 impl RefReleaser for WeakRefReleaser {
     /// Decrements the weak reference count of the binder object.
     fn dec_ref(binder_object: &Arc<BinderObject>, actions: &mut RefCountActions) {
-        if binder_object.lock().weak_count.dec_deferred() {
-            actions.insert(ArcKey(binder_object.clone()));
-        }
+        binder_object.lock().weak_count.dec_deferred();
+        actions.insert(ArcKey(binder_object.clone()));
     }
 }
 

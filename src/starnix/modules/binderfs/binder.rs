@@ -1173,31 +1173,32 @@ impl BinderDriver {
                         trace_id,
                     ));
                 } else {
+                    let target_thread = match match context.binder_thread.lock().transactions.last()
+                    {
+                        Some(TransactionRole::Receiver { peer, .. }) => peer.upgrade(),
+                        _ => None,
+                    } {
+                        Some((proc, thread)) if proc.key == target_proc.key => Some(thread),
+                        _ => None,
+                    };
+
+                    let transaction_sender = TransactionSender {
+                        target_proc: target_proc.identifier,
+                        target_thread: target_thread.as_ref().map(|t| t.tid.clone()),
+                        is_alive: true,
+                        target_thread_handle: target_thread.as_ref().map(|t| t.thread.clone()),
+                        trace_id,
+                    };
+
                     // Make the sender thread part of the transaction so it doesn't get scheduled to handle
                     // any other transactions. `TwoWayTransactionComplete` is enqueued before the
                     // transaction is dispatched to the target, so that it is always read before
                     // the reply (or failure) for this transaction.
-                    let (target_thread, expected_len) = {
+                    let expected_len = {
                         let mut thread_state = context.binder_thread.lock();
-                        let target_thread = match match thread_state.transactions.last() {
-                            Some(TransactionRole::Receiver { peer, .. }) => peer.upgrade(),
-                            _ => None,
-                        } {
-                            Some((proc, thread)) if proc.key == target_proc.key => Some(thread),
-                            _ => None,
-                        };
-
-                        let transaction_sender = TransactionSender {
-                            target_proc: target_proc.identifier,
-                            target_thread: target_thread.as_ref().map(|t| t.tid.clone()),
-                            is_alive: true,
-                            target_thread_handle: target_thread.as_ref().map(|t| t.thread.clone()),
-                            trace_id,
-                        };
-
                         thread_state.enqueue_command(Command::TwoWayTransactionComplete.into());
                         thread_state.transactions.push(TransactionRole::Sender(transaction_sender));
-                        (target_thread, thread_state.transactions.len())
+                        thread_state.transactions.len()
                     };
 
                     // Register the transaction buffer.
@@ -1535,16 +1536,18 @@ impl BinderDriver {
             // a thread waiting for work. Once commands have been written, the read is waiting for
             // the outcome of a two-way transaction after its BR_TRANSACTION_COMPLETE, and must
             // return that outcome rather than a BR_SPAWN_LOOPER. The next read checks again.
-            let (mut proc_state, mut thread_state) = context.lock();
-
-            if bytes_read == 0 && proc_state.should_request_thread_locked(&thread_state) {
-                drop(thread_state);
-                let bytes_written = Command::SpawnLooper
-                    .write_to_memory(context.memory_accessor, &remaining_buffer)?;
-                debug_assert_eq!(bytes_written, Command::SpawnLooper.required_buffer_size());
-                proc_state.did_request_thread();
-                return Ok(bytes_written);
+            if bytes_read == 0 {
+                let mut binder_proc_state = context.binder_proc.lock();
+                if binder_proc_state.should_request_thread(context.binder_thread) {
+                    let bytes_written = Command::SpawnLooper
+                        .write_to_memory(context.memory_accessor, &remaining_buffer)?;
+                    debug_assert_eq!(bytes_written, Command::SpawnLooper.required_buffer_size());
+                    binder_proc_state.did_request_thread();
+                    return Ok(bytes_written);
+                }
             }
+
+            let (mut proc_state, mut thread_state) = context.lock();
 
             if thread_state.request_kick {
                 thread_state.request_kick = false;
@@ -1951,7 +1954,7 @@ impl BinderDriver {
         release_on_error!(transaction_state, (), {
             let mut sg_remaining_buffer = sg_buffer.user_buffer();
             let mut sg_buffer_offset = 0;
-            let mut files = Vec::new();
+            let mut files = Vec::with_capacity(offsets.len());
             for (offset_idx, object_offset) in offsets.iter().map(|o| *o as usize).enumerate() {
                 // Bounds-check the offset.
                 if object_offset >= transaction_data.len() {
@@ -2170,22 +2173,20 @@ impl BinderDriver {
                 translated_object.write_to(&mut transaction_data[object_offset..])?;
             }
 
-            if !files.is_empty() {
-                let new_fds = Self::translate_files(
-                    source,
-                    source_files,
-                    target_resource_accessor,
-                    target_proc,
-                    files.iter().map(|TransientFile { fd, .. }| *fd).collect(),
-                    // Close this FD if the transaction fails.
-                    &mut |fd| transaction_state.push_transient_fd(fd),
-                )?;
-                for (TransientFile { object_offset, cookie, .. }, new_fd) in
-                    std::iter::zip(files, new_fds)
-                {
-                    SerializedBinderObject::File { fd: new_fd, cookie }
-                        .write_to(&mut transaction_data[object_offset..])?;
-                }
+            let new_fds = Self::translate_files(
+                source,
+                source_files,
+                target_resource_accessor,
+                target_proc,
+                files.iter().map(|TransientFile { fd, .. }| *fd).collect(),
+                // Close this FD if the transaction fails.
+                &mut |fd| transaction_state.push_transient_fd(fd),
+            )?;
+            for (TransientFile { object_offset, cookie, .. }, new_fd) in
+                std::iter::zip(files, new_fds)
+            {
+                SerializedBinderObject::File { fd: new_fd, cookie }
+                    .write_to(&mut transaction_data[object_offset..])?;
             }
 
             Ok(())
