@@ -10,8 +10,11 @@ Provides Zero-Function-specific constants, device node discovery, and a reusable
 """
 
 import collections.abc
+import contextlib
+import ctypes
 import logging
 import os
+import struct
 import time
 from typing import Any
 
@@ -28,6 +31,13 @@ from testusb import (
     TestStatus,
     USBTestBackend,
     USBTestIoctlBackend,
+)
+from testusb.ioctl import (
+    USBDEVFS_BULK,
+    USBDEVFS_CONTROL,
+    UsbdevfsBulktransfer,
+    UsbdevfsCtrltransfer,
+    _get_libc,
 )
 from usb_lib.sysfs_usb import find_usb_device_node, wait_for_usb_device
 from usb_lib.usb_config import (
@@ -132,6 +142,149 @@ def wait_for_zero_function(
         timeout_sec=timeout_sec,
         poll_interval_sec=poll_interval_sec,
     )
+
+
+class EndpointInfo:
+    """Descriptor metadata for a discovered USB endpoint."""
+
+    def __init__(self, address: int, max_packet_size: int) -> None:
+        self.bEndpointAddress = address
+        self.wMaxPacketSize = max_packet_size
+
+
+class LoopbackDevice:
+    """Userspace wrapper around USBTestIoctlBackend for control and bulk I/O."""
+
+    def __init__(
+        self,
+        backend: USBTestIoctlBackend,
+        ep_out: int,
+        ep_in: int,
+        mps: int,
+    ) -> None:
+        self._backend = backend
+        self.ep_out = EndpointInfo(ep_out, mps)
+        self.ep_in = EndpointInfo(ep_in, mps)
+
+    def control(
+        self,
+        bm_request_type: int,
+        b_request: int,
+        w_value: int,
+        w_index: int,
+        data: bytes = b"",
+        timeout: int = 5000,
+    ) -> int:
+        assert self._backend._fd is not None
+        payload = bytes(data)
+        buf = (
+            ctypes.create_string_buffer(payload, len(payload))
+            if payload
+            else None
+        )
+        ctrl = UsbdevfsCtrltransfer(
+            bRequestType=bm_request_type,
+            bRequest=b_request,
+            wValue=w_value,
+            wIndex=w_index,
+            wLength=len(payload),
+            timeout=timeout,
+            data=ctypes.addressof(buf) if buf is not None else 0,
+        )
+        res = _get_libc().ioctl(
+            self._backend._fd, USBDEVFS_CONTROL, ctypes.byref(ctrl)
+        )
+        if res < 0:
+            err = ctypes.get_errno()
+            raise OSError(
+                err,
+                f"USBDEVFS_CONTROL (bRequest={b_request:#x}) failed: "
+                f"errno {err} ({os.strerror(err)})",
+            )
+        return res
+
+    def bulk(
+        self,
+        ep_addr: int,
+        data_or_length: bytes | int,
+        timeout: int = 5000,
+    ) -> bytes:
+        assert self._backend._fd is not None
+        if isinstance(data_or_length, int):
+            in_buf = ctypes.create_string_buffer(data_or_length)
+            bulk_in = UsbdevfsBulktransfer(
+                ep=ep_addr,
+                len=data_or_length,
+                timeout=timeout,
+                data=ctypes.addressof(in_buf),
+            )
+            res = _get_libc().ioctl(
+                self._backend._fd, USBDEVFS_BULK, ctypes.byref(bulk_in)
+            )
+            if res < 0:
+                err = ctypes.get_errno()
+                raise OSError(
+                    err,
+                    f"USBDEVFS_BULK IN (ep={ep_addr:#x}, len={data_or_length}) "
+                    f"failed: errno {err} ({os.strerror(err)})",
+                )
+            return in_buf.raw[:res]
+        out_bytes = bytes(data_or_length)
+        out_buf = ctypes.create_string_buffer(out_bytes, len(out_bytes))
+        bulk_out = UsbdevfsBulktransfer(
+            ep=ep_addr,
+            len=len(out_bytes),
+            timeout=timeout,
+            data=ctypes.addressof(out_buf),
+        )
+        res = _get_libc().ioctl(
+            self._backend._fd, USBDEVFS_BULK, ctypes.byref(bulk_out)
+        )
+        if res < 0:
+            err = ctypes.get_errno()
+            raise OSError(
+                err,
+                f"USBDEVFS_BULK OUT (ep={ep_addr:#x}, len={len(out_bytes)}) "
+                f"failed: errno {err} ({os.strerror(err)})",
+            )
+        asserts.assert_equal(
+            res,
+            len(out_bytes),
+            f"Short bulk OUT write: expected {len(out_bytes)}, sent {res}",
+        )
+        return b""
+
+    def configure_scatter_gather(
+        self,
+        out_regions: collections.abc.Sequence[tuple[int, int]],
+        in_regions: collections.abc.Sequence[tuple[int, int]],
+        in_short_zlp: bool = False,
+    ) -> None:
+        """Configure scatter-gather buffer regions via vendor control 0x5D."""
+        payload = bytearray(
+            struct.pack("<HH", len(out_regions), len(in_regions))
+        )
+        for offset, size in out_regions:
+            payload.extend(struct.pack("<II", offset, size))
+        for offset, size in in_regions:
+            payload.extend(struct.pack("<II", offset, size))
+        self.control(
+            bm_request_type=0x40,
+            b_request=0x5D,
+            w_value=1 if in_short_zlp else 0,
+            w_index=0,
+            data=bytes(payload),
+        )
+
+    def reset_scatter_gather(self) -> None:
+        """Reset scatter-gather configuration via 0-length vendor control 0x5D."""
+        self.control(
+            bm_request_type=0x40,
+            b_request=0x5D,
+            w_value=0,
+            w_index=0,
+            data=b"",
+        )
 
 
 class ZeroFunctionBaseTest(fuchsia_base_test.FuchsiaBaseTest):
@@ -377,6 +530,33 @@ class ZeroFunctionBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         )
         assert self.dev_node is not None
         return self.dev_node
+
+    @contextlib.contextmanager
+    def open_loopback_device(
+        self,
+    ) -> collections.abc.Iterator[LoopbackDevice]:
+        """Open the Zero Function device in Configuration 2 (Loopback) mode."""
+        dev_node = self.require_dev_node()
+        with USBTestIoctlBackend(device_path=dev_node) as backend:
+            assert isinstance(backend, USBTestIoctlBackend)
+            asserts.assert_true(
+                backend.set_configuration(2),
+                "Failed to set Configuration 2 (Loopback)",
+            )
+            ep_out, ep_in, claim_ifnum = backend._find_endpoints(config_val=2)
+            asserts.assert_is_not_none(ep_out, "Bulk OUT endpoint not found")
+            asserts.assert_is_not_none(ep_in, "Bulk IN endpoint not found")
+            assert ep_out is not None and ep_in is not None
+            if claim_ifnum is None:
+                claim_ifnum = backend.ifnum
+            mps = getattr(backend, "_maxpacket", None) or (
+                512
+                if backend.speed_name == "high"
+                else (1024 if backend.speed_name.startswith("super") else 64)
+            )
+            dev = LoopbackDevice(backend, ep_out, ep_in, mps)
+            with backend.claimed_interface(claim_ifnum):
+                yield dev
 
     def execute_testusb(
         self,

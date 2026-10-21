@@ -12,13 +12,14 @@ use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use log::{debug, error, info, warn};
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use zerocopy::{FromBytes as _, little_endian};
 use zx::Status;
 
 const USB_INTERFACE_DESC_SIZE: u8 = 9;
 const USB_ENDPOINT_DESC_SIZE: u8 = 7;
 
-const DEFAULT_VMO_SIZE: u64 = 4096;
+pub const DEFAULT_VMO_SIZE: u64 = 65536;
 
 const USB_MAX_PACKET_SIZE_FULL_SPEED: u16 = 64;
 const USB_MAX_PACKET_SIZE_HIGH_SPEED: u16 = 512;
@@ -34,12 +35,14 @@ const USB_ZERO_IN_VMO_ID: u64 = 100;
 
 const QUEUE_DEPTH: usize = 32;
 
+const SG_IN_SHORT_ZLP_FLAG: u16 = 1;
+
 const USB_ZERO_WRITE_PAYLOAD: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF];
 const USB_ZERO_READ_PAYLOAD: &[u8] = &[0x12, 0x34, 0x56, 0x78];
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, enumn::N)]
 #[repr(u8)]
-enum VendorRequest {
+pub enum VendorRequest {
     SetStall = 0x50,
     ClearStall = 0x51,
     ConfigureEndpoint = 0x52,
@@ -55,6 +58,22 @@ enum VendorRequest {
     // 0x5b is control write (OUT), 0x5c is control read (IN).
     ControlLoopbackOut = 0x5b,
     ControlLoopbackIn = 0x5c,
+    ConfigureScatterGather = 0x5d,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ScatterGatherRegion {
+    offset: u64,
+    size: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ScatterGatherConfig {
+    out_regions: Vec<ScatterGatherRegion>,
+    in_regions: Vec<ScatterGatherRegion>,
+    in_short_zlp: bool,
+    in_flight_out: usize,
+    requeue_on_cancel: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -112,10 +131,12 @@ struct UsbZeroFunctionDevice {
     is_configured: bool,
     vmos_registered: bool,
     endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
+    requeue_rx: Option<mpsc::UnboundedReceiver<usize>>,
     mode: TestMode,
     speed: Option<fusb_descriptor::UsbSpeed>,
     stalled_endpoints: Vec<u8>,
     control_loopback_buf: Vec<u8>,
+    sg_config: Arc<Mutex<ScatterGatherConfig>>,
 }
 
 const BIND_USB_PROTOCOL_KEY: &str = "fuchsia.BIND_USB_PROTOCOL";
@@ -333,10 +354,12 @@ impl UsbZeroFunctionDevice {
             is_configured: false,
             vmos_registered: false,
             endpoint_tasks: None,
+            requeue_rx: None,
             mode,
             speed: None,
             stalled_endpoints: Vec::new(),
             control_loopback_buf: Vec::new(),
+            sg_config: Arc::new(Mutex::new(ScatterGatherConfig::default())),
         }
     }
 
@@ -364,6 +387,7 @@ impl UsbZeroFunctionDevice {
 
     async fn cleanup_endpoints(&mut self) {
         self.endpoint_tasks = None;
+        self.requeue_rx = None;
         if self.vmos_registered {
             let in_ids: Vec<u64> =
                 (USB_ZERO_IN_VMO_ID..USB_ZERO_IN_VMO_ID + QUEUE_DEPTH as u64).collect();
@@ -480,15 +504,18 @@ impl UsbZeroFunctionDevice {
                     )
                     .await
                 }
-                TestMode::Loopback => {
-                    run_loopback(
-                        self.ep_in.clone(),
-                        self.ep_out.clone(),
-                        &mut self.vmos_registered,
-                        transfer_size,
-                    )
-                    .await
-                }
+                TestMode::Loopback => run_loopback(
+                    self.ep_in.clone(),
+                    self.ep_out.clone(),
+                    &mut self.vmos_registered,
+                    transfer_size,
+                    self.sg_config.clone(),
+                )
+                .await
+                .map(|(r_task, w_task, requeue_rx)| {
+                    self.requeue_rx = Some(requeue_rx);
+                    (r_task, w_task)
+                }),
             };
             match res {
                 Ok((r_task, w_task)) => Ok(Some((r_task, w_task))),
@@ -636,6 +663,94 @@ impl UsbZeroFunctionDevice {
                 }
                 let len = std::cmp::min(setup.w_length as usize, self.control_loopback_buf.len());
                 Ok(self.control_loopback_buf[..len].to_vec())
+            }
+            VendorRequest::ConfigureScatterGather => {
+                if (setup.bm_request_type & fusb_descriptor::ENDPOINT_DIRECTION_MASK) != 0
+                    || usize::from(setup.w_length) != write.len()
+                {
+                    return Err(Status::INVALID_ARGS);
+                }
+                let mut new_config = if write.is_empty() {
+                    ScatterGatherConfig::default()
+                } else {
+                    let (num_out, rest) = little_endian::U16::read_from_prefix(write)
+                        .map_err(|_| Status::INVALID_ARGS)?;
+                    let (num_in, mut rest) = little_endian::U16::read_from_prefix(rest)
+                        .map_err(|_| Status::INVALID_ARGS)?;
+                    let num_out = usize::from(num_out.get());
+                    let num_in = usize::from(num_in.get());
+
+                    let mut parse_regions =
+                        |count: usize| -> Result<Vec<ScatterGatherRegion>, Status> {
+                            let mut regions: Vec<ScatterGatherRegion> = Vec::with_capacity(count);
+                            for _ in 0..count {
+                                let (offset, next) = little_endian::U32::read_from_prefix(rest)
+                                    .map_err(|_| Status::INVALID_ARGS)?;
+                                let (size, next) = little_endian::U32::read_from_prefix(next)
+                                    .map_err(|_| Status::INVALID_ARGS)?;
+                                rest = next;
+                                let offset = u64::from(offset.get());
+                                let size = u64::from(size.get());
+                                let Some(end) =
+                                    offset.checked_add(size).filter(|&end| end <= DEFAULT_VMO_SIZE)
+                                else {
+                                    return Err(Status::INVALID_ARGS);
+                                };
+                                if size == 0
+                                    || regions
+                                        .iter()
+                                        .any(|r| offset < r.offset + r.size && r.offset < end)
+                                {
+                                    return Err(Status::INVALID_ARGS);
+                                }
+                                regions.push(ScatterGatherRegion { offset, size });
+                            }
+                            Ok(regions)
+                        };
+
+                    let out_regions = parse_regions(num_out)?;
+                    let in_regions = parse_regions(num_in)?;
+                    if !rest.is_empty() {
+                        return Err(Status::INVALID_ARGS);
+                    }
+
+                    ScatterGatherConfig {
+                        out_regions,
+                        in_regions,
+                        in_short_zlp: (setup.w_value & SG_IN_SHORT_ZLP_FLAG) != 0,
+                        in_flight_out: 0,
+                        requeue_on_cancel: false,
+                    }
+                };
+
+                if self.is_configured && self.mode == TestMode::Loopback {
+                    let expected_requeued = {
+                        let mut sg = self.sg_config.lock().unwrap();
+                        let in_flight = sg.in_flight_out;
+                        new_config.in_flight_out = in_flight;
+                        new_config.requeue_on_cancel = in_flight > 0;
+                        *sg = new_config;
+                        if let Some(rx) = &mut self.requeue_rx {
+                            while let Ok(_) = rx.try_recv() {}
+                        }
+                        in_flight
+                    };
+                    let _ = self.ep_in.cancel_all().await;
+                    let _ = self.ep_out.cancel_all().await;
+                    if let Some(rx) = &mut self.requeue_rx {
+                        let mut requeued = 0;
+                        while requeued < expected_requeued {
+                            let Some(n) = rx.next().await else {
+                                break;
+                            };
+                            requeued += n;
+                        }
+                    }
+                    self.sg_config.lock().unwrap().requeue_on_cancel = false;
+                } else {
+                    *self.sg_config.lock().unwrap() = new_config;
+                }
+                Ok(Vec::new())
             }
         }
     }
@@ -852,6 +967,32 @@ fn make_bulk_request(vmo_id: u64, offset: u64, size: u64) -> fusb_request::Reque
     }
 }
 
+fn make_sg_bulk_request(
+    vmo_id: u64,
+    regions: &[ScatterGatherRegion],
+    short: bool,
+) -> fusb_request::Request {
+    fusb_request::Request {
+        data: Some(
+            regions
+                .iter()
+                .map(|r| fusb_request::BufferRegion {
+                    buffer: Some(fusb_request::Buffer::VmoId(vmo_id)),
+                    offset: Some(r.offset),
+                    size: Some(r.size),
+                    ..Default::default()
+                })
+                .collect(),
+        ),
+        defer_completion: Some(false),
+        information: Some(
+            fusb_request::RequestInfo::Bulk(fusb_request::BulkRequestInfo::default()),
+        ),
+        short: if short { Some(true) } else { None },
+        ..Default::default()
+    }
+}
+
 fn queue_requests_batch(
     ep: &fusb_endpoint::EndpointProxy,
     reqs: Vec<fusb_request::Request>,
@@ -863,15 +1004,6 @@ fn queue_requests_batch(
         }
     }
     Ok(())
-}
-
-fn queue_request(
-    ep: &fusb_endpoint::EndpointProxy,
-    vmo_id: u64,
-    size: u64,
-) -> Result<(), fidl::Error> {
-    let req = make_bulk_request(vmo_id, 0, size);
-    queue_requests_batch(ep, vec![req])
 }
 
 fn completion_vmo_id(c: &fusb_endpoint::Completion) -> Option<u64> {
@@ -1003,15 +1135,95 @@ impl MappedVmo {
     pub fn size(&self) -> usize {
         self.size
     }
+
+    pub fn flush_invalidate_range(&self, offset: usize, len: usize) {
+        if len == 0 {
+            return;
+        }
+        assert!(offset.checked_add(len).is_some_and(|end| end <= self.size));
+        // SAFETY: `self.as_ptr()` points to the start of a valid VMAR mapping
+        // of `self.size` bytes, and we asserted `offset + len <= self.size`, so
+        // `offset` is in bounds of the allocated mapping and does not wrap
+        // around the address space.
+        let ptr = unsafe { self.as_ptr().add(offset) };
+        // SAFETY: `ptr` is a valid mapped userspace pointer for `len` bytes
+        // within `self.size` returned by `root_vmar.map`.
+        unsafe {
+            let _ = zx::sys::zx_cache_flush(
+                ptr,
+                len,
+                zx::sys::ZX_CACHE_FLUSH_DATA | zx::sys::ZX_CACHE_FLUSH_INVALIDATE,
+            );
+        }
+    }
+
+    pub fn flush_range(&self, offset: usize, len: usize) {
+        if len == 0 {
+            return;
+        }
+        assert!(offset.checked_add(len).is_some_and(|end| end <= self.size));
+        // SAFETY: `self.as_ptr()` points to the start of a valid VMAR mapping
+        // of `self.size` bytes, and we asserted `offset + len <= self.size`, so
+        // `offset` is in bounds of the allocated mapping and does not wrap
+        // around the address space.
+        let ptr = unsafe { self.as_ptr().add(offset) };
+        // SAFETY: `ptr` is a valid mapped userspace pointer for `len` bytes
+        // within `self.size` returned by `root_vmar.map`.
+        unsafe {
+            let _ = zx::sys::zx_cache_flush(ptr, len, zx::sys::ZX_CACHE_FLUSH_DATA);
+        }
+    }
+
+    pub fn read_slice(&self, offset: usize, len: usize, dst: &mut Vec<u8>) {
+        if len == 0 {
+            return;
+        }
+        assert!(offset.checked_add(len).is_some_and(|end| end <= self.size));
+        self.flush_invalidate_range(offset, len);
+        // SAFETY: `self.as_ptr()` points to the start of a valid VMAR mapping
+        // of `self.size` bytes, and we asserted `offset + len <= self.size`, so
+        // `offset` is in bounds of the allocated mapping and does not wrap
+        // around the address space.
+        let ptr = unsafe { self.as_ptr().add(offset) };
+        // SAFETY: `ptr` points to `len` initialized, contiguous bytes within
+        // the VMAR mapping of `self.size` bytes. The USB controller transfer
+        // has completed and the request will not be re-queued until after the
+        // slice data is copied into `dst`.
+        let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+        dst.extend_from_slice(slice);
+    }
+
+    pub fn write_slice(&self, offset: usize, src: &[u8]) {
+        let len = src.len();
+        if len == 0 {
+            return;
+        }
+        assert!(offset.checked_add(len).is_some_and(|end| end <= self.size));
+        // SAFETY: `self.as_mut_ptr()` points to the start of a valid VMAR
+        // mapping of `self.size` bytes, and we asserted
+        // `offset + len <= self.size`, so `offset` is in bounds of the
+        // allocated mapping and does not wrap around the address space.
+        let dst_ptr = unsafe { self.as_mut_ptr().add(offset) };
+        // SAFETY: `src.as_ptr()` points to `len` valid contiguous bytes in
+        // userspace memory, and `dst_ptr` points to a valid userspace VMAR
+        // mapping for `len` bytes within `self.size`. Both pointers are
+        // properly aligned and reside in disjoint allocations that do not
+        // overlap.
+        unsafe {
+            std::ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, len);
+        }
+        self.flush_range(offset, len);
+    }
 }
 
 impl Drop for MappedVmo {
     fn drop(&mut self) {
         if self.addr != 0 && self.size != 0 {
             let root_vmar = fuchsia_runtime::vmar_root_self();
-            // SAFETY: `self.addr` is a valid userspace virtual memory address returned by
-            // `root_vmar.map` of size `self.size`, which has not yet been unmapped. No other
-            // references alias this virtual memory range upon destruction.
+            // SAFETY: `self.addr` is a valid userspace virtual memory address
+            // returned by `root_vmar.map` of size `self.size`, which has not
+            // yet been unmapped. No other references alias this virtual memory
+            // range upon destruction.
             if let Err(status) = unsafe { root_vmar.unmap(self.addr, self.size) } {
                 warn!(
                     "MappedVmo: failed to unmap VMAR (addr={:#x}, size={}): {:?}",
@@ -1038,7 +1250,8 @@ async fn run_loopback(
     ep_out: fusb_endpoint::EndpointProxy,
     vmos_registered: &mut bool,
     transfer_size: u64,
-) -> Result<(fasync::Task<()>, fasync::Task<()>), Status> {
+    sg_config: Arc<Mutex<ScatterGatherConfig>>,
+) -> Result<(fasync::Task<()>, fasync::Task<()>, mpsc::UnboundedReceiver<usize>), Status> {
     if transfer_size > DEFAULT_VMO_SIZE {
         return Err(Status::INVALID_ARGS);
     }
@@ -1090,6 +1303,7 @@ async fn run_loopback(
     };
     *vmos_registered = true;
 
+    let (requeue_tx, requeue_rx) = mpsc::unbounded();
     let (read_bulk, write_bulk) = spawn_loopback_pair(
         ep_in,
         ep_out,
@@ -1098,9 +1312,53 @@ async fn run_loopback(
         USB_ZERO_IN_VMO_ID,
         USB_ZERO_OUT_VMO_ID,
         transfer_size,
+        sg_config,
+        requeue_tx,
     );
 
-    Ok((read_bulk, write_bulk))
+    Ok((read_bulk, write_bulk, requeue_rx))
+}
+
+fn make_out_req(vmo_id: u64, sg: &ScatterGatherConfig, buffer_size: u64) -> fusb_request::Request {
+    if sg.out_regions.is_empty() {
+        make_bulk_request(vmo_id, 0, buffer_size)
+    } else {
+        make_sg_bulk_request(vmo_id, &sg.out_regions, false)
+    }
+}
+
+fn flush_out_vmo(mapped: &MappedVmo, sg: &ScatterGatherConfig, buffer_size: u64) {
+    if sg.out_regions.is_empty() {
+        mapped.flush_invalidate_range(0, buffer_size as usize);
+    } else {
+        for r in &sg.out_regions {
+            mapped.flush_invalidate_range(r.offset as usize, r.size as usize);
+        }
+    }
+}
+
+fn release_in_slot(
+    c: &fusb_endpoint::Completion,
+    base_in_id: u64,
+    count_in: usize,
+    free_slots: &mut VecDeque<usize>,
+    zlp_slots: &mut VecDeque<usize>,
+) {
+    if let Some(vmo_id) = completion_vmo_id(c) {
+        if let Some(slot) = vmo_id
+            .checked_sub(base_in_id)
+            .and_then(|diff| usize::try_from(diff).ok())
+            .filter(|&slot| slot < count_in && !free_slots.contains(&slot))
+        {
+            free_slots.push_back(slot);
+        }
+    } else if c.request.as_ref().is_some_and(|r| r.data.as_ref().is_none_or(|d| d.is_empty())) {
+        if let Some(slot) = zlp_slots.pop_front() {
+            if !free_slots.contains(&slot) {
+                free_slots.push_back(slot);
+            }
+        }
+    }
 }
 
 fn spawn_loopback_pair(
@@ -1111,34 +1369,33 @@ fn spawn_loopback_pair(
     base_in_id: u64,
     base_out_id: u64,
     buffer_size: u64,
+    sg_config: Arc<Mutex<ScatterGatherConfig>>,
+    requeue_tx: mpsc::UnboundedSender<usize>,
 ) -> (fasync::Task<()>, fasync::Task<()>) {
     let (mut tx, mut rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
     let (mut ack_tx, mut ack_rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
 
     let ep_out_clone = ep_out.clone();
     let count_out = mapped_out.len();
-    let read_task = fasync::Task::spawn(async move {
-        let mut event_stream = ep_out_clone.take_event_stream();
+    let sg_config_read = sg_config.clone();
+    let mut event_stream = ep_out_clone.take_event_stream();
 
-        // Queue initial ring of OUT requests
+    // Queue initial ring of OUT requests synchronously so in_flight_out is
+    // tracked immediately.
+    {
+        let mut initial_sg = sg_config_read.lock().unwrap();
         let mut initial_reqs = Vec::with_capacity(count_out);
         for (i, mapped) in mapped_out.iter().enumerate() {
             let vmo_id = base_out_id + (i as u64);
-            // SAFETY: `mapped.as_ptr()` is a valid mapped userspace pointer of size
-            // `mapped.size()` (DEFAULT_VMO_SIZE >= buffer_size) returned by
-            // `root_vmar.map`. The address is non-null and valid for cache operations.
-            unsafe {
-                let _ = zx::sys::zx_cache_flush(
-                    mapped.as_ptr(),
-                    buffer_size as usize,
-                    zx::sys::ZX_CACHE_FLUSH_DATA | zx::sys::ZX_CACHE_FLUSH_INVALIDATE,
-                );
-            }
-            initial_reqs.push(make_bulk_request(vmo_id, 0, buffer_size));
+            flush_out_vmo(mapped, &initial_sg, buffer_size);
+            initial_reqs.push(make_out_req(vmo_id, &initial_sg, buffer_size));
         }
-        let _ = queue_requests_batch(&ep_out_clone, initial_reqs);
+        initial_sg.in_flight_out =
+            if queue_requests_batch(&ep_out_clone, initial_reqs).is_ok() { count_out } else { 0 };
         debug!("read_task queued initial {} OUT requests of size {}", count_out, buffer_size);
+    }
 
+    let read_task = fasync::Task::spawn(async move {
         let mut recycled_bufs: Vec<Vec<u8>> = Vec::with_capacity(QUEUE_DEPTH);
 
         while let Ok(Some(event)) = event_stream.try_next().await {
@@ -1149,16 +1406,29 @@ fn spawn_loopback_pair(
                         recycled_bufs.push(buf);
                     }
 
-                    let mut re_reqs = Vec::with_capacity(completion.len());
+                    let completed_count = completion.len();
+                    let mut requeue_slots = Vec::with_capacity(completed_count);
+                    let mut canceled_slots = Vec::new();
                     for c in completion {
-                        let vmo_id = completion_vmo_id(&c);
+                        let vmo_slot = completion_vmo_id(&c).and_then(|id| {
+                            id.checked_sub(base_out_id)
+                                .and_then(|diff| usize::try_from(diff).ok())
+                                .filter(|&idx| idx < mapped_out.len())
+                                .map(|idx| (id, idx))
+                        });
                         if let Some(status) = c.status {
                             match status {
                                 zx::sys::ZX_ERR_IO_REFUSED => {
-                                    // Endpoint halted or transfer aborted; re-queue buffer to preserve ring
-                                    // depth without forwarding stale/partial data to loopback.
-                                    if let Some(id) = vmo_id {
-                                        re_reqs.push(make_bulk_request(id, 0, buffer_size));
+                                    // Endpoint halted or transfer aborted; re-queue buffer to
+                                    // preserve ring depth without forwarding stale/partial data.
+                                    if let Some(slot) = vmo_slot {
+                                        requeue_slots.push(slot);
+                                    }
+                                    continue;
+                                }
+                                zx::sys::ZX_ERR_CANCELED => {
+                                    if let Some(slot) = vmo_slot {
+                                        canceled_slots.push(slot);
                                     }
                                     continue;
                                 }
@@ -1168,58 +1438,46 @@ fn spawn_loopback_pair(
                                     );
                                     return;
                                 }
-                                zx::sys::ZX_ERR_CANCELED => {
-                                    // Explicitly canceled by client; drop buffer without re-queuing.
-                                    continue;
-                                }
                                 zx::sys::ZX_OK => {}
                                 err => {
                                     warn!(
                                         "Endpoint read completed with non-OK status: {:?}",
                                         Status::err_from_raw(err)
                                     );
-                                    if let Some(id) = vmo_id {
-                                        re_reqs.push(make_bulk_request(id, 0, buffer_size));
+                                    if let Some(slot) = vmo_slot {
+                                        requeue_slots.push(slot);
                                     }
                                     continue;
                                 }
                             }
                         }
 
-                        if let Some(id) = vmo_id {
-                            let Some(idx) = id
-                                .checked_sub(base_out_id)
-                                .and_then(|diff| usize::try_from(diff).ok())
-                                .filter(|&idx| idx < mapped_out.len())
-                            else {
-                                continue;
-                            };
-
-                            let actual_size = std::cmp::min(
-                                c.transfer_size.unwrap_or(0) as usize,
-                                mapped_out[idx].size(),
-                            );
-                            let ptr = mapped_out[idx].as_ptr();
-
+                        if let Some((id, idx)) = vmo_slot {
                             let mut buf = recycled_bufs
                                 .pop()
                                 .unwrap_or_else(|| Vec::with_capacity(buffer_size as usize));
                             buf.clear();
 
-                            if actual_size > 0 {
-                                // SAFETY: `ptr` is a valid mapped userspace pointer of size `mapped_out[idx].size() >= actual_size`
-                                // returned by `root_vmar.map`. The address is non-null and valid for cache operations and slice creation.
-                                // The USB controller transfer has completed and the request will not be re-queued until after the slice
-                                // data is copied into 'buf', ensuring hardware DMA does not mutate the memory while the slice is alive.
-                                unsafe {
-                                    let _ = zx::sys::zx_cache_flush(
-                                        ptr,
-                                        actual_size,
-                                        zx::sys::ZX_CACHE_FLUSH_DATA
-                                            | zx::sys::ZX_CACHE_FLUSH_INVALIDATE,
-                                    );
-                                    let slice = std::slice::from_raw_parts(ptr, actual_size);
-                                    buf.extend_from_slice(slice);
+                            let mut remaining = std::cmp::min(
+                                c.transfer_size.unwrap_or(0) as usize,
+                                mapped_out[idx].size(),
+                            );
+                            if let Some(regions) =
+                                c.request.as_ref().and_then(|req| req.data.as_ref())
+                            {
+                                for r in regions {
+                                    if remaining == 0 {
+                                        break;
+                                    }
+                                    let offset = r.offset.unwrap_or(0) as usize;
+                                    let size = r.size.unwrap_or(0) as usize;
+                                    let Some(avail) = mapped_out[idx].size().checked_sub(offset)
+                                    else {
+                                        break;
+                                    };
+                                    let take = remaining.min(size).min(avail);
+                                    mapped_out[idx].read_slice(offset, take, &mut buf);
+                                    remaining -= take;
                                 }
                             }
 
@@ -1227,11 +1485,27 @@ fn spawn_loopback_pair(
                             if tx.send(buf).await.is_err() {
                                 return;
                             }
-                            re_reqs.push(make_bulk_request(id, 0, buffer_size));
+                            requeue_slots.push((id, idx));
                         }
                     }
-                    if !re_reqs.is_empty() {
-                        let _ = queue_requests_batch(&ep_out_clone, re_reqs);
+                    {
+                        let mut sg = sg_config_read.lock().unwrap();
+                        sg.in_flight_out = sg.in_flight_out.saturating_sub(completed_count);
+                        if sg.requeue_on_cancel {
+                            requeue_slots.extend(canceled_slots);
+                        }
+                        let mut re_reqs = Vec::with_capacity(requeue_slots.len());
+                        for (id, idx) in requeue_slots {
+                            flush_out_vmo(&mapped_out[idx], &sg, buffer_size);
+                            re_reqs.push(make_out_req(id, &sg, buffer_size));
+                        }
+                        let requeued = re_reqs.len();
+                        if requeued > 0 && queue_requests_batch(&ep_out_clone, re_reqs).is_ok() {
+                            sg.in_flight_out += requeued;
+                            if sg.requeue_on_cancel {
+                                let _ = requeue_tx.unbounded_send(requeued);
+                            }
+                        }
                     }
                 }
             }
@@ -1240,9 +1514,11 @@ fn spawn_loopback_pair(
 
     let ep_in_clone = ep_in.clone();
     let count_in = mapped_in.len();
+    let sg_config_write = sg_config;
     let write_task = fasync::Task::spawn(async move {
         let mut event_stream = ep_in_clone.take_event_stream();
         let mut free_slots: VecDeque<usize> = (0..count_in).collect();
+        let mut zlp_slots: VecDeque<usize> = VecDeque::new();
 
         enum Action {
             Data(Option<Vec<u8>>),
@@ -1263,34 +1539,51 @@ fn spawn_loopback_pair(
                 Action::Data(Some(mut data)) => {
                     let slot = free_slots.pop_front().expect("free_slots not empty");
                     let mapped = &mapped_in[slot];
-                    let write_len = std::cmp::min(data.len(), mapped.size());
                     let vmo_id = base_in_id + slot as u64;
+                    let sg = sg_config_write.lock().unwrap().clone();
 
-                    if write_len > 0 {
-                        let ptr = mapped.as_mut_ptr();
-                        // SAFETY: `data` points to `write_len` valid contiguous bytes in userspace memory.
-                        // `ptr` points to `mapped.as_mut_ptr()`, which is a valid userspace VMAR mapping of size
-                        // `mapped.size() >= write_len`. The source (`data`) and destination (`ptr`) reside
-                        // in disjoint memory allocations and do not overlap. `ptr` is valid and non-null
-                        // for `write_len` bytes for cache flush.
-                        unsafe {
-                            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, write_len);
-                            let _ = zx::sys::zx_cache_flush(
-                                ptr,
-                                write_len,
-                                zx::sys::ZX_CACHE_FLUSH_DATA,
-                            );
+                    let is_zlp = data.is_empty();
+                    let req = if is_zlp {
+                        zlp_slots.push_back(slot);
+                        make_sg_bulk_request(vmo_id, &[], sg.in_short_zlp)
+                    } else if sg.in_regions.is_empty() {
+                        let write_len = std::cmp::min(data.len(), mapped.size());
+                        mapped.write_slice(0, &data[..write_len]);
+                        make_sg_bulk_request(
+                            vmo_id,
+                            &[ScatterGatherRegion { offset: 0, size: write_len as u64 }],
+                            sg.in_short_zlp,
+                        )
+                    } else {
+                        let total_in_cap: usize =
+                            sg.in_regions.iter().map(|r| r.size as usize).sum();
+                        let write_len = data.len().min(total_in_cap).min(mapped.size());
+                        let mut active_regions = Vec::new();
+                        let mut copied = 0usize;
+                        for r in &sg.in_regions {
+                            if copied >= write_len {
+                                break;
+                            }
+                            let chunk = (write_len - copied).min(r.size as usize);
+                            mapped.write_slice(r.offset as usize, &data[copied..copied + chunk]);
+                            active_regions
+                                .push(ScatterGatherRegion { offset: r.offset, size: chunk as u64 });
+                            copied += chunk;
                         }
-                    }
+                        make_sg_bulk_request(vmo_id, &active_regions, sg.in_short_zlp)
+                    };
 
                     // Recycle data buffer back to read_task
                     data.clear();
                     let _ = ack_tx.try_send(data);
 
-                    match queue_request(&ep_in_clone, vmo_id, write_len as u64) {
+                    match queue_requests_batch(&ep_in_clone, vec![req]) {
                         Ok(()) => {}
                         Err(e) => {
                             error!("Failed to queue request on ep_in: {:?}", e);
+                            if is_zlp {
+                                let _ = zlp_slots.pop_back();
+                            }
                             free_slots.push_front(slot);
                             return;
                         }
@@ -1302,18 +1595,13 @@ fn spawn_loopback_pair(
                             event_stream.next().await
                         {
                             for c in completion {
-                                if let Some(vmo_id) = completion_vmo_id(&c) {
-                                    let Some(slot) = vmo_id
-                                        .checked_sub(base_in_id)
-                                        .and_then(|diff| usize::try_from(diff).ok())
-                                        .filter(|&slot| {
-                                            slot < count_in && !free_slots.contains(&slot)
-                                        })
-                                    else {
-                                        continue;
-                                    };
-                                    free_slots.push_back(slot);
-                                }
+                                release_in_slot(
+                                    &c,
+                                    base_in_id,
+                                    count_in,
+                                    &mut free_slots,
+                                    &mut zlp_slots,
+                                );
                             }
                         } else {
                             return;
@@ -1344,16 +1632,7 @@ fn spawn_loopback_pair(
                                 }
                             }
                         }
-                        if let Some(vmo_id) = completion_vmo_id(&c) {
-                            let Some(slot) = vmo_id
-                                .checked_sub(base_in_id)
-                                .and_then(|diff| usize::try_from(diff).ok())
-                                .filter(|&slot| slot < count_in && !free_slots.contains(&slot))
-                            else {
-                                continue;
-                            };
-                            free_slots.push_back(slot);
-                        }
+                        release_in_slot(&c, base_in_id, count_in, &mut free_slots, &mut zlp_slots);
                     }
                 }
                 Action::Event(Some(Err(_))) | Action::Event(None) => return,

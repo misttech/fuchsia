@@ -11,6 +11,8 @@ from .zero_function import (
     USB_ZERO_FUNCTION_DRIVER_URL,
     USB_ZERO_PID,
     USB_ZERO_VID,
+    EndpointInfo,
+    LoopbackDevice,
     ZeroFunctionBaseTest,
     find_zero_function_device_node,
     wait_for_zero_function,
@@ -18,7 +20,9 @@ from .zero_function import (
 
 __all__ = [
     "ALL_SUPPORTED_TEST_IDS",
+    "EndpointInfo",
     "KNOWN_TEST_DEVICES",
+    "LoopbackDevice",
     "USB_ZERO_FUNCTION_DRIVER_URL",
     "USB_ZERO_PID",
     "USB_ZERO_VID",

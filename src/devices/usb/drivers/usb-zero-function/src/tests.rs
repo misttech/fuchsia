@@ -81,6 +81,31 @@ async fn run_mock_endpoint(
                 }
                 let _ = responder.send(&[], &[]);
             }
+            fusb_endpoint::EndpointRequest::CancelAll { responder } => {
+                let mut completions: Vec<fusb_endpoint::Completion> = {
+                    let mut state_lock = state.lock().unwrap();
+                    state_lock
+                        .requests
+                        .drain(..)
+                        .map(|req| fusb_endpoint::Completion {
+                            request: Some(req),
+                            status: Some(zx::sys::ZX_ERR_CANCELED),
+                            transfer_size: Some(0),
+                            ..Default::default()
+                        })
+                        .collect()
+                };
+                if completions.len() > 1 {
+                    // Simulate Dwc3::EpServer::CancelAll completing the active request
+                    // and remaining pending requests in two separate OnCompletion batches.
+                    let rest = completions.split_off(1);
+                    let _ = control_handle.send_on_completion(completions);
+                    let _ = control_handle.send_on_completion(rest);
+                } else if !completions.is_empty() {
+                    let _ = control_handle.send_on_completion(completions);
+                }
+                let _ = responder.send(Ok(()));
+            }
             _ => {}
         }
     }
@@ -152,6 +177,7 @@ async fn test_loopback() {
         ep_out_proxy,
         &mut vmos_registered,
         u64::from(USB_MAX_PACKET_SIZE_HIGH_SPEED),
+        Arc::new(Mutex::new(ScatterGatherConfig::default())),
     )
     .await
     .unwrap();
@@ -246,16 +272,7 @@ async fn test_loopback() {
     let zlp_write_req = {
         let mut state = state_in.lock().unwrap();
         let req = state.requests.pop().unwrap();
-        let len = req
-            .data
-            .as_ref()
-            .and_then(|d| d.first())
-            .and_then(|b| match b.buffer.as_ref() {
-                Some(fusb_request::Buffer::VmoId(_)) => Some(b.size.unwrap_or(0)),
-                _ => None,
-            })
-            .unwrap_or(0);
-        assert_eq!(len, 0);
+        assert_eq!(req.data.as_deref(), Some(&[][..]));
         req
     };
     comp_in_tx
@@ -1303,11 +1320,12 @@ async fn test_loopback_cancellation() {
     let ep_out_proxy = ep_out_client.into_proxy();
 
     let mut vmos_registered = false;
-    let (read_task, _write_task) = run_loopback(
+    let (read_task, _write_task, _requeue_rx) = run_loopback(
         ep_in_proxy,
         ep_out_proxy,
         &mut vmos_registered,
         u64::from(USB_MAX_PACKET_SIZE_HIGH_SPEED),
+        Arc::new(Mutex::new(ScatterGatherConfig::default())),
     )
     .await
     .unwrap();
@@ -1418,6 +1436,7 @@ async fn test_transfer_size_exceeds_vmo_size() {
         ep_out_client.into_proxy(),
         &mut vmos_registered,
         DEFAULT_VMO_SIZE + 1,
+        Arc::new(Mutex::new(ScatterGatherConfig::default())),
     )
     .await;
     assert_eq!(res.err(), Some(Status::INVALID_ARGS));
@@ -2012,4 +2031,209 @@ async fn test_set_configured_superspeed() {
 
     // Deconfigure
     assert_eq!(proxy.set_configured(false, fusb_descriptor::UsbSpeed::Full).await.unwrap(), Ok(()));
+}
+
+#[fuchsia::test]
+async fn test_loopback_scatter_gather() {
+    let (iface_c, iface_s) = create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
+    let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_c, ep_in_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_c, ep_out_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let state_in =
+        Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+    let state_out =
+        Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+
+    let (_comp_in_tx, comp_in_rx) = mpsc::unbounded();
+    let (comp_out_tx, comp_out_rx) = mpsc::unbounded();
+    let (event_in_tx, mut event_in_rx) = mpsc::unbounded();
+    let (event_out_tx, mut event_out_rx) = mpsc::unbounded();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_loopback_sg"));
+    scope.spawn_local(run_mock_function(func_s.into_stream()));
+    scope.spawn_local(run_mock_endpoint(
+        ep_in_s.into_stream(),
+        state_in.clone(),
+        comp_in_rx,
+        event_in_tx,
+        scope.clone(),
+    ));
+    scope.spawn_local(run_mock_endpoint(
+        ep_out_s.into_stream(),
+        state_out.clone(),
+        comp_out_rx,
+        event_out_tx,
+        scope.clone(),
+    ));
+
+    let (f_p, ep_i, ep_o) = (func_c.into_proxy(), ep_in_c.into_proxy(), ep_out_c.into_proxy());
+    scope.spawn_local(async move {
+        UsbZeroFunctionDevice::new(
+            f_p,
+            ep_i,
+            TEST_EP_IN_ADDR,
+            ep_o,
+            TEST_EP_OUT_ADDR,
+            0,
+            TestMode::Loopback,
+        )
+        .handle_requests(iface_s.into_stream())
+        .await;
+    });
+
+    let proxy = iface_c.into_proxy();
+    assert_eq!(proxy.set_configured(true, fusb_descriptor::UsbSpeed::High).await.unwrap(), Ok(()));
+
+    // Drain initial registration and queue events; keep initial OUT requests in state_out
+    // so ep_out.cancel_all() cancels them and triggers re-queuing with the new SG layout.
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::VmoRegistered));
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::VmoRegistered));
+
+    // Send VendorRequest::ConfigureScatterGather (0x5d) with w_value = 1 (in_short_zlp = true),
+    // 2 OUT regions: (offset: 4096, size: 300), (offset: 12288, size: 724)
+    // 3 IN regions: (offset: 8192, size: 256), (offset: 16384, size: 256), (offset: 24576, size: 512)
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&2u16.to_le_bytes()); // num_out = 2
+    payload.extend_from_slice(&3u16.to_le_bytes()); // num_in = 3
+    for (offset, size) in [
+        (4096u32, 300u32),
+        (12288u32, 724u32),
+        (8192u32, 256u32),
+        (16384u32, 256u32),
+        (24576u32, 512u32),
+    ] {
+        payload.extend_from_slice(&offset.to_le_bytes());
+        payload.extend_from_slice(&size.to_le_bytes());
+    }
+
+    let setup_sg = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::ConfigureScatterGather as u8,
+        w_value: 1, // in_short_zlp = true
+        w_index: 0,
+        w_length: payload.len() as u16,
+    };
+    assert_eq!(proxy.control(&setup_sg, &payload).await.unwrap(), Ok(vec![]));
+
+    // Wait for new SG OUT requests to be queued across both cancel_all() completion batches.
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+
+    let (read_req, vmo_out) = {
+        let mut state = state_out.lock().unwrap();
+        assert_eq!(state.requests.len(), QUEUE_DEPTH);
+        let req = state.requests.remove(0);
+        let regions = req.data.as_ref().unwrap();
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].offset, Some(4096));
+        assert_eq!(regions[0].size, Some(300));
+        assert_eq!(regions[1].offset, Some(12288));
+        assert_eq!(regions[1].size, Some(724));
+        let vmo = state
+            .vmos
+            .get(&USB_ZERO_OUT_VMO_ID)
+            .unwrap()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .unwrap();
+        (req, vmo)
+    };
+
+    let vmo_in = {
+        let state = state_in.lock().unwrap();
+        state
+            .vmos
+            .get(&USB_ZERO_IN_VMO_ID)
+            .unwrap()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .unwrap()
+    };
+
+    // Populate 600 bytes across out_regions[0] (300 bytes at 4096) and out_regions[1] (300 bytes at 12288).
+    let expected_payload: Vec<u8> = (0..600).map(|i| ((i * 7 + 3) & 0xff) as u8).collect();
+    vmo_out.write(&expected_payload[0..300], 4096).unwrap();
+    vmo_out.write(&expected_payload[300..600], 12288).unwrap();
+
+    comp_out_tx
+        .unbounded_send(vec![fusb_endpoint::Completion {
+            request: Some(read_req),
+            status: Some(zx::sys::ZX_OK),
+            transfer_size: Some(600),
+            ..Default::default()
+        }])
+        .unwrap();
+
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::RequestQueued));
+
+    let write_req = {
+        let mut state = state_in.lock().unwrap();
+        state.requests.pop().unwrap()
+    };
+
+    assert_eq!(write_req.short, Some(true));
+    let in_regions = write_req.data.as_ref().unwrap();
+    assert_eq!(in_regions.len(), 3);
+    assert_eq!(in_regions[0].offset, Some(8192));
+    assert_eq!(in_regions[0].size, Some(256));
+    assert_eq!(in_regions[1].offset, Some(16384));
+    assert_eq!(in_regions[1].size, Some(256));
+    assert_eq!(in_regions[2].offset, Some(24576));
+    assert_eq!(in_regions[2].size, Some(88));
+
+    let mut actual_payload = Vec::with_capacity(600);
+    let mut part0 = vec![0u8; 256];
+    let mut part1 = vec![0u8; 256];
+    let mut part2 = vec![0u8; 88];
+    vmo_in.read(&mut part0, 8192).unwrap();
+    vmo_in.read(&mut part1, 16384).unwrap();
+    vmo_in.read(&mut part2, 24576).unwrap();
+    actual_payload.extend_from_slice(&part0);
+    actual_payload.extend_from_slice(&part1);
+    actual_payload.extend_from_slice(&part2);
+    assert_eq!(actual_payload, expected_payload);
+
+    // Wait for read_task to re-queue the completed OUT request.
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+
+    // Verify ZLP in SG mode queues an empty BufferRegion list rather than a size-0 region.
+    let zlp_read_req = {
+        let mut state = state_out.lock().unwrap();
+        state.requests.remove(0)
+    };
+    comp_out_tx
+        .unbounded_send(vec![fusb_endpoint::Completion {
+            request: Some(zlp_read_req),
+            status: Some(zx::sys::ZX_OK),
+            transfer_size: Some(0),
+            ..Default::default()
+        }])
+        .unwrap();
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::RequestQueued));
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+    {
+        let mut state = state_in.lock().unwrap();
+        let zlp_req = state.requests.pop().unwrap();
+        assert_eq!(zlp_req.data.as_deref(), Some(&[][..]));
+    }
+
+    // Verify overlapping regions within the same request are rejected with INVALID_ARGS.
+    let mut bad_payload = Vec::new();
+    bad_payload.extend_from_slice(&2u16.to_le_bytes()); // num_out = 2
+    bad_payload.extend_from_slice(&0u16.to_le_bytes()); // num_in = 0
+    for (offset, size) in [(4096u32, 512u32), (4352u32, 512u32)] {
+        bad_payload.extend_from_slice(&offset.to_le_bytes());
+        bad_payload.extend_from_slice(&size.to_le_bytes());
+    }
+    let setup_bad_sg = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::ConfigureScatterGather as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: bad_payload.len() as u16,
+    };
+    assert_eq!(
+        proxy.control(&setup_bad_sg, &bad_payload).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
 }

@@ -40,6 +40,7 @@ fuchsia_rust_driver("usb-zero-function-driver") {
     "//third_party/rust_crates:enumn",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [ "//src/lib/fuchsia" ]
 }
