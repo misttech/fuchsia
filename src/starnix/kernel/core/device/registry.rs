@@ -606,9 +606,8 @@ impl DeviceRegistry {
         )
     }
 
-    /// Remove a device directly added with [`DeviceRegistry::add_device`],
-    /// [`DeviceRegistry::add_subsystemless_device`], [`DeviceRegistry::add_bus_device`], or
-    /// [`DeviceRegistry::add_numberless_device`].
+    /// Unregisters `device` from sysfs, devtmpfs, and the device-number table, recycling any
+    /// dynamically allocated [`DeviceId`] and dispatching a [`UEventAction::Remove`] uevent.
     pub fn remove_device(&self, current_task: &CurrentTask, device: Device) {
         if let Some(metadata) = device.metadata() {
             self.dispatch_uevent(UEventAction::Remove, device.clone());
@@ -616,11 +615,30 @@ impl DeviceRegistry {
             if let Err(err) = devtmpfs_remove_path(current_task, metadata.devname.as_ref()) {
                 log_error!("Cannot remove device {:?} ({:?})", device, err);
             }
-
-            self.devices(metadata.mode).unregister_minor(metadata.devt);
         }
 
         self.objects.remove(&device);
+
+        if let Some(metadata) = device.metadata() {
+            let mut state = self.state.lock();
+            match metadata.mode {
+                DeviceMode::Char => {
+                    state.char_devices.unregister_minor(metadata.devt);
+                    if metadata.devt.major() == MISC_MAJOR
+                        && MISC_DYNANIC_MINOR_RANGE.contains(&metadata.devt.minor())
+                    {
+                        state.misc_chardev_allocator.free(metadata.devt);
+                    } else if DYN_MAJOR_RANGE.contains(&metadata.devt.major())
+                        && DeviceMode::Char.minor_range().contains(&metadata.devt.minor())
+                    {
+                        state.dyn_chardev_allocator.free(metadata.devt);
+                    }
+                }
+                DeviceMode::Block => {
+                    state.block_devices.unregister_minor(metadata.devt);
+                }
+            }
+        }
     }
 
     /// Returns a list of the registered major device numbers for the given `DeviceMode` and their
@@ -759,8 +777,6 @@ impl DeviceIdAllocator {
     }
 
     /// Allocate a `DeviceId`.
-    ///
-    /// Once allocated, there is no mechanism for freeing a `DeviceId`.
     fn allocate(&mut self) -> Result<DeviceId, Errno> {
         let Some(range) = self.freelist.pop() else {
             return error!(ENOMEM);
@@ -772,6 +788,28 @@ impl DeviceIdAllocator {
             }
         }
         Ok(allocated)
+    }
+
+    /// Returns a previously allocated number to the pool so it can be reused.
+    fn free(&mut self, id: DeviceId) {
+        let Some(next) = id.next_minor() else {
+            return;
+        };
+        if self.freelist.iter().any(|range| range.start <= id && id < range.end) {
+            return;
+        };
+        // Coalesce with any immediately adjacent free ranges to prevent freelist fragmentation
+        // across repeated device removals.
+        let mut new_range = id..next;
+        if let Some(idx) = self.freelist.iter().position(|range| range.end == new_range.start) {
+            let prev = self.freelist.remove(idx);
+            new_range.start = prev.start;
+        }
+        if let Some(idx) = self.freelist.iter().position(|range| range.start == new_range.end) {
+            self.freelist[idx].start = new_range.start;
+        } else {
+            self.freelist.push(new_range);
+        }
     }
 }
 
@@ -1245,6 +1283,58 @@ mod tests {
             registry.remove_device(&current_task, dev);
 
             assert_eq!(registry.get_device(devt, DeviceMode::Char).map(|_| ()), error!(ENODEV));
+
+            // Re-registering after removal reuses the freed dynamic misc DeviceId and devtmpfs path.
+            let dev2 = registry
+                .register_misc_device(kernel, "test_misc".into(), simple_device_ops::<DevNull>)
+                .expect("re-register misc device");
+            assert_eq!(dev2.metadata().expect("metadata").devt, devt);
+            registry.remove_device(&current_task, dev2);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn registry_remove_dyn_device_recycles_device_id() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+            let class = registry.objects.get_or_create_class("test_dyn_class".into());
+
+            let dev1 = registry
+                .register_dyn_device(
+                    kernel,
+                    "test_dyn_0".into(),
+                    class.clone(),
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("register first dyn device");
+            let dev2 = registry
+                .register_dyn_device(
+                    kernel,
+                    "test_dyn_1".into(),
+                    class.clone(),
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("register second dyn device");
+            let devt1 = dev1.metadata().expect("metadata").devt;
+            let devt2 = dev2.metadata().expect("metadata").devt;
+            assert_ne!(devt1, devt2);
+
+            // Free out of order, then in order, verifying range coalescing and reallocation.
+            registry.remove_device(&current_task, dev1);
+            registry.remove_device(&current_task, dev2);
+
+            let dev1_rebound = registry
+                .register_dyn_device(
+                    kernel,
+                    "test_dyn_0".into(),
+                    class,
+                    simple_device_ops::<DevNull>,
+                )
+                .expect("re-register dyn device");
+            assert_eq!(dev1_rebound.metadata().expect("metadata").devt, devt1);
+            registry.remove_device(&current_task, dev1_rebound);
         })
         .await;
     }
