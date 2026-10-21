@@ -5,7 +5,7 @@
 use crate::fuchsia::device::BlockServer;
 use crate::fuchsia::dirent_cache::DirentCacheKey;
 use crate::fuchsia::errors::map_to_status;
-use crate::fuchsia::file::FxFile;
+use crate::fuchsia::file::{FlushType, FxFile};
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::symlink::FxSymlink;
 use crate::fuchsia::volume::{FxVolume, RootDir};
@@ -874,6 +874,7 @@ impl MutableDirectory for FxDirectory {
 
     async fn sync(&self) -> Result<(), zx::Status> {
         // FDIO implements `syncfs` by calling sync on a directory, so replicate that behaviour.
+        self.volume().flush_all_files(FlushType::Sync).await;
         self.volume()
             .store()
             .filesystem()
@@ -6126,6 +6127,52 @@ mod tests {
         // FxSymlink's Drop implementation and removes it from the node cache.
         assert!(!volume.cache().contains_key(symlink_id));
 
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_sync_flushes_file_data() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+        let volume = fixture.volume().volume();
+
+        let file = open_file_checked(
+            root,
+            "test_file",
+            fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_READABLE | fio::PERM_WRITABLE,
+            &fio::Options::default(),
+        )
+        .await;
+
+        let (_mutable, immutable) = file
+            .get_attributes(fio::NodeAttributesQuery::ID)
+            .await
+            .expect("transport error on get_attributes")
+            .expect("get_attributes failed");
+        let file_id = immutable.id.unwrap();
+
+        let node = volume
+            .cache()
+            .get(file_id)
+            .expect("Node should be cached")
+            .into_any()
+            .downcast::<FxFile>()
+            .unwrap();
+
+        file::write(&file, b"hello world").await.expect("write failed");
+
+        assert!(node.handle().needs_flush());
+
+        root.sync()
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::Status::err_from_raw)
+            .expect("sync failed");
+
+        assert!(!node.handle().needs_flush());
+
+        close_file_checked(file).await;
+        drop(node);
         fixture.close().await;
     }
 }
