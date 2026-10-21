@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:blobfs-ramdisk_test`, `:test-component`, and
+# `:unit-tests-package`) stay in BUILD.gn because their test runtime
+# dependencies (`//src/storage/blobfs/bin:blobfs-component`,
+# `//src/storage/fxfs:fxfs_component`, and
+# `//src/storage/testing:storage_driver_test_realm`) remain in GN.
+# @bazel2gn:raw_attribute:deps += [ "//src/storage/blobfs/bin:blobfs-component" ]
+rustc_library(
+    name = "blobfs-ramdisk",
+    testonly = True,
+    srcs = [
+        "src/lib.rs",
+        "src/test.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    # The GN variable `fxfs_blob` sets the structured config that determines
+    # whether fxblob or blobfs are used on the system. Tests that use the
+    # production pkg-cache structured config should create the correct associated
+    # blobfs dependency. They should both work, but if we're testing the current
+    # pkg-cache environment, we should use the current storage implementation as
+    # well.
+    rustc_env = {
+        "FXFS_BLOB": "true",  # @bazel2gn:value_overwrite:${fxfs_blob}
+    },
+    visibility = [
+        "//src/recovery/system:__pkg__",
+        "//src/sys/pkg:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.storage.blobfs:fuchsia.storage.blobfs_rust",
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/lib/blob_writer:blob-writer",
+        "//src/storage/lib/delivery_blob",
+        "//src/storage/lib/fs_management/rust:fs_management",
+        "//src/storage/lib/ramdevice_client",
+        "//src/sys/pkg/lib/blobfs",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:openat",
+    ],
+)
