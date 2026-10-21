@@ -2,9 +2,35 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/wlanix.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+fidl_library(
+    name = "fuchsia.wlan.wlanix",
+    srcs = [
+        "wlanix.fidl",
+    ],
+    # This is needed due to http://b/422844461.
+    # We need arbitrarily large messages for persistence,
+    # above what FIDL can normally handle.
+    excluded_checks = [
+        "vector-bounds-not-specified",
+    ],
+    visibility = [
+        "//src/connectivity/wlan/tests/wlanix:__subpackages__",
+        "//src/connectivity/wlan/wlanix/testing:__pkg__",
+        "//src/starnix/kernel/core:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.ieee80211",
+        "//sdk/fidl/fuchsia.wlan.stats",
+        "//zircon/vdso/zx",
+    ],
 )
