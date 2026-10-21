@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "sim-env",
+    srcs = [
+        "sim-env.cc",
+        "sim-frame.cc",
+        "sim-sig-loss-model.cc",
+    ],
+    hdrs = [
+        "sim-env.h",
+        "sim-frame.h",
+        "sim-sig-loss-model.h",
+        "sim-sta-ifc.h",
+    ],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    visibility = [
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env/test:__pkg__",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap:__subpackages__",
+        "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
+        "//sdk/lib/async",
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/lib/common/cpp:common",
+    ],
+)
