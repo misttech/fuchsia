@@ -210,6 +210,16 @@ foreach(funcs,
         }
       }
 
+      if (is_kernel && !is_pecoff) {
+        basic_abi = true
+        global_symbols = []
+        foreach(prefix,
+                [ "" ] + global_alias_prefixes + weak_alias_prefixes +
+                    export_alias_prefixes) {
+          global_symbols += [ prefix + func ]
+        }
+      }
+
       # See the generated_file() target below.
       non_test_deps = [ ":$func.inc" ]
       non_test_vars = {

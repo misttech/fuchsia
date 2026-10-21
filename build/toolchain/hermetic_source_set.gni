@@ -177,7 +177,7 @@ template("hermetic_source_set") {
                              "visibility",
                            ])
 
-    deps += toolchain_variant.source_deps
+    deps += default_common_source_deps
 
     output_dir = target_out_dir
     output_name = link_output_name
@@ -382,6 +382,10 @@ _remove_configs = [
   # --icf is not compatible with -r.  ICF will be done in the outer link.
   "//build/config:icf",
   "//build/config/zircon:default_icf",
+
+  # --pie is not compatible with -r.  -fPIE / --pie will still be used in the
+  # outer link.
+  "//build/config/zircon:static-pie-link",
 
   # This is only meant for a final link.
   "//build/config/zircon:user-link",

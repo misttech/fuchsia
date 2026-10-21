@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/clang/clang_cpu.gni")
+import("//build/config/sanitizers/sanitizer_runtime_symbols.gni")
 import("//build/toolchain/hermetic_source_set.gni")
 import("//build/toolchain/zircon/user_basic_redirect.gni")
 import("//src/zircon/lib/zircon/libzircon.gni")
@@ -47,35 +48,17 @@ libc_hermetic_undefs = [
   "memset",
   "strlen",
 ]
-if (is_ubsan) {
-  # The usual toolchain-provided ubsan runtime requires the compiler ABI, but
-  # these should never be called without a fatal error anyway.
-  libc_hermetic_undefs += [
-    "__ubsan_handle_add_overflow",
-    "__ubsan_handle_alignment_assumption",
-    "__ubsan_handle_builtin_unreachable",
-    "__ubsan_handle_cfi_bad_type",
-    "__ubsan_handle_cfi_check_fail",
-    "__ubsan_handle_divrem_overflow",
-    "__ubsan_handle_float_cast_overflow",
-    "__ubsan_handle_function_type_mismatch",
-    "__ubsan_handle_implicit_conversion",
-    "__ubsan_handle_invalid_builtin",
-    "__ubsan_handle_load_invalid_value",
-    "__ubsan_handle_missing_return",
-    "__ubsan_handle_mul_overflow",
-    "__ubsan_handle_negate_overflow",
-    "__ubsan_handle_nonnull_arg",
-    "__ubsan_handle_nonnull_return_v1",
-    "__ubsan_handle_nullability_arg",
-    "__ubsan_handle_nullability_return_v1",
-    "__ubsan_handle_out_of_bounds",
-    "__ubsan_handle_pointer_overflow",
-    "__ubsan_handle_shift_out_of_bounds",
-    "__ubsan_handle_sub_overflow",
-    "__ubsan_handle_type_mismatch_v1",
-    "__ubsan_handle_vla_bound_not_positive",
-  ]
+
+# Instrumented basic_abi code (such as in the kernel or user.basic ubsan) can
+# reference sanitizer runtime symbols.
+libc_hermetic_undefs += sanitizer_runtime_symbols
+
+if (is_kernel) {
+  # The kernel builds with -fstack-protector-strong and defines
+  # __stack_chk_fail, and string functions take the address of stack locals and
+  # emit calls to it.  Non-kernel basic_abi targets redirect to user.basic,
+  # which disables stack-protector and must not reference __stack_chk_fail.
+  libc_hermetic_undefs += [ "__stack_chk_fail" ]
 }
 
 if (is_gcc) {
@@ -285,8 +268,9 @@ template("libc_source_set") {
   # If basic_abi is set, then the main target will use user_basic_redirect()
   # but the test targets are never compiled for the basic ABI.
   basic_abi = defined(invoker.basic_abi) && invoker.basic_abi
-  need_redirect = basic_abi && toolchain_variant.tags + [ "no-compiler-abi" ] -
-                               [ "no-compiler-abi" ] == toolchain_variant.tags
+  need_redirect = basic_abi && !is_kernel &&
+                  toolchain_variant.tags + [ "no-compiler-abi" ] -
+                  [ "no-compiler-abi" ] == toolchain_variant.tags
   if (is_linux) {
     need_redirect = basic_abi && is_host
   }
@@ -298,7 +282,7 @@ template("libc_source_set") {
   # Other environments use the main user.basic target that only provides
   # hidden-visibility definitions.
   compile_targets = [ "" ]
-  if (basic_abi) {
+  if (basic_abi && !is_kernel) {
     compile_targets += [ ".export" ]
   }
 
@@ -331,6 +315,13 @@ template("libc_source_set") {
     foreach(suffix, compile_targets) {
       target(compile_target_type, target_name + suffix) {
         if (basic_abi) {
+          if (is_kernel) {
+            # In the kernel, basic_abi targets can still be compiled with ASan
+            # or SanCov instrumentation (e.g. in kasan and sancov builds), which
+            # emit module constructor sections (.init_array) for
+            # asan.module_ctor and sancov.module_ctor_trace_pc_guard.
+            allow_init = true
+          }
           forward_variables_from(invoker,
                                  [
                                    "allow_fini",
@@ -364,7 +355,7 @@ template("libc_source_set") {
           deps += invoker.non_test_deps
         }
         deps += [ "$libc:libc_source_set.deps" ]
-        if (basic_abi && !_diagnose_libzircon_refs) {
+        if (basic_abi && !is_kernel && !_diagnose_libzircon_refs) {
           deps += [
             "//src/zircon/lib/zircon:hermetic_source_set-underscores-rewrite",
           ]
@@ -376,7 +367,7 @@ template("libc_source_set") {
     }
   }
 
-  if (basic_abi) {
+  if (basic_abi && !is_kernel) {
     foreach(suffix,
             [
               "",
