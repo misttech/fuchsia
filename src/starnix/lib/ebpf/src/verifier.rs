@@ -17,7 +17,7 @@ use linux_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY};
 #[cfg(target_os = "fuchsia")]
 use starnix_sync::{EbpfVerifierDependenciesLock, LockDepMutex};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use zerocopy::IntoBytes;
 
@@ -68,7 +68,7 @@ pub enum Namespace {
 pub struct MemoryId {
     namespace: Namespace,
     id: u64,
-    parent: Option<Box<MemoryId>>,
+    parent: Option<Arc<MemoryId>>,
 }
 
 impl MemoryId {
@@ -110,12 +110,12 @@ impl MemoryId {
     fn prepended(&self, other: MemoryId) -> Self {
         match &self.parent {
             None => {
-                MemoryId { namespace: self.namespace, id: self.id, parent: Some(Box::new(other)) }
+                MemoryId { namespace: self.namespace, id: self.id, parent: Some(Arc::new(other)) }
             }
             Some(parent) => MemoryId {
                 namespace: self.namespace,
                 id: self.id,
-                parent: Some(Box::new(parent.prepended(other))),
+                parent: Some(Arc::new(parent.prepended(other))),
             },
         }
     }
@@ -346,10 +346,10 @@ pub enum Type {
     /// `PtrToArray` with the same `id`.
     PtrToEndArray { id: MemoryId },
     /// A pointer that might be null and must be validated before being referenced.
-    NullOr { id: MemoryId, inner: Box<Type> },
+    NullOr { id: MemoryId, inner: Arc<Type> },
     /// An object that must be passed to a method with an associated `ReleaseParameter` before the
     /// end of the program.
-    Releasable { id: MemoryId, inner: Box<Type> },
+    Releasable { id: MemoryId, inner: Arc<Type> },
     /// A function parameter that must be a `ScalarValue` when called.
     ScalarValueParameter,
     /// A function parameter that must be a `ConstPtrToMap` when called.
@@ -582,7 +582,7 @@ impl Type {
                 if jump_type.is_strict() && data.is_zero() =>
             {
                 context.set_null(id, false);
-                let inner = *inner.clone();
+                let inner = (**inner).clone();
                 inner.register_resource(context);
                 (inner, type2)
             }
@@ -590,7 +590,7 @@ impl Type {
                 if jump_type.is_strict() && data.is_zero() =>
             {
                 context.set_null(id, false);
-                let inner = *inner.clone();
+                let inner = (**inner).clone();
                 inner.register_resource(context);
                 (type1, inner)
             }
@@ -843,7 +843,7 @@ impl Type {
                 if is_null {
                     *self = Type::from(0);
                 } else {
-                    *self = *inner.clone();
+                    *self = (**inner).clone();
                 }
             }
             _ => {}
@@ -1589,7 +1589,7 @@ struct ComputationContext {
     /// The dynamically known bounds of buffers indexed by their ids.
     array_bounds: BTreeMap<MemoryId, u64>,
     /// The currently allocated resources.
-    resources: HashSet<MemoryId>,
+    resources: BTreeSet<MemoryId>,
     /// The previous context in the computation.
     parent: Option<Arc<ComputationContext>>,
     /// The data dependencies of this context. This is used to broaden a known ending context to
@@ -1858,7 +1858,7 @@ impl ComputationContext {
                         (
                             Type::NullOr {
                                 id: id.clone(),
-                                inner: Box::new(Type::PtrToMemory {
+                                inner: Arc::new(Type::PtrToMemory {
                                     id,
                                     offset: 0.into(),
                                     buffer_size: *buffer_size as u64,
@@ -1914,7 +1914,7 @@ impl ComputationContext {
                 }
                 Ok(Type::Releasable {
                     id,
-                    inner: Box::new(self.resolve_return_value(
+                    inner: Arc::new(self.resolve_return_value(
                         verification_context,
                         inner,
                         next,
@@ -1926,7 +1926,7 @@ impl ComputationContext {
                 let id = verification_context.next_id();
                 Ok(Type::NullOr {
                     id,
-                    inner: Box::new(self.resolve_return_value(
+                    inner: Arc::new(self.resolve_return_value(
                         verification_context,
                         t,
                         next,
@@ -4920,7 +4920,6 @@ fn associate_orderings(o1: Ordering, o2: Ordering) -> Option<Ordering> {
 mod tests {
     use super::*;
     use crate::{BPF_ADD, BPF_ALU64, BPF_K, BPF_LDX, BPF_MEM, BPF_MOV, BPF_ST};
-    use std::collections::BTreeSet;
     use test_util::{assert_geq, assert_leq};
 
     #[test]
@@ -5348,7 +5347,7 @@ mod tests {
     fn test_type_constraint_null_or() {
         let mut context = ComputationContext::default();
         let id = MemoryId::new();
-        let null_or = Type::NullOr { id: id.clone(), inner: Box::new(Type::UNKNOWN_SCALAR) };
+        let null_or = Type::NullOr { id: id.clone(), inner: Arc::new(Type::UNKNOWN_SCALAR) };
         let (new_lhs, _) =
             Type::constraint(&mut context, JumpType::Eq, JumpWidth::W64, null_or, Type::from(0))
                 .unwrap();
