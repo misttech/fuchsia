@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot::common::caching::CachingFastboot;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
@@ -14,6 +13,7 @@ use ffx_fastboot_transport_factory::usb::UsbFactory;
 use ffx_fastboot_transport_interface::tcp::TcpNetworkInterface;
 use ffx_fastboot_transport_interface::udp::UdpNetworkInterface;
 use netext::MultithreadedTokioAsyncWrapper;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -53,12 +53,11 @@ pub enum FastbootConnectionKind {
     Udp(String, SocketAddr),
 }
 
-#[async_trait(?Send)]
 pub trait FastbootConnectionFactory {
-    async fn build_interface(
+    fn build_interface(
         &self,
         connection: FastbootConnectionKind,
-    ) -> Result<Box<dyn FastbootInterface>, ConnectionFactoryError>;
+    ) -> impl Future<Output = Result<Box<dyn FastbootInterface>, ConnectionFactoryError>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +83,6 @@ impl ConnectionFactory {
     }
 }
 
-#[async_trait(?Send)]
 impl FastbootConnectionFactory for ConnectionFactory {
     async fn build_interface(
         &self,
@@ -358,7 +356,6 @@ pub mod test {
         state: Arc<Mutex<FakeServiceCommands>>,
     }
 
-    #[async_trait(?Send)]
     impl FastbootConnectionFactory for TestConnectionFactory {
         async fn build_interface(
             &self,
