@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
 //go:embed check-configs.yaml
@@ -185,9 +187,11 @@ func TestLoadChecksFromYAMLEmpty(t *testing.T) {
 
 func TestFastbootAndHealthCheckOrdering(t *testing.T) {
 	tests := []struct {
-		name     string
-		log      string
-		wantName string
+		name           string
+		serialLog      string
+		log            string
+		wantName       string
+		skipPassedTask bool
 	}{
 		{
 			name:     "target_specification_was_not_found_before_start_target_error",
@@ -224,6 +228,27 @@ func TestFastbootAndHealthCheckOrdering(t *testing.T) {
 			log:      "2026-10-17 07:06:18.654321 botanist: run.go:938: botanist ERROR: botanist failed: cannot connect to address \"192.168.42.18:22\": ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain\n",
 			wantName: "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/botanist_ERROR:_cannot_connect_to_address",
 		},
+		{
+			name:           "ufs_cpp_driver_start_failed_before_ssh_timeout",
+			serialLog:      "[00001.368] 03431:03433> [driver_manager.cm] ERROR: Failed to start driver 'driver/ufs-pdev.so' in driver host: ZX_ERR_INTERNAL\n",
+			log:            "2026-10-20 14:43:39.297415 botanist: run.go:938: botanist ERROR: botanist failed: timed out trying to connect to ssh\n",
+			wantName:       "testing_failure_mode/string_in_log/serial_log.txt/Failed_to_start_driver_'driver/ufs",
+			skipPassedTask: true,
+		},
+		{
+			name:           "ufs_cpp_driver_start_failed_on_second_boot_before_failed_to_run_health_check",
+			serialLog:      "[00001.512] 03431:03433> [driver, ufs] INFO: Bind Success\n[00009.403] 03431:03433> [driver_manager.cm] ERROR: Failed to start driver 'driver/ufs-pdev.so' in driver host: ZX_ERR_TIMED_OUT\n",
+			log:            "2026-10-20 14:52:30.965358 botanist: run.go:938: botanist ERROR: botanist failed: failed to run health check: FFX command failed (ffx --config log.level=debug target wait -t 90): exit status 1\n",
+			wantName:       "testing_failure_mode/string_in_log/serial_log.txt/Failed_to_start_driver_'driver/ufs",
+			skipPassedTask: true,
+		},
+		{
+			name:           "ufs_rust_driver_start_failed_before_ssh_timeout",
+			serialLog:      "[00001.368] 03431:03433> [driver_manager.cm] ERROR: Failed to start driver 'driver/ufs_rust.so' in driver host: ZX_ERR_TIMED_OUT\n",
+			log:            "2026-10-20 14:43:39.297415 botanist: run.go:938: botanist ERROR: botanist failed: timed out trying to connect to ssh\n",
+			wantName:       "testing_failure_mode/string_in_log/serial_log.txt/Failed_to_start_driver_'driver/ufs",
+			skipPassedTask: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -232,12 +257,17 @@ func TestFastbootAndHealthCheckOrdering(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadChecksFromYAML failed: %v", err)
 			}
+			var serialLogs [][]byte
+			if tc.serialLog != "" {
+				serialLogs = [][]byte{[]byte(tc.serialLog)}
+			}
 			for _, logOutput := range []string{
 				tc.log,
 				tc.log + "botanist ERROR: FFX command failed\n",
 			} {
 				to := TestingOutputs{
 					SwarmingOutput: []byte(logOutput),
+					SerialLogs:     serialLogs,
 					SwarmingSummary: &SwarmingTaskSummary{
 						Results: &SwarmingRpcsTaskResult{
 							TaskId:  "abc",
@@ -255,6 +285,27 @@ func TestFastbootAndHealthCheckOrdering(t *testing.T) {
 				}
 				if got[0].Name != tc.wantName {
 					t.Errorf("got check %q, want %q", got[0].Name, tc.wantName)
+				}
+			}
+			if tc.skipPassedTask {
+				// Omit SwarmingOutput so botanist checks without skip_passed_task do not fire.
+				passedTo := TestingOutputs{
+					SerialLogs:  serialLogs,
+					TestSummary: &runtests.TestSummary{},
+					SwarmingSummary: &SwarmingTaskSummary{
+						Results: &SwarmingRpcsTaskResult{
+							TaskId:  "abc",
+							State:   "COMPLETED",
+							Failure: false,
+						},
+					},
+				}
+				got, err := RunChecks(checks, &passedTo, "")
+				if err != nil {
+					t.Fatalf("RunChecks on passed task failed: %v", err)
+				}
+				if len(got) != 0 {
+					t.Errorf("RunChecks on passed task returned %d results, want 0: %+v", len(got), got)
 				}
 			}
 		})

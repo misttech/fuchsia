@@ -224,6 +224,14 @@ failure_mode_checks:
   log_types: ["serialLogType"]
 # LINT.ThenChange(/src/devices/block/drivers/sdmmc/sdmmc-root-device.cc:failed_to_probe_irremovable_device)
 
+# For https://fxbug.dev/575732757 and https://fxbug.dev/575374637.
+# Matches driver_manager start failures for both C++ ('driver/ufs-pdev.so',
+# 'driver/ufs-pci.so') and Rust ('driver/ufs_rust.so') UFS drivers.
+- kind: "string_in_log"
+  string: "Failed to start driver 'driver/ufs"
+  log_types: ["serialLogType"]
+  skip_passed_task: true
+
 # For https://fxbug.dev/486245491
 # LINT.IfChange(no_response_tefmo)
 - kind: "string_in_log"
