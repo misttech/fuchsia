@@ -220,6 +220,20 @@ class PowerLevel {
 
   // Level as described in the model shared with user.
   uint8_t level_{0};
+
+  static void CheckLayout() {
+    static_assert(sizeof(PowerLevel) == 96);
+    static_assert(alignof(PowerLevel) == 8);
+    static_assert(offsetof(PowerLevel, options_) == 0);
+    static_assert(offsetof(PowerLevel, control_) == 8);
+    static_assert(offsetof(PowerLevel, control_argument_) == 16);
+    static_assert(offsetof(PowerLevel, processing_rate_) == 24);
+    static_assert(offsetof(PowerLevel, power_coefficient_nw_) == 32);
+    static_assert(offsetof(PowerLevel, power_cost_nw_per_rate_) == 40);
+    static_assert(offsetof(PowerLevel, name_) == 48);
+    static_assert(offsetof(PowerLevel, name_len_) == 80);
+    static_assert(offsetof(PowerLevel, level_) == 88);
+  }
 };
 
 // Represents an entry in a transition matrix, where the position in the matrix denotes
@@ -398,6 +412,15 @@ class EnergyModel {
   uint64_t max_processing_rate_scale_ = 1;
 };
 
+class PowerDomain;
+
+}  // namespace power_management
+
+extern "C" const std::atomic<int64_t>* cpp_power_domain_total_normalized_utilization_ptr(
+    const power_management::PowerDomain* domain);
+
+namespace power_management {
+
 // PowerDomain establishes the relationship between a set of CPUs, the energy
 // model that describes their characteristics, and the power level controller
 // responsible for changing the active power levels for the set of CPUs.
@@ -453,6 +476,8 @@ class PowerDomain : public fbl::RefCounted<PowerDomain> {
 
  private:
   friend class PowerState;
+  friend const std::atomic<int64_t>* ::cpp_power_domain_total_normalized_utilization_ptr(
+      const PowerDomain* domain);
 
   const cpu_mask_t cpus_;
   const uint32_t id_;
@@ -460,7 +485,7 @@ class PowerDomain : public fbl::RefCounted<PowerDomain> {
 
   // Although this value is exposed publicly with the Utilization type, it needs to be atomically
   // updated via fetch_add, which only is only supported for fundamental types.
-  std::atomic<int64_t> total_normalized_utilization_{0};
+  mutable std::atomic<int64_t> total_normalized_utilization_{0};
 
   const fbl::RefPtr<PowerLevelController> controller_ = nullptr;
 
@@ -624,6 +649,14 @@ class PowerDomainSet {
   explicit PowerDomainSet(ArrayType domains) : domains_{std::move(domains)} {}
 
   ArrayType domains_;
+
+  static void CheckLayout() {
+    static_assert(sizeof(fbl::RefPtr<PowerDomain>) == 8);
+    static_assert(alignof(fbl::RefPtr<PowerDomain>) == 8);
+    static_assert(sizeof(PowerDomainSet) == 32);
+    static_assert(alignof(PowerDomainSet) == 8);
+    static_assert(offsetof(PowerDomainSet, domains_) == 0);
+  }
 };
 
 }  // namespace power_management
@@ -637,6 +670,31 @@ zx_status_t cpp_power_management_set_rate_limits(uint64_t cpu_mask, uint64_t min
                                                  uint64_t max_rate);
 
 bool cpp_power_management_boot_boost_enabled();
+
+void cpp_power_domain_recycle(power_management::PowerDomain* ptr);
+uint32_t cpp_power_domain_id(const power_management::PowerDomain* domain);
+uint64_t cpp_power_domain_cpus(const power_management::PowerDomain* domain);
+const power_management::EnergyModel* cpp_power_domain_model(
+    const power_management::PowerDomain* domain);
+const power_management::PowerLevelController* cpp_power_domain_controller(
+    const power_management::PowerDomain* domain);
+bool cpp_power_domain_scheduler_control_enabled(const power_management::PowerDomain* domain);
+
+bool cpp_power_level_controller_is_serving(
+    const power_management::PowerLevelController* controller);
+power_management::ControlInterface cpp_power_level_controller_control_interface(
+    const power_management::PowerLevelController* controller);
+zx_status_t cpp_power_level_controller_get_current_power_level(
+    const power_management::PowerLevelController* controller, uint32_t domain_id,
+    uint64_t* out_level);
+
+const power_management::PowerLevel* cpp_energy_model_levels_data(
+    const power_management::EnergyModel* model);
+size_t cpp_energy_model_levels_size(const power_management::EnergyModel* model);
+size_t cpp_energy_model_idle_levels_size(const power_management::EnergyModel* model);
+bool cpp_energy_model_find_power_level(const power_management::EnergyModel* model,
+                                       power_management::ControlInterface interface_id,
+                                       uint64_t control_argument, uint8_t* out_level);
 
 __END_CDECLS
 

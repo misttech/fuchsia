@@ -24,6 +24,24 @@
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
 
+#ifdef _KERNEL
+#include <debug.h>
+#include <lib/boot-options/boot-options.h>
+#include <lib/power-management/pdev-power-level-controller.h>
+
+#include <fbl/array.h>
+#include <kernel/ffi.h>
+#include <kernel/scheduler.h>
+#else
+#ifndef FFI_ALWAYS_INLINE
+#ifdef __clang__
+#define FFI_ALWAYS_INLINE [[gnu::always_inline]]
+#else
+#define FFI_ALWAYS_INLINE
+#endif
+#endif
+#endif
+
 namespace power_management {
 
 zx::result<EnergyModel> EnergyModel::Create(
@@ -193,13 +211,6 @@ const PowerLevel* EnergyModel::FindActivePowerLevelForRate(ProcessingRate proces
 }  // namespace power_management
 
 #ifdef _KERNEL
-#include <debug.h>
-#include <lib/boot-options/boot-options.h>
-#include <lib/power-management/pdev-power-level-controller.h>
-
-#include <fbl/array.h>
-#include <kernel/scheduler.h>
-
 namespace power_management {
 
 zx::result<PowerDomainSet> PowerDomainSet::Create(
@@ -362,3 +373,111 @@ extern "C" zx_status_t cpp_power_management_set_rate_limits(uint64_t cpu_mask, u
 
 extern "C" bool cpp_power_management_boot_boost_enabled() { return true; }
 #endif
+
+static_assert(sizeof(fbl::RefPtr<power_management::PowerDomain>) == 8);
+static_assert(alignof(fbl::RefPtr<power_management::PowerDomain>) == 8);
+static_assert(sizeof(power_management::PowerDomainSet) == 32);
+static_assert(alignof(power_management::PowerDomainSet) == 8);
+
+static_assert(sizeof(std::atomic<int64_t>) == sizeof(int64_t));
+static_assert(alignof(std::atomic<int64_t>) == alignof(int64_t));
+static_assert(std::atomic<int64_t>::is_always_lock_free);
+
+static_assert(!std::is_polymorphic_v<power_management::PowerDomain>);
+
+__BEGIN_CDECLS
+
+void cpp_power_domain_recycle(power_management::PowerDomain* ptr) {
+  ZX_DEBUG_ASSERT(static_cast<const void*>(
+                      static_cast<const fbl::RefCounted<power_management::PowerDomain>*>(ptr)) ==
+                  static_cast<const void*>(ptr));
+  delete ptr;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_power_domain_id(const power_management::PowerDomain* domain) {
+  return domain->id();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint64_t cpp_power_domain_cpus(const power_management::PowerDomain* domain) {
+  return domain->cpus();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const power_management::EnergyModel* cpp_power_domain_model(
+    const power_management::PowerDomain* domain) {
+  return &domain->model();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const power_management::PowerLevelController* cpp_power_domain_controller(
+    const power_management::PowerDomain* domain) {
+  return domain->controller().get();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_power_domain_scheduler_control_enabled(
+    const power_management::PowerDomain* domain) {
+  return domain->scheduler_control_enabled();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const std::atomic<int64_t>* cpp_power_domain_total_normalized_utilization_ptr(
+    const power_management::PowerDomain* domain) {
+  return &domain->total_normalized_utilization_;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_power_level_controller_is_serving(
+    const power_management::PowerLevelController* controller) {
+  return controller->is_serving();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE power_management::ControlInterface cpp_power_level_controller_control_interface(
+    const power_management::PowerLevelController* controller) {
+  return controller->control_interface();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_power_level_controller_get_current_power_level(
+    const power_management::PowerLevelController* controller, uint32_t domain_id,
+    uint64_t* out_level) {
+  const zx::result<uint64_t> result = controller->GetCurrentPowerLevel(domain_id);
+  if (result.is_ok()) {
+    *out_level = result.value();
+  }
+  return result.status_value();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const power_management::PowerLevel* cpp_energy_model_levels_data(
+    const power_management::EnergyModel* model) {
+  return model->levels().data();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE size_t cpp_energy_model_levels_size(const power_management::EnergyModel* model) {
+  return model->levels().size();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE size_t
+cpp_energy_model_idle_levels_size(const power_management::EnergyModel* model) {
+  return model->idle_levels().size();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_energy_model_find_power_level(
+    const power_management::EnergyModel* model, power_management::ControlInterface interface_id,
+    uint64_t control_argument, uint8_t* out_level) {
+  const std::optional<uint8_t> level = model->FindPowerLevel(interface_id, control_argument);
+  if (level.has_value()) {
+    *out_level = *level;
+    return true;
+  }
+  return false;
+}
+
+__END_CDECLS

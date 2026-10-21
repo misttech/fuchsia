@@ -6,6 +6,7 @@
 
 import("//build/components/fuchsia_unittest_package.gni")
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_staticlib.gni")
 import("//build/test.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 
@@ -31,10 +32,7 @@ library_headers("headers") {
 }
 
 source_set("power-management") {
-  sources = [
-    "energy-model.cc",
-    "power-state.cc",
-  ]
+  sources = [ "energy-model.cc" ]
   public_deps = [ ":headers" ]
   deps = [ "//zircon/system/ulib/fbl" ]
   if (is_kernel) {
@@ -45,25 +43,53 @@ source_set("power-management") {
       "//zircon/kernel/lib/boot-options",
       "//zircon/kernel/lib/ktl",
     ]
+  } else {
+    deps += [ ":power-management-userspace-rs" ]
   }
 }
 
 if (is_kernel) {
   kernel_rust_mod("power-management-rs") {
     sources = [
+      "energy_model.rs",
+      "energy_model_ffi.rs",
       "mod.rs",
       "pdev_power_level_controller.rs",
       "pdev_power_level_controller_ffi.rs",
       "power_level_controller.rs",
+      "power_state.rs",
+      "power_state_ffi.rs",
     ]
     deps = [
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
+      "//src/lib/ffl",
       "//src/lib/ksync",
       "//src/lib/zr",
       "//zircon/system/ulib/fbl/rust:fbl",
     ]
     test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
+  }
+} else {
+  rustc_staticlib("power-management-userspace-rs") {
+    edition = "2024"
+    source_root = "mod.rs"
+    sources = [
+      "energy_model.rs",
+      "energy_model_ffi.rs",
+      "mod.rs",
+      "power_level_controller.rs",
+      "power_state.rs",
+      "power_state_ffi.rs",
+    ]
+    features = [ "userspace" ]
+    deps = [
+      "//sdk/rust/zx-status",
+      "//sdk/rust/zx-types",
+      "//src/lib/ffl",
+      "//src/lib/zr",
+      "//zircon/system/ulib/fbl/rust:fbl",
+    ]
   }
 }
 

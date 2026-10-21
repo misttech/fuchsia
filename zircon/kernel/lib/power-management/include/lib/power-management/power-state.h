@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_LIB_POWER_MANAGEMENT_INCLUDE_LIB_POWER_MANAGEMENT_POWER_STATE_H_
 
 #include <stdint.h>
+#include <zircon/compiler.h>
 #include <zircon/errors.h>
 
 #include <atomic>
@@ -18,9 +19,15 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 
+#ifdef _KERNEL
+#include <kernel/ffi.h>
+#endif
+
 #include "energy-model.h"
 
 namespace power_management {
+
+class PowerState;
 
 // Represents a requested power level update to be executed at a later stage.
 struct PowerLevelUpdateRequest {
@@ -41,6 +48,65 @@ struct PowerLevelUpdateRequest {
   uint32_t options;
 };
 
+}  // namespace power_management
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
+__BEGIN_CDECLS
+
+void rust_power_state_init(power_management::PowerState* state);
+void rust_power_state_destroy(power_management::PowerState* state);
+bool rust_power_state_is_enabled(const power_management::PowerState* state);
+const fbl::RefPtr<power_management::PowerDomain>* rust_power_state_domain(
+    const power_management::PowerState* state);
+bool rust_power_state_domain_id(const power_management::PowerState* state, uint32_t* out);
+bool rust_power_state_is_serving(const power_management::PowerState* state);
+bool rust_power_state_scheduler_control_enabled(const power_management::PowerState* state);
+bool rust_power_state_active_power_level(const power_management::PowerState* state, uint8_t* out);
+bool rust_power_state_desired_active_power_level(const power_management::PowerState* state,
+                                                 uint8_t* out);
+bool rust_power_state_max_idle_power_level(const power_management::PowerState* state, uint8_t* out);
+uint64_t rust_power_state_active_power_coefficient_nw(const power_management::PowerState* state);
+uint64_t rust_power_state_max_idle_power_coefficient_nw(const power_management::PowerState* state);
+bool rust_power_state_max_idle_power_level_interface(const power_management::PowerState* state,
+                                                     power_management::ControlInterface* out);
+bool rust_power_state_is_valid_active_power_level(const power_management::PowerState* state,
+                                                  uint8_t power_level);
+power_management::ProcessingRate rust_power_state_max_processing_rate(
+    const power_management::PowerState* state);
+power_management::ProcessingRate rust_power_state_active_processing_rate(
+    const power_management::PowerState* state);
+power_management::ProcessingRate rust_power_state_preceding_active_processing_rate(
+    const power_management::PowerState* state);
+bool rust_power_state_target_active_power_level(const power_management::PowerState* state,
+                                                uint8_t* out);
+power_management::ProcessingRate rust_power_state_target_processing_rate(
+    const power_management::PowerState* state);
+power_management::ProcessingRate rust_power_state_preceding_target_processing_rate(
+    const power_management::PowerState* state);
+bool rust_power_state_has_preceding_target_power_level(const power_management::PowerState* state);
+power_management::Utilization rust_power_state_normalized_utilization(
+    const power_management::PowerState* state);
+power_management::Utilization rust_power_state_total_normalized_utilization(
+    const power_management::PowerState* state);
+void rust_power_state_update_power_domain_set(power_management::PowerState* state,
+                                              power_management::PowerDomainSet* power_domain_set,
+                                              uint32_t cpu_num);
+const power_management::PowerDomainSet* rust_power_state_power_domain_set(
+    const power_management::PowerState* state);
+bool rust_power_state_request_transition(power_management::PowerState* state, uint32_t cpu_num,
+                                         uint8_t active_power_level,
+                                         power_management::PowerLevelUpdateRequest* out_request);
+zx_status_t rust_power_state_update_active_power_level(power_management::PowerState* state,
+                                                       uint8_t active_power_level);
+power_management::Utilization rust_power_state_update_utilization(
+    power_management::PowerState* state, power_management::Utilization utilization_delta);
+
+__END_CDECLS
+#pragma clang diagnostic pop
+
+namespace power_management {
+
 // PowerState encapsulates the current power level, power domain, and energy model for an individual
 // processor.
 //
@@ -48,45 +114,61 @@ struct PowerLevelUpdateRequest {
 // associated with the owning processor.
 class PowerState {
  public:
-  PowerState() = default;
+  PowerState() { rust_power_state_init(this); }
+  ~PowerState() { rust_power_state_destroy(this); }
+
+  PowerState(const PowerState&) = delete;
+  PowerState& operator=(const PowerState&) = delete;
 
   // Returns true if the power domain is set.
-  bool is_enabled() const { return !!domain(); }
+  bool is_enabled() const { return rust_power_state_is_enabled(this); }
 
   // Domain the PowerState is being modeled after. Returns nullptr is there is
   // no power domain configured for processor owning this power state.
-  const fbl::RefPtr<PowerDomain>& domain() const { return domain_; }
+  const fbl::RefPtr<PowerDomain>& domain() const { return *rust_power_state_domain(this); }
 
   // Returns the id of the domain this power state belongs to.
   std::optional<uint32_t> domain_id() const {
-    if (domain()) {
-      return domain()->id();
+    uint32_t id = 0;
+    if (rust_power_state_domain_id(this, &id)) {
+      return id;
     }
     return std::nullopt;
   }
 
   // Returns whether the domain's controller is serving requests. Returns false if there is no
   // domain.
-  bool is_serving() const { return domain() && domain()->controller()->is_serving(); }
+  bool is_serving() const { return rust_power_state_is_serving(this); }
 
   // Returns whether the kernel scheduler should send power level update requests through the
   // control interface to handle utilization changes.
   bool scheduler_control_enabled() const {
-    return domain() && domain()->scheduler_control_enabled();
+    return rust_power_state_scheduler_control_enabled(this);
   }
 
   // Returns the active power level when device is not idle.
-  constexpr std::optional<uint8_t> active_power_level() const { return active_power_level_; }
+  std::optional<uint8_t> active_power_level() const {
+    uint8_t level = 0;
+    if (rust_power_state_active_power_level(this, &level)) {
+      return level;
+    }
+    return std::nullopt;
+  }
 
   // Returns the active power level the device is in the processo of transitioning to.
-  constexpr std::optional<uint8_t> desired_active_power_level() const {
-    return desired_active_power_level_;
+  std::optional<uint8_t> desired_active_power_level() const {
+    uint8_t level = 0;
+    if (rust_power_state_desired_active_power_level(this, &level)) {
+      return level;
+    }
+    return std::nullopt;
   }
 
   // Returns the maximum (i.e. highest power, lowest latency) idle power level.
   std::optional<uint8_t> max_idle_power_level() const {
-    if (domain()) {
-      return domain()->model().max_idle_power_level();
+    uint8_t level = 0;
+    if (rust_power_state_max_idle_power_level(this, &level)) {
+      return level;
     }
     return std::nullopt;
   }
@@ -94,54 +176,37 @@ class PowerState {
   // Returns the power coefficient of the current active power level. Returns zero if there is no
   // active power level or no domain is set.
   uint64_t active_power_coefficient_nw() const {
-    if (domain() && active_power_level_.has_value()) {
-      return domain()->model().levels()[*active_power_level_].power_coefficient_nw();
-    }
-    return 0;
+    return rust_power_state_active_power_coefficient_nw(this);
   }
 
   // Returns the power coefficient of the maximum idle power level. Returns zero if there is no
   // idle power level or no domain is set.
   uint64_t max_idle_power_coefficient_nw() const {
-    if (domain()) {
-      return domain()->model().max_idle_power_coefficient_nw().value_or(0);
-    }
-    return 0;
+    return rust_power_state_max_idle_power_coefficient_nw(this);
   }
 
   // Returns the control interface of the maximum idle power level. Returns nullopt if there is no
   // idle power level or no domain is set.
   std::optional<ControlInterface> max_idle_power_level_interface() const {
-    if (domain()) {
-      return domain()->model().max_idle_power_level_interface();
+    ControlInterface iface{};
+    if (rust_power_state_max_idle_power_level_interface(this, &iface)) {
+      return iface;
     }
     return std::nullopt;
   }
 
   // Returns true if the given power level is valid active power level.
   bool IsValidActivePowerLevel(uint8_t power_level) const {
-    if (domain()) {
-      return power_level >= domain()->model().idle_levels().size() &&
-             power_level < domain()->model().levels().size();
-    }
-    return false;
+    return rust_power_state_is_valid_active_power_level(this, power_level);
   }
 
   // Returns the processing rate of the fastest power level in this domain.
-  ProcessingRate max_processing_rate() const {
-    if (domain()) {
-      return domain()->model().max_processing_rate();
-    }
-    return ProcessingRate{0};
-  }
+  ProcessingRate max_processing_rate() const { return rust_power_state_max_processing_rate(this); }
 
   // Returns the processing rate of the current active power level. Returns zero if there is no
   // active power level or no domain is set.
   ProcessingRate active_processing_rate() const {
-    if (domain() && active_power_level_.has_value()) {
-      return domain()->model().levels()[*active_power_level_].processing_rate();
-    }
-    return ProcessingRate{0};
+    return rust_power_state_active_processing_rate(this);
   }
 
   // Returns the processing rate of the preceding active power level (i.e. the
@@ -149,75 +214,58 @@ class PowerState {
   // preceding active power level, no active power level is set, or no domain
   // is set.
   ProcessingRate preceding_active_processing_rate() const {
-    if (domain() && active_power_level_.has_value()) {
-      const PowerLevel* power_level = &domain()->model().levels()[*active_power_level_];
-      if (power_level != &domain()->model().active_levels().front()) {
-        return (power_level - 1)->processing_rate();
-      }
-    }
-    return ProcessingRate{0};
+    return rust_power_state_preceding_active_processing_rate(this);
   }
 
   // Returns the targeted active power level (the in-flight desired level if set,
   // otherwise the current active level).
-  constexpr std::optional<uint8_t> target_active_power_level() const {
-    return desired_active_power_level_.has_value() ? desired_active_power_level_
-                                                   : active_power_level_;
+  std::optional<uint8_t> target_active_power_level() const {
+    uint8_t level = 0;
+    if (rust_power_state_target_active_power_level(this, &level)) {
+      return level;
+    }
+    return std::nullopt;
   }
 
   // Returns the processing rate of the targeted active power level (the in-flight
   // desired level if set, otherwise the current active level).
   ProcessingRate target_processing_rate() const {
-    if (domain()) {
-      if (const auto level = target_active_power_level()) {
-        return domain()->model().levels()[*level].processing_rate();
-      }
-    }
-    return ProcessingRate{0};
+    return rust_power_state_target_processing_rate(this);
   }
 
   // Returns the processing rate of the active power level immediately preceding
   // the targeted active power level (i.e. the lower bound of the targeted active
   // power level).
   ProcessingRate preceding_target_processing_rate() const {
-    if (domain()) {
-      if (const auto level = target_active_power_level()) {
-        const PowerLevel* power_level = &domain()->model().levels()[*level];
-        if (power_level != &domain()->model().active_levels().front()) {
-          return (power_level - 1)->processing_rate();
-        }
-      }
-    }
-    return ProcessingRate{0};
+    return rust_power_state_preceding_target_processing_rate(this);
   }
 
   // Returns true if the targeted active power level has an active power level
   // preceding it (i.e. is not the lowest active power level).
   bool has_preceding_target_power_level() const {
-    if (domain()) {
-      if (const auto level = target_active_power_level()) {
-        return &domain()->model().levels()[*level] != &domain()->model().active_levels().front();
-      }
-    }
-    return false;
+    return rust_power_state_has_preceding_target_power_level(this);
   }
 
   // Returns the current utilization of the processor.
-  Utilization normalized_utilization() const { return normalized_utilization_; }
+  Utilization normalized_utilization() const {
+    return rust_power_state_normalized_utilization(this);
+  }
 
   // Returns the total normalized utilization of the domain this processor belongs to.
   Utilization total_normalized_utilization() const {
-    if (domain()) {
-      return domain()->total_normalized_utilization();
-    }
-    return Utilization{0};
+    return rust_power_state_total_normalized_utilization(this);
   }
 
   // Updates the power domain set and associates this power state with the domain in the set
   // matching the given CPU number. Returns the previous power domain set.
-  PowerDomainSet UpdatePowerDomainSet(PowerDomainSet power_domain_set, uint32_t cpu_num);
+  PowerDomainSet UpdatePowerDomainSet(PowerDomainSet power_domain_set, uint32_t cpu_num) {
+    rust_power_state_update_power_domain_set(this, &power_domain_set, cpu_num);
+    return power_domain_set;
+  }
 
-  const PowerDomainSet& power_domain_set() const { return power_domain_set_; }
+  const PowerDomainSet& power_domain_set() const {
+    return *rust_power_state_power_domain_set(this);
+  }
 
   // Posts a request to transition the power domain associated with this power state to a given
   // active power level from the current energy model.
@@ -226,39 +274,37 @@ class PowerState {
   //
   // `cpu_num` is the CPU associated with this power state.
   // `level` is the desired power level.
-  //
   std::optional<PowerLevelUpdateRequest> RequestTransition(uint32_t cpu_num,
-                                                           uint8_t active_power_level);
+                                                           uint8_t active_power_level) {
+    PowerLevelUpdateRequest request{};
+    if (rust_power_state_request_transition(this, cpu_num, active_power_level, &request)) {
+      return request;
+    }
+    return std::nullopt;
+  }
 
   // Updates the active power level of this power state. Typically called in response to the power
   // level controller completing a power level transition request.
-  zx::result<> UpdateActivePowerLevel(uint8_t active_power_level);
+  zx::result<> UpdateActivePowerLevel(uint8_t active_power_level) {
+    return zx::make_result(rust_power_state_update_active_power_level(this, active_power_level));
+  }
 
   // Update the utilization of this processor and the total utilization of its domain.
   Utilization UpdateUtilization(Utilization utilization_delta) {
-    if (domain()) {
-      domain()->total_normalized_utilization_.fetch_add(utilization_delta.raw_value(),
-                                                        std::memory_order_relaxed);
-    }
-    return normalized_utilization_ += utilization_delta;
+    return rust_power_state_update_utilization(this, utilization_delta);
   }
 
  private:
-  // The power domain set configured for this processor.
-  PowerDomainSet power_domain_set_;
-
-  // The power domain the processor belongs to.
-  fbl::RefPtr<PowerDomain> domain_{nullptr};
-
-  // The power level when the processor is actively running.
-  std::optional<uint8_t> active_power_level_;
-
-  // Represents the power level that needs be to transitioned to.
-  std::optional<uint8_t> desired_active_power_level_;
-
-  // The current normalized utilization of the processor.
-  Utilization normalized_utilization_{0};
+  static constexpr size_t kStorageSize = 56;
+#ifdef _KERNEL
+  [[maybe_unused]] OpaqueStorage<kStorageSize, 8> storage_;
+#else
+  [[maybe_unused]] alignas(8) uint8_t storage_[kStorageSize];
+#endif
 };
+
+static_assert(sizeof(PowerState) == 56);
+static_assert(alignof(PowerState) == 8);
 
 }  // namespace power_management
 
