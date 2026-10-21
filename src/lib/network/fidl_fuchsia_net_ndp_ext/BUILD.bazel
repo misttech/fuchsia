@@ -1,0 +1,61 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl_fuchsia_net_ndp_ext",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    visibility = [
+        "//src/connectivity/network/netlink:__pkg__",
+        "//src/connectivity/network/netstack3:__pkg__",
+        "//src/connectivity/network/tests/fidl/ndp:__pkg__",
+        "//src/connectivity/policy/netcfg:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net.ndp:fuchsia.net.ndp_rust",
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/lib/packet-formats",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/network/fidl_fuchsia_net_ext",
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fidl_fuchsia_net_ndp_ext_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":fidl_fuchsia_net_ndp_ext",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//src/connectivity/lib/net-declare",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "fidl_fuchsia_net_ndp_ext_host_test",
+    binary_name = "fidl_fuchsia_net_ndp_ext_test",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fidl-fuchsia-net-ndp-ext-tests",
+    unit_tests = [":fidl_fuchsia_net_ndp_ext_test"],
+)
