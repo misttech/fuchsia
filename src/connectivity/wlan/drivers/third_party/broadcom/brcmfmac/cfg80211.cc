@@ -467,6 +467,9 @@ done:
   return err;
 }
 
+static zx_status_t brcmf_cfg80211_del_ap_iface(struct brcmf_cfg80211_info* cfg,
+                                               struct wireless_dev* wdev);
+
 /**
  * brcmf_ap_add_vif() - create a new AP virtual interface for multiple BSS
  *
@@ -537,7 +540,6 @@ static zx_status_t brcmf_ap_add_vif(struct brcmf_cfg80211_info* cfg, const char*
   err = brcmf_net_attach(ifp, true);
   if (err != ZX_OK) {
     BRCMF_ERR("Registering netdevice failed");
-    brcmf_free_net_device(ifp->ndev);
     goto fail;
   }
 
@@ -553,7 +555,13 @@ static zx_status_t brcmf_ap_add_vif(struct brcmf_cfg80211_info* cfg, const char*
   return ZX_OK;
 
 fail:
-  brcmf_free_vif(vif);
+  if (vif->ifp != nullptr) {
+    // The firmware already created a new iface for this vif, and the IF event handler added it to
+    // drvr->iflist. Tear it down the same way an AP iface is deleted.
+    brcmf_cfg80211_del_ap_iface(cfg, &vif->wdev);
+  } else {
+    brcmf_free_vif(vif);
+  }
   if (dev_out) {
     *dev_out = nullptr;
   }

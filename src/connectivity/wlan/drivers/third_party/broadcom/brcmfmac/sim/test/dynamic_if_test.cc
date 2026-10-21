@@ -453,6 +453,32 @@ TEST_F(DynamicIfTest, CreateApWithNoMACAddress) {
   EXPECT_EQ(DeleteInterface(&softap_ifc_), ZX_OK);
 }
 
+// Verify that failing to set the MAC address of a new AP iface, which happens after the firmware
+// has already created the iface, does not leave a stale iface behind in drvr->iflist.
+TEST_F(DynamicIfTest, ApMacAddrFailureDoesNotLeakIface) {
+  Init();
+
+  // Simulate a bus error on the "cur_etheraddr" iovar used to set the AP iface's MAC address.
+  WithSimDevice([&](brcmfmac::SimDevice* device) {
+    device->GetSim()->sim_fw->err_inj_.AddErrInjIovar("cur_etheraddr", ZX_ERR_IO, BCME_OK);
+  });
+  EXPECT_NE(ZX_OK, StartInterface(wlan_common::WlanMacRole::kAp, &softap_ifc_, kFakeMac));
+
+  WithSimDevice([&](brcmfmac::SimDevice* device) {
+    brcmf_simdev* sim = device->GetSim();
+    sim->sim_fw->err_inj_.DelErrInjIovar("cur_etheraddr");
+
+    // Only the primary iface (bsscfgidx 0) should remain.
+    for (int i = 1; i < BRCMF_MAX_IFS; i++) {
+      EXPECT_NULL(sim->drvr->iflist[i], "Leaked iface at bsscfgidx %d", i);
+    }
+  });
+
+  // A subsequent attempt to create an AP iface should succeed.
+  ASSERT_EQ(ZX_OK, StartInterface(wlan_common::WlanMacRole::kAp, &softap_ifc_, kFakeMac));
+  EXPECT_EQ(ZX_OK, DeleteInterface(&softap_ifc_));
+}
+
 // This test verifies that if we want to create an client iface with the same MAC address as the
 // pre-set one, no error will be returned.
 TEST_F(DynamicIfTest, CreateClientWithPreAllocMac) {
