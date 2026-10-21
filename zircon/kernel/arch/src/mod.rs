@@ -55,7 +55,7 @@ unsafe extern "C" {
     fn cpp_arch_get_curr_percpu() -> *const core::ffi::c_void;
 }
 
-#[cfg(not(target_arch = "riscv64"))]
+#[cfg(target_arch = "x86_64")]
 unsafe extern "C" {
     fn cpp_arch_copy_from_user(
         dst: *mut core::ffi::c_void,
@@ -195,12 +195,17 @@ pub unsafe fn arch_copy_from_user(
     src: *const core::ffi::c_void,
     len: usize,
 ) -> Result<(), Status> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { arm64::arch_copy_from_user(dst, src, len) }
+    }
     #[cfg(target_arch = "riscv64")]
     {
         // SAFETY: Caller guarantees valid pointers and safety invariants.
         unsafe { riscv64::arch_copy_from_user(dst, src, len) }
     }
-    #[cfg(not(target_arch = "riscv64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         // SAFETY: Caller guarantees valid pointers and safety invariants.
         Status::ok(unsafe { cpp_arch_copy_from_user(dst, src, len) })
@@ -218,12 +223,17 @@ pub unsafe fn arch_copy_to_user(
     src: *const core::ffi::c_void,
     len: usize,
 ) -> Result<(), Status> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { arm64::arch_copy_to_user(dst, src, len) }
+    }
     #[cfg(target_arch = "riscv64")]
     {
         // SAFETY: Caller guarantees valid pointers and safety invariants.
         unsafe { riscv64::arch_copy_to_user(dst, src, len) }
     }
-    #[cfg(not(target_arch = "riscv64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         // SAFETY: Caller guarantees valid pointers and safety invariants.
         Status::ok(unsafe { cpp_arch_copy_to_user(dst, src, len) })
@@ -250,7 +260,7 @@ impl From<Status> for UserCopyCaptureFaultsError {
     }
 }
 
-#[cfg(not(target_arch = "riscv64"))]
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 fn capture_faults_result(
     status: i32,
@@ -302,13 +312,18 @@ pub unsafe fn arch_copy_from_user_capture_faults(
     len: usize,
     context: CopyContext,
 ) -> Result<(), UserCopyCaptureFaultsError> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { arm64::arch_copy_from_user_capture_faults(dst, src, len, context) }
+    }
     #[cfg(target_arch = "riscv64")]
     {
         let _ = context;
         // SAFETY: Caller guarantees valid pointers and safety invariants.
         unsafe { riscv64::arch_copy_from_user_capture_faults(dst, src, len) }
     }
-    #[cfg(not(target_arch = "riscv64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         let mut fault_va = 0usize;
         let mut fault_flags = 0u32;
@@ -340,13 +355,18 @@ pub unsafe fn arch_copy_to_user_capture_faults(
     len: usize,
     context: CopyContext,
 ) -> Result<(), UserCopyCaptureFaultsError> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { arm64::arch_copy_to_user_capture_faults(dst, src, len, context) }
+    }
     #[cfg(target_arch = "riscv64")]
     {
         let _ = context;
         // SAFETY: Caller guarantees valid pointers and safety invariants.
         unsafe { riscv64::arch_copy_to_user_capture_faults(dst, src, len) }
     }
-    #[cfg(not(target_arch = "riscv64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         let mut fault_va = 0usize;
         let mut fault_flags = 0u32;

@@ -20,12 +20,11 @@ if (is_kernel) {
   source_set("user-copy") {
     sources = [
       "user-copy.S",
-      "user-copy.cc",
+      "user_copy_c.cc",
     ]
     deps = [
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/libc",
-      "//zircon/kernel/lib/user_copy",
     ]
   }
 }

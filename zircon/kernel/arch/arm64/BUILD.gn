@@ -276,10 +276,32 @@ if (toolchain_environment == "kernel.phys" ||
     raw_lines = [ "#![no_std]" ]
     type_allowlist = [ "arch_thread" ]
     var_allowlist = [
+      "ARM64_DFR_RUN_ACCESS_FAULT_HANDLER_BIT",
+      "ARM64_DFR_RUN_FAULT_HANDLER_BIT",
       "ARM64_MAX_HW_BREAKPOINTS",
       "ARM64_MAX_HW_WATCHPOINTS",
       "CURRENT_MDSCR_OFFSET",
       "CURRENT_PERCPU_PTR_OFFSET",
+    ]
+    explicit_padding = false
+    expect_lints = [ "non_camel_case_types" ]
+  }
+
+  kernel_bindgen_crate("arm64-user-copy-bindings") {
+    headers = [ "user-copy/user-copy.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    deps = [ "//sdk/rust/zx-types" ]
+    notice_year = 2026
+    raw_lines = [
+      "#![no_std]",
+      "pub type zx_status_t = zx_types::zx_status_t;",
+      "pub type zx_vaddr_t = zx_types::zx_vaddr_t;",
+    ]
+    type_blocklist = [ "zx_.*" ]
+    type_allowlist = [
+      "Arm64UserCopyCaptureFaultsRet",
+      "Arm64UserCopyRet",
     ]
     explicit_padding = false
     expect_lints = [ "non_camel_case_types" ]
@@ -302,6 +324,7 @@ if (toolchain_environment == "kernel.phys" ||
       "src/sysreg.rs",
       "src/thread.rs",
       "src/uarch.rs",
+      "src/user_copy.rs",
       "src/vm.rs",
     ]
     deps = [
@@ -312,15 +335,18 @@ if (toolchain_environment == "kernel.phys" ||
       ":arm64-mp-bindings",
       ":arm64-restricted-bindings",
       ":arm64-thread-bindings",
+      ":arm64-user-copy-bindings",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//src/lib/kprint",
+      "//src/lib/lockdep/rust:lockdep",
       "//src/lib/regio",
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
       "//zircon/kernel/lib/init:init_rust",
       "//zircon/kernel/lib/libc:rust",
+      "//zircon/kernel/lib/user_copy",
       "//zircon/kernel/phys/handoff:handoff-rs",
       "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs",
     ]

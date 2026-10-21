@@ -17,6 +17,7 @@ mod spinlock;
 mod sysreg;
 mod thread;
 mod uarch;
+mod user_copy;
 pub mod vm;
 
 use crate::kernel::types::cpu_num_t;
@@ -45,6 +46,10 @@ pub fn cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64 {
 
 pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi};
 pub use periphmap::periph_paddr_to_vaddr;
+pub use user_copy::{
+    arch_copy_from_user, arch_copy_from_user_capture_faults, arch_copy_to_user,
+    arch_copy_to_user_capture_faults,
+};
 
 // [arm/v8]: C5.2.19 CPSR / D13.2.112 SPSR_EL1
 pub const ARM_NCZV_FLAGS: u32 = 0xf000_0000;

@@ -15,7 +15,7 @@
 #include <arch/ops.h>
 #include <kernel/ffi.h>
 #include <kernel/thread.h>
-#if !defined(__riscv)
+#if defined(__x86_64__)
 #include <arch/user_copy.h>
 
 static_assert(static_cast<uint8_t>(CopyContext::kBlockingAllowed) == 0);
@@ -51,7 +51,7 @@ interrupt_saved_state_t cpp_arch_interrupt_save();
 void cpp_arch_interrupt_restore(interrupt_saved_state_t state);
 cpu_num_t cpp_arch_curr_cpu_num();
 uint32_t cpp_arch_max_num_cpus();
-#if !defined(__riscv)
+#if defined(__x86_64__)
 zx_status_t cpp_arch_copy_from_user(void* dst, const void* src, size_t len);
 zx_status_t cpp_arch_copy_to_user(void* dst, const void* src, size_t len);
 zx_status_t cpp_arch_copy_from_user_capture_faults(void* dst, const void* src, size_t len,
@@ -85,7 +85,7 @@ FFI_ALWAYS_INLINE void cpp_arch_interrupt_restore(interrupt_saved_state_t state)
 }
 FFI_ALWAYS_INLINE cpu_num_t cpp_arch_curr_cpu_num() { return arch_curr_cpu_num(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_max_num_cpus() { return arch_max_num_cpus(); }
-#if !defined(__riscv)
+#if defined(__x86_64__)
 FFI_ALWAYS_INLINE zx_status_t cpp_arch_copy_from_user(void* dst, const void* src, size_t len) {
   return arch_copy_from_user(dst, src, len);
 }

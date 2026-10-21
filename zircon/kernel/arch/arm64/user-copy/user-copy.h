@@ -20,6 +20,28 @@ struct Arm64UserCopyRet {
 };
 static_assert(sizeof(Arm64UserCopyRet) == 16, "Arm64UserCopyRet has unexpected size");
 
+// The result of a user copy that captures faults, as the kernel's Rust user copy returns it to C++.
+// `copy.pf_flags` and `copy.pf_va` hold valid fault data only if `has_fault_info` is set.
+struct Arm64UserCopyCaptureFaultsRet {
+  Arm64UserCopyRet copy;
+  bool has_fault_info;
+};
+static_assert(sizeof(Arm64UserCopyCaptureFaultsRet) == 24,
+              "Arm64UserCopyCaptureFaultsRet has unexpected size");
+
+// Defined in <arch/user_copy.h>.
+enum class CopyContext : uint8_t;
+
+// The kernel's Rust user copies that capture faults, defined in src/user_copy.rs.
+extern "C" {
+Arm64UserCopyCaptureFaultsRet rust_arch_copy_from_user_capture_faults(void* dst, const void* src,
+                                                                      size_t len,
+                                                                      CopyContext context);
+Arm64UserCopyCaptureFaultsRet rust_arch_copy_to_user_capture_faults(void* dst, const void* src,
+                                                                    size_t len,
+                                                                    CopyContext context);
+}
+
 #ifndef ARM64_USERCOPY_FN
 #define ARM64_USERCOPY_FN _arm64_user_copy
 #endif
