@@ -10,10 +10,8 @@ import ipaddress
 import logging
 import platform
 import re
-import socket
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -26,37 +24,9 @@ if TYPE_CHECKING:
     from antlion.controllers.fuchsia_device import FuchsiaDevice
     from libs.ssh.connection import SshConnection
 
-# All Fuchsia devices use this suffix for link-local mDNS host names.
-FUCHSIA_MDNS_TYPE = "_fuchsia._udp.local."
-
 # Default max seconds it takes to Duplicate Address Detection to finish before
 # assigning an IPv6 address.
 DAD_TIMEOUT_SEC = 30
-
-
-def is_valid_ipv4_address(address: str) -> bool:
-    try:
-        socket.inet_pton(socket.AF_INET, address)
-    except AttributeError:  # no inet_pton here, sorry
-        try:
-            socket.inet_aton(address)
-        except socket.error:
-            return False
-        return address.count(".") == 3
-    except socket.error:  # not a valid address
-        return False
-
-    return True
-
-
-def is_valid_ipv6_address(address: str) -> bool:
-    if "%" in address:
-        address = address.split("%")[0]
-    try:
-        socket.inet_pton(socket.AF_INET6, address)
-    except socket.error:  # not a valid address
-        return False
-    return True
 
 
 def get_interface_ip_addresses(
@@ -279,15 +249,15 @@ def get_ping_command(
     Returns:
         The ping command.
     """
-    if is_valid_ipv4_address(dest_ip):
-        ping_binary = "ping"
-    elif is_valid_ipv6_address(dest_ip):
-        ping_binary = "ping6"
-    else:
-        raise ValueError(f"Invalid ip addr: {dest_ip}")
+    try:
+        parsed_ip = ipaddress.ip_address(dest_ip.split("%")[0])
+    except ValueError as e:
+        raise ValueError(f"Invalid ip addr: {dest_ip}") from e
+
+    ping_binary = "ping" if parsed_ip.version == 4 else "ping6"
 
     if os_type == "Darwin":
-        if is_valid_ipv6_address(dest_ip):
+        if parsed_ip.version == 6:
             # ping6 on MacOS doesn't support timeout
             logging.debug(
                 "Ignoring timeout, as ping6 on MacOS does not support it."
@@ -458,86 +428,3 @@ def ip_in_subnet(ip: str, subnet: str) -> bool:
         True, if ip in subnet, else False
     """
     return ipaddress.ip_address(ip) in ipaddress.ip_network(subnet)
-
-
-def get_fuchsia_mdns_ipv6_address(device_mdns_name: str) -> None | str:
-    """Finds the IPv6 link-local address of a Fuchsia device matching a mDNS
-    name.
-
-    Args:
-        device_mdns_name: name of Fuchsia device (e.g. gig-clone-sugar-slash)
-
-    Returns:
-        string, IPv6 link-local address
-    """
-    import psutil
-    from zeroconf import IPVersion, Zeroconf
-
-    if not device_mdns_name:
-        return None
-
-    def mdns_query(interface: str, address: str) -> None | str:
-        logging.info(
-            f'Sending mDNS query for device "{device_mdns_name}" using "{address}"'
-        )
-        try:
-            zeroconf = Zeroconf(
-                ip_version=IPVersion.V6Only, interfaces=[address]
-            )
-        except RuntimeError as e:
-            if "No adapter found for IP address" in e.args[0]:
-                # Most likely, a device went offline and its control
-                # interface was deleted. This is acceptable since the
-                # device that went offline isn't guaranteed to be the
-                # device we're searching for.
-                logging.warning(f'No adapter found for "{address}"')
-                return None
-            raise
-
-        device_records = zeroconf.get_service_info(
-            FUCHSIA_MDNS_TYPE, f"{device_mdns_name}.{FUCHSIA_MDNS_TYPE}"
-        )
-
-        if device_records:
-            for device_address in device_records.parsed_addresses():
-                device_ip_address = ipaddress.ip_address(device_address)
-                scoped_address = f"{device_address}%{interface}"
-                if (
-                    device_ip_address.version == 6
-                    and device_ip_address.is_link_local
-                    and ping(job, dest_ip=scoped_address).success  # type: ignore # Blanket ignore to enable mypy
-                ):
-                    logging.info(
-                        f'Found device "{device_mdns_name}" at "{scoped_address}"'
-                    )
-                    zeroconf.close()
-                    del zeroconf
-                    return scoped_address
-
-        zeroconf.close()
-        del zeroconf
-        return None
-
-    with ThreadPoolExecutor() as executor:
-        futures = []
-
-        interfaces = psutil.net_if_addrs()
-        for interface in interfaces:
-            for addr in interfaces[interface]:
-                address = addr.address.split("%")[0]
-                if (
-                    addr.family == socket.AF_INET6
-                    and ipaddress.ip_address(address).is_link_local
-                    and address != "fe80::1"
-                ):
-                    futures.append(
-                        executor.submit(mdns_query, interface, address)
-                    )
-
-        for future in futures:
-            addr = future.result()
-            if addr:
-                return addr
-
-    logging.error(f'Unable to find IP address for device "{device_mdns_name}"')
-    return None

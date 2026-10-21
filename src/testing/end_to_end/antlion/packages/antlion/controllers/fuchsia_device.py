@@ -17,7 +17,6 @@ from typing import Any, Tuple
 
 import fuchsia_async_extension
 import honeydew
-from antlion import utils
 from antlion.controllers import pdu
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_controller import (
     WlanController,
@@ -31,10 +30,7 @@ from antlion.controllers.fuchsia_lib.ssh import (
     FuchsiaSSHProvider,
 )
 from antlion.decorators import cached_property
-from antlion.utils import (
-    get_fuchsia_mdns_ipv6_address,
-    get_interface_ip_addresses,
-)
+from antlion.utils import get_interface_ip_addresses
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from honeydew.auxiliary_devices.power_switch.power_switch_using_dmc import (
     PowerSwitchDmcError,
@@ -64,8 +60,6 @@ FUCHSIA_DEFAULT_CLEAN_UP_COMMAND_TIMEOUT = 15
 
 FUCHSIA_COUNTRY_CODE_TIMEOUT = 15
 FUCHSIA_DEFAULT_COUNTRY_CODE_US = "US"
-
-MDNS_LOOKUP_RETRY_MAX = 3
 
 FFX_PROXY_TIMEOUT_SEC = 3
 
@@ -232,23 +226,10 @@ class FuchsiaDevice:
             str, "association_mechanism", "policy"
         )
 
-        if not utils.is_valid_ipv4_address(
-            self.ip
-        ) and not utils.is_valid_ipv6_address(self.ip):
-            mdns_ip = None
-            for _ in range(MDNS_LOOKUP_RETRY_MAX):
-                mdns_ip = get_fuchsia_mdns_ipv6_address(self.ip)
-                if mdns_ip:
-                    break
-                else:
-                    time.sleep(1)
-            if mdns_ip and utils.is_valid_ipv6_address(mdns_ip):
-                # self.ip was actually an mdns name. Use it for self.name
-                # unless one was explicitly provided.
-                self.name = self.name or self.ip
-                self.ip = mdns_ip
-            else:
-                raise ValueError(f"Invalid IP: {self.ip}")
+        try:
+            ip_address(self.ip.split("%")[0])
+        except ValueError as e:
+            raise ValueError(f"Invalid IP: {self.ip}") from e
 
         self.log = logger.PrefixLoggerAdapter(
             logging.getLogger(),
