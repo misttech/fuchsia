@@ -1,5 +1,5 @@
 ---
-name: hlcpp_to_natural_migration
+name: hlcpp-to-natural-migration
 description: Migrate C++ components from HLCPP to Natural C++ FIDL bindings.
 ---
 
@@ -17,6 +17,7 @@ to Natural C++ bindings (headers matching `<fidl/fuchsia.../cpp/fidl.h>`).
 ## Process
 
 ### 1. Research and Plan
+
 1.  **Identify HLCPP Usage**: Look for includes like
 
     ```cpp
@@ -24,16 +25,19 @@ to Natural C++ bindings (headers matching `<fidl/fuchsia.../cpp/fidl.h>`).
     ```
 
     and dependencies ending in `_hlcpp` in `BUILD.gn`.
+
 2.  **Identify FIDL Protocols**: Note the protocols used and implemented by the
     component.
 
 ### 2. Update BUILD.gn
+
 1.  Replace dependencies on HLCPP bindings (e.g.,
     `//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_hlcpp`) with Natural C++
     bindings (e.g., `//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_cpp`).
 2.  Update any test dependencies as well.
 
 ### 3. Update Headers and Implementation
+
 1.  **Replace Includes**:
     - Change `#include <fuchsia/protocol/cpp/fidl.h>` to `#include
       <fidl/fuchsia.protocol/cpp/fidl.h>`.
@@ -54,36 +58,38 @@ to Natural C++ bindings (headers matching `<fidl/fuchsia.../cpp/fidl.h>`).
       of just `void OnEvent()`.
 
 ### Common Patterns and Gotchas
--   **Factory Methods**: Some types in Natural C++ (e.g., unions) require using
-    factory methods like `WithField(...)` rather than default construction and
-    setters.
--   **`AddUnmanagedProtocol`**: When hosting protocols in `OutgoingDirectory`
-    using a lambda handler (instead of passing a `std::unique_ptr` to a server
-    implementation), use `AddUnmanagedProtocol`.
--   **Self-Destruction in Callbacks**: If a connection's error or unbind handler
-    removes the connection instance from a map (thus destroying it), doing so
-    directly within the callback can cause crashes (e.g., re-entering allocator
-    mutexes). Use `async::PostTask` to defer the destruction.
--   **Non-copyable `fidl::Result` in Tests**: In tests using
-    `fidl::Client::Then`, the callback receives a `fidl::Result`. This type is
-    typically non-copyable. Ensure the callback lambda takes it by reference
-    (e.g., `[](auto& result)`) or by rvalue reference if you plan to move it.
--   **Table Initialization**: Natural C++ tables do not support designated
-    initializers. Use setter methods instead, or construct a temporary and chain
-    setters if they return a reference (e.g., `Table().field(value)`).
--   **`[[nodiscard]]`**: Many Natural C++ methods return values that are
-    `[[nodiscard]]`. Instead of casting to `(void)` to ignore them, add checks
-    for success (e.g., `EXPECT_TRUE(result.is_ok())` in tests).
--   **Removing `//sdk/lib/sys/cpp`**: Components that do not use HLCPP bindings
-    should no longer depend on `//sdk/lib/sys/cpp`.
-    -   Remove `//sdk/lib/sys/cpp` from `BUILD.gn`.
-    -   Replace `sys::ComponentContext` with `component::OutgoingDirectory` for
-        serving services.
-    -   Replace `context->svc()->Connect<Protocol>()` with
-        `component::Connect<Protocol>()` from
-        `<lib/component/incoming/cpp/protocol.h>`.
+
+- **Factory Methods**: Some types in Natural C++ (e.g., unions) require using
+  factory methods like `WithField(...)` rather than default construction and
+  setters.
+- **`AddUnmanagedProtocol`**: When hosting protocols in `OutgoingDirectory`
+  using a lambda handler (instead of passing a `std::unique_ptr` to a server
+  implementation), use `AddUnmanagedProtocol`.
+- **Self-Destruction in Callbacks**: If a connection's error or unbind handler
+  removes the connection instance from a map (thus destroying it), doing so
+  directly within the callback can cause crashes (e.g., re-entering allocator
+  mutexes). Use `async::PostTask` to defer the destruction.
+- **Non-copyable `fidl::Result` in Tests**: In tests using `fidl::Client::Then`,
+  the callback receives a `fidl::Result`. This type is typically non-copyable.
+  Ensure the callback lambda takes it by reference (e.g., `[](auto& result)`) or
+  by rvalue reference if you plan to move it.
+- **Table Initialization**: Natural C++ tables do not support designated
+  initializers. Use setter methods instead, or construct a temporary and chain
+  setters if they return a reference (e.g., `Table().field(value)`).
+- **`[[nodiscard]]`**: Many Natural C++ methods return values that are
+  `[[nodiscard]]`. Instead of casting to `(void)` to ignore them, add checks for
+  success (e.g., `EXPECT_TRUE(result.is_ok())` in tests).
+- **Removing `//sdk/lib/sys/cpp`**: Components that do not use HLCPP bindings
+  should no longer depend on `//sdk/lib/sys/cpp`.
+    - Remove `//sdk/lib/sys/cpp` from `BUILD.gn`.
+    - Replace `sys::ComponentContext` with `component::OutgoingDirectory` for
+      serving services.
+    - Replace `context->svc()->Connect<Protocol>()` with
+      `component::Connect<Protocol>()` from
+      `<lib/component/incoming/cpp/protocol.h>`.
 
 ### 4. Update Tests
+
 1.  Migrate test fixtures to use Natural C++ clients.
 2.  **Avoid Deadlocks**: If the test setup involves serving a protocol or VFS on
     a separate thread, ensure you don't create deadlocks by making synchronous
@@ -106,6 +112,7 @@ to Natural C++ bindings (headers matching `<fidl/fuchsia.../cpp/fidl.h>`).
     positives in subsequent assertions.
 
 ### 5. Verification
+
 1.  Use `fx status` to check that modified targets are being build. Update
     `out/default/args.gn` to add them if they are missing.
 2.  Run `fx build` to ensure everything compiles.
@@ -113,5 +120,6 @@ to Natural C++ bindings (headers matching `<fidl/fuchsia.../cpp/fidl.h>`).
 4.  Run `fx format-code` before completing.
 
 ### 6. Cleanup
+
 1.  If the target was listed in `build/cpp/hlcpp_visibility.gni`, remove it from
     the allowlist.
