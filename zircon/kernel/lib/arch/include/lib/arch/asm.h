@@ -141,7 +141,19 @@
 ///     - Optional: `R` for SHF_GNU_RETAIN, empty for not.
 ///     - Default: ``
 ///
-.macro .function name, scope=local, cfi=abi, align=, nosection=, retain=
+///   * callgraph
+///     - Optional: Either `direct`, an integral expression, or empty.
+///     If omitted or empty, nothing happens.  If specified, then a
+///     .llvm.callgraph metadata entry will be emitted for the function.
+///     Specifying `direct` says this function is assumed for analysis purposes
+///     never to be the target of an indirect call (for analysis purposes).
+///     Any other value must be the 64-bit type ID consistent with Clang's type
+///     signature hash algorithm, or 0 to indicate there are indirect calls but
+///     the signature is unknown (which analysis may treat as a potential
+///     callee of all callers with any indirect calls).
+///     - Default: ``
+///
+.macro .function name, scope=local, cfi=abi, align=, nosection=, retain=, callgraph=
   // Validate the \cfi argument.  The valid values correspond to
   // the `_.function.{start,end}.\cfi` subroutine macros.
   .ifnc \cfi, abi
@@ -152,8 +164,9 @@
     .endif
   .endif
 
-  _.entity \name, \scope, \align, \nosection, \retain, function, function, _.function.end.\cfi
-  _.function.start.\cfi
+  _.entity \name, \scope, \align, \nosection, \retain, function, function, _.function.cfi.end.\cfi, _.function.callgraph.end
+  _.function.cfi.start.\cfi
+  _.function.callgraph.start \callgraph
 
   // This is a local name, reset inside each `.function`..`.end_function`.
   // It can be used by other macros like .llvm.stack_size, below.
@@ -283,6 +296,53 @@
   .else
     .error "value out of range for one-byte or two-byte SLEB128: \value"
   .endif
+.endm
+
+/// Record a direct callee inside a .function definition.
+///
+/// This can only be used within a `.function` that used `callgraph=...`.
+/// It adds direct callees to the .llvm.callgraph metadata record emitted.
+///
+/// **NOTE:** Each machine also defines the macros `callgraph.call` and
+/// `callgraph.tail` that combine this with an actual call or branch.  This
+/// macro only needs to be used directly for known callees reached through
+/// indirect means such as a switch table.
+///
+/// Parameters
+///
+///   * target [, ...]
+///     - Required: One or more address expressions.  Each is an expression
+///     used in a call instruction or equivalent.  The expressions can use
+///     relocation; but their evaluation is always delayed until
+///     `.end_function`, so they cannot use immediate values of symbols
+///     that will be changed later.
+///
+.macro .llvm.callgraph.callee target:vararg
+  .ifb \target
+    .error ".llvm.callgraph.callee must take at least one callee expression"
+  .endif
+  _.llvm.callgraph.callee \target
+.endm
+
+/// Record an indirect callee type ID inside a .function definition.
+///
+/// This can only be used within a `.function` that used `callgraph=...`.
+/// It adds indirect callee type IDs to the .llvm.callgraph metadata record
+/// emitted.
+///
+/// Parameters
+///
+///   * type [, ...]
+///     - Required: One or more integer expressions.  Each is an expression
+///     yielding a 64-bit type ID value.  The expression can use relocation;
+///     but its evaluation is always delayed until `.end_function`, so it
+///     cannot use immediate values of symbols that will be changed later.
+///
+.macro .llvm.callgraph.indirect_callee_type type:vararg
+  .ifb \type
+    .error ".llvm.callgraph.indirect_callee_type must take at least one type ID expression"
+  .endif
+  _.llvm.callgraph.indirect_callee_type \type
 .endm
 
 #else  // clang-format on
