@@ -573,7 +573,8 @@ void Scheduler::InitializeFirstThread(Thread* thread) {
     queue_state.OnInsert();
     scheduler->rust_state_.active_thread = thread;
 
-    scheduler->rust_state_.weight_total = state.effective_profile_.weight();
+    scheduler->rust_state_.weight_total += state.effective_profile_.weight();
+    DEBUG_ASSERT(scheduler->rust_state_.weight_total > SchedWeight{0});
     scheduler->rust_state_.runnable_task_count++;
     scheduler->UpdateTotalExpectedRuntime(state.expected_runtime_ns_);
   }
@@ -626,6 +627,7 @@ void Scheduler::RemoveFirstThread(Thread* thread) {
     queue_state.OnRemove(INVALID_CPU);  // Set active to false.
     scheduler->rust_state_.active_thread = nullptr;
     scheduler->rust_state_.weight_total -= state.effective_profile_.weight();
+    DEBUG_ASSERT(scheduler->rust_state_.weight_total >= SchedWeight{0});
     scheduler->rust_state_.runnable_task_count--;
     scheduler->UpdateTotalExpectedRuntime(-state.expected_runtime_ns_);
 
