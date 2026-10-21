@@ -1499,6 +1499,78 @@ TEST_F(GpioTest, TestPinStates) {
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
 }
 
+TEST_F(GpioTest, PinStatesWithSchedulerRole) {
+  fuchsia_hardware_pinimpl::DevicePinStates dev_states;
+  dev_states.name() = "my-device";
+  dev_states.id() = 100;
+
+  fuchsia_hardware_pinimpl::PinState default_state;
+  default_state.name() = "default";
+  default_state.pins().push_back({{
+      .pin = 1,
+      .call = fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
+          fuchsia_hardware_pin::Configuration{{.pull = fuchsia_hardware_pin::Pull::kUp}}),
+  }});
+  default_state.pins().push_back({{
+      .pin = 2,
+      .call = fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
+          fuchsia_hardware_gpio::BufferMode::kOutputHigh),
+  }});
+  dev_states.states().push_back(std::move(default_state));
+
+  fuchsia_hardware_pinimpl::PinState sleep_state;
+  sleep_state.name() = "sleep";
+  sleep_state.pins().push_back({{
+      .pin = 1,
+      .call = fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
+          fuchsia_hardware_pin::Configuration{{.pull = fuchsia_hardware_pin::Pull::kDown}}),
+  }});
+  sleep_state.pins().push_back({{
+      .pin = 2,
+      .call = fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
+          fuchsia_hardware_gpio::BufferMode::kOutputLow),
+  }});
+  dev_states.states().push_back(std::move(sleep_state));
+
+  SetPinMetadata({{.device_pin_states = {{dev_states}}}});
+
+  // With a scheduler role, the core driver serves FIDL on a dispatcher that doesn't allow sync
+  // calls. Applying pin states should still work.
+  driver_test().RunInEnvironmentTypeContext([](GpioTestEnvironment& env) {
+    env.SetSchedulerRoleName(fuchsia_scheduler::RoleName("no.such.scheduler.role"));
+  });
+
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
+
+  EXPECT_EQ(pin_state(1).pull, fuchsia_hardware_pin::Pull::kUp);
+  EXPECT_EQ(pin_state(2).mode, MockPinImpl::PinState::Mode::kOut);
+  EXPECT_TRUE(pin_state(2).value);
+
+  zx::result client_end =
+      driver_test().Connect<fuchsia_hardware_pin::PinStatesService::Device>("my-device");
+  ASSERT_TRUE(client_end.is_ok());
+
+  // Run the dispatcher to allow the connection to be established.
+  driver_test().runtime().RunUntilIdle();
+
+  // PinStatesDevice should be bound on the role dispatcher, so a sync client should work here.
+  fidl::WireSyncClient<fuchsia_hardware_pin::PinStates> client(*std::move(client_end));
+  auto result = client->SelectState("sleep");
+  ASSERT_TRUE(result.ok());
+  EXPECT_TRUE(result->is_ok());
+
+  EXPECT_EQ(pin_state(1).pull, fuchsia_hardware_pin::Pull::kDown);
+  EXPECT_EQ(pin_state(2).mode, MockPinImpl::PinState::Mode::kOut);
+  EXPECT_FALSE(pin_state(2).value);
+
+  EXPECT_TRUE(driver_test().StopDriver().is_ok());
+}
+
 TEST_F(GpioTest, TestPinStatesCustomId) {
   fuchsia_hardware_pinimpl::DevicePinStates dev_states_1;
   dev_states_1.name() = "dev-1";

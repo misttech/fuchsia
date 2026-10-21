@@ -159,14 +159,16 @@ class PinStatesDevice : public fidl::WireServer<fuchsia_hardware_pin::PinStates>
 
   zx::result<> AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node);
 
-  zx::result<> ApplyDefaultState();
+  void ApplyDefaultState(fit::callback<void(zx::result<>)> callback);
 
  private:
   void SelectState(SelectStateRequestView request, SelectStateCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_pin::PinStates> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  zx_status_t ApplyState(const std::string& state_name);
+  void ApplyState(std::string_view state_name, fit::callback<void(zx_status_t)> callback);
+  void ApplyPinConfigs(const fuchsia_hardware_pinimpl::PinState& state, size_t index,
+                       fit::callback<void(zx_status_t)> callback);
 
   async_dispatcher_t* const fidl_dispatcher_;
   const fuchsia_hardware_pinimpl::DevicePinStates pin_states_;
@@ -207,16 +209,21 @@ class GpioRootDevice : public fdf::DriverBase2 {
   // role if one is provided. This conflicts with the requirement on our outgoing directory, which
   // serves the GPIO service and lives on the driver dispatcher. To handle this, initializing
   // GpioDevice instances uses a three-step process:
-  //     1. Create the GpioDevice instances on fidl_dispatcher_ so that their thread-unsafe members
-  //        (fdf::WireClient, fidl::ServerBindingGroup) live there.
+  //     1. Create the GpioDevice and PinStatesDevice instances and apply default pin states on
+  //        fidl_dispatcher_ so that their thread-unsafe members (fdf::WireClient,
+  //        fidl::ServerBindingGroup) live there.
   //     2. Add services to outgoing() on the driver dispatcher. Connections will be made using this
   //        dispatcher, so service handlers should post tasks to fidl_dispatcher_ if needed.
-  //     3. Add GpioDevice nodes on fidl_dispatcher_.
+  //     3. Add GpioDevice and PinStatesDevice nodes on fidl_dispatcher_.
 
   // Must be run on the FIDL dispatcher.
   void CreatePinDevices(uint32_t controller_id, std::span<fuchsia_hardware_pinimpl::Pin> pins,
                         std::vector<fuchsia_hardware_pinimpl::DevicePinStates> device_pin_states,
                         gpio_config::Config config, fdf::StartCompleter completer);
+
+  // Must be run on the FIDL dispatcher.
+  void ApplyDefaultPinStates(size_t index, gpio_config::Config config,
+                             fdf::StartCompleter completer);
 
   // Must be run on the driver dispatcher.
   void ServePinDevices(gpio_config::Config config, fdf::StartCompleter completer);
@@ -231,7 +238,7 @@ class GpioRootDevice : public fdf::DriverBase2 {
 
   fdf::UnownedDispatcher fidl_dispatcher() const {
     return fidl_dispatcher_ ? fdf::UnownedDispatcher(fidl_dispatcher_->get())
-                            : fdf::Dispatcher::GetCurrent();
+                            : fdf::UnownedDispatcher(driver_dispatcher()->get());
   }
 
   std::optional<fdf::StopCompleter> stop_completer_;

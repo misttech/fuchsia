@@ -4,7 +4,12 @@
 {
     name: "gpio",
     program: {
-        allowed_scheduler_roles: [ "fuchsia.devices.gpio.drivers.aml-gpio.gpioh" ],
+        // TODO(https://fxbug.dev/573247832): Remove hardcoded board/controller roles once
+        // Driver Framework supports per-instance scheduler role configuration on nodes.
+        allowed_scheduler_roles: [
+            "fuchsia.devices.gpio.drivers.aml-gpio.gpioh",
+            "fuchsia.devices.gpio.drivers.gpio.pinctrl-B400000",
+        ],
         bind: {
             service: "fuchsia.hardware.pinimpl.Service",
             transport: "Driver",

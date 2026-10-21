@@ -431,7 +431,8 @@ zx::result<> PinStatesDevice::AddDevice(
   return zx::ok();
 }
 
-zx_status_t PinStatesDevice::ApplyState(const std::string& state_name) {
+void PinStatesDevice::ApplyState(std::string_view state_name,
+                                 fit::callback<void(zx_status_t)> callback) {
   const fuchsia_hardware_pinimpl::PinState* target_state = nullptr;
   for (const auto& state : pin_states_.states()) {
     if (state.name() == state_name) {
@@ -443,65 +444,96 @@ zx_status_t PinStatesDevice::ApplyState(const std::string& state_name) {
   if (!target_state) {
     logger_.log(fdf::ERROR, "Pin state '{}' not found for device '{}'", state_name,
                 pin_states_.name());
-    return ZX_ERR_NOT_FOUND;
+    callback(ZX_ERR_NOT_FOUND);
+    return;
   }
 
-  fdf::Arena arena('GPIO');
-  for (const auto& pin_cfg : target_state->pins()) {
-    uint32_t pin = pin_cfg.pin();
-
-    if (pin_cfg.call().Which() == fuchsia_hardware_pinimpl::InitCall::Tag::kPinConfig) {
-      auto result = pinimpl_.sync().buffer(arena)->Configure(
-          pin, fidl::ToWire(arena, pin_cfg.call().pin_config().value()));
-      if (!result.ok()) {
-        logger_.log(fdf::ERROR, "Failed to configure pin {} for state '{}': {}", pin, state_name,
-                    result.status_string());
-        return result.status();
-      }
-      if (result->is_error()) {
-        logger_.log(fdf::ERROR, "PinImpl Configure returned error for pin {} state '{}': {}", pin,
-                    state_name, result->error_value());
-        return result->error_value();
-      }
-    } else if (pin_cfg.call().Which() == fuchsia_hardware_pinimpl::InitCall::Tag::kBufferMode) {
-      auto result =
-          pinimpl_.sync().buffer(arena)->SetBufferMode(pin, pin_cfg.call().buffer_mode().value());
-      if (!result.ok()) {
-        logger_.log(fdf::ERROR, "Failed to set buffer mode for pin {} state '{}': {}", pin,
-                    state_name, result.status_string());
-        return result.status();
-      }
-      if (result->is_error()) {
-        logger_.log(fdf::ERROR, "PinImpl SetBufferMode returned error for pin {} state '{}': {}",
-                    pin, state_name, result->error_value());
-        return result->error_value();
-      }
-    }
-  }
-
-  return ZX_OK;
+  ApplyPinConfigs(*target_state, 0, std::move(callback));
 }
 
-zx::result<> PinStatesDevice::ApplyDefaultState() {
-  zx_status_t status = ApplyState("default");
-  if (status == ZX_ERR_NOT_FOUND) {
-    logger_.log(fdf::INFO, "No 'default' pin state found for device '{}'", pin_states_.name());
-    return zx::ok();
+void PinStatesDevice::ApplyPinConfigs(const fuchsia_hardware_pinimpl::PinState& state, size_t index,
+                                      fit::callback<void(zx_status_t)> callback) {
+  if (index >= state.pins().size()) {
+    callback(ZX_OK);
+    return;
   }
-  if (status != ZX_OK) {
-    return zx::error(status);
+
+  const auto& pin_cfg = state.pins()[index];
+  uint32_t pin = pin_cfg.pin();
+  fdf::Arena arena('GPIO');
+
+  if (pin_cfg.call().Which() == fuchsia_hardware_pinimpl::InitCall::Tag::kPinConfig) {
+    pinimpl_.buffer(arena)
+        ->Configure(pin, fidl::ToWire(arena, pin_cfg.call().pin_config().value()))
+        .ThenExactlyOnce([this, &state, index, pin,
+                          callback = std::move(callback)](auto& result) mutable {
+          if (!result.ok()) {
+            logger_.log(fdf::ERROR, "Failed to configure pin {} for state '{}': {}", pin,
+                        state.name(), result.status_string());
+            callback(result.status());
+            return;
+          }
+          if (result->is_error()) {
+            logger_.log(fdf::ERROR, "PinImpl Configure returned error for pin {} state '{}': {}",
+                        pin, state.name(), result->error_value());
+            callback(result->error_value());
+            return;
+          }
+          ApplyPinConfigs(state, index + 1, std::move(callback));
+        });
+    return;
   }
-  return zx::ok();
+
+  if (pin_cfg.call().Which() == fuchsia_hardware_pinimpl::InitCall::Tag::kBufferMode) {
+    pinimpl_.buffer(arena)
+        ->SetBufferMode(pin, pin_cfg.call().buffer_mode().value())
+        .ThenExactlyOnce(
+            [this, &state, index, pin, callback = std::move(callback)](auto& result) mutable {
+              if (!result.ok()) {
+                logger_.log(fdf::ERROR, "Failed to set buffer mode for pin {} state '{}': {}", pin,
+                            state.name(), result.status_string());
+                callback(result.status());
+                return;
+              }
+              if (result->is_error()) {
+                logger_.log(fdf::ERROR,
+                            "PinImpl SetBufferMode returned error for pin {} state '{}': {}", pin,
+                            state.name(), result->error_value());
+                callback(result->error_value());
+                return;
+              }
+              ApplyPinConfigs(state, index + 1, std::move(callback));
+            });
+    return;
+  }
+
+  ApplyPinConfigs(state, index + 1, std::move(callback));
+}
+
+void PinStatesDevice::ApplyDefaultState(fit::callback<void(zx::result<>)> callback) {
+  ApplyState("default", [this, callback = std::move(callback)](zx_status_t status) mutable {
+    if (status == ZX_ERR_NOT_FOUND) {
+      logger_.log(fdf::INFO, "No 'default' pin state found for device '{}'", pin_states_.name());
+      callback(zx::ok());
+      return;
+    }
+    if (status != ZX_OK) {
+      callback(zx::error(status));
+      return;
+    }
+    callback(zx::ok());
+  });
 }
 
 void PinStatesDevice::SelectState(SelectStateRequestView request,
                                   SelectStateCompleter::Sync& completer) {
-  zx_status_t status = ApplyState(std::string(request->name.data(), request->name.size()));
-  if (status != ZX_OK) {
-    completer.ReplyError(status);
-  } else {
-    completer.ReplySuccess();
-  }
+  ApplyState(request->name.get(), [completer = completer.ToAsync()](zx_status_t status) mutable {
+    if (status != ZX_OK) {
+      completer.ReplyError(status);
+    } else {
+      completer.ReplySuccess();
+    }
+  });
 }
 
 void PinStatesDevice::handle_unknown_method(
@@ -787,6 +819,8 @@ void GpioRootDevice::Start(fdf::DriverContext context, fdf::StartCompleter compl
     logger().log(fdf::INFO, "No controller ID provided. Assuming controller ID = 0");
   }
 
+  // TODO(https://fxbug.dev/573247832): Replace RoleName metadata with per-instance scheduler role
+  // configuration in Driver Framework so roles don't have to be hardcoded in gpio.cml.
   zx::result scheduler_role_name_result =
       fdf_metadata::GetMetadataIfExists<fuchsia_scheduler::RoleName>(incoming());
   if (scheduler_role_name_result.is_error()) {
@@ -954,10 +988,32 @@ void GpioRootDevice::CreatePinDevices(
     }
   }
 
-  async::PostTask(dispatcher(),
-                  [this, config = config, completer = std::move(completer)]() mutable {
-                    ServePinDevices(config, std::move(completer));
-                  });
+  ApplyDefaultPinStates(0, config, std::move(completer));
+}
+
+void GpioRootDevice::ApplyDefaultPinStates(size_t index, gpio_config::Config config,
+                                           fdf::StartCompleter completer) {
+  if (index >= pin_states_children_.size()) {
+    async::PostTask(dispatcher(),
+                    [this, config = config, completer = std::move(completer)]() mutable {
+                      ServePinDevices(config, std::move(completer));
+                    });
+    return;
+  }
+
+  // Apply the default state before adding the nodes so that drivers bound to them (e.g. through an
+  // optional "pin-states" composite parent) start with their pins already configured.
+  pin_states_children_[index]->ApplyDefaultState(
+      [this, index, config = config,
+       completer = std::move(completer)](zx::result<> result) mutable {
+        if (result.is_error()) {
+          logger().log(fdf::ERROR, "Failed to apply default state: {}", result);
+          completer(result.take_error());
+          return;
+        }
+
+        ApplyDefaultPinStates(index + 1, config, std::move(completer));
+      });
 }
 
 void GpioRootDevice::ServePinDevices(gpio_config::Config config, fdf::StartCompleter completer) {
@@ -996,14 +1052,6 @@ void GpioRootDevice::AddPinDevices(gpio_config::Config config, fdf::StartComplet
   }
 
   for (std::unique_ptr<PinStatesDevice>& child : pin_states_children_) {
-    // Apply the default state before adding the node so that drivers bound to it (e.g. through an
-    // optional "pin-states" composite parent) start with their pins already configured.
-    if (zx::result<> result = child->ApplyDefaultState(); result.is_error()) {
-      logger().log(fdf::ERROR, "Failed to apply default state: {}", result);
-      completer(result.take_error());
-      return;
-    }
-
     if (zx::result<> result = child->AddDevice(node_.node_.borrow()); result.is_error()) {
       logger().log(fdf::ERROR, "Failed to add pin-states device: {}", result);
       completer(result.take_error());
