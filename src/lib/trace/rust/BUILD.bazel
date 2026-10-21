@@ -3,12 +3,9 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 rustc_library(
     name = "trace",
@@ -16,7 +13,7 @@ rustc_library(
     crate_name = "fuchsia_trace",
     edition = "2024",
     link_deps = ["//zircon/system/ulib/trace-engine"],
-    with_unit_tests = True,
+    visibility = ["//:__subpackages__"],
     deps = [
         "//sdk/rust/zx",
         "//src/lib/fuchsia-runtime",
@@ -32,9 +29,8 @@ rustc_library(
 # BUILD.gn, which produces librust-trace-provider.so. That file is also included
 # in bootfs (see `bootfs_files_for_assembly("bootfs")` in BUILD.gn). Bazel links
 # the trace provider statically for now.
-# @bazel2gn:skip
 fx_cc_library(
-    name = "rust-trace-provider",
+    name = "rust-trace-provider-cpp",
     srcs = ["trace-provider/trace_provider.cc"],
     implementation_deps = [
         "//sdk/lib/async-loop:async-loop-cpp",
@@ -42,6 +38,7 @@ fx_cc_library(
         "//zircon/system/ulib/trace-provider",
     ],
     visibility = ["//visibility:private"],
+    alwayslink = True,
 )
 
 rustc_library(
@@ -54,9 +51,10 @@ rustc_library(
         # GN links Rust binaries with rustc, which needs the C++ standard
         # library to be linked dynamically for librust-trace-provider.so; see
         # group("rust-trace-provider-for-rust") in BUILD.gn.
-        ":rust-trace-provider",  # @bazel2gn:path_overwrite::rust-trace-provider-for-rust
+        ":rust-trace-provider-cpp",  # @bazel2gn:path_overwrite::rust-trace-provider-for-rust
         "//zircon/system/ulib/trace-provider",
     ],
+    visibility = ["//:__subpackages__"],
     deps = [
         "//sdk/lib/async/rust",
         "//sdk/lib/async/rust/sys",
@@ -71,6 +69,12 @@ rustc_library(
     crate_root = "trace-observer/src/lib.rs",
     edition = "2024",
     link_deps = ["//zircon/system/ulib/trace"],
+    visibility = [
+        "//src/performance/memory/attribution/monitor:__pkg__",
+        "//src/starnix/kernel/core:__pkg__",
+        "//src/starnix/modules/perfetto_consumer:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
     deps = [
         ":trace",
         "//sdk/rust/zx",

@@ -5,6 +5,7 @@
 import("//build/assembly/bootfs_files_for_assembly.gni")
 import("//build/components.gni")
 import("//build/rust/rustc_staticlib.gni")
+import("//build/rust/rustc_test.gni")
 import("//build/test.gni")
 
 rustc_staticlib("rust-cpp-test-lib") {
@@ -55,6 +56,20 @@ test("rust_cpp_test") {
   ]
 }
 
+rustc_test("trace_test") {
+  name = "fuchsia_trace_lib_test"
+  edition = "2024"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia-runtime",
+    "//third_party/rust_crates:libc",
+    "//third_party/rust_crates:pin-project",
+    "//third_party/rust_crates:rand",
+    "//zircon/system/ulib/trace-engine",
+  ]
+}
+
 fuchsia_unittest_component("fuchsia_trace_lib_test_component") {
   deps = [ ":trace_test" ]
 }
@@ -84,12 +99,7 @@ group("tests") {
 # `:trace-provider`.
 shared_library("rust-trace-provider") {
   visibility = [ ":*" ]
-  deps = [
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//zircon/system/ulib/trace-provider",
-  ]
-  sources = [ "trace-provider/trace_provider.cc" ]
+  deps = [ ":rust-trace-provider-cpp" ]
 }
 
 bootfs_files_for_assembly("bootfs") {
@@ -140,7 +150,7 @@ rustc_library("trace") {
   crate_name = "fuchsia_trace"
   edition = "2024"
   link_deps = [ "//zircon/system/ulib/trace-engine" ]
-  with_unit_tests = true
+  visibility = [ "//*" ]
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-runtime",
@@ -148,6 +158,15 @@ rustc_library("trace") {
     "//third_party/rust_crates:pin-project",
     "//third_party/rust_crates:rand",
   ]
+}
+source_set("rust-trace-provider-cpp") {
+  sources = [ "trace-provider/trace_provider.cc" ]
+  deps = [
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//zircon/system/ulib/trace-provider",
+  ]
+  visibility = [ ":*" ]
 }
 rustc_library("trace-provider") {
   sources = [ "trace-provider/src/lib.rs" ]
@@ -158,6 +177,7 @@ rustc_library("trace-provider") {
     ":rust-trace-provider-for-rust",
     "//zircon/system/ulib/trace-provider",
   ]
+  visibility = [ "//*" ]
   deps = [
     "//sdk/lib/async/rust",
     "//sdk/lib/async/rust/sys",
@@ -170,6 +190,13 @@ rustc_library("trace-observer") {
   source_root = "trace-observer/src/lib.rs"
   edition = "2024"
   link_deps = [ "//zircon/system/ulib/trace" ]
+  visibility = [
+    ":*",
+    "//src/performance/memory/attribution/monitor:*",
+    "//src/starnix/kernel/core:*",
+    "//src/starnix/modules/perfetto_consumer:*",
+    "//vendor/google/*",
+  ]
   deps = [
     ":trace",
     "//sdk/rust/zx",
