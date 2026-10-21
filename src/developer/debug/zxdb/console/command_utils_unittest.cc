@@ -112,6 +112,31 @@ TEST(CommandUtils, StringToUint64) {
   EXPECT_EQ(0xffffFFFFffffFFFFu, result);
 }
 
+TEST(CommandUtils, StringToTrust) {
+  debug_ipc::StackFrame::Trust trust = debug_ipc::StackFrame::Trust::kUnknown;
+
+  EXPECT_FALSE(StringToTrust("cfi", &trust).has_error());
+  EXPECT_EQ(debug_ipc::StackFrame::Trust::kCFI, trust);
+
+  EXPECT_FALSE(StringToTrust("FP", &trust).has_error());
+  EXPECT_EQ(debug_ipc::StackFrame::Trust::kFP, trust);
+
+  EXPECT_FALSE(StringToTrust("Scs", &trust).has_error());
+  EXPECT_EQ(debug_ipc::StackFrame::Trust::kSCS, trust);
+
+  EXPECT_FALSE(StringToTrust("plt", &trust).has_error());
+  EXPECT_EQ(debug_ipc::StackFrame::Trust::kPLT, trust);
+
+  EXPECT_FALSE(StringToTrust("armehabi", &trust).has_error());
+  EXPECT_EQ(debug_ipc::StackFrame::Trust::kArmEhAbi, trust);
+
+  EXPECT_FALSE(StringToTrust("sigreturn", &trust).has_error());
+  EXPECT_EQ(debug_ipc::StackFrame::Trust::kSigReturn, trust);
+
+  EXPECT_TRUE(StringToTrust("scan", &trust).has_error());
+  EXPECT_TRUE(StringToTrust("invalid", &trust).has_error());
+}
+
 TEST(CommandUtils, ReadUint64Arg) {
   Command cmd;
   uint64_t out;

@@ -47,9 +47,11 @@ constexpr int kInternalSwitch = 5;
 constexpr int kForceRemoteUnwind = 6;
 constexpr int kForceFrameAddresses = 7;
 constexpr int kTrust = 8;
+constexpr int kUnwinder = 9;
 
 // Sets formatting options commonly used for outputting stack frames for the "frame" noun.
-FormatStackOptions GetFormatStackOptions(const Command& cmd, ConsoleContext* console_context) {
+ErrOr<FormatStackOptions> GetFormatStackOptions(const Command& cmd,
+                                                ConsoleContext* console_context) {
   auto opts =
       FormatStackOptions::GetFrameOptions(cmd.target(), cmd.HasSwitch(kVerboseSwitch),
                                           cmd.HasSwitch(kForceTypes), cmd.HasSwitch(kTrust), 4);
@@ -64,6 +66,14 @@ FormatStackOptions GetFormatStackOptions(const Command& cmd, ConsoleContext* con
   if (cmd.HasSwitch(kForceRemoteUnwind)) {
     opts.sync_options.force_update = true;
     opts.sync_options.remote_unwind = true;
+  }
+
+  if (cmd.HasSwitch(kUnwinder)) {
+    debug_ipc::StackFrame::Trust trust;
+    if (Err err = StringToTrust(cmd.GetSwitchValue(kUnwinder), &trust); err.has_error())
+      return err;
+    opts.sync_options.force_update = true;
+    opts.sync_options.forced_unwinder = trust;
   }
 
   if (cmd.HasSwitch(kForceFrameAddresses)) {
@@ -121,6 +131,10 @@ Options
       Include the frame's Trust as reported by the unwinder, indicating which
       unwinder implementation retrieved this frame.
 
+  --unwinder <type>
+      Force the unwinder to use ONLY the specified implementation. Supported
+      types: cfi, fp, scs, plt, armehabi, sigreturn. Implies --force.
+
   -v
   --verbose
       Show more information in the frame list. This is valid when listing
@@ -160,7 +174,12 @@ bool HandleFrameNoun(ConsoleContext* console_context, const Command& cmd,
     return false;
   }
 
-  FormatStackOptions opts = GetFormatStackOptions(cmd, console_context);
+  auto opts_or = GetFormatStackOptions(cmd, console_context);
+  if (opts_or.has_error()) {
+    cmd_context->ReportError(opts_or.err());
+    return true;
+  }
+  FormatStackOptions opts = opts_or.value();
 
   if (cmd.GetNounIndex(Noun::kFrame) == Command::kNoIndex) {
     // Just "frame", this lists available frames. Simple format is the default.
@@ -385,8 +404,13 @@ bool HandleThreadNoun(ConsoleContext* console_context, const Command& cmd,
       return true;
     }
 
-    cmd_context->Output(FormatAllThreadStacks(
-        cmd.all_threads(), GetFormatStackOptions(cmd, console_context), cmd_context));
+    auto opts_or = GetFormatStackOptions(cmd, console_context);
+    if (opts_or.has_error()) {
+      cmd_context->ReportError(opts_or.err());
+      return true;
+    }
+
+    cmd_context->Output(FormatAllThreadStacks(cmd.all_threads(), opts_or.value(), cmd_context));
 
     return true;
   }
@@ -976,6 +1000,7 @@ const std::vector<SwitchRecord>& GetNounSwitches() {
     switches.emplace_back(kForceRemoteUnwind, false, "force-remote-unwind");
     switches.emplace_back(kForceFrameAddresses, false, "address", 'a');
     switches.emplace_back(kTrust, false, "trust");
+    switches.emplace_back(kUnwinder, true, "unwinder");
   }
   return switches;
 }

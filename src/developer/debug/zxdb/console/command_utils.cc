@@ -125,6 +125,32 @@ size_t CheckHexPrefix(const std::string& s) {
   return 0u;
 }
 
+Err StringToTrust(const std::string& s, debug_ipc::StackFrame::Trust* out) {
+  std::string lower = s;
+  for (char& c : lower) {
+    c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+  }
+
+  if (lower == "cfi") {
+    *out = debug_ipc::StackFrame::Trust::kCFI;
+  } else if (lower == "fp") {
+    *out = debug_ipc::StackFrame::Trust::kFP;
+  } else if (lower == "scs") {
+    *out = debug_ipc::StackFrame::Trust::kSCS;
+  } else if (lower == "plt") {
+    *out = debug_ipc::StackFrame::Trust::kPLT;
+  } else if (lower == "armehabi") {
+    *out = debug_ipc::StackFrame::Trust::kArmEhAbi;
+  } else if (lower == "sigreturn") {
+    *out = debug_ipc::StackFrame::Trust::kSigReturn;
+  } else {
+    return Err(
+        "Unknown unwinder type \"%s\". Supported types: cfi, fp, scs, plt, armehabi, sigreturn.",
+        s.c_str());
+  }
+  return Err();
+}
+
 Err ReadUint64Arg(const Command& cmd, size_t arg_index, const char* param_desc, uint64_t* out) {
   if (cmd.args().size() <= arg_index) {
     return Err(ErrType::kInput,

@@ -8,6 +8,7 @@
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
+#include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/system.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
@@ -196,6 +197,69 @@ TEST_F(NounTestWithThread, FrameNoun) {
   EXPECT_TRUE(debug::StringContains(output, "1 is"));
   EXPECT_TRUE(debug::StringContains(output, "▶ 2 not"));
   EXPECT_TRUE(debug::StringContains(output, "3 hard"));
+}
+
+TEST_F(NounTestWithThread, FrameAndBacktraceUnwinderAndTrust) {
+  std::vector<std::unique_ptr<Frame>> frames;
+  Location loc(0x1234, FileLine("file0.cc", 1), 0, SymbolContext::ForRelativeAddresses(), nullptr);
+  auto frame = std::make_unique<MockFrame>(&session(), thread(), loc, 0x2000);
+  frame->SetTrust(debug_ipc::StackFrame::Trust::kCFI);
+  frames.push_back(std::move(frame));
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), /*has_all_frames=*/true);
+  loop().RunUntilNoTasks();
+  console().FlushOutputEvents();
+
+  // Verify --trust works on both frame and backtrace.
+  console().ProcessInputLine("frame --trust");
+  loop().RunUntilNoTasks();
+  std::string output = console().GetOutputEvent().output.AsString();
+  EXPECT_TRUE(debug::StringContains(output, "from CFI")) << output;
+
+  console().ProcessInputLine("bt --trust");
+  loop().RunUntilNoTasks();
+  output = console().GetOutputEvent().output.AsString();
+  EXPECT_TRUE(debug::StringContains(output, "from CFI")) << output;
+
+  // Verify invalid --unwinder reports an error on both frame and backtrace.
+  console().ProcessInputLine("frame --unwinder invalid");
+  loop().RunUntilNoTasks();
+  output = console().GetOutputEvent().output.AsString();
+  EXPECT_TRUE(debug::StringContains(output, "Unknown unwinder type \"invalid\"")) << output;
+
+  console().ProcessInputLine("bt --unwinder invalid");
+  loop().RunUntilNoTasks();
+  output = console().GetOutputEvent().output.AsString();
+  EXPECT_TRUE(debug::StringContains(output, "Unknown unwinder type \"invalid\"")) << output;
+
+  // Configure mock ThreadStatus reply for forced unwinder sync.
+  debug_ipc::ThreadStatusReply reply;
+  reply.record.id = {.process = kProcessKoid, .thread = kThreadKoid};
+  reply.record.state = debug_ipc::ThreadRecord::State::kBlocked;
+  reply.record.stack_amount = debug_ipc::ThreadRecord::StackAmount::kFull;
+  reply.record.frames.emplace_back(0x1234, 0x2000, 0x2000, debug_ipc::StackFrame::Trust::kFP,
+                                   debug_ipc::StackFrame::AddressType::kExact);
+  mock_remote_api()->set_thread_status_reply(reply);
+
+  console().ProcessInputLine("frame --unwinder fp --trust");
+  loop().RunUntilNoTasks();
+  output = "";
+  while (console().HasOutputEvent()) {
+    output += console().GetOutputEvent().output.AsString();
+  }
+  EXPECT_TRUE(debug::StringContains(output, "from FP")) << output;
+
+  reply.record.frames[0].trust = debug_ipc::StackFrame::Trust::kSCS;
+  mock_remote_api()->set_thread_status_reply(reply);
+
+  console().ProcessInputLine("bt --unwinder scs --trust");
+  loop().RunUntilNoTasks();
+  output = "";
+  while (console().HasOutputEvent()) {
+    output += console().GetOutputEvent().output.AsString();
+  }
+  EXPECT_TRUE(debug::StringContains(output, "from SCS")) << output;
 }
 
 }  // namespace

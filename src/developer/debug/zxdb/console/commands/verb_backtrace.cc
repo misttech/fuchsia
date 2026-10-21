@@ -23,6 +23,7 @@ constexpr int kVerboseBacktrace = 3;
 constexpr int kForceRefresh = 4;
 constexpr int kForceRemoteUnwind = 5;
 constexpr int kTrust = 6;
+constexpr int kUnwinder = 7;
 
 const char kBacktraceShortHelp[] = "backtrace / bt: Print a backtrace.";
 const char kBacktraceUsage[] = "backtrace / bt";
@@ -56,6 +57,10 @@ Arguments
   --trust
       Include the frame's Trust as reported by the unwinder, indicating which
       unwinder implementation retrieved this frame.
+
+  --unwinder <type>
+      Force the unwinder to use ONLY the specified implementation. Supported
+      types: cfi, fp, scs, plt, armehabi, sigreturn. Implies --force.
 
   -v
   --verbose
@@ -101,15 +106,6 @@ void RunVerbBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_contex
                                       ? FormatBufferOptions::Verbosity::kAllTypes
                                       : FormatBufferOptions::Verbosity::kMinimal;
 
-  if (cmd.GetNounIndex(Noun::kThread) == Command::kWildcard) {
-    FX_DCHECK(cmd.target());
-    FX_DCHECK(cmd.target()->GetProcess());
-
-    cmd_context->Output(
-        FormatAllThreadStacks(cmd.target()->GetProcess()->GetThreads(), opts, cmd_context));
-    return;
-  }
-
   if (cmd.HasSwitch(kForceRefresh)) {
     opts.sync_options.force_update = true;
   }
@@ -117,6 +113,23 @@ void RunVerbBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_contex
   if (cmd.HasSwitch(kForceRemoteUnwind)) {
     opts.sync_options.force_update = true;
     opts.sync_options.remote_unwind = true;
+  }
+
+  if (cmd.HasSwitch(kUnwinder)) {
+    debug_ipc::StackFrame::Trust trust;
+    if (Err err = StringToTrust(cmd.GetSwitchValue(kUnwinder), &trust); err.has_error())
+      return cmd_context->ReportError(err);
+    opts.sync_options.force_update = true;
+    opts.sync_options.forced_unwinder = trust;
+  }
+
+  if (cmd.GetNounIndex(Noun::kThread) == Command::kWildcard) {
+    FX_DCHECK(cmd.target());
+    FX_DCHECK(cmd.target()->GetProcess());
+
+    cmd_context->Output(
+        FormatAllThreadStacks(cmd.target()->GetProcess()->GetThreads(), opts, cmd_context));
+    return;
   }
 
   cmd_context->Output(FormatStack(cmd.thread(), opts));
@@ -132,7 +145,10 @@ VerbRecord GetBacktraceVerbRecord() {
   SwitchRecord verbose(kVerboseBacktrace, false, "verbose", 'v');
   SwitchRecord force_refresh(kForceRefresh, false, "force", 'f');
   SwitchRecord force_remote_unwind(kForceRemoteUnwind, false, "force-remote-unwind");
-  backtrace.switches = {force_types, raw, verbose, force_refresh, force_remote_unwind};
+  SwitchRecord trust(kTrust, false, "trust");
+  SwitchRecord unwinder(kUnwinder, true, "unwinder");
+  backtrace.switches = {force_types,         raw,   verbose, force_refresh,
+                        force_remote_unwind, trust, unwinder};
 
   return backtrace;
 }

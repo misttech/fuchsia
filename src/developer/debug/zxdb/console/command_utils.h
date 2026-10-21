@@ -59,6 +59,9 @@ Err AssertAllStoppedThreadsCommand(ConsoleContext* context, const Command& cmd,
 // 0. If there is only the prefix and nothing following the returned value will be s.size().
 size_t CheckHexPrefix(const std::string& s);
 
+// Converts a user-specified unwinder name (case-insensitive) to a StackFrame::Trust value.
+[[nodiscard]] Err StringToTrust(const std::string& s, debug_ipc::StackFrame::Trust* out);
+
 // Reads an int64 from the given index of the command args. Returns an error if there are not enough
 // args, or if the value isn't an int64.
 //
