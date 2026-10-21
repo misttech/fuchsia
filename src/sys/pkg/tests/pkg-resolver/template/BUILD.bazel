@@ -8,6 +8,26 @@ load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 
 package(default_applicable_licenses = ["//:license"])
 
+exports_files(
+    [
+        "keys/root.json",
+        "keys/snapshot.json",
+        "keys/targets.json",
+        "keys/timestamp.json",
+        "repository/1.root.json",
+        "repository/1.snapshot.json",
+        "repository/1.targets.json",
+        "repository/root.json",
+        "repository/snapshot.json",
+        "repository/targets.json",
+        "repository/timestamp.json",
+    ],
+    visibility = [
+        "//src/developer/ffx/lib/pkg:__pkg__",
+        "//src/sys/pkg/tests/pkg-resolver:__pkg__",
+    ],
+)
+
 go_library(
     name = "lib",
     srcs = ["regenerate-metadata.go"],

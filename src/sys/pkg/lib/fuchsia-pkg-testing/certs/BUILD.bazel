@@ -11,12 +11,17 @@ package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     [
+        "ca.cert",
         "test.fuchsia.com.certchain",
         "test.fuchsia.com.rsa",
         "wildcard.fuchsia-updates.googleusercontent.com.certchain",
         "wildcard.fuchsia-updates.googleusercontent.com.rsa",
     ],
-    visibility = ["//src/sys/pkg/lib/fuchsia-pkg-testing:__pkg__"],
+    visibility = [
+        "//src/sys/pkg/lib/fuchsia-pkg-testing:__pkg__",
+        "//src/sys/pkg/tests/pkg-cache:__pkg__",
+        "//src/sys/pkg/tests/pkg-resolver:__pkg__",
+    ],
 )
 
 # @bazel2gn:skip

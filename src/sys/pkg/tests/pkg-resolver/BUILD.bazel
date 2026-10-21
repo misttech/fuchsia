@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "fuchsia_package_resource_group",
+    "resource",
+)
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "pkg-resolver-manifest",
+    component_name = "pkg-resolver",
+    includes = [
+        "//sdk/lib/inspect:client.shard.cml",
+        "//sdk/lib/inspect:offer.shard.cml",
+        "//sdk/lib/inspect:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/pkg/bin/pkg-resolver:meta/pkg-resolver-common.shard.cml",
+    ],
+    manifest = "meta/pkg-resolver-for-test.cml",
+)
+
+# @bazel2gn:skip
+resource(
+    name = "ca.cert-resource",
+    src = "//src/sys/pkg/lib/fuchsia-pkg-testing/certs:ca.cert",
+    dest = "data/ssl/cert.pem",
+)
+
+# @bazel2gn:skip
+fuchsia_package_resource_group(
+    name = "empty-repo",
+    testonly = True,
+    srcs = [
+        "//src/sys/pkg/tests/pkg-resolver/template:keys/root.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:keys/snapshot.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:keys/targets.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:keys/timestamp.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:repository/1.root.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:repository/1.snapshot.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:repository/1.targets.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:repository/root.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:repository/snapshot.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:repository/targets.json",
+        "//src/sys/pkg/tests/pkg-resolver/template:repository/timestamp.json",
+    ],
+    dest = "empty-repo",
+    strip_prefix = "template",
+    visibility = [
+        "//src/sys/pkg/bin/pkg-resolver:__pkg__",
+        "//src/sys/pkg/lib/isolated-swd:__pkg__",
+        "//src/sys/pkg/testing/isolated-ota-env:__pkg__",
+        "//src/sys/pkg/tests/isolated-ota:__pkg__",
+        "//src/sys/pkg/tests/pkg-cache:__pkg__",
+    ],
+)
