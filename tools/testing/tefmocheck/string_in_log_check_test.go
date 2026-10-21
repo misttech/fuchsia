@@ -243,6 +243,28 @@ func TestCheck(t *testing.T) {
 			wantName:    wantName + "/bar-test",
 		},
 		{
+			name:            "should not match when killer string in second test is within except block started in first test",
+			attributeToTest: true,
+			testingOutputs: TestingOutputs{
+				SwarmingOutput: fmt.Appendf(nil, "%s %s %s", exceptBlock.startString, killerString, exceptBlock.endString),
+				SwarmingOutputPerTest: []TestLog{
+					{
+						TestName: "foo-test",
+						Bytes:    fmt.Appendf(nil, "%s ", exceptBlock.startString),
+						FilePath: "foo/log.txt",
+						Index:    0,
+					},
+					{
+						TestName: "bar-test",
+						Bytes:    fmt.Appendf(nil, "%s %s", killerString, exceptBlock.endString),
+						FilePath: "bar/log.txt",
+						Index:    len(exceptBlock.startString) + 1,
+					},
+				},
+			},
+			shouldMatch: false,
+		},
+		{
 			name:            "should match correct FailureReason for non-zero SwarmingOutputPerTest slice index",
 			attributeToTest: true,
 			testingOutputs: TestingOutputs{
@@ -811,6 +833,48 @@ func TestCheck(t *testing.T) {
 							Bytes:    []byte("test1 output clean\n"),
 							FilePath: "test1/syslog.txt",
 							Index:    len("pre-test log " + killerString + "\ntest0 output clean\n"),
+						},
+					},
+				},
+			},
+			skipPassedTest:     true,
+			attributeToTest:    true,
+			typeToCheck:        syslogType,
+			shouldMatch:        false,
+			setWantOutputFiles: true,
+			wantOutputFiles:    []string{},
+		},
+		{
+			name: "should not match when killer string in second test syslog is within except block started in first test syslog",
+			testingOutputs: TestingOutputs{
+				TestSummary: &runtests.TestSummary{
+					Tests: []runtests.TestDetails{
+						{
+							Name:   "test0",
+							Status: runtests.TestFailure,
+						},
+						{
+							Name:   "test1",
+							Status: runtests.TestFailure,
+						},
+					},
+				},
+				Syslogs: [][]byte{
+					fmt.Appendf(nil, "%s\n%s\n%s\n", exceptBlock.startString, killerString, exceptBlock.endString),
+				},
+				SyslogsPerTest: [][]TestLog{
+					{
+						{
+							TestName: "test0",
+							Bytes:    fmt.Appendf(nil, "%s\n", exceptBlock.startString),
+							FilePath: "test0/syslog.txt",
+							Index:    0,
+						},
+						{
+							TestName: "test1",
+							Bytes:    fmt.Appendf(nil, "%s\n%s\n", killerString, exceptBlock.endString),
+							FilePath: "test1/syslog.txt",
+							Index:    len(fmt.Appendf(nil, "%s\n", exceptBlock.startString)),
 						},
 					},
 				},

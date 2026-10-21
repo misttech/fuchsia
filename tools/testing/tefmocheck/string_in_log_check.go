@@ -176,7 +176,7 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 	// UART buffering latency and sequential runner command interleaving across
 	// test boundaries.
 	if (c.Type == swarmingOutputType || c.Type == syslogType) && (c.AttributeToTest || c.SkipPassedTest) {
-		_, perTestLogs := to.allLogs(c.Type)
+		rawLogs, perTestLogs := to.allLogs(c.Type)
 		type testdata struct {
 			name       string
 			outputFile string
@@ -185,7 +185,11 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 			line       string
 		}
 		matchedTestsMap := make(map[string]testdata)
-		for _, testLogs := range perTestLogs {
+		for fileIdx, testLogs := range perTestLogs {
+			var fullLog []byte
+			if fileIdx < len(rawLogs) {
+				fullLog = rawLogs[fileIdx]
+			}
 			for i, testLog := range testLogs {
 				var testResult runtests.TestStatus
 				if to.TestSummary != nil && i < len(to.TestSummary.Tests) {
@@ -203,7 +207,15 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 				if len(testLog.Bytes) == 0 {
 					continue
 				}
-				found, line := c.checkBytes(testLog.Bytes)
+				toCheck := fullLog
+				start := testLog.Index
+				end := testLog.Index + len(testLog.Bytes)
+				if len(toCheck) < end {
+					toCheck = testLog.Bytes
+					start = 0
+					end = len(testLog.Bytes)
+				}
+				found, line := c.checkBytes(toCheck, start, end)
 				if found {
 					matchedTestsMap[testLog.TestName] = testdata{testLog.TestName, testLog.FilePath, c.AlwaysFlake, i, string(line)}
 				}
@@ -249,7 +261,7 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 	}
 
 	for _, file := range to.logs(c.Type) {
-		found, line := c.checkBytes(file)
+		found, line := c.checkBytes(file, 0, len(file))
 		if found {
 			if c.AlwaysFlake {
 				c.isFlake = true
@@ -261,35 +273,45 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 	return false
 }
 
-func (c *stringInLogCheck) checkBytes(toCheck []byte) (bool, []byte) {
+func (c *stringInLogCheck) checkBytes(toCheck []byte, start int, end int) (bool, []byte) {
+	toCheckBlock := toCheck[start:end]
 	for _, s := range c.ExceptStrings {
-		if bytes.Contains(toCheck, []byte(s)) {
+		if bytes.Contains(toCheckBlock, []byte(s)) {
 			return false, nil
 		}
 	}
-	if found, line := c.checkBytesForString(toCheck, c.String); found {
+	if found, line := c.checkBytesForString(toCheck, start, end, c.String); found {
 		return true, line
 	}
 	if after, ok := strings.CutPrefix(c.String, botanistErrorPrefix); ok {
 		wrapped := botanistErrorPrefix + constants.BotanistFailedMsg + ": " + after
-		return c.checkBytesForString(toCheck, wrapped)
+		return c.checkBytesForString(toCheck, start, end, wrapped)
 	}
 	return false, nil
 }
 
-func (c *stringInLogCheck) checkBytesForString(toCheck []byte, s string) (bool, []byte) {
+func (c *stringInLogCheck) checkBytesForString(toCheck []byte, start int, end int, s string) (bool, []byte) {
+	toCheckBlock := toCheck[start:end]
 	stringBytes := []byte(s)
 	if len(c.ExceptBlocks) == 0 {
-		if idx := bytes.Index(toCheck, stringBytes); idx != -1 {
-			line := getLine(toCheck, idx)
+		if idx := bytes.Index(toCheckBlock, stringBytes); idx != -1 {
+			line := getLine(toCheckBlock, idx)
 			return true, line
 		} else {
 			return false, nil
 		}
 	}
-	index := bytes.Index(toCheck, stringBytes)
-	for index >= 0 && index < len(toCheck) {
+	index := bytes.Index(toCheckBlock, stringBytes) + start
+	for index >= start && index < end {
 		foundString := true
+		// beforeBlock and afterBlock intentionally slice across the full log
+		// (toCheck[:index] and toCheck[nextStartIndex:]) rather than being restricted
+		// to [start:end]. This is because EXCEPT blocks, such as
+		// [===LSAN EXCEPT BLOCK START===] from lsan tests sometimes wind up spilling past
+		// the log boundaries of the test for which they are intended.
+		// Slicing the log specifically to the boundaries of the test runs caused false
+		// positive failures in serial logs and swarming output (b/573272606) as well as
+		// syslogs (b/575658434).
 		beforeBlock := toCheck[:index]
 		nextStartIndex := index + len(stringBytes)
 		afterBlock := toCheck[nextStartIndex:]
