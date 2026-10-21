@@ -1158,7 +1158,15 @@ impl PmmNode {
     /// |FillFreePagesAndArm|.
     ///
     /// Returns true if the checker was enabled with the requested fill_size, or |false| otherwise.
-    pub fn enable_free_page_filling(&self, fill_size: usize, action: CheckFailAction) -> bool {
+    ///
+    /// # Safety
+    ///
+    /// `fill_size` must satisfy [`PmmChecker::is_valid_fill_size`].
+    pub unsafe fn enable_free_page_filling(
+        &self,
+        fill_size: usize,
+        action: CheckFailAction,
+    ) -> bool {
         // Require both locks so we can manipulate free_fill_enabled.
         ksync::lock!(let _loaned_guard = self.loaned_list_lock.lock());
         ksync::lock!(let free_guard = self.lock_lock());
@@ -1166,10 +1174,15 @@ impl PmmNode {
             // Checker is already enabled.
             return false;
         }
-        // SAFETY: Both loaned_list_lock and lock are held, providing synchronized exclusive access
-        // to checker.
+        // SAFETY: Both loaned_list_lock and lock are held, so no other CPU can be writing to
+        // checker. free_fill_enabled is false, so checker has not been published to the lockless
+        // readers in the free paths, and its other accesses are made under these locks. The
+        // exception is the kernel console's `pmm checker` command, which reads the checker without
+        // these locks; console commands are serialized by the console's command lock, and this is
+        // only called during boot (before the console runs) or by `pmm checker enable`.
         let checker = unsafe { &mut *self.checker.get() };
-        checker.set_fill_size(fill_size);
+        // SAFETY: The caller guarantees `fill_size` is valid.
+        unsafe { checker.set_fill_size(fill_size) };
         checker.set_action(action);
         // As free_fill_enabled may be examined outside of the lock, ensure the manipulations to
         // checker complete first by performing a release. See is_free_fill_enabled_racy for where
@@ -1213,16 +1226,30 @@ impl PmmNode {
             }
         }
 
-        // SAFETY: Both loaned_list_lock and lock are held, providing synchronized exclusive access
-        // to checker.
-        let checker = unsafe { &mut *self.checker.get() };
-        // Now that every page has been filled, we can arm the checker.
-        checker.arm();
+        // Now that every page has been filled, we can arm the checker. Other CPUs may be using the
+        // checker concurrently (e.g. filling freed pages), so only shared references are formed
+        // here.
+        // SAFETY: `arm` is only called here, with both locks held, so this read cannot race with
+        // it.
+        if !unsafe { self.checker().is_armed() } {
+            // SAFETY: Both locks are held. The accesses to `armed` that are not made with both
+            // locks held are:
+            // - `assert_pattern` calls, which only happen after observing all_free_pages_filled
+            //   under a lock. As the checker is not yet armed, all_free_pages_filled is still false
+            //   (both are set together below, under these locks, and never cleared), so no such
+            //   call can be concurrent.
+            // - The kernel console's `pmm checker` command reading the armed state. Console
+            //   commands are serialized by the console's command lock, and the checker is only
+            //   armed during boot (before the console runs) or by the console's
+            //   `pmm checker enable` command.
+            unsafe { self.checker().arm() };
+        }
         let mut loaned_tg = self.guard_loaned_list_lock_mut_from_guard(loaned_guard.as_mut());
         *self
             .guard_lock_mut_from_guard(free_guard.as_mut())
             .all_free_pages_filled_mut(&mut loaned_tg) = true;
-        checker.print_status_stdout();
+        // SAFETY: `arm` is only called with both locks held, which are held here.
+        unsafe { self.checker().print_status_stdout() };
     }
 
     /// Configures the free memory bounds and allows for setting a one shot signal as well as a
@@ -2077,7 +2104,9 @@ impl PmmNode {
 
     /// Returns a reference to the free fill checker.
     pub fn checker(&self) -> &PmmChecker {
-        // SAFETY: checker is valid for the lifetime of PmmNode.
+        // SAFETY: checker is valid for the lifetime of PmmNode. The only `&mut` to checker is
+        // formed in `enable_free_page_filling`, which holds both locks and runs before the
+        // checker is published to lockless readers through free_fill_enabled.
         unsafe { &*self.checker.get() }
     }
 
@@ -2112,7 +2141,8 @@ impl PmmNode {
         ksync::lock!(let mut free_guard = self.lock.lock());
         let free_token = free_guard.as_mut().token_mut();
 
-        if !self.checker().is_armed() {
+        // SAFETY: `arm` is only called with both locks held, which are held here.
+        if !unsafe { self.checker().is_armed() } {
             return;
         }
 
@@ -2124,7 +2154,8 @@ impl PmmNode {
         let free_list = unsafe { self.free_list.get_mut(free_token) };
         for page in free_list.iter() {
             let vmp = VmPagePtr::new(NonNull::from(page));
-            // SAFETY: page in free_list is valid.
+            // SAFETY: page in free_list is valid, and both locks are held so `arm` cannot be
+            // called concurrently.
             unsafe {
                 self.checker().assert_pattern(vmp);
             }
@@ -2137,7 +2168,8 @@ impl PmmNode {
         let free_loaned_list = unsafe { self.free_loaned_list.get_mut(loaned_token) };
         for page in free_loaned_list.iter() {
             let vmp = VmPagePtr::new(NonNull::from(page));
-            // SAFETY: page in free_loaned_list is valid.
+            // SAFETY: page in free_loaned_list is valid, and both locks are held so `arm` cannot
+            // be called concurrently.
             unsafe {
                 self.checker().assert_pattern(vmp);
             }
@@ -2893,6 +2925,9 @@ unsafe extern "C" fn rust_pmm_node_poison_all_free_pages(node: *mut PmmNode) {
     node.poison_all_free_pages();
 }
 
+/// # Safety
+///
+/// `node` must be valid and `fill_size` must satisfy [`PmmChecker::is_valid_fill_size`].
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_pmm_node_enable_free_page_filling(
     node: *mut PmmNode,
@@ -2905,7 +2940,9 @@ unsafe extern "C" fn rust_pmm_node_enable_free_page_filling(
         1 => CheckFailAction::Panic,
         _ => CheckFailAction::Oops,
     };
-    node.enable_free_page_filling(fill_size, action)
+    // SAFETY: The caller guarantees `fill_size` is valid; the C++ callers either check it with
+    // `PmmChecker::IsValidFillSize` (pmm.cc) or pass `kPageSize` (pmm_unittest.cc).
+    unsafe { node.enable_free_page_filling(fill_size, action) }
 }
 
 #[unsafe(no_mangle)]
@@ -3028,10 +3065,13 @@ mod pmm_node_rust {
             // SAFETY: Pages were allocated and transitioned to FREE state above.
             unsafe { this.node.add_free_pages(list.as_mut()) };
 
-            assert!(this.node.enable_free_page_filling(
-                page::SIZE,
-                crate::vm::pmm_checker::CheckFailAction::Panic
-            ));
+            // SAFETY: `page::SIZE` is a valid fill size.
+            assert!(unsafe {
+                this.node.enable_free_page_filling(
+                    page::SIZE,
+                    crate::vm::pmm_checker::CheckFailAction::Panic,
+                )
+            });
             this.node.fill_free_pages_and_arm();
 
             let result = this.reset_default_mem_event();

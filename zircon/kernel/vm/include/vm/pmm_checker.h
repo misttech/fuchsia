@@ -9,6 +9,7 @@
 
 #include <lib/boot-options/boot-options.h>
 #include <lib/page/size.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include <ktl/atomic.h>
@@ -39,6 +40,8 @@ class PmmChecker {
   // See //zircon/kernel/lib/boot-options/include/lib/boot-options/options.inc
   // for default value.
   static constexpr CheckFailAction kDefaultAction = BootOptions{}.pmm_checker_action;
+  // kDefaultAction as an integer, which bindgen can turn into a Rust constant.
+  static constexpr uint8_t kDefaultActionRaw = static_cast<uint8_t>(kDefaultAction);
 
   // Returns true if |fill_size| is a valid value.  Valid values are mutliples of 8 between 8 and
   // kPageSize, inclusive.
@@ -60,7 +63,7 @@ class PmmChecker {
   CheckFailAction GetAction() const { return action_; }
 
   // Returns true if armed.
-  bool IsArmed() const { return armed_; }
+  bool IsArmed() const;
 
   void Arm();
 
@@ -87,7 +90,8 @@ class PmmChecker {
 
   CheckFailAction action_ = kDefaultAction;
 
-  bool armed_ = false;
+  // Only accessed by Rust after construction.
+  [[maybe_unused]] bool armed_ = false;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_CHECKER_H_
