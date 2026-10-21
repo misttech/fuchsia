@@ -1,0 +1,61 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "psi_provider-bin",
+    srcs = [
+        "src/history.rs",
+        "src/main.rs",
+    ],
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints",
+    deps = [
+        "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
+        "//sdk/fidl/fuchsia.starnix.psi:fuchsia.starnix.psi_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/starnix/lib/starnix_sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "psi_provider_packaged_bin",
+    binary = ":psi_provider-bin",
+    binary_name = "psi_provider-bin",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "psi_provider-manifest",
+    component_name = "psi_provider",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/psi_provider.cml",
+)
+
+# @bazel2gn:skip
+fx_component(
+    name = "psi_provider",
+    compiled_manifest = ":psi_provider-manifest",
+    component_name = "psi_provider",
+    deps = [":psi_provider_packaged_bin"],
+)
