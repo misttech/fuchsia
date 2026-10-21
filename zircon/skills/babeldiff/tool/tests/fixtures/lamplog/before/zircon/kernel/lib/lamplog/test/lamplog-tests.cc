@@ -1,3 +1,9 @@
+// Copyright 2026 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
+
 // A synthetic lamp log test suite for babeldiff's tests, trimmed from the
 // kernel's crashlog tests. It is not real kernel code.
 

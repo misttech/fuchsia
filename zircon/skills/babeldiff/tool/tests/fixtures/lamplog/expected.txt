@@ -4,32 +4,32 @@ rubric lints: 0 issues, 1 note (file-placement 1); see the end of the report
 legend: = same  ~ note  ! issue  < only in C++  > only in Rust
 
 ==== NoGlowTest  <->  no_glow_test
-  C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:15-27
-  Rust  zircon/kernel/lib/lamplog/src/tests.rs:19-28
+  C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:21-33
+  Rust  zircon/kernel/lib/lamplog/src/tests.rs:25-34
   why   same class and method name
   similarity 0.67, 0 issues, 6 notes
 
-> R     19  /// NoGlow
+> R     25  /// NoGlow
         ^ ~ doc comment only in Rust; its words are in a C++ comment elsewhere in the change
-= C     15  bool NoGlowTest() {
-  R     21  fn no_glow_test() {
-< C     16    BEGIN_TEST;
+= C     21  bool NoGlowTest() {
+  R     27  fn no_glow_test() {
+< C     22    BEGIN_TEST;
         ^ ~ statement only in C++
-< C     18    fbl::AllocChecker ac;
-< C     19    auto buffer = ktl::make_unique<char[]>(&ac, kLargeBufferSize);
-        ^ ~ statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 22
-< C     20    ASSERT_TRUE(ac.check());
-        ^ ~ statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 22
-> R     22      let mut buffer =
-  R     23          unwrap_some!(kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_SIZE).ok());
-        ^ ~ statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 19 and checks with `ac.check()`
-= C     22    // NoGlow should currently produce no log payload at all.
-  R     25      // NoGlow should currently produce no log payload at all.
-= C     23    size_t len = lamplog_to_string({buffer.get(), kLargeBufferSize}, LampOffReason::NoGlow);
-  R     26      let len = lamplog_to_string(&mut buffer, LampOffReason::NoGlow as u32);
-= C     24    EXPECT_EQ(0u, len);
-  R     27      expect_eq!(0, len);
-< C     26    END_TEST;
+< C     24    fbl::AllocChecker ac;
+< C     25    auto buffer = ktl::make_unique<char[]>(&ac, kLargeBufferSize);
+        ^ ~ statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 28
+< C     26    ASSERT_TRUE(ac.check());
+        ^ ~ statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 28
+> R     28      let mut buffer =
+  R     29          unwrap_some!(kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_SIZE).ok());
+        ^ ~ statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 25 and checks with `ac.check()`
+= C     28    // NoGlow should currently produce no log payload at all.
+  R     31      // NoGlow should currently produce no log payload at all.
+= C     29    size_t len = lamplog_to_string({buffer.get(), kLargeBufferSize}, LampOffReason::NoGlow);
+  R     32      let len = lamplog_to_string(&mut buffer, LampOffReason::NoGlow as u32);
+= C     30    EXPECT_EQ(0u, len);
+  R     33      expect_eq!(0, len);
+< C     32    END_TEST;
         ^ ~ statement only in C++
 
   errors   same
@@ -37,65 +37,65 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   flow     none
   comments 1 C++ comment: 1 identical, 0 reworded, 0 missing in Rust
   findings
-    ~ - | tests.rs:19  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
-    ~ lamplog-tests.cc:16 | -  statement only in C++
-    ~ lamplog-tests.cc:19 | -  statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 22
-    ~ lamplog-tests.cc:20 | -  statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 22
-    ~ - | tests.rs:22  statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 19 and checks with `ac.check()`
-    ~ lamplog-tests.cc:26 | -  statement only in C++
+    ~ - | tests.rs:25  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
+    ~ lamplog-tests.cc:22 | -  statement only in C++
+    ~ lamplog-tests.cc:25 | -  statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 28
+    ~ lamplog-tests.cc:26 | -  statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 28
+    ~ - | tests.rs:28  statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 25 and checks with `ac.check()`
+    ~ lamplog-tests.cc:32 | -  statement only in C++
 
 ==== FlickerTest  <->  flicker_test
-  C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:29-56
-  Rust  zircon/kernel/lib/lamplog/src/tests.rs:30-54
+  C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:35-62
+  Rust  zircon/kernel/lib/lamplog/src/tests.rs:36-60
   why   same class and method name
   similarity 0.79, 0 issues, 11 notes
 
-> R     30  /// Flicker
+> R     36  /// Flicker
         ^ ~ doc comment only in Rust; its words are in a C++ comment elsewhere in the change
-= C     29  bool FlickerTest() {
-  R     32  fn flicker_test() {
-< C     30    BEGIN_TEST;
+= C     35  bool FlickerTest() {
+  R     38  fn flicker_test() {
+< C     36    BEGIN_TEST;
         ^ ~ statement only in C++
-< C     32    fbl::AllocChecker ac;
-< C     33    auto buffer = ktl::make_unique<char[]>(&ac, kLargeBufferSize);
-        ^ ~ statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 33
-< C     34    ASSERT_TRUE(ac.check());
-        ^ ~ statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 33
-> R     33      let mut buffer =
-  R     34          unwrap_some!(kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_SIZE).ok());
-        ^ ~ statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 33 and checks with `ac.check()`
-= C     36    // Flicker and Burnout reasons should produce all of the sections.
-  R     36      // Flicker and Burnout reasons should produce all of the sections.
-~ C     37    constexpr ktl::array kReasons = {LampOffReason::Flicker, LampOffReason::Burnout};
-  R     37      const REASONS: [LampOffReason; 2] = [LampOffReason::Flicker, LampOffReason::Burnout];
+< C     38    fbl::AllocChecker ac;
+< C     39    auto buffer = ktl::make_unique<char[]>(&ac, kLargeBufferSize);
+        ^ ~ statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 39
+< C     40    ASSERT_TRUE(ac.check());
+        ^ ~ statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 39
+> R     39      let mut buffer =
+  R     40          unwrap_some!(kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_SIZE).ok());
+        ^ ~ statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 39 and checks with `ac.check()`
+= C     42    // Flicker and Burnout reasons should produce all of the sections.
+  R     42      // Flicker and Burnout reasons should produce all of the sections.
+~ C     43    constexpr ktl::array kReasons = {LampOffReason::Flicker, LampOffReason::Burnout};
+  R     43      const REASONS: [LampOffReason; 2] = [LampOffReason::Flicker, LampOffReason::Burnout];
         ^ ~ only C++ calls array
-= C     39    for (auto reason : kReasons) {
-  R     39      for reason in REASONS {
-= C     40      memset(buffer.get(), 0, kLargeBufferSize);
-  R     40          buffer.fill(0);
-= C     41      size_t len = lamplog_to_string({buffer.get(), kLargeBufferSize}, reason);
-  R     41          let len = lamplog_to_string(&mut buffer, reason as u32);
-= C     42      ASSERT_LE(len, kLargeBufferSize);
-  R     42          assert_le!(len, LARGE_BUFFER_SIZE);
-= C     43      ASSERT_GT(len, 0u);
-  R     43          assert_gt!(len, 0);
-~ C     45      ktl::string_view text{buffer.get(), len};
-  R     45          let text = &buffer[..len];
+= C     45    for (auto reason : kReasons) {
+  R     45      for reason in REASONS {
+= C     46      memset(buffer.get(), 0, kLargeBufferSize);
+  R     46          buffer.fill(0);
+= C     47      size_t len = lamplog_to_string({buffer.get(), kLargeBufferSize}, reason);
+  R     47          let len = lamplog_to_string(&mut buffer, reason as u32);
+= C     48      ASSERT_LE(len, kLargeBufferSize);
+  R     48          assert_le!(len, LARGE_BUFFER_SIZE);
+= C     49      ASSERT_GT(len, 0u);
+  R     49          assert_gt!(len, 0);
+~ C     51      ktl::string_view text{buffer.get(), len};
+  R     51          let text = &buffer[..len];
         ^ ~ only C++ calls string_view
-= C     47      // Wick info.
-  R     47          // Wick info.
-~ C     48      EXPECT_TRUE(text.find("WICK"sv) != ktl::string_view::npos);
-  R     48          expect_true!(contains(text, b"WICK"));
+= C     53      // Wick info.
+  R     53          // Wick info.
+~ C     54      EXPECT_TRUE(text.find("WICK"sv) != ktl::string_view::npos);
+  R     54          expect_true!(contains(text, b"WICK"));
         ^ ~ only C++ calls find; only Rust calls contains
-= C     50      // Glow log.
-  R     50          // Glow log.
-~ C     51      EXPECT_TRUE(text.find("--- BEGIN GLOW DUMP ---"sv) != ktl::string_view::npos);
-  R     51          expect_true!(contains(text, b"--- BEGIN GLOW DUMP ---"));
+= C     56      // Glow log.
+  R     56          // Glow log.
+~ C     57      EXPECT_TRUE(text.find("--- BEGIN GLOW DUMP ---"sv) != ktl::string_view::npos);
+  R     57          expect_true!(contains(text, b"--- BEGIN GLOW DUMP ---"));
         ^ ~ only C++ calls find; only Rust calls contains
-~ C     52      EXPECT_TRUE(text.find("--- END GLOW DUMP ---"sv) != ktl::string_view::npos);
-  R     52          expect_true!(contains(text, b"--- END GLOW DUMP ---"));
+~ C     58      EXPECT_TRUE(text.find("--- END GLOW DUMP ---"sv) != ktl::string_view::npos);
+  R     58          expect_true!(contains(text, b"--- END GLOW DUMP ---"));
         ^ ~ only C++ calls find; only Rust calls contains
-< C     55    END_TEST;
+< C     61    END_TEST;
         ^ ~ statement only in C++
 
   errors   same
@@ -103,46 +103,46 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   flow     loop 1
   comments 3 C++ comments: 3 identical, 0 reworded, 0 missing in Rust
   findings
-    ~ - | tests.rs:30  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
-    ~ lamplog-tests.cc:30 | -  statement only in C++
-    ~ lamplog-tests.cc:33 | -  statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 33
-    ~ lamplog-tests.cc:34 | -  statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 33
-    ~ - | tests.rs:33  statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 33 and checks with `ac.check()`
-    ~ lamplog-tests.cc:37 | tests.rs:37  only C++ calls array
-    ~ lamplog-tests.cc:45 | tests.rs:45  only C++ calls string_view
-    ~ lamplog-tests.cc:48 | tests.rs:48  only C++ calls find; only Rust calls contains
-    ~ lamplog-tests.cc:51 | tests.rs:51  only C++ calls find; only Rust calls contains
-    ~ lamplog-tests.cc:52 | tests.rs:52  only C++ calls find; only Rust calls contains
-    ~ lamplog-tests.cc:55 | -  statement only in C++
+    ~ - | tests.rs:36  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
+    ~ lamplog-tests.cc:36 | -  statement only in C++
+    ~ lamplog-tests.cc:39 | -  statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 39
+    ~ lamplog-tests.cc:40 | -  statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 39
+    ~ - | tests.rs:39  statement (calls unwrap_some, try_new_zeroed_slice) only in Rust; it is the fallible allocation the C++ makes at line 39 and checks with `ac.check()`
+    ~ lamplog-tests.cc:43 | tests.rs:43  only C++ calls array
+    ~ lamplog-tests.cc:51 | tests.rs:51  only C++ calls string_view
+    ~ lamplog-tests.cc:54 | tests.rs:54  only C++ calls find; only Rust calls contains
+    ~ lamplog-tests.cc:57 | tests.rs:57  only C++ calls find; only Rust calls contains
+    ~ lamplog-tests.cc:58 | tests.rs:58  only C++ calls find; only Rust calls contains
+    ~ lamplog-tests.cc:61 | -  statement only in C++
 
 ==== DimTest  <->  dim_test
-  C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:58-70
-  Rust  zircon/kernel/lib/lamplog/src/tests.rs:56-66
+  C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:64-76
+  Rust  zircon/kernel/lib/lamplog/src/tests.rs:62-72
   why   same class and method name
   similarity 0.65, 3 issues, 4 notes
 
-> R     56  /// Dim
+> R     62  /// Dim
         ^ ~ doc comment only in Rust; its words are in a C++ comment elsewhere in the change
-= C     58  bool DimTest() {
-  R     58  fn dim_test() {
-< C     59    BEGIN_TEST;
+= C     64  bool DimTest() {
+  R     64  fn dim_test() {
+< C     65    BEGIN_TEST;
         ^ ~ statement only in C++
-< C     61    fbl::AllocChecker ac;
-< C     62    auto buffer = ktl::make_unique<char[]>(&ac, kLargeBufferSize);
+< C     67    fbl::AllocChecker ac;
+< C     68    auto buffer = ktl::make_unique<char[]>(&ac, kLargeBufferSize);
         ^ ! statement (calls make_unique) only in C++
-< C     63    ASSERT_TRUE(ac.check());
+< C     69    ASSERT_TRUE(ac.check());
         ^ ! statement (calls assert, check) only in C++
-> R     59      let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_SIZE) else {
+> R     65      let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_SIZE) else {
         ^ ! Rust adds a check `let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_S...`, returning a value, that the C++ doesn't make
-> R     60          return;
+> R     66          return;
         ^ ~ return of a value only in Rust
-= C     65    // Dim should produce just the banner.
-  R     63      // Dim should produce just the banner.
-= C     66    size_t len = lamplog_to_string({buffer.get(), kLargeBufferSize}, LampOffReason::Dim);
-  R     64      let len = lamplog_to_string(&mut buffer, LampOffReason::Dim as u32);
-= C     67    EXPECT_GT(len, 0u);
-  R     65      expect_gt!(len, 0);
-< C     69    END_TEST;
+= C     71    // Dim should produce just the banner.
+  R     69      // Dim should produce just the banner.
+= C     72    size_t len = lamplog_to_string({buffer.get(), kLargeBufferSize}, LampOffReason::Dim);
+  R     70      let len = lamplog_to_string(&mut buffer, LampOffReason::Dim as u32);
+= C     73    EXPECT_GT(len, 0u);
+  R     71      expect_gt!(len, 0);
+< C     75    END_TEST;
         ^ ~ statement only in C++
 
   errors   same
@@ -150,19 +150,19 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   flow     if 0/1!, return 0/1!  (C++/Rust counts where they differ)
   comments 1 C++ comment: 1 identical, 0 reworded, 0 missing in Rust
   findings
-    ! lamplog-tests.cc:62 | -  statement (calls make_unique) only in C++
-    ! lamplog-tests.cc:63 | -  statement (calls assert, check) only in C++
-    ! - | tests.rs:59  Rust adds a check `let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_S...`, returning a value, that the C++ doesn't make
-    ~ - | tests.rs:56  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
-    ~ lamplog-tests.cc:59 | -  statement only in C++
-    ~ - | tests.rs:60  return of a value only in Rust
-    ~ lamplog-tests.cc:69 | -  statement only in C++
+    ! lamplog-tests.cc:68 | -  statement (calls make_unique) only in C++
+    ! lamplog-tests.cc:69 | -  statement (calls assert, check) only in C++
+    ! - | tests.rs:65  Rust adds a check `let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_S...`, returning a value, that the C++ doesn't make
+    ~ - | tests.rs:62  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
+    ~ lamplog-tests.cc:65 | -  statement only in C++
+    ~ - | tests.rs:66  return of a value only in Rust
+    ~ lamplog-tests.cc:75 | -  statement only in C++
 
 ==== Rust tests with no C++ counterpart
-  > Rust contains  zircon/kernel/lib/lamplog/src/tests.rs:14-17
+  > Rust contains  zircon/kernel/lib/lamplog/src/tests.rs:20-23
 
 ==== File placement
   lamplog-tests.cc -> tests.rs (3, unexpected)
 
 ==== Rubric lints
-  ~ zircon/kernel/lib/lamplog/src/tests.rs:19  [file-placement] NoGlowTest, FlickerTest, DimTest from lamplog-tests.cc landed in tests.rs, which isn't named after it  (C++ at lamplog-tests.cc:15)
+  ~ zircon/kernel/lib/lamplog/src/tests.rs:25  [file-placement] NoGlowTest, FlickerTest, DimTest from lamplog-tests.cc landed in tests.rs, which isn't named after it  (C++ at lamplog-tests.cc:21)
