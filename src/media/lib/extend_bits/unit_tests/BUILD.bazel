@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "extend_bits_tests",
+    testonly = True,
+    srcs = ["extend_bits_tests.cc"],
+    tags = ["manual"],
+    deps = [
+        "//src/lib/fxl/test:gtest_main",
+        "//src/media/lib/extend_bits",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "extend-bits-tests",
+    package_name = "extend-bits-tests",
+    unit_tests = [":extend_bits_tests"],
+)

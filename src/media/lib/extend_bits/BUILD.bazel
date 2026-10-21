@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "extend_bits",
+    srcs = ["extend_bits.cc"],
+    hdrs = ["include/lib/media/extend_bits/extend_bits.h"],
+    includes = ["include"],
+    public_configs = [":extend_bits_include_config"],
+    visibility = [
+        "//src/media/drivers/amlogic_decoder:__pkg__",
+        "//src/media/lib:__subpackages__",
+    ],
+    alwayslink = True,
+)

@@ -18,6 +18,6 @@ group("tests") {
   deps = [
     "//src/media/lib/blocking_mpsc_queue:tests",
     "//src/media/lib/codec_impl:tests",
-    "//src/media/lib/extend_bits:tests",
+    "//src/media/lib/extend_bits/unit_tests",
   ]
 }
