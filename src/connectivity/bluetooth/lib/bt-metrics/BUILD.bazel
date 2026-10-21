@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
+package(default_applicable_licenses = ["//:license"])
+
+metrics_registry(
+    name = "bt_metrics_registry",
+    generate_binarypb = False,
+    generate_rust = True,
+    # This must match the ID of our Cobalt project as specified in:
+    # third_party/cobalt_config/projects.yaml
+    project_id = 2322225253,
+    visibility = ["//visibility:private"],
+)
+
+rustc_library(
+    name = "bt-metrics",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__subpackages__",
+        "//src/connectivity/bluetooth/profiles/bt-a2dp:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-avrcp:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-fastpair-provider:__pkg__",
+    ],
+    deps = [
+        ":bt_metrics_registry_rustlib",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
