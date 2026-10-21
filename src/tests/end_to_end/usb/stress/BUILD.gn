@@ -162,7 +162,7 @@ if (is_host) {
       num_iterations = 10
     }
     environments = [ sorrel_env ]
-    timeout_secs = 600
+    timeout_secs = 420
   }
 
   python_mobly_test("adb_fastboot_stress_test") {
