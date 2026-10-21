@@ -353,9 +353,15 @@ impl From<WakeOption> for bindings::OwnedWaitQueue_WakeOption {
 /// (`(uintptr_t)this | 1`). Moving it by value in Rust (`memcpy`) without running the C++ move
 /// constructor would invalidate its sentinel. Consequently, `ThreadUnblockList` is pinned in place
 /// via [`ThreadUnblockList::init`].
+///
+/// `raw` is structurally pinned so that `ThreadUnblockList` is `!Unpin`. Otherwise
+/// `&mut ThreadUnblockList` would be `noalias`, and LLVM could assume that the C++ list's head is
+/// not modified through pointers recovered from its (self-referential) sentinel, caching stale
+/// list state across FFI calls that inline the C++ list operations.
 #[repr(C)]
 #[pin_data(PinnedDrop)]
 pub struct ThreadUnblockList {
+    #[pin]
     raw: zr::Opaque<bindings::Thread_UnblockList>,
 }
 
