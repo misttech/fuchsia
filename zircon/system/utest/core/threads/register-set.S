@@ -252,23 +252,50 @@
   msr fpsr, x2
 
   // Each register is 128 bits = 16 bytes, so each pair is 32 bytes.
-  add x0, x0, REGS_Q(0)
-  ldp q0, q1, [x0], #32
-  ldp q2, q3, [x0], #32
-  ldp q4, q5, [x0], #32
-  ldp q6, q7, [x0], #32
-  ldp q8, q9, [x0], #32
-  ldp q10, q11, [x0], #32
-  ldp q12, q13, [x0], #32
-  ldp q14, q15, [x0], #32
-  ldp q16, q17, [x0], #32
-  ldp q18, q19, [x0], #32
-  ldp q20, q21, [x0], #32
-  ldp q22, q23, [x0], #32
-  ldp q24, q25, [x0], #32
-  ldp q26, q27, [x0], #32
-  ldp q28, q29, [x0], #32
-  ldp q30, q31, [x0]
+  add x1, x0, REGS_Q(0)
+  ldp q0, q1, [x1], #32
+  ldp q2, q3, [x1], #32
+  ldp q4, q5, [x1], #32
+  ldp q6, q7, [x1], #32
+  ldp q8, q9, [x1], #32
+  ldp q10, q11, [x1], #32
+  ldp q12, q13, [x1], #32
+  ldp q14, q15, [x1], #32
+  ldp q16, q17, [x1], #32
+  ldp q18, q19, [x1], #32
+  ldp q20, q21, [x1], #32
+  ldp q22, q23, [x1], #32
+  ldp q24, q25, [x1], #32
+  ldp q26, q27, [x1], #32
+  ldp q28, q29, [x1], #32
+  ldp q30, q31, [x1]
+
+  adrp x1, g_arm64_has_sve
+  ldrb w1, [x1, :lo12:g_arm64_has_sve]
+  cbz w1, 1f
+  .arch_extension sve
+  add x1, x0, REGS_FFR
+  ldr p0, [x1]
+  wrffr p0.b
+  add x1, x0, REGS_P0
+  ldr p0, [x1, #0, mul vl]
+  ldr p1, [x1, #1, mul vl]
+  ldr p2, [x1, #2, mul vl]
+  ldr p3, [x1, #3, mul vl]
+  ldr p4, [x1, #4, mul vl]
+  ldr p5, [x1, #5, mul vl]
+  ldr p6, [x1, #6, mul vl]
+  ldr p7, [x1, #7, mul vl]
+  ldr p8, [x1, #8, mul vl]
+  ldr p9, [x1, #9, mul vl]
+  ldr p10, [x1, #10, mul vl]
+  ldr p11, [x1, #11, mul vl]
+  ldr p12, [x1, #12, mul vl]
+  ldr p13, [x1, #13, mul vl]
+  ldr p14, [x1, #14, mul vl]
+  ldr p15, [x1, #15, mul vl]
+  .arch_extension nosve
+1:
 
   b spin_address
 
@@ -530,8 +557,32 @@
   stp q28, q29, [x0], #32
   stp q30, q31, [x0]
 
-  bl zx_thread_exit
-  brk 0
+  adrp x1, g_arm64_has_sve
+  ldrb w1, [x1, :lo12:g_arm64_has_sve]
+  cbz w1, 1f
+  .arch_extension sve
+  add x0, sp, REGS_P0
+  str p0, [x0, #0, mul vl]
+  str p1, [x0, #1, mul vl]
+  str p2, [x0, #2, mul vl]
+  str p3, [x0, #3, mul vl]
+  str p4, [x0, #4, mul vl]
+  str p5, [x0, #5, mul vl]
+  str p6, [x0, #6, mul vl]
+  str p7, [x0, #7, mul vl]
+  str p8, [x0, #8, mul vl]
+  str p9, [x0, #9, mul vl]
+  str p10, [x0, #10, mul vl]
+  str p11, [x0, #11, mul vl]
+  str p12, [x0, #12, mul vl]
+  str p13, [x0, #13, mul vl]
+  str p14, [x0, #14, mul vl]
+  str p15, [x0, #15, mul vl]
+  rdffr p0.b
+  add x0, sp, REGS_FFR
+  str p0, [x0]
+  .arch_extension nosve
+1:
 
   bl zx_thread_exit
   brk 0

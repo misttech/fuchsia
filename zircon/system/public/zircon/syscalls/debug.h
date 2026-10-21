@@ -6,6 +6,7 @@
 #define ZIRCON_SYSCALLS_DEBUG_H_
 
 #include <stdint.h>
+#include <zircon/availability.h>
 #include <zircon/compiler.h>
 
 __BEGIN_CDECLS
@@ -113,6 +114,15 @@ typedef struct zx_arm64_thread_state_vector_regs {
     uint64_t low;
     uint64_t high;
   } v[32];
+#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  // SVE predicate registers P0-P15 and First Fault Register (FFR) for 128-bit SVE (available at
+  // API level NEXT). On hardware without SVE, these fields are 0 on read and ignored on write.
+  // When SVE is supported, `ffr` bits must form a contiguous sequence of 1s starting from bit 0
+  // (`(1 << k) - 1` for `0 <= k <= 16`) or `zx_thread_write_state` returns `ZX_ERR_INVALID_ARGS`.
+  uint16_t p[16];
+  uint16_t ffr;
+  uint8_t padding1[6];
+#endif
 } zx_arm64_thread_state_vector_regs_t;
 
 // ARMv8-A provides 2 to 16 hardware breakpoint registers.

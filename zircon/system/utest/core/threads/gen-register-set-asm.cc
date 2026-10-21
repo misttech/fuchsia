@@ -19,6 +19,8 @@ int main(int argc, char** argv) {
       .Macro("REGS_FPSR", offsetof(zx_arm64_thread_state_vector_regs_t, fpsr))
       .Macro("REGS_Q0", offsetof(zx_arm64_thread_state_vector_regs_t, v))
       .Macro("REGS_Q(n)", "(REGS_Q0 + ((n) * 16))")
+      .Macro("REGS_P0", offsetof(zx_arm64_thread_state_vector_regs_t, p))
+      .Macro("REGS_FFR", offsetof(zx_arm64_thread_state_vector_regs_t, ffr))
       .Line({"#elif defined(__riscv)"})
       .Macro("REGS_PC", offsetof(zx_riscv64_thread_state_general_regs_t, pc))
       .Macro("REGS_RA", offsetof(zx_riscv64_thread_state_general_regs_t, ra))

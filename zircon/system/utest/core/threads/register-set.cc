@@ -8,11 +8,19 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <zircon/features.h>
 #include <zircon/hw/debug/arm64.h>
+#include <zircon/syscalls.h>
 
 #include <cstdint>
 
 #include <zxtest/zxtest.h>
+
+#if defined(__aarch64__)
+// Referenced directly from assembly via adrp; disable HWASan global tagging.
+extern "C" [[clang::no_sanitize("hwaddress"), gnu::visibility("hidden")]] bool g_arm64_has_sve =
+    false;
+#endif
 
 #ifdef __riscv
 
@@ -21,6 +29,21 @@ constexpr size_t kRiscvVlenb = 16;
 #endif
 
 namespace {
+
+#if defined(__aarch64__)
+bool Arm64HasSve() {
+  static const bool kHasSve = [] {
+    uint32_t features = 0;
+    bool has_sve = zx_system_get_features(ZX_FEATURE_KIND_CPU, &features) == ZX_OK &&
+                   (features & ZX_ARM64_FEATURE_ISA_SVE) != 0;
+    g_arm64_has_sve = has_sve;
+    return has_sve;
+  }();
+  return kHasSve;
+}
+
+[[maybe_unused]] const bool kInitArm64HasSve = Arm64HasSve();
+#endif
 
 // Write a NaN double value to the given uint64_t (which is how most of the
 // registers are stored in the structs).
@@ -144,6 +167,14 @@ void vector_regs_fill_test_values(zx_thread_state_vector_regs_t* regs) {
 
   // Write NaN to the last value.
   WriteNaNDouble(&regs->v[31].low);
+
+  if (Arm64HasSve()) {
+    for (size_t i = 0; i < 16; i++) {
+      regs->p[i] = static_cast<uint16_t>(0x5a00u | (i + 1));
+    }
+    // FFR must be a monotonically decreasing sequence of 1s from bit 0.
+    regs->ffr = 0x00ff;
+  }
 
 #elif defined(__riscv)
 
@@ -372,7 +403,12 @@ void vector_regs_expect_unsupported_are_zero(const zx_thread_state_vector_regs_t
 
 #elif defined(__aarch64__)
 
-  // All features/fields are supported on arm64.
+  if (!Arm64HasSve()) {
+    for (int i = 0; i < 16; i++) {
+      EXPECT_EQ(regs.p[i], 0);
+    }
+    EXPECT_EQ(regs.ffr, 0);
+  }
 
 #elif defined(__riscv)
 
@@ -401,6 +437,12 @@ void vector_regs_expect_eq(const zx_thread_state_vector_regs_t& regs1,
   for (int i = 0; i < 32; i++) {
     EXPECT_EQ(regs1.v[i].high, regs2.v[i].high);
     EXPECT_EQ(regs1.v[i].low, regs2.v[i].low);
+  }
+  if (Arm64HasSve()) {
+    for (int i = 0; i < 16; i++) {
+      EXPECT_EQ(regs1.p[i], regs2.p[i]);
+    }
+    EXPECT_EQ(regs1.ffr, regs2.ffr);
   }
 
 #elif defined(__riscv)

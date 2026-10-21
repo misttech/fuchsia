@@ -24,6 +24,7 @@
 #include <stddef.h>
 #include <unistd.h>
 #include <zircon/errors.h>
+#include <zircon/features.h>
 #include <zircon/process.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
@@ -1156,7 +1157,7 @@ class RegisterWriteSetup {
       // A small stack that is used for calling zx_thread_exit().
       char stack[1024] __ALIGNED(16);
       RegisterStruct regs_got;  // STACK_PTR will point here.
-    } stack;
+    } stack = {};
     general_regs.REG_PC = (uintptr_t)save_func;
     general_regs.REG_STACK_PTR = (uintptr_t)(stack.stack + sizeof(stack.stack));
     ASSERT_EQ(zx_thread_write_state(thread_handle(), ZX_THREAD_STATE_GENERAL_REGS, &general_regs,
@@ -1306,6 +1307,7 @@ TEST(Threads, WritingVectorRegisterState) {
 
   zx_thread_state_vector_regs_t regs;
   setup.DoSave(&save_vector_regs_and_exit_thread, &regs);
+  ASSERT_NO_FATAL_FAILURE(vector_regs_expect_unsupported_are_zero(regs));
   ASSERT_NO_FATAL_FAILURE(vector_regs_expect_eq(regs_to_set, regs));
 }
 
@@ -1329,6 +1331,17 @@ TEST(Threads, WritingVectorRegisterStateUnsupportedFieldsIgnored) {
       regs.zmm[reg].v[i] = 0xfffffffffffffffful;
     }
   }
+#elif defined(__aarch64__)
+  uint32_t features = 0;
+  ASSERT_OK(zx_system_get_features(ZX_FEATURE_KIND_CPU, &features));
+  if ((features & ZX_ARM64_FEATURE_ISA_SVE) == 0) {
+    for (uint16_t& p : regs.p) {
+      p = 0xffffu;
+    }
+    // Use a non-monotonic mask to verify that arch_set_vector_regs ignores ffr rather than
+    // rejecting it with ZX_ERR_INVALID_ARGS when SVE is unsupported.
+    regs.ffr = 0x5a5au;
+  }
 #endif
 
   ASSERT_EQ(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs,
@@ -1344,6 +1357,136 @@ TEST(Threads, WritingVectorRegisterStateUnsupportedFieldsIgnored) {
   vector_regs_fill_test_values(&vector_regs_expected);
   ASSERT_NO_FATAL_FAILURE(vector_regs_expect_eq(regs, vector_regs_expected));
 }
+
+#if defined(__aarch64__)
+TEST(Threads, VectorRegisterStateCompatSize) {
+  RegisterWriteSetup<zx_thread_state_vector_regs_t> setup;
+  setup.Init("VectorRegisterStateCompatSize");
+
+  constexpr size_t kCompatSize = offsetof(zx_arm64_thread_state_vector_regs_t, p);
+  static_assert(kCompatSize == 520);
+
+  zx_thread_state_vector_regs_t regs_to_set;
+  vector_regs_fill_test_values(&regs_to_set);
+
+  // Buffers smaller than the pre-SVE struct size or in the intermediate range (520, 560) must be
+  // rejected.
+  EXPECT_EQ(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_to_set,
+                                  kCompatSize - 1),
+            ZX_ERR_BUFFER_TOO_SMALL);
+  EXPECT_EQ(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_to_set,
+                                  kCompatSize + 1),
+            ZX_ERR_BUFFER_TOO_SMALL);
+  EXPECT_EQ(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_to_set,
+                                  sizeof(regs_to_set) - 1),
+            ZX_ERR_BUFFER_TOO_SMALL);
+
+  // Seed non-zero SVE register state (p and ffr) via a full-size write first.
+  ASSERT_OK(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_to_set,
+                                  sizeof(regs_to_set)));
+
+  zx_thread_state_vector_regs_t regs_read{};
+  ASSERT_OK(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_read,
+                                 sizeof(regs_read)));
+  ASSERT_NO_FATAL_FAILURE(vector_regs_expect_eq(regs_to_set, regs_read));
+
+  memset(&regs_read, 0xff, sizeof(regs_read));
+  EXPECT_EQ(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_read,
+                                 kCompatSize - 1),
+            ZX_ERR_BUFFER_TOO_SMALL);
+  EXPECT_EQ(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_read,
+                                 kCompatSize + 1),
+            ZX_ERR_BUFFER_TOO_SMALL);
+  EXPECT_EQ(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_read,
+                                 sizeof(regs_read) - 1),
+            ZX_ERR_BUFFER_TOO_SMALL);
+
+  // Reading using the pre-SVE 520-byte struct size must succeed and not overwrite bytes past 520.
+  ASSERT_OK(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_read,
+                                 kCompatSize));
+  EXPECT_EQ(regs_read.fpcr, regs_to_set.fpcr);
+  EXPECT_EQ(regs_read.fpsr, regs_to_set.fpsr);
+  for (int i = 0; i < 32; i++) {
+    EXPECT_EQ(regs_read.v[i].low, regs_to_set.v[i].low);
+    EXPECT_EQ(regs_read.v[i].high, regs_to_set.v[i].high);
+  }
+  for (int i = 0; i < 16; i++) {
+    EXPECT_EQ(regs_read.p[i], 0xffffu);
+  }
+  EXPECT_EQ(regs_read.ffr, 0xffffu);
+
+  // Mutate V registers and FPCR/FPSR, then write using the pre-SVE 520-byte compat size.
+  // Existing SVE state (p and ffr) must be preserved rather than zeroed.
+  regs_to_set.fpcr = 0x01000000u;  // FZ
+  regs_to_set.fpsr = 0x08000000u;  // QC
+  for (int i = 0; i < 32; i++) {
+    regs_to_set.v[i].low ^= 0x5555555555555555ull;
+    regs_to_set.v[i].high ^= 0xaaaaaaaaaaaaaaaaull;
+  }
+  ASSERT_OK(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_to_set,
+                                  kCompatSize));
+
+  // Full-size read should show updated V/FPCR/FPSR state and preserved p and ffr state.
+  memset(&regs_read, 0, sizeof(regs_read));
+  ASSERT_OK(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_read,
+                                 sizeof(regs_read)));
+  EXPECT_EQ(regs_read.fpcr, regs_to_set.fpcr);
+  EXPECT_EQ(regs_read.fpsr, regs_to_set.fpsr);
+  ASSERT_NO_FATAL_FAILURE(vector_regs_expect_eq(regs_to_set, regs_read));
+
+  memset(&regs_read, 0, sizeof(regs_read));
+  setup.DoSave(&save_vector_regs_and_exit_thread, &regs_read);
+  EXPECT_EQ(regs_read.fpcr, regs_to_set.fpcr);
+  EXPECT_EQ(regs_read.fpsr, regs_to_set.fpsr);
+  ASSERT_NO_FATAL_FAILURE(vector_regs_expect_eq(regs_to_set, regs_read));
+}
+
+TEST(Threads, WriteThreadStateWithInvalidFfrIsInvalidArgs) {
+  uint32_t features = 0;
+  ASSERT_OK(zx_system_get_features(ZX_FEATURE_KIND_CPU, &features));
+  if ((features & ZX_ARM64_FEATURE_ISA_SVE) == 0) {
+    ZXTEST_SKIP("SVE not supported");
+  }
+
+  RegisterWriteSetup<zx_thread_state_vector_regs_t> setup;
+  setup.Init("WriteThreadStateWithInvalidFfrIsInvalidArgs");
+
+  zx_thread_state_vector_regs_t initial_regs;
+  ASSERT_OK(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &initial_regs,
+                                 sizeof(initial_regs)));
+
+  zx_thread_state_vector_regs_t regs_to_set;
+  vector_regs_fill_test_values(&regs_to_set);
+
+  // FFR must be a monotonically decreasing sequence of 1s from bit 0.
+  for (uint16_t invalid_ffr : {uint16_t{0x0002u}, uint16_t{0x8000u}, uint16_t{0x8001u},
+                               uint16_t{0xfffeu}, uint16_t{0x0101u}}) {
+    regs_to_set.ffr = invalid_ffr;
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS,
+                                    &regs_to_set, sizeof(regs_to_set)));
+  }
+
+  // Verify boundary valid FFR patterns succeed.
+  for (uint16_t valid_ffr :
+       {uint16_t{0x0000u}, uint16_t{0x0001u}, uint16_t{0x7fffu}, uint16_t{0xffffu}}) {
+    regs_to_set.ffr = valid_ffr;
+    ASSERT_OK(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS,
+                                    &regs_to_set, sizeof(regs_to_set)));
+    zx_thread_state_vector_regs_t regs_read{};
+    ASSERT_OK(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &regs_read,
+                                   sizeof(regs_read)));
+    EXPECT_EQ(regs_read.ffr, valid_ffr);
+  }
+
+  ASSERT_OK(zx_thread_write_state(setup.thread_handle(), ZX_THREAD_STATE_VECTOR_REGS, &initial_regs,
+                                  sizeof(initial_regs)));
+
+  zx_thread_state_vector_regs_t end_values;
+  setup.DoSave(&save_vector_regs_and_exit_thread, &end_values);
+  ASSERT_NO_FATAL_FAILURE(vector_regs_expect_eq(initial_regs, end_values));
+}
+#endif
 
 // Test for https://fxbug.dev/42127734: Make sure zx_thread_write_state doesn't overwrite
 // reserved bits in mxcsr (x64 only).

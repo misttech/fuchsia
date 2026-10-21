@@ -513,12 +513,15 @@ VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_fp_regs_t, st[0].high, 40, 8);
 #endif
 
 #if defined(__aarch64__)
-VALIDATE_TYPE_SIZE_ALIGNMENT(zx_thread_state_vector_regs_t, 520, 8);
+VALIDATE_TYPE_SIZE_ALIGNMENT(zx_thread_state_vector_regs_t, 560, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, fpcr, 0, 4);
 VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, fpsr, 4, 4);
 VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, v, 8, 512);
 VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, v[0].low, 8, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, v[0].high, 16, 8);
+VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, p, 520, 32);
+VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, ffr, 552, 2);
+VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, padding1, 554, 6);
 #elif defined(__x86_64__)
 VALIDATE_TYPE_SIZE_ALIGNMENT(zx_thread_state_vector_regs_t, 2120, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zx_thread_state_vector_regs_t, zmm, 0, 2048);
