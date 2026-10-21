@@ -2,10 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
+
+exports_files(
+    [
+        "testdata/composite_policies/initial_sids",
+        "testdata/scripts/merge_policies/a_policy.conf",
+        "testdata/scripts/merge_policies/b_policy.conf",
+        "testdata/scripts/merge_policies/golden_a_b_policy.conf",
+        "testdata/scripts/merge_policies/invalid_policy.conf",
+    ],
+    visibility = ["//src/starnix/lib/selinux/scripts:__pkg__"],
+)
 
 rustc_library(
     name = "selinux",
