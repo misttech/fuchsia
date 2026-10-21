@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_package.bzl",
+    "fx_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+fx_package(
+    name = "empty_container",
+    package_name = "starless",
+    components = [
+        ":empty_container_component",
+    ],
+)
+
+fx_component(
+    name = "empty_container_component",
+    compiled_manifest = ":empty_container_manifest",
+    component_name = "empty_container",
+    deps = [
+        "//src/starnix/containers:default_init",
+    ],
+)
+
+fx_component_manifest(
+    name = "empty_container_manifest",
+    component_name = "empty_container",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/starnix/containers:container.shard.cml",
+        "//src/starnix/containers:container_config.shard.cml",
+    ],
+    manifest = "meta/empty_container.cml",
+)
+# LINT.ThenChange(BUILD.gn)

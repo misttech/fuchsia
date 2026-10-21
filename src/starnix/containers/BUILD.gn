@@ -19,6 +19,7 @@ group("tests") {
   deps = [ "empty_container" ]
 }
 
+# LINT.IfChange
 # The default init executable. Used if the starnix kernel configuration has no
 # init.
 resource("default_init") {
@@ -35,3 +36,4 @@ resource("data_tmp_target") {
   sources = [ "//src/starnix/containers/placeholder" ]
   outputs = [ "data/tmp/.placeholder" ]
 }
+# LINT.ThenChange(BUILD.bazel)

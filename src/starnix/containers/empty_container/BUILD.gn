@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//src/starnix/kernel/starnix.gni")
 
+# LINT.IfChange
 fuchsia_package_with_single_component("empty_container") {
   manifest = "meta/empty_container.cml"
   package_name = "starless"
@@ -12,3 +13,4 @@ fuchsia_package_with_single_component("empty_container") {
 
   deps = [ "//src/starnix/containers:default_init" ]
 }
+# LINT.ThenChange(BUILD.bazel)
