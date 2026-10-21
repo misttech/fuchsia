@@ -46,10 +46,6 @@ const PIPE_MAX_SIZE: usize = 1 << 31;
 /// `PIPE_BUF`.
 const PIPE_WRITE_SPACE_WAIT_KEY: u64 = 2;
 
-fn round_up(value: usize, increment: usize) -> usize {
-    (value + (increment - 1)) & !(increment - 1)
-}
-
 #[derive(Debug)]
 pub struct Pipe {
     messages: MessageQueue<PipeMessageData>,
@@ -199,21 +195,28 @@ impl Pipe {
         if requested_capacity > PIPE_MAX_SIZE {
             return error!(EINVAL);
         }
-        if requested_capacity
-            > current_task
-                .kernel()
-                .system_limits
-                .pipe_max_size
-                .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            security::check_task_capable(current_task, CAP_SYS_RESOURCE)?;
-        }
         let page_size = *PAGE_SIZE as usize;
         if requested_capacity < page_size {
             requested_capacity = page_size;
         }
-        requested_capacity = round_up(requested_capacity, page_size);
-        self.messages.set_capacity(requested_capacity)
+        requested_capacity = requested_capacity.next_power_of_two();
+        let old_capacity = self.messages.capacity();
+        if requested_capacity > old_capacity
+            && requested_capacity
+                > current_task
+                    .kernel()
+                    .system_limits
+                    .pipe_max_size
+                    .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            security::check_task_capable(current_task, CAP_SYS_RESOURCE)?;
+        }
+        let was_writable = self.is_writable(uapi::PIPE_BUF as usize);
+        self.messages.set_capacity(requested_capacity)?;
+        if requested_capacity > old_capacity {
+            self.notify_write_space(was_writable);
+        }
+        Ok(())
     }
 
     fn is_readable(&self) -> bool {
@@ -309,7 +312,11 @@ impl Pipe {
         match cmd {
             F_GETPIPE_SZ => Ok(self.capacity().into()),
             F_SETPIPE_SZ => {
-                self.set_capacity(current_task, arg as usize)?;
+                let raw_arg = arg as i32;
+                if raw_arg < 0 {
+                    return error!(EINVAL);
+                }
+                self.set_capacity(current_task, raw_arg as usize)?;
                 Ok(self.capacity().into())
             }
             _ => default_fcntl(cmd),
@@ -1455,6 +1462,62 @@ mod tests {
                 epoll_ops.wait(&current_task, 1, zx::MonotonicInstant::ZERO).unwrap();
             assert_eq!(epoll_events.len(), 1);
             assert!(epoll_events[0].events().contains(FdEvents::POLLOUT));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_f_setpipe_sz_power_of_two_rounding_and_grow_wakes_blocked_writer() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (_pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let page_size = *PAGE_SIZE as usize;
+
+            // Negative sizes must be rejected with `EINVAL`.
+            assert_eq!(
+                pipe_in.fcntl(&current_task, F_SETPIPE_SZ, (-1i32 as u32) as u64).unwrap_err(),
+                errno!(EINVAL)
+            );
+
+            // Non-power-of-two sizes above PAGE_SIZE round up to the next power of two.
+            let rounded = pipe_in
+                .fcntl(&current_task, F_SETPIPE_SZ, (page_size * 3) as u64)
+                .expect("F_SETPIPE_SZ rounds to power of two");
+            assert_eq!(rounded, (page_size * 4).into());
+            assert_eq!(
+                pipe_in.fcntl(&current_task, F_GETPIPE_SZ, 0).unwrap(),
+                (page_size * 4).into()
+            );
+
+            // Fill the pipe to capacity (`page_size * 4`).
+            let fill = vec![b'F'; page_size * 4];
+            assert_eq!(
+                pipe_in.write(&current_task, &mut VecInputBuffer::new(&fill)).unwrap(),
+                page_size * 4
+            );
+
+            let pipe_in_clone = pipe_in.clone();
+            let (writer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    pipe_in_clone
+                        .write(worker_task, &mut VecInputBuffer::new(b"GROW"))
+                        .expect("blocked writer wakes when F_SETPIPE_SZ grows pipe")
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            while pipe_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().waiters.is_empty()
+            {
+                std::thread::yield_now();
+            }
+
+            let grown = pipe_in
+                .fcntl(&current_task, F_SETPIPE_SZ, (page_size * 8) as u64)
+                .expect("F_SETPIPE_SZ grows capacity");
+            assert_eq!(grown, (page_size * 8).into());
+            assert_eq!(writer_join().unwrap(), 4);
         })
         .await;
     }

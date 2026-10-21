@@ -518,6 +518,46 @@ TEST(PipeTest, SubPipeBufReadAndPartialSpliceWakeBlockedWriter) {
   }
 }
 
+TEST(PipeTest, SetPipeSizeRoundingAndWakeBlockedWriter) {
+  const int page_size = getpagesize();
+  test_helper::ScopedPipe pipe;
+
+  // 1. Negative F_SETPIPE_SZ arguments must be rejected with EINVAL.
+  EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, -1), SyscallFailsWithErrno(EINVAL));
+
+  // 2. Non-power-of-two sizes above page_size must round up to the next power of two.
+  // Before fixing F_SETPIPE_SZ rounding, Starnix rounded 3 * page_size to 3 * page_size instead
+  // of 4 * page_size.
+  EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, 3 * page_size),
+              SyscallSucceedsWithValue(4 * page_size));
+  EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_GETPIPE_SZ), SyscallSucceedsWithValue(4 * page_size));
+
+  // 3. Growing a full pipe via F_SETPIPE_SZ must wake a blocked writer and assert POLLOUT.
+  std::vector<char> fill(4 * page_size, 'F');
+  ASSERT_EQ(write(pipe.WriteSide().get(), fill.data(), fill.size()), 4 * page_size);
+
+  pollfd pfd = {
+      .fd = pipe.WriteSide().get(),
+      .events = POLLOUT,
+      .revents = 0,
+  };
+  EXPECT_EQ(poll(&pfd, 1, 0), 0);
+
+  std::thread resizer([&pipe, page_size]() {
+    usleep(20000);
+    EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, 8 * page_size),
+                SyscallSucceedsWithValue(8 * page_size));
+  });
+
+  const char payload[] = "GROW";
+  EXPECT_THAT(write(pipe.WriteSide().get(), payload, 4), SyscallSucceedsWithValue(4));
+  resizer.join();
+
+  pfd.revents = 0;
+  EXPECT_EQ(poll(&pfd, 1, 0), 1);
+  EXPECT_EQ(pfd.revents, POLLOUT);
+}
+
 // Verify that when the only writer (a child process) exits, the pipe is immediately closed even if
 // the child is not yet reaped.
 TEST(PipeTest, ZombieWriter) {
