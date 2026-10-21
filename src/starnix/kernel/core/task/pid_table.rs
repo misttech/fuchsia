@@ -15,7 +15,7 @@ use starnix_sync::PidTableLock;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::Signal;
 use starnix_uapi::{errno, error, pid_t};
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 
 #[derive(Debug, RcuDroppable)]
@@ -439,6 +439,9 @@ pub struct PidTable {
     /// The most-recently allocated pid in this table.
     last_pid: AtomicI32,
 
+    /// The number of live tasks in this table.
+    num_tasks: AtomicUsize,
+
     /// The tasks in this table, organized by pid_t using an IDR radix tree.
     idr: Idr<PidEntry, PidTableLock>,
 
@@ -451,7 +454,12 @@ impl Default for PidTable {
         let idr = Idr::new_cyclic(Some(RESERVED_PIDS));
         idr.set_max(actual_pid_limit(PID_MAX_DEFAULT) as u32);
         idr.lock().reserve_id(0);
-        Self { last_pid: AtomicI32::new(0), idr, thread_group_notifier: Default::default() }
+        Self {
+            last_pid: AtomicI32::new(0),
+            num_tasks: AtomicUsize::new(0),
+            idr,
+            thread_group_notifier: Default::default(),
+        }
     }
 }
 
@@ -506,6 +514,7 @@ impl<'a> PidTableGuard<'a> {
                 .update(Some(ProcessEntry::ThreadGroup(Arc::downgrade(task.thread_group()))));
         }
         entry.task.update(Arc::downgrade(&task));
+        self.table.num_tasks.fetch_add(1, Ordering::Relaxed);
 
         if task.is_leader() {
             // Notify thread group changes.
@@ -530,6 +539,7 @@ impl<'a> PidTableGuard<'a> {
     }
 
     pub fn remove_task(&mut self, tid: &Pid) {
+        self.table.num_tasks.fetch_sub(1, Ordering::Relaxed);
         self.remove_item(tid, |entry| {
             let scope = RcuReadScope::new();
             assert!(entry.task.strong_count(&scope) > 0);
@@ -621,6 +631,11 @@ impl PidTable {
         })
     }
 
+    /// Returns the number of live tasks in this table.
+    pub fn num_tasks(&self) -> usize {
+        self.num_tasks.load(Ordering::Relaxed)
+    }
+
     /// Returns the process ids for all processes, including zombies.
     pub fn process_ids(&self) -> Vec<pid_t> {
         let scope = RcuReadScope::new();
@@ -663,7 +678,8 @@ mod tests {
     use crate::testing::spawn_kernel_and_run;
     use starnix_types::ownership::Releasable;
     use starnix_uapi::signals::{SIGCHLD, SIGCONT};
-    use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
+    use starnix_uapi::user_address::UserRef;
+    use starnix_uapi::{CLONE_CHILD_SETTID, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
     use std::collections::HashSet;
     use std::sync::atomic::AtomicBool;
 
@@ -699,6 +715,7 @@ mod tests {
     fn test_pid_table_empty_state() {
         let table = PidTable::default();
         assert_eq!(table.last_pid(), 0);
+        assert_eq!(table.num_tasks(), 0);
         assert_eq!(table.process_ids().len(), 0);
         let scope = RcuReadScope::new();
         assert_eq!(table.running_task_ids(&scope).count(), 0);
@@ -1372,6 +1389,115 @@ mod tests {
             current_pid.attach_sid(&guard, child1.thread_group());
             current_pid.attach_sid(&guard, child2.thread_group());
             current_pid.attach_sid(&guard, child3.thread_group());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_pid_table_num_tasks_tracks_live_tasks() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let scope = RcuReadScope::new();
+            let initial_tasks = kernel.pids.num_tasks();
+            let initial_processes = kernel.pids.process_ids().len();
+            assert!(initial_tasks >= 1);
+            assert_eq!(initial_tasks, kernel.pids.running_task_ids(&scope).count());
+
+            // Allocating a PID directly must not change num_tasks().
+            let _allocated = kernel.pids.lock().allocate_pid().unwrap();
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks);
+
+            // Creating and dropping a thread in the same thread group must increment and
+            // decrement num_tasks().
+            let thread = current_task.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks + 1);
+            assert_eq!(kernel.pids.num_tasks(), kernel.pids.running_task_ids(&scope).count());
+            std::mem::drop(thread);
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks);
+            assert_eq!(kernel.pids.num_tasks(), kernel.pids.running_task_ids(&scope).count());
+
+            // Creating a new process (thread group leader) must increment num_tasks().
+            let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks + 1);
+            assert_eq!(kernel.pids.num_tasks(), kernel.pids.running_task_ids(&scope).count());
+
+            // Releasing the child process calls remove_task() and kill_process(), transitioning it
+            // to a zombie and decrementing num_tasks(), while process_ids() still includes the
+            // zombie.
+            std::mem::drop(child);
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks);
+            assert_eq!(kernel.pids.num_tasks(), kernel.pids.running_task_ids(&scope).count());
+            assert_eq!(kernel.pids.process_ids().len(), initial_processes + 1);
+
+            // Reaping the zombie via remove_zombie removes it from process_ids() without
+            // decrementing num_tasks() a second time.
+            let zombies: Vec<_> =
+                current_task.thread_group().write().zombie_children.drain(..).collect();
+            assert_eq!(zombies.len(), 1);
+            {
+                let mut pids = kernel.pids.lock();
+                for zombie in zombies {
+                    zombie.release(&mut pids);
+                }
+            }
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks);
+            assert_eq!(kernel.pids.process_ids().len(), initial_processes);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_pid_table_num_tasks_failed_clone_rollback() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let scope = RcuReadScope::new();
+            let initial_tasks = kernel.pids.num_tasks();
+            let initial_processes = kernel.pids.process_ids().len();
+            assert!(initial_tasks >= 1);
+            assert_eq!(initial_tasks, kernel.pids.running_task_ids(&scope).count());
+
+            // Passing CLONE_CHILD_SETTID with a null user_child_tid fails with EFAULT after
+            // PidTableGuard::add_task has already incremented num_tasks, exercising the
+            // release_on_error! rollback path for both process and thread clones.
+            let Err(err) = current_task.clone_task(
+                CLONE_CHILD_SETTID as u64,
+                Some(SIGCHLD),
+                UserRef::default(),
+                UserRef::default(),
+                UserRef::default(),
+            ) else {
+                panic!("clone_task with null user_child_tid should fail");
+            };
+            assert_eq!(err, errno!(EFAULT));
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks);
+            assert_eq!(kernel.pids.num_tasks(), kernel.pids.running_task_ids(&scope).count());
+
+            let Err(err) = current_task.clone_task(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND | CLONE_CHILD_SETTID) as u64,
+                Some(SIGCHLD),
+                UserRef::default(),
+                UserRef::default(),
+                UserRef::default(),
+            ) else {
+                panic!("thread clone_task with null user_child_tid should fail");
+            };
+            assert_eq!(err, errno!(EFAULT));
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks);
+            assert_eq!(kernel.pids.num_tasks(), kernel.pids.running_task_ids(&scope).count());
+
+            let zombies: Vec<_> =
+                current_task.thread_group().write().zombie_children.drain(..).collect();
+            {
+                let mut pids = kernel.pids.lock();
+                for zombie in zombies {
+                    zombie.release(&mut pids);
+                }
+            }
+            assert_eq!(kernel.pids.num_tasks(), initial_tasks);
+            assert_eq!(kernel.pids.process_ids().len(), initial_processes);
         })
         .await;
     }
