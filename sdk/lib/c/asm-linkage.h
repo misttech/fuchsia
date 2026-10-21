@@ -54,8 +54,8 @@
 #else  // clang-format off
 
 // This replaces `.function` for a function defined in LIBC_NAMESPACE_DECL.
-.macro .llvm_libc_function name, callgraph=
-  .function LIBC_ASM_LINKAGE(\name), scope=global, callgraph=\callgraph
+.macro .llvm_libc_function name, args:vararg
+  .function LIBC_ASM_LINKAGE(\name), global, \args
 .endm
 
 // This makes a namespaced alias of an `.llvm_libc_function`-defined symbol.

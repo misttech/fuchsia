@@ -13,6 +13,10 @@
 #define TP_DWARF_REGNO 36 // TPIDR_EL0
 #define SCSP_DWARF_REGNO shadow_call_sp
 
+.macro call target
+  bl \target
+.endm
+
 // Save the 3rd and 4th arguments in call-saved registers.
 .macro save_arguments
   mov x19, x2
@@ -154,12 +158,7 @@
 
 #endif
 
-// We annotate this as being only a direct call target, when of course it
-// certainly _could_ be an indirect call target.  But there's no reasonable
-// way to get the proper type ID into the record.  And realistically, this
-// function's use in call-graph / stack-size analysis will be as a special-case
-// root entry point, or stitched as a direct callee of _start (crt1.S).
-.llvm_libc_function __libc_start_main, callgraph=direct
+.llvm_libc_function __libc_start_main
   .llvm_libc_public __libc_start_main
 
   .cfi.all_integer .cfi_same_value
@@ -170,7 +169,7 @@
   // call-saved registers to be recovered in the final tail call.
   save_arguments
 
-  callgraph.call LIBC_ASM_LINKAGE(StartCompilerAbi)
+  call LIBC_ASM_LINKAGE(StartCompilerAbi)
   .cfi.all_call_used .cfi_undefined
 
 #ifdef SCSP_DWARF_REGNO
@@ -189,12 +188,6 @@
 
   // Now this frame ceases to exist and is replaced by the C++ function
   // using the full Fuchsia Compiler ABI on its new stacks.
-  //
-  // Note this doesn't use callgraph.tail, so this won't be recorded as a
-  // callee.  Only the phase 1 call graph is considered to be rooted at this
-  // entry point (or _start).  This starts the "phase 2" __libc_start_main as
-  // the root of a fresh call graph starting on the new stack (after the
-  // synthetic frame pointer link), which has a very different size budget.
   tail LIBC_ASM_LINKAGE(start_main)
 
 .end_function
