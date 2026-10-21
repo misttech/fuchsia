@@ -9,7 +9,7 @@ Fuchsia.  It serves:
 
   - As an easy way to do Vulkan-based code prototyping.
 
-  - As a cross-platform (Fuchsia / Linux / macOS) vulkan-based template
+  - As a cross-platform (Fuchsia / Linux) vulkan-based template
     that can be used to compare the rendering output of all the
     respective renderers as a debugging and development aid.
 

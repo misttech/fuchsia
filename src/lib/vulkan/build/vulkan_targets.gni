@@ -78,7 +78,7 @@ template("_vulkan_executable_intermediate") {
 #   - For executables / tests on Fuchsia, it adds necessary build dependencies,
 #     including include directories, Vulkan loaders and Vulkan layers linkage.
 #
-#   - For executables / tests running on Linux/macOS hosts,
+#   - For executables / tests running on Linux hosts,
 #
 #     * It creates an executable named "{output_name}_host_executable"
 #       (output_name is set to target_name, unless specifically defined) which
@@ -163,7 +163,7 @@ template("_target_with_vulkan") {
 #
 # For Fuchsia targets, it is equivalent to executable().
 #
-# For Linux/macOS hosts, it generates two intermediate executables:
+# For Linux hosts, it generates two intermediate executables:
 #
 # - {output_name}_host_executable,
 #   which built from the sources and dependencies specified in the
@@ -194,7 +194,7 @@ template("vulkan_executable") {
 #
 # For Fuchsia targets, it is equivalent to test().
 #
-# For Linux/macOS hosts, it generates two intermediate executables:
+# For Linux hosts, it generates two intermediate executables:
 #
 # - {output_name}_host_executable,
 #   which built from the sources and dependencies specified in the

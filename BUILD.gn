@@ -471,7 +471,7 @@ build_api_module("bazel_build_events_logs") {
 #     Type: string
 #
 #   os
-#     Required: OS the binary is for, e.g. "fuchsia", "linux", or "mac".
+#     Required: OS the binary is for, e.g. "fuchsia" or "linux".
 #     Type: string
 #
 #   environment
@@ -597,7 +597,7 @@ build_api_module("binaries") {
 #     Type: string
 #
 #   os
-#     Required: OS the binary is for, e.g. "fuchsia", "linux", or "mac".
+#     Required: OS the binary is for, e.g. "fuchsia" or "linux".
 #     Type: string
 #
 #   debug

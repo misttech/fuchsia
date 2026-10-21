@@ -34,7 +34,7 @@ The diagnostic checklist sequentially evaluates the following environment layers
 
 ### 2. Physical and Virtual Targets Environment
 *   **FFX Emulator Instances**: Audits local active virtualization setups, listing running emulators or reporting empty slots.
-*   **Inotify Watches Bounds**: (Linux only) Checks filesystem watcher limits to ensure the kernel has sufficient allocation handles to trace file changes during large build operations.
+*   **Inotify Watches Bounds**: Checks filesystem watcher limits to ensure the kernel has sufficient allocation handles to trace file changes during large build operations.
 *   **FFX USB Driver Sockets**: Validates the operational status of the FFX USB host driver socket binds, ensuring they listen on the expected path locations.
 
 ### 3. Network and Target Verification Checks

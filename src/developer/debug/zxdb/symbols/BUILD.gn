@@ -229,7 +229,7 @@ static_library("test_support") {
 }
 
 if (is_host) {
-  # Copies the test libraries for zxdb tests to use when run on Linux or Mac.
+  # Copies the test libraries for zxdb tests to use when run on Linux.
   default_shared_out_dir =
       get_label_info("//anything(${default_toolchain}-shared)", "root_out_dir")
 

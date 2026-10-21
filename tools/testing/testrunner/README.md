@@ -44,7 +44,7 @@ field, which specifies the operating system that the test was built for.
 
 If the test's target operating system corresponds to the operating system that
 testrunner is running on, testrunner will run the test as a subprocess. Since
-testrunner always runs on a Mac or Linux host, this only applies to host-side
+testrunner always runs on a Linux host, this only applies to host-side
 tests.
 
 For these tests, testrunner will run the executable specified by the `path`

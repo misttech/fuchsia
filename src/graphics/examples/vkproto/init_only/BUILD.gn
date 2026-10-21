@@ -52,7 +52,7 @@ executable("bin") {
 }
 
 #
-# Linux / Mac Build
+# Linux Host Build
 #
 group("init-only-host") {
   testonly = true

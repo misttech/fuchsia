@@ -88,7 +88,7 @@ copy("spirv_copy") {
 }
 
 #
-# Linux / Mac Build
+# Linux Host Build
 #
 group("onscreen-glfw") {
   testonly = true

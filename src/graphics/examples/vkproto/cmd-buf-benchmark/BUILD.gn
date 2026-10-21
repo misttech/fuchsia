@@ -131,7 +131,7 @@ copy("spirv_copy") {
 }
 
 #
-# Linux / Mac Build
+# Linux Host Build
 #
 group("cmd-buf-benchmark-glfw") {
   deps = [ ":bin($host_toolchain)" ]

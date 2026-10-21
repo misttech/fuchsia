@@ -4,7 +4,7 @@ This set of tests includes microbenchmarks for core OS functionality,
 including Zircon syscalls and IPC primitives, as well as microbenchmarks for
 other layers of Fuchsia.
 
-Some of the microbenchmarks are portable and can be run on Linux or Mac, for
+Some of the microbenchmarks are portable and can be run on Linux for
 comparison against Fuchsia.  This means that the name fuchsia_microbenchmarks
 should be taken to mean "microbenchmarks that are part of the Fuchsia project"
 rather than "microbenchmarks that only run on Fuchsia".

@@ -297,14 +297,6 @@ def read_spec_frontmatter_fields(
 
 def _get_fuchsia_metrics_dir() -> Path:
     """Returns the Fuchsia metrics configuration directory (~/.local/share/Fuchsia/metrics)."""
-    if sys.platform == "darwin":
-        return (
-            Path.home()
-            / "Library"
-            / "Application Support"
-            / "Fuchsia"
-            / "metrics"
-        )
     xdg_data = os.environ.get("XDG_DATA_HOME", "").strip()
     base = Path(xdg_data) if xdg_data else (Path.home() / ".local" / "share")
     return base / "Fuchsia" / "metrics"

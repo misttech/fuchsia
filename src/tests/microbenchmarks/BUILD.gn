@@ -17,9 +17,6 @@ import("//zircon/vdso/vdso.gni")
 # This can be built as a Fuchsia executable or as a host executable.
 # The latter allows running some of the benchmarks on Linux for
 # comparison against Fuchsia.
-#
-# In principle this could be built for Mac too, but it may require
-# changes to build and run successfully on Mac.
 
 fuchsia_microbenchmark_sources = [
   "atomics.cc",

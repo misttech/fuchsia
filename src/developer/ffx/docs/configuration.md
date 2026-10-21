@@ -37,8 +37,7 @@ ffx config env get
     | `connectivity.enable_uart`              | Allow ffx to use a UART connection.|
     |                                         | Defaults to `false`.               |
     | `connectivity.enable_usb`               | Allow ffx to use a USB connection. |
-    |                                         | Not supported on mac. Defaults to  |
-    |                                         | `false`.                           |
+    |                                         | Defaults to `false`.               |
     | `connectivity.enable_vsock`             | Allow using a VSOCK socket to      |
     |                                         | connect to virtual machine targets |
     |                                         | where supported. Defaults to       |

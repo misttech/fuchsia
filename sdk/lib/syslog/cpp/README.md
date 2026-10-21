@@ -12,6 +12,3 @@ To run host tests, use
 ```
 $ fx test --host logging_cpp_unittests
 ```
-
-Note that host tests are not currently supported on ARM MacOS, but should
-function on Intel-based Macs or on certain Linux distributions.

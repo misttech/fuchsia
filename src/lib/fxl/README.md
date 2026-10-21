@@ -3,10 +3,10 @@
 A library containing basic C++ building blocks, such as logging and
 reference counting.
 
-This library builds for both host (this includes Linux, Windows, and
-macOS) as well as target (i.e., Fuchsia) platforms and is not source
-or binary stable. On both host and target, we require C++17, and thus
-this library may use C++17 language and library features.
+This library builds for both host (i.e., Linux) as well as target (i.e.,
+Fuchsia) platforms and is not source or binary stable. On both host and target,
+we require C++17, and thus this library may use C++17 language and library
+features.
 
 ## Should I put my thing in FXL?
 

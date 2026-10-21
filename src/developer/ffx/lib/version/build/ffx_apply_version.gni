@@ -90,10 +90,7 @@ template("ffx_apply_version") {
     args = [
       # -x applies a "strip" on the output. Strip is currently performed after
       # the link step in the normal toolchain rules, and uses this same flag on
-      # most platforms (see clang_toolchain.gni). Note on macOS this is a
-      # "different strip", as at time of writing, binaries on macOS are normally
-      # stripped with xcrun strip -Sx. The outcome produces the same size binary
-      # as the stripped binary on macOS.
+      # most platforms (see clang_toolchain.gni).
       "-x",
 
       "--update-section=${version_info_section}=" +

@@ -3,7 +3,7 @@
 # Zxdb (`zxdb`)
 
 `zxdb` is the host-side frontend of the Fuchsia debugger. It runs on the
-developer's workstation (Linux or macOS) and talks over `debug_ipc`
+developer's workstation (Linux) and talks over `debug_ipc`
 ([../ipc](../ipc/README.md)) to `debug_agent`
 ([../debug_agent](../debug_agent/README.md)) on the Fuchsia target.
 
