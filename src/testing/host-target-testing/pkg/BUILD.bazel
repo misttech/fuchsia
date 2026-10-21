@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "pkg",
+    srcs = ["package.go"],
+    importpath = "go.fuchsia.dev/fuchsia/src/testing/host-target-testing/pkg",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/testing/host-target-testing/build:__pkg__",
+        "//src/testing/host-target-testing/packages:__pkg__",
+    ],
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "pm_pkg_test",
+    srcs = ["package_test.go"],
+    embed = [":pkg"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
