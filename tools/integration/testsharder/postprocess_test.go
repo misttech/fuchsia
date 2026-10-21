@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
@@ -1765,4 +1766,44 @@ func TestApplyTestTimeouts(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRandomizeTestOrder(t *testing.T) {
+	makeShard := func(name string, count int) *Shard {
+		var tests []Test
+		for i := 0; i < count; i++ {
+			tests = append(tests, Test{Test: build.Test{Name: fmt.Sprintf("test%02d", i)}})
+		}
+		return &Shard{Name: name, Tests: tests}
+	}
+
+	t.Run("same seed produces deterministic order", func(t *testing.T) {
+		s1 := makeShard("shard1", 10)
+		s2 := makeShard("shard1", 10)
+		RandomizeTestOrder([]*Shard{s1}, 12345)
+		RandomizeTestOrder([]*Shard{s2}, 12345)
+		if diff := cmp.Diff(s1.Tests, s2.Tests); diff != "" {
+			t.Fatalf("unexpected diff:\n%s", diff)
+		}
+	})
+
+	t.Run("different seeds produce different orders", func(t *testing.T) {
+		s1 := makeShard("shard1", 20)
+		s2 := makeShard("shard1", 20)
+		RandomizeTestOrder([]*Shard{s1}, 11111)
+		RandomizeTestOrder([]*Shard{s2}, 22222)
+		if reflect.DeepEqual(s1.Tests, s2.Tests) {
+			t.Fatalf("different seeds produced identical orders: %v", s1.Tests)
+		}
+	})
+
+	t.Run("different shards get different orders", func(t *testing.T) {
+		// Check that the shard name is added into the seed.
+		s1 := makeShard("shard1", 20)
+		s2 := makeShard("shard2", 20)
+		RandomizeTestOrder([]*Shard{s1, s2}, 11111)
+		if reflect.DeepEqual(s1.Tests, s2.Tests) {
+			t.Fatalf("different shards got identical orders: %v", s1.Tests)
+		}
+	})
 }

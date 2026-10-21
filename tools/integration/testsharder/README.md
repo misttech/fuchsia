@@ -66,20 +66,35 @@ and uses the duration data to divide tests into shards of approximately equal
 expected duration, using a greedy approximation algorithm for
 [static multiprocessor scheduling](https://en.wikipedia.org/wiki/Multiprocessor_scheduling).
 
-Within a shard, tests are ordered by expected duration descending (longest
-tests first). However, this should be considered an infra implementation
-detail and is subject to change.
-
 If any test does not appear in `test_durations.json` (for example, because
 the duration files have not been updated since it was added) then testsharder
 will use the duration file entry with name `*` for that test. That entry's
-data is an average of all existing tests' data. So any newly added tests will
-be scheduled close to the middle of one of the shards.
+data is an average of all existing tests' data.
+
+### Test ordering
+
+In the current implementation, tests can get ordered within shards in
+the following ways:
+
+*   When `-random-order-in-shards-seed` is specified, the order of tests
+    within each shard is randomized based on the given PRNG seed.
+
+*   Otherwise, when `target_duration` is specified via `-params-file`,
+    tests are sorted based on a hash of their names. This gives an
+    arbitrary but stable ordering.
+
+*   Otherwise, when `target_duration` is not specified, tests are sorted
+    by their names within each shard.
+
+*   Additionally, `-preserve-order` is used by `fx test-remote` and is
+    used for running tests in the order that they were passed to `fx
+    test-remote` on the command line.
 
 ### Determinism
 
-Given an input `tests.json`, `test_durations.json`, and `-multipliers` file,
-testsharder's output is completely deterministic.
+Given the inputs (`tests.json`, `test_durations.json`, `-modifiers` file,
+params file, seed argument, etc.), testsharder's output is completely
+deterministic.
 
 However, adding, deleting, or renaming a test can completely change the
 output. For example, adding a new test that takes an average amount of time
@@ -88,8 +103,13 @@ push some faster tests into new shards, leading to a complete reshuffling of
 all faster tests between shards.
 
 Updates to the duration files may also affect testsharder's output, so
-duration file updates go through CQ before landing to ensure that they don't
-cause any ordering-related test breakages.
+duration file updates go through CQ before landing in an attempt to ensure
+that they don't cause any ordering-related test breakages.
+
+However, CI and CQ no longer use the same sharding settings, so this check
+is not necessarily effective any more. For this reason, among others, we
+are working on switching to randomizing the order of tests, so that at
+least the order is consistently randomized (b/42148044).
 
 ### Test modifiers
 

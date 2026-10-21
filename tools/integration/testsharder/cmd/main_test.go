@@ -589,6 +589,18 @@ func TestExecute(t *testing.T) {
 				MaxShardsPerEnv: 1,
 			},
 		},
+		{
+			name: "randomize test order",
+			flags: testsharderFlags{
+				randomOrderInShardsSeed: 12345,
+			},
+			testSpecs: []build.TestSpec{
+				fuchsiaTestSpec("test1"),
+				fuchsiaTestSpec("test2"),
+				fuchsiaTestSpec("test3"),
+				fuchsiaTestSpec("test4"),
+			},
+		},
 	}
 
 	for _, tc := range testCases {

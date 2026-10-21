@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
@@ -846,5 +847,20 @@ func ApplyTestTimeouts(shards []*Shard, perTestTimeout time.Duration) {
 				shard.Tests[i].Timeout = time.Duration(testTimeoutSecs) * time.Second
 			}
 		}
+	}
+}
+
+// RandomizeTestOrder randomizes the order of tests within each shard using
+// the given seed.
+func RandomizeTestOrder(shards []*Shard, seed uint32) {
+	for _, shard := range shards {
+		// Mix the main seed with a hash of the shard name so that
+		// each shard has a deterministic and distinct shuffle
+		// sequence.
+		shardSeed := int64(seed) ^ int64(hash(shard.Name))
+		r := rand.New(rand.NewSource(shardSeed))
+		r.Shuffle(len(shard.Tests), func(i, j int) {
+			shard.Tests[i], shard.Tests[j] = shard.Tests[j], shard.Tests[i]
+		})
 	}
 }

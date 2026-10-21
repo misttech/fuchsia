@@ -24,6 +24,7 @@ GOLDENS = [
     "cmd/testdata/multiply_affected_tests_with_large_number_of_runs.golden.json",
     "cmd/testdata/multiply_unaffected_hermetic_tests.golden.json",
     "cmd/testdata/no_tests.golden.json",
+    "cmd/testdata/randomize_test_order.golden.json",
     "cmd/testdata/run_all_tests_if_empty_affected_tests.golden.json",
     "cmd/testdata/run_all_tests_if_no_affected_and_affected_only.golden.json",
     "cmd/testdata/run_all_tests_if_no_affected_tests.golden.json",
