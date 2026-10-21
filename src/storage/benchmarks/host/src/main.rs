@@ -17,8 +17,6 @@ use storage_benchmarks::io_benchmarks::{
 };
 use storage_benchmarks::{BenchmarkSet, add_benchmarks};
 
-mod erofs;
-
 /// Fuchsia Filesystem Benchmarks
 #[derive(argh::FromArgs)]
 struct Args {
@@ -41,11 +39,6 @@ struct Args {
     /// Warning: the contents of the directory may be deleted by the benchmarks.
     #[argh(option)]
     benchmark_dir: PathBuf,
-
-    /// directory containing backing EROFS blobs (`compressed` and `uncompressed`) for EROFS
-    /// benchmarks.
-    #[argh(option)]
-    erofs_blob_dir: Option<PathBuf>,
 
     /// name of the filesystem, used for outputting results.
     #[argh(option, default = "String::from(\"host\")")]
@@ -100,11 +93,8 @@ async fn main() {
     let filter = filter.build().unwrap();
 
     let block_device_factory = PanickingBlockDeviceFactory::new();
-    let benchmark_suite = if let Some(erofs_blob_dir) = args.erofs_blob_dir {
-        erofs::build_erofs_benchmark_set(erofs_blob_dir, args.filesystem_name)
-    } else {
-        build_benchmark_set(MountedFilesystem::new(args.benchmark_dir, args.filesystem_name))
-    };
+    let benchmark_suite =
+        build_benchmark_set(MountedFilesystem::new(args.benchmark_dir, args.filesystem_name));
     let results = benchmark_suite.run(&block_device_factory, &filter).await;
 
     results.write_table(std::io::stdout());

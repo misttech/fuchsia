@@ -24,16 +24,11 @@ const BLOCK_SKIP: usize = 255;
 pub struct ReadSequentialCold {
     op_size: usize,
     op_count: usize,
-    read_only: bool,
 }
 
 impl ReadSequentialCold {
     pub fn new(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: false }
-    }
-
-    pub fn new_read_only(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: true }
+        Self { op_size, op_count }
     }
 }
 
@@ -49,12 +44,9 @@ impl<T: CacheClearableFilesystem> Benchmark<T> for ReadSequentialCold {
         let file_path = fs.benchmark_dir().join("file");
 
         // Setup
-        if !self.read_only {
-            let mut file =
-                OpenOptions::new().write(true).create_new(true).open(&file_path).unwrap();
-            write_file(&mut file, self.op_size, self.op_count);
-            std::mem::drop(file);
-        }
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&file_path).unwrap();
+        write_file(&mut file, self.op_size, self.op_count);
+        std::mem::drop(file);
         fs.clear_cache().await;
 
         // Benchmark
@@ -73,16 +65,11 @@ impl<T: CacheClearableFilesystem> Benchmark<T> for ReadSequentialCold {
 pub struct ReadSequentialWarm {
     op_size: usize,
     op_count: usize,
-    read_only: bool,
 }
 
 impl ReadSequentialWarm {
     pub fn new(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: false }
-    }
-
-    pub fn new_read_only(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: true }
+        Self { op_size, op_count }
     }
 }
 
@@ -98,22 +85,10 @@ impl<T: Filesystem> Benchmark<T> for ReadSequentialWarm {
         let file_path = fs.benchmark_dir().join("file");
 
         // Setup
-        let mut file = if self.read_only {
-            let mut file = OpenOptions::new().read(true).open(&file_path).unwrap();
-            let _ = read_sequential(&mut file, self.op_size, self.op_count);
-            file.seek(SeekFrom::Start(0)).unwrap();
-            file
-        } else {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .read(true)
-                .create_new(true)
-                .open(&file_path)
-                .unwrap();
-            write_file(&mut file, self.op_size, self.op_count);
-            file.seek(SeekFrom::Start(0)).unwrap();
-            file
-        };
+        let mut file =
+            OpenOptions::new().write(true).read(true).create_new(true).open(&file_path).unwrap();
+        write_file(&mut file, self.op_size, self.op_count);
+        file.seek(SeekFrom::Start(0)).unwrap();
 
         // Benchmark
         read_sequential(&mut file, self.op_size, self.op_count)
@@ -130,16 +105,11 @@ impl<T: Filesystem> Benchmark<T> for ReadSequentialWarm {
 pub struct ReadRandomCold {
     op_size: usize,
     op_count: usize,
-    read_only: bool,
 }
 
 impl ReadRandomCold {
     pub fn new(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: false }
-    }
-
-    pub fn new_read_only(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: true }
+        Self { op_size, op_count }
     }
 }
 
@@ -155,12 +125,9 @@ impl<T: CacheClearableFilesystem> Benchmark<T> for ReadRandomCold {
         let file_path = fs.benchmark_dir().join("file");
 
         // Setup
-        if !self.read_only {
-            let mut file =
-                OpenOptions::new().write(true).create_new(true).open(&file_path).unwrap();
-            write_file(&mut file, self.op_size, self.op_count);
-            std::mem::drop(file);
-        }
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&file_path).unwrap();
+        write_file(&mut file, self.op_size, self.op_count);
+        std::mem::drop(file);
         fs.clear_cache().await;
 
         // Benchmark
@@ -222,16 +189,11 @@ impl<T: CacheClearableFilesystem> Benchmark<T> for ReadSparseCold {
 pub struct ReadRandomWarm {
     op_size: usize,
     op_count: usize,
-    read_only: bool,
 }
 
 impl ReadRandomWarm {
     pub fn new(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: false }
-    }
-
-    pub fn new_read_only(op_size: usize, op_count: usize) -> Self {
-        Self { op_size, op_count, read_only: true }
+        Self { op_size, op_count }
     }
 }
 
@@ -247,20 +209,9 @@ impl<T: Filesystem> Benchmark<T> for ReadRandomWarm {
         let file_path = fs.benchmark_dir().join("file");
 
         // Setup
-        let mut file = if self.read_only {
-            let mut file = OpenOptions::new().read(true).open(&file_path).unwrap();
-            let _ = read_sequential(&mut file, self.op_size, self.op_count);
-            file
-        } else {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .read(true)
-                .create_new(true)
-                .open(&file_path)
-                .unwrap();
-            write_file(&mut file, self.op_size, self.op_count);
-            file
-        };
+        let mut file =
+            OpenOptions::new().write(true).read(true).create_new(true).open(&file_path).unwrap();
+        write_file(&mut file, self.op_size, self.op_count);
 
         // Benchmark
         let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);

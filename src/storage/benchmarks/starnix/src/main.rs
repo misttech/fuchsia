@@ -6,8 +6,7 @@ use anyhow::Context;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_component::BinderMarker;
 use fidl_fuchsia_power_cpu_manager as fcpumanager;
-use fidl_fuchsia_process_lifecycle::LifecycleMarker;
-use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
+use fuchsia_component::client::connect_to_protocol;
 use log::{info, warn};
 
 #[fuchsia::main(logging_tags = ["storage_starnix_benchmarks"])]
@@ -45,14 +44,6 @@ async fn main() -> Result<(), anyhow::Error> {
         .context("Failed to connect to benchmark app Binder")?;
 
     binder_proxy.on_closed().await.context("Failed waiting for benchmark app to complete")?;
-
-    if let Ok(lifecycle) =
-        connect_to_protocol_at_path::<LifecycleMarker>("/svc/fuchsia.process.lifecycle.Lifecycle")
-    {
-        if lifecycle.stop().is_ok() {
-            let _ = lifecycle.on_closed().await;
-        }
-    }
 
     info!("Starnix storage benchmark workload completed successfully.");
     Ok(())

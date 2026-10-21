@@ -42,7 +42,6 @@ rustc_library("metadata") {
     "//src/starnix/kernel/core:*",
     "//src/starnix/lib/starnix_container:*",
     "//src/starnix/tools/tar_to_pkg:*",
-    "//src/storage/benchmarks/starnix:*",
     "//src/storage/ext4/lib/ext4_extract:*",
     "//src/storage/ext4/tests:*",
     "//vendor/google/*",

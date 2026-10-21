@@ -13,7 +13,6 @@ rustc_library(
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     visibility = [
-        "//src/storage/benchmarks/starnix:__pkg__",
         "//src/storage/lib/blob_pager_and_verifier:__pkg__",
         "//src/sys/pkg/lib/blobfs:__pkg__",
     ],

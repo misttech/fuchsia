@@ -85,16 +85,11 @@ impl DirectoryTreeStructure {
 pub struct WalkDirectoryTreeCold {
     dts: DirectoryTreeStructure,
     iterations: u64,
-    read_only: bool,
 }
 
 impl WalkDirectoryTreeCold {
     pub fn new(dts: DirectoryTreeStructure, iterations: u64) -> Self {
-        Self { dts, iterations, read_only: false }
-    }
-
-    pub fn new_read_only(dts: DirectoryTreeStructure, iterations: u64) -> Self {
-        Self { dts, iterations, read_only: true }
+        Self { dts, iterations }
     }
 }
 
@@ -110,9 +105,7 @@ impl<T: CacheClearableFilesystem> Benchmark<T> for WalkDirectoryTreeCold {
         );
         let root = fs.benchmark_dir().to_path_buf();
 
-        if !self.read_only {
-            self.dts.create_directory_tree(root.clone());
-        }
+        self.dts.create_directory_tree(root.clone());
         let max_pending = self.dts.max_pending() as usize;
         let mut durations = Vec::new();
         for i in 0..self.iterations {
@@ -139,16 +132,11 @@ impl<T: CacheClearableFilesystem> Benchmark<T> for WalkDirectoryTreeCold {
 pub struct WalkDirectoryTreeWarm {
     dts: DirectoryTreeStructure,
     iterations: u64,
-    read_only: bool,
 }
 
 impl WalkDirectoryTreeWarm {
     pub fn new(dts: DirectoryTreeStructure, iterations: u64) -> Self {
-        Self { dts, iterations, read_only: false }
-    }
-
-    pub fn new_read_only(dts: DirectoryTreeStructure, iterations: u64) -> Self {
-        Self { dts, iterations, read_only: true }
+        Self { dts, iterations }
     }
 }
 
@@ -164,12 +152,8 @@ impl<T: Filesystem> Benchmark<T> for WalkDirectoryTreeWarm {
         );
         let root = fs.benchmark_dir().to_path_buf();
 
+        self.dts.create_directory_tree(root.clone());
         let max_pending = self.dts.max_pending() as usize;
-        if self.read_only {
-            walk_directory_tree(root.clone(), max_pending);
-        } else {
-            self.dts.create_directory_tree(root.clone());
-        }
         let mut durations = Vec::new();
         for i in 0..self.iterations {
             storage_trace::duration!("benchmark", "WalkDirectoryTree", "iteration" => i);
@@ -210,16 +194,11 @@ fn walk_directory_tree(root: PathBuf, max_pending: usize) {
 #[derive(Clone)]
 pub struct StatPath {
     file_count: u64,
-    read_only: bool,
 }
 
 impl StatPath {
     pub fn new() -> Self {
-        Self { file_count: 100, read_only: false }
-    }
-
-    pub fn new_read_only() -> Self {
-        Self { file_count: 100, read_only: true }
+        Self { file_count: 100 }
     }
 }
 
@@ -229,10 +208,8 @@ impl<T: Filesystem> Benchmark<T> for StatPath {
         storage_trace::duration!("benchmark", "StatPath");
 
         let root = fs.benchmark_dir().to_path_buf();
-        if !self.read_only {
-            for i in 0..self.file_count {
-                std::fs::File::create(root.join(file_name(i))).unwrap();
-            }
+        for i in 0..self.file_count {
+            std::fs::File::create(root.join(file_name(i))).unwrap();
         }
 
         let root_fd =
@@ -259,16 +236,11 @@ impl<T: Filesystem> Benchmark<T> for StatPath {
 #[derive(Clone)]
 pub struct OpenFile {
     file_count: u64,
-    read_only: bool,
 }
 
 impl OpenFile {
     pub fn new() -> Self {
-        Self { file_count: 100, read_only: false }
-    }
-
-    pub fn new_read_only() -> Self {
-        Self { file_count: 100, read_only: true }
+        Self { file_count: 100 }
     }
 }
 
@@ -278,14 +250,9 @@ impl<T: Filesystem> Benchmark<T> for OpenFile {
         storage_trace::duration!("benchmark", "OpenFile");
 
         let root = fs.benchmark_dir().to_path_buf();
-        let open_flags = if self.read_only {
-            libc::O_RDONLY
-        } else {
-            for i in 0..self.file_count {
-                std::fs::File::create(root.join(file_name(i))).unwrap();
-            }
-            libc::O_RDWR
-        };
+        for i in 0..self.file_count {
+            std::fs::File::create(root.join(file_name(i))).unwrap();
+        }
 
         let root_fd =
             open_path(&path_buf_to_c_string(root), libc::O_DIRECTORY | libc::O_RDONLY).unwrap();
@@ -297,9 +264,9 @@ impl<T: Filesystem> Benchmark<T> for OpenFile {
             let _file = {
                 storage_trace::duration!("benchmark", "open", "file" => i);
                 let timer = OperationTimer::start();
-                let file = open_path_at(&root_fd, &path, open_flags);
+                let file = open_path_at(&root_fd, &path, libc::O_RDWR);
                 durations.push(timer.stop());
-                file.unwrap()
+                file
             };
         }
         durations
@@ -399,16 +366,11 @@ impl<T: Filesystem> Benchmark<T> for UnlinkFile {
 pub struct OpenDeeplyNestedFile {
     file_count: u64,
     depth: u64,
-    read_only: bool,
 }
 
 impl OpenDeeplyNestedFile {
     pub fn new() -> Self {
-        Self { file_count: 100, depth: 5, read_only: false }
-    }
-
-    pub fn new_read_only() -> Self {
-        Self { file_count: 100, depth: 5, read_only: true }
+        Self { file_count: 100, depth: 5 }
     }
 
     fn dir_path(&self, n: u64) -> PathBuf {
@@ -426,16 +388,11 @@ impl<T: Filesystem> Benchmark<T> for OpenDeeplyNestedFile {
         storage_trace::duration!("benchmark", "OpenDeeplyNestedFile");
 
         let root = fs.benchmark_dir().to_path_buf();
-        let open_flags = if self.read_only {
-            libc::O_RDONLY
-        } else {
-            for i in 0..self.file_count {
-                let dir_path = root.join(self.dir_path(i));
-                std::fs::create_dir_all(&dir_path).unwrap();
-                std::fs::File::create(dir_path.join(file_name(i))).unwrap();
-            }
-            libc::O_RDWR
-        };
+        for i in 0..self.file_count {
+            let dir_path = root.join(self.dir_path(i));
+            std::fs::create_dir_all(&dir_path).unwrap();
+            std::fs::File::create(dir_path.join(file_name(i))).unwrap();
+        }
 
         let root_fd =
             open_path(&path_buf_to_c_string(root), libc::O_DIRECTORY | libc::O_RDONLY).unwrap();
@@ -447,9 +404,9 @@ impl<T: Filesystem> Benchmark<T> for OpenDeeplyNestedFile {
             let _file = {
                 storage_trace::duration!("benchmark", "open", "file" => i);
                 let timer = OperationTimer::start();
-                let file = open_path_at(&root_fd, &path, open_flags);
+                let file = open_path_at(&root_fd, &path, libc::O_RDWR);
                 durations.push(timer.stop());
-                file.unwrap()
+                file
             };
         }
         durations
@@ -468,7 +425,6 @@ pub struct GitStatus {
 
     /// The number of threads to use when stat'ing all of the files.
     stat_threads: usize,
-    read_only: bool,
 }
 
 impl GitStatus {
@@ -483,11 +439,7 @@ impl GitStatus {
 
         // Git uses many threads when stat'ing large repositories but using multiple threads in the
         // benchmarks significantly increases the performance variation between runs.
-        Self { dts, iterations: 5, stat_threads: 1, read_only: false }
-    }
-
-    pub fn new_read_only() -> Self {
-        Self { read_only: true, ..Self::new() }
+        Self { dts, iterations: 5, stat_threads: 1 }
     }
 
     /// Stat all of the paths in `paths`. This mimics git checking to see if any of the files in its
@@ -524,9 +476,7 @@ impl<T: Filesystem> Benchmark<T> for GitStatus {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         let root = &fs.benchmark_dir().to_path_buf();
 
-        if !self.read_only {
-            self.dts.create_directory_tree(root.clone());
-        }
+        self.dts.create_directory_tree(root.clone());
         let paths = self.dts.enumerate_paths().into_iter().map(path_buf_to_c_string).collect();
 
         let root_fd =
@@ -764,7 +714,7 @@ mod tests {
     #[fuchsia::test]
     async fn stat_path_test() {
         let mut test_fs = Box::new(TestFilesystem::new());
-        let benchmark = StatPath { file_count: 5, read_only: false };
+        let benchmark = StatPath { file_count: 5 };
         let results = benchmark.run(test_fs.as_mut()).await;
         assert_eq!(results.len(), 5);
         assert_eq!(test_fs.clear_cache_count().await, 0);
@@ -774,7 +724,7 @@ mod tests {
     #[fuchsia::test]
     async fn open_file_test() {
         let mut test_fs = Box::new(TestFilesystem::new());
-        let benchmark = OpenFile { file_count: 5, read_only: false };
+        let benchmark = OpenFile { file_count: 5 };
         let results = benchmark.run(test_fs.as_mut()).await;
         assert_eq!(results.len(), 5);
         assert_eq!(test_fs.clear_cache_count().await, 0);
@@ -804,7 +754,7 @@ mod tests {
     #[fuchsia::test]
     async fn open_deeply_nested_file_test() {
         let mut test_fs = Box::new(TestFilesystem::new());
-        let benchmark = OpenDeeplyNestedFile { file_count: 5, depth: 3, read_only: false };
+        let benchmark = OpenDeeplyNestedFile { file_count: 5, depth: 3 };
         let results = benchmark.run(test_fs.as_mut()).await;
         assert_eq!(results.len(), 5);
         assert_eq!(test_fs.clear_cache_count().await, 0);
@@ -819,8 +769,7 @@ mod tests {
             directories_per_directory: 2,
             max_depth: 2,
         };
-        let benchmark =
-            GitStatus { dts, iterations: ITERATION_COUNT, stat_threads: 1, read_only: false };
+        let benchmark = GitStatus { dts, iterations: ITERATION_COUNT, stat_threads: 1 };
         let results = benchmark.run(test_fs.as_mut()).await;
 
         assert_eq!(results.len(), ITERATION_COUNT as usize);
