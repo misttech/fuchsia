@@ -2368,7 +2368,7 @@ impl ComputationContext {
             "{op_name} {}, {}, {}",
             display_register(dst),
             display_source(src),
-            if offset == 0 { format!("0") } else { print_offset(offset) },
+            print_jump_offset(offset),
         );
         let op1 = self.reg(dst)?;
         let op2 = self.compute_source(src.clone())?;
@@ -3526,15 +3526,33 @@ impl JumpType {
     }
 }
 
-fn display_register(register: Register) -> String {
-    format!("%r{register}")
+#[derive(Clone, Copy)]
+struct DisplayRegister(Register);
+
+impl std::fmt::Display for DisplayRegister {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "%r{}", self.0)
+    }
 }
 
-fn display_source(src: Source) -> String {
-    match src {
-        Source::Reg(r) => display_register(r),
-        Source::Value(v) => format!("0x{v:x}"),
+fn display_register(register: Register) -> DisplayRegister {
+    DisplayRegister(register)
+}
+
+#[derive(Clone, Copy)]
+struct DisplaySource(Source);
+
+impl std::fmt::Display for DisplaySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Source::Reg(r) => display_register(r).fmt(f),
+            Source::Value(v) => write!(f, "0x{v:x}"),
+        }
     }
+}
+
+fn display_source(src: Source) -> DisplaySource {
+    DisplaySource(src)
 }
 
 /// Visiting an instruction pushes the successors of `self` to `VerificationContext::states`.
@@ -4763,14 +4781,18 @@ impl BpfVisitor for &ComputationContext {
         register_offset: Option<Register>,
         width: DataWidth,
     ) -> Result<(), VerifierErrorKind> {
-        bpf_log!(
-            self,
-            context,
-            "ldp{} {}{}",
-            width.str(),
-            register_offset.map(display_register).unwrap_or_else(Default::default),
-            print_offset(offset)
-        );
+        if let Some(reg) = register_offset {
+            bpf_log!(
+                self,
+                context,
+                "ldp{} {}{}",
+                width.str(),
+                display_register(reg),
+                print_offset(offset)
+            );
+        } else {
+            bpf_log!(self, context, "ldp{} {}", width.str(), print_offset(offset));
+        }
 
         // Verify that `src` refers to a packet.
         let src_type = self.reg(src)?;
@@ -4913,15 +4935,30 @@ fn scomp32(
     Ok(Some(op(x.value as i32, y.value as i32)))
 }
 
-fn print_offset<T: Into<i32>>(offset: T) -> String {
-    let offset: i32 = offset.into();
-    if offset == 0 {
-        String::new()
-    } else if offset > 0 {
-        format!("+{offset}")
-    } else {
-        format!("{offset}")
+#[derive(Clone, Copy)]
+struct DisplayOffset {
+    offset: i32,
+    show_zero: bool,
+}
+
+impl std::fmt::Display for DisplayOffset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.offset > 0 {
+            write!(f, "+{}", self.offset)
+        } else if self.offset < 0 || self.show_zero {
+            write!(f, "{}", self.offset)
+        } else {
+            Ok(())
+        }
     }
+}
+
+fn print_offset<T: Into<i32>>(offset: T) -> DisplayOffset {
+    DisplayOffset { offset: offset.into(), show_zero: false }
+}
+
+fn print_jump_offset<T: Into<i32>>(offset: T) -> DisplayOffset {
+    DisplayOffset { offset: offset.into(), show_zero: true }
 }
 
 fn run_on_stack_offset<F>(v: StackOffset, f: F) -> StackOffset

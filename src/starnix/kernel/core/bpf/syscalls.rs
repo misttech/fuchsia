@@ -323,22 +323,26 @@ pub fn sys_bpf(
             let user_code = UserRef::<EbpfInstruction>::new(UserAddress::from(prog_attr.insns));
             let code = current_task.read_objects_to_vec(user_code, prog_attr.insn_cnt as usize)?;
 
-            let mut log_buffer = if prog_attr.log_buf != 0 && prog_attr.log_size > 1 {
-                UserBuffersOutputBuffer::unified_new(
-                    current_task,
-                    smallvec![UserBuffer {
-                        address: prog_attr.log_buf.into(),
-                        length: (prog_attr.log_size - 1) as usize
-                    }],
-                )?
-            } else {
-                UserBuffersOutputBuffer::unified_new(current_task, smallvec![])?
-            };
+            let mut log_buffer =
+                if prog_attr.log_level != 0 && prog_attr.log_buf != 0 && prog_attr.log_size > 1 {
+                    UserBuffersOutputBuffer::unified_new(
+                        current_task,
+                        smallvec![UserBuffer {
+                            address: prog_attr.log_buf.into(),
+                            length: prog_attr.log_size as usize,
+                        }],
+                    )?
+                } else {
+                    UserBuffersOutputBuffer::unified_new(current_task, smallvec![])?
+                };
             let name = validate_bpf_name(prog_attr.prog_name.as_bytes())?;
             let info = ProgramInfo::try_from(&prog_attr)?;
             Program::check_load_access(current_task, &info)?;
             let program_type = info.program_type;
             let program = Program::new(current_task, info, &mut log_buffer, code);
+            if log_buffer.available() > 0 && log_buffer.bytes_written() == 0 {
+                log_buffer.write_all(b"\0")?;
+            }
             let program_or_stub = match (program, program_type) {
                 (Ok(program), _) => BpfHandle::Program(program),
 
@@ -358,8 +362,6 @@ pub fn sys_bpf(
                     return Err(e.into());
                 }
             };
-            // Ensures the log buffer ends with a 0.
-            log_buffer.write(b"\0")?;
             install_bpf_fd(current_task, program_or_stub)
         }
 

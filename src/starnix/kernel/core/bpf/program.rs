@@ -9,24 +9,39 @@ use crate::task::{CurrentTask, Kernel, register_delayed_release};
 use crate::vfs::{FdNumber, OutputBuffer};
 use ebpf::{
     BPF_LDDW, BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
-    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, EbpfError, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, StaticHelperSet, VerifiedEbpfProgram, VerifierError, VerifierLogger,
-    link_program, verify_program,
+    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, CallingContext, EbpfError, EbpfInstruction,
+    EbpfProgram, EbpfProgramContext, NullVerifierLogger, StaticHelperSet, VerifiedEbpfProgram,
+    VerifierError, VerifierLogger, link_program, verify_program,
 };
 use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType, StructId};
 use fidl_fuchsia_ebpf as febpf;
 use starnix_lifecycle::{AtomicCounter, ObjectReleaser, ReleaserAction};
-use starnix_logging::{log_warn, track_stub};
+use starnix_logging::track_stub;
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON};
 use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::{bpf_attr__bindgen_ty_4, errno, error};
 use std::sync::{Arc, Weak};
 
+bitflags::bitflags! {
+    /// Verifier log level flags (`BPF_LOG_*` in Linux `include/linux/bpf_verifier.h`).
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct VerifierLogLevel: u32 {
+        /// `BPF_LOG_LEVEL1`: log instruction trace, but reset the log buffer on verification
+        /// success so only verification failures retain the trace.
+        const LEVEL1 = 1 << 0;
+        /// `BPF_LOG_LEVEL2`: verbose trace retained even when verification succeeds.
+        const LEVEL2 = 1 << 1;
+        /// `BPF_LOG_STATS`: log verifier statistics.
+        const STATS = 1 << 2;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ProgramInfo {
     pub program_type: ProgramType,
     pub expected_attach_type: AttachType,
+    pub log_level: VerifierLogLevel,
 }
 
 impl TryFrom<&bpf_attr__bindgen_ty_4> for ProgramInfo {
@@ -36,6 +51,7 @@ impl TryFrom<&bpf_attr__bindgen_ty_4> for ProgramInfo {
         Ok(Self {
             program_type: info.prog_type.try_into().map_err(map_ebpf_api_error)?,
             expected_attach_type: info.expected_attach_type.into(),
+            log_level: VerifierLogLevel::from_bits_retain(info.log_level),
         })
     }
 }
@@ -101,6 +117,30 @@ fn map_ebpf_error(e: EbpfError) -> Errno {
     }
 }
 
+fn verify_with_logger(
+    code: Vec<EbpfInstruction>,
+    log_level: VerifierLogLevel,
+    logger: &mut dyn OutputBuffer,
+    make_calling_context: impl Fn() -> Result<CallingContext, Errno>,
+) -> Result<VerifiedEbpfProgram, Errno> {
+    if log_level.is_empty() || logger.available() == 0 {
+        return verify_program(code, make_calling_context()?, &mut NullVerifierLogger)
+            .map_err(verifier_error_to_errno);
+    }
+    if !log_level.contains(VerifierLogLevel::LEVEL2) {
+        if let Ok(program) =
+            verify_program(code.clone(), make_calling_context()?, &mut NullVerifierLogger)
+        {
+            logger.write_all(b"\0")?;
+            return Ok(program);
+        }
+    }
+    let mut buffered_logger = BufferVerifierLogger::new(logger);
+    let res = verify_program(code, make_calling_context()?, &mut buffered_logger);
+    buffered_logger.flush()?;
+    res.map_err(verifier_error_to_errno)
+}
+
 impl Program {
     pub fn new(
         current_task: &CurrentTask,
@@ -109,14 +149,12 @@ impl Program {
         mut code: Vec<EbpfInstruction>,
     ) -> Result<ProgramHandle, Errno> {
         let maps = link_maps_fds(current_task, &mut code)?;
-        let maps_schema = maps.iter().map(|m| m.schema).collect();
-        let mut logger = BufferVeriferLogger::new(logger);
-        let calling_context = info
-            .program_type
-            .create_calling_context(info.expected_attach_type, maps_schema)
-            .map_err(map_ebpf_api_error)?;
-        let program =
-            verify_program(code, calling_context, &mut logger).map_err(verifier_error_to_errno)?;
+        let program = verify_with_logger(code, info.log_level, logger, || {
+            let maps_schema = maps.iter().map(|m| m.schema).collect();
+            info.program_type
+                .create_calling_context(info.expected_attach_type, maps_schema)
+                .map_err(map_ebpf_api_error)
+        })?;
 
         let (fidl_handle, service_handle) = zx::EventPair::create();
         let fidl_id =
@@ -355,19 +393,31 @@ fn link_maps_fds(
     Ok(maps)
 }
 
-struct BufferVeriferLogger<'a> {
+struct BufferVerifierLogger<'a> {
     buffer: &'a mut dyn OutputBuffer,
+    data: Vec<u8>,
+    max_len: usize,
     full: bool,
 }
 
-impl BufferVeriferLogger<'_> {
-    fn new<'a>(buffer: &'a mut dyn OutputBuffer) -> BufferVeriferLogger<'a> {
-        let full = buffer.available() == 0;
-        BufferVeriferLogger { buffer, full }
+impl<'a> BufferVerifierLogger<'a> {
+    fn new(buffer: &'a mut dyn OutputBuffer) -> Self {
+        // Reserve 1 byte in the output buffer for the trailing NUL terminator.
+        let max_len = buffer.available().saturating_sub(1);
+        let full = max_len == 0;
+        Self { buffer, data: Vec::new(), max_len, full }
+    }
+
+    fn flush(mut self) -> Result<(), Errno> {
+        if self.buffer.available() > 0 {
+            self.data.push(0);
+            self.buffer.write_all(&self.data)?;
+        }
+        Ok(())
     }
 }
 
-impl VerifierLogger for BufferVeriferLogger<'_> {
+impl VerifierLogger for BufferVerifierLogger<'_> {
     fn is_enabled(&self) -> bool {
         !self.full
     }
@@ -378,26 +428,99 @@ impl VerifierLogger for BufferVeriferLogger<'_> {
         if self.full {
             return;
         }
-        if line.len() + 1 > self.buffer.available() {
+        if self.data.len() + line.len() + 1 > self.max_len {
             self.full = true;
             return;
         }
-        match self.buffer.write(line) {
-            Err(e) => {
-                log_warn!("Unable to write verifier log: {e:?}");
-                self.full = true;
-            }
-            _ => {}
-        }
-        match self.buffer.write(b"\n") {
-            Err(e) => {
-                log_warn!("Unable to write verifier log: {e:?}");
-                self.full = true;
-            }
-            _ => {}
-        }
-        if self.buffer.available() == 0 {
+        self.data.extend_from_slice(line);
+        self.data.push(b'\n');
+        if self.data.len() == self.max_len {
             self.full = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::buffers::VecOutputBuffer;
+    use ebpf::{BPF_ADD, BPF_ALU64, BPF_EXIT, BPF_JMP, BPF_K, BPF_MOV};
+
+    #[::fuchsia::test]
+    fn test_buffer_verifier_logger_batches_and_nul_terminates() {
+        // Buffer has room for "abc\n" (4 bytes) + "\0" (1 byte) = 5 bytes, so second line is
+        // dropped while still NUL-terminating.
+        let mut out = VecOutputBuffer::new(6);
+        let mut logger = BufferVerifierLogger::new(&mut out);
+        assert!(logger.is_enabled());
+        logger.log(b"abc");
+        assert!(logger.is_enabled());
+        logger.log(b"def");
+        assert!(!logger.is_enabled());
+        logger.flush().expect("flush");
+        assert_eq!(out.data(), b"abc\n\0");
+    }
+
+    #[::fuchsia::test]
+    fn test_verify_with_logger_log_levels() {
+        let valid_code = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_MOV | BPF_K, 0, 0, 0, 0),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        let invalid_code = vec![
+            EbpfInstruction::new(BPF_ALU64 | BPF_ADD | BPF_K, 0, 0, 0, 1),
+            EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+        ];
+        let make_context = || {
+            ProgramType::SocketFilter
+                .create_calling_context(AttachType::Unspecified, Vec::new())
+                .map_err(map_ebpf_api_error)
+        };
+
+        // log_level = empty: nothing written to log buffer even when provided.
+        let mut out = VecOutputBuffer::new(256);
+        let _prog = verify_with_logger(
+            valid_code.clone(),
+            VerifierLogLevel::empty(),
+            &mut out,
+            make_context,
+        )
+        .expect("verify valid program with log_level=0");
+        assert!(out.data().is_empty());
+
+        // log_level = LEVEL1 (BPF_LOG_LEVEL1) on success: resets log buffer to empty NUL-terminated
+        // string without formatting instruction trace.
+        let mut out = VecOutputBuffer::new(256);
+        let _prog = verify_with_logger(
+            valid_code.clone(),
+            VerifierLogLevel::LEVEL1,
+            &mut out,
+            make_context,
+        )
+        .expect("verify valid program with log_level=1");
+        assert_eq!(out.data(), b"\0");
+
+        // log_level = LEVEL1 (BPF_LOG_LEVEL1) on failure: populates full instruction trace + error
+        // and NUL-terminates.
+        let mut out = VecOutputBuffer::new(256);
+        let Err(err) =
+            verify_with_logger(invalid_code, VerifierLogLevel::LEVEL1, &mut out, make_context)
+        else {
+            panic!("invalid program must fail");
+        };
+        assert_eq!(err, errno!(EACCES));
+        assert!(out.data().ends_with(b"\0"));
+        let log_str = std::str::from_utf8(&out.data()[..out.data().len() - 1]).unwrap();
+        assert!(log_str.contains("0: (07) add %r0, 0x1"), "unexpected log: {log_str}");
+
+        // log_level = LEVEL2 (BPF_LOG_LEVEL2) on success: retains full instruction trace and
+        // NUL-terminates.
+        let mut out = VecOutputBuffer::new(256);
+        let _prog =
+            verify_with_logger(valid_code, VerifierLogLevel::LEVEL2, &mut out, make_context)
+                .expect("verify valid program with log_level=2");
+        assert!(out.data().ends_with(b"\0"));
+        let log_str = std::str::from_utf8(&out.data()[..out.data().len() - 1]).unwrap();
+        assert_eq!(log_str, "0: (b7) mov %r0, 0x0\n1: (95) exit\n");
     }
 }
