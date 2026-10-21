@@ -303,6 +303,11 @@ type Status = table {
     /// path, in microvolts.
     /// Omitted if indeterminate or unsupported by hardware.
     12: input_voltage_limit_uv uint32;
+
+    /// Active top-off duration programmed into the charger: how long it stays in
+    /// `ChargePhase::TOP_OFF` before entering `ChargePhase::DONE`.
+    /// Omitted if indeterminate or unsupported by hardware.
+    13: top_off_duration zx.Duration;
 };
 
 /// Diagnostic and telemetry interface for charging hardware.
@@ -452,6 +457,12 @@ type ControlOptions = table {
     /// Values between discrete hardware register steps are rounded up to the nearest programmable
     /// step so the input voltage never drops below the requested floor.
     6: input_voltage_limit_uv uint32;
+
+    /// How long the charger stays in `ChargePhase::TOP_OFF`, after the charge current falls below
+    /// the termination threshold, before it enters `ChargePhase::DONE`. A shorter duration charges
+    /// less. Values between discrete hardware register steps are rounded down to the nearest
+    /// programmable step.
+    7: top_off_duration zx.Duration;
 };
 
 /// Control interface for mutating charger hardware state.
