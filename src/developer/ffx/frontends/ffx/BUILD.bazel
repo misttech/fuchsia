@@ -25,6 +25,7 @@ ffx_plugin(
     edition = "2024",
     plugin_deps = [
         "//src/developer/ffx/plugins/completion:ffx_completion",
+        "//src/developer/ffx/plugins/config:ffx_config_plugin",
         "//src/developer/ffx/plugins/version:ffx_version",
     ],
     sdk_category = "not-yet-specified",

@@ -48,6 +48,8 @@ test_suite(
         "//src/developer/ffx/lib/traceable_error:lib_test",
         "//src/developer/ffx/lib/usb_fastboot_discovery:lib_test",
         "//src/developer/ffx/lib/version:lib_test",
+        "//src/developer/ffx/plugins/config:ffx_config_plugin_args_test",
+        "//src/developer/ffx/plugins/config:ffx_config_plugin_test",
         "//src/developer/ffx/plugins/emulator/common:ffx_emulator_common_test",
         "//src/developer/ffx/plugins/version:ffx_version_test",
         "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common_host_test",

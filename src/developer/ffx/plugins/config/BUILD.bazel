@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//src/developer/ffx/build:ffx_plugin.bzl", "ffx_plugin")
+
+package(default_applicable_licenses = ["//:license"])
+
+ffx_plugin(
+    name = "ffx_config_plugin",
+    srcs = ["src/lib.rs"],
+    args_deps = [
+        "//src/developer/ffx/config:lib",
+        "//src/developer/ffx/core:lib",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+    args_srcs = ["src/args.rs"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    sdk_category = "not-yet-specified",
+    version = "0.1.0",
+    visibility = ["//src/developer/ffx:__subpackages__"],
+    deps = [
+        "//src/developer/ffx/config:lib",
+        "//src/developer/ffx/lib/errors:lib",
+        "//src/developer/ffx/lib/fho:lib",
+        "//src/developer/ffx/lib/ssh:lib",
+        "//src/developer/ffx/lib/writer:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+host_rustc_test(
+    name = "ffx_config_plugin_args_test",
+    crate = ":ffx_config_plugin_args",
+    visibility = ["//src/developer/ffx:__pkg__"],
+)
+
+host_rustc_test(
+    name = "ffx_config_plugin_test",
+    crate = ":ffx_config_plugin",
+    visibility = ["//src/developer/ffx:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
