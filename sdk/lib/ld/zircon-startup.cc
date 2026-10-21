@@ -75,8 +75,9 @@ LoadExecutableResult LoadExecutable(Diagnostics& diag, StartupData& startup,
     elfldltl::UnownedVmoFile file{vmo.borrow(), diag};
     Elf::size_type max_tls_modid = 0;
     std::optional<Elf::Phdr> interp;
-    static_cast<StartupLoadResult&>(result) = result.module->Load(
-        diag, initial_exec, file, 0, max_tls_modid, elfldltl::PhdrInterpObserver<Elf>(interp));
+    static_cast<StartupLoadResult&>(result) =
+        result.module->Load(diag, scratch, initial_exec, file, 0, max_tls_modid,
+                            elfldltl::PhdrInterpObserver<Elf>(interp));
     assert(max_tls_modid <= 1);
 
     // Extract the PT_INTERP string.

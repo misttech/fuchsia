@@ -102,9 +102,12 @@ struct StartupLoadModule : public StartupLoadModuleBase,
   // passive ABI module in this->module().  The allocator only guarantees two
   // mutable allocations at a time, so the caller must then promptly splice it
   // into the link_map list before the next Load call allocates the next one.
-  template <class Allocator, class File, class... PhdrObservers>
-  [[nodiscard]] StartupLoadResult Load(Diagnostics& diag, Allocator& allocator, File&& file,
-                                       uint32_t symbolizer_modid, size_type& max_tls_modid,
+  // The scratch allocator is used for data only needed during startup, such as
+  // the program headers read from the file.
+  template <class ScratchAllocator, class Allocator, class File, class... PhdrObservers>
+  [[nodiscard]] StartupLoadResult Load(Diagnostics& diag, ScratchAllocator& scratch,
+                                       Allocator& allocator, File&& file, uint32_t symbolizer_modid,
+                                       size_type& max_tls_modid,
                                        PhdrObservers&&... phdr_observers) {
     // Diagnostics sent to diag during loading will be prefixed with the module
     // name, unless the name is empty as it is for the main executable.
@@ -119,12 +122,21 @@ struct StartupLoadModule : public StartupLoadModuleBase,
     // and their symbols are inherently visible.
     decoded().module().symbols_visible = true;
 
-    // Read the file header and program headers into stack buffers and map in
-    // the image.  This fills in load_info() as well as the module vaddr bounds
-    // and phdrs fields.  Note that module().phdrs might remain empty if the
-    // phdrs aren't in the load image, so DecodeFromMemory will keep using the
-    // stack copy read from the file instead.
-    ld::DecodedModuleInMemory<>::FixedPhdrAllocator phdr_allocator;
+    // Read the file header and program headers and map in the image.  This
+    // fills in load_info() as well as the module vaddr bounds and phdrs
+    // fields.  The program headers go into scratch memory rather than onto the
+    // stack, since the startup stack is very small.  Note that module().phdrs
+    // might remain empty if the phdrs aren't in the load image, so
+    // DecodeFromMemory will keep using the copy read from the file instead.
+    auto phdr_allocator = [&diag, &scratch](size_t count) -> std::optional<std::span<Phdr>> {
+      if (count > kMaxPhdrs) [[unlikely]] {
+        return std::nullopt;
+      }
+      fbl::AllocChecker ac;
+      Phdr* phdrs = new (scratch, ac) Phdr[count];
+      CheckAlloc(diag, ac, "program headers");
+      return std::span{phdrs, count};
+    };
     auto headers = decoded().LoadFromFile(diag, loader_, std::forward<File>(file), phdr_allocator,
                                           std::forward<PhdrObservers>(phdr_observers)...);
     if (!headers) [[unlikely]] {
@@ -301,7 +313,8 @@ struct StartupLoadModule : public StartupLoadModuleBase,
         it->decoded().module().symbolizer_modid = symbolizer_modid++;
       } else if (auto file = get_dep_file(it->name())) {
         needed_count =
-            it->Load(diag, initial_exec, *file, symbolizer_modid++, max_tls_modid).needed_count;
+            it->Load(diag, scratch, initial_exec, *file, symbolizer_modid++, max_tls_modid)
+                .needed_count;
         assert(it->IsLoaded());
       } else {
         diag.MissingDependency(it->name().str());
