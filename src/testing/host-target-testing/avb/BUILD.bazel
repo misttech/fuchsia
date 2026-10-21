@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "avb",
+    testonly = True,
+    srcs = ["avb.go"],
+    importpath = "go.fuchsia.dev/fuchsia/src/testing/host-target-testing/avb",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/testing/host-target-testing:__subpackages__"],
+    deps = ["//tools/lib/logger"],
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "host-target-testing-avb-test",
+    srcs = ["avb_test.go"],
+    embed = [":avb"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
