@@ -3,11 +3,11 @@ name: driver-file-structure
 description: >
   Create or update a Fuchsia driver's directory layout, file names, and build
   target conventions. Covers the meta/ dir (.bind, .cml, -info.json), C++
-  (.cc/.h) vs Rust (mandatory src/lib.rs) sources, and the four-target GN/Bazel
-  chain (bind -> driver -> component -> package). Use when scaffolding a new
-  driver or when build/bind targets fail to resolve due to hyphen-vs-underscore
-  naming mismatches with the parent directory, or a missing dependency on the
-  bind target.
+  (.cc/.h) vs Rust (mandatory src/lib.rs) sources, and the four-target
+  GN/Bazel chain (bind to driver to component to package). Use when
+  scaffolding a new driver or when build/bind targets fail to resolve due to
+  hyphen-vs-underscore naming mismatches with the parent directory, or a
+  missing dependency on the bind target.
 ---
 
 # Driver File Structure
@@ -42,6 +42,7 @@ subdirectories if complex.
 #### C++ Drivers
 
 C++ drivers typically consist of the following file structure:
+
 * **`[driver_name].cc`**: Contains the driver implementation, including the
   lifecycle hooks and the `FUCHSIA_DRIVER_EXPORT2` macro.
 * **`[driver_name].h`**: Defines the driver class, inheriting from
@@ -51,6 +52,7 @@ C++ drivers typically consist of the following file structure:
 
 Rust drivers have a strict file structure enforced by the Rust compilation
 model:
+
 * **`src/lib.rs`**: The root library file. Fuchsia Rust drivers are compiled as
   dynamic libraries loaded by the driver host, so they **must** use `lib.rs`.
 * **Other source files**: Additional modules can be included in the `src/`
