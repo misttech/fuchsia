@@ -5,7 +5,10 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_MOCK_REMOTE_API_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_MOCK_REMOTE_API_H_
 
+#include <cstdint>
+#include <map>
 #include <optional>
+#include <vector>
 
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/mock_memory.h"
@@ -21,7 +24,10 @@ namespace zxdb {
 class MockRemoteAPI : public RemoteAPI {
  public:
   MockRemoteAPI();
-  ~MockRemoteAPI();
+  ~MockRemoteAPI() override;
+
+  // Attach.
+  const std::optional<debug_ipc::AttachRequest>& last_attach() const { return last_attach_; }
 
   // Resume. By default Resume() counts the number of calls, but many tests also want to opt-in to
   // an implicit MessageLoop exit when this happens so they can continue testing from after the IPC
@@ -34,7 +40,9 @@ class MockRemoteAPI : public RemoteAPI {
   void set_thread_status_reply(const debug_ipc::ThreadStatusReply& reply) {
     thread_status_reply_ = reply;
   }
-  std::optional<debug_ipc::ThreadStatusReply> thread_status_reply() { return thread_status_reply_; }
+  const std::optional<debug_ipc::ThreadStatusReply>& thread_status_reply() const {
+    return thread_status_reply_;
+  }
 
   // Breakpoints.
   int breakpoint_add_count() const { return breakpoint_add_count_; }
@@ -44,8 +52,9 @@ class MockRemoteAPI : public RemoteAPI {
   }
   uint64_t last_breakpoint_id() const { return last_breakpoint_add_.breakpoint.id; }
   uint64_t last_breakpoint_address() const {
-    if (last_breakpoint_add_.breakpoint.locations.empty())
+    if (last_breakpoint_add_.breakpoint.locations.empty()) {
       return 0;
+    }
     return last_breakpoint_add_.breakpoint.locations[0].address;
   }
 
@@ -101,10 +110,11 @@ class MockRemoteAPI : public RemoteAPI {
   // TODO(donosoc): The client will detect underlying exceptions by analyzing the threads it
   //                receives upon process attaching, so this will be filled then.
   //                Currently we need this to not assert existing tests.
-  void Threads(const debug_ipc::ThreadsRequest& request,
-               fit::callback<void(const Err&, debug_ipc::ThreadsReply)> cb) override {}
+  void Threads(const debug_ipc::ThreadsRequest& /*request*/,
+               fit::callback<void(const Err&, debug_ipc::ThreadsReply)> /*cb*/) override {}
 
  private:
+  std::optional<debug_ipc::AttachRequest> last_attach_;
   std::optional<debug_ipc::ThreadStatusReply> thread_status_reply_ = std::nullopt;
   debug_ipc::PauseReply pause_reply_;
   debug_ipc::AddressSpaceReply address_space_reply_;

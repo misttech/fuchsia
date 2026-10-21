@@ -4,6 +4,10 @@
 
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/zxdb/common/err.h"
@@ -30,12 +34,13 @@ void MockRemoteAPI::SetRegisterCategory(debug::RegisterCategory cat,
 
 void MockRemoteAPI::Attach(const debug_ipc::AttachRequest& request,
                            fit::callback<void(const Err&, debug_ipc::AttachReply)> cb) {
+  last_attach_ = request;
   debug_ipc::AttachReply reply;
   reply.koid = request.koid;
   reply.name = "<mock>";
 
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb), reply]() mutable { cb(Err(), reply); });
+      FROM_HERE, [cb = std::move(cb), reply] mutable { cb(Err(), reply); });
 }
 
 void MockRemoteAPI::AddOrChangeBreakpoint(
@@ -43,7 +48,7 @@ void MockRemoteAPI::AddOrChangeBreakpoint(
     fit::callback<void(const Err&, debug_ipc::AddOrChangeBreakpointReply)> cb) {
   breakpoint_add_count_++;
   last_breakpoint_add_ = request;
-  debug::MessageLoop::Current()->PostTask(FROM_HERE, [cb = std::move(cb)]() mutable {
+  debug::MessageLoop::Current()->PostTask(FROM_HERE, [cb = std::move(cb)] mutable {
     cb(Err(), debug_ipc::AddOrChangeBreakpointReply());
   });
 }
@@ -51,9 +56,8 @@ void MockRemoteAPI::AddOrChangeBreakpoint(
 void MockRemoteAPI::AddressSpace(const debug_ipc::AddressSpaceRequest& request,
                                  fit::callback<void(const Err&, debug_ipc::AddressSpaceReply)> cb) {
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [reply = address_space_reply_, cb = std::move(cb)]() mutable {
-        cb(Err(), std::move(reply));
-      });
+      FROM_HERE,
+      [reply = address_space_reply_, cb = std::move(cb)] mutable { cb(Err(), std::move(reply)); });
 }
 
 void MockRemoteAPI::RemoveBreakpoint(
@@ -61,7 +65,7 @@ void MockRemoteAPI::RemoveBreakpoint(
     fit::callback<void(const Err&, debug_ipc::RemoveBreakpointReply)> cb) {
   breakpoint_remove_count_++;
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb)]() mutable { cb(Err(), debug_ipc::RemoveBreakpointReply()); });
+      FROM_HERE, [cb = std::move(cb)] mutable { cb(Err(), debug_ipc::RemoveBreakpointReply()); });
 }
 
 void MockRemoteAPI::ThreadStatus(const debug_ipc::ThreadStatusRequest& request,
@@ -77,7 +81,7 @@ void MockRemoteAPI::ThreadStatus(const debug_ipc::ThreadStatusRequest& request,
 
   // Returns the canned response.
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb), reply]() mutable { cb(Err(), std::move(reply)); });
+      FROM_HERE, [cb = std::move(cb), reply] mutable { cb(Err(), std::move(reply)); });
 }
 
 void MockRemoteAPI::Pause(const debug_ipc::PauseRequest& request,
@@ -85,7 +89,7 @@ void MockRemoteAPI::Pause(const debug_ipc::PauseRequest& request,
   // Returns the canned response.
   debug::MessageLoop::Current()->PostTask(
       FROM_HERE,
-      [cb = std::move(cb), response = pause_reply_]() mutable { cb(Err(), std::move(response)); });
+      [cb = std::move(cb), response = pause_reply_] mutable { cb(Err(), std::move(response)); });
 }
 
 void MockRemoteAPI::Resume(const debug_ipc::ResumeRequest& request,
@@ -94,55 +98,54 @@ void MockRemoteAPI::Resume(const debug_ipc::ResumeRequest& request,
   resume_count_++;
   last_resume_ = request;
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb), resume_quits_loop = resume_quits_loop_]() mutable {
+      FROM_HERE, [cb = std::move(cb), resume_quits_loop = resume_quits_loop_] mutable {
         cb(Err(), debug_ipc::ResumeReply());
-        if (resume_quits_loop)
+        if (resume_quits_loop) {
           debug::MessageLoop::Current()->QuitNow();
+        }
       });
 }
 
 void MockRemoteAPI::ReadMemory(const debug_ipc::ReadMemoryRequest& request,
                                fit::callback<void(const Err&, debug_ipc::ReadMemoryReply)> cb) {
   std::vector<uint8_t> result = memory_.ReadMemory(request.address, request.size);
-  debug::MessageLoop::Current()->PostTask(FROM_HERE,
-                                          [request, result, cb = std::move(cb)]() mutable {
-                                            debug_ipc::ReadMemoryReply reply;
+  debug::MessageLoop::Current()->PostTask(FROM_HERE, [request, result, cb = std::move(cb)] mutable {
+    debug_ipc::ReadMemoryReply reply;
 
-                                            // For now this is very simple and returns the
-                                            // result as one block. A more complete
-                                            // implementation would convert short reads into
-                                            // multiple blocks.
-                                            reply.blocks.resize(1);
-                                            auto& block = reply.blocks[0];
+    // For now this is very simple and returns the result as one block. A more complete
+    // implementation would convert short reads into multiple blocks.
+    reply.blocks.resize(1);
+    auto& block = reply.blocks[0];
 
-                                            block.address = request.address;
-                                            block.valid = request.size > 0;
-                                            block.size = request.size;
-                                            if (block.valid)
-                                              block.data = std::move(result);
+    block.address = request.address;
+    block.valid = request.size > 0;
+    block.size = request.size;
+    if (block.valid) {
+      block.data = std::move(result);
+    }
 
-                                            cb(Err(), std::move(reply));
-                                          });
+    cb(Err(), std::move(reply));
+  });
 }
 
 void MockRemoteAPI::ReadRegisters(
     const debug_ipc::ReadRegistersRequest& request,
     fit::callback<void(const Err&, debug_ipc::ReadRegistersReply)> cb) {
   debug_ipc::ReadRegistersReply reply;
-  for (auto& cat : request.categories) {
+  for (const auto& cat : request.categories) {
     const auto& regs = register_replies_[cat];
     reply.registers.insert(reply.registers.end(), regs.begin(), regs.end());
   }
 
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [reply, cb = std::move(cb)]() mutable { cb(Err(), reply); });
+      FROM_HERE, [reply, cb = std::move(cb)] mutable { cb(Err(), reply); });
 }
 
 void MockRemoteAPI::WriteRegisters(
     const debug_ipc::WriteRegistersRequest& request,
     fit::callback<void(const Err&, debug_ipc::WriteRegistersReply)> cb) {
   last_write_registers_ = request;
-  debug::MessageLoop::Current()->PostTask(FROM_HERE, [cb = std::move(cb)]() mutable {
+  debug::MessageLoop::Current()->PostTask(FROM_HERE, [cb = std::move(cb)] mutable {
     debug_ipc::WriteRegistersReply reply;
     cb(Err(), reply);
   });
@@ -151,18 +154,18 @@ void MockRemoteAPI::WriteRegisters(
 void MockRemoteAPI::Detach(const debug_ipc::DetachRequest& request,
                            fit::callback<void(const Err&, debug_ipc::DetachReply)> cb) {
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb)]() mutable { cb(Err(), debug_ipc::DetachReply()); });
+      FROM_HERE, [cb = std::move(cb)] mutable { cb(Err(), debug_ipc::DetachReply()); });
 }
 
 void MockRemoteAPI::Kill(const debug_ipc::KillRequest& request,
                          fit::callback<void(const Err&, debug_ipc::KillReply)> cb) {
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb)]() mutable { cb(Err(), debug_ipc::KillReply()); });
+      FROM_HERE, [cb = std::move(cb)] mutable { cb(Err(), debug_ipc::KillReply()); });
 }
 
 void MockRemoteAPI::Modules(const debug_ipc::ModulesRequest& request,
                             fit::callback<void(const Err&, debug_ipc::ModulesReply)> cb) {
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb)]() mutable { cb(Err(), debug_ipc::ModulesReply()); });
+      FROM_HERE, [cb = std::move(cb)] mutable { cb(Err(), debug_ipc::ModulesReply()); });
 }
 }  // namespace zxdb
