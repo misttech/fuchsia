@@ -282,13 +282,18 @@ impl InterruptControllerOps for DefaultInterruptController {
 
 static DEFAULT_DRIVER: DefaultInterruptController = DefaultInterruptController;
 
-struct DriverHolder(UnsafeCell<Option<&'static dyn InterruptControllerOps>>);
+/// Holds the active interrupt controller, `DEFAULT_DRIVER` until a driver registers.
+///
+/// It is not an `Option`: the entry points are inlined into every caller, and starting out at
+/// `DEFAULT_DRIVER` keeps each call site to a load of the data and vtable pointers and the
+/// indirect call, with no null check or fallback select.
+struct DriverHolder(UnsafeCell<&'static dyn InterruptControllerOps>);
 
 // SAFETY: The driver is written once during single-threaded early boot and read immutable
 // thereafter.
 unsafe impl Sync for DriverHolder {}
 
-static ACTIVE_DRIVER: DriverHolder = DriverHolder(UnsafeCell::new(None));
+static ACTIVE_DRIVER: DriverHolder = DriverHolder(UnsafeCell::new(&DEFAULT_DRIVER));
 
 /// Returns the registered interrupt controller, or the default no-op controller if no driver has
 /// registered yet.
@@ -298,7 +303,7 @@ static ACTIVE_DRIVER: DriverHolder = DriverHolder(UnsafeCell::new(None));
 fn get_driver() -> &'static dyn InterruptControllerOps {
     // SAFETY: ACTIVE_DRIVER is written once during single-threaded early boot, and read immutable
     // thereafter.
-    unsafe { (*ACTIVE_DRIVER.0.get()).unwrap_or(&DEFAULT_DRIVER) }
+    unsafe { *ACTIVE_DRIVER.0.get() }
 }
 
 /// Registers the platform's interrupt controller with the PDEV dispatch layer.
@@ -328,7 +333,7 @@ pub unsafe fn register_interrupt_controller(driver: &'static dyn InterruptContro
     // SAFETY: This function's contract makes this the only write to `ACTIVE_DRIVER`, with no
     // concurrent reader.
     unsafe {
-        *ACTIVE_DRIVER.0.get() = Some(driver);
+        *ACTIVE_DRIVER.0.get() = driver;
     }
     // Architectural memory barrier to guarantee the vtable and data pointers, along with the
     // driver's early initialization writes, are visible to all future CPUs before they boot up and
