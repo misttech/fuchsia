@@ -224,7 +224,9 @@ pub struct ThreadState {
     /// If blocked, a pointer to the `WaitQueueBase` the `Thread` is on.
     // Safety invariant: Points to the active `WaitQueueBase` while
     // `blocked_threads_tree_node.in_container()` is true, and is `None` otherwise (including when
-    // dropped).
+    // dropped). If the pointed-to queue's magic is `OWNED_MAGIC`, the pointer carries provenance
+    // over the enclosing `OwnedWaitQueue` (unsafe code downcasts it). Only written through the
+    // `unsafe` `set_blocking_wait_queue`.
     blocking_wait_queue: KCell<Option<NonNull<WaitQueueBase>>, ThreadLockClass>,
     /// Node state for existing in `WaitQueueCollection::threads`.
     blocked_threads_tree_node: fbl::WavlTreeNode<Thread>,
@@ -332,8 +334,16 @@ impl ThreadState {
     }
 
     /// Sets the wait queue the thread is currently blocked on.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `wq` is either `None` (when the thread has just been, or is
+    /// about to be, removed from its wait queue's collection), or points to a live
+    /// [`WaitQueueBase`] in whose collection the thread has just been (or is about to be)
+    /// inserted, and which remains live while the thread is blocked in it. If that queue's magic
+    /// is [`OWNED_MAGIC`], `wq` must carry provenance over the enclosing [`OwnedWaitQueue`].
     #[inline]
-    fn set_blocking_wait_queue(
+    pub(crate) unsafe fn set_blocking_wait_queue(
         &self,
         wq: Option<NonNull<WaitQueueBase>>,
         token: &mut LockToken<'_, ThreadLockClass>,
@@ -577,7 +587,10 @@ impl Iterator for WaitQueueCollectionThreads<'_> {
 ///    cannot mutate while we exist in the wait queue (at least, not without
 ///    holding both the wait queue and thread's lock), other things can.
 #[inline]
-fn assert_in_wait_queue(t: &ChainLockProof<'_, Thread>, wq: &ChainLockProof<'_, WaitQueueBase>) {
+pub(crate) fn assert_in_wait_queue(
+    t: &ChainLockProof<'_, Thread>,
+    wq: &ChainLockProof<'_, WaitQueueBase>,
+) {
     debug_assert!(t.wait_queue_state().in_wait_queue());
     debug_assert!(
         t.state() == ThreadStateKind::Blocked || t.state() == ThreadStateKind::BlockedReadLock
@@ -756,6 +769,42 @@ impl ChainLockProof<'_, WaitQueueBase> {
         reason: ResourceOwnership,
         interruptible: Interruptible,
     ) -> Result<(), Status> {
+        let wq_ptr = NonNull::from(self.owner());
+        // SAFETY: Forwarded from the caller; `wq_ptr` points to `self.owner()`, and the caller
+        // guarantees that `self.owner()` carries provenance over the enclosing `OwnedWaitQueue` if
+        // its magic is `OWNED_MAGIC`.
+        unsafe {
+            self.block_etc_preamble_with_ptr(
+                wq_ptr,
+                current_thread,
+                deadline,
+                signal_mask,
+                reason,
+                interruptible,
+            )
+        }
+    }
+
+    /// Exactly like [`Self::block_etc_preamble`], but records `wq_ptr` (rather than a pointer
+    /// derived from `self.owner()`) as the thread's blocking wait queue. This lets an
+    /// `OwnedWaitQueue` record a pointer with provenance over the whole `OwnedWaitQueue`, which a
+    /// `&WaitQueueBase` does not have under Stacked Borrows.
+    ///
+    /// # Safety
+    ///
+    /// The requirements of [`Self::block_etc_preamble`] (with the provenance requirement applying
+    /// to `wq_ptr` instead of `self.owner()`), and `wq_ptr` must point to `self.owner()`.
+    #[inline]
+    pub(crate) unsafe fn block_etc_preamble_with_ptr(
+        &mut self,
+        wq_ptr: NonNull<WaitQueueBase>,
+        current_thread: &mut ChainLockProof<'_, Thread>,
+        deadline: &Deadline,
+        signal_mask: u32,
+        reason: ResourceOwnership,
+        interruptible: Interruptible,
+    ) -> Result<(), Status> {
+        debug_assert!(core::ptr::addr_eq(wq_ptr.as_ptr(), self.owner()));
         debug_assert!(core::ptr::eq(
             current_thread.owner().as_raw(),
             // SAFETY: Multi-threading is initialized when blocking a thread.
@@ -790,8 +839,11 @@ impl ChainLockProof<'_, WaitQueueBase> {
         } else {
             current_thread.set_blocked_read_lock();
         }
-        let wq_ptr = NonNull::from(self.owner());
-        state.set_blocking_wait_queue(Some(wq_ptr), current_thread.token_mut());
+        // SAFETY: `current_thread.owner()` was just inserted into `self.owner()`'s collection, and
+        // the caller guarantees that `wq_ptr` points to `self.owner()`, which stays live while the
+        // thread is blocked in it, and that `wq_ptr` carries provenance over the enclosing
+        // `OwnedWaitQueue` if its magic is `OWNED_MAGIC`.
+        unsafe { state.set_blocking_wait_queue(Some(wq_ptr), current_thread.token_mut()) };
         state.set_blocked_status(Ok(()), current_thread.token_mut());
 
         Ok(())
@@ -824,7 +876,8 @@ impl ChainLockProof<'_, WaitQueueBase> {
             self.collection_mut().remove(t);
         }
         t.wait_queue_state().set_blocked_status(wait_queue_error.into(), t.token_mut());
-        t.wait_queue_state().set_blocking_wait_queue(None, t.token_mut());
+        // SAFETY: `t.owner()` was just removed from `self.owner()`'s collection.
+        unsafe { t.wait_queue_state().set_blocking_wait_queue(None, t.token_mut()) };
     }
 
     /// Recomputes the effective profile of a thread `t` which is known to be blocked in this wait
@@ -2017,7 +2070,10 @@ impl WaitQueue {
         }
         let dest_base: &WaitQueueBase = dest.owner();
         let dest_ptr = NonNull::from(dest_base);
-        t.wait_queue_state().set_blocking_wait_queue(Some(dest_ptr), t.token_mut());
+        // SAFETY: `t.owner()` was just inserted into `dest.owner()`'s collection, and
+        // `dest.owner()` is a plain `WaitQueue` (asserted above), which stays live while threads
+        // are blocked in it.
+        unsafe { t.wait_queue_state().set_blocking_wait_queue(Some(dest_ptr), t.token_mut()) };
     }
 }
 
