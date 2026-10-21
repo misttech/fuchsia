@@ -32,10 +32,13 @@ import (
 )
 
 func usage() {
-	fmt.Printf(`testsharder [flags]
+	fmt.Fprintf(flag.CommandLine.Output(), `testsharder [flags]
 
 Shards tests produced by a build.
+
+Flags:
 `)
+	flag.PrintDefaults()
 }
 
 type testsharderFlags struct {
