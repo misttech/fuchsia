@@ -78,11 +78,13 @@ def destroy(objects: List[OpenWrtAP]) -> None:
     for ap in objects:
         ap.stop_wifi()
         ap.reset_wifi_config()
-        ap.dhcp.reset_dhcp_config()
-        ap.iperf_server.stop()
-        # iperf_server.stop() only terminates the remote iperf3 process and does
-        # not close IPerfServerOverSsh's SSH connection, so close it explicitly.
-        ap.iperf_server.close_ssh()
+        if ap._dhcp is not None:
+            ap._dhcp.reset_dhcp_config()
+        if ap._iperf_server is not None:
+            ap._iperf_server.stop()
+            # iperf_server.stop() only terminates the remote iperf3 process and does
+            # not close IPerfServerOverSsh's SSH connection, so close it explicitly.
+            ap._iperf_server.close_ssh()
         ap.ssh.close()
 
 
@@ -333,24 +335,41 @@ class OpenWrtAP:
         self.allow_regdb_bypass = c.get(bool, "allow_regdb_bypass", False)
         self.ssh_settings = settings.from_config(c.get(dict, "ssh_config"))
         self.ssh = connection.SshConnection(self.ssh_settings)
-        self.dhcp = DhcpController(self.ssh)
-        self.dhcp.reset_dhcp_config()
+        self._dhcp: DhcpController | None = None
+        self._tcpdump: LinuxTcpdumpCommand | None = None
+        self._iperf_server: IPerfServerOverSsh | None = None
+        self._ensure_dhcp_healthy()
         self.reset_wifi_config()
 
-        # Check for tcpdump
-        try:
-            self.ssh.run("which tcpdump")
-        except Exception:
-            _LOGGER.error("tcpdump command not found on OpenWrt AP")
+    @property
+    def dhcp(self) -> DhcpController:
+        """Lazily initializes and returns the DhcpController instance."""
+        if self._dhcp is None:
+            self._dhcp = DhcpController(self.ssh)
+        return self._dhcp
 
-        self.tcpdump = LinuxTcpdumpCommand(self.ssh)
+    @property
+    def tcpdump(self) -> LinuxTcpdumpCommand:
+        """Lazily initializes and returns the LinuxTcpdumpCommand instance."""
+        if self._tcpdump is None:
+            try:
+                self.ssh.run("which tcpdump")
+            except Exception:
+                _LOGGER.error("tcpdump command not found on OpenWrt AP")
+            self._tcpdump = LinuxTcpdumpCommand(self.ssh)
+        return self._tcpdump
 
-        self.iperf_server = IPerfServerOverSsh(
-            ssh_settings=self.ssh_settings,
-            port=5201,
-            test_interface=InterfaceName.lan,
-            use_killall=True,
-        )
+    @property
+    def iperf_server(self) -> IPerfServerOverSsh:
+        """Lazily initializes and returns the IPerfServerOverSsh instance."""
+        if self._iperf_server is None:
+            self._iperf_server = IPerfServerOverSsh(
+                ssh_settings=self.ssh_settings,
+                port=5201,
+                test_interface=InterfaceName.lan,
+                use_killall=True,
+            )
+        return self._iperf_server
 
     @property
     def default_subnet(self) -> str:
@@ -994,6 +1013,13 @@ class OpenWrtAP:
             radio: The radio (e.g. Radio.RADIO_2G, Radio.RADIO_5G).
         """
         self._set_radio_enabled(radio, False)
+
+    def _ensure_dhcp_healthy(self) -> None:
+        """Conditionally restores default DHCP config and restarts dnsmasq if dirty or stopped."""
+        self.ssh.run(
+            "cmp -s /rom/etc/config/dhcp /etc/config/dhcp && pidof dnsmasq >/dev/null "
+            "|| (cp /rom/etc/config/dhcp /etc/config/dhcp && /etc/init.d/dnsmasq restart)"
+        )
 
     def reset_wifi_config(self) -> None:
         """Resets wireless configuration to system defaults.
