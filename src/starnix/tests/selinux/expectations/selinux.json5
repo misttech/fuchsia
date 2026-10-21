@@ -17,13 +17,17 @@
                 "cgroupfs_label/001",
                 "cgroupfs_label/002",
 
-                // TODO: https://fxbug.dev/398699131
+                // See https://fxbug.dev/398699131: Starnix doesn't support AF_ALG sockets. Must
+                // pass if/when implemented.
                 "extended_socket_class/005",
 
-                // TODO: https://fxbug.dev/398696731
+                // See https://fxbug.dev/398696731: Starnix doesn't support F_SETSIG, O_ASYNC/SIGIO
+                // delivery, or TIOCSTI. Must pass if/when implemented.
                 "file/008",
 
-                // TODO: https://fxbug.dev/398699133
+                // See https://fxbug.dev/398699133: Starnix doesn't support filesystem quotas
+                // (quotactl), fanotify, or shared superblocks across loop mounts of the same image.
+                // Must pass if/when implemented.
                 "filesystem/005",
                 "filesystem/006",
                 "filesystem/007",
@@ -44,7 +48,8 @@
                 "filesystem/069",
                 "filesystem/079",
 
-                // See https://fxbug.dev/398696732: Starnix doesn't support the new mount API.
+                // See https://fxbug.dev/398696732: Starnix doesn't support the new mount API. Must
+                // pass if/when implemented.
                 "fs_filesystem/003",
                 "fs_filesystem/004",
                 "fs_filesystem/005",
@@ -144,11 +149,13 @@
                 "inet_socket/udp/011",
                 "inet_socket/udp/013",
 
-                // TODO: https://fxbug.dev/398696734
+                // See https://fxbug.dev/398696734: Starnix doesn't support AF_KEY socket
+                // operations. Must pass if/when implemented.
                 "key_socket/001",
                 "key_socket/005",
 
                 // See https://fxbug.dev/398699136: Starnix doesn't support the relevant syscalls.
+                // Must pass if/when implemented.
                 "keys/001",
                 "keys/005",
                 "keys/006",
@@ -171,19 +178,21 @@
                 "mac_admin/006",
 
                 // See https://fxbug.dev/448793897: The Debian test image policy does not define
-                // memfd_file.
+                // memfd_file. Must pass once the test image is updated.
                 "memfd/001",
                 "memfd/003",
 
                 // See https://fxbug.dev/398707795: Zircon prohibits mapping at 0x0 (001) and
-                // Starnix does not support SysV shm (038).
+                // Starnix does not support SysV shm (038, which must pass if/when implemented).
                 "mmap/001",
                 "mmap/038",
 
-                // See https://fxbug.dev/319480589: Starnix does not support dynamic kernel module loading.
+                // See https://fxbug.dev/319480589: Starnix does not support dynamic kernel module
+                // loading. Must pass if/when implemented.
                 "module_load/*",
 
                 // See https://fxbug.dev/398663319: Starnix doesn't support SysV message queues.
+                // Must pass if/when implemented.
                 "msg/001",
                 "msg/002",
                 "msg/003",
@@ -196,6 +205,7 @@
                 "msg/013",
 
                 // See https://fxbug.dev/398696738: Starnix doesn't support the fanotify syscall.
+                // Must pass if/when implemented.
                 "notify/002",
                 "notify/006",
                 "notify/010",
@@ -207,7 +217,8 @@
                 // to match GKI 6.12 behavior.
                 "perf_event/006",
 
-                // See https://fxbug.dev/398696740: Starnix doesn't support SysV semaphores.
+                // See https://fxbug.dev/398696740: Starnix doesn't support SysV semaphores. Must
+                // pass if/when implemented.
                 "sem/001",
                 "sem/002",
                 "sem/004",
@@ -216,14 +227,16 @@
                 "sem/008",
                 "sem/010",
 
-                // See https://fxbug.dev/398696741: Starnix doesn't support SysV shared memory.
+                // See https://fxbug.dev/398696741: Starnix doesn't support SysV shared memory. Must
+                // pass if/when implemented.
                 "shm/001",
                 "shm/002",
                 "shm/003",
                 "shm/004",
                 "shm/007",
 
-                // TODO: https://fxbug.dev/398663323
+                // See https://fxbug.dev/398663323: Starnix doesn't support persistent TUN/TAP
+                // devices (`TUNSETPERSIST`, `TUNSETQUEUE`). Must pass if/when implemented.
                 "tun_tap/001",
                 "tun_tap/002",
                 "tun_tap/003",
@@ -239,7 +252,8 @@
                 "tun_tap/013",
                 "tun_tap/014",
 
-                // TODO: https://fxbug.dev/398707804
+                // See https://fxbug.dev/398707804: Starnix doesn't support event-based
+                // `userfaultfd` without `UFFD_FEATURE_SIGBUS`. Must pass if/when implemented.
                 "userfaultfd/001",
                 "userfaultfd/002",
                 "userfaultfd/007",

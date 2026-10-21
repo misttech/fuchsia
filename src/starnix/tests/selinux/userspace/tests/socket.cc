@@ -930,4 +930,17 @@ TEST(SocketTest, UnixDomainDatagramConnectDeniedWithoutSendTo) {
   }));
 }
 
+// See https://fxbug.dev/398707802: Starnix doesn't support `IPPROTO_SCTP` sockets. Must pass
+// if/when implemented.
+TEST(SocketTest, SctpNotSupported) {
+  EXPECT_THAT(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), SyscallFailsWithErrno(EPROTONOSUPPORT));
+}
+
+// See https://fxbug.dev/398699135 and https://fxbug.dev/398696733: Starnix doesn't support
+// InfiniBand. Must pass if/when implemented.
+TEST(SocketTest, InfinibandNotSupported) {
+  EXPECT_THAT(access("/sys/class/infiniband", F_OK), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access("/dev/infiniband", F_OK), SyscallFailsWithErrno(ENOENT));
+}
+
 }  // namespace

@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fcntl.h>
 #include <lib/stdcompat/string_view.h>
 #include <mntent.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <map>
@@ -294,6 +296,33 @@ TEST(MountTest, BindRemountWithContext) {
     // 5. Verify the context is still ctx1 (it was not changed by the remount)
     EXPECT_TRUE(cpp23::contains(MountOptionsFor(target_dir.path()), "test_mount_fscontext_t"));
   }));
+}
+
+// See https://fxbug.dev/398696694: Starnix doesn't support POSIX message queues (`mq_*` syscalls
+// and the `mqueue` filesystem). Must pass if/when implemented.
+TEST(MountTest, MqueueNotSupported) {
+  EXPECT_THAT(
+      syscall(SYS_mq_open, "test_mq", O_CREAT | O_RDWR, /* mode = */ 0600, /* attr = */ nullptr),
+      SyscallFailsWithErrno(ENOSYS));
+
+  test_helper::ScopedTempDir mount_dir;
+  EXPECT_THAT(mount("mqueue", mount_dir.path().c_str(), "mqueue", /* mountflags = */ 0,
+                    /* data = */ nullptr),
+              SyscallFailsWithErrno(ENODEV));
+}
+
+// See https://fxbug.dev/398707799: Starnix doesn't support NFS filesystems (`nfs`, `nfs4`). Must
+// pass if/when implemented.
+TEST(MountTest, NfsNotSupported) {
+  auto filesystems = ReadFile("/proc/filesystems");
+  ASSERT_THAT(filesystems, SyscallResultIsOk());
+  EXPECT_FALSE(cpp23::contains(filesystems.value(), "\tnfs\n"));
+  EXPECT_FALSE(cpp23::contains(filesystems.value(), "\tnfs4\n"));
+
+  test_helper::ScopedTempDir mount_dir;
+  EXPECT_THAT(
+      mount("none", mount_dir.path().c_str(), "nfs", /* mountflags = */ 0, /* data = */ nullptr),
+      SyscallFailsWithErrno(ENODEV));
 }
 
 }  // namespace

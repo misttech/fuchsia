@@ -23,6 +23,10 @@
 
 namespace {
 
+#ifndef SYS_memfd_secret
+#define SYS_memfd_secret 447
+#endif
+
 int g_before_policy_userfaultfd = -1;
 
 TEST(AnonInodeTest, EventFdIsUnlabeled) {
@@ -166,6 +170,15 @@ TEST(AnonInodeTest, EventFdBeforePolicy) {
   // userfaultfd() created before policy load should have been labeled based on the "kernel" SID.
   EXPECT_THAT(GetLabel(g_before_policy_userfaultfd),
               SyscallResultIsOk("unlabeled_u:unlabeled_r:unlabeled_t:s0"));
+}
+
+// See https://fxbug.dev/398698182: Starnix doesn't support `memfd_secret(2)`. Must pass if/when
+// implemented.
+TEST(AnonInodeTest, MemfdSecretNotSupported) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "memfd_secret(2) is supported on Linux";
+  }
+  EXPECT_THAT(syscall(SYS_memfd_secret, /* flags = */ 0), SyscallFailsWithErrno(ENOSYS));
 }
 
 }  // namespace
