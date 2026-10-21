@@ -52,12 +52,6 @@ def _parse_args(
         default=[],
         help="Skip the specified check(s) (comma-separated or repeated).",
     )
-    # TODO(https://fxbug.dev/562256780): Remove after updating skills to use --only=commit_msg.
-    parser.add_argument(
-        "--commit-msg",
-        action="store_true",
-        help="Lint commit message (alias for --only=commit_msg).",
-    )
     parser.add_argument(
         "--files",
         dest="explicit_files",
@@ -103,8 +97,6 @@ def main(argv: Sequence[str]) -> None:
     )
 
     only_checks = shac_runner.split_comma_separated(args.only)
-    if args.commit_msg and "commit_msg" not in only_checks:
-        only_checks = (*only_checks, "commit_msg")
     skip_checks = shac_runner.split_comma_separated(args.skip)
 
     explicit_files: Collection[str] | None

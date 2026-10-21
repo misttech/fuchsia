@@ -89,6 +89,12 @@ TEST_fx-lint-fix-flag() {
   BT_EXPECT grep -q -E '"shac fix .*rust.rs"' "${out}"
 }
 
+TEST_fx-lint-only-flag() {
+  local out="${BT_TEMP_DIR}/_fx_lint_output"
+  BT_EXPECT "${fx}" lint --only=commit_msg --verbose > "${out}"
+  BT_EXPECT grep -q -E '"shac check .*--only=commit_msg"' "${out}"
+}
+
 TEST_fx-lint-nonexistent-file() {
   local err="${BT_TEMP_DIR}/_fx_lint_stderr"
   local path="${TESTDATA}/doesnotexist.py"

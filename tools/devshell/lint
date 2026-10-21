@@ -16,7 +16,6 @@
 ##   --all              Run checks across all tracked files in the repository.
 ##   --only <check>     Run only the specified check(s) (comma-separated or repeated).
 ##   --skip <check>     Skip the specified check(s) (comma-separated or repeated).
-##   --commit-msg       Lint commit message (alias for --only=commit_msg).
 ##   --files <files>    Comma-separated list of specific files to lint.
 ##   -v, --verbose      Print verbose command execution output.
 ##   --dry-run          Print shac commands without executing.
