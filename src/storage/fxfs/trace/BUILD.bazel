@@ -38,6 +38,8 @@ wrap_host_rust_test(
     visibility = ["//src/storage:__pkg__"],
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 fx_unittest_package(
     name = "fxfs-trace-tests-package",
     package_name = "fxfs-trace-tests",

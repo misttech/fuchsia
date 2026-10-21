@@ -279,6 +279,12 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		}
 		return nil, nil
 	}
+	if bazelRule == "fx_unittest_package" {
+		if len(rawAttrs) > 0 {
+			return nil, fmt.Errorf("raw_attribute annotation is not supported on %s", bazelRule)
+		}
+		return fxUnittestPackageToGN(expr)
+	}
 
 	attrsToOmit := attrsToOmitByRules[bazelRule]
 	unsupportedAttrs := unsupportedAttrsByRules[bazelRule]

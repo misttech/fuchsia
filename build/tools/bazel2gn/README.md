@@ -117,6 +117,32 @@ annotation. `args` only support `$(location <file>)`, `$(execpath <file>)`, and
 `$(RULEDIR)`; any other substitution is an error. The GN tool's output name must
 match its target name, because `tool_output_name` is not synced.
 
+#### Tests
+
+While a library is used in both build systems, its tests run in both (see
+[Testing libraries in both build systems](/docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)),
+so `bazel2gn` translates test rules too:
+
+*   `rustc_test()` maps to GN `rustc_test()`. With `crate = ":<lib>"`, the
+    crate must be defined in the same `BUILD.bazel`, and its `srcs`,
+    `crate_root`, `edition`, `rustc_env`, `deps`, `proc_macro_deps`,
+    `link_deps`, and `compile_data` are inlined into the GN test, like
+    `rules_rust` does.
+*   `host_rustc_test()` and `host_go_test()` map to GN `rustc_test()` and
+    `go_test()` inside `if (is_host)`. `data`, `test_data`, and `test_label`
+    are errors, because the GN templates have no equivalent.
+*   `fx_unittest_package()` maps to `fuchsia_unittest_package()`, or to
+    `fuchsia_unittest_component()`s in a `fuchsia_test_package()` when it has
+    several `unit_tests`. The GN package name gets a `-gn` suffix so it doesn't
+    collide with the Bazel package in the package repository. Only `name`,
+    `package_name`, `unit_tests`, `max_log_severity`, `tags`, `testonly`, and
+    `visibility` are supported; any other attribute (such as `resources` or
+    `environments`) is an error.
+*   The `with_unit_tests`, `with_host_unit_tests`, and `test_deps` attributes
+    of Rust rules are passed through to the GN templates.
+*   `wrap_host_rust_test()`, explicit `fx_package()` / `fx_test()` chains, and
+    the other `host_*_test()` rules have no GN equivalent and are ignored.
+
 ### Starlark vs GN
 
 [Starlark][starlark] is the language of Bazel for defining build targets, while
@@ -213,6 +239,14 @@ rustc_library("foo") {
   sources = [ "foo.rs" ]
 }
 ```
+
+Tests of a library are translated too, so they run in both build systems while
+the library is used in both. Put `# @bazel2gn:skip` on a test (with a brief
+comment explaining why) when `bazel2gn` shouldn't or can't generate a GN copy
+(for example, when the target under test is itself skipped in `BUILD.bazel`,
+`bazel2gn` doesn't support that rule or attribute, or the cost of running the
+test in both build systems outweighs the benefit); see
+[Testing libraries in both build systems](/docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems).
 
 #### `@bazel2gn:clear`
 

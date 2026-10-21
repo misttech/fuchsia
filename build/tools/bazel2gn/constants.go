@@ -155,17 +155,28 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fx_test":               noGNEquivalent,
 	"fx_test_component":     noGNEquivalent,
 	"fx_unittest_component": noGNEquivalent,
-	"fx_unittest_package":   noGNEquivalent,
 
-	// Bazel host test rules. Migrated host tests are only defined in Bazel and
-	// reach GN through `bazel_test_suite()`, so they should never get a GN twin.
-	"host_cc_test":        noGNEquivalent,
-	"host_go_test":        noGNEquivalent,
-	"host_py_test":        noGNEquivalent,
-	"host_rustc_test":     noGNEquivalent,
-	"host_shac_test":      noGNEquivalent,
-	"host_test":           noGNEquivalent,
+	// Tests of a library run in both build systems while the library has
+	// users in both, so these test rules get a GN copy. See
+	// https://fuchsia.dev/fuchsia-src/development/build/bazel_concepts/tests#tests-in-both-build-systems
+	//
+	// The GN copy of an `fx_unittest_package()` gets a different package name,
+	// see `fxUnittestPackageToGN()`.
+	"fx_unittest_package": "fuchsia_unittest_package",
+	"host_go_test":        "go_test",
+	"host_rustc_test":     "rustc_test",
+
+	// `wrap_host_rust_test()` wraps an existing `rustc_test()`, which bazel2gn
+	// translates to a GN `rustc_test()` that already runs as a host test.
 	"wrap_host_rust_test": noGNEquivalent,
+
+	// TODO(https://fxbug.dev/574121341): Translate these host test rules too.
+	// Until then, keep hand-written GN copies of these tests above the
+	// sentinel.
+	"host_cc_test":   noGNEquivalent,
+	"host_py_test":   noGNEquivalent,
+	"host_shac_test": noGNEquivalent,
+	"host_test":      noGNEquivalent,
 
 	// Runtime data for Bazel host tests, so it's only consumed by the rules
 	// above.

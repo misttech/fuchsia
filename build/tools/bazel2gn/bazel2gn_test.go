@@ -307,31 +307,169 @@ fx_test(
 	name = "foo-test-component",
 	component_name = "foo-test",
 	binary = ":foo_bin",
-)
-
-fx_unittest_package(
-	name = "foo-test",
-	package_name = "foo-test",
-	unit_tests = [":foo_bin"],
 )`,
 			wantGN: "",
 		},
 		{
-			name: "Bazel host test rules",
+			name: "fx_unittest_package",
+			bazel: `fx_unittest_package(
+	name = "foo-test",
+	package_name = "foo-tests",
+	unit_tests = [":foo_bin"],
+	max_log_severity = "ERROR",
+	tags = ["manual"],
+	visibility = ["//src/foo:__pkg__"],
+)`,
+			wantGN: `fuchsia_unittest_package("foo-test") {
+	package_name = "foo-tests-gn"
+	component_name = "foo-tests"
+	deps = [
+		":foo_bin",
+	]
+	test_specs = {
+		log_settings = {
+			max_severity = "ERROR"
+		}
+	}
+	visibility = [
+		":*",
+		"//src/foo:*",
+	]
+}`,
+		},
+		{
+			name: "fx_unittest_package without package_name",
+			bazel: `fx_unittest_package(
+	name = "foo-test",
+	unit_tests = ["//src/foo:foo_bin"],
+)`,
+			wantGN: `fuchsia_unittest_package("foo-test") {
+	package_name = "foo-test-gn"
+	component_name = "foo-test"
+	deps = [
+		"//src/foo:foo_bin",
+	]
+}`,
+		},
+		{
+			name: "fx_unittest_package with multiple unit tests",
+			bazel: `fx_unittest_package(
+	name = "foo-test",
+	package_name = "foo-tests",
+	unit_tests = [
+		":foo_test",
+		"//src/foo/bar:bar_test",
+	],
+)`,
+			wantGN: `fuchsia_unittest_component("foo-test.foo_test.component") {
+	component_name = "foo_test"
+	visibility = [ ":*" ]
+	deps = [
+		":foo_test",
+	]
+}
+fuchsia_unittest_component("foo-test.bar_test.component") {
+	component_name = "bar_test"
+	visibility = [ ":*" ]
+	deps = [
+		"//src/foo/bar:bar_test",
+	]
+}
+fuchsia_test_package("foo-test") {
+	package_name = "foo-tests-gn"
+	test_components = [
+		":foo-test.foo_test.component",
+		":foo-test.bar_test.component",
+	]
+}`,
+		},
+		{
+			name: "fx_unittest_package with skipped unit test",
+			bazel: `fx_unittest_package(
+	name = "foo-test",
+	package_name = "foo-tests",
+	unit_tests = [
+		":foo_test",
+		# @bazel2gn:skip
+		":foo_nostd_test",
+	],
+)`,
+			wantGN: `fuchsia_unittest_package("foo-test") {
+	package_name = "foo-tests-gn"
+	component_name = "foo-tests"
+	deps = [
+		":foo_test",
+	]
+}`,
+		},
+		{
+			name: "host_go_test",
+			bazel: `host_go_test(
+	name = "foo_test",
+	srcs = ["foo_test.go"],
+	binary_name = "foo_test_bin",
+	embed = [":foo"],
+	size = "small",
+	test_args = ["--foo"],
+	timeout = "10m",
+)`,
+			wantGN: `if (is_host) {
+	go_test("foo_test") {
+		sources = [
+			"foo_test.go",
+		]
+		embed = [
+			":foo",
+		]
+		args = [
+			"--foo",
+		]
+		timeout = "10m"
+	}
+}`,
+		},
+		{
+			name: "host_rustc_test",
+			bazel: `host_rustc_test(
+	name = "foo_test",
+	srcs = ["src/lib.rs"],
+	crate_root = "src/lib.rs",
+	edition = "2024",
+	test_args = ["--foo"],
+)`,
+			wantGN: `if (is_host) {
+	rustc_test("foo_test") {
+		sources = [
+			"src/lib.rs",
+		]
+		source_root = "src/lib.rs"
+		edition = "2024"
+		args = [
+			"--foo",
+		]
+	}
+}`,
+		},
+		{
+			name: "host_go_test with target_compatible_with",
+			bazel: `host_go_test(
+	name = "foo_test",
+	srcs = ["foo_test.go"],
+	target_compatible_with = ["@platforms//os:fuchsia"],
+)`,
+			wantGN: `if (is_fuchsia && is_host) {
+	go_test("foo_test") {
+		sources = [
+			"foo_test.go",
+		]
+	}
+}`,
+		},
+		{
+			name: "Ignored host test rules",
 			bazel: `wrap_host_rust_test(
 	name = "foo_host_test",
 	test = ":foo_test",
-)
-
-host_go_test(
-	name = "foo_go_test",
-	srcs = ["foo_test.go"],
-	embed = [":foo"],
-)
-
-host_rustc_test(
-	name = "foo_rust_test",
-	srcs = ["src/lib.rs"],
 )
 
 wrap_host_rust_test(
@@ -1705,6 +1843,52 @@ rustc_library(
 			}
 			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
 				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
+
+func TestUnsupportedTestAttributes(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bazel string
+	}{
+		{
+			name: "host_go_test with test_data",
+			bazel: `host_go_test(
+	name = "foo_test",
+	srcs = ["foo_test.go"],
+	test_data = [":testdata"],
+)`,
+		},
+		{
+			name: "host_rustc_test with test_data",
+			bazel: `host_rustc_test(
+	name = "foo_test",
+	srcs = ["src/lib.rs"],
+	test_data = [":testdata"],
+)`,
+		},
+		{
+			name: "fx_unittest_package with non-literal unit tests",
+			bazel: `fx_unittest_package(
+	name = "foo-test",
+	unit_tests = [":foo_bin", BAR_TEST],
+)`,
+		},
+		{
+			name: "fx_unittest_package with environments",
+			bazel: `fx_unittest_package(
+	name = "foo-test",
+	unit_tests = [":foo_bin"],
+	environments = ["//build/testing/environments:emu_env"],
+)`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			if _, err := bazelToGN(f); err == nil {
+				t.Errorf("Unexpected success converting Bazel targets. Bazel source:\n%s", tc.bazel)
 			}
 		})
 	}

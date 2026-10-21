@@ -38,6 +38,8 @@ idk_go_binary_host_tool(
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "dev_finder_tests",
     srcs = [

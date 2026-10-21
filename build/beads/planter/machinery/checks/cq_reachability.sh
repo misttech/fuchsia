@@ -19,12 +19,13 @@ set -euo pipefail
 #    directly or through a Bazel `test_suite`, in a GN `bazel_test_suite` (`fx_test` in
 #    `target_tests`, host tests in `host_tests`) that the GN `group("tests")` of its
 #    directory (or the parent BUILD.gn) references. Otherwise it is missing from
-#    tests.json and neither `fx test` nor infra runs it. Tests move to Bazel and bazel2gn
-#    does not translate them, so no Bazel test is reached through a GN twin.
+#    tests.json and neither `fx test` nor infra runs it. The GN copy bazel2gn generates for a
+#    dual-build library's test runs the GN build of the test, not the Bazel one, so the Bazel
+#    test needs the export too.
 # 4. Every Rust device test binary (`rustc_test`, or the `<name>_test` of
 #    `rustc_*(with_unit_tests = "fuchsia"|"both")`) must be packaged by an
-#    `fx_packaged_binary` in the same BUILD.bazel (for an `fx_test`), otherwise nothing runs
-#    it (`unpackaged_rust_device_test`).
+#    `fx_unittest_package` or an `fx_packaged_binary` (for an `fx_test`) in the same
+#    BUILD.bazel, otherwise nothing runs it (`unpackaged_rust_device_test`).
 #    Only runs when the checkout has `build/bazel/rules/testing/fx_test.bzl` (older
 #    checkouts keep tests in GN).
 # 5. The change must merge cleanly onto `origin/main` without rebase conflicts
@@ -57,7 +58,10 @@ TEST_RULES = {
     "rustc_test",
     "cc_test",
     "go_test",
+    "host_go_test",
+    "host_rustc_test",
     "python_host_test",
+    "fx_unittest_package",
     "fuchsia_unittest_package",
     "fuchsia_test_package",
 }
@@ -68,8 +72,8 @@ findings = []
 
 DEVICE_TEST_RULES = {"fx_test", "fx_unittest_package"}
 HOST_TEST_RULES = {"host_rustc_test", "host_go_test", "host_py_test", "host_test", "wrap_host_rust_test"}
-# Tests move to Bazel and bazel2gn does not translate them (migration_sanity enforces the
-# `# @bazel2gn:skip`), so no Bazel host test has a GN twin that runs it instead.
+# The GN copy bazel2gn generates for a test runs the GN build of the test, so it never stands
+# in for exporting the Bazel test: both run while the library is in both build systems.
 GN_CONVERTED_HOST_TEST_RULES = set()
 RUST_TEST_OWNERS = {"rustc_library", "rustc_binary", "rustc_proc_macro"}
 # Checkouts without fx_test keep tests in GN (the old path): skip the export check there.
@@ -571,6 +575,17 @@ for td in target_dirs:
         except Exception:
             gn_src = ""
 
+    has_explicit_rustc_test = any(
+        isinstance(n, ast.Call)
+        and (
+            (isinstance(n.func, ast.Name) and n.func.id in ("rustc_test", "host_rustc_test"))
+            or (isinstance(n.func, ast.Attribute) and n.func.attr in ("rustc_test", "host_rustc_test"))
+        )
+        for n in ast.walk(tree)
+    )
+    base_gn_ref = change_base if change_base != "HEAD" else "HEAD~1"
+    base_gn_src = git_out(["show", f"{base_gn_ref}:{gn_rel}"]) if gn_rel else ""
+
     test_targets = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -580,16 +595,31 @@ for td in target_dirs:
             rule_name = node.func.id
         elif isinstance(node.func, ast.Attribute):
             rule_name = node.func.attr
-        if rule_name not in TEST_RULES:
-            continue
+        kws = {kw.arg: kw.value for kw in node.keywords if kw.arg}
         t_name = ""
-        lineno = getattr(node, "lineno", 1)
+        call_lineno = getattr(node, "lineno", 1)
+        lineno = call_lineno
         for kw in node.keywords:
             if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 t_name = kw.value.value
                 lineno = kw.lineno
-        if t_name:
-            test_targets.append((t_name, rule_name, lineno))
+        if not t_name:
+            continue
+        if rule_name in TEST_RULES:
+            test_targets.append((t_name, rule_name, lineno, [call_lineno]))
+        elif rule_name in RUST_TEST_OWNERS and unit_test_envs(kws) and not has_explicit_rustc_test:
+            unit_t_name = t_name + "_test"
+            has_gn_tests_group = bool(
+                re.search(r'\bgroup\(\s*"tests"\s*\)|\bbazel_test_suite\(', gn_src)
+                or re.search(r'":' + re.escape(unit_t_name) + r'(?:\(|")', base_gn_src)
+            )
+            if has_gn_tests_group:
+                for kw in node.keywords:
+                    if kw.arg in ("with_unit_tests", "with_host_unit_tests"):
+                        test_targets.append(
+                            (unit_t_name, f"{rule_name}({kw.arg})", kw.lineno, [call_lineno, kw.lineno])
+                        )
+                        break
 
     parent_gn = os.path.join(workdir, os.path.dirname(td), "BUILD.gn")
     parent_gn_src = ""
@@ -600,7 +630,81 @@ for td in target_dirs:
         except Exception:
             parent_gn_src = ""
 
-    for t_name, rule_name, lineno in test_targets:
+    def strip_bazel_test_suites(code):
+        out = list(code)
+        for m in SUITE_RE.finditer(code):
+            end = closing(code, m.end() - 1)
+            for idx in range(m.start(), min(end + 1, len(out))):
+                if out[idx] != "\n":
+                    out[idx] = " "
+        return "".join(out)
+
+    def has_skip_above(lines, line_1based):
+        idx = line_1based - 2
+        while idx >= 0:
+            s = lines[idx].strip() if idx < len(lines) else ""
+            if not s:
+                idx -= 1
+                continue
+            if s.startswith("#"):
+                if "@bazel2gn:skip" in s:
+                    return True
+                idx -= 1
+                continue
+            break
+        return False
+
+    bazel_lines = bazel_src.splitlines()
+    for t_name, rule_name, lineno, check_linenos in test_targets:
+        # Check if this test target (or test attribute) has `# @bazel2gn:skip` in BUILD.bazel
+        # (in which case bazel2gn does not generate a GN copy; migration_sanity.sh validates the skip).
+        is_skipped = any(has_skip_above(bazel_lines, ln) for ln in check_linenos)
+        m_sent = SENTINEL_RE.search(gn_src)
+        if m_sent and not is_skipped:
+            gn_pre_no_suites = strip_bazel_test_suites(gn_code(gn_src[: m_sent.start()]))
+            gn_post_code = gn_code(gn_src[m_sent.end() :])
+            ref_in_gn_pre = bool(re.search(r'":' + re.escape(t_name) + r'(?:\(|")', gn_pre_no_suites))
+            ref_in_gn_post_pkg = (
+                rule_name in ("rustc_test", "cc_test") or rule_name.startswith("rustc_")
+            ) and bool(re.search(r'":' + re.escape(t_name) + r'"', gn_post_code))
+            ref_in_ancestor_gn = False
+            anc = os.path.dirname(td)
+            while True:
+                anc_rel = os.path.join(anc, "BUILD.gn") if anc else "BUILD.gn"
+                anc_code = strip_bazel_test_suites(read_gn(anc_rel))
+                if anc_code:
+                    rel_from_anc = os.path.relpath(td, anc) if anc else td
+                    label_re = r'"(?://' + re.escape(td) + r"|" + re.escape(rel_from_anc) + r"):" + re.escape(t_name) + r'(?:\(|")'
+                    if t_name == os.path.basename(td):
+                        # `gn format` shortens "dir/name:name" to "dir/name".
+                        label_re += r'|"(?://' + re.escape(td) + r"|" + re.escape(rel_from_anc) + r')(?:\(|")'
+                    if re.search(label_re, anc_code):
+                        ref_in_ancestor_gn = True
+                        break
+                if not anc:
+                    break
+                anc = os.path.dirname(anc)
+            if not (ref_in_gn_pre or ref_in_gn_post_pkg or ref_in_ancestor_gn):
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "orphaned_test_target",
+                    "severity": "error",
+                    "file": gn_rel,
+                    "line": 1,
+                    "message": (
+                        f"Generated GN test copy ':{t_name}' (from `{rule_name}` in '{bazel_rel}') below "
+                        f"`## BAZEL2GN SENTINEL` in '{gn_rel}' is not wired into `group(\"tests\")` above the "
+                        "sentinel (or an ancestor `BUILD.gn` `tests` group outside `bazel_test_suite`), so the "
+                        "GN build of this test is dead code and never runs in CQ."
+                    ),
+                    "remediation": (
+                        f"Add '\":{t_name}\"' (or '\":{t_name}($host_toolchain)\"' for a host test) to "
+                        f"`group(\"tests\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}' alongside `:bazel_tests`."
+                    ),
+                })
+                continue
+        if m_sent or rule_name in ("fx_unittest_package", "host_go_test", "host_rustc_test"):
+            continue
         ref_patterns = [
             f'":{t_name}"',
             f'"{t_name}"',

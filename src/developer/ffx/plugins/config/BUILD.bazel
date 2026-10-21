@@ -38,12 +38,16 @@ ffx_plugin(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
+# @bazel2gn:skip
 host_rustc_test(
     name = "ffx_config_plugin_args_test",
     crate = ":ffx_config_plugin_args",
     visibility = ["//src/developer/ffx:__pkg__"],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
+# @bazel2gn:skip
 host_rustc_test(
     name = "ffx_config_plugin_test",
     crate = ":ffx_config_plugin",

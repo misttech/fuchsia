@@ -20,9 +20,10 @@ motivation, and comment annotations.
 ## 2. Package Layout & Key Entry Points
 
 -   [`bazel2gn.go`](./bazel2gn.go): Exported parser (`ParseBytes`) and top-level
-    statement converter (`StmtToGN`), plus AST traversal for rule calls,
-    variable assignments, `target_compatible_with`, `aspect_hints` reordering,
-    same-package visibility, and `# @bazel2gn:raw_attribute:` annotations.
+    file/statement converters (`FileToGN`, `StmtToGN`), plus AST traversal for
+    rule calls, variable assignments, `target_compatible_with`, `aspect_hints`
+    reordering, same-package visibility, and `# @bazel2gn:raw_attribute:`
+    annotations.
 -   [`constants.go`](./constants.go): Rule-to-GN-template mappings
     (`bazelRuleToGNTemplate`, `noGNEquivalent`), attribute omissions
     (`attrsToOmitByRules`), attribute renames (`commonAttrMap`,
@@ -33,11 +34,19 @@ motivation, and comment annotations.
 -   [`compiled_action.go`](./compiled_action.go): Converts `compiled_action`
     `outs` (placed under `$target_gen_dir` unless overwritten) and `args`
     (`$(location <label>)`, `$(execpath <label>)`, and `$(RULEDIR)`).
+-   [`fx_unittest_package.go`](./fx_unittest_package.go): Converts
+    `fx_unittest_package` into `fuchsia_unittest_package` (or
+    `fuchsia_unittest_component` + `fuchsia_test_package` for multiple test
+    binaries) with a `-gn` suffix on `package_name`.
 -   [`genrule.go`](./genrule.go): Converts `genrule` `cmd` strings starting with
     `$(location //path/to:tool)` into GN `script` and `args`.
 -   [`rust_check_cfg.go`](./rust_check_cfg.go): Converts
     `rustc_check_cfg_build_flags` macro calls into GN `config` targets with
     `--check-cfg=cfg(...)` in `rustflags`.
+-   [`rust_test_crate.go`](./rust_test_crate.go): Inlines `srcs`, `crate_root`,
+    `edition`, `rustc_env`, `deps`, `proc_macro_deps`, `link_deps`, and
+    `compile_data` for `rustc_test` / `host_rustc_test` targets that set
+    `crate = ":<lib>"`.
 -   [`rustenv.go`](./rustenv.go): Converts `rustc_env` dictionaries into GN
     `rustenv = ["KEY=VALUE", ...]` lists (supporting `#
     @bazel2gn:value_overwrite:`).

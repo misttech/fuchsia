@@ -65,6 +65,7 @@ rustc_proc_macro(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
 # @bazel2gn:skip
 rustc_test(
     name = "net-types_test",
@@ -76,6 +77,7 @@ rustc_test(
     deps = ["//third_party/rust_crates/vendor:test-case"],
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
 # @bazel2gn:skip
 rustc_test(
     name = "net-types-nostd_test",
@@ -96,6 +98,8 @@ wrap_host_rust_test(
     binary_name = "net-types-nostd_test",
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 fx_unittest_package(
     name = "net-types-test-package",
     package_name = "net-types-test",

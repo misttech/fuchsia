@@ -28,6 +28,7 @@ rustc_library(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
 # @bazel2gn:skip
 rustc_test(
     name = "ffx-wlan-common_test",
@@ -41,6 +42,8 @@ wrap_host_rust_test(
     visibility = ["//src/developer/ffx:__pkg__"],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
+# @bazel2gn:skip
 fx_unittest_package(
     name = "ffx-wlan-common-tests",
     unit_tests = [":ffx-wlan-common_test"],

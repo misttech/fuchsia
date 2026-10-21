@@ -75,7 +75,7 @@ Attributes mapping table for `go_binary` targets:
 ### Step 4: Host Test Integration
 1. **Do NOT create intermediate package-level `test_suite(name = "tests", ...)` targets** inside each tool's `BUILD.bazel`.
 2. Integrate individual `host_go_test` target(s) directly into the top-level `"host_tests"` `test_suite` in the parent or ancestor directory (e.g., `//tools:host_tests` in `//tools/BUILD.bazel` or `//build/tools:host_tests` in `//build/tools/BUILD.bazel`).
-3. **Remove migrated tests from GN:** Remove the legacy test target from the parent GN test group (e.g., `group("tests_no_e2e")` in `//tools/BUILD.gn` or `group("tests")` in `//build/tools/BUILD.gn`). Ensure unmigrated GN tests remain in GN.
+3. **Remove migrated tests from GN:** Remove the legacy test target from the parent GN test group (e.g., `group("tests_no_e2e")` in `//tools/BUILD.gn` or `group("tests")` in `//build/tools/BUILD.gn`). Ensure unmigrated GN tests remain in GN. Exception: if `BUILD.gn` is kept because the library still has GN users, the test runs in both build systems (see [Testing libraries in both build systems](../../../../../../docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)): `bazel2gn` generates a GN `go_test` from the `host_go_test`, so keep it listed in the GN test group as `":<name>($host_toolchain)"`.
 
 
 ### Step 5: Add `target_compatible_with` Attribute
@@ -125,4 +125,4 @@ Bazel enforces strict dependency checking for Go compile steps.
 
 ### 8. Test Dependencies After Library Sync (When `BUILD.gn` is Retained)
 - **Pitfall:** When `BUILD.gn` is retained and `bazel2gn` syncs `go_library` back to GN without test files, the synced GN library will not depend on test-only libraries.
-- **Fix:** Manually add missing test dependencies to `deps` of the `go_test` target in `BUILD.gn`.
+- **Fix:** Do NOT add `# @bazel2gn:skip` to `host_go_test` or `go_test` when the embedded `go_library` is synced to GN: let `bazel2gn` generate the GN `go_test` from `host_go_test` (with its own `deps`) and keep `":<name>($host_toolchain)"` in the GN test group. Only add `# @bazel2gn:skip` to `host_go_test` when the target under test in `BUILD.bazel` is itself skipped (`# @bazel2gn:skip`, e.g. a Bazel-only `go_binary_host_tool` internal package) or when `host_go_test` sets `data` or `test_data` (which `bazel2gn` cannot translate; in that case, hand-write the GN `go_test` above `## BAZEL2GN SENTINEL`).

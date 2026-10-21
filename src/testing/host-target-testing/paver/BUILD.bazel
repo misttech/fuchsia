@@ -25,6 +25,7 @@ go_library(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
 # @bazel2gn:skip
 host_go_test(
     name = "host-target-testing-paver-test",

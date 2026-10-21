@@ -46,6 +46,7 @@ rustc_library(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
 # @bazel2gn:skip
 rustc_test(
     name = "mapping_test",
@@ -57,6 +58,7 @@ rustc_test(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
 # @bazel2gn:skip
 fx_unittest_package(
     name = "mapping-tests",

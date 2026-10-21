@@ -110,6 +110,8 @@ go_binary_host_tool(
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "testsharder_lib_tests",
     srcs = [
@@ -130,6 +132,8 @@ host_go_test(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "testsharder_metadata_tests",
     srcs = [
@@ -149,6 +153,8 @@ host_test_data_files(
     dest_dir = "goldens",
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "testsharder_tests",
     srcs = [

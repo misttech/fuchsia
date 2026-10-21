@@ -15,6 +15,7 @@ go_library(
         "bazel2gn.go",
         "compiled_action.go",
         "constants.go",
+        "fx_unittest_package.go",
         "genrule.go",
         "rust_check_cfg.go",
         "rust_test_crate.go",

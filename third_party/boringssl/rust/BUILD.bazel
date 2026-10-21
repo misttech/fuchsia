@@ -131,6 +131,9 @@ rustc_library(
 # LINT.ThenChange(BUILD.gn:bssl_crypto_lib)
 
 # The unit tests run through Bazel only, on host, against the static boringssl.
+# bazel2gn can't translate their sources, which come from a filegroup outside
+# this package.
+# @bazel2gn:skip
 host_rustc_test(
     name = "bssl-crypto.lib_test",
     build_flags = [":bssl-crypto.allows"],

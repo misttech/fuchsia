@@ -19,6 +19,7 @@ fx_cc_binary(
     ],
 )
 
+# TODO(https://fxbug.dev/574121341): Run in GN too.
 # @bazel2gn:skip
 fx_unittest_package(
     name = "extend-bits-tests",

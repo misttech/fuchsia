@@ -79,11 +79,11 @@ In Bazel, the `rustc_library()` target creates a sub-target named `{target_name}
 
 - **If all dependencies in `test_deps` are migrated to Bazel:**
   1. Register `{target_name}_test` in Bazel:
-      * For `//src/developer/ffx/lib/*` libraries, add `//src/developer/ffx/lib/<name>:{target_name}_test` to Bazel `//src/developer/ffx:tests`, and add `"<name>"` to `tests_migrated_ffx_libraries` within `//src/developer/ffx/lib/ffx_libraries_list.gni`.
-      * For other rustc libraries, highlight to the user.
+      * For `//src/developer/ffx/lib/*` libraries, add `//src/developer/ffx/lib/<name>:{target_name}_test` to Bazel `//src/developer/ffx:tests`. Only add `"<name>"` to `tests_migrated_ffx_libraries` within `//src/developer/ffx/lib/ffx_libraries_list.gni` if the library no longer has GN users (`BUILD.gn` is removed) or its test uses `host_test_data_files` that `bazel2gn` cannot translate.
+      * For other rustc libraries, export the Bazel test via a GN `bazel_test_suite("bazel_tests")`.
   2. Clean up `BUILD.gn` file:
-      * Remove `:{target_name}_test` from `group("tests")` in `BUILD.gn`.
-      * If `group("tests")` has no remaining dependencies, delete `group("tests")` and remove `":tests"` from the top-level library group.
+      * If the library still has GN users (`BUILD.gn` is kept and synced with `bazel2gn`), its tests run in both build systems (see [Testing libraries in both build systems](../../../../../../docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)): keep `with_host_unit_tests`/`with_unit_tests` and `test_deps` without `# @bazel2gn:skip` (or define a standalone `rustc_test(crate = ":<lib>")` without `# @bazel2gn:skip`), and keep the generated `:{target_name}_test` in `group("tests")` in `BUILD.gn`.
+      * Otherwise, remove `:{target_name}_test` from `group("tests")` in `BUILD.gn`. If `group("tests")` has no remaining dependencies, delete `group("tests")` and remove `":tests"` from the top-level library group.
 
 - **If any dependency in `test_deps` is NOT yet migrated to Bazel:**
   * **Keep** `with_host_unit_tests = True` (or `with_unit_tests = True`) and `test_deps` on `rustc_library()` in `BUILD.bazel` so that `bazel2gn` continues syncing `with_unit_tests = true` to `BUILD.gn`.
@@ -132,15 +132,19 @@ rustc_binary(
 
 ## Common Pitfalls and Best Practices
 
-### 1. Preventing Redundant Binary Syncs
-When `BUILD.gn` is retained (due to unmigrated targets), add `# @bazel2gn:skip` on the line immediately preceding `rustc_binary` in `BUILD.bazel` to prevent `bazel2gn` from generating conflicting GN targets. If all targets in `BUILD.gn` are migrated and `BUILD.gn` is deleted, omit `# @bazel2gn:skip`.
+### 1. Preventing Redundant Binary Syncs & Test Skip Rules
+When `BUILD.gn` is retained (due to unmigrated targets), add `# @bazel2gn:skip` on the line immediately preceding a non-test `rustc_binary` in `BUILD.bazel` if that binary has no GN users, to prevent `bazel2gn` from generating a conflicting or unused GN binary target. If all targets in `BUILD.gn` are migrated and `BUILD.gn` is deleted, omit `# @bazel2gn:skip`.
 
-### 2. Preserving GN Target Shape for Unit Tests
+Never add `# @bazel2gn:skip` to a test target (`rustc_test`, `host_rustc_test`, `fx_unittest_package`) or test attribute (`with_unit_tests`, `with_host_unit_tests`, `test_deps`) in a `bazel2gn`-synced `BUILD.bazel` unless one of the conditions in [Testing libraries in both build systems](../../../../../../docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems) holds:
+1. The binary or library under test in the same `BUILD.bazel` is itself annotated with `# @bazel2gn:skip`.
+2. `fx_unittest_package` sets `resources = [...]` (paired with a hand-written `fuchsia_unittest_package` with `package_name = "<name>-gn"` above `## BAZEL2GN SENTINEL` in `BUILD.gn`).
+3. A host test sets `data` (`host_test_data_files`), `test_data`, or `test_label`.
+4. `rustc_test` uses cross-package `srcs`/`crate` or sets `rustc_env` when its `crate = ":<lib>"` also sets `rustc_env`.
+5. A human code owner already opted the test out with `# @bazel2gn:skip` and a comment explaining why (preserve it; don't add new opt-outs on your own).
 
-Match the GN test structure exactly to ensure correct `bazel2gn` sync:
+### 2. Unit Test Target Shape (`rustc_test(crate = ...)` vs `with_unit_tests`)
 
-- **Do not merge** standalone GN `rustc_test` targets into `with_host_unit_tests = True` in Bazel.
-- **Do not split** a GN `rustc_library` with `with_unit_tests = true` into separate Bazel library and test targets; use `with_host_unit_tests = True`.
+`bazel2gn` translates both `with_unit_tests` / `with_host_unit_tests` on `rustc_*` rules and standalone `rustc_test(crate = ":<lib>")` targets (inlining the crate's sources, root, edition, and deps into the generated GN `rustc_test`). Prefer standalone `rustc_test(crate = ":<lib>")` targets when migrating device unit tests (which `fx_unittest_package` packages directly; `with_unit_tests` is being deprecated in favor of explicit `rustc_test` targets per https://fxbug.dev/572570591). Do not merge standalone GN `rustc_test` targets into `with_host_unit_tests = True` in Bazel.
 
 ### 3. Specifying Crate Root
 

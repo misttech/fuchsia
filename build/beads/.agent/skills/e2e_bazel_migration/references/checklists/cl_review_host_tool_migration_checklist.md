@@ -86,7 +86,7 @@ This checklist defines the review criteria and standards for code changes migrat
 
 * [ ] **Go Host Tests:** Individual `host_go_test` targets are added directly to parent/ancestor `//tools:host_tests` (or `//build/tools:host_tests`) with `visibility = ["//tools:__pkg__"]` (no intermediate package `test_suite(name = "tests")`).
 * [ ] **Rust Host Tests:** Migrated test targets are grouped under a package-level `"tests"` `test_suite()` target with visibility restricted to parent/ancestor package, and added to the parent `"host_tests"` `test_suite()`.
-* [ ] **No GN Test Duplication:** Migrated host tests are removed from GN test groups (`group("tests_no_e2e")` in `//tools/BUILD.gn` or `group("tests")` in `//build/tools/BUILD.gn`).
+* [ ] **No GN Test Duplication:** Migrated host tests are removed from GN test groups (`group("tests_no_e2e")` in `//tools/BUILD.gn` or `group("tests")` in `//build/tools/BUILD.gn`), unless the library still has GN users: then the `bazel2gn`-generated GN copy of the test stays listed (tests of a library in both build systems run in both; see [Testing libraries in both build systems](../../../../../../../docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)).
 * [ ] **Test Parity Check:** All tests removed from `BUILD.gn` have matching definitions in `BUILD.bazel` included in a Bazel test suite; unmigrated GN tests remain in GN.
 
 ---

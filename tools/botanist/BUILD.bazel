@@ -143,6 +143,8 @@ go_binary_host_tool(
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "botanist_cmd_tests",
     srcs = ["cmd/run_test.go"],
@@ -151,6 +153,8 @@ host_go_test(
     visibility = ["//tools:__pkg__"],
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "botanist_lib_tests",
     srcs = [
@@ -162,6 +166,8 @@ host_go_test(
     visibility = ["//tools:__pkg__"],
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "botanist_repo_tests",
     srcs = [
@@ -173,6 +179,8 @@ host_go_test(
     visibility = ["//tools:__pkg__"],
 )
 
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
 host_go_test(
     name = "botanist_targets_tests",
     srcs = [

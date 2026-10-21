@@ -31,7 +31,18 @@ the Bazel targets to GN:
 
 2.  **Clean up GN:**
 
-    Remove the old GN targets you've migrated from `path/to/dir/BUILD.gn`.
+    Remove the old GN targets that `bazel2gn` now generates below `## BAZEL2GN
+    SENTINEL` from above the sentinel in `path/to/dir/BUILD.gn`. While a library
+    still has users in both build systems, its tests must run in both build
+    systems (see [Testing libraries in both build
+    systems](../../../../../docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)):
+    do not add `# @bazel2gn:skip` to test targets or test attributes
+    (`with_unit_tests`, `with_host_unit_tests`, `test_deps`) unless one of the
+    opt-out cases in that doc applies (the target under test in `BUILD.bazel`
+    is itself skipped, `bazel2gn` cannot translate that specific
+    rule/attribute, or a code owner opted the test out with a comment), and keep
+    the generated GN test copies wired into `group("tests")` alongside
+    `bazel_test_suite("bazel_tests")`.
 
 3.  **Verify:**
 
