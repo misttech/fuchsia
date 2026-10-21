@@ -7196,6 +7196,118 @@ impl Drop for QueueLockIrqSaveGuard {
 const MIGRATE_STAGE_SAVE: i32 = 0;
 const MIGRATE_STAGE_RESTORE: i32 = 1;
 
+impl Scheduler {
+    /// Completes a lock handoff after a context switch: releases the previous
+    /// thread's lock, restores `saved_state` as the active transaction, and
+    /// re-syncs `current_thread`'s lock to the restored transaction's token.
+    ///
+    /// # Safety
+    /// - Interrupts must be disabled and the current CPU's `Scheduler` must have
+    ///   a non-null `previous_thread` recorded by the context switch that
+    ///   resumed or started `current_thread`.
+    /// - An active `ChainLockTransaction` must hold exactly two locks: the
+    ///   previous thread's lock and `current_thread`'s lock, both acquired with
+    ///   the reserved scheduler token.
+    /// - `saved_state` must have been produced by a `ChainLockTransaction` that
+    ///   lives on `current_thread`'s stack and outlives this call.
+    unsafe fn lock_handoff_internal(saved_state: &SavedState, current_thread: *mut Thread) {
+        debug_assert!(crate::arch_rs::ints_disabled());
+        // SAFETY: Interrupts are disabled, so the current CPU cannot change and its
+        // `Scheduler` is initialized.
+        let scheduler = unsafe { cpp_scheduler_get(crate::arch_rs::curr_cpu_num()) };
+        // SAFETY: Interrupts are disabled and `scheduler` is the current CPU's
+        // initialized `Scheduler`. `previous_thread` is only accessed on the local
+        // CPU with interrupts disabled, so a relaxed load + store suffices without
+        // an atomic RMW.
+        let previous_thread = unsafe {
+            let prev = (*(*scheduler).state.get())
+                .previous_thread
+                .load(core::sync::atomic::Ordering::Relaxed);
+            (*(*scheduler).state.get())
+                .previous_thread
+                .store(core::ptr::null_mut(), core::sync::atomic::Ordering::Relaxed);
+            prev
+        };
+        debug_assert!(!previous_thread.is_null());
+
+        // SAFETY: The caller guarantees that an active `ChainLockTransaction` holds
+        // both `previous_thread`'s lock and `current_thread`'s lock with the
+        // reserved token, and that `saved_state` belongs to a live, stack-pinned
+        // `ChainLockTransaction` on `current_thread`'s stack.
+        unsafe {
+            let token = ChainLockTransaction::assert_active();
+            let prev_lock = thread_get_lock(previous_thread);
+            (*prev_lock).assert_acquired(&token);
+            ChainLockTransaction::active_ref(&token).assert_num_locks_held(2);
+            ChainLockTransaction::restore_state(*saved_state);
+            let curr_lock = thread_get_lock(current_thread);
+            (*curr_lock).sync_token(&token);
+            (*prev_lock).sync_token(&token);
+            (*prev_lock).release(&token);
+        }
+    }
+}
+
+/// Releases the lock held by the previous and current threads after a context
+/// switch. This must be called by trampoline routines at some point before
+/// jumping to the current thread's entry point.
+///
+/// # Safety
+/// Must be called on thread trampoline entry with interrupts disabled and an
+/// active `ChainLockTransaction` holding both `previous_thread`'s and
+/// `current_thread`'s locks with the reserved scheduler token.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_lock_handoff() {
+    // SAFETY: The thread trampoline runs with the transaction registered by the
+    // reschedule that switched to this thread.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+
+    // Construct the fake chainlock transaction we will be restoring. It should:
+    //
+    // 1) Not attempt to register itself with the per-cpu data structure. There
+    //    should already be a registered CLT, and attempting to instantiate a new
+    //    one using the typical constructor would trigger an ASSERT. This should
+    //    look like a transaction which had been sitting on a stack, but swapped
+    //    out using `save_state_and_use_reserved_token` at some point in the past.
+    // 2) Report that there are currently two locks held (because there are).
+    //    We have the previously running thread's lock, and the current (new)
+    //    thread's lock held (obtained by `Scheduler::reschedule_common`).
+    // 3) Report that the transaction has been finalized, as it would have been
+    //    had we come in via `Scheduler::reschedule_common`.
+    let tx = ChainLockTransaction::new_unregistered(clt_tag!("Trampoline"), 2, true);
+
+    // Assert that the current thread's lock was "acquired" here. It was
+    // actually acquired during the context switch from
+    // `Scheduler::reschedule_common`, but we now need to release it before letting
+    // the new thread run. The currently registered CLT should be using the
+    // scheduler token that was used to acquire the new thread's lock during
+    // `Scheduler::reschedule_common`.
+    let current_thread = super::thread::current_get();
+    // SAFETY: `current_thread` is valid and its lock is held by the active
+    // `ChainLockTransaction` with the reserved scheduler token.
+    let curr_lock = unsafe { thread_get_lock(current_thread) };
+    // SAFETY: `curr_lock` is valid and held by the active transaction.
+    unsafe {
+        (*curr_lock).assert_acquired(&token);
+    }
+
+    // Now perform our lock handoff. This will release our previous
+    // thread's lock, and restore the transaction we just instantiated as
+    // the active transaction, and replace the current thread's lock's
+    // token with the new non-scheduler token.
+    let saved_state = tx.save_state_initial(&token);
+    // SAFETY: `tx` stays at this stack address (it is not moved after
+    // `save_state_initial`), interrupts are disabled, and both `previous_thread`'s
+    // and `current_thread`'s locks are held with the reserved token.
+    unsafe {
+        Scheduler::lock_handoff_internal(&saved_state, current_thread);
+
+        // Finally, we just need to release the current thread's lock and we
+        // are finished.
+        (*curr_lock).release(&token);
+    }
+}
+
 /// Indicates how to select the target CPU for the woken task. This flag is a
 /// hint to enable more optimal CPU placement for "synchronous wake"
 /// operations, but is not required for correctness. See `unblock_synchronous`

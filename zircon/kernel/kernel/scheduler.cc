@@ -1465,43 +1465,7 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   }
 }
 
-void Scheduler::TrampolineLockHandoff() {
-  ChainLockTransaction::AssertActive();
-
-  // Construct the fake chainlock transaction we will be restoring.  It should:
-  //
-  // 1) Not attempt to register itself with the per-cpu data structure.  There
-  //    should already be a registered CLT, and attempting to instantiate a new
-  //    one using the typical constructor would trigger an ASSERT.  This should
-  //    look like a transaction which had been sitting on a stack, but swapped
-  //    out using PrepareForReschedule at some point in the past.
-  // 2) Report that there are currently two locks held (because there are).
-  //    We have the previously running thread's lock, and the current (new)
-  //    thread's lock held (obtained by Scheduler::RescheduleCommon).
-  // 3) Report that the transaction has been finalized, as it would have been
-  //    had we come in via RescheduleCommon.
-  //
-  ChainLockTransaction transaction =
-      ChainLockTransaction::MakeBareTransaction(CLT_TAG("Trampoline"), 2, true);
-  // Assert that the current thread's lock was "acquired" here.  It was
-  // actually acquired during the context switch from
-  // Scheduler::RescheduleCommon, but we now need to release it before letting
-  // the new thread run.  The currently registered CLT should be using the
-  // scheduler token that was used to acquire the new thread's lock during
-  // reschedule common.
-  Thread* const current_thread = Thread::Current::Get();
-  current_thread->get_lock().AssertAcquired();
-
-  // Now perform our lock handoff.  This will release our previous
-  // thread's lock, and restore the transaction we just instantiated as
-  // the active transaction, and replace the current thread's lock's
-  // token with the new non-scheduler token.
-  Scheduler::LockHandoffInternal(transaction.SaveStateInitial(), current_thread);
-
-  // Finally, we just need to release the current thread's lock and we
-  // are finished.
-  current_thread->get_lock().Release();
-}
+void Scheduler::TrampolineLockHandoff() { rust_kernel_scheduler_lock_handoff(); }
 
 void Scheduler::LockHandoffInternal(SavedState saved_state, Thread* const current_thread) {
   DEBUG_ASSERT(arch_ints_disabled());
