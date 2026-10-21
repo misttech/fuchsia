@@ -7,6 +7,7 @@
   enforce_source_listing = false
   {cfgs}
   {dependencies}
+  {inputs}
   {rustenv}
   {rustflags}
   {aliased_deps}

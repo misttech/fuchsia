@@ -102,6 +102,7 @@ target unconditionally (for all platforms) and can include the following arrays:
 * `env_vars` - environment variables, usually used for pretending to be Cargo
 * `features` - extra crate features to enable (converted to `--cfg=feature="..."` flags)
 * `remove_features` - crate features to exclude (converted to `--cfg=feature="..."` flags removed via `-=` in GN)
+* `inputs` - extra input files needed to compile the crate (for example, files read by proc-macros)
 * `rustflags` - flags to pass through to rustc
 * `remove_rustflags` - flags to remove from rustc (via `-=` in GN)
 
@@ -119,7 +120,7 @@ building for Fuchsia, when building for the Zircon kernel (`cfg(kernel)` or
 Specify platforms in the Rust cfg format (for example, `cfg(unix)`, `cfg(kernel)`,
 `cfg(all(kernel, target_arch = "x86_64"))`). You can use any of the configuration fields
 documented above (`configs`, `remove_configs`, `deps`, `env_vars`, `features`,
-`remove_features`, `rustflags`, `remove_rustflags`).
+`remove_features`, `inputs`, `rustflags`, `remove_rustflags`).
 
 #### Example
 ```toml

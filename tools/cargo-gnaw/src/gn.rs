@@ -333,6 +333,10 @@ impl GnField {
         self.remove_platform_cfg(None, cfg)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.add_fields.is_empty() && self.remove_fields.is_empty()
+    }
+
     pub fn render_gn(&self) -> String {
         let mut output = if self.exists {
             // We don't create an empty [] if the field already exists
@@ -510,6 +514,7 @@ pub fn write_rule<W: io::Write>(
     // write the features into the configs
     let mut rustflags = GnField::new("rustflags");
     let mut rustenv = GnField::new("rustenv");
+    let mut inputs = GnField::new("inputs");
     let mut configs = GnField::exists("configs");
     let mut require_licenses = false;
 
@@ -591,6 +596,11 @@ pub fn write_rule<W: io::Write>(
             if let Some(ref env_vars) = cfg.env_vars {
                 for flag in env_vars {
                     rustenv.add_platform_cfg(platform.cloned(), flag.to_string());
+                }
+            }
+            if let Some(ref input_files) = cfg.inputs {
+                for input in input_files {
+                    inputs.add_platform_cfg(platform.cloned(), input.to_string());
                 }
             }
             if let Some(ref crate_configs) = cfg.remove_configs {
@@ -816,6 +826,8 @@ uses_fuchsia_license = true
         }
     }
 
+    let inputs = if inputs.is_empty() { String::new() } else { inputs.render_gn() };
+
     writeln!(
         output,
         include_str!("../templates/gn_rule.template"),
@@ -829,6 +841,7 @@ uses_fuchsia_license = true
         dependencies = dependencies,
         optional_disable_rustdoc = optional_disable_rustdoc,
         cfgs = configs.render_gn(),
+        inputs = inputs,
         rustenv = rustenv.render_gn(),
         rustflags = rustflags.render_gn(),
         visibility = visibility,
@@ -960,6 +973,7 @@ mod tests {
   
   deps = []
 
+  
   rustenv = []
 
   rustflags = ["--cap-lints=allow","-Cmetadata=c5bf97c44457465a","-Cextra-filename=-c5bf97c44457465a"]
@@ -1029,6 +1043,7 @@ mod tests {
   
   deps = []
 
+  
   rustenv = []
 
   rustflags = ["--cap-lints=allow","-Cmetadata=dfe40348e50d4144","-Cextra-filename=-dfe40348e50d4144"]
@@ -1097,6 +1112,7 @@ mod tests {
   
   deps = []
 
+  
   rustenv = []
 
   rustflags = ["--cap-lints=allow","-Cmetadata=dfe40348e50d4144","-Cextra-filename=-dfe40348e50d4144"]
@@ -1584,6 +1600,7 @@ group("foo-v1_2.test") {
   
   deps = []
 
+  
   rustenv = []
 
   rustflags = ["--cap-lints=allow","-Cmetadata=c5bf97c44457465a","-Cextra-filename=-c5bf97c44457465a","--cfg=foo"]
@@ -1661,11 +1678,169 @@ rustflags -= ["--cfg=foo"]
   
   deps = []
 
+  
   rustenv = []
 
   rustflags = ["--cap-lints=allow","-Cmetadata=c5bf97c44457465a","-Cextra-filename=-c5bf97c44457465a"]
 if (current_os == "fuchsia") {
 rustflags -= ["--cfg=foo"]}
+
+  
+  visibility = [":*"]
+
+  
+  applicable_licenses = []
+
+  
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn target_with_inputs() {
+        let pkg_id = cargo_metadata::PackageId { repr: String::from("42") };
+        let version = Version::new(0, 1, 0);
+
+        let mut project_root = std::env::temp_dir();
+        project_root.push(Path::new("inputs_target"));
+        std::fs::write(&project_root, "").expect("write to temp file");
+
+        let target = GnTarget::new(
+            &pkg_id,
+            "test_target",
+            "test_package",
+            Edition::E2024,
+            Utf8Path::from_path(project_root.as_path()).unwrap(),
+            &version,
+            GnRustType::Library,
+            &[],
+            false,
+            HashMap::new(),
+            HashMap::new(),
+        );
+
+        let cfg = TargetCfg {
+            inputs: Some(vec!["//some/path/Cargo.toml".to_string()]),
+            ..Default::default()
+        };
+        let mut custom_build = CombinedTargetCfg::new();
+        custom_build.insert(None, &cfg);
+
+        let mut output = vec![];
+        write_rule(
+            &mut output,
+            &target,
+            std::env::temp_dir().as_path(),
+            None,
+            Some(&custom_build),
+            None,
+            false,
+            false,
+            None,
+            false,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"rustc_library("test_package-v0_1_0") {
+  crate_name = "test_target"
+  source_root = "//inputs_target"
+  output_name = "test_target-c5bf97c44457465a"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  
+  deps = []
+
+  inputs = ["//some/path/Cargo.toml"]
+
+  rustenv = []
+
+  rustflags = ["--cap-lints=allow","-Cmetadata=c5bf97c44457465a","-Cextra-filename=-c5bf97c44457465a"]
+
+  
+  visibility = [":*"]
+
+  
+  applicable_licenses = []
+
+  
+}
+
+"#
+        );
+    }
+
+    #[test]
+    fn target_with_platform_inputs() {
+        let pkg_id = cargo_metadata::PackageId { repr: String::from("42") };
+        let version = Version::new(0, 1, 0);
+
+        let mut project_root = std::env::temp_dir();
+        project_root.push(Path::new("platform_inputs_target"));
+        std::fs::write(&project_root, "").expect("write to temp file");
+
+        let target = GnTarget::new(
+            &pkg_id,
+            "test_target",
+            "test_package",
+            Edition::E2024,
+            Utf8Path::from_path(project_root.as_path()).unwrap(),
+            &version,
+            GnRustType::Library,
+            &[],
+            false,
+            HashMap::new(),
+            HashMap::new(),
+        );
+
+        let cfg = TargetCfg {
+            inputs: Some(vec!["//some/path/Cargo.toml".to_string()]),
+            ..Default::default()
+        };
+        let platform = "cfg(target_os = \"fuchsia\")".to_string();
+        let mut custom_build = CombinedTargetCfg::new();
+        custom_build.insert(Some(&platform), &cfg);
+
+        let mut output = vec![];
+        write_rule(
+            &mut output,
+            &target,
+            std::env::temp_dir().as_path(),
+            None,
+            Some(&custom_build),
+            None,
+            false,
+            false,
+            None,
+            false,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(
+            output_str,
+            r#"rustc_library("test_package-v0_1_0") {
+  crate_name = "test_target"
+  source_root = "//platform_inputs_target"
+  output_name = "test_target-c5bf97c44457465a"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  
+  deps = []
+
+  inputs = []
+if (current_os == "fuchsia") {
+inputs += ["//some/path/Cargo.toml"]}
+
+  rustenv = []
+
+  rustflags = ["--cap-lints=allow","-Cmetadata=c5bf97c44457465a","-Cextra-filename=-c5bf97c44457465a"]
 
   
   visibility = [":*"]

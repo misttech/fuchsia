@@ -113,6 +113,8 @@ pub struct TargetCfg {
     remove_configs: Option<Vec<String>>,
     /// GN Visibility that controls which targets can depend on this target.
     visibility: Option<Vec<String>>,
+    /// Extra input files needed to compile this target.
+    inputs: Option<Vec<String>>,
 
     /// Controls whether rustdoc will be build for this crate.
     disable_rustdoc: Option<bool>,
@@ -667,6 +669,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 && pkg_cfg.default_cfg.deps.is_none()
                                 && pkg_cfg.default_cfg.configs.is_none()
                                 && pkg_cfg.default_cfg.visibility.is_none()
+                                && pkg_cfg.default_cfg.inputs.is_none()
                                 && pkg_cfg.default_cfg.uses_fuchsia_license.is_none()
                                 && pkg_cfg.platform_cfg.is_empty()
                                 && pkg_cfg.binary.is_empty()
@@ -1095,6 +1098,7 @@ mod tests {
         let toml_str = r#"
             features = [ "alloc" ]
             remove_features = [ "std" ]
+            inputs = [ "//some:input" ]
             rustflags = [ "--cfg=foo" ]
             remove_rustflags = [ "--cfg=bar" ]
         "#;
@@ -1102,6 +1106,7 @@ mod tests {
         let cfg: TargetCfg = toml::from_str(toml_str).expect("deserialize TargetCfg");
         assert_eq!(cfg.features, Some(vec!["alloc".to_string()]));
         assert_eq!(cfg.remove_features, Some(vec!["std".to_string()]));
+        assert_eq!(cfg.inputs, Some(vec!["//some:input".to_string()]));
         assert_eq!(cfg.rustflags, Some(vec!["--cfg=foo".to_string()]));
         assert_eq!(cfg.remove_rustflags, Some(vec!["--cfg=bar".to_string()]));
     }
