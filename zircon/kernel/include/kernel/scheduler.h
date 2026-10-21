@@ -322,13 +322,6 @@ void rust_scheduler_remove_thread_locked(const Scheduler* sched, SchedTime now, 
 void rust_scheduler_queue_thread(const Scheduler* sched, Thread* thread, int32_t placement,
                                  SchedTime now);
 void rust_scheduler_erase_from_queue(const Scheduler* sched, Thread* thread);
-bool rust_scheduler_evaluate_next_thread(const Scheduler* sched, SchedTime now,
-                                         Thread* current_thread, bool current_is_migrating,
-                                         void* out_result);
-void rust_scheduler_unblock_common(Thread* thread, SchedTime now, int32_t unblock_type,
-                                   void* out_targets);
-void rust_scheduler_reschedule_common(const Scheduler* sched, Thread* current_thread,
-                                      void (*end_outer_trace_cb)(void*), void* end_outer_trace_ctx);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.
@@ -548,8 +541,6 @@ class Scheduler {
     FlushPending,
     Reschedule,
   };
-  static fxt::StringRef<fxt::RefType::kId> ToStringRef(PreemptType preempt_type);
-
   // No chainlocks should be held when calling preempt.  The thread's lock will
   // be obtained unconditionally in the process.
   //
@@ -1196,10 +1187,6 @@ class Scheduler {
 
     cpu_mask_t Mask() const { return cpu_num_to_mask(target_cpu) | cpus_to_reschedule; }
   };
-
-  // Common logic for unblock API.
-  static RescheduleTargets UnblockCommon(Thread* thread, SchedTime now, UnblockType unblock_type)
-      TA_REQ(chainlock_transaction_token, thread->get_lock());
 
   // Common logic for reschedule API.
   void RescheduleCommon(Thread* current_thread, EndTraceCallback end_outer_trace = nullptr)
@@ -2171,8 +2158,6 @@ FFI_ALWAYS_INLINE void cpp_scheduler_dump(Scheduler* scheduler, bool queue_state
 FFI_ALWAYS_INLINE const void* cpp_scheduler_get_queue_lock(const Scheduler* scheduler);
 void cpp_current_mono_time_and_boot_ticks(Scheduler::SchedMonoTimeAndBootTicks* out);
 void cpp_scheduler_block(Thread* current_thread);
-void cpp_scheduler_unblock(Thread* thread);
-void cpp_scheduler_unblock_list(Thread::UnblockList* list);
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_scheduler_update_power_level(
     uint32_t domain_id, uint64_t controller_id, power_management::ControlInterface interface,

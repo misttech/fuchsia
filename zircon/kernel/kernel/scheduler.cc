@@ -67,20 +67,6 @@ KCOUNTER(counter_find_target_cpu_retries, "scheduler.find_target_cpu.retries")
 
 void Scheduler::CountUpdateInTransition() { counter_update_in_transition.Add(1); }
 
-fxt::StringRef<fxt::RefType::kId> Scheduler::ToStringRef(PreemptType preempt_type) {
-  using fxt::operator""_intern;
-  switch (preempt_type) {
-    case PreemptType::Irq:
-      return "irq"_intern;
-    case PreemptType::FlushPending:
-      return "flush-pending"_intern;
-    case PreemptType::Reschedule:
-      return "reschedule"_intern;
-    default:
-      return "[unknown]"_intern;
-  }
-}
-
 // Records details about the threads entering/exiting the run queues for various
 // CPUs, as well as which task on each CPU is currently active. These events are
 // used for trace analysis to compute statistics about overall utilization,
@@ -166,19 +152,6 @@ FFI_ALWAYS_INLINE Scheduler* cpp_scheduler_get(cpu_num_t cpu) { return Scheduler
 FFI_ALWAYS_INLINE void cpp_scheduler_block(Thread* current_thread) TA_NO_THREAD_SAFETY_ANALYSIS {
   DEBUG_ASSERT(current_thread != nullptr);
   Scheduler::Block(current_thread);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_scheduler_unblock(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(thread != nullptr);
-  Scheduler::Unblock(thread);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_scheduler_unblock_list(Thread::UnblockList* list)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(list != nullptr);
-  Scheduler::Unblock(ktl::move(*list));
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -655,29 +628,6 @@ SchedTime Scheduler::GetNextEligibleTime() const {
   return rust_scheduler_get_next_eligible_time(this);
 }
 
-Scheduler::DequeueResult Scheduler::EvaluateNextThread(
-    SchedTime now, Thread* current_thread, bool current_is_migrating,
-    Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
-  DequeueResult result;
-  if (rust_scheduler_evaluate_next_thread(this, now, current_thread, current_is_migrating,
-                                          &result)) {
-    return result;
-  }
-
-  // Release the queue lock while attempting to steal work, leaving IRQs
-  // disabled.
-  queue_guard.CallUnlocked([&, processing_rate = power_level_control_.processing_rate()] {
-    ChainLockTransaction::AssertActive();
-    result = StealWork(now, processing_rate);
-  });
-
-  if (result) {
-    return result;
-  }
-
-  return &percpu::Get(this_cpu()).idle_power_thread.thread();
-}
-
 cpu_num_t Scheduler::FindTargetCpu(Thread* thread, UnblockType unblock_type) {
   return rust_scheduler_find_target_cpu(thread, unblock_type == UnblockType::Synchronous ? 1 : 0);
 }
@@ -701,17 +651,6 @@ cpu_stats Scheduler::GetProjectedCpuStats(cpu_num_t cpu_num) {
   cpu_stats stats;
   rust_kernel_scheduler_get_projected_cpu_stats(cpu_num, &stats);
   return stats;
-}
-
-void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback end_outer_trace) {
-  // Pass a null callback when there is no outer trace to end (the common case
-  // when tracing is disabled) so the Rust side can skip the erased scope.
-  if (!end_outer_trace) {
-    rust_scheduler_reschedule_common(this, current_thread, nullptr, nullptr);
-    return;
-  }
-  auto cb = [](void* ctx) { (*static_cast<EndTraceCallback*>(ctx))(); };
-  rust_scheduler_reschedule_common(this, current_thread, cb, &end_outer_trace);
 }
 
 void Scheduler::TrampolineLockHandoff() { rust_kernel_scheduler_lock_handoff(); }
@@ -768,165 +707,30 @@ void Scheduler::ValidateInvariantsUnconditional() const {
 
 void Scheduler::Block(Thread* const current_thread) { rust_kernel_scheduler_block(current_thread); }
 
-Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime now,
-                                                      UnblockType unblock_type) {
-  RescheduleTargets targets;
-  rust_scheduler_unblock_common(thread, now, unblock_type == UnblockType::Synchronous ? 1 : 0,
-                                &targets);
-  return targets;
-}
+void Scheduler::Unblock(Thread* thread) { rust_scheduler_unblock(thread); }
 
-void Scheduler::Unblock(Thread* thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock");
-  ChainLockTransaction::ActiveRef().AssertFinalized();
-  const SchedTime now = CurrentTime();
-  RescheduleTargets targets = UnblockCommon(thread, now, UnblockType::Normal);
-  thread->get_lock().Release();
-  trace.End();
+void Scheduler::Unblock(Thread::UnblockList list) { rust_scheduler_unblock_list(&list); }
 
-  RescheduleMask(targets.Mask());
-}
+void Scheduler::UnblockSynchronous(Thread* thread) { rust_scheduler_unblock_synchronous(thread); }
 
-void Scheduler::Unblock(Thread::UnblockList list) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock_list");
-  ChainLockTransaction::ActiveRef().AssertFinalized();
-  cpu_mask_t reschedule_mask = 0;
-  const SchedTime now = CurrentTime();
-  Thread* thread;
-  while ((thread = list.pop_back()) != nullptr) {
-    DEBUG_ASSERT(!thread->IsIdle());
-    thread->get_lock().AssertAcquired();
-    RescheduleTargets targets = UnblockCommon(thread, now, UnblockType::Normal);
-    reschedule_mask |= targets.Mask();
-    thread->get_lock().Release();
-  }
-  trace.End();
+void Scheduler::UnblockIdle(Thread* thread) { rust_scheduler_unblock_idle(thread); }
 
-  RescheduleMask(reschedule_mask);
-}
-
-void Scheduler::UnblockSynchronous(Thread* thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock_sync");
-  ChainLockTransaction::ActiveRef().AssertFinalized();
-  const SchedTime now = CurrentTime();
-  RescheduleTargets targets = UnblockCommon(thread, now, UnblockType::Synchronous);
-  thread->get_lock().Release();
-  trace.End();
-
-  // If there was a power level change we need to account for, reschedule those CPUs. But do not
-  // reschedule the target CPU, if it is the current CPU.
-  if (targets.target_cpu == arch_curr_cpu_num()) {
-    RescheduleMask(targets.cpus_to_reschedule);
-  } else {
-    RescheduleMask(targets.Mask());
-  }
-}
-
-void Scheduler::UnblockIdle(Thread* thread) {
-  SchedulerState* const state = &thread->scheduler_state();
-
-  DEBUG_ASSERT(thread->IsIdle());
-  DEBUG_ASSERT(ktl::popcount(state->hard_affinity_) == 1);
-
-  const cpu_num_t target_cpu = lowest_cpu_set(state->hard_affinity_);
-  Scheduler* const target_scheduler = Get(target_cpu);
-
-  {
-    Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&target_scheduler->queue_lock_, SOURCE_TAG};
-    thread->set_ready();
-    state->curr_cpu_ = target_cpu;
-    target_scheduler->AssertInScheduler(*thread);
-    thread->scheduler_queue_state().OnInsert();
-  }
-}
-
-void Scheduler::Yield(Thread* const current_thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_yield");
-  DEBUG_ASSERT(current_thread == Thread::Current::Get());
-  DEBUG_ASSERT(!current_thread->IsIdle());
-
-  if (IsFairThread(current_thread)) {
-    Scheduler& current_scheduler = *Get();
-    SchedulerState& current_state = current_thread->scheduler_state();
-
-    // If the thread is running in an eligible activation, expire the time slice
-    // to push it into the next activation, potentially allowing other eligible
-    // threads to run. However, if the start time is in the future, this thread
-    // is running because there were no other eligible fair threads to run and
-    // the eligible time was snapped forward. In that case, avoid pushing the
-    // activation further into the future.
-    const SchedTime now = CurrentTime();
-
-    if (current_state.start_time() < now) {
-      current_state.time_slice_used_ns_ = current_state.time_slice_ns_;
-      current_scheduler.RescheduleCommon(current_thread, trace.Completer());
-    }
-  }
-}
+void Scheduler::Yield(Thread* const current_thread) { rust_scheduler_yield(current_thread); }
 
 void Scheduler::Preempt(PreemptType preempt_type) {
-  Thread* current_thread = Thread::Current::Get();
-  SingleChainLockGuard thread_guard{IrqSaveOption, current_thread->get_lock(),
-                                    CLT_TAG("Scheduler::Preempt")};
-  PreemptLocked(current_thread, preempt_type);
+  rust_scheduler_preempt(static_cast<uint8_t>(preempt_type));
 }
 
 void Scheduler::PreemptLocked(Thread* current_thread, PreemptType preempt_type) {
-  ktrace::Scope trace =
-      LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_preempt", ("type", ToStringRef(preempt_type)));
-  const cpu_num_t current_cpu = arch_curr_cpu_num();
-
-  // If any spinlocks are held, we can't immediately reschedule.  Instead, send
-  // this CPU a reschedule IPI that will fire once the last spinlock has been
-  // released and interrupts have been re-enabled.
-  if (arch_num_spinlocks_held() > 0) {
-    PreemptionState& preemption_state = current_thread->preemption_state();
-    preemption_state.preempts_pending_add(cpu_num_to_mask(current_cpu));
-    mp_reschedule_self();
-    return;
-  }
-
-  SchedulerState& current_state = current_thread->scheduler_state();
-  DEBUG_ASSERT(current_state.curr_cpu_ == current_cpu);
-  DEBUG_ASSERT(current_state.last_cpu_ == current_state.curr_cpu_);
-  DEBUG_ASSERT(current_thread->state() == THREAD_RUNNING);
-
-  Get()->RescheduleCommon(current_thread, trace.Completer());
+  rust_scheduler_preempt_locked(current_thread, static_cast<uint8_t>(preempt_type));
 }
 
 void Scheduler::Reschedule(Thread* const current_thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_reschedule");
-
-  DEBUG_ASSERT(current_thread == Thread::Current::Get());
-  SchedulerState* const current_state = &current_thread->scheduler_state();
-  const cpu_num_t current_cpu = arch_curr_cpu_num();
-
-  const bool preempt_enabled = current_thread->preemption_state().EvaluateTimesliceExtension();
-
-  // Pend the preemption rather than rescheduling if preemption is disabled.
-  if (!preempt_enabled) {
-    current_thread->preemption_state().preempts_pending_add(cpu_num_to_mask(current_cpu));
-    return;
-  }
-
-  // If any spinlocks are held, we can't immediately reschedule.  Instead, send
-  // this CPU a reschedule IPI that will fire once the last spinlock has been
-  // released and interrupts have been re-enabled.
-  if (arch_num_spinlocks_held() > 0) {
-    current_thread->preemption_state().preempts_pending_add(cpu_num_to_mask(current_cpu));
-    mp_reschedule_self();
-    return;
-  }
-
-  DEBUG_ASSERT(current_state->curr_cpu_ == current_cpu);
-  DEBUG_ASSERT(current_state->last_cpu_ == current_state->curr_cpu_);
-
-  Get()->RescheduleCommon(current_thread, trace.Completer());
+  rust_scheduler_reschedule(current_thread);
 }
 
 void Scheduler::RescheduleInternal(Thread* const current_thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_resched_internal");
-  Get()->RescheduleCommon(current_thread, trace.Completer());
+  rust_scheduler_reschedule_internal(current_thread);
 }
 
 void Scheduler::MigrateUnpinnedThreads() {
@@ -1120,77 +924,11 @@ void Scheduler::MigrateUnpinnedThreads() {
 void Scheduler::TimerTick(SchedTime now) { rust_kernel_scheduler_timer_tick(now); }
 
 void Scheduler::UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info) {
-  DEBUG_ASSERT(info.size() <= percpu::processor_count());
-  InterruptDisableGuard irqd;
-
-  cpu_num_t cpus_to_reschedule_mask = 0;
-  for (auto& entry : info) {
-    DEBUG_ASSERT(entry.logical_cpu_number <= percpu::processor_count());
-
-    cpus_to_reschedule_mask |= cpu_num_to_mask(entry.logical_cpu_number);
-    Scheduler* scheduler = Scheduler::Get(entry.logical_cpu_number);
-    Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-
-    // TODO(eieio): Apply a minimum value threshold.
-    rust_scheduler_user_set_processing_rate(scheduler,
-                                            ToSchedProcessingRate(entry.performance_scale));
-
-    // Return the original performance scale (i.e. processing rate).
-    entry.performance_scale = ToUserPerformanceScale(scheduler->processing_rate());
-  }
-
-  RescheduleMask(cpus_to_reschedule_mask);
+  rust_scheduler_update_processing_rates(info.data(), info.size());
 }
 
 void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
-  DEBUG_ASSERT(limits.size() <= percpu::processor_count());
-  InterruptDisableGuard interrupts_disabled;
-
-  // Set the limits for each CPU in the given limits array, keeping track of one
-  // CPU per domain to evaluate the domain's active power level.
-  cpu_mask_t cpus_for_handled_domains = 0;
-  cpu_mask_t cpus_to_evaluate_updates = 0;
-  for (auto& entry : limits) {
-    switch (entry.limit_type) {
-      case ZX_CPU_PERF_LIMIT_TYPE_RATE: {
-        Scheduler* scheduler = Scheduler::Get(entry.logical_cpu_number);
-        Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-
-        using power_management::PowerLevel;
-
-        const SchedProcessingRate min =
-            PowerLevel::ToProcessingRate(entry.min, PowerLevel::kUserProcessingRateScale);
-        const SchedProcessingRate max =
-            PowerLevel::ToProcessingRate(entry.max, PowerLevel::kUserProcessingRateScale);
-        scheduler->power_level_control_.UserSetProcessingRateLimits(min, max);
-
-        // A rate change only needs to be evaluated for one active CPU in each domain.
-        const cpu_mask_t cpu_mask = cpu_num_to_mask(entry.logical_cpu_number);
-        const bool is_domain_handled = cpus_for_handled_domains & cpu_mask;
-        if (scheduler->IsSchedulerActiveLocked() && scheduler->power_level_control_.is_enabled() &&
-            !is_domain_handled) {
-          cpus_to_evaluate_updates |= cpu_mask;
-
-          const cpu_mask_t domain_cpu_mask = scheduler->power_level_control_.domain()->cpus();
-          cpus_for_handled_domains |= domain_cpu_mask;
-        }
-      } break;
-
-      default:
-        break;
-    }
-  }
-
-  // Reevaluate the power level for each updated domain.
-  cpu_mask_t cpu_mask = cpus_to_evaluate_updates;
-  for (cpu_num_t cpu = remove_cpu_from_mask(cpu_mask); cpu != INVALID_CPU;
-       cpu = remove_cpu_from_mask(cpu_mask)) {
-    Scheduler* scheduler = Scheduler::Get(cpu);
-    Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-    scheduler->power_level_control_.ReevaluateCurrentPowerLevel();
-  }
-
-  RescheduleMask(cpus_to_evaluate_updates);
+  rust_scheduler_update_processing_limits(limits.data(), limits.size());
 }
 
 cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
@@ -1372,35 +1110,7 @@ cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
 }
 
 bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
-  InterruptDisableGuard interrupts_disabled;
-  bool need_reschedule;
-  {
-    Guard<MonitoredSpinLock, NoIrqSave> guard{&queue_lock_, SOURCE_TAG};
-    need_reschedule = power_level_control_.IsValidActivePowerLevel(power_level) &&
-                      power_level_control_.PendPowerLevelRequest(power_level);
-  }
-  if (need_reschedule) {
-    RescheduleMask(cpu_num_to_mask(this_cpu()));
-  }
-  return need_reschedule;
-}
-
-bool Scheduler::PowerLevelControl::UserSetProcessingRateLimits(SchedProcessingRate min,
-                                                               SchedProcessingRate max) {
-  return rust_scheduler_user_set_processing_rate_limits(&scheduler(), min, max);
-}
-
-bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
-  return rust_scheduler_pend_power_level_request(&scheduler(), power_level);
-}
-
-bool Scheduler::PowerLevelControl::PendPowerLevelRequestForRate(
-    SchedProcessingRate processing_rate) {
-  return rust_scheduler_pend_power_level_request_for_rate(&scheduler(), processing_rate);
-}
-
-void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
-  rust_scheduler_reevaluate_current_power_level(&scheduler());
+  return rust_scheduler_request_power_level_for_testing(this, power_level);
 }
 
 void Scheduler::SetPowerDomainSet(PowerDomainSet power_domain_set) {

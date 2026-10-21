@@ -2214,8 +2214,6 @@ unsafe extern "C" {
 
     fn cpp_thread_call_migrate_fn_for_cpu(cpu: CpuNum);
     fn cpp_scheduler_block(current_thread: *mut Thread);
-    fn cpp_scheduler_unblock(thread: *mut Thread);
-    fn cpp_scheduler_unblock_list(list: *mut core::ffi::c_void);
     fn cpp_scheduler_thread_base_profile_changed(thread: *mut Thread);
     fn cpp_scheduler_upstream_thread_base_profile_changed_thread(
         upstream: *const Thread,
@@ -2972,6 +2970,15 @@ fn placement_to_str(placement: Placement) -> &'static ktrace_rs::InternedString 
         Placement::Preemption => PLACEMENT_PREEMPTION,
         Placement::Migration => PLACEMENT_MIGRATION,
         Placement::Association => PLACEMENT_ASSOCIATION,
+    }
+}
+
+/// Returns a tracing string ref for the given preemption type.
+fn preempt_type_to_str(t: PreemptType) -> &'static ktrace_rs::InternedString {
+    match t {
+        PreemptType::Irq => PREEMPT_IRQ,
+        PreemptType::FlushPending => PREEMPT_FLUSH_PENDING,
+        PreemptType::Reschedule => PREEMPT_RESCHEDULE,
     }
 }
 
@@ -4895,6 +4902,70 @@ impl Scheduler {
                 .store(plc.clamped_max_processing_rate().raw_value());
         }
     }
+    /// Sends a power level request through this scheduler's power level controller for testing.
+    /// This method is called from thread and IRQ context to ensure that the underlying machinery
+    /// can be safely called within `block`, `unblock`, and other scheduling operations.
+    ///
+    /// Returns true if the request was sent, false otherwise.
+    ///
+    /// # Safety
+    /// `self` must be a valid initialized `Scheduler` whose `queue_lock_` is not
+    /// already held by the current CPU (`TA_EXCL(queue_lock_)`).
+    pub unsafe fn request_power_level_for_testing(&self, power_level: u8) -> bool {
+        let _irqd = crate::arch_rs::InterruptDisableGuard::new();
+        let sched_mut = self as *const Scheduler as *mut Scheduler;
+        // SAFETY: `sched_mut` is valid, interrupts are disabled by `_irqd`, and
+        // `queue_lock_` is not already held.
+        let need_reschedule = unsafe {
+            let _guard = QueueLockGuard::acquire(sched_mut);
+            cpp_scheduler_power_state_is_valid_active_power_level(self, power_level)
+                && self.pend_power_level_request(power_level)
+        };
+        if need_reschedule {
+            // SAFETY: Interrupts are disabled and `self.this_cpu()` is initialized.
+            unsafe { Self::reschedule_mask(cpu_num_to_mask(self.this_cpu())) };
+        }
+        need_reschedule
+    }
+
+    /// Updates the performance scales of the requested CPUs and returns the
+    /// effective values in place, which may be different than the requested values
+    /// if they are below the minimum safe values for the respective CPUs.
+    ///
+    /// Requires `info.len() <= num CPUs`.
+    ///
+    /// # Safety
+    /// `info.len()` and each `entry.logical_cpu_number` must be valid CPU numbers
+    /// (`< PerCpu::processor_count()`), and no `queue_lock_` may be held by the
+    /// current CPU (`TA_EXCL(queue_lock_)`).
+    pub unsafe fn update_processing_rates(info: &mut [zx_types::zx_cpu_performance_info_t]) {
+        debug_assert!(info.len() <= PerCpu::processor_count());
+        let _irqd = crate::arch_rs::InterruptDisableGuard::new();
+
+        let mut cpus_to_reschedule_mask: CpuMask = 0;
+        for entry in info.iter_mut() {
+            debug_assert!((entry.logical_cpu_number as usize) < PerCpu::processor_count());
+
+            cpus_to_reschedule_mask |= cpu_num_to_mask(entry.logical_cpu_number);
+            // SAFETY: `entry.logical_cpu_number` is a valid CPU number, interrupts are
+            // disabled by `_irqd`, and `queue_lock_` is acquired before forming
+            // `&Scheduler` on `sched_ptr`.
+            unsafe {
+                let sched_ptr = cpp_scheduler_get(entry.logical_cpu_number);
+                let _guard = QueueLockGuard::acquire(sched_ptr);
+                let scheduler = &*sched_ptr;
+
+                // TODO(eieio): Apply a minimum value threshold.
+                scheduler
+                    .user_set_processing_rate(to_sched_processing_rate(entry.performance_scale));
+                // Return the original performance scale (i.e. processing rate).
+                entry.performance_scale = to_user_performance_scale(scheduler.processing_rate());
+            }
+        }
+
+        // SAFETY: Interrupts are disabled and no `queue_lock_` is held.
+        unsafe { Self::reschedule_mask(cpus_to_reschedule_mask) };
+    }
 
     /// Gets the performance scales of up to `info.len()` CPUs. Returns the last
     /// values requested by userspace, even if they have not yet taken effect.
@@ -4951,6 +5022,77 @@ impl Scheduler {
         }
     }
 
+    /// Updates the performance limits of the requested CPUs.
+    ///
+    /// Requires `limits.len() <= num CPUs`.
+    ///
+    /// # Safety
+    /// `limits.len()` and each `entry.logical_cpu_number` must be valid CPU
+    /// numbers (`< PerCpu::processor_count()`), and no `queue_lock_` may be held by
+    /// the current CPU (`TA_EXCL(queue_lock_)`).
+    pub unsafe fn update_processing_limits(limits: &[zx_types::zx_cpu_perf_limit_t]) {
+        debug_assert!(limits.len() <= PerCpu::processor_count());
+        let _irqd = crate::arch_rs::InterruptDisableGuard::new();
+
+        // Set the limits for each CPU in the given limits slice, keeping track of one
+        // CPU per domain to evaluate the domain's active power level.
+        let mut cpus_for_handled_domains: CpuMask = 0;
+        let mut cpus_to_evaluate_updates: CpuMask = 0;
+        for entry in limits.iter() {
+            if entry.limit_type == zx_types::ZX_CPU_PERF_LIMIT_TYPE_RATE {
+                debug_assert!((entry.logical_cpu_number as usize) < PerCpu::processor_count());
+                // SAFETY: `entry.logical_cpu_number` is a valid CPU number, interrupts
+                // are disabled by `_irqd`, and `_guard` acquires `queue_lock_` before
+                // forming `&Scheduler` on `sched_ptr`.
+                unsafe {
+                    let sched_ptr = cpp_scheduler_get(entry.logical_cpu_number);
+                    let _guard = QueueLockGuard::acquire(sched_ptr);
+                    let scheduler = &*sched_ptr;
+
+                    // Convert the user limits, expressed in units of USER_PROCESSING_RATE_SCALE,
+                    // using the 64-bit `FastFixed` division path. The generic `Fixed` division
+                    // evaluates in i128 and requires the 128-bit division builtins, which the
+                    // kernel does not link. Values above the scale saturate and are clamped to
+                    // 1.0 by `user_set_processing_rate_limits`.
+                    let scale = FastFixed::<u64, 0>::from_raw(USER_PROCESSING_RATE_SCALE);
+                    let min =
+                        SchedProcessingRate::from(FastFixed::<u64, 0>::from_raw(entry.min) / scale);
+                    let max =
+                        SchedProcessingRate::from(FastFixed::<u64, 0>::from_raw(entry.max) / scale);
+                    scheduler.user_set_processing_rate_limits(min, max);
+
+                    // A rate change only needs to be evaluated for one active CPU in each domain.
+                    let cpu_mask = cpu_num_to_mask(entry.logical_cpu_number);
+                    let is_domain_handled = (cpus_for_handled_domains & cpu_mask) != 0;
+                    if scheduler.is_scheduler_active_locked()
+                        && scheduler.power_level_control_is_enabled()
+                        && !is_domain_handled
+                    {
+                        cpus_to_evaluate_updates |= cpu_mask;
+                        let domain_cpu_mask = cpp_scheduler_power_state_domain_cpus(scheduler);
+                        cpus_for_handled_domains |= domain_cpu_mask;
+                    }
+                }
+            }
+        }
+
+        // Reevaluate the power level for each updated domain.
+        let mut cpu_mask = cpus_to_evaluate_updates;
+        while cpu_mask != 0 {
+            let cpu = remove_cpu_from_mask(&mut cpu_mask);
+            // SAFETY: `cpu` is a valid CPU number, interrupts are disabled, and
+            // `_guard` acquires `queue_lock_` before forming `&Scheduler`.
+            unsafe {
+                let sched_ptr = cpp_scheduler_get(cpu);
+                let _guard = QueueLockGuard::acquire(sched_ptr);
+                let scheduler = &*sched_ptr;
+                scheduler.reevaluate_current_power_level();
+            }
+        }
+
+        // SAFETY: Interrupts are disabled and no `queue_lock_` is held.
+        unsafe { Self::reschedule_mask(cpus_to_evaluate_updates) };
+    }
     /// Gets the processing limits of up to `limits.len()` CPUs.
     ///
     /// Requires `limits.len() <= num CPUs`.
@@ -7587,56 +7729,6 @@ pub unsafe extern "C" fn rust_scheduler_erase_from_queue(
 }
 
 /// # Safety
-/// `sched` and `current_thread` must be valid, `out_result` must point to an
-/// initialized `DequeueResult` (it is read before it is overwritten), and both
-/// `queue_lock_` and `current_thread`'s lock must be held.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_evaluate_next_thread(
-    sched: *const Scheduler,
-    now: SchedTime,
-    current_thread: *mut Thread,
-    current_is_migrating: bool,
-    out_result: *mut DequeueResult,
-) -> bool {
-    // SAFETY: Forwarded from the caller.
-    let mut eval =
-        unsafe { (*sched).evaluate_next_thread(now, current_thread, current_is_migrating) };
-    if eval.status == EvaluateStatus::Selected {
-        let res = DequeueResult {
-            thread: eval.thread,
-            mono_start_time_ns: eval.mono_start_time_ns,
-            mono_finish_time_ns: eval.mono_finish_time_ns,
-        };
-        eval.mono_start_time_ns = SchedTime::from_raw(0);
-        eval.mono_finish_time_ns = SchedTime::from_raw(0);
-        // SAFETY: `out_result` is a valid pointer provided by the caller.
-        unsafe {
-            debug_assert!(!(*out_result).is_updated_pending());
-            out_result.write(res);
-        }
-        true
-    } else {
-        false
-    }
-}
-
-/// # Safety
-/// `thread` and `out_targets` must be valid, and `thread` must be locked.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_unblock_common(
-    thread: *mut Thread,
-    now: SchedTime,
-    unblock_type: i32,
-    out_targets: *mut RescheduleTargets,
-) {
-    let ut = if unblock_type == 0 { UnblockType::Normal } else { UnblockType::Synchronous };
-    // SAFETY: Forwarded from the caller.
-    let targets = unsafe { unblock_common(thread, now, ut) };
-    // SAFETY: `out_targets` is a valid pointer provided by the caller.
-    unsafe { out_targets.write(targets) };
-}
-
-/// # Safety
 /// Pointers must be valid and thread lock held.
 #[unsafe(export_name = "rust_kernel_scheduler_block")]
 pub unsafe extern "C" fn ffi_scheduler_block(current_thread: *mut Thread) {
@@ -7652,38 +7744,120 @@ pub unsafe extern "C" fn ffi_scheduler_timer_tick(now: SchedTime) {
     unsafe { rust_kernel_scheduler_timer_tick(now) };
 }
 
-struct CppErasedScope {
-    cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
-    ctx: *mut core::ffi::c_void,
-}
-
-impl ktrace_rs::ErasedScope for CppErasedScope {
-    fn end(&mut self) {
-        if let Some(cb) = self.cb.take() {
-            // SAFETY: `cb` and `ctx` were supplied together by the C++ caller of
-            // `rust_scheduler_reschedule_common`, whose `EndTraceCallback` outlives
-            // this scope; `take()` ensures it is invoked at most once.
-            unsafe { cb(self.ctx) };
-        }
-    }
+/// # Safety
+/// `thread` must be valid and locked.
+#[unsafe(export_name = "rust_scheduler_unblock")]
+pub unsafe extern "C" fn ffi_scheduler_unblock(thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_unblock(thread) };
 }
 
 /// # Safety
-/// `sched` and `current_thread` must be valid, with `current_thread` locked.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_reschedule_common(
-    sched: *const Scheduler,
-    current_thread: *mut Thread,
-    end_outer_trace_cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
-    end_outer_trace_ctx: *mut core::ffi::c_void,
-) {
-    // Only materialize an erased scope when the C++ caller actually has an outer
-    // trace to end; `end_outer_trace_cb` is null otherwise.
-    let mut scope = CppErasedScope { cb: end_outer_trace_cb, ctx: end_outer_trace_ctx };
-    let end_outer_trace =
-        scope.cb.is_some().then_some(&mut scope as &mut dyn ktrace_rs::ErasedScope);
+/// `list` must point to a valid `Thread::UnblockList`.
+#[unsafe(export_name = "rust_scheduler_unblock_list")]
+pub unsafe extern "C" fn ffi_scheduler_unblock_list(list: *mut UnblockList) {
     // SAFETY: Forwarded from the caller.
-    unsafe { (*sched).reschedule_common(current_thread, end_outer_trace) };
+    unsafe { rust_scheduler_unblock_list(list) };
+}
+
+/// # Safety
+/// `thread` must be valid and locked.
+#[unsafe(export_name = "rust_scheduler_unblock_synchronous")]
+pub unsafe extern "C" fn ffi_scheduler_unblock_synchronous(thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_unblock_synchronous(thread) };
+}
+
+/// # Safety
+/// `thread` must be valid and locked.
+#[unsafe(export_name = "rust_scheduler_unblock_idle")]
+pub unsafe extern "C" fn ffi_scheduler_unblock_idle(thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_unblock_idle(thread) };
+}
+
+/// # Safety
+/// `current_thread` must be valid and locked.
+#[unsafe(export_name = "rust_scheduler_yield")]
+pub unsafe extern "C" fn ffi_scheduler_yield(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_yield(current_thread) };
+}
+
+/// # Safety
+/// Must be called with no chain locks held.
+#[unsafe(export_name = "rust_scheduler_preempt")]
+pub unsafe extern "C" fn ffi_scheduler_preempt(preempt_type: u8) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_preempt(preempt_type) };
+}
+
+/// # Safety
+/// `current_thread` must be valid and locked.
+#[unsafe(export_name = "rust_scheduler_preempt_locked")]
+pub unsafe extern "C" fn ffi_scheduler_preempt_locked(
+    current_thread: *mut Thread,
+    preempt_type: u8,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_preempt_locked(current_thread, preempt_type) };
+}
+
+/// # Safety
+/// `current_thread` must be valid and locked.
+#[unsafe(export_name = "rust_scheduler_reschedule")]
+pub unsafe extern "C" fn ffi_scheduler_reschedule(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_reschedule(current_thread) };
+}
+
+/// # Safety
+/// `current_thread` must be valid and locked.
+#[unsafe(export_name = "rust_scheduler_reschedule_internal")]
+pub unsafe extern "C" fn ffi_scheduler_reschedule_internal(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_reschedule_internal(current_thread) };
+}
+
+/// # Safety
+/// Interrupts must be disabled or preemption state valid.
+#[unsafe(export_name = "rust_scheduler_reschedule_mask")]
+pub unsafe extern "C" fn ffi_scheduler_reschedule_mask(cpus_to_reschedule_mask: CpuMask) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_reschedule_mask(cpus_to_reschedule_mask) };
+}
+
+/// # Safety
+/// `sched` must be valid and `queue_lock_` not held.
+#[unsafe(export_name = "rust_scheduler_request_power_level_for_testing")]
+pub unsafe extern "C" fn ffi_scheduler_request_power_level_for_testing(
+    sched: *mut Scheduler,
+    power_level: u8,
+) -> bool {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_request_power_level_for_testing(sched, power_level) }
+}
+
+/// # Safety
+/// `info` must point to `count` valid elements.
+#[unsafe(export_name = "rust_scheduler_update_processing_rates")]
+pub unsafe extern "C" fn ffi_scheduler_update_processing_rates(
+    info: *mut zx_types::zx_cpu_performance_info_t,
+    count: usize,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_update_processing_rates(info, count) };
+}
+
+/// # Safety
+/// `limits` must point to `count` valid elements.
+#[unsafe(export_name = "rust_scheduler_update_processing_limits")]
+pub unsafe extern "C" fn ffi_scheduler_update_processing_limits(
+    limits: *const zx_types::zx_cpu_perf_limit_t,
+    count: usize,
+) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_scheduler_update_processing_limits(limits, count) };
 }
 
 /// Initializes a run queue in-place.
@@ -9279,6 +9453,103 @@ impl Scheduler {
         unsafe { (*scheduler).set_is_active(is_active) };
     }
 
+    /// # Safety
+    /// The caller must ensure interrupts are disabled or preemption state is valid,
+    /// and if a `ChainLockTransaction` is active, it holds either 0 locks or only
+    /// `current_thread`'s lock.
+    pub unsafe fn reschedule_mask(cpus_to_reschedule_mask: CpuMask) {
+        // Does the local CPU need to be preempted?
+        let local_mask = cpu_num_to_mask(crate::arch_rs::curr_cpu_num());
+        let local_cpu = cpus_to_reschedule_mask & local_mask;
+
+        let current_thread = super::thread::current_get();
+
+        // First deal with the remote CPUs.
+        //
+        // Can we reschedule them?
+        // SAFETY: `current_thread` is the current CPU's active thread.
+        if unsafe { cpp_thread_preempt_eager_resched_disable_count(current_thread) } > 0 {
+            // EagerReschedDisabled implies that local preemption is also disabled.
+            debug_assert!(!super::thread::preempt_is_enabled());
+            // Nope, save them for later.
+            // SAFETY: `current_thread` is the current CPU's active thread.
+            unsafe { cpp_thread_preempts_pending_add(current_thread, cpus_to_reschedule_mask) };
+            if local_cpu != 0 {
+                // SAFETY: `current_thread` is the current CPU's active thread.
+                unsafe { cpp_thread_preempt_evaluate_timeslice_extension(current_thread) };
+            }
+            return;
+        }
+
+        // `mp::reschedule` will remove the local CPU from the mask for us.
+        super::mp::reschedule(cpus_to_reschedule_mask, 0);
+
+        // Now deal with the local CPU.
+        if local_cpu == 0 {
+            // Nothing to do.
+            return;
+        }
+        // SAFETY: `current_thread` is the current CPU's active thread.
+        let preempt_enabled =
+            unsafe { cpp_thread_preempt_evaluate_timeslice_extension(current_thread) };
+
+        // Can we do it here and now?
+        if !preempt_enabled {
+            // Nope, can't do it now. Make a note for later.
+            // SAFETY: `current_thread` is the current CPU's active thread.
+            unsafe { cpp_thread_preempts_pending_add(current_thread, local_cpu) };
+            return;
+        }
+
+        // From a chain-lock requirement perspective, there are a few different
+        // cases to consider.
+        //
+        // 1) We currently have no transaction in progress and hold no locks.
+        //    In this case, we can simply call `preempt`, which will start a
+        //    transaction, lock our current thread, and take care of preemption.
+        // 2) We do currently have a transaction in progress, but we hold no
+        //    locks. This can happen in the cases such as `unblock(thread)` or
+        //    `unblock_list(list)`, where all of the unblocking thread's locks were
+        //    dropped after adding them to the proper scheduler queue. We need
+        //    to re-use our existing transaction by first restarting it, then
+        //    obtaining our current thread's lock, and finally calling
+        //    `preempt_locked`.
+        // 3) We do currently have a transaction in progress, and we are holding
+        //    exactly one lock which is the current thread's lock. In this case,
+        //    we simply call `preempt_locked` directly.
+        //
+        // TODO(johngro): Determine if #1 and #3 are actual possibilities by the
+        // time that we hit this stage. #2 may be the only legit case, but I'm
+        // not quite sure yet.
+        if ChainLockTransaction::active().is_none() {
+            // SAFETY: No `ChainLockTransaction` is active on the current CPU.
+            unsafe { preempt(PreemptType::Reschedule) };
+            return;
+        }
+
+        // SAFETY: `ChainLockTransaction::active().is_some()` was verified above.
+        let token = unsafe { ChainLockTransaction::mark_active() };
+        let active_clt = ChainLockTransaction::active_ref(&token);
+        // SAFETY: `current_thread` is the current CPU's active thread.
+        let lock = unsafe { &*thread_get_lock(current_thread) };
+        if !lock.is_held(&token) {
+            active_clt.restart(clt_tag!("Scheduler::RescheduleMask"), &token);
+            active_clt.assert_num_locks_held(0);
+            let _guard = ChainLockGuard::new(lock, &token);
+            ChainLockTransaction::finalize(&token);
+            // SAFETY: `current_thread` is valid and `_guard` holds its lock as the
+            // sole lock in the finalized `ChainLockTransaction`.
+            unsafe { preempt_locked(current_thread, PreemptType::Reschedule) };
+            return;
+        }
+
+        active_clt.assert_num_locks_held(1);
+        lock.assert_acquired(&token);
+        // SAFETY: `current_thread` is valid and its lock is the sole lock held in
+        // the active `ChainLockTransaction`.
+        unsafe { preempt_locked(current_thread, PreemptType::Reschedule) };
+    }
+
     /// A helper function used by `find_active_scheduler_for_thread`. Returns a CPU to
     /// run the given thread on, but does not lock that scheduler, meaning that the
     /// selected scheduler can become deactivated before the caller can lock it.
@@ -9860,6 +10131,476 @@ impl Scheduler {
     }
 }
 
+/// Indicates the type of preemption for diagnostic/tracing purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PreemptType {
+    Irq = 0,
+    FlushPending = 1,
+    Reschedule = 2,
+}
+
+#[inline]
+fn preempt_type_from_raw(raw: u8) -> PreemptType {
+    match raw {
+        0 => PreemptType::Irq,
+        1 => PreemptType::FlushPending,
+        2 => PreemptType::Reschedule,
+        _ => unreachable!(),
+    }
+}
+
+/// Finishes unblocking a thread. This function expects the thread to be locked
+/// when called. It will:
+///
+/// 1) Select a scheduler compatible with the thread.
+/// 2) Place the thread into that scheduler's run queue.
+/// 3) Drop the thread's lock.
+/// 4) Reschedule if needed/permitted.
+///
+/// # Safety
+/// - `thread` must point to a valid initialized `Thread` whose lock is held by
+///   an active, finalized `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token)`,
+///   `TA_REL(thread->get_lock())`).
+/// - Interrupts must be disabled.
+unsafe fn unblock_raw(thread: *mut Thread) {
+    let mut trace = local_ktrace_begin_scope!(COMMON, "sched_unblock");
+    // SAFETY: The caller guarantees an active `ChainLockTransaction` on the current CPU.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    ChainLockTransaction::active_ref(&token).assert_finalized();
+    let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+    // SAFETY: `thread` is a valid `Thread` pointer and its lock is held by the caller.
+    let targets = unsafe { unblock_common(thread, now, UnblockType::Normal) };
+    // SAFETY: `thread` is a valid pointer to `Thread`.
+    let lock = unsafe { thread_get_lock(thread) };
+    // SAFETY: `lock` is a valid pointer to `ChainLock` and was held by the caller.
+    unsafe { (*lock).release(&token) };
+    if let Some(t) = trace.as_mut() {
+        t.end();
+    }
+    // SAFETY: `Scheduler::reschedule_mask` is safe to call after releasing `thread`'s lock.
+    unsafe { Scheduler::reschedule_mask(targets.mask()) };
+}
+
+/// Expects to receive a list of threads, all of whose locks are currently
+/// held. It will drop each thread's lock after successfully assigning it to a
+/// scheduler.
+///
+/// # Safety
+/// - `list` must point to a valid `Thread::UnblockList` whose contained threads
+///   are all valid, non-idle, and have their locks held by an active, finalized
+///   `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token)`).
+/// - Interrupts must be disabled.
+unsafe fn unblock_list_raw(list: *mut UnblockList) {
+    let mut trace = local_ktrace_begin_scope!(COMMON, "sched_unblock_list");
+    // SAFETY: The caller guarantees an active `ChainLockTransaction` on the current CPU.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    ChainLockTransaction::active_ref(&token).assert_finalized();
+    let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+    let mut reschedule_mask = 0;
+    loop {
+        // SAFETY: `list` is a valid pointer to a C++ `Thread::UnblockList`.
+        let thread = unsafe { cpp_unblock_list_pop_back(list) };
+        if thread.is_null() {
+            break;
+        }
+        // SAFETY: `thread` is a valid `Thread` popped from `list`.
+        debug_assert!(!unsafe { cpp_thread_is_idle(thread) });
+        // SAFETY: `thread` is valid and its lock is held in `token`.
+        let lock = unsafe { thread_get_lock(thread) };
+        unsafe { (*lock).assert_acquired(&token) };
+        // SAFETY: `thread` is valid and its lock is held.
+        let targets = unsafe { unblock_common(thread, now, UnblockType::Normal) };
+        reschedule_mask |= targets.mask();
+        // SAFETY: `lock` is valid and held in `token`.
+        unsafe { (*lock).release(&token) };
+    }
+    if let Some(t) = trace.as_mut() {
+        t.end();
+    }
+    // SAFETY: All unblocked threads' locks have been released.
+    unsafe { Scheduler::reschedule_mask(reschedule_mask) };
+}
+
+/// Similar to `unblock`, except that it uses different target CPU selection
+/// criteria to enable a "synchronous wake", if possible.
+///
+/// A synchronous wake is a sequence of operations where the current thread
+/// wakes another thread, updates the woken thread's scheduling parameters, and
+/// then blocks, such that, under compatible conditions, the woken thread
+/// replaces the current thread as the actively running thread on the CPU in
+/// the _same reschedule operation_. A correctly executed synchronous wake
+/// optimizes queuing latency in synchronous wake-and-wait operations, such as
+/// channel calls.
+///
+/// Due to the structure of run queues and wait queues, and their respective
+/// locking protocols, a synchronous wake cannot be implemented as a single
+/// scheduler operation. Instead, some variation of the following sequence of
+/// operations must be executed to achieve the same effect:
+///
+/// 1. Prevent immediate rescheduling in step 2 using an appropriate mechanism,
+///    or combination of mechanisms, for the use case (i.e. spinlock + irq
+///    disable, preempt disable, eager resched disable).
+/// 2. Unblock the target thread and place it on the same CPU as the current
+///    thread, if possible.
+/// 3. Update the target thread's scheduling parameters to transfer bandwidth
+///    and/or urgency from the current to the target thread, if possible.
+/// 4. Block the current thread and reschedule the local CPU, and remote CPU if
+///    applicable.
+///
+/// This function implements step 2 of the synchronous wake sequence. Note that
+/// the normal `unblock` may be used in place of this function without impacting
+/// correctness. However, suboptimal task placement can occur at step 2 and
+/// multiple reschedules may be necessary in steps 3 and 4.
+///
+/// # Safety
+/// - `thread` must point to a valid initialized `Thread` whose lock is held by
+///   an active, finalized `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token)`,
+///   `TA_REL(thread->get_lock())`).
+/// - Interrupts must be disabled.
+unsafe fn unblock_synchronous(thread: *mut Thread) {
+    let mut trace = local_ktrace_begin_scope!(COMMON, "sched_unblock_sync");
+    // SAFETY: The caller guarantees an active `ChainLockTransaction` on the current CPU.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    ChainLockTransaction::active_ref(&token).assert_finalized();
+    let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+    // SAFETY: `thread` is valid and locked by the caller.
+    let targets = unsafe { unblock_common(thread, now, UnblockType::Synchronous) };
+    // SAFETY: `thread` is valid.
+    let lock = unsafe { thread_get_lock(thread) };
+    // SAFETY: `lock` is valid and held by the caller.
+    unsafe { (*lock).release(&token) };
+    if let Some(t) = trace.as_mut() {
+        t.end();
+    }
+
+    // If there was a power level change we need to account for, reschedule those CPUs. But do not
+    // reschedule the target CPU, if it is the current CPU.
+    let current_cpu = crate::arch_rs::curr_cpu_num();
+    if targets.target_cpu == current_cpu {
+        // SAFETY: `Scheduler::reschedule_mask` is safe to call after releasing `thread`'s lock.
+        unsafe { Scheduler::reschedule_mask(targets.cpus_to_reschedule) };
+    } else {
+        // SAFETY: `Scheduler::reschedule_mask` is safe to call after releasing `thread`'s lock.
+        unsafe { Scheduler::reschedule_mask(targets.mask()) };
+    }
+}
+
+/// Used in the process of creation of the idle thread. It simply asserts that
+/// the thread is (in fact) flagged as the idle thread, and that it has hard
+/// affinity for exactly one CPU (its CPU). It then sets the thread to be ready,
+/// and ensures that its `curr_cpu` state is correct.
+///
+/// # Safety
+/// - `thread` must point to a valid idle `Thread` whose lock is held by an
+///   active `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token, idle_thread->get_lock())`).
+/// - Interrupts must be disabled and `target_scheduler`'s `queue_lock_` must not
+///   be held.
+unsafe fn unblock_idle(thread: *mut Thread) {
+    // SAFETY: `thread` is valid.
+    debug_assert!(unsafe { cpp_thread_is_idle(thread) });
+    // SAFETY: `thread` is valid and its lock is held by the caller.
+    let state_ptr = unsafe { cpp_thread_get_scheduler_state(thread) };
+    // SAFETY: `thread`'s lock is held.
+    let hard_affinity = unsafe { (*state_ptr).hard_affinity };
+    debug_assert!(hard_affinity.count_ones() == 1);
+    let target_cpu = hard_affinity.trailing_zeros() as CpuNum;
+    // SAFETY: `target_cpu` is a valid CPU number from `hard_affinity`.
+    let target_scheduler = unsafe { cpp_scheduler_get(target_cpu) };
+
+    // SAFETY: `target_scheduler` is valid, interrupts are disabled, and
+    // `queue_lock_` is not already held.
+    let _guard = unsafe { QueueLockGuard::acquire(target_scheduler) };
+    // SAFETY: `thread` is valid and both `thread`'s lock and `target_scheduler`'s
+    // `queue_lock_` are held.
+    unsafe {
+        cpp_thread_set_ready(thread);
+        (*state_ptr).curr_cpu = target_cpu;
+        (*target_scheduler).assert_in_scheduler(thread);
+        let queue_state = &mut *cpp_thread_get_queue_state(thread);
+        queue_state.on_insert();
+    }
+}
+
+/// Yields the current thread's remaining time slice if it is a fair thread
+/// running in an eligible activation.
+///
+/// # Safety
+/// - `current_thread` must be the current CPU's active thread (`current_get()`),
+///   and its lock must be the sole lock held by an active, finalized
+///   `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+/// - Interrupts must be disabled and the current CPU's `queue_lock_` must not be held.
+unsafe fn yield_thread(current_thread: *mut Thread) {
+    let mut trace = local_ktrace_begin_scope!(COMMON, "sched_yield");
+    debug_assert_eq!(current_thread, super::thread::current_get());
+    // SAFETY: `current_thread` is valid.
+    debug_assert!(!unsafe { cpp_thread_is_idle(current_thread) });
+    // SAFETY: `current_thread` is valid and its lock is held by the caller.
+    let state_ptr = unsafe { cpp_thread_get_scheduler_state(current_thread) };
+    // SAFETY: `current_thread`'s lock is held.
+    let is_fair = unsafe { (*state_ptr).effective_profile.is_fair() };
+    if is_fair {
+        let current_cpu = crate::arch_rs::curr_cpu_num();
+        // SAFETY: `current_cpu` is a valid CPU number.
+        let sched = unsafe { cpp_scheduler_get(current_cpu) };
+        // If the thread is running in an eligible activation, expire the time slice
+        // to push it into the next activation, potentially allowing other eligible
+        // threads to run. However, if the start time is in the future, this thread
+        // is running because there were no other eligible fair threads to run and
+        // the eligible time was snapped forward. In that case, avoid pushing the
+        // activation further into the future.
+        let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+        // SAFETY: `current_thread`'s lock is held.
+        if unsafe { (*state_ptr).start_time < now } {
+            // SAFETY: `current_thread`'s lock is held.
+            unsafe { (*state_ptr).time_slice_used_ns = (*state_ptr).time_slice_ns };
+            // SAFETY: `sched` and `current_thread` are valid, and `current_thread`'s
+            // lock is the sole lock held in the active `ChainLockTransaction`.
+            unsafe {
+                (*sched).reschedule_common(
+                    current_thread,
+                    trace.as_mut().map(|s| s as &mut dyn ktrace_rs::ErasedScope),
+                );
+            }
+        }
+    }
+}
+
+/// No chainlocks should be held when calling `preempt`. The thread's lock will
+/// be obtained unconditionally in the process.
+///
+/// If holding a spinlock, the preemption will be deferred via self-IPI until
+/// all spinlocks are released and interrupts are re-enabled.
+///
+/// # Safety
+/// Must be called with no active `ChainLockTransaction` on the current CPU
+/// (`TA_EXCL(chainlock_transaction_token)`).
+unsafe fn preempt(preempt_type: PreemptType) {
+    let current_thread = super::thread::current_get();
+    // SAFETY: `current_thread` is the current CPU's active thread.
+    let lock = unsafe { &*thread_get_lock(current_thread) };
+    single_chain_lock_guard!(_guard, IRQ_SAVE_OPTION, lock, clt_tag!("Scheduler::Preempt"));
+    // SAFETY: `current_thread` is valid and `_guard` holds its lock as the sole
+    // lock in the active `ChainLockTransaction`.
+    unsafe {
+        preempt_locked(current_thread, preempt_type);
+    }
+}
+
+/// Preempts `current_thread` while its lock is already held.
+///
+/// # Safety
+/// - `current_thread` must be the current CPU's active thread, and its lock
+///   must be the sole lock held by an active, finalized `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+/// - Interrupts must be disabled and the current CPU's `queue_lock_` must not be held.
+unsafe fn preempt_locked(current_thread: *mut Thread, preempt_type: PreemptType) {
+    let mut trace = local_ktrace_begin_scope!(
+        COMMON,
+        "sched_preempt",
+        "type" => preempt_type_to_str(preempt_type),
+    );
+    let current_cpu = crate::arch_rs::curr_cpu_num();
+    // If any spinlocks are held, we can't immediately reschedule. Instead, send
+    // this CPU a reschedule IPI that will fire once the last spinlock has been
+    // released and interrupts have been re-enabled.
+    // SAFETY: Querying per-CPU spinlock count with interrupts disabled.
+    if unsafe { cpp_arch_num_spinlocks_held() } > 0 {
+        // SAFETY: `current_thread` is valid.
+        unsafe { cpp_thread_preempts_pending_add(current_thread, cpu_num_to_mask(current_cpu)) };
+        super::mp::reschedule_self();
+        return;
+    }
+
+    {
+        // SAFETY: `current_thread` is valid and its lock is held by the caller.
+        let state = unsafe { &*cpp_thread_get_scheduler_state(current_thread) };
+        debug_assert!(state.curr_cpu == current_cpu);
+        debug_assert!(state.last_cpu == state.curr_cpu);
+        debug_assert_eq!(state.state, ThreadState::Running);
+    }
+
+    // SAFETY: `current_cpu` is a valid CPU number.
+    let sched = unsafe { cpp_scheduler_get(current_cpu) };
+    // SAFETY: `sched` and `current_thread` are valid, and `current_thread`'s lock
+    // is the sole lock held in the active `ChainLockTransaction`.
+    unsafe {
+        (*sched).reschedule_common(
+            current_thread,
+            trace.as_mut().map(|s| s as &mut dyn ktrace_rs::ErasedScope),
+        );
+    }
+}
+
+/// Reschedules the current CPU if preemption is enabled and no spinlocks are held.
+///
+/// # Safety
+/// - `current_thread` must be the current CPU's active thread (`current_get()`),
+///   and its lock must be the sole lock held by an active, finalized
+///   `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+/// - Interrupts must be disabled and the current CPU's `queue_lock_` must not be held.
+unsafe fn reschedule(current_thread: *mut Thread) {
+    let mut trace = local_ktrace_begin_scope!(COMMON, "sched_reschedule");
+    debug_assert!(current_thread == super::thread::current_get());
+    let current_cpu = crate::arch_rs::curr_cpu_num();
+    // SAFETY: `current_thread` is valid.
+    let preempt_enabled =
+        unsafe { cpp_thread_preempt_evaluate_timeslice_extension(current_thread) };
+    // Pend the preemption rather than rescheduling if preemption is disabled.
+    if !preempt_enabled {
+        // SAFETY: `current_thread` is valid.
+        unsafe { cpp_thread_preempts_pending_add(current_thread, cpu_num_to_mask(current_cpu)) };
+        return;
+    }
+
+    // If any spinlocks are held, we can't immediately reschedule. Instead, send
+    // this CPU a reschedule IPI that will fire once the last spinlock has been
+    // released and interrupts have been re-enabled.
+    // SAFETY: Querying per-CPU spinlock count with interrupts disabled.
+    if unsafe { cpp_arch_num_spinlocks_held() } > 0 {
+        // SAFETY: `current_thread` is valid.
+        unsafe { cpp_thread_preempts_pending_add(current_thread, cpu_num_to_mask(current_cpu)) };
+        super::mp::reschedule_self();
+        return;
+    }
+
+    {
+        // SAFETY: `current_thread` is valid and its lock is held by the caller.
+        let state = unsafe { &*cpp_thread_get_scheduler_state(current_thread) };
+        debug_assert!(state.curr_cpu == current_cpu);
+        debug_assert!(state.last_cpu == state.curr_cpu);
+    }
+
+    // SAFETY: `current_cpu` is a valid CPU number.
+    let sched = unsafe { cpp_scheduler_get(current_cpu) };
+    // SAFETY: `sched` and `current_thread` are valid, and `current_thread`'s lock
+    // is the sole lock held in the active `ChainLockTransaction`.
+    unsafe {
+        (*sched).reschedule_common(
+            current_thread,
+            trace.as_mut().map(|s| s as &mut dyn ktrace_rs::ErasedScope),
+        );
+    }
+}
+
+/// Internal reschedule entry point used for initial thread startup and exit.
+///
+/// # Safety
+/// - `current_thread` must be the current CPU's active thread (`current_get()`),
+///   and its lock must be the sole lock held by an active, finalized
+///   `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+/// - Interrupts must be disabled and the current CPU's `queue_lock_` must not be held.
+unsafe fn reschedule_internal(current_thread: *mut Thread) {
+    let mut trace = local_ktrace_begin_scope!(COMMON, "sched_resched_internal");
+    let current_cpu = crate::arch_rs::curr_cpu_num();
+    // SAFETY: `current_cpu` is a valid CPU number.
+    let sched = unsafe { cpp_scheduler_get(current_cpu) };
+    // SAFETY: `sched` and `current_thread` are valid, and `current_thread`'s lock
+    // is the sole lock held in the active `ChainLockTransaction`.
+    unsafe {
+        (*sched).reschedule_common(
+            current_thread,
+            trace.as_mut().map(|s| s as &mut dyn ktrace_rs::ErasedScope),
+        );
+    }
+}
+
+/// Unblocks `thread`, releasing its lock and rescheduling as needed.
+/// Requires `TA_REQ(chainlock_transaction_token)` and `TA_REL(thread->get_lock())`.
+///
+/// # Safety
+/// The caller must ensure that the thread pointer points to a valid initialized Thread.
+pub unsafe extern "C" fn rust_scheduler_unblock(thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { unblock_raw(thread) };
+}
+
+/// Unblocks all threads in `list`, releasing each thread's lock and rescheduling as needed.
+/// Requires `TA_REQ(chainlock_transaction_token)`.
+///
+/// # Safety
+/// The caller must ensure that `list` points to a valid, initialized Thread::UnblockList.
+pub unsafe extern "C" fn rust_scheduler_unblock_list(list: *mut UnblockList) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { unblock_list_raw(list) };
+}
+
+/// Synchronously unblocks `thread`, releasing its lock and rescheduling remote CPUs as needed.
+/// Requires `TA_REQ(chainlock_transaction_token)` and `TA_REL(thread->get_lock())`.
+///
+/// # Safety
+/// The caller must ensure that the thread pointer points to a valid initialized Thread.
+pub unsafe extern "C" fn rust_scheduler_unblock_synchronous(thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { unblock_synchronous(thread) };
+}
+
+/// Marks the idle `thread` ready on its assigned CPU.
+/// Requires `TA_REQ(chainlock_transaction_token, thread->get_lock())`.
+///
+/// # Safety
+/// The caller must ensure that the thread pointer points to a valid initialized Thread.
+pub unsafe extern "C" fn rust_scheduler_unblock_idle(thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { unblock_idle(thread) };
+}
+
+/// Yields `current_thread`'s remaining time slice.
+/// Requires `TA_REQ(chainlock_transaction_token, current_thread->get_lock())`.
+///
+/// # Safety
+/// The caller must ensure that the thread pointer points to a valid initialized Thread.
+pub unsafe extern "C" fn rust_scheduler_yield(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { yield_thread(current_thread) };
+}
+
+/// Preempts the current thread on the local CPU.
+/// Requires `TA_EXCL(chainlock_transaction_token)`.
+///
+/// # Safety
+/// The caller must ensure that the arguments are valid and match the FFI invariants.
+pub unsafe extern "C" fn rust_scheduler_preempt(preempt_type: u8) {
+    let pt = preempt_type_from_raw(preempt_type);
+    // SAFETY: Forwarded from the caller.
+    unsafe { preempt(pt) };
+}
+
+/// Preempts `current_thread` while its lock is already held.
+/// Requires `TA_REQ(chainlock_transaction_token, current_thread->get_lock())`.
+///
+/// # Safety
+/// The caller must ensure that the thread pointer points to a valid initialized Thread and the
+/// preempt type is correct.
+pub unsafe extern "C" fn rust_scheduler_preempt_locked(
+    current_thread: *mut Thread,
+    preempt_type: u8,
+) {
+    let pt = preempt_type_from_raw(preempt_type);
+    // SAFETY: Forwarded from the caller.
+    unsafe { preempt_locked(current_thread, pt) };
+}
+
+/// Reschedules `current_thread` on the local CPU if preemption is enabled.
+/// Requires `TA_REQ(chainlock_transaction_token, current_thread->get_lock())`.
+///
+/// # Safety
+/// The caller must ensure that the thread pointer points to a valid initialized Thread.
+pub unsafe extern "C" fn rust_scheduler_reschedule(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { reschedule(current_thread) };
+}
+
+/// Reschedules `current_thread` unconditionally during thread startup or exit.
+/// Requires `TA_REQ(chainlock_transaction_token, current_thread->get_lock())`.
+///
+/// # Safety
+/// The caller must ensure that the thread pointer points to a valid initialized Thread.
+pub unsafe extern "C" fn rust_scheduler_reschedule_internal(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { reschedule_internal(current_thread) };
+}
+
 impl Scheduler {
     /// Writes the CPU stats for the given CPU number to `out_stats`, forward
     /// projected to account for idle or normalized busy time elapsed since the
@@ -10264,6 +11005,13 @@ pub unsafe extern "C" fn rust_kernel_scheduler_dump_active_thread(
     );
 }
 
+/// # Safety
+/// The caller must ensure interrupts are disabled or preemption state is valid.
+pub unsafe extern "C" fn rust_scheduler_reschedule_mask(cpus_to_reschedule_mask: CpuMask) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { Scheduler::reschedule_mask(cpus_to_reschedule_mask) };
+}
+
 /// Peeks at the active scheduler mask. See `peek_active_mask`.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_scheduler_peek_active_mask() -> CpuMask {
@@ -10359,6 +11107,29 @@ pub unsafe extern "C" fn rust_scheduler_initialize_processing_rate(
 }
 
 /// # Safety
+/// `sched` must be valid and its `queue_lock_` must NOT be held.
+pub unsafe extern "C" fn rust_scheduler_request_power_level_for_testing(
+    sched: *mut Scheduler,
+    power_level: u8,
+) -> bool {
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).request_power_level_for_testing(power_level) }
+}
+
+/// # Safety
+/// `info` must point to `count` valid `zx_cpu_performance_info_t` elements.
+pub unsafe extern "C" fn rust_scheduler_update_processing_rates(
+    info: *mut zx_types::zx_cpu_performance_info_t,
+    count: usize,
+) {
+    // SAFETY: When `count > 0`, the caller guarantees `info` points to `count` valid elements.
+    let slice =
+        if count == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(info, count) } };
+    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
+    unsafe { Scheduler::update_processing_rates(slice) };
+}
+
+/// # Safety
 /// `info` must point to `count` valid `zx_cpu_performance_info_t` elements.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_scheduler_get_performance_scales(
@@ -10384,6 +11155,19 @@ pub unsafe extern "C" fn rust_scheduler_get_default_performance_scales(
         if count == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(info, count) } };
     // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
     unsafe { Scheduler::get_default_performance_scales(slice) };
+}
+
+/// # Safety
+/// `limits` must point to `count` valid `zx_cpu_perf_limit_t` elements.
+pub unsafe extern "C" fn rust_scheduler_update_processing_limits(
+    limits: *const zx_types::zx_cpu_perf_limit_t,
+    count: usize,
+) {
+    // SAFETY: When `count > 0`, the caller guarantees `limits` points to `count` valid elements.
+    let slice =
+        if count == 0 { &[] } else { unsafe { core::slice::from_raw_parts(limits, count) } };
+    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
+    unsafe { Scheduler::update_processing_limits(slice) };
 }
 
 /// # Safety
@@ -10445,7 +11229,7 @@ pub unsafe fn unblock(thread: OwnerGuard<'_, Thread>, clt_token: &ChainLockTrans
     // SAFETY: `thread.lock()` is held via the consumed `OwnerGuard` in the active transaction,
     // and the caller guarantees `thread` is ready to be unblocked in the scheduler.
     unsafe {
-        cpp_scheduler_unblock(thread.as_raw());
+        unblock_raw(thread.as_raw());
     }
 }
 
@@ -10469,10 +11253,10 @@ pub unsafe fn unblock_list(
 ) {
     assert_transaction_active(clt_token);
     // SAFETY: Every thread in `list` has its lock held in the finalized active transaction and is
-    // ready to be unblocked in the scheduler, and `cpp_scheduler_unblock_list` moves the nodes out
-    // of `list` in-place, leaving `list` as a valid empty `Thread::UnblockList`.
+    // ready to be unblocked in the scheduler, and `unblock_list_raw` pops the threads out of
+    // `list` in-place, leaving `list` as a valid empty `Thread::UnblockList`.
     unsafe {
-        cpp_scheduler_unblock_list(list.as_raw().cast());
+        unblock_list_raw(list.as_raw().cast());
     }
 }
 
