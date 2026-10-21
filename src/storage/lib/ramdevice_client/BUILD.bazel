@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# Forward some targets for easier transition
+# Note the old zircon directory forwarded to the CPP implementation.
+alias(
+    name = "ramdevice_client",
+    actual = "//src/storage/lib/ramdevice_client/rust:ramdevice_client",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/security/tests/pkg_test/util:__pkg__",
+        "//src/storage/benchmarks/fuchsia:__pkg__",
+        "//src/storage/factory/export_ffs:__pkg__",
+        "//src/storage/lib:__subpackages__",
+        "//src/storage/stress-tests/utils:__pkg__",
+        "//src/sys/pkg/testing/blobfs-ramdisk:__pkg__",
+    ],
+)

@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:ramdevice_client_test`) stay in BUILD.gn because they are
+# packaged via `storage_driver_test_realm_component`, which has no Bazel build
+# yet.
+rustc_library(
+    name = "ramdevice_client",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/storage/blackout/target/lib:__pkg__",
+        "//src/storage/lib/blob_writer:__pkg__",
+        "//src/storage/lib/fs_management/rust:__pkg__",
+        "//src/storage/lib/ramdevice_client:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component/client",
+        "//src/lib/fuchsia-fs",
+        "//src/storage/lib/fs_management/rust:fs_management",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
