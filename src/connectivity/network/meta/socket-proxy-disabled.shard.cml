@@ -16,19 +16,10 @@
                 "#reachability",
             ],
         },
-        {
-            protocol: [ "fuchsia.net.policy.properties.DefaultNetworkWatcher" ],
-            from: "void",
-            to: "#netcfg",
-            availability: "optional",
-        },
     ],
     expose: [
         {
-            protocol: [
-                "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-                "fuchsia.net.policy.socketproxy.NetworkRegistry",
-            ],
+            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
             from: "void",
             availability: "optional",
         },

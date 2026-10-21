@@ -13,7 +13,6 @@
     capabilities: [
         {
             protocol: [
-                "fuchsia.net.policy.properties.DefaultNetworkWatcher",
                 "fuchsia.posix.socket.Provider",
                 "fuchsia.posix.socket.raw.Provider",
             ],
@@ -31,7 +30,6 @@
     expose: [
         {
             protocol: [
-                "fuchsia.net.policy.properties.DefaultNetworkWatcher",
                 "fuchsia.posix.socket.Provider",
                 "fuchsia.posix.socket.raw.Provider",
             ],

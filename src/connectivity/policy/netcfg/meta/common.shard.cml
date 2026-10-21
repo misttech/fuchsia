@@ -53,10 +53,6 @@
             protocol: "fuchsia.net.dhcpv6.ClientProvider",
             availability: "optional",
         },
-        {
-            protocol: "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-            availability: "optional",
-        },
         { service: "fuchsia.hardware.network.Service" },
         {
             directory: "netcfg-config",

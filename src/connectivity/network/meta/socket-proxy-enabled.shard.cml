@@ -36,11 +36,6 @@
             ],
         },
         {
-            protocol: [ "fuchsia.net.policy.properties.DefaultNetworkWatcher" ],
-            from: "#socket-proxy",
-            to: [ "#netcfg" ],
-        },
-        {
             protocol: [ "fuchsia.net.policy.properties.Networks" ],
             from: "#netcfg",
             to: "#socket-proxy",
@@ -51,11 +46,6 @@
         {
             protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
             from: "#netcfg",
-            availability: "optional",
-        },
-        {
-            protocol: [ "fuchsia.net.policy.properties.DefaultNetworkWatcher" ],
-            from: "#socket-proxy",
             availability: "optional",
         },
         {

@@ -9,10 +9,7 @@
     },
     capabilities: [
         {
-            protocol: [
-                "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-                "fuchsia.net.policy.socketproxy.NetworkRegistry",
-            ],
+            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
         },
     ],
     use: [
@@ -22,10 +19,7 @@
     ],
     expose: [
         {
-            protocol: [
-                "fuchsia.net.policy.properties.DefaultNetworkWatcher",
-                "fuchsia.net.policy.socketproxy.NetworkRegistry",
-            ],
+            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
             from: "self",
         },
     ],
