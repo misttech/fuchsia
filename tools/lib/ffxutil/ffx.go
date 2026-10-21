@@ -862,6 +862,15 @@ func (f *FFXInstance) RunAndGetOutput(ctx context.Context, args ...string) (stri
 	return strings.TrimSpace(s), err
 }
 
+// RunAndGetOutputWithTimeout runs ffx with the provided timeout and args and returns the stdout.
+// A timeout of 0 disables the default 5-minute invoker timeout and defers to ctx.
+func (f *FFXInstance) RunAndGetOutputWithTimeout(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
+	i := f.invoker(args).setCaptureOutput().setTimeout(timeout)
+	err := i.run(ctx)
+	s := i.output.String()
+	return strings.TrimSpace(s), err
+}
+
 // RunAndGetOutputRaw runs ffx with the provided args and returns the stdout,
 // using the raw machine format.
 func (f *FFXInstance) RunAndGetOutputRaw(ctx context.Context, args ...string) (string, error) {

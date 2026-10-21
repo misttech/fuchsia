@@ -461,7 +461,15 @@ func (f *ffxStrict) runFFXCmd(ctx context.Context, args ...string) ([]byte, erro
 	// Add default flags to match daemon implementation
 	args = append([]string{"--log-level", f.logLevel}, args...)
 	logger.Infof(ctx, "running with strict ffx: %s %v", path, args)
-	stdoutStr, err := f.ffxInstance.RunAndGetOutput(ctx, args...)
+	var stdoutStr string
+	if containsSequence(args, []string{"target", "flash"}) {
+		// `target flash` sets its own transfer timeouts (e.g., `--min-timeout-secs 600`
+		// on Astro/Sherlock) and relies on the caller's context deadline rather than
+		// ffxInvoker's default 5-minute timeout.
+		stdoutStr, err = f.ffxInstance.RunAndGetOutputWithTimeout(ctx, 0, args...)
+	} else {
+		stdoutStr, err = f.ffxInstance.RunAndGetOutput(ctx, args...)
+	}
 	stdout := []byte(stdoutStr)
 
 	if err == nil {
