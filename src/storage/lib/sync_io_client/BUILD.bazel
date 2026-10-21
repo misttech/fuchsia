@@ -1,0 +1,46 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Visibility is restricted to Starnix because it is usually preferable to just
+# use the standard library (which uses fdio and zxio). This is used in Starnix
+# for performance and memory reasons.
+rustc_library(
+    name = "sync_io_client",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-sync",
+        "//src/starnix/lib/syncio",
+        "//third_party/rust_crates/vendor:smallvec",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "sync_io_client_test",
+    crate = ":sync_io_client",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "sync-io-client-tests",
+    unit_tests = [":sync_io_client_test"],
+)
