@@ -64,7 +64,7 @@ extern "C" uint8_t num_variable = 0;
 /* Whether or not fixed range MTRRs are supported */
 extern "C" bool supports_fixed_range = false;
 /* Whether write-combining memory type is supported */
-static bool supports_wc = false;
+[[maybe_unused]] static bool supports_wc = false;
 
 struct variable_mtrr {
   uint64_t physbase;

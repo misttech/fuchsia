@@ -87,7 +87,7 @@ static bool xsaves_supported = false;
 /* Does this processor support the XSAVEOPT instruction */
 static bool xsaveopt_supported = false;
 /* Does this processor support the XGETBV instruction with ecx=1 */
-static bool xgetbv_1_supported = false;
+[[maybe_unused]] static bool xgetbv_1_supported = false;
 /* Does this processor support the XSAVE instruction */
 static bool xsave_supported = false;
 /* Does this processor support FXSAVE */
