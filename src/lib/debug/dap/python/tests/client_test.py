@@ -10,7 +10,12 @@ from typing import Any
 
 from pydantic import ValidationError
 from pydap.client import DapClient, DapError, StreamWriterProtocol
-from pydap.dap_types import DataBreakpoint, Source, SourceBreakpoint
+from pydap.dap_types import (
+    DataBreakpoint,
+    FunctionBreakpoint,
+    Source,
+    SourceBreakpoint,
+)
 from pydap.models import (
     AttachRequestArguments,
     ContinueArguments,
@@ -25,6 +30,7 @@ from pydap.models import (
     ScopesArguments,
     SetBreakpointsArguments,
     SetDataBreakpointsArguments,
+    SetFunctionBreakpointsArguments,
     StackTraceArguments,
     StepInArguments,
     StepOutArguments,
@@ -33,6 +39,8 @@ from pydap.models import (
 
 
 class MockWriter(StreamWriterProtocol):
+    """In-memory stream writer capturing raw DAP bytes for test assertions."""
+
     def __init__(self) -> None:
         self.buffer = io.BytesIO()
 
@@ -44,6 +52,8 @@ class MockWriter(StreamWriterProtocol):
 
 
 class FailingWriter(StreamWriterProtocol):
+    """Stream writer that raises OSError on every write."""
+
     def write(self, data: bytes) -> None:
         raise OSError("Connection reset by peer")
 
@@ -54,6 +64,7 @@ class FailingWriter(StreamWriterProtocol):
 def feed_dap_response(
     reader: asyncio.StreamReader, response: dict[str, Any]
 ) -> None:
+    """Frames and feeds a DAP response dictionary into `reader`."""
     body = json.dumps(response, separators=(",", ":")).encode("utf-8")
     header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
     reader.feed_data(header + body)
@@ -1226,4 +1237,67 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             resp.body.breakpoints[0].instruction_reference, "0x1234"
         )
+        await client.close()
+
+    async def test_set_function_breakpoints(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        send_task = asyncio.create_task(
+            client.set_function_breakpoints(
+                SetFunctionBreakpointsArguments(
+                    breakpoints=[
+                        FunctionBreakpoint(
+                            name="usb_xhci::UsbXhci::HandleInterrupterIrq",
+                            condition="interrupter_id == 0",
+                        )
+                    ]
+                )
+            )
+        )
+
+        await asyncio.sleep(0)
+        await client._write_queue.join()
+
+        buffer_val = writer.buffer.getvalue()
+        _, body = buffer_val.split(b"\r\n\r\n", 1)
+        sent = json.loads(body.decode("utf-8"))
+        self.assertEqual(sent["command"], "setFunctionBreakpoints")
+        self.assertEqual(
+            sent["arguments"],
+            {
+                "breakpoints": [
+                    {
+                        "name": "usb_xhci::UsbXhci::HandleInterrupterIrq",
+                        "condition": "interrupter_id == 0",
+                    }
+                ]
+            },
+        )
+
+        feed_dap_response(
+            reader,
+            {
+                "seq": 1,
+                "type": "response",
+                "request_seq": sent["seq"],
+                "success": True,
+                "command": "setFunctionBreakpoints",
+                "body": {
+                    "breakpoints": [
+                        {
+                            "id": 3,
+                            "verified": True,
+                        }
+                    ]
+                },
+            },
+        )
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(len(resp.body.breakpoints), 1)
+        self.assertEqual(resp.body.breakpoints[0].id, 3)
+        self.assertTrue(resp.body.breakpoints[0].verified)
+
         await client.close()

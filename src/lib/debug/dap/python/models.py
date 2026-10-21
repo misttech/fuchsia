@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Request, response, and event message models for the Debug Adapter Protocol."""
+
 from enum import Enum
 from typing import Any, Literal
 
@@ -12,6 +14,7 @@ from .dap_types import (
     DapBaseModel,
     DataBreakpoint,
     DataBreakpointAccessType,
+    FunctionBreakpoint,
     Scope,
     Source,
     SourceBreakpoint,
@@ -109,7 +112,13 @@ class ThreadEventBody(DapBaseModel):
 
 
 class ThreadEvent(Event):
-    """Standard thread event."""
+    """Standard thread event.
+
+    Attributes:
+        type: Message type ('event').
+        event: Event name ('thread').
+        body: Thread event payload.
+    """
 
     type: Literal["event"] = "event"
     event: Literal["thread"] = "thread"
@@ -122,7 +131,8 @@ class InitializeArguments(DapBaseModel):
     Attributes:
         adapter_id: The ID of the debug adapter.
         supports_invalidated_event: Client supports the `invalidated` event.
-        supports_run_in_terminal_request: Client supports the `runInTerminal` request.
+        supports_run_in_terminal_request: Client supports the `runInTerminal`
+            request.
     """
 
     adapter_id: str = Field(alias="adapterID")
@@ -134,14 +144,21 @@ class DisconnectArguments(DapBaseModel):
     """Arguments for `disconnect` request.
 
     Attributes:
-        terminate_debuggee: Indicates whether the debuggee should be terminated when the debugger is disconnected.
+        terminate_debuggee: Indicates whether the debuggee should be terminated
+            when the debugger is disconnected.
     """
 
     terminate_debuggee: bool | None = None
 
 
 class StackTraceResponseBody(DapBaseModel):
-    """Body of response to `stackTrace` request."""
+    """Body of response to `stackTrace` request.
+
+    Attributes:
+        stack_frames: The frames of the stackframe. If the array has length
+            zero, there are no stackframes available.
+        total_frames: The total number of frames available in the stack.
+    """
 
     stack_frames: list[StackFrame]
     total_frames: int | None = None
@@ -183,7 +200,11 @@ class ContinueResponse(Response):
 
 
 class ThreadsResponseBody(DapBaseModel):
-    """Body of response to `threads` request."""
+    """Body of response to `threads` request.
+
+    Attributes:
+        threads: All threads.
+    """
 
     threads: list[Thread]
 
@@ -203,8 +224,10 @@ class StackTraceArguments(DapBaseModel):
 
     Attributes:
         thread_id: Retrieve the stacktrace for this thread.
-        start_frame: The index of the first frame to return; if omitted frames start at 0.
-        levels: The maximum number of frames to return. If levels is not specified or 0, all frames are returned.
+        start_frame: The index of the first frame to return; if omitted frames
+            start at 0.
+        levels: The maximum number of frames to return. If levels is not
+            specified or 0, all frames are returned.
     """
 
     thread_id: int
@@ -217,7 +240,8 @@ class ContinueArguments(DapBaseModel):
 
     Attributes:
         thread_id: Specifies the active thread.
-        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
+        single_thread: If this flag is true, execution is resumed only for the
+            thread with given `thread_id`.
     """
 
     thread_id: int
@@ -239,8 +263,10 @@ class StepOutArguments(DapBaseModel):
 
     Attributes:
         thread_id: Specifies the thread for which to step out.
-        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
-        granularity: Stepping granularity ('statement' | 'line' | 'instruction').
+        single_thread: If this flag is true, execution is resumed only for the
+            thread with given `thread_id`.
+        granularity: Stepping granularity ('statement' | 'line' |
+            'instruction').
     """
 
     thread_id: int
@@ -253,8 +279,10 @@ class NextArguments(DapBaseModel):
 
     Attributes:
         thread_id: Specifies the thread for which to step over.
-        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
-        granularity: Stepping granularity ('statement' | 'line' | 'instruction').
+        single_thread: If this flag is true, execution is resumed only for the
+            thread with given `thread_id`.
+        granularity: Stepping granularity ('statement' | 'line' |
+            'instruction').
     """
 
     thread_id: int
@@ -267,9 +295,11 @@ class StepInArguments(DapBaseModel):
 
     Attributes:
         thread_id: Specifies the thread for which to step in.
-        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
+        single_thread: If this flag is true, execution is resumed only for the
+            thread with given `thread_id`.
         target_id: Id of the target frame to step into.
-        granularity: Stepping granularity ('statement' | 'line' | 'instruction').
+        granularity: Stepping granularity ('statement' | 'line' |
+            'instruction').
     """
 
     thread_id: int
@@ -279,14 +309,25 @@ class StepInArguments(DapBaseModel):
 
 
 class LaunchArguments(DapBaseModel):
-    """Arguments for `launch` request."""
+    """Arguments for `launch` request.
+
+    Attributes:
+        process: Target process name or URL to launch.
+        launch_command: Optional shell command used to launch the target.
+    """
 
     process: str
     launch_command: str = Field(default="", alias="launchCommand")
 
 
 class EvaluateArguments(DapBaseModel):
-    """Arguments for `evaluate` request."""
+    """Arguments for `evaluate` request.
+
+    Attributes:
+        expression: The expression or zxdb console verb to evaluate.
+        context: The context in which the evaluate request is run (e.g. 'repl').
+        frame_id: Evaluate the expression in the scope of this stack frame.
+    """
 
     expression: str
     context: str = Field(default="repl")
@@ -294,10 +335,17 @@ class EvaluateArguments(DapBaseModel):
 
 
 class EvaluateResponseBody(DapBaseModel):
-    """Body of response to `evaluate` request."""
+    """Body of response to `evaluate` request.
 
-    # TODO(https://fxbug.dev/529329366): Support `type` and `variablesReference` in the zxdb
-    # backend.
+    Attributes:
+        result: The string representation of the evaluation result.
+        type: The optional type of the evaluate result.
+        variables_reference: If greater than 0, the evaluate result is
+            structured and its children can be retrieved.
+    """
+
+    # TODO(https://fxbug.dev/529329366): Support `type` and `variablesReference`
+    # in the zxdb backend.
     result: str
     type: str | None = None
     variables_reference: int
@@ -328,6 +376,7 @@ class AttachRequestArguments(DapBaseModel):
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler: Any) -> dict[str, Any]:
+        """Flattens `extra_fields` into the top-level serialized payload."""
         data = handler(self)
         extra_fields = data.pop("extra_fields", None)
         if extra_fields:
@@ -414,7 +463,11 @@ class SetBreakpointsArguments(DapBaseModel):
 
 
 class SetBreakpointsResponseBody(DapBaseModel):
-    """Body of response to `setBreakpoints` request."""
+    """Body of response to `setBreakpoints` request.
+
+    Attributes:
+        breakpoints: Information about the breakpoints.
+    """
 
     breakpoints: list[Breakpoint]
 
@@ -498,7 +551,11 @@ class SetDataBreakpointsArguments(DapBaseModel):
 
 
 class SetDataBreakpointsResponseBody(DapBaseModel):
-    """Body of response to `setDataBreakpoints` request."""
+    """Body of response to `setDataBreakpoints` request.
+
+    Attributes:
+        breakpoints: Information about the data breakpoints.
+    """
 
     breakpoints: list[Breakpoint]
 
@@ -511,3 +568,33 @@ class SetDataBreakpointsResponse(Response):
     """
 
     body: SetDataBreakpointsResponseBody
+
+
+class SetFunctionBreakpointsArguments(DapBaseModel):
+    """Arguments for `setFunctionBreakpoints` request.
+
+    Attributes:
+        breakpoints: The function names of the breakpoints.
+    """
+
+    breakpoints: list[FunctionBreakpoint]
+
+
+class SetFunctionBreakpointsResponseBody(DapBaseModel):
+    """Body of response to `setFunctionBreakpoints` request.
+
+    Attributes:
+        breakpoints: Information about the breakpoints.
+    """
+
+    breakpoints: list[Breakpoint]
+
+
+class SetFunctionBreakpointsResponse(Response):
+    """Response to `setFunctionBreakpoints` request.
+
+    Attributes:
+        body: The setFunctionBreakpoints response body.
+    """
+
+    body: SetFunctionBreakpointsResponseBody

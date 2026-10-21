@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Asynchronous client implementation for the Debug Adapter Protocol."""
+
 import asyncio
 import json
 import logging
@@ -29,6 +31,8 @@ from .models import (
     SetBreakpointsResponse,
     SetDataBreakpointsArguments,
     SetDataBreakpointsResponse,
+    SetFunctionBreakpointsArguments,
+    SetFunctionBreakpointsResponse,
     StackTraceArguments,
     StackTraceResponse,
     StepInArguments,
@@ -50,21 +54,26 @@ class StreamWriterProtocol(Protocol):
 
 
 READER_STOPPED_EVENT: str = "reader_stopped"
-"""Synthetic event type emitted to `event_queue` when the reader task terminates.
+"""Synthetic event type emitted to `event_queue` when the reader task stops.
 
-This event is pushed to `event_queue` when the background reader task stops (due to EOF on stream,
-cancellation, or an unrecoverable stream error).
+This event is pushed to `event_queue` when the background reader task stops
+(due to EOF on stream, cancellation, or an unrecoverable stream error).
 
-* **DapClient State**: The `DapClient` instance is in the process of shutting down or already closed.
-  `close()` is called immediately after emitting this event, cleaning up background reader/writer tasks
-  and clearing pending requests. `is_running` will return `False`.
-* **Subsequent Events**: This is the final event placed on `event_queue`. Callers must not expect any further
-  events or responses from the client after receiving this.
-* **Caller Expectations & Cleanup**: Callers consuming `event_queue` should catch this event and stop reading
-  from the queue. The event payload is `{"type": READER_STOPPED_EVENT, "exception": exc}`, where `exception` is
-  `None` if the reader exited cleanly or via cancellation, or the exception instance if caused by a failure.
-  Callers should perform any necessary caller-side cleanup (e.g. tearing down test fixtures or session state).
-  Once the client has finished closing (`is_running` is `False`), `run()` may be called again with a new reader, writer, and event_queue.
+* **DapClient State**: The `DapClient` instance is in the process of shutting
+  down or already closed. `close()` is called immediately after emitting this
+  event, cleaning up background reader/writer tasks and clearing pending
+  requests. `is_running` will return `False`.
+* **Subsequent Events**: This is the final event placed on `event_queue`.
+  Callers must not expect any further events or responses from the client after
+  receiving this.
+* **Caller Expectations & Cleanup**: Callers consuming `event_queue` should
+  catch this event and stop reading from the queue. The event payload is
+  `{"type": READER_STOPPED_EVENT, "exception": exc}`, where `exception` is
+  `None` if the reader exited cleanly or via cancellation, or the exception
+  instance if caused by a failure. Callers should perform any necessary
+  caller-side cleanup (e.g. tearing down test fixtures or session state). Once
+  the client has finished closing (`is_running` is `False`), `run()` may be
+  called again with a new reader, writer, and `event_queue`.
 """
 logger = logging.getLogger(__name__)
 
@@ -94,7 +103,7 @@ class DapClient:
 
     @property
     def is_running(self) -> bool:
-        """Returns True if both the reader loop and writer tasks are currently running."""
+        """Returns True if both the reader and writer tasks are running."""
         return (
             self._reader_task is not None
             and not self._reader_task.done()
@@ -103,7 +112,7 @@ class DapClient:
         )
 
     async def close(self) -> None:
-        """Closes the client and cancels active writer and reader tasks if running."""
+        """Closes the client and cancels active reader and writer tasks."""
         curr_task = asyncio.current_task()
         tasks_to_cancel: list[asyncio.Task[None]] = []
         if (
@@ -152,7 +161,7 @@ class DapClient:
                 fut.cancel()
         self._pending_requests.clear()
 
-    # The caller shouldn't directly manage this task. Use `run` and `close` instead.
+    # Callers should not directly manage this task; use `run` and `close`.
     async def _run_writer_task(self, writer: StreamWriterProtocol) -> None:
         """Processes queued write requests sequentially in FIFO order.
 
@@ -164,7 +173,7 @@ class DapClient:
                 # Cancellation is raised via client.close().
                 request, sent_fut, data_fut = await self._write_queue.get()
                 try:
-                    # If the caller gave up or cancelled before dequeuing, skip sending.
+                    # Skip sending if the caller cancelled before dequeuing.
                     if not data_fut.done():
                         await self._write_message(writer, request)
                         if not sent_fut.done():
@@ -213,17 +222,19 @@ class DapClient:
         except asyncio.CancelledError:
             pass
 
-        # We cannot recover when _read_message encounters errors such as an invalid Content-Length, as there is no reliable way to parse corrupt stream data.
+        # Stream framing errors (such as an invalid Content-Length) are
+        # unrecoverable because corrupt stream boundaries cannot be resynced.
         except Exception as e:
             logger.exception("Error in DAP client reader task")
             exc = e
-            # Set exception on all in-flight pending request futures so callers fail fast with root cause.
+            # Fail all in-flight pending request futures with the root cause.
             for fut in self._pending_requests.values():
                 if not fut.done():
                     fut.set_exception(e)
             self._pending_requests.clear()
         finally:
-            # Emit synthetic termination event so queue consumers wake up immediately and fail active event expectations without polling.
+            # Emit a synthetic termination event so queue consumers wake up
+            # immediately without polling.
             try:
                 await event_queue.put(
                     {"type": READER_STOPPED_EVENT, "exception": exc}
@@ -259,13 +270,13 @@ class DapClient:
         )
         self._writer_task = asyncio.create_task(self._run_writer_task(writer))
 
-    # To make requests execute `_write_message` by FIFO order, we rely on the run_writer_task.
+    # Requests are enqueued for `_run_writer_task` to preserve FIFO wire order.
     def _send_request_future(
         self,
         command: str,
         arguments: DapBaseModel | None = None,
     ) -> tuple[int, asyncio.Future[None], asyncio.Future[dict[str, Any]]]:
-        """Sends a request to the debug adapter synchronously by queueing it for the write worker.
+        """Queues a request for asynchronous transmission by the writer task.
 
         Args:
             command: The DAP command name.
@@ -315,19 +326,19 @@ class DapClient:
         data_fut: asyncio.Future[dict[str, Any]],
         timeout: float,
     ) -> dict[str, Any]:
-        """Awaits wire transmission and response for a request with centralized cleanup."""
+        """Awaits wire transmission and response for a queued request."""
         try:
             async with asyncio.timeout(timeout):
                 await sent_fut
                 return await data_fut
-        except TimeoutError:
+        except TimeoutError as err:
             if not sent_fut.done():
                 raise DapError(
                     f"Request {command} (seq={seq}) failed to write to socket within {timeout}s"
-                )
+                ) from err
             raise DapError(
                 f"Request {command} (seq={seq}) sent over wire, but adapter timed out waiting for response after {timeout}s"
-            )
+            ) from err
         finally:
             self._pending_requests.pop(seq, None)
             if not sent_fut.done():
@@ -358,9 +369,8 @@ class DapClient:
         if timeout <= 0:
             raise ValueError(f"timeout must be positive, got {timeout}")
 
-        # Instead of directly calling _write_message here,
-        # we leverage _send_request_future, so this function inherently sends requests in FIFO order.
-        # FIFO may not be necessary for this function and its client, but we keep it for consistency.
+        # Route through `_send_request_future` so all requests share FIFO
+        # ordering through the writer task.
         seq, sent_fut, data_fut = self._send_request_future(command, arguments)
         resp = await self._await_request_response(
             command, seq, sent_fut, data_fut, timeout
@@ -584,6 +594,20 @@ class DapClient:
         resp = await self._send_request("setDataBreakpoints", args)
         return SetDataBreakpointsResponse.model_validate(resp)
 
+    async def set_function_breakpoints(
+        self, args: SetFunctionBreakpointsArguments
+    ) -> SetFunctionBreakpointsResponse:
+        """Sends a setFunctionBreakpoints request.
+
+        Args:
+            args: Arguments for the setFunctionBreakpoints request.
+
+        Returns:
+            The setFunctionBreakpoints response model.
+        """
+        resp = await self._send_request("setFunctionBreakpoints", args)
+        return SetFunctionBreakpointsResponse.model_validate(resp)
+
     async def _read_message(
         self, reader: asyncio.StreamReader
     ) -> dict[str, Any] | None:
@@ -612,8 +636,10 @@ class DapClient:
                 if len(parts) >= 2:
                     try:
                         content_length = int(parts[1].strip())
-                    except ValueError:
-                        raise DapError(f"Invalid Content-Length: {trimmed}")
+                    except ValueError as err:
+                        raise DapError(
+                            f"Invalid Content-Length: {trimmed}"
+                        ) from err
 
         if content_length is None:
             raise DapError("Missing Content-Length header")
