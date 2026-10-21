@@ -451,6 +451,73 @@ TEST(PipeTest, PartialEfaultRollbackAndShortCounts) {
   }
 }
 
+TEST(PipeTest, SubPipeBufReadAndPartialSpliceWakeBlockedWriter) {
+  const size_t page_size = sysconf(_SC_PAGE_SIZE);
+
+  // 1. Reading < PIPE_BUF (100 bytes) from a full pipe must wake a blocked small writer.
+  // Before fixing sub-PIPE_BUF writer wakeups, Starnix only notified writers when free capacity
+  // reached >= PIPE_BUF (4096 bytes), so freeing 100 bytes left the blocked writer hung.
+  {
+    test_helper::ScopedPipe pipe;
+    SAFE_SYSCALL(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, 2 * page_size));
+
+    // Enqueue a 100-byte vmsplice segment at the head of the pipe so Slot 0 on Linux is a
+    // non-mergeable 100-byte buffer, then fill the remaining capacity of the 2-page pipe.
+    std::vector<char> head_buf(100, 'H');
+    iovec head_iov = {.iov_base = head_buf.data(), .iov_len = head_buf.size()};
+    ASSERT_EQ(vmsplice(pipe.WriteSide().get(), &head_iov, 1, 0), 100);
+
+    std::vector<char> page_buf(page_size, 'A');
+    ASSERT_EQ(write(pipe.WriteSide().get(), page_buf.data(), page_size),
+              static_cast<ssize_t>(page_size));
+
+    // On Starnix, pipe capacity is tracked in bytes (2 * page_size), so fill the remaining
+    // `page_size - 100` bytes; on Linux, both pipe_buffer slots are already occupied so a
+    // non-blocking write returns EAGAIN.
+    SAFE_SYSCALL(fcntl(pipe.WriteSide().get(), F_SETFL, O_NONBLOCK));
+    ssize_t rem = write(pipe.WriteSide().get(), page_buf.data(), page_size - 100);
+    if (rem == -1) {
+      ASSERT_EQ(errno, EAGAIN);
+    } else {
+      ASSERT_EQ(rem, static_cast<ssize_t>(page_size - 100));
+    }
+    SAFE_SYSCALL(fcntl(pipe.WriteSide().get(), F_SETFL, 0));
+
+    std::thread reader([&pipe]() {
+      usleep(20000);
+      char small_buf[100];
+      EXPECT_EQ(read(pipe.ReadSide().get(), small_buf, sizeof(small_buf)), 100);
+    });
+
+    const char payload[] = "ABCD";
+    EXPECT_THAT(write(pipe.WriteSide().get(), payload, 4), SyscallSucceedsWithValue(4));
+    reader.join();
+  }
+
+  // 2. Splicing a single page out of a full 2-page pipe (leaving the source pipe non-empty) must
+  // also wake a writer blocked on the source pipe.
+  {
+    test_helper::ScopedPipe pipe_a;
+    test_helper::ScopedPipe pipe_b;
+
+    SAFE_SYSCALL(fcntl(pipe_a.WriteSide().get(), F_SETPIPE_SZ, 2 * page_size));
+    std::vector<char> fill(2 * page_size, 'A');
+    ASSERT_EQ(write(pipe_a.WriteSide().get(), fill.data(), fill.size()),
+              static_cast<ssize_t>(2 * page_size));
+
+    std::thread splicer([&pipe_a, &pipe_b, page_size]() {
+      usleep(20000);
+      EXPECT_EQ(
+          splice(pipe_a.ReadSide().get(), nullptr, pipe_b.WriteSide().get(), nullptr, page_size, 0),
+          static_cast<ssize_t>(page_size));
+    });
+
+    const char payload[] = "EFGH";
+    EXPECT_THAT(write(pipe_a.WriteSide().get(), payload, 4), SyscallSucceedsWithValue(4));
+    splicer.join();
+  }
+}
+
 // Verify that when the only writer (a child process) exits, the pipe is immediately closed even if
 // the child is not yet reaped.
 TEST(PipeTest, ZombieWriter) {

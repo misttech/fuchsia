@@ -42,6 +42,10 @@ const ATOMIC_IO_BYTES: u16 = 4096;
 /// The maximum size of a pipe, independent of task capabilities and sysctl limits.
 const PIPE_MAX_SIZE: usize = 1 << 31;
 
+/// Wait-queue key notified whenever buffer space increases, even if available space remains below
+/// `PIPE_BUF`.
+const PIPE_WRITE_SPACE_WAIT_KEY: u64 = 2;
+
 fn round_up(value: usize, increment: usize) -> usize {
     (value + (increment - 1)) & !(increment - 1)
 }
@@ -335,11 +339,22 @@ impl Pipe {
         self.waiters.notify_fd_events(events);
     }
 
+    fn notify_write_space(&self, was_writable: bool) {
+        if !was_writable {
+            if self.is_writable(uapi::PIPE_BUF as usize) {
+                self.notify_fd_events(FdEvents::POLLOUT);
+            } else if self.is_writable(1) {
+                self.waiters.notify_value(PIPE_WRITE_SPACE_WAIT_KEY);
+            }
+        }
+    }
+
     /// Splice from the `from` pipe to the `to` pipe.
     pub fn splice(from: &mut Pipe, to: &mut Pipe, len: usize) -> Result<usize, Errno> {
         if len == 0 {
             return Ok(0);
         }
+        let from_was_writable = from.is_writable(uapi::PIPE_BUF as usize);
         let to_was_empty = to.is_empty();
         let mut bytes_transferred = 0;
         loop {
@@ -361,9 +376,7 @@ impl Pipe {
             to.messages.write_message(message);
         }
         if bytes_transferred > 0 {
-            if from.is_empty() {
-                from.notify_fd_events(FdEvents::POLLOUT);
-            }
+            from.notify_write_space(from_was_writable);
             if to_was_empty {
                 to.notify_fd_events(FdEvents::POLLIN);
             }
@@ -497,8 +510,8 @@ impl FileOps for PipeFileObject {
             let mut pipe = self.pipe.lock();
             let was_writable = pipe.is_writable(uapi::PIPE_BUF as usize);
             let actual = pipe.read(data)?;
-            if !was_writable && pipe.is_writable(uapi::PIPE_BUF as usize) {
-                pipe.notify_fd_events(FdEvents::POLLOUT);
+            if actual > 0 {
+                pipe.notify_write_space(was_writable);
             }
             Ok(actual)
         })
@@ -517,31 +530,32 @@ impl FileOps for PipeFileObject {
             return Ok(0);
         }
 
-        let result = file.blocking_op(current_task, FdEvents::POLLOUT, None, || {
-            let mut pipe = self.pipe.lock();
-            let offset_before = data.bytes_read();
-            let bytes_written = match pipe.write(data) {
-                Err(e) => {
-                    if data.bytes_read() > offset_before {
-                        pipe.notify_fd_events(FdEvents::POLLIN);
+        let result =
+            file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLERR, None, || {
+                let mut pipe = self.pipe.lock();
+                let offset_before = data.bytes_read();
+                let bytes_written = match pipe.write(data) {
+                    Err(e) => {
+                        if data.bytes_read() > offset_before {
+                            pipe.notify_fd_events(FdEvents::POLLIN);
+                        }
+                        if e == EPIPE {
+                            std::mem::drop(pipe);
+                            send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+                        }
+                        return Err(e);
                     }
-                    if e == EPIPE {
-                        std::mem::drop(pipe);
-                        send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
-                    }
-                    return Err(e);
+                    Ok(bytes_written) => bytes_written,
+                };
+                debug_assert!(data.bytes_read() - offset_before == bytes_written);
+                if bytes_written > 0 {
+                    pipe.notify_fd_events(FdEvents::POLLIN);
                 }
-                Ok(bytes_written) => bytes_written,
-            };
-            debug_assert!(data.bytes_read() - offset_before == bytes_written);
-            if bytes_written > 0 {
-                pipe.notify_fd_events(FdEvents::POLLIN);
-            }
-            if data.available() > 0 {
-                return error!(EAGAIN);
-            }
-            Ok(())
-        });
+                if data.available() > 0 {
+                    return error!(EAGAIN);
+                }
+                Ok(())
+            });
 
         let bytes_written = data.bytes_read();
         if bytes_written == 0 {
@@ -566,7 +580,17 @@ impl FileOps for PipeFileObject {
         if !flags.can_write() {
             events.remove(FdEvents::POLLOUT);
         }
-        Some(self.pipe.lock().waiters.wait_async_fd_events(waiter, events, handler))
+        let subscribe_write_space =
+            matches!(handler, EventHandler::None) && events.contains(FdEvents::POLLOUT);
+        let pipe = self.pipe.lock();
+        let canceler = pipe.waiters.wait_async_fd_events(waiter, events, handler);
+        if subscribe_write_space {
+            let write_space_canceler =
+                pipe.waiters.wait_async_value(waiter, PIPE_WRITE_SPACE_WAIT_KEY);
+            Some(WaitCanceler::merge(canceler, write_space_canceler))
+        } else {
+            Some(canceler)
+        }
     }
 
     fn query_events(
@@ -734,6 +758,7 @@ impl<'a> InputBuffer for SpliceInputBuffer<'a> {
         if length > self.available {
             return error!(EINVAL);
         }
+        let was_writable = self.pipe.is_writable(uapi::PIPE_BUF as usize);
         self.available -= length;
         while let Some(mut message) = self.pipe.messages.read_message() {
             if let Some(data) = MessageData::split_off(&mut message.data, length) {
@@ -742,9 +767,7 @@ impl<'a> InputBuffer for SpliceInputBuffer<'a> {
             }
             length -= message.len();
             if length == 0 {
-                if self.pipe.is_empty() {
-                    self.pipe.notify_fd_events(FdEvents::POLLOUT);
-                }
+                self.pipe.notify_write_space(was_writable);
                 return Ok(());
             }
         }
@@ -869,7 +892,7 @@ impl PipeFileObject {
                 file,
                 |pipe| pipe.is_writable(len),
                 pregen,
-                FdEvents::POLLOUT,
+                FdEvents::POLLOUT | FdEvents::POLLERR,
             )?
         };
         if pipe.reader_count == 0 {
@@ -1001,8 +1024,8 @@ impl PipeFileObject {
         let mut pipe = self.lock_pipe_for_reading(current_task, self_file, non_blocking)?;
         let was_writable = pipe.is_writable(uapi::PIPE_BUF as usize);
         let actual = pipe.read(&mut data)?;
-        if !was_writable && pipe.is_writable(uapi::PIPE_BUF as usize) {
-            pipe.notify_fd_events(FdEvents::POLLOUT);
+        if actual > 0 {
+            pipe.notify_write_space(was_writable);
         }
         Ok(actual)
     }
@@ -1349,6 +1372,89 @@ mod tests {
             let mut rem_buf2 = VecOutputBuffer::new(4);
             assert_eq!(pipe_out.read(&current_task, &mut rem_buf2).unwrap(), 4);
             assert_eq!(rem_buf2.data(), b"DDDD");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_blocking_write_wakes_when_reader_frees_less_than_pipe_buf() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let capacity =
+                pipe_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().capacity();
+            let fill = vec![b'A'; capacity];
+            assert_eq!(
+                pipe_in.write(&current_task, &mut VecInputBuffer::new(&fill)).unwrap(),
+                capacity
+            );
+
+            let pipe_in_clone = pipe_in.clone();
+            let (writer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    pipe_in_clone
+                        .write(worker_task, &mut VecInputBuffer::new(b"BBBB"))
+                        .expect("blocked 4-byte write wakes when < PIPE_BUF bytes are freed")
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            while pipe_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().waiters.is_empty()
+            {
+                std::thread::yield_now();
+            }
+
+            // Register a poll (`EventHandler::Enqueue`) waiter and an edge-triggered epoll waiter
+            // watching `POLLOUT` on the full pipe alongside the blocked writer.
+            let poll_waiter = Waiter::new();
+            let poll_ready_items = Arc::default();
+            pipe_in.wait_async(
+                &current_task,
+                &poll_waiter,
+                FdEvents::POLLOUT,
+                EventHandler::Enqueue {
+                    key: crate::task::ReadyItemKey::Usize(1),
+                    queue: Arc::clone(&poll_ready_items),
+                    sought_events: FdEvents::POLLOUT | FdEvents::POLLERR | FdEvents::POLLHUP,
+                },
+            );
+            let epoll_file = crate::vfs::epoll::EpollFileObject::new_file(&current_task);
+            let epoll_ops =
+                epoll_file.downcast_file::<crate::vfs::epoll::EpollFileObject>().unwrap();
+            epoll_ops
+                .add(
+                    &current_task,
+                    &pipe_in,
+                    &epoll_file,
+                    starnix_uapi::vfs::EpollEvent::new(FdEvents::POLLOUT | FdEvents::EPOLLET, 1),
+                )
+                .unwrap();
+
+            let mut small_buf = VecOutputBuffer::new(100);
+            assert_eq!(pipe_out.read(&current_task, &mut small_buf).unwrap(), 100);
+
+            assert_eq!(writer_join().unwrap(), 4);
+            // Free capacity is 96 bytes (`< PIPE_BUF = 4096`), so neither poll nor epoll may report
+            // spurious POLLOUT readiness.
+            assert!(poll_ready_items.lock().is_empty());
+            assert!(
+                epoll_ops.wait(&current_task, 1, zx::MonotonicInstant::ZERO).unwrap().is_empty()
+            );
+
+            // Reading `PIPE_BUF` bytes brings available capacity above `PIPE_BUF`, notifying both
+            // poll and epoll with `POLLOUT`.
+            let mut page_buf = VecOutputBuffer::new(uapi::PIPE_BUF as usize);
+            assert_eq!(
+                pipe_out.read(&current_task, &mut page_buf).unwrap(),
+                uapi::PIPE_BUF as usize
+            );
+            assert!(!poll_ready_items.lock().is_empty());
+            let epoll_events =
+                epoll_ops.wait(&current_task, 1, zx::MonotonicInstant::ZERO).unwrap();
+            assert_eq!(epoll_events.len(), 1);
+            assert!(epoll_events[0].events().contains(FdEvents::POLLOUT));
         })
         .await;
     }
