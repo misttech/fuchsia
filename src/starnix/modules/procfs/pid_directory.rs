@@ -7,7 +7,7 @@ use itertools::Itertools;
 use regex_lite::Regex;
 use starnix_core::mm::{
     MemoryAccessor, MemoryAccessorExt, MemoryManager, MemoryStats, PAGE_SIZE, ProcMapsFile,
-    ProcPagemapFile, ProcSmapsFile, ProcSmapsRollupFile,
+    ProcPagemapFile, ProcSmapsFile, ProcSmapsRollupFile, SelfStatsCacheMode,
 };
 use starnix_core::security;
 use starnix_core::task::{
@@ -1204,10 +1204,13 @@ impl FileOps for MemFile {
 const STUBBED_MEM_BYTES: usize = 4096;
 
 // Workaround for b/525059309: Zircon VMAR walks (`ZX_INFO_VMAR_MAPS`) are extremely
-// slow and cause Perfetto's `traced_probes` watchdog timeouts when sweeping thread status
-// files. We bypass them when the reader is `traced_probes` by returning a 1 page/KB stub.
+// slow and cause Perfetto's `traced_probes` watchdog timeouts and `lmkd` `cmd_procs_prio`
+// VMAR lock contention when sweeping thread status files. We bypass them when the reader
+// is `traced_probes` or `lmkd` by returning a 1 page/KB stub.
 fn should_skip_memory_stats(current_task: &CurrentTask) -> bool {
-    current_task.persistent_info.command_guard().comm_name() == b"traced_probes"
+    let comm = current_task.persistent_info.command_guard();
+    let name = comm.comm_name();
+    name == b"traced_probes" || name == b"lmkd"
 }
 fn stub_memory_stats() -> MemoryStats {
     MemoryStats {
@@ -1330,9 +1333,10 @@ impl DynamicFileSource for StatFile {
         utime = duration_to_scheduler_clock(time_stats.user_time);
         stime = duration_to_scheduler_clock(time_stats.system_time);
 
-        if let Ok(info) = task.thread_group().process.info() {
-            starttime =
-                duration_to_scheduler_clock(info.start_time - zx::MonotonicInstant::ZERO) as u64;
+        if !task.thread_group().process.is_invalid() {
+            starttime = duration_to_scheduler_clock(
+                task.thread_group().start_time - zx::MonotonicInstant::ZERO,
+            ) as u64;
         }
 
         if let Ok(mm) = task.mm() {
@@ -1340,7 +1344,7 @@ impl DynamicFileSource for StatFile {
             let mem_stats = if should_skip_memory_stats(current_task) {
                 stub_memory_stats()
             } else {
-                mm.get_stats(current_task)
+                mm.get_stats(current_task, SelfStatsCacheMode::BypassCache)
             };
             let page_size = *PAGE_SIZE as usize;
             vsize = mem_stats.vm_size;
@@ -1409,7 +1413,7 @@ impl DynamicFileSource for StatmFile {
             stub_memory_stats()
         } else {
             match task.mm() {
-                Ok(mm) => mm.get_stats(current_task),
+                Ok(mm) => mm.get_stats(current_task, SelfStatsCacheMode::BypassCache),
                 Err(_) => Default::default(),
             }
         };
@@ -1512,7 +1516,7 @@ impl DynamicFileSource for StatusFile {
             let mem_stats = if should_skip_memory_stats(current_task) {
                 stub_memory_stats()
             } else {
-                mm.get_stats(current_task)
+                mm.get_stats(current_task, SelfStatsCacheMode::AllowCached)
             };
             writeln!(sink, "VmSize:\t{} kB", mem_stats.vm_size / 1024)?;
             writeln!(sink, "VmLck:\t{} kB", mem_stats.vm_lck / 1024)?;

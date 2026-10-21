@@ -17,10 +17,24 @@ use std::sync::Arc;
 /// potential lock contention for /proc/pid/status and related files. Luckily it seems that
 /// in practice files like /proc/pid/status are not regularly accessed concurrently.
 pub struct MapInfoCache {
-    buf: LockDepMutex<PageBuf<zx::MapInfo>, MapInfoCacheBufLock>,
+    state: LockDepMutex<MapInfoCacheState, MapInfoCacheBufLock>,
+}
+
+struct MapInfoCacheState {
+    buf: PageBuf<zx::MapInfo>,
+    /// Pool of reusable heap buffers used to copy `zx::MapInfo` entries out of the shared
+    /// pinned `buf` before releasing the `MapInfoCache` mutex.
+    ///
+    /// Holding the `MapInfoCache` mutex while callers iterate over `zx::MapInfo` entries and
+    /// format `/proc/<pid>/{status,statm,smaps_rollup}` serializes all concurrent procfs
+    /// readers behind a single global lock. Copying the slice into a pooled `Vec<zx::MapInfo>`
+    /// allows dropping the mutex immediately after the `zx_object_get_info(ZX_INFO_VMAR_MAPS)`
+    /// syscall while avoiding repeated multi-hundred-kilobyte `Vec` allocations.
+    scratch_pool: Vec<Vec<zx::MapInfo>>,
 }
 
 const ZIRCON_NAME: zx::Name = zx::Name::new_lossy("starnix_zx_map_info_cache");
+const MAX_SCRATCH_POOL_LEN: usize = 4;
 
 impl MapInfoCache {
     pub fn get_or_init(current_task: &CurrentTask) -> Result<Arc<Self>, Errno> {
@@ -43,7 +57,7 @@ impl MapInfoCache {
             .map_err(|e| from_status_like_fdio!(e))?;
         buf.set_name(&ZIRCON_NAME);
 
-        Ok(Self { buf: buf.into() })
+        Ok(Self { state: MapInfoCacheState { buf, scratch_pool: Vec::new() }.into() })
     }
 
     pub fn with_map_infos<R>(
@@ -51,16 +65,37 @@ impl MapInfoCache {
         vmar: &zx::Vmar,
         op: impl FnOnce(Result<&[zx::MapInfo], zx::Status>) -> R,
     ) -> R {
-        let mut buf = self.buf.lock();
-        match vmar.maps(buf.as_mut()) {
-            Ok((maps, _, avail)) if maps.len() == avail => return op(Ok(maps)),
-            Err(e) => return op(Err(e)),
+        let mut state = self.state.lock();
+        let mut scratch = state.scratch_pool.pop().unwrap_or_default();
+        match vmar.maps(state.buf.as_mut()) {
+            Ok((maps, _, avail)) if maps.len() == avail => {
+                scratch.clear();
+                scratch.extend_from_slice(maps);
+                drop(state);
+                let res = op(Ok(&scratch));
+                let mut state = self.state.lock();
+                if state.scratch_pool.len() < MAX_SCRATCH_POOL_LEN {
+                    state.scratch_pool.push(scratch);
+                }
+                return res;
+            }
+            Err(e) => {
+                if state.scratch_pool.len() < MAX_SCRATCH_POOL_LEN && scratch.capacity() > 0 {
+                    state.scratch_pool.push(scratch);
+                }
+                drop(state);
+                return op(Err(e));
+            }
 
             // The call succeeded but the buffer wasn't big enough, fall back to a heap allocation.
-            Ok(_) => (),
+            Ok(_) => {
+                if state.scratch_pool.len() < MAX_SCRATCH_POOL_LEN && scratch.capacity() > 0 {
+                    state.scratch_pool.push(scratch);
+                }
+            }
         }
         // No need to hold this lock while we're using the heap instead.
-        drop(buf);
+        drop(state);
 
         match vmar.maps_vec() {
             Ok(maps) => op(Ok(&maps)),
@@ -83,13 +118,13 @@ mod tests {
     async fn basic_test() {
         let shadow_process = ShadowProcess::new(zx::Name::new_lossy("testing123")).unwrap();
         let cache = MapInfoCache::new(&shadow_process, 100).unwrap();
-        let maps_base_addr = cache.with_map_infos(&shadow_process.vmar(), |maps| {
+        let maps_len = cache.with_map_infos(&shadow_process.vmar(), |maps| {
             let maps = maps.unwrap();
             assert_ne!(maps, &[]);
-            maps.as_ptr() as usize
+            maps.len()
         });
-        let cache_base_addr = cache.buf.lock().as_mut().as_ptr() as usize;
-        assert_eq!(maps_base_addr, cache_base_addr, "map infos must have been read into cache");
+        assert!(maps_len > 0);
+        assert_eq!(cache.state.lock().scratch_pool.len(), 1);
     }
 
     #[fuchsia::test]
@@ -114,7 +149,7 @@ mod tests {
             maps.as_ptr() as usize
         });
 
-        let cache_base_addr = cache.buf.lock().as_mut().as_ptr() as usize;
+        let cache_base_addr = cache.state.lock().buf.as_mut().as_ptr() as usize;
         assert_ne!(maps_base_addr, cache_base_addr, "map infos must not have been read into cache");
     }
 }
