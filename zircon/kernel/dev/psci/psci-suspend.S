@@ -6,10 +6,16 @@
 
 #include <arch/asm_macros.h>
 #include <dev/psci.h>
+#include <lib/arch/arm64/feature-asm.h>
 #include <lib/arch/asm.h>
 
 // TODO(https://fxbug.dev/417553411): See about saving/restoring other
 // architectural state including, sctlr2_el1 and tcr2_el1.
+
+// PSTATE.PAN, accessed via its generic system register encoding so as not to
+// require an assembler targeting armv8.1-a.  Only accessible when FEAT_PAN is
+// implemented.
+#define PAN_SYSREG s3_0_c4_c2_3
 
 // Saves register state into the psci_cpu_resume_context pointed to by
 // \context_reg.  Clobbers x4-x17, so \context_reg must not be one of them.
@@ -53,7 +59,18 @@
   stp x24, x25, [\context_reg, (10 * 16)]
   stp x26, x27, [\context_reg, (11 * 16)]
   stp x28, x29, [\context_reg, (12 * 16)]
-  stp lr, xzr, [\context_reg, (13 * 16)]
+
+  // PSTATE.PAN is not preserved across a powerdown.  When the CPU is powered
+  // back on, it may begin executing with PAN clear (e.g. as established by the
+  // firmware, or by |ArmDropToEl1|), so save it (if implemented) to be restored
+  // by |psci_do_resume|.
+  mov x4, xzr
+  mrs x5, id_aa64mmfr1_el1
+  tst x5, #ID_AA64MMFR1_EL1_PAN
+  b.eq 1f
+  mrs x4, PAN_SYSREG
+1:
+  stp lr, x4, [\context_reg, (13 * 16)]
 .endm
 
 // int64_t psci_do_suspend(psci_call_proc psci_call_routine,
@@ -122,7 +139,7 @@
   ldp x24, x25, [x0, (10 * 16)]
   ldp x26, x27, [x0, (11 * 16)]
   ldp x28, x29, [x0, (12 * 16)]
-  ldp lr, xzr, [x0, (13 * 16)]
+  ldp lr, x2, [x0, (13 * 16)]
 
   msr tpidr_el0, x16
   msr tpidrro_el0, x15
@@ -144,6 +161,14 @@
   isb
   msr sctlr_el1, x5
   isb
+
+  // Restore PSTATE.PAN (if implemented).  See |save_resume_context|.
+  mrs x1, id_aa64mmfr1_el1
+  tst x1, #ID_AA64MMFR1_EL1_PAN
+  b.eq 1f
+  msr PAN_SYSREG, x2
+1:
+
   msr daif, x4
 
   // Return 1 to indicate that we resumed from a "power down" state.

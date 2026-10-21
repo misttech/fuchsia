@@ -12,8 +12,13 @@
 #include <kernel/deadline.h>
 #include <kernel/idle_power_thread.h>
 #include <kernel/mp.h>
+#include <kernel/percpu.h>
 #include <kernel/scheduler.h>
 #include <kernel/thread.h>
+
+#if defined(__aarch64__)
+#include <arch/arm64/feature.h>
+#endif
 
 // Provides tests with access to IdlePowerThread internals.
 struct IdlePowerThreadTestAccess {
@@ -63,6 +68,28 @@ bool SuspendAllActiveSystemModeRestoresCpus() {
   }
   EXPECT_EQ(online_before, mp_get_online_mask());
   EXPECT_EQ(active_before, Scheduler::PeekActiveMask());
+
+#if defined(__aarch64__)
+  // Kernel code runs with PSTATE.PAN set (when FEAT_PAN is implemented), but PAN is not preserved
+  // across a CPU powerdown, so make sure it was restored on every CPU that may have powered down.
+  // PSTATE.PAN is not saved and restored per-thread, so if a CPU had resumed with PAN clear, the
+  // threads it switches to would observe it clear as well.  Run on each CPU and check.
+  if (arm64_mmu_features.pan) {
+    const cpu_mask_t previous_affinity = Thread::Current::Get()->GetCpuAffinity();
+    for (cpu_num_t cpu = 0; cpu < percpu::processor_count(); ++cpu) {
+      if ((active_before & cpu_num_to_mask(cpu)) == 0) {
+        continue;
+      }
+      Thread::Current::SetCpuAffinity(cpu_num_to_mask(cpu));
+      const uint64_t pan = __arm_rsr64("s3_0_c4_c2_3");
+      if (pan == 0) {
+        printf("PSTATE.PAN is clear on CPU %u\n", cpu);
+      }
+      EXPECT_NE(0u, pan);
+    }
+    Thread::Current::SetCpuAffinity(previous_affinity);
+  }
+#endif
 
   END_TEST;
 }
