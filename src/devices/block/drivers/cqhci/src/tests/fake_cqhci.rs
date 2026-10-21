@@ -10,6 +10,7 @@ use fake_bti::{FakeBti, FakeBtiPinnedVmos};
 use fdf_component::ServiceOffer;
 use fdf_component::testing::harness::TestHarness;
 use fdf_fidl::{DriverChannel, FidlExecutor};
+use fidl_fuchsia_power_system as fpower;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, CqhciHostInfo, EmmcPartitionId};
 use fidl_next_fuchsia_hardware_inlineencryption as finlineencryption;
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
@@ -50,8 +51,17 @@ impl FakeCqhci {
     ) -> (Self, TestHarness<CqhciDriver>) {
         let (non_cq_interrupt_sink, non_cq_interrupt_receiver) = mpsc::unbounded();
         let (rpmb_request_sender, rpmb_request_receiver) = mpsc::unbounded();
+        let (execution_state_dependency_sender, execution_state_dependency_receiver) =
+            mpsc::unbounded();
         let scope = fasync::Scope::new_with_name("test");
         let mut service_fs = ServiceFs::new();
+        let cpu_element_manager_scope = scope.to_handle();
+        service_fs.dir("svc").add_service_connector(move |server_end| {
+            cpu_element_manager_scope.spawn(serve_cpu_element_manager(
+                server_end,
+                execution_state_dependency_sender.clone(),
+            ));
+        });
         let config =
             Config { suspend_enabled: true }.to_vmo().expect("failed to create config vmo");
         let mut harness = TestHarness::<CqhciDriver>::new().set_config(config);
@@ -76,6 +86,7 @@ impl FakeCqhci {
             hardware_irq: host.task_handler.irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             non_cq_interrupt_receiver,
             rpmb_request_receiver,
+            execution_state_dependency_receiver,
         };
 
         let offers = [ServiceOffer::<cqhci::Service>::new_next()
@@ -391,6 +402,34 @@ pub struct TestHandles {
     pub hardware_irq: zx::VirtualInterrupt,
     pub non_cq_interrupt_receiver: mpsc::UnboundedReceiver<Arc<zx::VirtualInterrupt>>,
     pub rpmb_request_receiver: mpsc::UnboundedReceiver<futures::channel::oneshot::Sender<()>>,
+    /// Receives every `fuchsia.power.system/CpuElementManager.AddExecutionStateDependency`
+    /// request the driver makes.
+    pub execution_state_dependency_receiver:
+        mpsc::UnboundedReceiver<fpower::CpuElementManagerAddExecutionStateDependencyRequest>,
+}
+
+/// Serves a fake `fuchsia.power.system/CpuElementManager` that accepts every dependency and
+/// forwards the request to `sender`.
+fn serve_cpu_element_manager(
+    server_end: fidl::endpoints::ServerEnd<fpower::CpuElementManagerMarker>,
+    sender: mpsc::UnboundedSender<fpower::CpuElementManagerAddExecutionStateDependencyRequest>,
+) -> BoxFuture<'static, ()> {
+    async move {
+        let mut stream = server_end.into_stream();
+        while let Some(Ok(request)) = stream.next().await {
+            match request {
+                fpower::CpuElementManagerRequest::AddExecutionStateDependency {
+                    payload,
+                    responder,
+                } => {
+                    let _ = sender.unbounded_send(payload);
+                    responder.send(Ok(())).ok();
+                }
+                _ => panic!("unexpected CpuElementManager request"),
+            }
+        }
+    }
+    .boxed()
 }
 
 struct FakeHardwareState {

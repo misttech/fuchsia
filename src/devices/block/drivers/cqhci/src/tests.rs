@@ -116,6 +116,29 @@ async fn test_node_token() {
 }
 
 #[fuchsia::test]
+async fn test_power_element_token() {
+    let (mut fixture, mut harness) = FakeCqhci::new(None);
+    let token = zx::Event::create();
+    harness =
+        harness.set_power_element_token(token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    // With suspend enabled, the driver must register its power element token as an execution
+    // state dependency at power level 1 while starting.
+    let request = fixture
+        .handles
+        .execution_state_dependency_receiver
+        .next()
+        .await
+        .expect("driver did not add an execution state dependency");
+    let dependency_token = request.dependency_token.expect("missing dependency token");
+    assert_eq!(dependency_token.koid().unwrap(), token.koid().unwrap());
+    assert_eq!(request.power_level, Some(1));
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
 async fn test_io() {
     let (_fixture, mut harness) = FakeCqhci::new(None);
     let started_driver = harness.start_driver().await.expect("failed to start driver");

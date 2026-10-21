@@ -39,6 +39,7 @@ pub struct TestHarness<D> {
     offers: Option<Vec<NextOffer>>,
     scope: fasync::Scope,
     power_element_args: Option<fidl_fuchsia_driver_framework::PowerElementArgs>,
+    power_element_token: Option<zx::Event>,
     node_token: Option<zx::Event>,
     node_properties: Vec<df_next::NodePropertyEntry2>,
     _d: PhantomData<D>,
@@ -92,6 +93,7 @@ impl<D: Driver> TestHarness<D> {
             offers: None,
             scope,
             power_element_args: None,
+            power_element_token: None,
             node_token: None,
             node_properties: Vec::new(),
             _d: PhantomData,
@@ -149,6 +151,15 @@ impl<D: Driver> TestHarness<D> {
         self
     }
 
+    /// Sets the power element dependency token for the driver, as returned by
+    /// [`crate::DriverContext::take_power_element_token`]. This only populates the `token` of the
+    /// power element args; use [`Self::set_power_element_args`] to also provide the power broker
+    /// endpoints. Consumes and returns self to allow chaining.
+    pub fn set_power_element_token(mut self, token: zx::Event) -> Self {
+        self.power_element_token = Some(token);
+        self
+    }
+
     /// Adds a property of the parent node named `parent` to the driver's start args, as reported
     /// by [`crate::DriverContext::node_properties`]. Drivers bound to a single node see their
     /// properties under the parent name `default`. Consumes and returns self to allow chaining.
@@ -193,6 +204,25 @@ impl<D: Driver> TestHarness<D> {
         let driver_incoming_svc =
             open_directory_async(&self.driver_incoming_dir, ".", fio::R_STAR_DIR).unwrap();
 
+        let power_element_token = self.power_element_token.take();
+        let mut power_element_args = self.power_element_args.take().map(|args| {
+            fidl_next_fuchsia_driver_framework::natural::PowerElementArgs {
+                control_client: args
+                    .control_client
+                    .map(|c| NextClientEnd::from_untyped(c.into_channel())),
+                runner_server: args
+                    .runner_server
+                    .map(|s| NextServerEnd::from_untyped(s.into_channel())),
+                lessor_client: args
+                    .lessor_client
+                    .map(|c| NextClientEnd::from_untyped(c.into_channel())),
+                token: args.token,
+            }
+        });
+        if power_element_token.is_some() {
+            power_element_args.get_or_insert_default().token = power_element_token;
+        }
+
         let start_args = DriverStartArgs {
             node: Some(NextClientEnd::from_untyped(node_client)),
             incoming: Some(vec![ComponentNamespaceEntry {
@@ -210,20 +240,7 @@ impl<D: Driver> TestHarness<D> {
                 .and_then(|v| v.duplicate_handle(fidl::Rights::SAME_RIGHTS).ok()),
             url: self.url.clone(),
             node_offers: self.offers.clone(),
-            power_element_args: self.power_element_args.take().map(|args| {
-                fidl_next_fuchsia_driver_framework::natural::PowerElementArgs {
-                    control_client: args
-                        .control_client
-                        .map(|c| NextClientEnd::from_untyped(c.into_channel())),
-                    runner_server: args
-                        .runner_server
-                        .map(|s| NextServerEnd::from_untyped(s.into_channel())),
-                    lessor_client: args
-                        .lessor_client
-                        .map(|c| NextClientEnd::from_untyped(c.into_channel())),
-                    token: args.token,
-                }
-            }),
+            power_element_args,
             node_token: self
                 .node_token
                 .as_ref()
@@ -635,10 +652,7 @@ mod tests {
         let power_token = zx::Event::create();
         let mut harness = TestHarness::<StartArgsDriver>::new()
             .set_node_token(node_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
-            .set_power_element_args(fidl_fuchsia_driver_framework::PowerElementArgs {
-                token: Some(power_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
-                ..Default::default()
-            })
+            .set_power_element_token(power_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
             .add_node_property("default", "fuchsia.BIND_PROTOCOL", 7u32)
             .add_node_property("default", "name", "value")
             .add_node_property("other-parent", "enabled", true)
