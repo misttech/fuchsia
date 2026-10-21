@@ -2219,7 +2219,9 @@ impl MemoryManagerState {
             }
             let start_offset = mapping.address_to_offset(range_to_zero.start);
             let end_offset = mapping.address_to_offset(range_to_zero.end);
-            if mapping.flags().contains(MappingFlags::SHARED) {
+            if mapping.flags().contains(MappingFlags::SHARED)
+                && advice != MadviseReadOnlyAdvice::WillNeed
+            {
                 continue;
             }
             let op = match advice {
@@ -6359,6 +6361,7 @@ mod tests {
         PR_SET_VMA_ANON_NAME, PROT_EXEC, PROT_NONE, PROT_READ, PROT_WRITE,
     };
     use std::ffi::CString;
+    use test_case::test_case;
     use zerocopy::{FromBytes, Immutable, KnownLayout};
 
     #[::fuchsia::test]
@@ -8608,9 +8611,11 @@ mod tests {
         fileops_impl_noop_sync!();
     }
 
+    #[test_case(MAP_PRIVATE)]
+    #[test_case(MAP_SHARED)]
     #[::fuchsia::test]
-    async fn test_madvise_background_thread_pool() {
-        spawn_kernel_and_run(async |current_task| {
+    async fn test_madvise_background_thread_pool(flags: u32) {
+        spawn_kernel_and_run(async move |current_task| {
             let page_size = *PAGE_SIZE;
             let pager = zx::Pager::create(zx::PagerOptions::empty()).unwrap();
             let port = zx::Port::create();
@@ -8626,7 +8631,7 @@ mod tests {
                 UserAddress::default(),
                 page_size as usize,
                 PROT_READ | PROT_WRITE,
-                MAP_PRIVATE,
+                flags,
                 fd,
                 0,
             )
