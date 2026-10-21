@@ -191,7 +191,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_idk",
     "//zircon/vdso/zx:zx_idk",
 ]
-# LINT.ThenChange(BUILD.gn:partner_stable_libraries)
+# LINT.ThenChange(fidl_category_lists.gni:partner_stable_libraries)
 
 # Unstable FIDL libraries in the partner category.
 # All are included in the IDK.
@@ -268,7 +268,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_idk",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_idk",
 ]
-# LINT.ThenChange(BUILD.gn:partner_unstable_libraries)
+# LINT.ThenChange(fidl_category_lists.gni:partner_unstable_libraries)
 
 # FIDL libraries in the prebuilt category. All are stable.
 # None are included in the IDK, but they may be used by prebuilt libraries in the IDK.
@@ -288,7 +288,7 @@ PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_idk",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_idk",
 ]
-# LINT.ThenChange(BUILD.gn:prebuilt_libraries)
+# LINT.ThenChange(fidl_category_lists.gni:prebuilt_libraries)
 
 # FIDL libraries in the host tool category. All are stable.
 # None are included in the IDK, but they may be used by host tools in the IDK.
@@ -312,7 +312,7 @@ HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_idk",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_idk",
 ]
-# LINT.ThenChange(BUILD.gn:host_tool_libraries)
+# LINT.ThenChange(fidl_category_lists.gni:host_tool_libraries)
 
 # FIDL libraries in the compat test category. All are stable.
 # None are included in the IDK, and they may not be used by anything in the IDK.
@@ -329,4 +329,4 @@ COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_idk",
     "//src/sys/pkg/tests/pkgdir/test_realm_proxy/fidl:fuchsia.pkg.test_idk",
 ]
-# LINT.ThenChange(BUILD.gn:compat_test_libraries)
+# LINT.ThenChange(fidl_category_lists.gni:compat_test_libraries)
