@@ -1,0 +1,146 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+@available(added=HEAD)
+library fuchsia.power.powercap;
+
+/// Maximum length of a powercap zone or constraint name.
+const MAX_NAME_LEN uint32 = 64;
+
+/// Maximum length of a powercap zone sysfs directory name under `/sys/class/powercap`.
+const MAX_PATH_LEN uint32 = 128;
+
+/// Maximum number of discrete power levels in a zone's power table.
+const MAX_POWER_LEVELS uint32 = 64;
+
+/// Maximum number of powercap zone nodes in a `GetPowercapTree` response.
+const MAX_NODES uint32 = 64;
+
+/// Maximum number of domains returned by `ClientStateWatcher.Watch`.
+const MAX_DOMAINS uint32 = 32;
+
+/// Errors associated with `fuchsia.power.powercap` protocols.
+type PowercapError = flexible enum {
+    /// The component encountered an unexpected error while servicing the request.
+    INTERNAL = 1;
+
+    /// The arguments provided to the method were invalid (e.g., unknown node_id,
+    /// or unsupported operation on the target node).
+    INVALID_ARGUMENTS = 2;
+};
+
+/// Describes the static topology and attributes of a single powercap zone node.
+///
+/// `node_id`, `zone_path`, and `name` must always be present on every node;
+/// entries omitting any of these fields are ignored by clients.
+type PowercapNodeInfo = table {
+    /// Unique identifier for this node within the powercap tree. Required.
+    1: node_id uint64;
+
+    /// The `node_id` of the parent zone. Omitted for root zones (e.g., `gpc:0`).
+    2: parent_node_id uint64;
+
+    /// The canonical sysfs directory name under `/sys/class/powercap` (e.g.,
+    /// `"gpc:0"`, `"gpc:0:0"`, `"gpc:0:0:0"`). Required.
+    3: zone_path string:MAX_PATH_LEN;
+
+    /// The logical zone name exposed via the `name` sysfs attribute (e.g.,
+    /// `"gpc"`, `"TestZone"`, `"BIG"`, `"MID"`, `"LITTLE"`, `"GPU"`). Required.
+    4: name string:MAX_NAME_LEN;
+
+    /// The constraint name exposed via `constraint_0_name` (e.g., `"TestConstraint"`).
+    /// Omitted if the zone does not expose constraint metadata.
+    5: constraint_name string:MAX_NAME_LEN;
+
+    /// Maximum power limit in microwatts (`constraint_0_max_power_uw`).
+    /// Omitted if the zone does not expose a maximum power limit attribute.
+    6: max_power_uw uint64;
+
+    /// Minimum power limit in microwatts (`constraint_0_min_power_uw`).
+    /// Omitted if the zone does not expose a minimum power limit attribute.
+    7: min_power_uw uint64;
+
+    /// Discrete supported power levels in microwatts (`power_levels_uw`),
+    /// ordered from highest to lowest. Omitted for aggregator zones without
+    /// discrete power tables.
+    8: power_levels_uw vector<uint64>:MAX_POWER_LEVELS;
+
+    /// Whether this zone exposes `power_limit_bypass_msec` for transient boost
+    /// overrides (e.g., PowerHAL `CPU_LOAD_SPIKE` / `LAUNCH` hints). Omitted
+    /// (or `false`) if the zone does not support bypass overrides.
+    9: supports_bypass bool;
+};
+
+/// Protocol used by Starnix to build and interact with the `/sys/class/powercap`
+/// hierarchy backed by Power Manager's `PowercapController`.
+@discoverable
+open protocol Client {
+    /// Retrieves the static powercap zone topology at container initialization.
+    flexible GetPowercapTree() -> (struct {
+        nodes vector<PowercapNodeInfo>:MAX_NODES;
+    });
+
+    /// Reads the current `constraint_0_power_limit_uw` for `node_id`.
+    ///
+    /// Before `SetPowerLimit` is called, returns the zone's initial unthrottled
+    /// limit (`max_power_uw`, or the highest entry in `power_levels_uw` if
+    /// `max_power_uw` is omitted, or `0` if neither is configured).
+    ///
+    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown.
+    flexible GetPowerLimit(struct {
+        node_id uint64;
+    }) -> (struct {
+        power_limit_uw uint64;
+    }) error PowercapError;
+
+    /// Writes `constraint_0_power_limit_uw` for `node_id` (in microwatts).
+    ///
+    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown.
+    flexible SetPowerLimit(struct {
+        node_id uint64;
+        power_limit_uw uint64;
+    }) -> () error PowercapError;
+
+    /// Reads the remaining bypass duration in milliseconds (`power_limit_bypass_msec`).
+    /// Returns `0` if no bypass is currently active.
+    ///
+    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown or if
+    /// `supports_bypass` is not enabled on the target zone.
+    flexible GetPowerLimitBypass(struct {
+        node_id uint64;
+    }) -> (struct {
+        remaining_bypass_ms uint64;
+    }) error PowercapError;
+
+    /// Sets or clears the power limit bypass timer (`power_limit_bypass_msec`).
+    ///
+    /// A value of `0` immediately cancels any active bypass and restores the
+    /// cached thermal power limit. Setting a non-zero `bypass_time_ms` while a
+    /// bypass is already active replaces the active timer deadline with a new
+    /// deadline `bypass_time_ms` from now.
+    ///
+    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown or if
+    /// `supports_bypass` is not enabled on the target zone.
+    flexible SetPowerLimitBypass(struct {
+        node_id uint64;
+        bypass_time_ms uint64;
+    }) -> () error PowercapError;
+};
+
+/// Hanging-get protocol used by `cpu_manager` to observe per-cluster OPP ceiling
+/// changes computed by `PowercapController`.
+@discoverable
+open protocol ClientStateWatcher {
+    /// Hanging-get that returns a vector of OPP indices indexed by `cluster_id`.
+    ///
+    /// Returns immediately on the first call for a connection with the current
+    /// per-cluster OPP ceilings, and blocks on subsequent calls until `domain_opps`
+    /// changes.
+    ///
+    /// OPP index `0` represents the highest-frequency (unthrottled) operating
+    /// point, with larger indices representing lower frequency ceilings (matching
+    /// `fuchsia.power.cpu/DomainController`).
+    flexible Watch() -> (struct {
+        domain_opps vector<uint64>:MAX_DOMAINS;
+    });
+};

@@ -149,6 +149,7 @@
                 "fuchsia.power.battery.BatteryManager",
                 "fuchsia.power.broker.Topology",
                 "fuchsia.power.cpu.DomainController",
+                "fuchsia.power.powercap.Client",
                 "fuchsia.power.suspend.Stats",
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.storage.mapping.FileMapper",

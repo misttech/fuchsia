@@ -91,6 +91,8 @@
         {
             protocol: [
                 "fuchsia.power.clientlevel.Connector",
+                "fuchsia.power.powercap.Client",
+                "fuchsia.power.powercap.ClientStateWatcher",
                 "fuchsia.power.profile.Watcher",
                 "fuchsia.power.systemmode.ClientConfigurator",
                 "fuchsia.power.systemmode.Requester",
@@ -121,6 +123,7 @@
         {
             protocol: [
                 "fuchsia.power.clientlevel.Connector",
+                "fuchsia.power.powercap.Client",
                 "fuchsia.power.profile.Watcher",
                 "fuchsia.power.systemmode.ClientConfigurator",
                 "fuchsia.power.systemmode.Requester",
