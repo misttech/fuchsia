@@ -133,6 +133,7 @@ cc_test_executable("cpp_test") {
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gmock",
+    "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/zx",
   ]
 

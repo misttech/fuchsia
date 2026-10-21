@@ -117,10 +117,17 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     fuchsia_driver_framework::HealthCheckRequest level = request->request;
 
     fdf::DriverBase2::HealthCheckCompleter hc_completer(
-        [guard = HealthCheckReplyGuard(std::move(arena), completer.ToAsync())](
+        [guard =
+             HealthCheckReplyGuard(driver_.get(), level, std::move(arena), completer.ToAsync())](
             fit::result<fuchsia_driver_framework::HealthCheckError,
                         fuchsia_driver_framework::HealthCheckResponse>
                 result) mutable {
+          // A reply is only needed once; a second invocation of the completer (or one after the
+          // binding went away) must not touch Inspect or the binding.
+          if (!guard.completer.is_reply_needed()) {
+            return;
+          }
+          guard.driver->RecordHealthCheckToInspect(guard.level, result);
           if (result.is_ok()) {
             guard.completer.buffer(guard.arena)
                 .ReplySuccess(fidl::ToWire(guard.arena, result.value()));
@@ -150,17 +157,24 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
  private:
   // Ensures that if a custom `HealthCheck` implementation drops its `HealthCheckCompleter`
   // without invoking it (e.g., due to an early return or cancelled async task), the FIDL server
-  // replies with `HealthCheckError::kInternalError` instead of closing the driver channel.
+  // replies with `HealthCheckError::kInternalError` instead of closing the driver channel. The
+  // error is also mirrored to Inspect so that a stale record from an earlier check does not
+  // survive.
   struct HealthCheckReplyGuard {
+    fdf::DriverBase2* driver;
+    fuchsia_driver_framework::HealthCheckRequest level;
     fdf::Arena arena;
     HealthCheckCompleter::Async completer;
 
-    HealthCheckReplyGuard(fdf::Arena a, HealthCheckCompleter::Async c)
-        : arena(std::move(a)), completer(std::move(c)) {}
+    HealthCheckReplyGuard(fdf::DriverBase2* d, fuchsia_driver_framework::HealthCheckRequest l,
+                          fdf::Arena a, HealthCheckCompleter::Async c)
+        : driver(d), level(l), arena(std::move(a)), completer(std::move(c)) {}
     HealthCheckReplyGuard(HealthCheckReplyGuard&&) noexcept = default;
     HealthCheckReplyGuard& operator=(HealthCheckReplyGuard&&) = delete;
     ~HealthCheckReplyGuard() {
       if (completer.is_reply_needed()) {
+        driver->RecordHealthCheckToInspect(
+            level, fit::error(fuchsia_driver_framework::HealthCheckError::kInternalError));
         completer.buffer(arena).ReplyError(
             fuchsia_driver_framework::wire::HealthCheckError::kInternalError);
       }

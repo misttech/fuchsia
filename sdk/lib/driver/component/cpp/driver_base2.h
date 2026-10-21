@@ -394,6 +394,24 @@ class DriverBase2 {
   async_dispatcher_t* dispatcher() const { return driver_dispatcher_->async_dispatcher(); }
 
  private:
+  // DriverServer2 drives RecordHealthCheckToInspect.
+  template <typename DriverBaseImpl>
+  friend class fdf_internal::DriverServer2;
+
+  // Mirrors the result of the latest health check into the driver's Inspect tree under
+  // root/driver_health_check if CreateInspector() was called. `level` is the requested level of
+  // the check, or std::nullopt when the record does not come from a health check request. Errors
+  // are recorded as status "ERROR" with an "error" property. The previous record is replaced
+  // wholesale.
+  void RecordHealthCheckToInspect(
+      std::optional<fuchsia_driver_framework::HealthCheckRequest> level,
+      const fit::result<fuchsia_driver_framework::HealthCheckError,
+                        fuchsia_driver_framework::HealthCheckResponse>& result);
+
+  // Set by DriverContext::CreateInspector; `health_check_node_` holds the latest
+  // root/driver_health_check record.
+  std::optional<inspect::Inspector> health_check_inspector_;
+  std::optional<inspect::Node> health_check_node_;
   std::string name_;
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
   std::shared_ptr<OutgoingDirectory> outgoing_;
