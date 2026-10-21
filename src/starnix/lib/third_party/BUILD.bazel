@@ -1,0 +1,14 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
+
+package(default_applicable_licenses = ["//:license"])
+
+stamp_group(
+    name = "third_party",
+    stamp = "third_party.stamp",
+    visibility = ["//src/starnix/lib:__pkg__"],
+    deps = ["//src/starnix/lib/third_party/rust_netlink"],
+)
