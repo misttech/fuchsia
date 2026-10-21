@@ -6,6 +6,7 @@ import("//build/components.gni")
 import("//build/cpp/sdk_source_set.gni")
 import("//build/test.gni")
 
+# LINT.IfChange
 sdk_source_set("cpp") {
   # TODO(https://fxbug.dev/376105715): Promote to "partner" with devicetree.
   category = "internal"
@@ -20,6 +21,8 @@ sdk_source_set("cpp") {
   ]
   deps = [ "//sdk/lib/fdio" ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 test("test") {
   output_name = "device-watcher-cpp-test"
