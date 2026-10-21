@@ -4561,7 +4561,7 @@ mod vmo_rs {
 
         let vmo_cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
         let status = vmo_cow.debug_lookup_readable(
-            VmCowRange { offset: 0, len: alloc_size },
+            VmCowRange::new(0, alloc_size),
             &mut pages_seen,
             lookup_fn,
         );
@@ -4614,7 +4614,7 @@ mod vmo_rs {
 
         let clone_cow = clone.debug_get_cow_pages().unwrap();
         let status = clone_cow.debug_lookup_readable(
-            VmCowRange { offset: 0, len: alloc_size },
+            VmCowRange::new(0, alloc_size),
             &mut pages_seen,
             lookup_fn,
         );

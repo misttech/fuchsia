@@ -731,7 +731,7 @@ impl PhysicalPageProvider {
                         // don't need to call `process_pages_for_supply` to dereference them.
                         let supply_result = cow_ref.supply_pages_locked(
                             cow_lock.token(),
-                            VmCowRange { offset: supply_offset, len: supply_length },
+                            VmCowRange::new(supply_offset, supply_length),
                             guard.splice_list.as_mut(),
                             SupplyOptions::PhysicalPageProvider,
                             deferred.as_mut(),

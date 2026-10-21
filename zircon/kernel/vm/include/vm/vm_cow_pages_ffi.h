@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_FFI_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_FFI_H_
 
+#include <stddef.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
@@ -16,8 +17,13 @@
 
 #include "vm/discardable_vmo_tracker.h"
 #include "vm/vm_cow_pages.h"
-
 __BEGIN_CDECLS
+
+// The Rust `VmCowRange` in vm_cow_pages.rs mirrors this struct.
+static_assert(sizeof(VmCowRange) == 16);
+static_assert(alignof(VmCowRange) == 8);
+static_assert(offsetof(VmCowRange, offset) == 0);
+static_assert(offsetof(VmCowRange, len) == 8);
 
 typedef zx_status_t (*cpp_vm_cow_pages_lookup_readable_fn)(void* ctx, uint64_t offset,
                                                            uint64_t paddr);

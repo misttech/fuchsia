@@ -64,6 +64,8 @@ enum class VmCowPagesOptions : uint32_t {
 };
 FBL_ENABLE_ENUM_BITS(VmCowPagesOptions)
 
+// The Rust `VmCowRange` in vm_cow_pages.rs is a `#[repr(C)]` layout-compatible mirror
+// of this struct. Do not change its size or layout without updating both sides.
 struct VmCowRange {
   uint64_t offset;
   uint64_t len;

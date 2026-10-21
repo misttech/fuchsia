@@ -284,7 +284,7 @@ mod tests {
 
         cow_pages.zero_pages_locked(
             guard.token(),
-            VmCowRange { offset: 0, len: PAGE_SIZE },
+            VmCowRange::new(0, PAGE_SIZE),
             /*dirty_track=*/ false,
             deferred.as_mut(),
             page_request.as_mut(),

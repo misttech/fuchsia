@@ -12,6 +12,7 @@ use crate::vm::compressor::VmCompressor;
 use crate::vm::discardable_vmo_tracker::DiscardableVmoTracker;
 use crate::vm::page_source::MultiPageRequest;
 use crate::vm::pmm_node::PmmOptDelayReuse;
+use core::cmp;
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::marker::{PhantomData, PhantomPinned};
@@ -27,7 +28,114 @@ use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
 use zx_status::Status;
 use zx_types::zx_status_t;
 
-pub type VmCowRange = bindings::VmCowRange;
+/// A copy-on-write page hierarchy range.
+///
+/// Arithmetic methods assume that callers have validated the range (e.g. via
+/// [`VmCowRange::is_bounded_by`]) so that `offset + len` and any transformations do not overflow
+/// or underflow `u64`.
+#[repr(C)]
+#[must_use]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VmCowRange {
+    pub offset: u64,
+    pub len: u64,
+}
+
+impl VmCowRange {
+    #[inline]
+    pub const fn new(offset: u64, len: u64) -> Self {
+        Self { offset, len }
+    }
+
+    #[inline]
+    pub const fn end(self) -> u64 {
+        self.offset + self.len
+    }
+
+    #[inline]
+    pub const fn is_empty(self) -> bool {
+        self.len == 0
+    }
+
+    #[inline]
+    pub const fn is_page_aligned(self) -> bool {
+        ::page::is_page_rounded(self.offset as usize) && ::page::is_page_rounded(self.len as usize)
+    }
+
+    #[inline]
+    pub const fn expand_till_page_aligned(self) -> VmCowRange {
+        let start = ::page::round_down(self.offset as usize) as u64;
+        VmCowRange::new(start, (::page::round_up(self.end() as usize) as u64).wrapping_sub(start))
+    }
+
+    #[inline]
+    pub const fn offset_by(self, delta: u64) -> VmCowRange {
+        VmCowRange::new(self.offset + delta, self.len)
+    }
+
+    /// Trims `amount` bytes from the start of the range. The caller must ensure `amount <= self.len`.
+    #[inline]
+    pub const fn trimmed_from_start(self, amount: u64) -> VmCowRange {
+        debug_assert!(amount <= self.len);
+        VmCowRange::new(self.offset + amount, self.len - amount)
+    }
+
+    /// Returns the minimal range that covers both `self` and `other`. If these ranges are disjoint
+    /// then the returned range will be larger than combined length of `self` and `other` in
+    /// order to span both using a single range.
+    #[inline]
+    pub fn cover(self, other: VmCowRange) -> VmCowRange {
+        if self.is_empty() {
+            return other;
+        }
+        if other.is_empty() {
+            return self;
+        }
+        let start = cmp::min(self.offset, other.offset);
+        let end = cmp::max(self.end(), other.end());
+        VmCowRange::new(start, end.wrapping_sub(start))
+    }
+
+    #[inline]
+    pub const fn with_length(self, new_length: u64) -> VmCowRange {
+        VmCowRange::new(self.offset, new_length)
+    }
+
+    #[inline]
+    pub fn is_bounded_by(self, max: u64) -> bool {
+        ::range_check::in_range_max(self.offset, self.len, max)
+    }
+}
+
+impl From<bindings::VmCowRange> for VmCowRange {
+    #[inline]
+    fn from(bindings_range: bindings::VmCowRange) -> Self {
+        Self::new(bindings_range.offset, bindings_range.len)
+    }
+}
+
+impl From<VmCowRange> for bindings::VmCowRange {
+    #[inline]
+    fn from(range: VmCowRange) -> Self {
+        Self { offset: range.offset, len: range.len }
+    }
+}
+
+::zr::static_assert!(core::mem::size_of::<VmCowRange>() == 16);
+::zr::static_assert!(
+    core::mem::size_of::<VmCowRange>() == core::mem::size_of::<bindings::VmCowRange>()
+);
+::zr::static_assert!(core::mem::align_of::<VmCowRange>() == 8);
+::zr::static_assert!(
+    core::mem::align_of::<VmCowRange>() == core::mem::align_of::<bindings::VmCowRange>()
+);
+::zr::static_assert!(
+    core::mem::offset_of!(VmCowRange, offset)
+        == core::mem::offset_of!(bindings::VmCowRange, offset)
+);
+::zr::static_assert!(
+    core::mem::offset_of!(VmCowRange, len) == core::mem::offset_of!(bindings::VmCowRange, len)
+);
 pub type VmCowReclaimFailure = bindings::VmCowReclaimFailure;
 pub type VmCowReclaimSuccess = bindings::VmCowReclaimSuccess;
 pub type VmCowReclaimType = bindings::VmCowReclaimSuccess_Type;
@@ -184,8 +292,8 @@ impl<'a> PriorityChanger<'a> {
         self: Pin<&mut Self>,
         _token: &LockToken<'_, VmCowPagesLockClass>,
     ) {
-        // SAFETY: `self.as_raw()` points to a live `PriorityChanger`, guaranteed by `Pin<&mut Self>`
-        // and its exclusive borrow.
+        // SAFETY: `self.as_raw()` points to a live `PriorityChanger`, guaranteed by
+        // `Pin<&mut Self>` and its exclusive borrow.
         unsafe {
             bindings::cpp_priority_changer_change_high_priority_count_locked(self.as_raw());
         }
@@ -579,7 +687,7 @@ impl VmCowPages {
         let status = unsafe {
             bindings::cpp_vm_cow_pages_debug_lookup_readable(
                 self.as_raw(),
-                range,
+                range.into(),
                 ctx_ptr,
                 Some(lookup_callback_shim::<T>),
             )
@@ -676,7 +784,7 @@ impl VmCowPages {
         let status = unsafe {
             bindings::cpp_vm_cow_pages_zero_pages_locked(
                 self.as_raw(),
-                range,
+                range.into(),
                 dirty_track,
                 deferred,
                 page_request,
@@ -712,7 +820,7 @@ impl VmCowPages {
         let status = unsafe {
             bindings::cpp_vm_cow_pages_supply_pages_locked(
                 self.as_raw(),
-                range,
+                range.into(),
                 pages.as_raw(),
                 options,
                 deferred,
@@ -765,3 +873,100 @@ fn initialize_page_cache(level: init::LkInitLevel) {
 
 // Initialize the cache after the percpu data structures are initialized.
 init::lk_init_hook!(vm_cow_pages_cache_init, initialize_page_cache, init::LK_INIT_LEVEL_KERNEL);
+
+#[cfg(ktest)]
+#[unittest::suite]
+/// Tests for the Rust port of VmCowRange.
+mod vm_cow_pages_rs {
+    use super::VmCowRange;
+    use unittest::{expect_eq, expect_false, expect_true};
+
+    /// Tests various methods of VmCowRange.
+    #[test]
+    fn vm_cow_range_test() {
+        // construction/end/is_empty
+        let r1 = VmCowRange::new(0, 0);
+        expect_true!(r1.is_empty());
+        expect_eq!(r1.end(), 0);
+
+        let r2 = VmCowRange::new(4096, 8192);
+        expect_false!(r2.is_empty());
+        expect_eq!(r2.end(), 12288);
+        expect_eq!(r2.offset + r2.len, r2.end());
+
+        let r3 = VmCowRange::new(u64::MAX, 0);
+        expect_true!(r3.is_empty());
+        expect_eq!(r3.end(), u64::MAX);
+
+        let r4 = VmCowRange::new(0, u64::MAX);
+        expect_false!(r4.is_empty());
+        expect_eq!(r4.end(), u64::MAX);
+
+        // page alignment
+        let page_size = ::page::SIZE as u64;
+
+        let r_aligned = VmCowRange::new(page_size, page_size * 2);
+        expect_true!(r_aligned.is_page_aligned());
+
+        let r_unaligned_len = VmCowRange::new(page_size, page_size * 2 - 1);
+        expect_false!(r_unaligned_len.is_page_aligned());
+        let r_unaligned_len_expanded = r_unaligned_len.expand_till_page_aligned();
+        expect_true!(r_unaligned_len_expanded.is_page_aligned());
+        expect_eq!(r_unaligned_len_expanded.offset, page_size);
+        expect_eq!(r_unaligned_len_expanded.len, page_size * 2);
+
+        let r_unaligned_offset = VmCowRange::new(page_size + 1, page_size);
+        expect_false!(r_unaligned_offset.is_page_aligned());
+        let r_unaligned_offset_expanded = r_unaligned_offset.expand_till_page_aligned();
+        expect_true!(r_unaligned_offset_expanded.is_page_aligned());
+        expect_eq!(r_unaligned_offset_expanded.offset, page_size);
+        expect_eq!(r_unaligned_offset_expanded.len, page_size * 2);
+
+        // offset_by/trimmed_from_start/with_length
+        let r_arith = VmCowRange::new(4096, 8192);
+
+        let r_offset = r_arith.offset_by(4096);
+        expect_eq!(r_offset.offset, 8192);
+        expect_eq!(r_offset.len, 8192);
+
+        let r_trimmed = r_arith.trimmed_from_start(4096);
+        expect_eq!(r_trimmed.offset, 8192);
+        expect_eq!(r_trimmed.len, 4096);
+
+        let r_length = r_arith.with_length(4096);
+        expect_eq!(r_length.offset, 4096);
+        expect_eq!(r_length.len, 4096);
+
+        // cover
+        let cover_base = VmCowRange::new(4096, 8192);
+        let cover_next = VmCowRange::new(8192, 8192);
+        let cover1 = cover_base.cover(cover_next);
+        expect_eq!(cover1.offset, 4096);
+        expect_eq!(cover1.len, 12288);
+
+        let disjoint1 = VmCowRange::new(4096, 4096);
+        let disjoint2 = VmCowRange::new(16384, 4096);
+        let cover2 = disjoint1.cover(disjoint2);
+        expect_eq!(cover2.offset, 4096);
+        expect_eq!(cover2.len, 16384);
+
+        let empty_range = VmCowRange::new(0, 0);
+        let cover_empty1 = cover_base.cover(empty_range);
+        expect_eq!(cover_empty1.offset, cover_base.offset);
+        expect_eq!(cover_empty1.len, cover_base.len);
+
+        let cover_empty2 = empty_range.cover(cover_base);
+        expect_eq!(cover_empty2.offset, cover_base.offset);
+        expect_eq!(cover_empty2.len, cover_base.len);
+
+        // is_bounded_by incl. the overflow case
+        let r_bounded = VmCowRange::new(4096, 8192);
+        expect_true!(r_bounded.is_bounded_by(16384));
+        expect_true!(r_bounded.is_bounded_by(12288));
+        expect_false!(r_bounded.is_bounded_by(12287));
+        expect_false!(r_bounded.is_bounded_by(4096));
+
+        let overflow_r = VmCowRange::new(u64::MAX - 4095, 8192);
+        expect_false!(overflow_r.is_bounded_by(u64::MAX));
+    }
+}
