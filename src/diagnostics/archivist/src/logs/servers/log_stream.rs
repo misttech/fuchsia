@@ -2,18 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::identity::ComponentIdentity;
-use crate::logs::error::LogsError;
-use crate::logs::repository::LogsRepository;
 use crate::logs::shared_buffer::FilterCursor;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
 use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, MONIKER, Record, URL};
-use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
-use fidl_fuchsia_diagnostics as fdiagnostics;
-use fidl_fuchsia_diagnostics::StreamMode;
 use fidl_fuchsia_diagnostics_types::Severity;
 use fuchsia_async as fasync;
-use futures::{AsyncWriteExt, StreamExt};
-use log::warn;
+use futures::AsyncWriteExt;
 use std::collections::HashMap;
 use std::future::poll_fn;
 use std::io::Cursor;
@@ -28,121 +22,9 @@ pub enum StreamError {
     Io(#[from] std::io::Error),
 }
 
-pub struct LogStreamServer {
-    /// The repository holding the logs.
-    logs_repo: Arc<LogsRepository>,
-
-    /// Scope in which we spawn all of the server tasks.
-    scope: fasync::Scope,
-}
+pub struct LogStreamServer;
 
 impl LogStreamServer {
-    pub fn new(logs_repo: Arc<LogsRepository>, scope: fasync::Scope) -> Self {
-        Self { logs_repo, scope }
-    }
-
-    /// Spawn a task to handle requests from components reading the shared log.
-    pub fn spawn(&self, stream: fdiagnostics::LogStreamRequestStream) {
-        let logs_repo = Arc::clone(&self.logs_repo);
-        let scope = self.scope.to_handle();
-        self.scope.spawn(async move {
-            if let Err(e) = Self::handle_requests(logs_repo, stream, scope).await {
-                warn!("error handling Log requests: {}", e);
-            }
-        });
-    }
-
-    /// Handle requests to `fuchsia.diagnostics.LogStream`. All request types read the
-    /// whole backlog from memory, `DumpLogs(Safe)` stops listening after that.
-    async fn handle_requests(
-        logs_repo: Arc<LogsRepository>,
-        mut stream: fdiagnostics::LogStreamRequestStream,
-        scope: fasync::ScopeHandle,
-    ) -> Result<(), LogsError> {
-        while let Some(request) = stream.next().await {
-            let request = request.map_err(|source| LogsError::HandlingRequests {
-                protocol: fdiagnostics::LogStreamMarker::PROTOCOL_NAME,
-                source,
-            })?;
-
-            match request {
-                fdiagnostics::LogStreamRequest::Connect { socket, opts, .. } => {
-                    let logs = logs_repo.logs_cursor_raw(
-                        opts.mode.unwrap_or(StreamMode::SnapshotThenSubscribe),
-                        Vec::new(),
-                    );
-                    let opts = ExtendRecordOpts::from(opts);
-                    if opts.subscribe_to_manifest {
-                        if opts.moniker || opts.component_url || opts.rolled_out {
-                            stream.control_handle().shutdown_with_epitaph(zx::Status::INVALID_ARGS);
-                            return Ok(());
-                        }
-
-                        scope.spawn(async move {
-                            let _ = Self::stream_logs_with_manifest(
-                                fasync::Socket::from_socket(socket),
-                                logs,
-                            )
-                            .await;
-                        });
-                    } else {
-                        scope.spawn(Self::stream_logs(
-                            fasync::Socket::from_socket(socket),
-                            logs,
-                            opts,
-                        ));
-                    }
-                }
-                fdiagnostics::LogStreamRequest::_UnknownMethod {
-                    ordinal,
-                    method_type,
-                    control_handle,
-                    ..
-                } => {
-                    warn!(ordinal, method_type:?; "Unknown request. Closing connection");
-                    control_handle.shutdown_with_epitaph(zx::Status::UNAVAILABLE);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    async fn stream_logs(mut socket: fasync::Socket, logs: FilterCursor, opts: ExtendRecordOpts) {
-        let mut logs = pin!(logs);
-        let mut buffer = Vec::new();
-        while let Some((identity, dropped)) = poll_fn(|cx| {
-            loop {
-                match ready!(logs.as_mut().poll_next(cx)) {
-                    Some(message) => {
-                        let (identity_ref, header, data) = match message.parse() {
-                            Ok(res) => res,
-                            Err(_) => {
-                                // If we fail to parse the message, just ignore it and move on
-                                // to the next message.
-                                continue;
-                            }
-                        };
-                        let identity = Arc::clone(identity_ref);
-                        buffer.clear();
-                        buffer.reserve(data.len());
-                        buffer.extend_from_slice(header.as_bytes());
-                        buffer.extend_from_slice(&data[8..]);
-                        return Poll::Ready(Some((identity, message.dropped)));
-                    }
-                    None => return Poll::Ready(None),
-                }
-            }
-        })
-        .await
-        {
-            extend_fxt_record(&identity, dropped, &opts, &mut buffer);
-            if socket.write_all(&buffer).await.is_err() {
-                // Assume an error means the peer closed for now.
-                break;
-            }
-        }
-    }
-
     pub async fn stream_logs_with_manifest(
         mut socket: fasync::Socket,
         logs: FilterCursor,
@@ -227,32 +109,12 @@ pub struct ExtendRecordOpts {
     pub moniker: bool,
     pub component_url: bool,
     pub rolled_out: bool,
-    pub subscribe_to_manifest: bool,
 }
 
 impl ExtendRecordOpts {
     fn should_extend(&self) -> bool {
-        let Self { moniker, component_url, rolled_out, subscribe_to_manifest: _ } = self;
+        let Self { moniker, component_url, rolled_out } = self;
         *moniker || *component_url || *rolled_out
-    }
-}
-
-impl From<fdiagnostics::LogStreamOptions> for ExtendRecordOpts {
-    fn from(opts: fdiagnostics::LogStreamOptions) -> Self {
-        let fdiagnostics::LogStreamOptions {
-            include_moniker,
-            include_component_url,
-            include_rolled_out,
-            mode: _,
-            __source_breaking: _,
-            subscribe_to_manifest,
-        } = opts;
-        Self {
-            moniker: include_moniker.unwrap_or(false),
-            component_url: include_component_url.unwrap_or(false),
-            rolled_out: include_rolled_out.unwrap_or(false),
-            subscribe_to_manifest: subscribe_to_manifest.unwrap_or(false),
-        }
     }
 }
 
@@ -292,9 +154,11 @@ pub fn extend_fxt_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::logs::repository::LogsRepository;
     use crate::logs::testing::make_message;
     use diagnostics_log_encoding::Value;
     use diagnostics_log_encoding::parse::parse_record;
+    use fidl_fuchsia_diagnostics::StreamMode;
     use futures::AsyncReadExt;
     use moniker::ExtendedMoniker;
     use test_case::test_case;
@@ -311,20 +175,16 @@ mod tests {
         let container_tag = container.buffer().iob_tag() as u32;
 
         let scope = fasync::Scope::new();
-        let server = Arc::new(LogStreamServer::new(Arc::clone(&repo), scope));
-        let (proxy, stream) =
-            fidl::endpoints::create_proxy_and_stream::<fdiagnostics::LogStreamMarker>();
-        server.spawn(stream);
-
         let (client_socket, server_socket) = zx::Socket::create_stream();
         let mut client_socket = fasync::Socket::from_socket(client_socket);
-
-        let opts = fdiagnostics::LogStreamOptions {
-            subscribe_to_manifest: Some(true),
-            mode: Some(StreamMode::SnapshotThenSubscribe),
-            ..Default::default()
-        };
-        proxy.connect(server_socket, &opts).expect("connect");
+        let logs = repo.logs_cursor_raw(StreamMode::SnapshotThenSubscribe, Vec::new());
+        scope.spawn(async move {
+            let _ = LogStreamServer::stream_logs_with_manifest(
+                fasync::Socket::from_socket(server_socket),
+                logs,
+            )
+            .await;
+        });
 
         // Wait for connection to be established/handled?
         // We can just ingest. The cursor should pick it up.
@@ -399,20 +259,16 @@ mod tests {
         );
 
         let scope = fasync::Scope::new();
-        let server = Arc::new(LogStreamServer::new(Arc::clone(&repo), scope));
-        let (proxy, stream) =
-            fidl::endpoints::create_proxy_and_stream::<fdiagnostics::LogStreamMarker>();
-        server.spawn(stream);
-
         let (client_socket, server_socket) = zx::Socket::create_stream();
         let mut client_socket = fasync::Socket::from_socket(client_socket);
-
-        let opts = fdiagnostics::LogStreamOptions {
-            subscribe_to_manifest: Some(true),
-            mode: Some(StreamMode::SnapshotThenSubscribe),
-            ..Default::default()
-        };
-        proxy.connect(server_socket, &opts).expect("connect");
+        let logs = repo.logs_cursor_raw(StreamMode::SnapshotThenSubscribe, Vec::new());
+        scope.spawn(async move {
+            let _ = LogStreamServer::stream_logs_with_manifest(
+                fasync::Socket::from_socket(server_socket),
+                logs,
+            )
+            .await;
+        });
 
         // 1. Setup Identity A
         let identity_a = Arc::new(ComponentIdentity::new(
@@ -565,7 +421,7 @@ mod tests {
         42
         ; "with_rolled_out")]
     #[test_case(
-        ExtendRecordOpts { moniker: true, component_url: true, rolled_out: true, subscribe_to_manifest: false },
+        ExtendRecordOpts { moniker: true, component_url: true, rolled_out: true },
         "UNKNOWN",
         "fuchsia-pkg://UNKNOWN",
         42

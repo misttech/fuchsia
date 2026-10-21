@@ -18,7 +18,10 @@ use crate::logs::serial::{SerialSink, launch_serial};
 use crate::logs::servers::*;
 use crate::pipeline::PipelineManager;
 use archivist_config::Config;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_process_lifecycle::LifecycleRequestStream;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
@@ -29,7 +32,6 @@ use moniker::ExtendedMoniker;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Responsible for initializing an `Archivist` instance. Supports multiple configurations by
 /// either calling or not calling methods on the builder like `serve_test_controller_protocol`.
@@ -54,9 +56,6 @@ pub struct Archivist {
 
     /// The server handling fuchsia.diagnostics.system.LogFlush
     flush_server: Arc<LogFlushServer>,
-
-    /// The server handling fuchsia.diagnostics.LogStream
-    log_stream_server: Arc<LogStreamServer>,
 
     /// The server handling fuchsia.inspect.InspectSink
     _inspect_sink_server: Arc<InspectSinkServer>,
@@ -166,10 +165,6 @@ impl Archivist {
             Arc::clone(&logs_repo),
             servers_scope.new_child_with_name("Log"),
         ));
-        let log_stream_server = Arc::new(LogStreamServer::new(
-            Arc::clone(&logs_repo),
-            servers_scope.new_child_with_name("LogStream"),
-        ));
 
         // Initialize the external event providers containing incoming diagnostics directories and
         // log sink connections.
@@ -219,7 +214,6 @@ impl Archivist {
             accessor_server,
             log_server,
             flush_server,
-            log_stream_server,
             event_router,
             _inspect_sink_server: inspect_sink_server,
             pipeline_manager,
@@ -295,7 +289,6 @@ impl Archivist {
             logs_repository,
             accessor_server: _accessor_server,
             log_server: _log_server,
-            log_stream_server: _log_stream_server,
             _inspect_sink_server,
             general_scope,
             incoming_events_scope,
@@ -386,13 +379,6 @@ impl Archivist {
             scope.spawn(async move {
                 let _ = server.handle_requests(stream).await;
             });
-        });
-
-        // Server fuchsia.logger.LogStream
-        let log_stream_server = Arc::clone(&self.log_stream_server);
-        svc_dir.add_fidl_service(move |stream| {
-            debug!("fuchsia.logger.LogStream connection");
-            log_stream_server.spawn(stream);
         });
 
         // Server fuchsia.diagnostics.LogSettings

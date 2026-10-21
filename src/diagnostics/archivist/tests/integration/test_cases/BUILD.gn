@@ -56,7 +56,6 @@ rustc_test("bin") {
     "src/logs/interest.rs",
     "src/logs/lifecycle.rs",
     "src/logs/lifecycle_stop.rs",
-    "src/logs/log_stream.rs",
     "src/logs/mod.rs",
     "src/logs/selectors.rs",
     "src/logs/sorting.rs",
@@ -75,7 +74,6 @@ rustc_test("bin") {
 
     deps += [
       "//src/lib/diagnostics/inspect/rust",
-      "//src/lib/diagnostics/log/encoding/rust",
       "//src/lib/diagnostics/log/message/rust",
       "//third_party/rust_crates:bumpalo",
     ]

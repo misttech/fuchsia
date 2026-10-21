@@ -525,7 +525,6 @@ impl PacketFormat for FxtPacketFormat {
                     component_url: !*this.subscribe_to_manifest,
                     moniker: !*this.subscribe_to_manifest,
                     rolled_out: !*this.subscribe_to_manifest,
-                    subscribe_to_manifest: false,
                 },
                 buffer,
             );

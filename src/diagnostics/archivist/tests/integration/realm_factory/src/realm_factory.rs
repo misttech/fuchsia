@@ -114,7 +114,6 @@ impl ArchivistRealmFactory {
         let archivist_to_parent = Route::new()
             .capability(Capability::dictionary("diagnostics-accessors"))
             .capability(Capability::protocol::<fdiagnostics::LogSettingsMarker>())
-            .capability(Capability::protocol::<fdiagnostics::LogStreamMarker>())
             .capability(Capability::protocol::<flogger::LogSinkMarker>())
             .capability(Capability::protocol::<finspect::InspectSinkMarker>())
             .capability(Capability::protocol::<flogger::LogMarker>());
