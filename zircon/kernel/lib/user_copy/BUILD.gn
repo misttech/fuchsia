@@ -5,7 +5,6 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
-import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 
@@ -55,20 +54,6 @@ group("boot_tests") {
   testonly = true
 }
 
-kernel_bindgen_crate("user-copy-bindings") {
-  headers = [ "include/lib/user_copy/internal.h" ]
-  cpp = true
-  non_rust_deps = [ ":headers" ]
-  raw_lines = [
-    "#![no_std]",
-    "pub use zx_types::zx_vaddr_t as vaddr_t;",
-  ]
-  type_blocklist = [ "vaddr_t" ]
-  function_allowlist = [ "internal::validate_user_accessible_range" ]
-  deps = [ "//sdk/rust/zx-types" ]
-  notice_year = 2026
-}
-
 kernel_rust_mod("user-copy-rs") {
   output_name = "user_copy"
   source_root = "src/mod.rs"
@@ -80,10 +65,10 @@ kernel_rust_mod("user-copy-rs") {
     "src/user_string_view.rs",
   ]
   deps = [
-    ":user-copy-bindings",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//third_party/rust_crates:zerocopy",
+    "//zircon/system/ulib/fbl/rust:fbl",
   ]
 }
 
