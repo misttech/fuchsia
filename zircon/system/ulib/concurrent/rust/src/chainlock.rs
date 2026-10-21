@@ -316,16 +316,18 @@ impl<T: Transaction> ChainLock<T> {
     /// Asserts in debug builds that the lock is held by the current transaction.
     #[inline]
     pub fn assert_held(&self, token: &ChainLockTransactionToken<T>) {
-        let transaction = T::active_ref(token);
-        let tx_token = transaction.token();
-        let lock_token = self.state.load(Ordering::Relaxed);
-        debug_assert_eq!(
-            lock_token,
-            tx_token,
-            "Failed to assert ChainLock is held (lock token {:#x}, our token {:#x}).",
-            lock_token.value(),
-            tx_token.value()
-        );
+        if cfg!(debug_assertions) {
+            let transaction = T::active_ref(token);
+            let tx_token = transaction.token();
+            let lock_token = self.state.load(Ordering::Relaxed);
+            debug_assert_eq!(
+                lock_token,
+                tx_token,
+                "Failed to assert ChainLock is held (lock token {:#x}, our token {:#x}).",
+                lock_token.value(),
+                tx_token.value()
+            );
+        }
     }
 
     /// Asserts in debug builds that the lock is held by the current transaction and must be
