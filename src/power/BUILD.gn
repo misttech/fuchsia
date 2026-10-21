@@ -52,6 +52,7 @@ group("tests") {
     "cpu-manager:tests",
     "fidl/testing",
     "lib/election:tests",
+    "lib/governor:tests",
     "metrics-logger:tests",
     "power-manager:tests",
     "shutdown-shim:tests",
