@@ -40,7 +40,6 @@ group("tests") {
     "line_discipline:tests",
     "linux_uapi:tests",
     "memory_pinning:tests",
-    "paged_ring_buffer:tests",
     "range_map:tests",
 
     # Still groups non-Bazel GN targets (scripts:tests and

@@ -13,6 +13,7 @@ test_suite(
     tests = [
         "//src/starnix/lib/crash_throttling:crash-throttling-tests",
         "//src/starnix/lib/page_buf:page_buf_tests",
+        "//src/starnix/lib/paged_ring_buffer:starnix-paged-ring-buffer-tests",
         "//src/starnix/lib/selinux:starnix-selinux-unit-tests",
         "//src/starnix/lib/seq_lock:seq_lock_tests",
         "//src/starnix/lib/starnix_registers:starnix_registers_tests",

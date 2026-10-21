@@ -1,0 +1,54 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "paged_ring_buffer",
+    srcs = [
+        "src/lib.rs",
+        "src/lockless_ring_buffer.rs",
+        "src/tail_val.rs",
+    ],
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-rcu",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/shared-buffer",
+        "//src/lib/trace/rust:trace",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_types",
+        "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:bitfield",
+        "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:static_assertions",
+    ],
+)
+
+# Declared as a separate rustc_test instead of with_unit_tests so test code
+# uses starnix_clippy_lints_test rather than the library's production
+# lint_config.
+# @bazel2gn:skip
+rustc_test(
+    name = "paged_ring_buffer_lib_test",
+    crate = ":paged_ring_buffer",
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "starnix-paged-ring-buffer-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":paged_ring_buffer_lib_test"],
+    visibility = ["//src/starnix/lib:__pkg__"],
+)
