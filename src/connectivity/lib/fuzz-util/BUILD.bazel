@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuzz-util",
+    srcs = [
+        "src/lib.rs",
+        "src/packet_formats.rs",
+        "src/zerocopy.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/lib:__subpackages__",
+        "//src/connectivity/network/netstack3/core:__pkg__",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/lib/packet-formats",
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:arbitrary",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
