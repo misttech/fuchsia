@@ -113,10 +113,6 @@ class Evictor {
   // By default this only enables user pager based eviction and |use_compression| can be used to
   // also perform compression.
   void EnableEviction(bool use_compression);
-  // Called from the scanner to disable all eviction if needed, will shut down any in existing
-  // eviction thread. It is a responsibility of the scanner to not have multiple concurrent calls
-  // to this and EnableEviction.
-  void DisableEviction();
 
   // Evict from a user specified external |target| which is only used for this eviction attempt and
   // does not interfere with the |eviction_target_|.
@@ -131,39 +127,6 @@ class Evictor {
                                   EvictionLevel eviction_level = EvictionLevel::OnlyOldest,
                                   Output output = Output::NoPrint,
                                   TriggerReason reason = TriggerReason::Other);
-
-  // Reclaim memory until free memory equals the |free_mem_target| (in bytes) and at least
-  // |min_mem_to_free| (in bytes) has been reclaimed. Reclamation will happen asynchronously on the
-  // eviction thread and this function returns immediately. Once the target is reached, or there is
-  // no more memory that can be reclaimed, this process will stop and the free memory target will be
-  // cleared. The |eviction_level| is a rough control on how hard to try and evict. Multiple calls
-  // to EvictAsynchronous will cause all the targets to get merged by adding together
-  // |min_mem_to_free|, taking the max of |free_mem_target| and the highest or most aggressive of
-  // any |eviction_level|.
-  void EvictAsynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
-                         EvictionLevel eviction_level = EvictionLevel::OnlyOldest,
-                         Output output = Output::NoPrint);
-
-  // Whether any eviction can occur.
-  bool IsEvictionEnabled() const;
-
-  // Whether eviction should attempt to use compression.
-  bool IsCompressionEnabled() const;
-
-  struct EvictorStats {
-    uint64_t pager_backed_oom = 0;
-    uint64_t pager_backed_other = 0;
-    uint64_t compression_oom = 0;
-    uint64_t compression_other = 0;
-    uint64_t discarded_oom = 0;
-    uint64_t discarded_other = 0;
-  };
-  // Return global eviction stats from all instantiations of the Evictor.
-  static EvictorStats GetGlobalStats();
-
-  // Debug method to retrieve any current eviction thread. Only to be used for testing / debugging
-  // purposes. It is up to the caller to know if this objects is alive or not.
-  Thread* DebugGetEvictorThread();
 
   using TestReclaimFunction = bool (*)(void* ctx, VmCompression* compression,
                                        EvictionLevel eviction_level, bool* out_is_ok,

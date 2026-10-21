@@ -25,11 +25,9 @@ source_set("vm") {
     "kstack.cc",
     "lz4_compressor.cc",
     "mem_command.cc",
-    "page.cc",
     "page_queues.cc",
     "page_source.cc",
     "page_source_ffi.cc",
-    "page_state.cc",
     "physical_page_borrowing_config.cc",
     "physical_page_provider.cc",
     "physmap_ffi.cc",
@@ -114,7 +112,6 @@ kernel_bindgen_crate("evictor-bindings") {
     "Evictor_EvictionTarget",
     "Evictor_EvictedPageCounts",
     "Evictor_EvictionResult",
-    "Evictor_EvictorStats",
     "ktl::atomic",
     "std::atomic",
   ]
@@ -435,10 +432,7 @@ kernel_bindgen_crate("pmm-arena-bindings") {
     "zx_paddr_t",
   ]
   opaque_types = [ "PmmArena" ]
-  function_blocklist = [
-    "PmmArena_.*",
-    "PrintPageStateCounts",
-  ]
+  function_blocklist = [ "PmmArena_.*" ]
   additional_bindgen_flags = [
     "--with-derive-custom-struct=pmm_arena_info=Copy",
     "--with-derive-custom-struct=pmm_arena_info=Clone",
@@ -464,19 +458,13 @@ kernel_bindgen_crate("page-queues-bindings") {
   edition = "2024"
   notice_year = 2026
   type_allowlist = [
-    "AgeReason",
     "Counts",
-    "LruAction",
     "PageQueues",
     "PageQueues_ActiveInactiveCounts",
     "PageQueues_Counts",
-    "PageQueues_ReclaimCounts",
     "PageQueuesVmoBacklink",
   ]
   type_blocklist = [
-    "AutounsignalEvent",
-    "Event",
-    "Thread",
     "VmPageDoublyLinkedList",
     "fbl_RefPtr",
     "vm_page_t",
@@ -494,36 +482,26 @@ kernel_bindgen_crate("page-queues-bindings") {
     "std::atomic",
     "std::unique_ptr",
   ]
-  rustified_enum = [
-    "PageQueues_AgeReason",
-    "PageQueues_LruAction",
-  ]
   function_blocklist = [ "PageQueues_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   deps = [
     ":page-bindings",
     "//sdk/rust/zx-types",
-    "//zircon/kernel/kernel:event-bindings",
   ]
   raw_lines = [
     "#![no_std]",
     "use page_bindings::vm_page_t;",
-    "pub use event_bindings::{AutounsignalEvent, Event};",
     "pub use zx_types::{zx_duration_mono_t, zx_instant_mono_t};",
     "pub use zx_types::zx_paddr_t;",
-    "pub type Thread = core::ffi::c_void;",
     "pub type VmCowPages = *const core::ffi::c_void;",
     "pub type VmPageDoublyLinkedList = usize;",
   ]
-  expect_lints = [
-    "non_camel_case_types",
-    "non_upper_case_globals",
-  ]
+  expect_lints = [ "non_upper_case_globals" ]
 }
 
 kernel_bindgen_crate("page-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/page_ffi.h" ]
+  headers = [ "include/vm/page.h" ]
   non_rust_deps = [ ":vm" ]
   output_name = "page_bindings.rs"
   cpp = true

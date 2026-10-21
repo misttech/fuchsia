@@ -293,17 +293,6 @@ pub unsafe extern "C" fn rust_vm_object_physical_state_get_size(
 ///
 /// The caller must ensure `ptr` points to an initialized `VmObjectPhysicalState`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_object_physical_state_get_base(
-    ptr: *const VmObjectPhysicalState,
-) -> PAddr {
-    // SAFETY: The caller guarantees `ptr` points to an initialized `VmObjectPhysicalState`.
-    unsafe { (*ptr).base }
-}
-
-/// # Safety
-///
-/// The caller must ensure `ptr` points to an initialized `VmObjectPhysicalState`.
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_object_physical_state_get_is_slice(
     ptr: *const VmObjectPhysicalState,
 ) -> bool {

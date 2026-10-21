@@ -469,10 +469,6 @@ fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegion(vaddr_t addr) 
   return fbl::ImportFromRawPtr(rust_vm_address_region_find_region(this, addr));
 }
 
-fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegionLocked(vaddr_t addr) {
-  return fbl::ImportFromRawPtr(rust_vm_address_region_find_region_locked(this, addr));
-}
-
 VmObject::AttributionCounts VmAddressRegion::GetAttributedMemory() const {
   AssertCanary();
 

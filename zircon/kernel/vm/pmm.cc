@@ -84,15 +84,6 @@ zx_status_t pmm_get_arena_info(size_t count, uint64_t i, pmm_arena_info_t* buffe
   return Pmm::Node().GetArenaInfo(count, i, buffer, buffer_size);
 }
 
-zx_status_t pmm_alloc_page(uint alloc_flags, paddr_t* pa) {
-  VM_KTRACE_DURATION(3, "pmm_alloc_page", ("count", 1), ("alloc_flags", alloc_flags));
-  zx::result<vm_page_t*> result = Pmm::Node().AllocPage(alloc_flags);
-  if (result.is_ok()) {
-    *pa = result.value()->paddr();
-  }
-  return result.status_value();
-}
-
 zx_status_t pmm_alloc_page(uint alloc_flags, vm_page_t** page) {
   VM_KTRACE_DURATION(3, "pmm_alloc_page", ("count", 1), ("alloc_flags", alloc_flags));
   zx::result<vm_page_t*> result = Pmm::Node().AllocPage(alloc_flags);
@@ -164,14 +155,6 @@ uint64_t pmm_count_loan_cancelled_pages() { return Pmm::Node().CountLoanCancelle
 uint64_t pmm_count_total_bytes() { return Pmm::Node().CountTotalBytes(); }
 
 Evictor* pmm_evictor() { return Pmm::Node().GetEvictor(); }
-
-bool pmm_set_free_memory_signal(uint64_t free_lower_bound, uint64_t free_upper_bound,
-                                uint64_t delay_allocations_pages, Event* event) {
-  return Pmm::Node().SetFreeMemorySignal(free_lower_bound, free_upper_bound,
-                                         delay_allocations_pages, event);
-}
-
-void pmm_stop_returning_should_wait() { Pmm::Node().StopReturningShouldWait(); }
 
 void pmm_checker_check_all_free_pages() { Pmm::Node().CheckAllFreePages(); }
 

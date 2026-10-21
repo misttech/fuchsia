@@ -1238,13 +1238,13 @@ impl PmmNode {
     /// first time an allocation fails (i.e. the first time at which has_alloc_failed_no_mem would
     /// return true).
     ///
-    /// |delay_allocations_level| is the number of PMM free pages below which the PMM will
+    /// |delay_allocations_pages| is the number of PMM free pages below which the PMM will
     /// transition to delaying allocations that can wait, i.e. those with PMM_ALLOC_FLAG_CAN_WAIT.
     /// This transition is sticky, and even if pages are freed to go back above this line,
     /// allocations will remain delayed until this method is called again to re-set the level. For
-    /// this reason, and since there is only a single common Event, the |delay_allocations_level|
+    /// this reason, and since there is only a single common Event, the |delay_allocations_pages|
     /// must either be <= the |free_lower_bound|, ensuring that the caller will have been notified
-    /// and can respond by freeing memory and/or setting a new level, or |delay_allocations_level|
+    /// and can respond by freeing memory and/or setting a new level, or |delay_allocations_pages|
     /// can be UINT64_MAX, indicating allocations should start and remain delayed.
     ///
     /// # Safety
@@ -2598,22 +2598,6 @@ unsafe extern "C" fn rust_pmm_node_free_list(
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_with_loaned_page(
-    node: *mut PmmNode,
-    page: *mut page_bindings::vm_page_t,
-    with_page: unsafe extern "C" fn(*mut page_bindings::vm_page_t, *mut core::ffi::c_void),
-    cookie: *mut core::ffi::c_void,
-) {
-    // SAFETY: node and page are valid.
-    let node = unsafe { &*node };
-    let page = unsafe { VmPagePtr::from_ffi(page) }.expect("null page");
-    node.with_loaned_page(page, |p| {
-        // SAFETY: FFI callback with cookie.
-        unsafe { with_page(p.as_ffi(), cookie) };
-    });
-}
-
-#[unsafe(no_mangle)]
 unsafe extern "C" fn rust_pmm_node_alloc_loaned_page(
     node: *mut PmmNode,
     allocated: unsafe extern "C" fn(*mut page_bindings::vm_page_t, *mut core::ffi::c_void),
@@ -2883,20 +2867,6 @@ unsafe extern "C" fn rust_pmm_node_get_arena_info(
                 zx_types::ZX_OK
             }
         }
-        Err(status) => status.into_raw(),
-    }
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_set_page_compression(
-    node: *mut PmmNode,
-    compression: *mut VmCompression,
-) -> zx_status_t {
-    // SAFETY: node is valid. compression was passed from RefPtr::release().
-    let node = unsafe { &*node };
-    let ref_ptr = unsafe { fbl::RefPtr::from_raw(compression) };
-    match node.set_page_compression(ref_ptr) {
-        Ok(()) => zx_types::ZX_OK,
         Err(status) => status.into_raw(),
     }
 }

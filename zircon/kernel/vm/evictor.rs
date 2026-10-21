@@ -264,7 +264,6 @@ zr::static_assert!(
         == core::mem::offset_of!(bindings::Evictor_EvictionResult, free_target_reached)
 );
 
-#[repr(C)]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct EvictorStats {
     pub pager_backed_oom: u64,
@@ -274,39 +273,6 @@ pub struct EvictorStats {
     pub discarded_oom: u64,
     pub discarded_other: u64,
 }
-
-// Compile-time layout assertions against C++ EvictorStats
-zr::static_assert!(
-    core::mem::size_of::<EvictorStats>() == core::mem::size_of::<bindings::Evictor_EvictorStats>()
-);
-zr::static_assert!(
-    core::mem::align_of::<EvictorStats>()
-        == core::mem::align_of::<bindings::Evictor_EvictorStats>()
-);
-zr::static_assert!(
-    core::mem::offset_of!(EvictorStats, pager_backed_oom)
-        == core::mem::offset_of!(bindings::Evictor_EvictorStats, pager_backed_oom)
-);
-zr::static_assert!(
-    core::mem::offset_of!(EvictorStats, pager_backed_other)
-        == core::mem::offset_of!(bindings::Evictor_EvictorStats, pager_backed_other)
-);
-zr::static_assert!(
-    core::mem::offset_of!(EvictorStats, compression_oom)
-        == core::mem::offset_of!(bindings::Evictor_EvictorStats, compression_oom)
-);
-zr::static_assert!(
-    core::mem::offset_of!(EvictorStats, compression_other)
-        == core::mem::offset_of!(bindings::Evictor_EvictorStats, compression_other)
-);
-zr::static_assert!(
-    core::mem::offset_of!(EvictorStats, discarded_oom)
-        == core::mem::offset_of!(bindings::Evictor_EvictorStats, discarded_oom)
-);
-zr::static_assert!(
-    core::mem::offset_of!(EvictorStats, discarded_other)
-        == core::mem::offset_of!(bindings::Evictor_EvictorStats, discarded_other)
-);
 
 pub type ReclaimFunction = SendSyncInlineFn<
     'static,
@@ -1357,7 +1323,7 @@ pub unsafe extern "C" fn rust_evictor_destroy(evictor: *mut Evictor) {
 ///
 /// The caller must ensure that:
 /// - `evictor` is a valid reference to an initialized `Evictor` that remains pinned and valid
-///   until `rust_evictor_disable_eviction` or `rust_evictor_destroy` completes.
+///   until `Evictor::disable_eviction` or `rust_evictor_destroy` completes.
 /// - This function is not called concurrently with `enable_eviction`, `disable_eviction`, or
 ///   `debug_get_evictor_thread` on `evictor`.
 /// - The current thread does not hold `evictor.lock`.
@@ -1367,25 +1333,6 @@ pub unsafe extern "C" fn rust_evictor_enable_eviction(evictor: &Evictor, use_com
     // SAFETY: The caller satisfies all preconditions of `Evictor::enable_eviction`.
     unsafe {
         evictor.enable_eviction(use_compression);
-    }
-}
-
-/// Disables eviction on `evictor`.
-///
-/// # Safety
-///
-/// The caller must ensure that:
-/// - `evictor` is a valid reference to an initialized, pinned `Evictor`.
-/// - This function is not called concurrently with `enable_eviction`, `disable_eviction`, or
-///   `debug_get_evictor_thread` on `evictor`.
-/// - The current thread does not hold `evictor.lock` or `evictor.eviction_lock`, and is not the
-///   eviction thread itself.
-// SAFETY: Symbol name is prefixed with `rust_evictor_` and matches `evictor.cc`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_evictor_disable_eviction(evictor: &Evictor) {
-    // SAFETY: The caller satisfies all preconditions of `Evictor::disable_eviction`.
-    unsafe {
-        evictor.disable_eviction();
     }
 }
 
@@ -1437,78 +1384,6 @@ pub unsafe extern "C" fn rust_evictor_evict_synchronous(
             reason,
         );
     }
-}
-
-/// Triggers asynchronous eviction on `evictor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `evictor` is a valid reference to an initialized `Evictor` for the
-/// duration of the call.
-// SAFETY: Symbol name is prefixed with `rust_evictor_` and matches `evictor.cc`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_evictor_evict_asynchronous(
-    evictor: &Evictor,
-    min_mem_to_free: u64,
-    free_mem_target: u64,
-    eviction_level: EvictionLevel,
-    output: Output,
-) {
-    evictor.evict_asynchronous(min_mem_to_free, free_mem_target, eviction_level, output);
-}
-
-/// Returns whether eviction is enabled on `evictor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `evictor` is a valid reference to an initialized `Evictor` for the
-/// duration of the call.
-// SAFETY: Symbol name is prefixed with `rust_evictor_` and matches `evictor.cc`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_evictor_is_eviction_enabled(evictor: &Evictor) -> bool {
-    evictor.is_eviction_enabled()
-}
-
-/// Returns whether compression is enabled on `evictor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `evictor` is a valid reference to an initialized `Evictor` for the
-/// duration of the call.
-// SAFETY: Symbol name is prefixed with `rust_evictor_` and matches `evictor.cc`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_evictor_is_compression_enabled(evictor: &Evictor) -> bool {
-    evictor.is_compression_enabled()
-}
-
-/// Writes the global `EvictorStats` to `out_stats`.
-///
-/// # Safety
-///
-/// The caller must ensure that `out_stats` is a valid, aligned, non-null pointer writable for the
-/// duration of the call.
-// SAFETY: Symbol name is prefixed with `rust_evictor_` and matches `evictor.cc`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_evictor_get_global_stats(out_stats: *mut EvictorStats) {
-    // SAFETY: The caller guarantees `out_stats` is valid for writing.
-    unsafe {
-        *out_stats = Evictor::get_global_stats();
-    }
-}
-
-/// Returns the eviction thread pointer for `evictor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `evictor` is a valid reference to an initialized `Evictor`, that
-/// this function is not called concurrently with `enable_eviction` or `disable_eviction` on
-/// `evictor`, and that any returned pointer is not used after `disable_eviction` or
-/// `rust_evictor_destroy` is called.
-// SAFETY: Symbol name is prefixed with `rust_evictor_` and matches `evictor.cc`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_evictor_debug_get_evictor_thread(evictor: &Evictor) -> *mut Thread {
-    // SAFETY: The caller satisfies all preconditions of `Evictor::debug_get_evictor_thread`.
-    unsafe { evictor.debug_get_evictor_thread().map_or(core::ptr::null_mut(), |t| t.as_raw()) }
 }
 
 /// Writes the current `EvictionTarget` of `evictor` to `out_target`.

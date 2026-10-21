@@ -24,8 +24,6 @@
 #include <vm/vm_constants.h>
 #include <vm/vm_object.h>
 
-extern "C" void cpp_vm_object_physical_free(VmObjectPhysical* vmo);
-
 // VMO representing a physical range of memory
 class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjectPhysical> {
  public:
@@ -109,7 +107,6 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
   // private destructor, only called from refptr
   ~VmObjectPhysical() override;
   friend fbl::RefPtr<VmObjectPhysical>;
-  friend void ::cpp_vm_object_physical_free(VmObjectPhysical* vmo);
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmObjectPhysical);
 

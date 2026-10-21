@@ -768,7 +768,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // Finds the child region that contains the given addr.  If addr is in a gap,
   // returns nullptr.  This is a non-recursive search.
   fbl::RefPtr<VmAddressRegionOrMapping> FindRegion(vaddr_t addr);
-  fbl::RefPtr<VmAddressRegionOrMapping> FindRegionLocked(vaddr_t addr) TA_REQ(lock());
 
   // Applies the given memory priority to this VMAR, which may or may not result in a change. Up to
   // the derived type to know how to apply and update the memory priority.
@@ -937,8 +936,6 @@ void rust_vm_address_region_assert_canary(const VmAddressRegion* vmar);
 bool rust_vm_address_region_has_parent(const VmAddressRegion* vmar);
 VmAddressRegionOrMapping* rust_vm_address_region_find_region(const VmAddressRegion* vmar,
                                                              vaddr_t addr);
-VmAddressRegionOrMapping* rust_vm_address_region_find_region_locked(const VmAddressRegion* vmar,
-                                                                    vaddr_t addr);
 VmMapping* rust_vm_address_region_find_mapping_locked(const VmAddressRegion* vmar, vaddr_t va);
 zx_status_t rust_vm_address_region_activate(VmAddressRegion* vmar);
 void rust_vm_address_region_dump_locked(const VmAddressRegion* vmar, uint32_t depth, bool verbose);
@@ -963,10 +960,6 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // different accessors, one for each lock.
   arch_mmu_flags_t arch_mmu_flags_locked(vaddr_t offset) const
       TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return FlagsRangeAtAddrLocked(offset).mmu_flags;
-  }
-  arch_mmu_flags_t arch_mmu_flags_locked_object(vaddr_t offset) const
-      TA_REQ(object_locked()->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return FlagsRangeAtAddrLocked(offset).mmu_flags;
   }
   struct FlagsRange {

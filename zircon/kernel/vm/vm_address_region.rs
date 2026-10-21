@@ -1228,22 +1228,6 @@ pub extern "C" fn rust_vm_address_region_find_region(
 ///
 /// The aspace lock is held.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_address_region_find_region_locked(
-    this: &VmAddressRegion,
-    addr: usize,
-) -> *mut bindings::VmAddressRegionOrMapping {
-    // SAFETY: The aspace lock is held by the caller.
-    let token = unsafe { LockToken::new() };
-    match this.find_region_locked(&token, VAddr(addr)) {
-        Some(region) => RefPtr::into_raw(region).cast_mut().cast(),
-        None => core::ptr::null_mut(),
-    }
-}
-
-/// # Safety
-///
-/// The aspace lock is held.
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_address_region_find_mapping_locked(
     this: &VmAddressRegion,
     va: usize,

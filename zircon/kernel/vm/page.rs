@@ -962,34 +962,6 @@ pub fn add_to_initial_count(state: VmPageState, n: u64) {
     })
 }
 
-// FFI trampolines exported to C++
-
-/// FFI trampoline for dumping information about `page` from C++.
-///
-/// # Safety
-///
-/// The caller must ensure that `page` points to a valid `VmPage` and that it is safe to inspect
-/// the page state and union metadata.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_page_dump(page: &VmPage) {
-    // SAFETY: Preconditions forwarded from caller.
-    unsafe {
-        page.dump();
-    }
-}
-
-/// FFI trampoline for getting the approximate number of pages in `state` from C++.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_vm_page_get_count(state: bindings::vm_page_state) -> u64 {
-    get_count(VmPageState(state))
-}
-
-/// FFI trampoline for adding `n` to the count of pages in `state` from C++.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_vm_page_add_to_initial_count(state: bindings::vm_page_state, n: u64) {
-    add_to_initial_count(VmPageState(state), n);
-}
-
 #[cfg(console_enabled)]
 /// Console command handler for `vm_page`.
 ///

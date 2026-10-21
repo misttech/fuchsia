@@ -227,14 +227,6 @@ void PmmNode::FinishFreeLoanedPages(FreeLoanedPagesHolder& flph) {
   rust_pmm_node_finish_free_loaned_pages(this, &flph);
 }
 
-void PmmNode::WithLoanedPage(vm_page_t* page, fit::inline_function<void(vm_page_t*)> with_page) {
-  auto cb = [](vm_page_t* page, void* cookie) {
-    auto* fn = reinterpret_cast<fit::inline_function<void(vm_page_t*)>*>(cookie);
-    (*fn)(page);
-  };
-  rust_pmm_node_with_loaned_page(this, page, cb, &with_page);
-}
-
 void PmmNode::FreePage(vm_page* page, PmmOptDelayReuse delay_reuse) {
   rust_pmm_node_free_page(this, page, delay_reuse);
 }
@@ -315,26 +307,6 @@ PmmNode::AllocFailure PmmNode::GetFirstAllocFailure() {
 }
 
 void PmmNode::SeedRandomShouldWait() { rust_pmm_node_seed_random_should_wait(this); }
-
-zx_status_t PmmNode::SetPageCompression(fbl::RefPtr<VmCompression> compression) {
-  return rust_pmm_node_set_page_compression(this, fbl::ExportToRawPtr(&compression));
-}
-
-const char* PmmNode::AllocFailure::TypeToString(Type type) {
-  switch (type) {
-    case Type::None:
-      return "None";
-    case Type::Pmm:
-      return "PMM";
-    case Type::Heap:
-      return "Heap";
-    case Type::Handle:
-      return "Handle";
-    case Type::Other:
-      return "Other";
-  }
-  return "UNKNOWN";
-}
 
 zx::result<vm_page_t*> PmmNode::WaitForSinglePageAllocation(Deadline deadline, bool suspendable) {
   vm_page_t* out_page = nullptr;

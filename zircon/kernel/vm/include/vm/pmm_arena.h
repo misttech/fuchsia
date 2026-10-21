@@ -11,7 +11,6 @@
 #include <zircon/types.h>
 
 #include <fbl/macros.h>
-#include <ktl/array.h>
 #include <vm/page.h>
 #include <vm/phys/arena.h>
 
@@ -26,9 +25,6 @@ typedef struct pmm_arena_info {
   paddr_t base;
   size_t size;
 } pmm_arena_info_t;
-
-using PmmStateCount = ktl::array<size_t, static_cast<size_t>(vm_page_state::COUNT_)>;
-void PrintPageStateCounts(const PmmStateCount& state_count);
 
 class PmmNode;
 
@@ -52,19 +48,11 @@ class PmmArena {
   paddr_t end() const { return base() + size(); }
   unsigned int flags() const { return info_.flags; }
 
-  // Counts the number of pages in every state. For each page in the arena,
-  // increments the corresponding vm_page_state::*-indexed entry of
-  // |state_count|. Does not zero out the entries first.
-  void CountStates(PmmStateCount* state_count) const;
-
   vm_page_t* get_page(size_t index) { return &page_array_[index]; }
   size_t get_index(const vm_page_t* page) { return page - page_array_; }
 
   // find a free run of contiguous pages
   vm_page_t* FindFreeContiguous(size_t count, uint8_t alignment_log2);
-
-  // return a pointer to a specific page
-  vm_page_t* FindSpecific(paddr_t pa);
 
   // helpers
   bool page_belongs_to_arena(const vm_page* page) const {
@@ -74,8 +62,6 @@ class PmmArena {
   bool address_in_arena(paddr_t address) const {
     return (address >= info_.base && address <= info_.base + info_.size - 1);
   }
-
-  void Dump(bool dump_pages, bool dump_free_ranges, PmmStateCount* counts) const;
 
  private:
   pmm_arena_info_t info_ = {};

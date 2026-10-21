@@ -51,7 +51,6 @@ void rust_vm_object_physical_state_init(void* state, paddr_t base, uint64_t size
 void rust_vm_object_physical_state_destroy(void* state);
 Lock<CriticalMutex>* rust_vm_object_physical_state_get_lock(const void* state);
 uint64_t rust_vm_object_physical_state_get_size(const void* state);
-paddr_t rust_vm_object_physical_state_get_base(const void* state);
 bool rust_vm_object_physical_state_get_is_slice(const void* state);
 uint64_t rust_vm_object_physical_state_get_parent_user_id(const void* state);
 VmObjectPhysical* rust_vm_object_physical_state_get_parent_locked(const void* state);

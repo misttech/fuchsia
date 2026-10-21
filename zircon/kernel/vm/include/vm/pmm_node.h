@@ -102,13 +102,6 @@ class PmmNode {
   void FreeList(VmPageDoublyLinkedList* list,
                 PmmOptDelayReuse delay_reuse = PmmOptDelayReuse::Default);
 
-  // Calls the provided function, passing |page| back into it, serialized with any other calls to
-  // |AllocLoanedPage|, |BeginFreeLoanedPage| and |FinishFreeLoanedPages|. This allows caller to
-  // know that while the |with_page| callback is running there are no in progress calls to these
-  // methods, and that the page is not presently in holding object, i.e. it is either fully owned by
-  // the PmmNode, or fully owned by an object.
-  void WithLoanedPage(vm_page_t* page, fit::inline_function<void(vm_page_t*)> with_page);
-
   // Allocates a single page from the loaned pages list. The allocated page will always have
   // is_loaned() being true, and must be returned by either FreeLoanedPage or FreeLoanedList. If
   // there are not loaned pages available ZX_ERR_UNAVAILABLE is returned, as an absence of loaned
@@ -170,7 +163,27 @@ class PmmNode {
   //  * Be in the FREE_LOANED state.
   void EndLoan(vm_page_t* page);
 
-  // See |pmm_set_free_memory_signal|
+  // Configures the free memory bounds and allows for setting a one shot signal as well as a level
+  // where allocations should start being delayed.
+  //
+  // The event is signaled once the number of PMM free pages falls outside of the range given by
+  // |free_lower_bound| and |free_upper_bound|. As the event is one shot, one signaled this must be
+  // called again to configure a new range. If the number of free pages is already outside the
+  // requested bound then this method fails (returns false) and no event is setup. In this case the
+  // caller should recalculate a correct bounds and try again.
+  //
+  // In addition to exiting the provided memory bounds, the event will also get signaled on the
+  // first time an allocation fails (i.e. the first time at which has_alloc_failed_no_mem would
+  // return true).
+  //
+  // |delay_allocations_pages| is the number of PMM free pages below which the PMM will transition
+  // to delaying allocations that can wait, i.e. those with PMM_ALLOC_FLAG_CAN_WAIT. This transition
+  // is sticky, and even if pages are freed to go back above this line, allocations will remain
+  // delayed until this method is called again to re-set the level. For this reason, and since there
+  // is only a single common Event, the |delay_allocations_pages| must either be <= the
+  // |free_lower_bound|, ensuring that the caller will have been notified and can respond by freeing
+  // memory and/or setting a new level, or |delay_allocations_pages| can be UINT64_MAX, indicating
+  // allocations should start and remain delayed.
   bool SetFreeMemorySignal(uint64_t free_lower_bound, uint64_t free_upper_bound,
                            uint64_t delay_allocations_pages, Event* event);
 
@@ -239,9 +252,6 @@ class PmmNode {
     return page_compression_.get();
   }
 
-  // Set the page compression instance. Returns an error if one has already been set.
-  zx_status_t SetPageCompression(fbl::RefPtr<VmCompression> compression);
-
   // Fill all free pages (both non-loaned and loaned) with a pattern and arm the checker.  See
   // |PmmChecker|.
   //
@@ -296,7 +306,6 @@ class PmmNode {
       Handle,
       Other,
     };
-    static const char* TypeToString(Type type);
     Type type = Type::None;
     size_t size = 0;
     uint64_t free_count = 0;

@@ -44,7 +44,6 @@ class VmObjectPaged;
 class VmObjectPhysical;
 class VmAspace;
 class VmObject;
-class VmHierarchyBase;
 
 class VmObjectChildObserver {
  public:
@@ -144,95 +143,6 @@ template <typename T>
 fbl::SinglyLinkedListCustomTraits<fbl::RefPtr<T>, typename VmDeferredDeleter<T>::ListTraits>
     VmDeferredDeleter<T>::delete_list_;
 
-// Cursor to allow for walking global vmo lists without needing to hold the lock protecting them all
-// the time. This can be required to enforce order of acquisition with another lock (as in the case
-// of |discardable_reclaim_candidates_|), or it can be desirable for performance reasons (as in the
-// case of |all_vmos_|).
-// In practice at most one cursor is expected to exist, but as the cursor list is global the
-// overhead of being generic to support multiple cursors is negligible.
-//
-// |ObjType| is the type of object being tracked in the list (VmObject, VmCowPages etc).
-// |LockType| is the singleton global lock used to protect the list.
-// |ListType| is the type of the global vmo list.
-// |ListIteratorType| is the iterator for |ListType|.
-template <typename ObjType, typename LockType, typename ListType, typename ListIteratorType>
-class VmoCursor
-    : public fbl::DoublyLinkedListable<VmoCursor<ObjType, LockType, ListType, ListIteratorType>*> {
- public:
-  VmoCursor() = delete;
-
-  using CursorsList =
-      fbl::DoublyLinkedList<VmoCursor<ObjType, LockType, ListType, ListIteratorType>*>;
-
-  // Constructor takes as arguments the global lock, the global vmo list, and the global list of
-  // cursors to add the newly created cursor to. Should be called while holding the global |lock|.
-  VmoCursor(LockType* lock, ListType& vmos, CursorsList& cursors)
-      : lock_(*lock), vmos_list_(vmos), cursors_list_(cursors) {
-    AssertHeld(lock_);
-
-    if (!vmos_list_.is_empty()) {
-      vmos_iter_ = vmos_list_.begin();
-    } else {
-      vmos_iter_ = vmos_list_.end();
-    }
-
-    cursors_list_.push_front(this);
-  }
-
-  // Destructor removes this cursor from the global list of all cursors.
-  ~VmoCursor() TA_REQ(lock_) { cursors_list_.erase(*this); }
-
-  // Advance the cursor and return the next element or nullptr if at the end of the list.
-  //
-  // Once |Next| has returned nullptr, all subsequent calls will return nullptr.
-  //
-  // The caller must hold the global |lock_|.
-  ObjType* Next() TA_REQ(lock_) {
-    if (vmos_iter_ == vmos_list_.end()) {
-      return nullptr;
-    }
-
-    ObjType* result = &*vmos_iter_;
-    vmos_iter_++;
-    return result;
-  }
-
-  // If the next element is |h|, advance the cursor past it.
-  //
-  // The caller must hold the global |lock_|.
-  void AdvanceIf(const ObjType* h) TA_REQ(lock_) {
-    if (vmos_iter_ != vmos_list_.end()) {
-      if (&*vmos_iter_ == h) {
-        vmos_iter_++;
-      }
-    }
-  }
-
-  // Advances all the cursors in |cursors_list|, calling |AdvanceIf(h)| on each cursor.
-  //
-  // The caller must hold the global lock protecting the |cursors_list|.
-  static void AdvanceCursors(CursorsList& cursors_list, const ObjType* h) {
-    for (auto& cursor : cursors_list) {
-      AssertHeld(cursor.lock_ref());
-      cursor.AdvanceIf(h);
-    }
-  }
-
-  LockType& lock_ref() TA_RET_CAP(lock_) { return lock_; }
-
- private:
-  VmoCursor(const VmoCursor&) = delete;
-  VmoCursor& operator=(const VmoCursor&) = delete;
-  VmoCursor(VmoCursor&&) = delete;
-  VmoCursor& operator=(VmoCursor&&) = delete;
-
-  LockType& lock_;
-  ListType& vmos_list_ TA_GUARDED(lock_);
-  CursorsList& cursors_list_ TA_GUARDED(lock_);
-
-  ListIteratorType vmos_iter_ TA_GUARDED(lock_);
-};
-
 enum class VmObjectReadWriteOptions : uint8_t {
   None = 0,
 
@@ -264,7 +174,6 @@ class VmObject : public fbl::ContainableBaseClasses<
     Guard<CriticalMutex> guard{lock()};
     return size_locked();
   }
-  virtual uint32_t create_options() const { return 0; }
 
   // Returns true if the object is backed by RAM and this object can be cast to a VmObjectPaged, if
   // false this is a VmObjectPhysical.

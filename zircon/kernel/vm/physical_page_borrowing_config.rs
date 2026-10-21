@@ -139,11 +139,6 @@ pub extern "C" fn rust_ppb_config_set_borrowing_on_mru_enabled(enabled: bool) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_ppb_config_is_borrowing_on_mru_enabled() -> bool {
-    PhysicalPageBorrowingConfig::get().is_borrowing_on_mru_enabled()
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn rust_ppb_config_set_loaning_enabled(enabled: bool) {
     PhysicalPageBorrowingConfig::get().set_loaning_enabled(enabled);
 }
@@ -156,26 +151,6 @@ pub extern "C" fn rust_ppb_config_is_loaning_enabled() -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_ppb_config_set_replace_on_unloan_enabled(enabled: bool) {
     PhysicalPageBorrowingConfig::get().set_replace_on_unloan_enabled(enabled);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_ppb_config_is_replace_on_unloan_enabled() -> bool {
-    PhysicalPageBorrowingConfig::get().is_replace_on_unloan_enabled()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_ppb_config_notify_unloan_started() {
-    PhysicalPageBorrowingConfig::get().notify_unloan_started();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_ppb_config_notify_unloan_finished() {
-    PhysicalPageBorrowingConfig::get().notify_unloan_finished();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_ppb_config_is_borrowing_active() -> bool {
-    PhysicalPageBorrowingConfig::get().is_borrowing_active()
 }
 
 #[cfg(ktest)]

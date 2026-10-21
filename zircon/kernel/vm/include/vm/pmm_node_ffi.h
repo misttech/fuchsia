@@ -30,8 +30,6 @@ zx_status_t rust_pmm_node_alloc_contiguous(PmmNode* node, size_t count, uint32_t
 void rust_pmm_node_free_page(PmmNode* node, vm_page_t* page, PmmOptDelayReuse delay_reuse);
 void rust_pmm_node_free_list(PmmNode* node, VmPageDoublyLinkedList* list,
                              PmmOptDelayReuse delay_reuse);
-void rust_pmm_node_with_loaned_page(PmmNode* node, vm_page_t* page,
-                                    void (*with_page)(vm_page_t*, void* cookie), void* cookie);
 zx_status_t rust_pmm_node_alloc_loaned_page(PmmNode* node,
                                             void (*allocated)(vm_page_t*, void* cookie),
                                             void* cookie, vm_page_t** out_page);
@@ -68,7 +66,6 @@ void rust_pmm_node_dump(const PmmNode* node, bool is_panic);
 zx_status_t rust_pmm_node_get_arena_info(const PmmNode* node, size_t count, uint64_t i,
                                          pmm_arena_info_t* buffer, size_t buffer_size);
 void rust_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list);
-zx_status_t rust_pmm_node_set_page_compression(PmmNode* node, VmCompression* compression);
 void rust_pmm_node_fill_free_pages_and_arm(PmmNode* node);
 void rust_pmm_node_check_all_free_pages(PmmNode* node);
 void rust_pmm_node_poison_all_free_pages(PmmNode* node);

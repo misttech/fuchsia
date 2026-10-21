@@ -79,7 +79,6 @@ struct VmCowRange {
     return VmCowRange(start, RoundUpPageSize(end()) - start);
   }
 
-  VmCowRange OffsetBy(uint64_t delta) const { return VmCowRange(offset + delta, len); }
   VmCowRange TrimmedFromStart(uint64_t amount) const {
     return VmCowRange(offset + amount, len - amount);
   }
@@ -1283,16 +1282,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // internal check if any pages in a range are pinned
   bool AnyPagesPinnedLocked(uint64_t offset, size_t len) TA_REQ(lock());
-
-  // Helper function for ::GetAttributedMemoryInRangeLocked. Counts the number of bytes in
-  // ancestor's vmos that should be attributed to this vmo for the specified range. It is an error
-  // to pass in a range that does not need attributing (i.e. offset must be < parent_limit_),
-  // although |len| is permitted to be sized such that the range exceeds parent_limit_. The return
-  // value is the length of the processed region, which will be <= |size| and is guaranteed to be >
-  // 0. The |count| is the number of bytes in this region that should be attributed to this vmo,
-  // versus some other vmo.
-  uint64_t CountAttributedAncestorBytesLocked(uint64_t offset, uint64_t size,
-                                              AttributionCounts* count) const TA_REQ(lock());
 
   // Searches for the content for the page in |this| at |offset|. If the offset is already
   // populated in |this| then that page is returned with the |owner| unset, otherwise the

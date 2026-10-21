@@ -12,10 +12,7 @@
 
 #include <fbl/macros.h>
 #include <fbl/ref_ptr.h>
-#include <kernel/event.h>
 #include <kernel/ffi.h>
-#include <kernel/lockdep.h>
-#include <kernel/mutex.h>
 #include <ktl/array.h>
 #include <ktl/optional.h>
 #include <vm/page.h>
@@ -23,7 +20,6 @@
 
 class VmCowPages;
 class PageQueues;
-struct Thread;
 
 // Version of PageQueues::VmoBacklink that uses a raw pointer instead of a RefPtr for FFI.
 struct PageQueuesVmoBacklink {
@@ -44,8 +40,6 @@ void rust_page_queues_set_reclaim(const void* storage, vm_page_t* page, VmCowPag
                                   uint64_t page_offset);
 void rust_page_queues_set_pager_backed_dirty(const void* storage, vm_page_t* page,
                                              VmCowPages* object, uint64_t page_offset);
-void rust_page_queues_set_anonymous_zero_fork(const void* storage, vm_page_t* page,
-                                              VmCowPages* object, uint64_t page_offset);
 void rust_page_queues_set_high_priority(const void* storage, vm_page_t* page, VmCowPages* object,
                                         uint64_t page_offset);
 
@@ -59,13 +53,9 @@ void rust_page_queues_move_anonymous_to_anonymous_zero_fork(const void* storage,
 
 void rust_page_queues_compress_failed(const void* storage, vm_page_t* page);
 
-void rust_page_queues_change_object_offset(const void* storage, vm_page_t* page, VmCowPages* object,
-                                           uint64_t page_offset);
 void rust_page_queues_change_object_offset_array(const void* storage, vm_page_t** pages,
                                                  VmCowPages* object, const uint64_t* offsets,
                                                  size_t count);
-void rust_page_queues_change_object_offset_locked_list(const void* storage, vm_page_t* page,
-                                                       VmCowPages* object, uint64_t page_offset);
 
 void rust_page_queues_remove(const void* storage, vm_page_t* page);
 void rust_page_queues_remove_array_into_list(const void* storage, vm_page_t** pages, size_t count,
@@ -73,27 +63,13 @@ void rust_page_queues_remove_array_into_list(const void* storage, vm_page_t** pa
 
 void rust_page_queues_mark_accessed(const void* storage, vm_page_t* page);
 
-void* rust_page_queues_get_lock(const void* storage);
-
-const char* rust_page_queues_string_from_age_reason(int32_t reason);
-
 void rust_page_queues_rotate_reclaim_queues(const void* storage);
 
-bool rust_page_queues_pop_anonymous_zero_fork(const void* storage,
-                                              PageQueuesVmoBacklink* out_backlink);
 bool rust_page_queues_peek_isolate(const void* storage, size_t lowest_queue,
                                    PageQueuesVmoBacklink* out_backlink);
-bool rust_page_queues_get_cow_for_loaned_page(const void* storage, vm_page_t* page,
-                                              PageQueuesVmoBacklink* out_backlink);
 
-void rust_page_queues_get_reclaim_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_get_active_inactive_counts(const void* storage, void* out_counts);
-
-void rust_page_queues_dump(const void* storage);
-uint64_t rust_page_queues_get_lru_pages_compressed(void);
-
-void rust_page_queues_enable_anonymous_reclaim(const void* storage, bool zero_forks);
 bool rust_page_queues_reclaim_is_only_pager_backed(const void* storage);
 bool rust_page_queues_is_page_reclaimable(const vm_page_t* page);
 
@@ -102,7 +78,6 @@ bool rust_page_queues_debug_page_is_reclaim(const void* storage, const vm_page_t
 bool rust_page_queues_debug_page_is_reclaim_isolate(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_pager_backed_dirty(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_anonymous(const void* storage, const vm_page_t* page);
-bool rust_page_queues_debug_page_is_anonymous_zero_fork(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_any_anonymous(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_wired(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_high_priority(const void* storage, const vm_page_t* page);
@@ -110,13 +85,6 @@ bool rust_page_queues_debug_page_is_high_priority(const void* storage, const vm_
 void rust_page_queues_start_threads(const void* storage, zx_duration_mono_t min_mru_rotate_time,
                                     zx_duration_mono_t max_mru_rotate_time);
 void rust_page_queues_set_active_ratio_multiplier(const void* storage, uint32_t multiplier);
-void rust_page_queues_set_lru_action(const void* storage, int32_t action);
-void rust_page_queues_disable_aging(const void* storage);
-void rust_page_queues_enable_aging(const void* storage);
-void rust_page_queues_set_aging_event(const void* storage, Event* event);
-
-Thread* rust_page_queues_debug_get_lru_thread(const void* storage);
-Thread* rust_page_queues_debug_get_mru_thread(const void* storage);
 }  // extern "C"
 
 // Allocated pages that are part of the cow pages in a VmObjectPaged can be placed in a page queue.
@@ -210,10 +178,6 @@ class PageQueues {
                                              uint64_t page_offset) {
     rust_page_queues_set_pager_backed_dirty(&storage_, page, object, page_offset);
   }
-  FFI_ALWAYS_INLINE void SetAnonymousZeroFork(vm_page_t* page, VmCowPages* object,
-                                              uint64_t page_offset) {
-    rust_page_queues_set_anonymous_zero_fork(&storage_, page, object, page_offset);
-  }
   FFI_ALWAYS_INLINE void SetHighPriority(vm_page_t* page, VmCowPages* object,
                                          uint64_t page_offset) {
     rust_page_queues_set_high_priority(&storage_, page, object, page_offset);
@@ -264,21 +228,9 @@ class PageQueues {
 
   // Changes the backlink information for a page and should only be called by the page owner under
   // its lock (that is the VMO lock). The page must currently be in a valid page queue.
-  FFI_ALWAYS_INLINE void ChangeObjectOffset(vm_page_t* page, VmCowPages* object,
-                                            uint64_t page_offset) {
-    rust_page_queues_change_object_offset(&storage_, page, object, page_offset);
-  }
   FFI_ALWAYS_INLINE void ChangeObjectOffsetArray(vm_page_t** pages, VmCowPages* object,
                                                  uint64_t* offsets, size_t count) {
     rust_page_queues_change_object_offset_array(&storage_, pages, object, offsets, count);
-  }
-
-  // Externally locked variant of ChangeObjectOffset that can be used for more efficient batch
-  // operations. In addition to the annotated lock_, the VMO lock of the owner is also required to
-  // be held.
-  FFI_ALWAYS_INLINE void ChangeObjectOffsetLockedList(vm_page_t* page, VmCowPages* object,
-                                                      uint64_t page_offset) TA_REQ(get_lock()) {
-    rust_page_queues_change_object_offset_locked_list(&storage_, page, object, page_offset);
   }
 
   // Removes the page from any page list and returns ownership of the queue_node.
@@ -294,27 +246,6 @@ class PageQueues {
   FFI_ALWAYS_INLINE void MarkAccessed(vm_page_t* page) {
     rust_page_queues_mark_accessed(&storage_, page);
   }
-
-  // Provides access to the underlying lock, allowing _Locked variants to be called. Use of this is
-  // highly discouraged as the underlying lock is a CriticalMutex which disables preemption.
-  // Preferably *Array variations should be used, but this provides a higher performance mechanism
-  // when needed.
-  FFI_ALWAYS_INLINE Lock<CriticalMutex>* get_lock() {
-    return static_cast<Lock<CriticalMutex>*>(rust_page_queues_get_lock(&storage_));
-  }
-
-  // Used to identify the reason that aging is triggered, mostly for debugging and informational
-  // purposes.
-  enum class AgeReason {
-    // Aging occurred due to the maximum timeout being reached before any other reason could trigger
-    Timeout,
-    // The allowable ratio of active versus inactive pages was exceeded.
-    ActiveRatio,
-    // An explicit call to RotatePagerBackedQueues caused aging. This would typically occur due to
-    // test code or via the kernel debug console.
-    Manual,
-  };
-  static const char* string_from_age_reason(PageQueues::AgeReason reason);
 
   // Performs a manually requested aging event. This ignores usual aging triggers / restrictions and
   // waits, if necessary, for aging to be possible and then performs it.
@@ -332,12 +263,6 @@ class PageQueues {
     uint64_t offset = 0;
   };
 
-  // Moves a page from the anonymous zero fork queue into the anonymous queue and returns
-  // the backlink information. If the zero fork queue is empty then a nullopt is returned, otherwise
-  // if it has_value the vmo field may be null to indicate that the vmo is running its destructor
-  // (see VmoBacklink for more details).
-  ktl::optional<VmoBacklink> PopAnonymousZeroFork();
-
   // Looks at the isolate queues and returns backlink information of the first page found. If the
   // isolate queue is empty then LRU queues up to |lowest_queue| epochs from the most recent will be
   // processed to attempt to fill the isolate list. If no page was found a nullopt is returned,
@@ -345,22 +270,6 @@ class PageQueues {
   // destructor (see VmoBacklink for more details). If a page is returned its location in the
   // reclaim queue is not modified.
   ktl::optional<VmoBacklink> PeekIsolate(size_t lowest_queue);
-
-  // Can be called while the |page| is known to be in the loaned state. This method checks if it is
-  // in the page queues, and if so returns a reference to the cow pages that owns it.
-  // The page must be 'owned' by the caller, in so far as the page->state() is guaranteed to not be
-  // changing.
-  ktl::optional<VmoBacklink> GetCowForLoanedPage(vm_page_t* page);
-
-  // Helper struct to group reclaimable queue length counts returned by GetReclaimCounts.
-  struct ReclaimCounts {
-    size_t total = 0;
-    size_t newest = 0;
-    size_t oldest = 0;
-  };
-
-  // Returns just the reclaim queue counts. Called from the zx_object_get_info() syscall.
-  ReclaimCounts GetReclaimQueueCounts() const;
 
   // Helper struct to group queue length counts returned by QueueCounts.
   struct Counts {
@@ -398,19 +307,6 @@ class PageQueues {
   };
   ActiveInactiveCounts GetActiveInactiveCounts() const;
 
-  void Dump() const;
-
-  // Returns a global count of all pages compressed at the point of LRU change. This is a global
-  // method and will include stats from every PageQueues that has been instantiated.
-  static uint64_t GetLruPagesCompressed();
-
-  // Enables reclamation of anonymous pages by causing them to be placed into the reclaimable queue
-  // instead of the dedicated anonymous queue. The |zero_forks| parameter controls whether the
-  // anonymous zero forks should also go into the general reclaimable queue or not.
-  // Any pages already placed into the anonymous queues will be moved over, and there is no way to
-  // disable this once enabled.
-  void EnableAnonymousReclaim(bool zero_forks);
-
   // Returns whether or not the reclaim queues only include pager backed pages or not.
   FFI_ALWAYS_INLINE bool ReclaimIsOnlyPagerBacked() const {
     return rust_page_queues_reclaim_is_only_pager_backed(&storage_);
@@ -430,7 +326,6 @@ class PageQueues {
   bool DebugPageIsReclaimIsolate(const vm_page_t* page) const;
   bool DebugPageIsPagerBackedDirty(const vm_page_t* page) const;
   bool DebugPageIsAnonymous(const vm_page_t* page) const;
-  bool DebugPageIsAnonymousZeroFork(const vm_page_t* page) const;
   bool DebugPageIsAnyAnonymous(const vm_page_t* page) const;
   bool DebugPageIsWired(const vm_page_t* page) const;
   bool DebugPageIsHighPriority(const vm_page_t* page) const;
@@ -451,36 +346,6 @@ class PageQueues {
 
   // Sets the active ratio multiplier.
   void SetActiveRatioMultiplier(uint32_t multiplier);
-
-  // Describes any action to take when processing the LRU queue. This is applied to pages that would
-  // otherwise have to be moved from the old LRU queue into the isolate queue.
-  enum class LruAction {
-    None,
-    EvictOnly,
-    CompressOnly,
-    EvictAndCompress,
-  };
-  void SetLruAction(LruAction action);
-
-  // Controls to enable and disable the active aging system. These must be called alternately and
-  // not in parallel. That is, it is an error to call DisableAging twice without calling EnableAging
-  // in between. Similar for EnableAging.
-  void DisableAging();
-  void EnableAging();
-
-  // Register an Event that will be signalled every time aging occurs. This can be used to know if
-  // PeekReclaim might now return items (due to aging having occurred) where it had previously
-  // ceased.
-  // Only a single Event may be registered at a time and the Event is assumed to live as long as the
-  // PageQueues object. A nullptr can be passed in to unregister an Event, otherwise it is an error
-  // to attempt to register over the top of an existing event.
-  void SetAgingEvent(Event* event);
-
-  // Debug methods to retrieve a reference to any lru and mru threads. These are intended for use
-  // during tests / debugging and hence bypass the lock normally needed to read these members. It is
-  // up to the caller to know if these objects are alive or not.
-  Thread* DebugGetLruThread() { return rust_page_queues_debug_get_lru_thread(&storage_); }
-  Thread* DebugGetMruThread() { return rust_page_queues_debug_get_mru_thread(&storage_); }
 
  private:
   OpaqueStorage<kPageQueuesStorageSize, kPageQueuesStorageAlign> storage_;

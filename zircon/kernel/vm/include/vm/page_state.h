@@ -39,7 +39,4 @@ typedef struct vm_page_counts {
   RelaxedAtomic<int64_t> by_state[VmPageStateIndex(vm_page_state::COUNT_)];
 } vm_page_counts_t;
 
-// Returns a string description of |state|.
-const char* page_state_to_string(vm_page_state state);
-
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PAGE_STATE_H_

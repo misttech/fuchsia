@@ -19,7 +19,7 @@ use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowReclaimType};
 use crate::vm::{pmm, scanner};
 #[cfg(debug_assertions)]
 use core::cell::UnsafeCell;
-use core::ffi::{CStr, c_char, c_void};
+use core::ffi::{CStr, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{MaybeUninit, offset_of};
 use core::pin::Pin;
@@ -54,7 +54,6 @@ define_kcounter!(PQ_PEEK_PROCESS_LRU_ALL_INACTIVE, "pq.peek.process_lru.all_inac
 
 /// Used to identify the reason that aging is triggered, mostly for debugging and informational
 /// purposes.
-#[repr(i32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum AgeReason {
     /// Aging occurred due to the maximum timeout being reached before any other reason could
@@ -67,55 +66,14 @@ pub enum AgeReason {
     Manual,
 }
 
-zr::static_assert!(AgeReason::Timeout as i32 == bindings::PageQueues_AgeReason::Timeout as i32);
-zr::static_assert!(
-    AgeReason::ActiveRatio as i32 == bindings::PageQueues_AgeReason::ActiveRatio as i32
-);
-zr::static_assert!(AgeReason::Manual as i32 == bindings::PageQueues_AgeReason::Manual as i32);
-zr::static_assert!(size_of::<AgeReason>() == size_of::<bindings::PageQueues_AgeReason>());
-
-impl AgeReason {
-    fn from_raw(raw: i32) -> Self {
-        match raw {
-            x if x == Self::Timeout as i32 => Self::Timeout,
-            x if x == Self::ActiveRatio as i32 => Self::ActiveRatio,
-            x if x == Self::Manual as i32 => Self::Manual,
-            _ => panic!("Invalid AgeReason: {raw}"),
-        }
-    }
-}
-
 /// Describes any action to take when processing the LRU queue. This is applied to pages that would
 /// otherwise have to be moved from the old LRU queue into the isolate queue.
-#[repr(i32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum LruAction {
     None,
     EvictOnly,
     CompressOnly,
     EvictAndCompress,
-}
-
-zr::static_assert!(LruAction::None as i32 == bindings::PageQueues_LruAction::None as i32);
-zr::static_assert!(LruAction::EvictOnly as i32 == bindings::PageQueues_LruAction::EvictOnly as i32);
-zr::static_assert!(
-    LruAction::CompressOnly as i32 == bindings::PageQueues_LruAction::CompressOnly as i32
-);
-zr::static_assert!(
-    LruAction::EvictAndCompress as i32 == bindings::PageQueues_LruAction::EvictAndCompress as i32
-);
-zr::static_assert!(size_of::<LruAction>() == size_of::<bindings::PageQueues_LruAction>());
-
-impl LruAction {
-    fn from_raw(raw: i32) -> Self {
-        match raw {
-            x if x == Self::None as i32 => Self::None,
-            x if x == Self::EvictOnly as i32 => Self::EvictOnly,
-            x if x == Self::CompressOnly as i32 => Self::CompressOnly,
-            x if x == Self::EvictAndCompress as i32 => Self::EvictAndCompress,
-            _ => panic!("Invalid LruAction: {raw}"),
-        }
-    }
 }
 
 /// Helper struct to group queue length counts returned by [`PageQueues::queue_counts`].
@@ -157,23 +115,12 @@ zr::static_assert!(size_of::<Counts>() == size_of::<bindings::PageQueues_Counts>
 
 /// Helper struct to group reclaimable queue length counts returned by
 /// [`PageQueues::get_reclaim_queue_counts`].
-#[repr(C)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ReclaimCounts {
     pub total: usize,
     pub newest: usize,
     pub oldest: usize,
 }
-zr::static_assert!(
-    offset_of!(ReclaimCounts, total) == offset_of!(bindings::PageQueues_ReclaimCounts, total)
-);
-zr::static_assert!(
-    offset_of!(ReclaimCounts, newest) == offset_of!(bindings::PageQueues_ReclaimCounts, newest)
-);
-zr::static_assert!(
-    offset_of!(ReclaimCounts, oldest) == offset_of!(bindings::PageQueues_ReclaimCounts, oldest)
-);
-zr::static_assert!(size_of::<ReclaimCounts>() == size_of::<bindings::PageQueues_ReclaimCounts>());
 
 /// Helper struct to group active and inactive page counts returned by
 /// [`PageQueues::get_active_inactive_counts`].
@@ -3573,29 +3520,6 @@ pub unsafe extern "C" fn rust_page_queues_set_pager_backed_dirty(
     }
 }
 
-/// FFI wrapper for [`PageQueues::set_anonymous_zero_fork`].
-///
-/// # Safety
-///
-/// `page` and `object` must be valid pointers meeting the preconditions of
-/// [`PageQueues::set_anonymous_zero_fork`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_set_anonymous_zero_fork(
-    queues: &PageQueues,
-    page: *mut vm_page_t,
-    object: *mut bindings::VmCowPages,
-    page_offset: u64,
-) {
-    debug_assert!(!object.is_null());
-    // SAFETY: Caller guarantees `page` and `object` are valid pointers upholding
-    // `set_anonymous_zero_fork` preconditions.
-    unsafe {
-        let cow = &*(object as *const VmCowPages);
-        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
-        queues.set_anonymous_zero_fork(page_ptr, cow, page_offset);
-    }
-}
-
 /// FFI wrapper for [`PageQueues::set_high_priority`].
 ///
 /// # Safety
@@ -3749,29 +3673,6 @@ pub unsafe extern "C" fn rust_page_queues_compress_failed(
     unsafe { queues.compress_failed(page_ptr) };
 }
 
-/// FFI wrapper for [`PageQueues::change_object_offset`].
-///
-/// # Safety
-///
-/// `page` and `object` must be valid pointers meeting the preconditions of
-/// [`PageQueues::change_object_offset`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_change_object_offset(
-    queues: &PageQueues,
-    page: *mut vm_page_t,
-    object: *mut bindings::VmCowPages,
-    page_offset: u64,
-) {
-    debug_assert!(!object.is_null());
-    // SAFETY: Caller guarantees `page` and `object` are valid non-null pointers upholding
-    // `change_object_offset` preconditions.
-    unsafe {
-        let cow = &*(object as *const VmCowPages);
-        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
-        queues.change_object_offset(page_ptr, cow, page_offset);
-    }
-}
-
 /// FFI wrapper for [`PageQueues::change_object_offset_array`].
 ///
 /// # Safety
@@ -3796,31 +3697,6 @@ pub unsafe extern "C" fn rust_page_queues_change_object_offset_array(
         let pages_slice = slice_from_raw_parts_or_empty(pages as *const VmPagePtr, count);
         let offsets_slice = slice_from_raw_parts_or_empty(offsets, count);
         queues.change_object_offset_array(pages_slice, &*cow, offsets_slice);
-    }
-}
-
-/// FFI wrapper for [`PageQueues::change_object_offset_locked_list`].
-///
-/// # Safety
-///
-/// `page` and `object` must be valid pointers meeting the preconditions of
-/// [`PageQueues::change_object_offset_locked_list`], and the page queues lock (`get_lock()`) must
-/// be held by the caller.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_change_object_offset_locked_list(
-    queues: &PageQueues,
-    page: *mut vm_page_t,
-    object: *mut bindings::VmCowPages,
-    page_offset: u64,
-) {
-    debug_assert!(!object.is_null());
-    // SAFETY: Caller guarantees `page` and `object` are valid non-null pointers, `list_lock`
-    // (`get_lock()`) is held, and `change_object_offset_locked_list` preconditions are met.
-    unsafe {
-        let cow = object as *const VmCowPages;
-        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
-        let token = LockToken::new();
-        queues.change_object_offset_locked_list(page_ptr, &*cow, page_offset, &token);
     }
 }
 
@@ -3877,29 +3753,6 @@ pub unsafe extern "C" fn rust_page_queues_mark_accessed(queues: &PageQueues, pag
     unsafe { queues.mark_accessed(page_ptr) };
 }
 
-/// FFI wrapper for [`PageQueues::get_lock`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call and for as long as the returned lock pointer is used.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_get_lock(queues: &PageQueues) -> *mut c_void {
-    queues.get_lock() as *const _ as *mut c_void
-}
-
-/// FFI wrapper for [`PageQueues::string_from_age_reason`].
-///
-/// # Panics
-///
-/// Panics if `reason` is not a valid [`AgeReason`] discriminant.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_page_queues_string_from_age_reason(reason: i32) -> *const c_char {
-    PageQueues::string_from_age_reason(AgeReason::from_raw(reason)).as_ptr()
-}
-
 /// FFI wrapper for [`PageQueues::rotate_reclaim_queues`].
 ///
 /// # Safety
@@ -3911,32 +3764,6 @@ pub extern "C" fn rust_page_queues_string_from_age_reason(reason: i32) -> *const
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_page_queues_rotate_reclaim_queues(queues: &PageQueues) {
     queues.rotate_reclaim_queues();
-}
-
-/// FFI wrapper for [`PageQueues::pop_anonymous_zero_fork`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call with neither `queues.lock` nor `queues.list_lock` held by the current
-/// thread, and `out_backlink` is non-null, properly aligned, and valid for exclusive writes of a
-/// `PageQueuesVmoBacklink`. When this function returns `true` and `out_backlink.cow` is non-null,
-/// ownership of one strong reference count of `VmCowPages` is transferred to the caller.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_pop_anonymous_zero_fork(
-    queues: &PageQueues,
-    out_backlink: *mut PageQueuesVmoBacklink,
-) -> bool {
-    match queues.pop_anonymous_zero_fork() {
-        Some(b) => {
-            // SAFETY: Caller guarantees `out_backlink` is non-null, aligned, and valid for
-            // exclusive writes of `PageQueuesVmoBacklink`.
-            unsafe { out_backlink.write(b.into()) };
-            true
-        }
-        None => false,
-    }
 }
 
 /// FFI wrapper for [`PageQueues::peek_isolate`].
@@ -3963,55 +3790,6 @@ pub unsafe extern "C" fn rust_page_queues_peek_isolate(
             true
         }
         None => false,
-    }
-}
-
-/// FFI wrapper for [`PageQueues::get_cow_for_loaned_page`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call with `queues.list_lock` not held by the current thread, `page` is a
-/// non-null, aligned pointer to a live loaned `vm_page_t` with `state()` not changing for the
-/// duration of this call, and `out_backlink` is non-null, properly aligned, and valid for
-/// exclusive writes of a `PageQueuesVmoBacklink`. When this function returns `true` and
-/// `out_backlink.cow` is non-null, ownership of one strong reference count of `VmCowPages` is
-/// transferred to the caller.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_get_cow_for_loaned_page(
-    queues: &PageQueues,
-    page: *mut vm_page_t,
-    out_backlink: *mut PageQueuesVmoBacklink,
-) -> bool {
-    // SAFETY: Caller guarantees `page` is a valid non-null `vm_page_t` pointer.
-    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page) };
-    // SAFETY: Caller guarantees `page_ptr` is a loaned page with stable state.
-    match unsafe { queues.get_cow_for_loaned_page(page_ptr) } {
-        Some(b) => {
-            // SAFETY: Caller guarantees `out_backlink` is non-null, aligned, and valid for
-            // exclusive writes of `PageQueuesVmoBacklink`.
-            unsafe { out_backlink.write(b.into()) };
-            true
-        }
-        None => false,
-    }
-}
-
-/// FFI wrapper for [`PageQueues::get_reclaim_queue_counts`].
-///
-/// # Safety
-///
-/// `out_counts` must point to a valid writable `ReclaimCounts`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_get_reclaim_queue_counts(
-    queues: &PageQueues,
-    out_counts: *mut c_void,
-) {
-    let counts = queues.get_reclaim_queue_counts();
-    // SAFETY: Caller guarantees `out_counts` points to a valid `ReclaimCounts`.
-    unsafe {
-        *(out_counts as *mut ReclaimCounts) = counts;
     }
 }
 
@@ -4047,43 +3825,6 @@ pub unsafe extern "C" fn rust_page_queues_get_active_inactive_counts(
     unsafe {
         *(out_counts as *mut ActiveInactiveCounts) = counts;
     }
-}
-
-/// FFI wrapper for [`PageQueues::dump`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, and that neither `queues.lock` nor `queues.list_lock` is held by the
-/// current thread.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_dump(queues: &PageQueues) {
-    queues.dump();
-}
-
-/// FFI wrapper for [`PageQueues::get_lru_pages_compressed`].
-///
-/// # Safety
-///
-/// The caller must ensure kernel counters have been initialized.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_get_lru_pages_compressed() -> u64 {
-    PageQueues::get_lru_pages_compressed()
-}
-
-/// FFI wrapper for [`PageQueues::enable_anonymous_reclaim`].
-///
-/// # Safety
-///
-/// `queues` must be a valid reference to an initialized `PageQueues`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_enable_anonymous_reclaim(
-    queues: &PageQueues,
-    zero_forks: bool,
-) {
-    queues.enable_anonymous_reclaim(zero_forks);
 }
 
 /// FFI wrapper for [`PageQueues::reclaim_is_only_pager_backed`].
@@ -4187,22 +3928,6 @@ pub unsafe extern "C" fn rust_page_queues_debug_page_is_anonymous(
     unsafe { queues.debug_page_is_anonymous(page_ptr) }
 }
 
-/// FFI wrapper for [`PageQueues::debug_page_is_anonymous_zero_fork`].
-///
-/// # Safety
-///
-/// `page` must be a valid `vm_page_t` pointer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_debug_page_is_anonymous_zero_fork(
-    queues: &PageQueues,
-    page: *const vm_page_t,
-) -> bool {
-    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
-    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
-    // SAFETY: Caller upholds `debug_page_is_anonymous_zero_fork` preconditions.
-    unsafe { queues.debug_page_is_anonymous_zero_fork(page_ptr) }
-}
-
 /// FFI wrapper for [`PageQueues::debug_page_is_any_anonymous`].
 ///
 /// # Safety
@@ -4288,88 +4013,6 @@ pub unsafe extern "C" fn rust_page_queues_set_active_ratio_multiplier(
     multiplier: u32,
 ) {
     queues.set_active_ratio_multiplier(multiplier);
-}
-
-/// FFI wrapper for [`PageQueues::set_lru_action`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues`,
-/// `action` is a valid `LruAction` discriminant, and `queues.lock` is not held by the current
-/// thread.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_set_lru_action(queues: &PageQueues, action: i32) {
-    queues.set_lru_action(LruAction::from_raw(action));
-}
-
-/// FFI wrapper for [`PageQueues::disable_aging`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, and that neither `queues.lock` nor `queues.list_lock` is held by the
-/// current thread.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_disable_aging(queues: &PageQueues) {
-    queues.disable_aging();
-}
-
-/// FFI wrapper for [`PageQueues::enable_aging`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, and that neither `queues.lock` nor `queues.list_lock` is held by the
-/// current thread.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_enable_aging(queues: &PageQueues) {
-    queues.enable_aging();
-}
-
-/// FFI wrapper for [`PageQueues::set_aging_event`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues`,
-/// that `queues.lock` is not held by the current thread, and that if `event` is non-null, it is
-/// properly aligned and points to a valid, initialized `Event` that remains live for as long as it
-/// is registered.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_set_aging_event(queues: &PageQueues, event: *mut Event) {
-    // SAFETY: Caller guarantees `event` (if non-null) lives as long as it is registered.
-    unsafe { queues.set_aging_event(NonNull::new(event)) };
-}
-
-/// FFI wrapper for [`PageQueues::debug_get_lru_thread`].
-///
-/// # Safety
-///
-/// The caller must ensure `pq` is a valid shared reference to an initialized `PageQueues`, and
-/// that this function is not called concurrently with `stop_threads`, with the returned pointer
-/// only used before `stop_threads` is called.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_debug_get_lru_thread(pq: &PageQueues) -> *mut Thread {
-    // SAFETY: Caller upholds `debug_get_lru_thread` preconditions.
-    unsafe { pq.debug_get_lru_thread() }.map_or(core::ptr::null_mut(), |p| p.as_raw())
-}
-
-/// FFI wrapper for [`PageQueues::debug_get_mru_thread`].
-///
-/// # Safety
-///
-/// The caller must ensure `pq` is a valid shared reference to an initialized `PageQueues`, and
-/// that this function is not called concurrently with `stop_threads`, with the returned pointer
-/// only used before `stop_threads` is called.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_debug_get_mru_thread(pq: &PageQueues) -> *mut Thread {
-    // SAFETY: Caller upholds `debug_get_mru_thread` preconditions.
-    unsafe { pq.debug_get_mru_thread() }.map_or(core::ptr::null_mut(), |p| p.as_raw())
 }
 
 // ------------------------------------------------------------------------------------------------

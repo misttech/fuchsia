@@ -155,7 +155,7 @@ struct vm_page {
 
   // offset 0x2f
 
-  // logically private, use loaned getters and setters below.
+  // logically private, use loaned getters below.
   static constexpr uint8_t kLoanedStateIsLoaned = 1;
   static constexpr uint8_t kLoanedStateIsLoanCancelled = 2;
   // The loaned state is packed into a single byte here to reduce memory usage, but due to the
@@ -169,11 +169,6 @@ struct vm_page {
   // be owned by the relevant PmmNode, and hence unless its lock is held this query must be assumed
   // to be racy.
   bool is_free() const { return state() == vm_page_state::FREE; }
-
-  // Returns whether this page is in the FREE_LOANED state. Similar to the FREE state the page is
-  // assumed to be owned by the relevant PmmNode, however this distinguishes whether the page is
-  // part of the general purpose free list, versus the more narrowly usable set of loaned pages.
-  bool is_free_loaned() const { return state() == vm_page_state::FREE_LOANED; }
 
   // If true, this page is "loaned" in the sense of being loaned from a contiguous VMO (via
   // decommit) to Zircon.  If the original contiguous VMO is deleted, this page will no longer be
@@ -200,30 +195,6 @@ struct vm_page {
                   .load(ktl::memory_order_relaxed) &
               kLoanedStateIsLoanCancelled);
   }
-  // Manipulation of 'loaned' should only be done by the PmmNode under the loaned pages lock whilst
-  // it is the owner of the page.
-  void set_is_loaned() {
-    ktl::atomic_ref<uint8_t>(loaned_state_priv)
-        .fetch_or(kLoanedStateIsLoaned, ktl::memory_order_relaxed);
-  }
-  void clear_is_loaned() {
-    ktl::atomic_ref<uint8_t>(loaned_state_priv)
-        .fetch_and(~kLoanedStateIsLoaned, ktl::memory_order_relaxed);
-  }
-
-  // Manipulation of 'loan_cancelled' should only be done by the PmmNode under its lock, but may be
-  // done when the PmmNode is not the owner of the page.
-  void set_is_loan_cancelled() {
-    ktl::atomic_ref<uint8_t>(loaned_state_priv)
-        .fetch_or(kLoanedStateIsLoanCancelled, ktl::memory_order_relaxed);
-  }
-  void clear_is_loan_cancelled() {
-    ktl::atomic_ref<uint8_t>(loaned_state_priv)
-        .fetch_and(~kLoanedStateIsLoanCancelled, ktl::memory_order_relaxed);
-  }
-
-  void dump() const;
-
   // return the physical address
   // future plan to store in a compressed form
   paddr_t paddr() const { return paddr_priv; }
@@ -243,16 +214,6 @@ struct vm_page {
     p.vm_page_counts.by_state[VmPageStateIndex(old_state)] -= 1;
     p.vm_page_counts.by_state[VmPageStateIndex(new_state)] += 1;
   }
-
-  // Return the approximate number of pages in state |state|.
-  //
-  // When called concurrently with |set_state|, the count may be off by a small amount.
-  static uint64_t get_count(vm_page_state state);
-
-  // Add |n| to the count of pages in state |state|.
-  //
-  // Should be used when first constructing pages.
-  static void add_to_initial_count(vm_page_state state, uint64_t n);
 
  private:
   static constexpr uintptr_t kObjectOrStackOwnerIsStackOwnerFlag = 0x1;

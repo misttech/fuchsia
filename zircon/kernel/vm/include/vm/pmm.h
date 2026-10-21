@@ -70,7 +70,6 @@ zx_status_t pmm_alloc_pages(size_t count, uint alloc_flags, VmPageDoublyLinkedLi
 
 // Allocate a single page of physical memory.
 zx_status_t pmm_alloc_page(uint alloc_flags, vm_page** p) __NONNULL((2));
-zx_status_t pmm_alloc_page(uint alloc_flags, paddr_t* pa) __NONNULL((2));
 zx_status_t pmm_alloc_page(uint alloc_flags, vm_page** p, paddr_t* pa) __NONNULL((2, 3));
 
 // Allocate a specific range of physical pages, adding to the tail of the passed list.
@@ -129,36 +128,6 @@ paddr_t vaddr_to_paddr(const void* va);
 
 // paddr to vm_page_t
 vm_page_t* paddr_to_vm_page(paddr_t addr);
-
-// Configures the free memory bounds and allows for setting a one shot signal as well as a level
-// where allocations should start being delayed.
-//
-// The event is signaled once the number of PMM free pages falls outside of the range given by
-// |free_lower_bound| and |free_upper_bound|. As the event is one shot, one signaled this must be
-// called again to configure a new range. If the number of free pages is already outside the
-// requested bound then this method fails (returns false) and no event is setup. In this case the
-// caller should recalculate a correct bounds and try again.
-//
-// In addition to exiting the provided memory bounds, the event will also get signaled on the first
-// time an allocation fails (i.e. the first time at which has_alloc_failed_no_mem would return
-// true).
-//
-// |delay_allocations_level| is the number of PMM free pages below which the PMM will transition to
-// delaying allocations that can wait, i.e. those with PMM_ALLOC_FLAG_CAN_WAIT. This transition is
-// sticky, and even if pages are freed to go back above this line, allocations will remain delayed
-// until this method is called again to re-set the level. For this reason, and since there is only a
-// single common Event, the |delay_allocations_level| must either be <= the |free_lower_bound|,
-// ensuring that the caller will have been notified and can respond by freeing memory and/or setting
-// a new level, or |delay_allocations_level| can be UINT64_MAX, indicating allocations should start
-// and remain delayed.
-bool pmm_set_free_memory_signal(uint64_t free_lower_bound, uint64_t free_upper_bound,
-                                uint64_t delay_allocations_level, Event* event);
-
-// Tells the PMM that it should never return ZX_ERR_SHOULD_WAIT (even in the presence of
-// PMM_ALLOC_FLAG_CAN_WAIT) and from now on must either succeed an allocation, or fail with
-// ZX_ERR_NO_MEMORY.
-// There is no way to re-enable this as disabling is intended for use in the panic/shutdown path.
-void pmm_stop_returning_should_wait();
 
 // Should be called after the kernel command line has been parsed.
 void pmm_checker_init_from_cmdline();

@@ -564,19 +564,6 @@ pub unsafe extern "C" fn rust_pmm_arena_init_for_test(
 ///
 /// The caller must ensure `arena` points to an initialized `PmmArena`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_pmm_arena_find_specific(
-    arena: *const PmmArena,
-    pa: bindings::zx_paddr_t,
-) -> *mut page_bindings::vm_page_t {
-    // SAFETY: The caller ensures `arena` points to an initialized `PmmArena`.
-    let arena = unsafe { &*arena };
-    arena.find_specific(PAddr(pa)).map_or(core::ptr::null_mut(), |p| p.as_ptr().cast())
-}
-
-/// # Safety
-///
-/// The caller must ensure `arena` points to an initialized `PmmArena`.
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_pmm_arena_find_free_contiguous(
     arena: *mut PmmArena,
     count: usize,
@@ -587,52 +574,6 @@ pub unsafe extern "C" fn rust_pmm_arena_find_free_contiguous(
     arena
         .find_free_contiguous(count, alignment_log2)
         .map_or(core::ptr::null_mut(), |p| p.as_ptr().cast())
-}
-
-/// # Safety
-///
-/// The caller must ensure `arena` and `state_count` (array of `VmPageState::COUNT` usize) are
-/// valid.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_pmm_arena_count_states(
-    arena: *const PmmArena,
-    state_count: *mut usize,
-) {
-    // SAFETY: The caller ensures `arena` and `state_count` are valid.
-    let arena = unsafe { &*arena };
-    let counts = unsafe { &mut *(state_count as *mut PmmStateCount) };
-    arena.count_states(counts);
-}
-
-/// # Safety
-///
-/// The caller must ensure `arena` is valid. If non-null, `counts_sum` must point to
-/// `PmmStateCount`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_pmm_arena_dump(
-    arena: *const PmmArena,
-    dump_pages: bool,
-    dump_free_ranges: bool,
-    counts_sum: *mut usize,
-) {
-    // SAFETY: The caller ensures `arena` is valid.
-    let arena = unsafe { &*arena };
-    let counts_sum_ref = if counts_sum.is_null() {
-        None
-    } else {
-        Some(unsafe { &mut *(counts_sum as *mut PmmStateCount) })
-    };
-    arena.dump(dump_pages, dump_free_ranges, counts_sum_ref);
-}
-
-/// # Safety
-///
-/// The caller must ensure `state_count` points to an array of `VmPageState::COUNT` usize.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_print_page_state_counts(state_count: *const usize) {
-    // SAFETY: The caller ensures `state_count` points to a valid PmmStateCount array.
-    let counts = unsafe { &*(state_count as *const PmmStateCount) };
-    print_page_state_counts(counts);
 }
 
 /// Unit tests for PmmArena.
