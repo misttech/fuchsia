@@ -19,7 +19,6 @@ standardized_test_groups("tests") {
     "//src/lib/assembly/config_schema:config_schema_test",
     "//src/lib/assembly/domain_config:domain_config_test",
     "//src/lib/assembly/driver_manifest:driver_manifest_test",
-    "//src/lib/assembly/image_assembly_config:image_assembly_config_test",
     "//src/lib/assembly/image_assembly_config_builder:image_assembly_config_builder_test",
     "//src/lib/assembly/fvm:fvm_test",
     "//src/lib/assembly/fxfs:fxfs_test",
