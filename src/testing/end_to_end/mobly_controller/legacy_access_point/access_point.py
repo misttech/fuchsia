@@ -13,7 +13,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, FrozenSet
 
-from antlion import utils
 from antlion.controllers.pdu import PduDevice, get_pdu_port_for_device
 from honeydew.typing.custom_types import MacAddress
 from legacy_access_point.ap_lib import hostapd_constants
@@ -700,24 +699,20 @@ class AccessPoint:
             self.stop_all_aps()
         self.ssh.close()
 
-    def ping(
-        self,
-        dest_ip: str,
-        count: int = 3,
-        interval: int = 1000,
-        timeout: int = 1000,
-        size: int = 56,
-        additional_ping_params: str = "",
-    ) -> utils.PingResult:
-        """Pings from AP to dest_ip, returns dict of ping stats (see utils.ping)"""
-        return utils.ping(
-            self.ssh,
-            dest_ip,
-            count=count,
-            interval=interval,
-            timeout=timeout,
-            size=size,
-            additional_ping_params=additional_ping_params,
+    def ping(self, dest_ip: str, count: int = 3, timeout_sec: int = 1) -> None:
+        """Pings from AP to dest_ip.
+
+        Args:
+            dest_ip: IP address to ping.
+            count: Number of ping packets to send.
+            timeout_sec: Timeout in seconds.
+
+        Raises:
+            Exception: If the ping command fails (non-zero return code).
+        """
+        self.ssh.run(
+            f"ping -c {count} -W {timeout_sec} {dest_ip}",
+            ignore_status=False,
         )
 
     def hard_power_cycle(

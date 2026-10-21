@@ -12,10 +12,6 @@ from typing import Any
 import fuchsia_async_extension
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.pdu import PduDevice
-from antlion.utils import PingResult
-from honeydew.affordances.connectivity.netstack.errors import (
-    HoneydewNetstackError,
-)
 from honeydew.affordances.connectivity.wlan import core as wlan_core
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
@@ -110,52 +106,6 @@ class FuchsiaWlanDevice:
         fuchsia_async_extension.get_loop().run_until_complete(
             self.device.honeydew_fd.wlan_policy.wait_for_no_connections()
         )
-
-    def ping(
-        self,
-        dest_ip: str,
-        count: int = 3,
-        interval: timedelta = timedelta(seconds=1),
-        timeout: timedelta = timedelta(seconds=1),
-        size: int = 25,
-        additional_ping_params: str | None = None,
-    ) -> PingResult:
-        try:
-            hd_result = fuchsia_async_extension.get_loop().run_until_complete(
-                self.device.honeydew_fd.netstack.ping(
-                    dest_ip,
-                    count=count,
-                    interval=interval,
-                    timeout=timeout,
-                    size=size,
-                    additional_ping_params=additional_ping_params,
-                )
-            )
-            return PingResult(
-                raw_output=hd_result.raw_output,
-                success=hd_result.any_pings_received,
-                requested=count,
-                transmitted=hd_result.transmitted,
-                received=hd_result.received,
-                time_ms=hd_result.time_ms,
-                rtt_min_ms=hd_result.rtt_min_ms,
-                rtt_avg_ms=hd_result.rtt_avg_ms,
-                rtt_max_ms=hd_result.rtt_max_ms,
-                rtt_mdev_ms=hd_result.rtt_mdev_ms,
-            )
-        except HoneydewNetstackError as e:
-            return PingResult(
-                raw_output=str(e),
-                success=False,
-                requested=count,
-                transmitted=0,
-                received=0,
-                time_ms=None,
-                rtt_min_ms=None,
-                rtt_avg_ms=None,
-                rtt_max_ms=None,
-                rtt_mdev_ms=None,
-            )
 
     def get_default_wlan_test_interface(self) -> str:
         if self.device.wlan_client_test_interface_name is None:
