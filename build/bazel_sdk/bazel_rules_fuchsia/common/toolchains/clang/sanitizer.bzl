@@ -26,6 +26,7 @@ load(
 
 # This feature should only be enabled by one of the features below
 # and will drop the optimization level and raise the debug info detail.
+# LINT.IfChange(clang_sanitizer)
 def _get_clang_sanitizer_feature(use_default_build_flags = False):
     """Define the common clang_sanitizer feature implied by all sanitizer features."""
 
@@ -72,6 +73,11 @@ def _get_clang_sanitizer_feature(use_default_build_flags = False):
             ),
         ],
     )
+
+# LINT.ThenChange(
+#   //build/config/BUILD.gn:frame_pointers,
+#   //build/config/BUILD.gn:optimize_sanitizer,
+# )
 
 def _sanitizer_mode_feature(
         name,
@@ -167,6 +173,8 @@ def get_sanitizer_features(
             "-asan-use-odr-indicator=0",
             "-mllvm",
             "-asan-use-private-alias=1",
+            "-mllvm",
+            "-asan-instrument-assume-dereferenceable=1",
         ],
         extra_link_flags = [
             "-Wl,-dynamic-linker=asan/ld.so.1",
@@ -175,6 +183,7 @@ def get_sanitizer_features(
     )
     # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:asan)
 
+    # LINT.IfChange(hwasan)
     hwasan_feature = _sanitizer_mode_feature(
         "hwasan",
         "hwaddress",
@@ -183,6 +192,7 @@ def get_sanitizer_features(
         ] if is_fuchsia else [],
         enabled = "hwasan" in enabled_features,
     )
+    # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:hwasan)
 
     msan_feature = _sanitizer_mode_feature(
         "msan",
@@ -197,6 +207,7 @@ def get_sanitizer_features(
     # PT_INTERP to a path that does not exist in the package. Only pass these
     # flags in-tree (when use_default_build_flags is True) to match GN's
     # //build/config/sanitizers:variant-libprefix.
+    # LINT.IfChange(tsan)
     tsan_feature = _sanitizer_mode_feature(
         "tsan",
         "thread",
@@ -205,6 +216,7 @@ def get_sanitizer_features(
         ] if (is_fuchsia and use_default_build_flags) else [],
         enabled = "tsan" in enabled_features,
     )
+    # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:tsan)
 
     # The lsan feature corresponds to -fsanitize=leak which is compatible
     # with either -fsanitize=address or -fsanitize=hwaddress, because their
@@ -213,6 +225,7 @@ def get_sanitizer_features(
     #
     # To support this, only add the linker flag when neither asan or hwasan
     # are enabled.
+    # LINT.IfChange(lsan)
     lsan_feature = feature(
         name = "lsan",
         enabled = "lsan" in enabled_features,
@@ -229,6 +242,7 @@ def get_sanitizer_features(
         ],
         implies = ["clang_sanitizer"],
     )
+    # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:lsan)
 
     # The ubsan feature corresponds to -fsanitize=undefined at compile time
     # and is also compatible with -fsanitize={address,hwaddress} for the same
@@ -281,7 +295,10 @@ def get_sanitizer_features(
         flag_sets = ubsan_flag_sets,
         implies = ["clang_sanitizer"],
     )
-    # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:ubsan)
+    # LINT.ThenChange(
+    #   //build/config/BUILDCONFIG.gn:ubsan,
+    #   //build/config/sanitizers/BUILD.gn:ubsan,
+    # )
 
     # LINT.IfChange(sanitizer_features)
     # Note: _INSTRUMENTATION_FEATURES in fx_cc_binary.bzl includes these sanitizer

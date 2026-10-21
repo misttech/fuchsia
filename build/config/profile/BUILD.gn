@@ -103,6 +103,7 @@ _has_compiler_abi = toolchain_variant.tags + [ "no-compiler-abi" ] -
                     [ "no-compiler-abi" ] == toolchain_variant.tags
 _fuchsia_prebuilt_runtime = _has_compiler_abi && is_fuchsia && !is_kernel
 
+# LINT.IfChange(coverage)
 compiler_config("variant-libprefix") {
   visibility = [ ":*" ]
 
@@ -173,6 +174,8 @@ variant("coverage") {
   }
 }
 
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:coverage)
+
 # This can be appended with:
 # ```
 #   configs += [ "//build/config/profile:no-coverage" ]
@@ -236,6 +239,7 @@ variant("coverage-cts") {
 # DO NOT NAME THIS WITH PREFIX `rust-`. The prefix will be stripped in some
 # cases, and fail to work with other cases that do not expect the stripped
 # prefix.
+# LINT.IfChange(rust_coverage)
 variant("coverage-rust") {
   configs = [ ":variant-libprefix" ]
   deps = [ ":runtime-deps" ]
@@ -254,6 +258,8 @@ variant("coverage-rust") {
     rustflags += [ "-Cllvm-args=-runtime-counter-relocation" ]
   }
 }
+
+# LINT.ThenChange(//build/bazel/templates/template.bazelrc:rust_coverage)
 
 # Enable PGO instrumentation to collect profiles.
 variant("profile") {

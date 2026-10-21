@@ -368,18 +368,19 @@ def get_default_compile_flags_feature(
         _flag_configs.default_warnings,
         _flag_configs.symbol_visibility_hidden,
         _flag_configs.ffp_contract_off,
-        _flag_configs.auto_var_init,
-        _flag_configs.thread_safety_annotations,
-        _flag_configs.relpath_debug_info,
     ]
 
-    # Already in @fuchsia_build_info//default_build_flags (default_debuginfo,
-    # libcpp_remove_transitive_includes).
+    # Already in @fuchsia_build_info//default_build_flags (auto_var_init,
+    # default_debuginfo, libcpp_remove_transitive_includes, relative_paths,
+    # thread_safety_annotations).
     # NOTE: //build/config/fuchsia:zircon_asserts (ZX_ASSERT_LEVEL) is not
     # supported OOT.
     oot_only_cflags = [] if use_default_build_flags else [
+        _flag_configs.auto_var_init,
         _flag_configs.debuginfo,
         _flag_configs.libcpp_remove_transitive_includes,
+        _flag_configs.relpath_debug_info,
+        _flag_configs.thread_safety_annotations,
     ]
 
     in_tree_remaining_conlyflags = [
@@ -395,17 +396,17 @@ def get_default_compile_flags_feature(
         default_system_flags,
         _flag_configs.no_rtti,
         _flag_configs.symbol_visibility_hidden,
-        _flag_configs.relpath_debug_info,
     ]
 
     # Already in @fuchsia_build_info//default_build_flags (language, no_exceptions,
-    # no-template-backtrace-limit):
+    # no-template-backtrace-limit, relative_paths):
     oot_only_ccflags = [] if use_default_build_flags else [
         # NOTE: In-tree //build/config:language uses -std=c++23, but OOT keeps
         # -std=c++20 to avoid breaking petals.
         _flag_configs.language_cxx20,
         _flag_configs.no_exceptions,
         _flag_configs.no_template_backtrace_limit,
+        _flag_configs.relpath_debug_info,
     ]
 
     in_tree_remaining_ldflags = [
@@ -416,15 +417,15 @@ def get_default_compile_flags_feature(
         _flag_configs.linker_gc,
         _flag_configs.no_rtti,
         _flag_configs.pic,
-        _flag_configs.relpath_debug_info,
     ]
 
     # Already in @fuchsia_build_info//default_build_flags (default_debuginfo,
-    # no_exceptions, icf):
+    # no_exceptions, icf, relative_paths):
     oot_only_ldflags = [] if use_default_build_flags else [
         _flag_configs.debuginfo,
         _flag_configs.no_exceptions,
         _flag_configs.icf,
+        _flag_configs.relpath_debug_info,
     ]
 
     return feature(

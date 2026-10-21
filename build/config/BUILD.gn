@@ -580,6 +580,7 @@ config("optimize_size_thinlto_clang") {
   }
 }
 
+# LINT.IfChange(optimize_sanitizer)
 config("optimize_sanitizer") {
   # Instrumentation adds overhead that is greatly improved by optimization.
   # -O1 is well-tested with the instrumentation modes and does not degrade the
@@ -589,17 +590,25 @@ config("optimize_sanitizer") {
   rustflags = [ "-Copt-level=1" ]
 }
 
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer)
+
 config("optimize_profile") {
   cflags = [ "-O1" ]
   ldflags = cflags
   rustflags = [ "-Copt-level=1" ]
 }
 
+# LINT.IfChange(optimize_coverage)
 config("optimize_coverage") {
   cflags = [ "-O1" ]
   ldflags = cflags
   rustflags = [ "-Copt-level=1" ]
 }
+
+# LINT.ThenChange(
+#   //build/bazel/templates/template.bazelrc:rust_coverage,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:coverage,
+# )
 
 # LINT.IfChange(debuginfo_configs)
 
@@ -720,6 +729,7 @@ config("default_frame_pointers") {
   }
 }
 
+# LINT.IfChange(frame_pointers)
 variant("frame_pointers") {
   cflags = [
     "-fno-omit-frame-pointer",
@@ -731,6 +741,8 @@ variant("frame_pointers") {
     defines = [ "WITH_FRAME_POINTERS=1" ]
   }
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer)
 
 variant("no_frame_pointers") {
   cflags = [ "-fomit-frame-pointer" ]

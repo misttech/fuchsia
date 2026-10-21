@@ -217,7 +217,10 @@ _fuzzer_remove_shared_configs = [ "//build/config:symbol_no_undefined" ]
 # RTTI-enabled vtables rather than other non-RTTI vtables.  So just let
 # RTTI be enabled everywhere, and then get the vptr checking everywhere
 # too.
+# LINT.IfChange(ubsan)
 _ubsan_remove_common_configs = [ "//build/config:no_rtti" ]
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:ubsan)
 
 declare_args() {
   # List of variants that will form the basis for variant toolchains.

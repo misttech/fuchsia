@@ -181,6 +181,7 @@ def compute_clang_features(
         ],
     )
 
+    # LINT.IfChange(coverage)
     coverage_feature = feature(
         name = "coverage",
         enabled = "coverage" in enabled_features,
@@ -253,6 +254,10 @@ def compute_clang_features(
             ] if is_fuchsia else []
         ),
     )
+    # LINT.ThenChange(
+    #   //build/config/BUILD.gn:optimize_coverage,
+    #   //build/config/profile/BUILD.gn:coverage,
+    # )
 
     generate_linkmap_feature = feature(
         name = "generate_linkmap",

@@ -306,6 +306,7 @@ variant("rust-asan") {
 # TODO(https://fxbug.dev/42120045): Building with this variant alone can still lead to
 # some build errors, but this is still needed for lsan tests (see
 # //sdk/lib/c/test/sanitizer:lsan-test).
+# LINT.IfChange(lsan)
 variant("lsan") {
   ldflags = [ "-fsanitize=leak" ]
 
@@ -320,6 +321,8 @@ variant("lsan") {
 
   executable_deps = [ ":lsan_default_options" ]
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:lsan)
 
 # LINT.IfChange(ubsan)
 variant("ubsan") {
@@ -373,6 +376,7 @@ variant("sancov") {
   c_family_flags = [ "-fsanitize-coverage=trace-pc-guard" ]
 }
 
+# LINT.IfChange(tsan)
 variant("tsan") {
   c_family_flags = [ "-fsanitize=thread" ]
   configs = [
@@ -380,6 +384,8 @@ variant("tsan") {
     ":tsan.rustflags",
   ]
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:tsan)
 
 sanitizer_rustflags("tsan.rustflags") {
   variant = "tsan"
@@ -389,6 +395,7 @@ sanitizer_rustflags("tsan.rustflags") {
 sanitizer_default_options("tsan_default_options") {
 }
 
+# LINT.IfChange(hwasan)
 variant("hwasan") {
   c_family_flags = [ "-fsanitize=hwaddress" ]
   configs = [
@@ -397,6 +404,8 @@ variant("hwasan") {
   ]
   executable_deps = [ ":hwasan_default_options" ]
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:hwasan)
 
 sanitizer_rustflags("hwasan.rustflags") {
   variant = "hwasan"
