@@ -1296,6 +1296,145 @@ pub unsafe extern "C" fn rust_event_dispatcher_create() {
         report.rust_facades
     );
     assert!(!report.rust_facades.is_empty());
+
+    // Untouched FFI shim targets in `rust_pool` must not be paired with
+    // unchanged C++ via `CppFinder` (Step 6) or fuzzy-paired with deleted C++
+    // (Step 4), while an untouched exact-name match pairs via Step 7 ("the
+    // change left this Rust function alone") and a changed C++ caller still
+    // pairs via Step 2 (`Link::Ffi`).
+    struct UnchangedShimFinder(Vec<babeldiff::model::Function>);
+    impl babeldiff::analyze::CppFinder for UnchangedShimFinder {
+        fn find(&mut self, _: &babeldiff::model::Function) -> Vec<babeldiff::model::Function> {
+            self.0.clone()
+        }
+    }
+    let unchanged_cpp = babeldiff::cpp::extract(
+        "event_dispatcher.cc",
+        concat!(
+            "// Enables free page filling once initialized.\n",
+            "void EventDispatcher::EnableFreePageFilling() {\n",
+            "  rust_event_dispatcher_enable_free_page_filling(this);\n",
+            "}\n",
+        ),
+    )
+    .functions;
+    let cpp_old = concat!(
+        "uint64_t EventDispatcher::get_alloc_failed_count() {\n",
+        "  return rust_event_dispatcher_get_alloc_failed_count();\n",
+        "}\n",
+        "\n",
+        "zx_koid_t EventDispatcher::GetCriticalProcessKoid() {\n",
+        "  return rust_event_dispatcher_get_critical_process_koid();\n",
+        "}\n",
+    );
+    let rust_with_shims = concat!(
+        "impl EventDispatcher {\n",
+        "    /// Enables free page filling once initialized.\n",
+        "    pub fn enable_free_page_filling(&self) {\n",
+        "        // Fill free pages once enabled.\n",
+        "        if self.free_fill_enabled.load(Ordering::SeqCst) {\n",
+        "            return;\n",
+        "        }\n",
+        "        self.fill_free_pages();\n",
+        "    }\n",
+        "\n",
+        "    pub fn get_critical_process_dying() -> bool {\n",
+        "        CRITICAL_PROCESS_DYING.load(Ordering::Acquire)\n",
+        "    }\n",
+        "\n",
+        "    pub fn get_alloc_failed_count() -> u64 {\n",
+        "        ALLOC_FAILED.sum_across_all_cpus()\n",
+        "    }\n",
+        "\n",
+        "    pub fn user_signal_self(&self) {\n",
+        "        unsafe { cpp_event_dispatcher_user_signal_self(self) };\n",
+        "    }\n",
+        "}\n",
+        "\n",
+        "#[unsafe(no_mangle)]\n",
+        "pub extern \"C\" fn rust_event_dispatcher_enable_free_page_filling(\n",
+        "    dispatcher: &EventDispatcher,\n",
+        ") {\n",
+        "    dispatcher.enable_free_page_filling();\n",
+        "}\n",
+        "\n",
+        "#[unsafe(no_mangle)]\n",
+        "pub extern \"C\" fn rust_event_dispatcher_get_critical_process_dying() -> bool {\n",
+        "    EventDispatcher::get_critical_process_dying()\n",
+        "}\n",
+        "\n",
+        "#[unsafe(no_mangle)]\n",
+        "pub extern \"C\" fn rust_event_get_alloc_failed_count() -> u64 {\n",
+        "    EventDispatcher::get_alloc_failed_count()\n",
+        "}\n",
+    );
+    let touched_only_signal: std::collections::BTreeSet<usize> = (19..=21).collect();
+    let cs = ChangeSet {
+        cpp_old: vec![version("event_dispatcher.cc", cpp_old)],
+        cpp_new: Vec::new(),
+        rust_new: vec![babeldiff::input::Version {
+            path: "event_dispatcher.rs".into(),
+            text: rust_with_shims.into(),
+            changed: Some(touched_only_signal.clone()),
+        }],
+    };
+    let report = babeldiff::run(
+        &cs,
+        &Options::default(),
+        &mut UnchangedShimFinder(unchanged_cpp),
+    );
+    let pair_names: Vec<(&str, &str, &str)> = report
+        .pairs
+        .iter()
+        .map(|p| (p.cpp.name.as_str(), p.rust.name.as_str(), p.rationale.as_str()))
+        .collect();
+    assert_eq!(
+        pair_names.len(),
+        1,
+        "only the exact-name untouched counterpart should pair: {pair_names:?}"
+    );
+    assert_eq!(pair_names[0].0, "EventDispatcher::get_alloc_failed_count");
+    assert_eq!(pair_names[0].1, "EventDispatcher::get_alloc_failed_count");
+    assert!(
+        pair_names[0].2.starts_with("same name; the change left this Rust function alone"),
+        "expected Step 7 rationale, got {:?}",
+        pair_names[0].2
+    );
+
+    // When a C++ function in the change is rewritten to call an untouched FFI
+    // shim, Step 2 (`Link::Ffi`) still pairs it with the untouched Rust target.
+    let cs_ffi = ChangeSet {
+        cpp_old: vec![version(
+            "event_dispatcher.cc",
+            concat!(
+                "void EventDispatcher::EnableFreePageFilling() {\n",
+                "  // Fill free pages once enabled.\n",
+                "  if (free_fill_enabled_.load()) {\n",
+                "    return;\n",
+                "  }\n",
+                "  FillFreePages();\n",
+                "}\n",
+            ),
+        )],
+        cpp_new: vec![version(
+            "event_dispatcher.cc",
+            concat!(
+                "void EventDispatcher::EnableFreePageFilling() {\n",
+                "  rust_event_dispatcher_enable_free_page_filling(this);\n",
+                "}\n",
+            ),
+        )],
+        rust_new: vec![babeldiff::input::Version {
+            path: "event_dispatcher.rs".into(),
+            text: rust_with_shims.into(),
+            changed: Some(touched_only_signal),
+        }],
+    };
+    let report_ffi = babeldiff::run(&cs_ffi, &Options::default(), &mut NoFinder);
+    assert_eq!(report_ffi.pairs.len(), 1);
+    assert_eq!(report_ffi.pairs[0].cpp.name, "EventDispatcher::EnableFreePageFilling");
+    assert_eq!(report_ffi.pairs[0].rust.name, "EventDispatcher::enable_free_page_filling");
+    assert!(matches!(report_ffi.pairs[0].link, Link::Ffi { .. }));
 }
 
 #[test]

@@ -771,6 +771,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
         .iter()
         .map(|r| (r.path.clone(), r.start_line))
         .collect();
+    let is_touched = |r: &Function| touched_rust.contains(&(r.path.clone(), r.start_line));
     let mut rust_pool: Vec<Function> = rust;
     for (s, _) in &shims {
         if !rust_pool
@@ -951,7 +952,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
                 && name_words(r) == name_words(c)
         };
         let mut hits: Vec<usize> = (0..rust_pool.len())
-            .filter(|&ri| !rust_used[ri] && exact(&rust_pool[ri]))
+            .filter(|&ri| !rust_used[ri] && is_touched(&rust_pool[ri]) && exact(&rust_pool[ri]))
             .collect();
         // A trait impl's `fn read(&self) { Self::read(self) }` forwards to
         // the inherent method that holds the body.
@@ -1013,7 +1014,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
         let kept = stays(c);
         let twin = has_twin(c, &universe);
         for (ri, r) in rust_pool.iter().enumerate() {
-            if rust_used[ri] || r.is_ffi || (r.test_only && !cpp_is_test(c)) {
+            if rust_used[ri] || r.is_ffi || !is_touched(r) || (r.test_only && !cpp_is_test(c)) {
                 continue;
             }
             if twin && class_key(r) != class_key(c) {
@@ -1138,7 +1139,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
     // `PendingTlbItem::addr` just by coming first.
     let mut cands6: Vec<(bool, f64, usize, Function)> = Vec::new();
     for (ri, r) in rust_pool.iter().enumerate() {
-        if rust_used[ri] || r.is_ffi {
+        if rust_used[ri] || r.is_ffi || !is_touched(r) {
             continue;
         }
         // A thin Rust wrapper that calls back into C++ wraps that C++; it
@@ -1336,6 +1337,9 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
             }
             continue;
         }
+        if !is_touched(&r) {
+            continue;
+        }
         let (s, _) = score(&p.cpp, &r);
         if s < opts.min_score {
             continue;
@@ -1419,7 +1423,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
     report.unmatched_rust = rust_pool
         .into_iter()
         .zip(rust_used)
-        .filter(|(f, u)| !u && !f.is_ffi && touched_rust.contains(&(f.path.clone(), f.start_line)))
+        .filter(|(f, u)| !u && !f.is_ffi && is_touched(f))
         .map(|(f, _)| f)
         .collect();
     let (facades, unmatched): (Vec<Function>, Vec<Function>) =
@@ -1465,9 +1469,9 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
     report.shims = shims
         .into_iter()
         .filter(|(shim, target)| {
-            touched_rust.contains(&(shim.path.clone(), shim.start_line))
+            is_touched(shim)
                 || used_shims.contains(&shim.name)
-                || matches!(target, Target::One(t) if touched_rust.contains(&(t.path.clone(), t.start_line)))
+                || matches!(target, Target::One(t) if is_touched(t))
         })
         .map(|(shim, target)| match target {
             Target::One(t) => Shim {
