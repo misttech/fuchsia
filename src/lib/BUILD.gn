@@ -70,7 +70,6 @@ group("tests") {
     "http-uri-ext:tests",
     "icu:tests",
     "icu_data:tests",
-    "inet:tests",
     "injectable-time:tests",
     "intl:tests",
     "json_parser:tests",

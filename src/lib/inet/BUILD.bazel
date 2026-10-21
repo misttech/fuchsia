@@ -1,0 +1,65 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "inet",
+    srcs = [
+        "ip_address.cc",
+        "ip_port.cc",
+        "socket_address.cc",
+    ],
+    hdrs = [
+        "ip_address.h",
+        "ip_port.h",
+        "socket_address.h",
+    ],
+    visibility = [
+        "//src/connectivity/network/mdns/service:__pkg__",
+        "//src/connectivity/network/mdns/util:__pkg__",
+        "//src/virtualization/tests:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_hlcpp",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl",
+    ],
+)
+
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "libinet_test",
+    testonly = True,
+    srcs = [
+        "test/ip_address_test.cc",
+        "test/socket_address_test.cc",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":inet",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+# @bazel2gn:skip
+host_test(
+    name = "libinet_host_test",
+    binary = ":libinet_test",
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//src/lib:__pkg__"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "libinet_tests",
+    unit_tests = [":libinet_test"],
+    visibility = ["//src/lib:__pkg__"],
+)

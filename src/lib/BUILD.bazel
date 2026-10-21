@@ -15,6 +15,7 @@ test_suite(
         "//src/lib/fuchsia-emulated-handle:fuchsia-emulated-handle-shutdown-test",
         "//src/lib/fuchsia-emulated-handle:fuchsia-emulated-handle_test",
         "//src/lib/gcs/test:gcs_test_client_bin_test",
+        "//src/lib/inet:libinet_host_test",
         "//src/lib/listnode:listnode_host_tests",
     ],
 )
@@ -30,6 +31,7 @@ test_suite(
         "//src/lib/callback:callback_tests",
         "//src/lib/cstringify:cstringify-test",
         "//src/lib/fuchsia-image-format:fuchsia-image-format-tests",
+        "//src/lib/inet:libinet_tests",
         "//src/lib/listnode:listnode-package",
     ],
 )
