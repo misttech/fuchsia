@@ -21,6 +21,14 @@ exports_files(
     visibility = ["//bundles/assembly:__subpackages__"],
 )
 
+exports_files(
+    [
+        "meta/isolated-network.shard.cml",
+        "meta/isolated-network-offers.shard.cml",
+    ],
+    visibility = ["//src/sys/pkg/testing/mock-omaha-server-fuchsia:__pkg__"],
+)
+
 # This is a single definition for the optimization configuration of crates used
 # by networking components that are performance sensitive.
 #

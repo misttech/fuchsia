@@ -214,7 +214,7 @@ CRATE_ANNOTATIONS = {
                 },
             ),
             rustc_flags = [
-                "--cfg=fasync",
+                "--cfg=export_testing_macro",
             ],
         ),
     ],

@@ -199,7 +199,7 @@ CRATE_ANNOTATION_OVERWRITES = {
                     ],
                 },
             ),
-            rustc_flags = ["--cfg=fasync"],
+            rustc_flags = ["--cfg=export_testing_macro"],
         ),
     ],
     "pin-init": [

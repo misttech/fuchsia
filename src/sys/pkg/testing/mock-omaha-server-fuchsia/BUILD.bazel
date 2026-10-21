@@ -2,7 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -22,4 +31,36 @@ rustc_library(
         "//third_party/rust_crates/vendor:hyper-util",
         "//third_party/rust_crates/vendor:mock-omaha-server",
     ],
+)
+
+# Kept in GN because `mock-omaha-server-fuchsia-tests` packages
+# `//src/connectivity/network/netstack3:component-for-tests`, which has no
+# Bazel build yet.
+# @bazel2gn:skip
+rustc_test(
+    name = "mock-omaha-server-fuchsia_test",
+    crate = ":mock-omaha-server-fuchsia",
+    edition = "2024",
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "mock-omaha-server-fuchsia_test_packaged_bin",
+    testonly = True,
+    binary = ":mock-omaha-server-fuchsia_test",
+    binary_name = "mock_omaha_server_fuchsia_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "mock-omaha-server-fuchsia-tests-manifest",
+    testonly = True,
+    component_name = "mock-omaha-server-fuchsia-tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/connectivity/network:meta/isolated-network.shard.cml",
+        "//src/connectivity/network:meta/isolated-network-offers.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/mock-omaha-server-fuchsia-tests.cml",
 )

@@ -68,7 +68,7 @@ rust_library(
     edition = "2024",
     rustc_flags = [
         "--cap-lints=allow",
-        "--cfg=fasync",
+        "--cfg=export_testing_macro",
     ],
     tags = [
         "cargo-bazel",
