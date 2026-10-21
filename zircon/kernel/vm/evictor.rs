@@ -502,7 +502,6 @@ impl ReclaimFailureStats {
             prev_evicted_page: None,
             prev_eviction_result: Ok(VmCowReclaimSuccess {
                 type_: VmCowReclaimType::Evict,
-                __bindgen_padding_0: [0; 7],
                 num_pages: 0,
                 num_loaned_pages: 0,
             }),
@@ -1527,7 +1526,6 @@ mod tests {
                         state.total_evictions.fetch_add(10, Ordering::Relaxed);
                         return Some(Ok(VmCowReclaimSuccess {
                             type_: VmCowReclaimType::Discard,
-                            __bindgen_padding_0: [0; 7],
                             num_pages: 10,
                             num_loaned_pages: 0,
                         }));
@@ -1536,7 +1534,6 @@ mod tests {
                     state.total_evictions.fetch_add(1, Ordering::Relaxed);
                     Some(Ok(VmCowReclaimSuccess {
                         type_: VmCowReclaimType::Evict,
-                        __bindgen_padding_0: [0; 7],
                         num_pages: 1,
                         num_loaned_pages: 0,
                     }))

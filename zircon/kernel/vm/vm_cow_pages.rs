@@ -6,6 +6,8 @@
 
 use super::anonymous_page_request::AnonymousPageRequest;
 use super::page::{VmPageDoublyLinkedList, VmPagePtr};
+use super::page_queues::PageQueues;
+use super::page_state::VmPageState;
 use super::vm_page_list::VmPageSpliceList;
 use crate::kernel::types::PAddr;
 use crate::vm::compressor::VmCompressor;
@@ -138,20 +140,293 @@ impl From<VmCowRange> for bindings::VmCowRange {
 ::zr::static_assert!(
     core::mem::offset_of!(VmCowRange, len) == core::mem::offset_of!(bindings::VmCowRange, len)
 );
-pub type VmCowReclaimFailure = bindings::VmCowReclaimFailure;
-pub type VmCowReclaimSuccess = bindings::VmCowReclaimSuccess;
-pub type VmCowReclaimType = bindings::VmCowReclaimSuccess_Type;
-pub type PageSourceType = bindings::PageSourceType;
-pub type DiscardablePageCounts = bindings::VmCowPages_DiscardablePageCounts;
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VmCowReclaimFailure {
+    EvictAccessed = 0,
+    CompressAccessed = 1,
+    CompressFailed = 2,
+    IncorrectPage = 3,
+    Other = 4,
+}
+::zr::static_assert_size_and_align!(
+    VmCowReclaimFailure,
+    core::mem::size_of::<bindings::VmCowReclaimFailure>(),
+    core::mem::align_of::<bindings::VmCowReclaimFailure>(),
+);
+::zr::static_assert!(
+    VmCowReclaimFailure::EvictAccessed as u8 == bindings::VmCowReclaimFailure::EvictAccessed as u8
+);
+::zr::static_assert!(
+    VmCowReclaimFailure::CompressAccessed as u8
+        == bindings::VmCowReclaimFailure::CompressAccessed as u8
+);
+::zr::static_assert!(
+    VmCowReclaimFailure::CompressFailed as u8
+        == bindings::VmCowReclaimFailure::CompressFailed as u8
+);
+::zr::static_assert!(
+    VmCowReclaimFailure::IncorrectPage as u8 == bindings::VmCowReclaimFailure::IncorrectPage as u8
+);
+::zr::static_assert!(
+    VmCowReclaimFailure::Other as u8 == bindings::VmCowReclaimFailure::Other as u8
+);
+impl From<bindings::VmCowReclaimFailure> for VmCowReclaimFailure {
+    #[inline]
+    fn from(value: bindings::VmCowReclaimFailure) -> Self {
+        match value {
+            bindings::VmCowReclaimFailure::EvictAccessed => Self::EvictAccessed,
+            bindings::VmCowReclaimFailure::CompressAccessed => Self::CompressAccessed,
+            bindings::VmCowReclaimFailure::CompressFailed => Self::CompressFailed,
+            bindings::VmCowReclaimFailure::IncorrectPage => Self::IncorrectPage,
+            bindings::VmCowReclaimFailure::Other => Self::Other,
+        }
+    }
+}
+impl From<VmCowReclaimFailure> for bindings::VmCowReclaimFailure {
+    #[inline]
+    fn from(value: VmCowReclaimFailure) -> Self {
+        match value {
+            VmCowReclaimFailure::EvictAccessed => Self::EvictAccessed,
+            VmCowReclaimFailure::CompressAccessed => Self::CompressAccessed,
+            VmCowReclaimFailure::CompressFailed => Self::CompressFailed,
+            VmCowReclaimFailure::IncorrectPage => Self::IncorrectPage,
+            VmCowReclaimFailure::Other => Self::Other,
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VmCowReclaimType {
+    Evict = 0,
+    Discard = 1,
+    Compress = 2,
+}
+::zr::static_assert_size_and_align!(
+    VmCowReclaimType,
+    core::mem::size_of::<bindings::VmCowReclaimSuccess_Type>(),
+    core::mem::align_of::<bindings::VmCowReclaimSuccess_Type>(),
+);
+::zr::static_assert!(
+    VmCowReclaimType::Evict as u8 == bindings::VmCowReclaimSuccess_Type::Evict as u8
+);
+::zr::static_assert!(
+    VmCowReclaimType::Discard as u8 == bindings::VmCowReclaimSuccess_Type::Discard as u8
+);
+::zr::static_assert!(
+    VmCowReclaimType::Compress as u8 == bindings::VmCowReclaimSuccess_Type::Compress as u8
+);
+impl From<bindings::VmCowReclaimSuccess_Type> for VmCowReclaimType {
+    #[inline]
+    fn from(value: bindings::VmCowReclaimSuccess_Type) -> Self {
+        match value {
+            bindings::VmCowReclaimSuccess_Type::Evict => Self::Evict,
+            bindings::VmCowReclaimSuccess_Type::Discard => Self::Discard,
+            bindings::VmCowReclaimSuccess_Type::Compress => Self::Compress,
+        }
+    }
+}
+impl From<VmCowReclaimType> for bindings::VmCowReclaimSuccess_Type {
+    #[inline]
+    fn from(value: VmCowReclaimType) -> Self {
+        match value {
+            VmCowReclaimType::Evict => Self::Evict,
+            VmCowReclaimType::Discard => Self::Discard,
+            VmCowReclaimType::Compress => Self::Compress,
+        }
+    }
+}
+
+/// Result of attempting to reclaim a single page. See `VmCowPages::ReclaimPage` for more details.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VmCowReclaimSuccess {
+    pub type_: VmCowReclaimType,
+    pub num_pages: u64,
+    pub num_loaned_pages: u64,
+}
+::zr::static_assert_size_and_align!(
+    VmCowReclaimSuccess,
+    core::mem::size_of::<bindings::VmCowReclaimSuccess>(),
+    core::mem::align_of::<bindings::VmCowReclaimSuccess>(),
+);
+::zr::static_assert!(
+    core::mem::offset_of!(VmCowReclaimSuccess, type_)
+        == core::mem::offset_of!(bindings::VmCowReclaimSuccess, type_)
+);
+::zr::static_assert!(
+    core::mem::offset_of!(VmCowReclaimSuccess, num_pages)
+        == core::mem::offset_of!(bindings::VmCowReclaimSuccess, num_pages)
+);
+::zr::static_assert!(
+    core::mem::offset_of!(VmCowReclaimSuccess, num_loaned_pages)
+        == core::mem::offset_of!(bindings::VmCowReclaimSuccess, num_loaned_pages)
+);
+impl From<bindings::VmCowReclaimSuccess> for VmCowReclaimSuccess {
+    #[inline]
+    fn from(value: bindings::VmCowReclaimSuccess) -> Self {
+        Self {
+            type_: value.type_.into(),
+            num_pages: value.num_pages,
+            num_loaned_pages: value.num_loaned_pages,
+        }
+    }
+}
+impl From<VmCowReclaimSuccess> for bindings::VmCowReclaimSuccess {
+    #[inline]
+    fn from(value: VmCowReclaimSuccess) -> Self {
+        Self {
+            type_: value.type_.into(),
+            __bindgen_padding_0: [0; 7],
+            num_pages: value.num_pages,
+            num_loaned_pages: value.num_loaned_pages,
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageSourceType {
+    /// The VmCowPages is not directly backed by a `page_source`.
+    Anonymous = 0,
+    /// The VmCowPages is directly backed by a contiguous page source. That has the following
+    /// implications:
+    /// * The direct page source provides specific physical pages.
+    /// * The direct page source (possibly with the help of the VmCowPages) provides zeroed pages.
+    Contiguous = 1,
+    /// The VmCowPages is directly backed by a user pager. That has the following implications:
+    /// * The direct page source is responsible for freeing the page content.
+    /// * The VmCowPages must implement dirty tracking.
+    UserPager = 2,
+}
+::zr::static_assert_size_and_align!(
+    PageSourceType,
+    core::mem::size_of::<bindings::PageSourceType>(),
+    core::mem::align_of::<bindings::PageSourceType>(),
+);
+::zr::static_assert!(PageSourceType::Anonymous as u8 == bindings::PageSourceType::Anonymous as u8);
+::zr::static_assert!(
+    PageSourceType::Contiguous as u8 == bindings::PageSourceType::Contiguous as u8
+);
+::zr::static_assert!(PageSourceType::UserPager as u8 == bindings::PageSourceType::UserPager as u8);
+impl From<bindings::PageSourceType> for PageSourceType {
+    #[inline]
+    fn from(value: bindings::PageSourceType) -> Self {
+        match value {
+            bindings::PageSourceType::Anonymous => Self::Anonymous,
+            bindings::PageSourceType::Contiguous => Self::Contiguous,
+            bindings::PageSourceType::UserPager => Self::UserPager,
+        }
+    }
+}
+impl From<PageSourceType> for bindings::PageSourceType {
+    #[inline]
+    fn from(value: PageSourceType) -> Self {
+        match value {
+            PageSourceType::Anonymous => Self::Anonymous,
+            PageSourceType::Contiguous => Self::Contiguous,
+            PageSourceType::UserPager => Self::UserPager,
+        }
+    }
+}
+
+/// See DiscardableVmoTracker::DebugDiscardablePageCounts().
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct DiscardablePageCounts {
+    pub locked: u64,
+    pub unlocked: u64,
+}
+::zr::static_assert_size_and_align!(
+    DiscardablePageCounts,
+    core::mem::size_of::<bindings::VmCowPages_DiscardablePageCounts>(),
+    core::mem::align_of::<bindings::VmCowPages_DiscardablePageCounts>(),
+);
+::zr::static_assert!(
+    core::mem::offset_of!(DiscardablePageCounts, locked)
+        == core::mem::offset_of!(bindings::VmCowPages_DiscardablePageCounts, locked)
+);
+::zr::static_assert!(
+    core::mem::offset_of!(DiscardablePageCounts, unlocked)
+        == core::mem::offset_of!(bindings::VmCowPages_DiscardablePageCounts, unlocked)
+);
+impl From<bindings::VmCowPages_DiscardablePageCounts> for DiscardablePageCounts {
+    #[inline]
+    fn from(value: bindings::VmCowPages_DiscardablePageCounts) -> Self {
+        Self { locked: value.locked, unlocked: value.unlocked }
+    }
+}
+impl From<DiscardablePageCounts> for bindings::VmCowPages_DiscardablePageCounts {
+    #[inline]
+    fn from(value: DiscardablePageCounts) -> Self {
+        Self { locked: value.locked, unlocked: value.unlocked }
+    }
+}
 
 /// Argument that specifies the context in which we are supplying pages.
 pub type SupplyOptions = bindings::SupplyOptions;
 
-/// Controls the type of `VmPageOrMarker` slot in `self` `VmCowPages`' `page_list_` that can be
-/// overwritten by the `add_[new_]page[s]_locked` functions. It is the caller's responsibility to
-/// ensure that the previous content is dealt with correctly (e.g. any pages and compressed
-/// references are freed).
-pub type CanOverwriteSlot = bindings::VmCowPages_CanOverwriteSlot;
+/// Controls the type of `VmPageOrMarker` slot in `self`'s `page_list` that can be overwritten by
+/// the `add_[new_]page[s]_locked` functions. It is the caller's responsibility to ensure that the
+/// previous content is dealt with correctly (e.g. any pages and compressed references are freed).
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CanOverwriteSlot {
+    /// Only overwrite empty slots.
+    Empty = 0,
+    /// Can overwrite parent content markers (in addition to empty slots).
+    EmptyOrParent = 1,
+    /// Can overwrite zero page markers and zero intervals (in addition to empty slots and
+    /// parent content markers).
+    ZeroMarkerOrInterval = 2,
+    /// Can overwrite pages and compressed references (in addition to empty slots, parent content
+    /// markers, zero markers and intervals), i.e. can overwrite all VmPageOrMarker types.
+    PageOrRef = 3,
+}
+::zr::static_assert_size_and_align!(
+    CanOverwriteSlot,
+    core::mem::size_of::<bindings::VmCowPages_CanOverwriteSlot>(),
+    core::mem::align_of::<bindings::VmCowPages_CanOverwriteSlot>(),
+);
+::zr::static_assert!(
+    CanOverwriteSlot::Empty as u8 == bindings::VmCowPages_CanOverwriteSlot::Empty as u8
+);
+::zr::static_assert!(
+    CanOverwriteSlot::EmptyOrParent as u8
+        == bindings::VmCowPages_CanOverwriteSlot::EmptyOrParent as u8
+);
+::zr::static_assert!(
+    CanOverwriteSlot::ZeroMarkerOrInterval as u8
+        == bindings::VmCowPages_CanOverwriteSlot::ZeroMarkerOrInterval as u8
+);
+::zr::static_assert!(
+    CanOverwriteSlot::PageOrRef as u8 == bindings::VmCowPages_CanOverwriteSlot::PageOrRef as u8
+);
+impl From<bindings::VmCowPages_CanOverwriteSlot> for CanOverwriteSlot {
+    #[inline]
+    fn from(value: bindings::VmCowPages_CanOverwriteSlot) -> Self {
+        match value {
+            bindings::VmCowPages_CanOverwriteSlot::Empty => Self::Empty,
+            bindings::VmCowPages_CanOverwriteSlot::EmptyOrParent => Self::EmptyOrParent,
+            bindings::VmCowPages_CanOverwriteSlot::ZeroMarkerOrInterval => {
+                Self::ZeroMarkerOrInterval
+            }
+            bindings::VmCowPages_CanOverwriteSlot::PageOrRef => Self::PageOrRef,
+        }
+    }
+}
+impl From<CanOverwriteSlot> for bindings::VmCowPages_CanOverwriteSlot {
+    #[inline]
+    fn from(value: CanOverwriteSlot) -> Self {
+        match value {
+            CanOverwriteSlot::Empty => Self::Empty,
+            CanOverwriteSlot::EmptyOrParent => Self::EmptyOrParent,
+            CanOverwriteSlot::ZeroMarkerOrInterval => Self::ZeroMarkerOrInterval,
+            CanOverwriteSlot::PageOrRef => Self::PageOrRef,
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct VmCowPagesLockClass;
@@ -302,6 +577,42 @@ impl<'a> PriorityChanger<'a> {
     }
 }
 
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvictionAction {
+    FollowHint = 0,
+    IgnoreHint = 1,
+}
+::zr::static_assert_size_and_align!(
+    EvictionAction,
+    core::mem::size_of::<bindings::VmCowPages_EvictionAction>(),
+    core::mem::align_of::<bindings::VmCowPages_EvictionAction>(),
+);
+::zr::static_assert!(
+    EvictionAction::FollowHint as u8 == bindings::VmCowPages_EvictionAction::FollowHint as u8
+);
+::zr::static_assert!(
+    EvictionAction::IgnoreHint as u8 == bindings::VmCowPages_EvictionAction::IgnoreHint as u8
+);
+impl From<bindings::VmCowPages_EvictionAction> for EvictionAction {
+    #[inline]
+    fn from(value: bindings::VmCowPages_EvictionAction) -> Self {
+        match value {
+            bindings::VmCowPages_EvictionAction::FollowHint => Self::FollowHint,
+            bindings::VmCowPages_EvictionAction::IgnoreHint => Self::IgnoreHint,
+        }
+    }
+}
+impl From<EvictionAction> for bindings::VmCowPages_EvictionAction {
+    #[inline]
+    fn from(value: EvictionAction) -> Self {
+        match value {
+            EvictionAction::FollowHint => Self::FollowHint,
+            EvictionAction::IgnoreHint => Self::IgnoreHint,
+        }
+    }
+}
+
 /// Used to track dirty_state in the vm_page_t.
 ///
 /// The transitions between the three states can roughly be summarized as follows:
@@ -311,9 +622,65 @@ impl<'a> PriorityChanger<'a> {
 /// 4. A writeback_end moves the AwaitingClean page to Clean.
 /// 5. A write that comes in while the writeback is in progress (i.e. the page is AwaitingClean)
 ///    moves the AwaitingClean page back to Dirty.
-pub type DirtyState = bindings::VmCowPages_DirtyState;
-
-pub type EvictionAction = bindings::VmCowPages_EvictionAction;
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DirtyState {
+    /// The page does not track dirty state. Used for non pager backed pages.
+    Untracked = 0,
+    /// The page is clean, i.e. its contents have not been altered from when the page was supplied.
+    Clean = 1,
+    /// The page's contents have been modified from the time of supply, and should be written back
+    /// to the page source at some point.
+    Dirty = 2,
+    /// The page still has modified contents, but the page source is in the process of writing back
+    /// the changes. This is used to ensure that a consistent version is written back, and that any
+    /// new modifications that happen during the writeback are not lost. The page source will mark
+    /// pages AwaitingClean before starting any writeback.
+    AwaitingClean = 3,
+    /// Number of states.
+    NumStates = 4,
+}
+::zr::static_assert_size_and_align!(
+    DirtyState,
+    core::mem::size_of::<bindings::VmCowPages_DirtyState>(),
+    core::mem::align_of::<bindings::VmCowPages_DirtyState>(),
+);
+::zr::static_assert!(
+    DirtyState::Untracked as u8 == bindings::VmCowPages_DirtyState::Untracked as u8
+);
+::zr::static_assert!(DirtyState::Clean as u8 == bindings::VmCowPages_DirtyState::Clean as u8);
+::zr::static_assert!(DirtyState::Dirty as u8 == bindings::VmCowPages_DirtyState::Dirty as u8);
+::zr::static_assert!(
+    DirtyState::AwaitingClean as u8 == bindings::VmCowPages_DirtyState::AwaitingClean as u8
+);
+::zr::static_assert!(
+    DirtyState::NumStates as u8 == bindings::VmCowPages_DirtyState::NumStates as u8
+);
+::zr::static_assert!((DirtyState::NumStates as u32) <= crate::vm::page::object::MAX_DIRTY_STATES);
+impl From<bindings::VmCowPages_DirtyState> for DirtyState {
+    #[inline]
+    fn from(value: bindings::VmCowPages_DirtyState) -> Self {
+        match value {
+            bindings::VmCowPages_DirtyState::Untracked => Self::Untracked,
+            bindings::VmCowPages_DirtyState::Clean => Self::Clean,
+            bindings::VmCowPages_DirtyState::Dirty => Self::Dirty,
+            bindings::VmCowPages_DirtyState::AwaitingClean => Self::AwaitingClean,
+            bindings::VmCowPages_DirtyState::NumStates => Self::NumStates,
+        }
+    }
+}
+impl From<DirtyState> for bindings::VmCowPages_DirtyState {
+    #[inline]
+    fn from(value: DirtyState) -> Self {
+        match value {
+            DirtyState::Untracked => Self::Untracked,
+            DirtyState::Clean => Self::Clean,
+            DirtyState::Dirty => Self::Dirty,
+            DirtyState::AwaitingClean => Self::AwaitingClean,
+            DirtyState::NumStates => Self::NumStates,
+        }
+    }
+}
 
 #[repr(C)]
 pub struct VmCowPagesState {
@@ -400,6 +767,78 @@ unsafe impl Recyclable for VmCowPages {
 }
 
 impl VmCowPages {
+    /// Returns the raw dirty state bits of `page`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `page` points to a valid `VmPage` in the `OBJECT` state, and
+    /// that reading its `object` union variant / `flags` is safe without data races (e.g. by
+    /// holding the owning `VmCowPages` lock).
+    #[inline]
+    unsafe fn page_dirty_state(page: VmPagePtr) -> u8 {
+        // SAFETY: The caller guarantees `page` is a valid `VmPage` pointer.
+        let page = unsafe { page.as_ref() };
+        debug_assert_eq!(page.state(), VmPageState::OBJECT);
+        // SAFETY: The caller guarantees `object` is the active union variant and that reading its
+        // flags does not race with concurrent writes.
+        unsafe { (*(*page.state_union.get()).object).dirty_state() }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `page` points to a valid `VmPage` in the `OBJECT` state, and
+    /// that reading its `object` union variant / `flags` is safe without data races (e.g. by
+    /// holding the owning `VmCowPages` lock).
+    #[inline]
+    pub unsafe fn is_page_dirty_tracked(page: VmPagePtr) -> bool {
+        // SAFETY: The caller upholds the safety preconditions of `page_dirty_state`.
+        unsafe { Self::page_dirty_state(page) != DirtyState::Untracked as u8 }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `page` points to a valid `VmPage` in the `OBJECT` state, and
+    /// that reading its `object` union variant / `flags` is safe without data races (e.g. by
+    /// holding the owning `VmCowPages` lock).
+    #[inline]
+    pub unsafe fn is_page_dirty(page: VmPagePtr) -> bool {
+        // SAFETY: The caller upholds the safety preconditions of `page_dirty_state`.
+        unsafe { Self::page_dirty_state(page) == DirtyState::Dirty as u8 }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `page` points to a valid `VmPage` in the `OBJECT` state, and
+    /// that reading its `object` union variant / `flags` is safe without data races (e.g. by
+    /// holding the owning `VmCowPages` lock).
+    #[inline]
+    pub unsafe fn is_page_clean(page: VmPagePtr) -> bool {
+        // SAFETY: The caller upholds the safety preconditions of `page_dirty_state`.
+        unsafe { Self::page_dirty_state(page) == DirtyState::Clean as u8 }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `page` points to a valid `VmPage` in the `OBJECT` state, and
+    /// that reading its `object` union variant / `flags` is safe without data races (e.g. by
+    /// holding the owning `VmCowPages` lock).
+    #[inline]
+    pub unsafe fn is_page_awaiting_clean(page: VmPagePtr) -> bool {
+        // SAFETY: The caller upholds the safety preconditions of `page_dirty_state`.
+        unsafe { Self::page_dirty_state(page) == DirtyState::AwaitingClean as u8 }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `page` points to a valid `VmPage` in the `OBJECT` state (owned
+    /// by a VMO and assigned to `PageQueues`).
+    #[inline]
+    pub unsafe fn is_page_reclaimable(page: VmPagePtr) -> bool {
+        // SAFETY: The caller guarantees `page` is a valid `VmPage` in the `OBJECT` state owned by
+        // a VMO and assigned to `PageQueues`.
+        unsafe { PageQueues::is_page_reclaimable(page) }
+    }
+
     /// Non-borrowing accessor to the Rust state in `VmCowPages`.
     #[inline]
     fn state(&self) -> &VmCowPagesState {
@@ -682,8 +1121,8 @@ impl VmCowPages {
             Some(c) => c.as_raw(),
             None => ptr::null_mut(),
         };
-        let mut success = MaybeUninit::uninit();
-        let mut failure = MaybeUninit::uninit();
+        let mut success = MaybeUninit::<bindings::VmCowReclaimSuccess>::zeroed();
+        let mut failure = MaybeUninit::<bindings::VmCowReclaimFailure>::uninit();
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, `page.as_raw()` is a
         // valid `vm_page_t` pointer, and out-pointers are valid for writes.
         let ok = unsafe {
@@ -691,7 +1130,7 @@ impl VmCowPages {
                 self.as_raw(),
                 page.as_ffi(),
                 offset,
-                eviction_action,
+                eviction_action.into(),
                 compressor_ptr,
                 success.as_mut_ptr(),
                 failure.as_mut_ptr(),
@@ -699,10 +1138,10 @@ impl VmCowPages {
         };
         if ok {
             // SAFETY: `cpp_vm_cow_pages_reclaim_page` initialized `success` when returning true.
-            Ok(unsafe { success.assume_init() })
+            Ok(unsafe { success.assume_init() }.into())
         } else {
             // SAFETY: `cpp_vm_cow_pages_reclaim_page` initialized `failure` when returning false.
-            Err(unsafe { failure.assume_init() })
+            Err(unsafe { failure.assume_init() }.into())
         }
     }
 
@@ -802,7 +1241,7 @@ impl VmCowPages {
                 self.as_raw(),
                 start_offset,
                 list,
-                overwrite,
+                overwrite.into(),
                 zero,
                 deferred,
             )
@@ -909,16 +1348,17 @@ impl VmCowPages {
     ///
     /// See `DiscardableVmoTracker::debug_discardable_page_counts()`.
     pub fn debug_get_discardable_page_counts(&self) -> DiscardablePageCounts {
-        let mut counts = DiscardablePageCounts { locked: 0, unlocked: 0 };
+        let mut counts = MaybeUninit::<bindings::VmCowPages_DiscardablePageCounts>::uninit();
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, and `counts` is valid
-        // for writing.
+        // for writing. `cpp_vm_cow_pages_debug_get_discardable_page_counts` unconditionally
+        // initializes `counts`.
         unsafe {
             bindings::cpp_vm_cow_pages_debug_get_discardable_page_counts(
                 self.as_raw(),
-                &mut counts,
+                counts.as_mut_ptr(),
             );
+            counts.assume_init().into()
         }
-        counts
     }
 
     /// Dumps all the reclamation counters to the debuglog.
