@@ -67,6 +67,9 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
         .devicetree_bdfs_list = devicetree_devices_.data(),
         .devicetree_bdfs_count = devicetree_devices_.size(),
     };
+    if (!enable_cam_) {
+      info.cam.vmo = ZX_HANDLE_INVALID;
+    }
     memcpy(info.name, info_.name, sizeof(info.name));
     return info;
   }
@@ -84,14 +87,24 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   auto& acpi_devices() { return acpi_devices_; }
   auto& devicetree_devices() { return devicetree_devices_; }
 
+  void enable_cam(bool enable) { enable_cam_ = enable; }
+
+  struct BtiRequest {
+    uint32_t bdf;
+    uint32_t index;
+  };
+
   // Protocol methods.
   zx_status_t PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti) {
     if (!enable_get_bti_) {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
+    last_bti_request_ = BtiRequest{.bdf = bdf, .index = index};
     return bti_.duplicate(ZX_RIGHT_SAME_RIGHTS, bti);
   }
+
+  const std::optional<BtiRequest>& last_bti_request() const { return last_bti_request_; }
 
   zx_status_t PcirootConnectSysmem(zx::channel connection) {
     if (!enable_connect_sysmem_) {
@@ -257,6 +270,7 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   pciroot_protocol_t proto_;
   FakeEcam ecam_;
   const pci_platform_info_t info_;
+  bool enable_cam_ = true;
   std::vector<zx::eventpair> allocation_eps_;
   zx::bti bti_;
   zx::resource mmio_resource_;
@@ -266,6 +280,7 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   std::vector<pci_irq_routing_entry_t> routing_entries_;
   std::vector<pci_bdf_t> acpi_devices_;
   std::vector<pci_bdf_t> devicetree_devices_;
+  std::optional<BtiRequest> last_bti_request_;
 
   // Switches so tests can test error paths of PCIRoot usage.
   bool enable_get_bti_ = true;

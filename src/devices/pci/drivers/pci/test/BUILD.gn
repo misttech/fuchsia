@@ -8,12 +8,34 @@ import("//build/rust/rustc_test.gni")
 import("//build/test.gni")
 
 # The test suite consists of:
+# fakes: Test fakes (FakePciroot, FakeEcam) used by pci-unit-test and downstream
+#        adapter tests.
 # pci-unit-test: C++ unit tests (in unit/) testing allocation, bus, config,
 #                device, fake pciroot, and MSI-X against mock DDK and fakes.
 # pci-driver-test: Rust integration test (driver/driver_tests.rs) running in
 #                  DriverTestRealm to test all PCI protocol operations.
 # fake-bus-pci (target: pci_fake): A fake bus driver loaded in DriverTestRealm
 # to configure a fake device and serve fuchsia.hardware.pci.Service.
+
+source_set("fakes") {
+  testonly = true
+  visibility = [
+    ":*",
+    "//src/devices/pci/drivers/pciroot-banjo-adapter/*",
+  ]
+  public = [
+    "fakes/fake_ecam.h",
+    "fakes/fake_pciroot.h",
+  ]
+  public_deps = [
+    "..:user_pci",
+    "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+    "//sdk/lib/driver/mmio/testing/cpp",
+    "//src/devices/testing/fake-bti",
+    "//src/devices/testing/fake-resource",
+    "//zircon/system/ulib/zx",
+  ]
+}
 
 test("pci-unit") {
   output_name = "pci-unit-test"
@@ -27,6 +49,7 @@ test("pci-unit") {
   ]
 
   deps = [
+    ":fakes",
     "..:user_pci",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
