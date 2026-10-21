@@ -149,6 +149,7 @@ build --@io_bazel_rules_go//go/config:pure=True
 common --experimental_exclude_starlark_flags_from_exec_config
 common --experimental_propagate_custom_flag=@io_bazel_rules_go//go/config:gc_linkopts
 common --experimental_propagate_custom_flag=@io_bazel_rules_go//go/config:pure
+common --experimental_propagate_custom_flag=@fuchsia_rules_common//build_flags:use_default_build_flags
 
 # Do not propagate defines to the exec config by default.
 # Explicitly propagate `EXECUTOR`, which is used in remote builds.
@@ -167,6 +168,9 @@ common --experimental_platform_in_output_dir=True
 
 # Enable dynamic linking of C++ stdlib for drivers in-tree.
 common --@rules_fuchsia//fuchsia/flags:dynamic_cpp_standard_library_for_drivers=True
+
+# Use in-tree default build_flags() targets for C++ toolchains and fx_cc_* rules.
+common --@fuchsia_rules_common//build_flags:use_default_build_flags=True
 
 # Turn off build-time venv generation to avoid creating dangling symlinks in bazel-out.
 # Without this, host_py_test targets would fail with `No such file or directory` when invoking the

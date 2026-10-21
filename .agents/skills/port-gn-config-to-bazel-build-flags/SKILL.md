@@ -4,10 +4,12 @@ description: >
   Guides porting Fuchsia GN config() and compiler_config() targets to Bazel
   build_flags() targets (both default toolchain configs and non-default
   configs across //build/config/**/BUILD.gn and other packages). Use when
-  creating build_flags() definitions, exposing global GN build variables via
-  gn_build_variables_for_bazel or //build/bazel/config/derived/*.bzl, mapping
-  OS/CPU conditions to Bazel select() expressions, or auditing config()
-  definitions for GN/Ninja-specific limitations.
+  creating build_flags() definitions, updating corresponding out-of-tree (OOT)
+  flags in cc_features.bzl / default_flag_values.bzl, exposing global GN build
+  variables via gn_build_variables_for_bazel or
+  //build/bazel/config/derived/*.bzl, mapping OS/CPU conditions to Bazel
+  select() expressions, or auditing config() definitions for GN/Ninja-specific
+  limitations.
 ---
 
 # Porting GN `config()` Definitions to Bazel `build_flags()`
@@ -337,7 +339,54 @@ build_flags(
 
 ---
 
-## 5. Step 4: Verification Workflow
+## 5. Step 4: Update Out-of-Tree (OOT) Toolchain Flags for Default Configs
+
+When porting a **default toolchain config** (one that becomes active in
+`@fuchsia_build_info//default_build_flags/BUILD.bazel`), you **must** also
+update the out-of-tree C++ toolchain flag definitions in
+`//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl`
+(and, when applicable, `toolchain_utils.bzl` or
+`//build/bazel_sdk/fuchsia_rules_common/build_flags/default_flag_values.bzl`):
+
+1.  **Dual-Mode Architecture (`use_default_build_flags`)**:
+    - In-tree platform and host builds (`--config=fuchsia_platform`,
+      `--config=host`) set
+      `@fuchsia_rules_common//build_flags:use_default_build_flags = True` and
+      receive default flags from `@fuchsia_build_info//default_build_flags`.
+    - Out-of-tree (OOT) workspaces and SDK target builds
+      (`--config=fuchsia_sdk`) use `@fuchsia_clang` or have
+      `use_default_build_flags = False`, relying on
+      `get_default_compile_flags_feature()` in `cc_features.bzl`.
+    - Inside `get_default_compile_flags_feature()`, default flags are
+      partitioned into:
+      - `in_tree_remaining_{cflags,conlyflags,ccflags,ldflags}`: Flags not yet
+        in `@fuchsia_build_info//default_build_flags` (applied unconditionally).
+      - `oot_only_{cflags,conlyflags,ccflags,ldflags}`: Flags already in
+        `@fuchsia_build_info//default_build_flags` (applied only when `not
+        use_default_build_flags`).
+
+2.  **Required Updates in `cc_features.bzl` When Adding a Default
+    `build_flags()`**:
+    - **Move existing flags from `in_tree_remaining_*` to `oot_only_*`** (or
+      gate mode-specific flag sets on `not use_default_build_flags`) so they are
+      not duplicated in-tree and can be removed via `disable_build_flags =
+      [...]` on `fx_cc_*` targets.
+    - **Add or update the OOT flag config in `_flag_configs` and `oot_only_*` to
+      match the `//build/config/` equivalent evaluated for the `fuchsia_sdk`
+      platform (`target_os == "fuchsia"`).** If the newly ported `build_flags()`
+      was previously missing or outdated in `cc_features.bzl`, define or update
+      its entry in `_flag_configs` and include it in the appropriate
+      `oot_only_{cflags,conlyflags,ccflags,ldflags}` list.
+    - **Share multi-flag lists via `default_flag_values.bzl`**: For configs with
+      larger flag lists (such as `default_warnings` or
+      `thread_safety_annotations`), define shared constants in
+      `//build/bazel_sdk/fuchsia_rules_common/build_flags/default_flag_values.bzl`
+      and load them in both `//build/config/BUILD.bazel` and `cc_features.bzl`,
+      guarded by `LINT.IfChange` / `LINT.ThenChange` comments.
+
+---
+
+## 6. Step 5: Verification Workflow
 
 1.  **Format modified GN and Bazel files**:
 
@@ -353,4 +402,4 @@ build_flags(
 
     - Regenerates `@fuchsia_build_info//default_build_flags/BUILD.bazel` and
       verifies that normalized compiler/linker command lines match between GN
-      and Bazel.
+      and Bazel across `host`, `fuchsia_platform`, and `fuchsia_sdk` (OOT).

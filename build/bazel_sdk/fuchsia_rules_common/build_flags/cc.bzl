@@ -7,6 +7,7 @@
 See README.md file for full technical details.
 """
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load(
     "@rules_cc//cc:cc_toolchain_config_lib.bzl",
@@ -71,8 +72,11 @@ CC_ACTION_KINDS = [
 def _final_cc_build_flags_impl(ctx):
     # Compute the default build_flags + the target-specific ones first.
     build_flags_infos = []
+    use_default_build_flags = ctx.attr._use_default_build_flags[BuildSettingInfo].value
     toolchain = ctx.toolchains["@fuchsia_rules_common//build_flags:toolchain_type"]
-    if toolchain:
+    if use_default_build_flags:
+        if not toolchain:
+            fail("@fuchsia_rules_common//build_flags:use_default_build_flags is True, but no @fuchsia_rules_common//build_flags:toolchain_type toolchain is registered.")
         target_type = ctx.attr.target_type
         if target_type == "cxx_common":
             build_flags_infos.extend(toolchain.default_flags.cxx_common_infos)
@@ -120,6 +124,10 @@ _final_cc_build_flags = rule(
             doc = "The type of target being wrapped.",
             mandatory = True,
             values = list(BUILD_FLAGS_CC_TARGET_TYPES),
+        ),
+        "_use_default_build_flags": attr.label(
+            default = "@fuchsia_rules_common//build_flags:use_default_build_flags",
+            providers = [BuildSettingInfo],
         ),
     },
 

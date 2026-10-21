@@ -2,10 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+
 # A toolchain type used to access the default build flags for the C++ and Rust toolchain.
 # See toolchain.bzl for details.
 toolchain_type(
     name = "toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+# Set to True in the Fuchsia in-tree workspace to configure the C++ toolchain
+# and fx_cc_* rules to use the default build_flags() from
+# @fuchsia_rules_common//build_flags:toolchain_type instead of hardcoded
+# flags in cc_features.bzl and sanitizer.bzl.
+# Defaults to False for out-of-tree workspaces.
+bool_flag(
+    name = "use_default_build_flags",
+    build_setting_default = False,
     visibility = ["//visibility:public"],
 )
 

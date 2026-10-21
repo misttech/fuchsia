@@ -4,6 +4,7 @@
 
 """Implementation of the build_flags_toolchain_instance() rule."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(":providers.bzl", "BuildFlagsInfo", "DefaultBuildFlagsSetInfo")
 
 #############################################################################
@@ -99,10 +100,14 @@ def _dedup_list(items):
 
 def _rust_toolchain_with_build_flags_impl(ctx):
     base_info = ctx.attr.toolchain[platform_common.ToolchainInfo]
+    use_default_build_flags = ctx.attr._use_default_build_flags[BuildSettingInfo].value
     flags_toolchain = ctx.toolchains["@fuchsia_rules_common//build_flags:toolchain_type"]
 
     extra_flags = []
-    if flags_toolchain:
+    if use_default_build_flags:
+        if not flags_toolchain:
+            fail("@fuchsia_rules_common//build_flags:use_default_build_flags is True, but no @fuchsia_rules_common//build_flags:toolchain_type toolchain is registered.")
+
         # Only use the common_infos list for Rust targets, since the GN default configs
         # for Rust do not change for executables or shared libraries.
         for info in flags_toolchain.default_flags.rust_common_infos:
@@ -140,6 +145,10 @@ rust_toolchain_with_build_flags = rule(
         "extra_rustc_flags": attr.string_list(
             doc = "Extra flags to append after default build flags.",
             default = [],
+        ),
+        "_use_default_build_flags": attr.label(
+            default = "@fuchsia_rules_common//build_flags:use_default_build_flags",
+            providers = [BuildSettingInfo],
         ),
     },
     toolchains = [

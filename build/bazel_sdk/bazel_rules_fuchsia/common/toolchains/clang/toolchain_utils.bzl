@@ -4,6 +4,7 @@
 
 """Helper functions to define Clang toolchain related targets."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load(
     "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
@@ -65,7 +66,14 @@ def compute_clang_features(
 
     clang_tuple = to_clang_target_tuple(target_os, target_cpu)
 
-    default_compile_flags_feature = get_default_compile_flags_feature(clang_info, target_os, sysroot = sysroot)
+    use_default_build_flags = default_flags_set != None
+
+    default_compile_flags_feature = get_default_compile_flags_feature(
+        clang_info,
+        target_os,
+        sysroot = sysroot,
+        use_default_build_flags = use_default_build_flags,
+    )
 
     # A feature that adds a --target=<clang_tuple> to compiler and linker commands.
     target_system_name_feature = feature(
@@ -319,7 +327,10 @@ def compute_clang_features(
         opt_feature,
         clang_driver_mode_cxx_feature,
         static_cpp_standard_library_feature,
-    ] + get_sanitizer_features(target_os)
+    ] + get_sanitizer_features(
+        target_os,
+        use_default_build_flags = use_default_build_flags,
+    )
 
     # This feature adds an RPATH entry into the final binary. We do not want this
     # because it is not valid for fuchsia since we install all of our libraries
@@ -514,8 +525,13 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         # `copts` directly. See https://fxbug.dev/548409875.
         fuchsia_api_level = None
 
+    use_default_build_flags = ctx.attr._use_default_build_flags[BuildSettingInfo].value
     build_flags_toolchain = ctx.toolchains["@fuchsia_rules_common//build_flags:toolchain_type"]
-    default_flags_set = build_flags_toolchain.default_flags if build_flags_toolchain else None
+    if use_default_build_flags and not build_flags_toolchain:
+        fail("@fuchsia_rules_common//build_flags:use_default_build_flags is True, but no @fuchsia_rules_common//build_flags:toolchain_type toolchain is registered.")
+    default_flags_set = (
+        build_flags_toolchain.default_flags if (use_default_build_flags and build_flags_toolchain) else None
+    )
 
     features = compute_clang_features(
         clang_info,
@@ -566,6 +582,10 @@ _prebuilt_clang_cc_toolchain_config = rule(
         "fuchsia_api_level": attr.label(
             default = None,
             providers = [FuchsiaApiLevelInfo],
+        ),
+        "_use_default_build_flags": attr.label(
+            default = "@fuchsia_rules_common//build_flags:use_default_build_flags",
+            providers = [BuildSettingInfo],
         ),
     },
     toolchains = [

@@ -42,6 +42,7 @@ ignore_policy = struct(
         for label in [
             "@bazel_tools",
             "@fuchsia_clang",  # TODO(https://fxbug.dev/42177702): clang bazel defs should provide licenses.
+            "@fuchsia_rules_common//:bzl_srcs",  # TODO(https://fxbug.dev/42081016): sdk rules should provide licenses.
             "@fuchsia_sdk",  # TODO(https://fxbug.dev/42081016): sdk atoms should provide licenses.
             "@rules_fuchsia",  # TODO(https://fxbug.dev/42081016): sdk rules should provide licenses.
         ]

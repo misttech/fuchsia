@@ -103,6 +103,7 @@ sanitizer_rustflags("cfi.rustflags") {
   variant = "cfi"
 }
 
+# LINT.IfChange(asan)
 variant("asan") {
   c_family_flags = [ "-fsanitize=address" ]
 
@@ -173,6 +174,8 @@ variant("asan") {
 
   executable_deps = [ ":asan_default_options" ]
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:asan)
 
 # Disable "stack malloc" code generation.
 compiler_config("asan-use-after-return-never") {
@@ -318,6 +321,7 @@ variant("lsan") {
   executable_deps = [ ":lsan_default_options" ]
 }
 
+# LINT.IfChange(ubsan)
 variant("ubsan") {
   c_family_flags = []
   configs = []
@@ -354,6 +358,8 @@ variant("ubsan") {
     ]
   }
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:ubsan)
 
 sanitizer_rustflags("ubsan.rustflags") {
   variant = "ubsan"

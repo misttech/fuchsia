@@ -161,11 +161,23 @@ _flag_configs = struct(
     pic = _make_flag_config(
         cflags = ["-fPIC"],
     ),
+    language_c11 = _make_flag_config(
+        conlyflags = ["-std=c11"],
+        combine_cflags_with_ldflags = False,
+    ),
     language_cxx17 = _make_flag_config(
         ccflags = ["-std=c++17"],
     ),
     language_cxx20 = _make_flag_config(
         ccflags = ["-std=c++20"],
+    ),
+    libcpp_remove_transitive_includes = _make_flag_config(
+        cflags = ["-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES"],
+        combine_cflags_with_ldflags = False,
+    ),
+    no_template_backtrace_limit = _make_flag_config(
+        ccflags = ["-ftemplate-backtrace-limit=0"],
+        combine_cflags_with_ldflags = False,
     ),
     no_frame_pointers = _make_flag_config(
         cflags = ["-fomit-frame-pointer"],
@@ -188,7 +200,9 @@ _flag_configs = struct(
     ),
     optimize_size = _make_flag_config(
         cflags = ["-Os"],
-        ldflags = ["-Wl,-O2"],
+        ldflags = [
+            "-Wl,-O2",
+        ],
     ),
     # LINT.IfChange
     debuginfo = _make_flag_config(
@@ -299,7 +313,8 @@ _flag_configs = struct(
 def get_default_compile_flags_feature(
         clang_info,
         target_os,
-        sysroot = ""):
+        sysroot = "",
+        use_default_build_flags = False):
     """Compute the special "default_compile_flags" feature().
 
     This feature is special because Bazel will place all its flags before all
@@ -309,6 +324,11 @@ def get_default_compile_flags_feature(
        clang_info: A ClangInfo provider value.
        target_os: Target OS, following Fuchsia conventions.
        sysroot: Optional path to sysroot to use.
+       use_default_build_flags: True when building in-tree with
+           @fuchsia_rules_common//build_flags:use_default_build_flags
+           enabled. When True, flags that are already provided by
+           @fuchsia_build_info//default_build_flags are omitted to prevent
+           duplicate/conflicting flags and allow disable_build_flags to work.
 
     Returns:
        A new feature() value.
@@ -345,7 +365,6 @@ def get_default_compile_flags_feature(
         _flag_configs.pic,
         _flag_configs.linker_gc,
         _flag_configs.no_frame_pointers,
-        _flag_configs.debuginfo,
         _flag_configs.default_warnings,
         _flag_configs.symbol_visibility_hidden,
         _flag_configs.ffp_contract_off,
@@ -354,8 +373,22 @@ def get_default_compile_flags_feature(
         _flag_configs.relpath_debug_info,
     ]
 
+    # Already in @fuchsia_build_info//default_build_flags (default_debuginfo,
+    # libcpp_remove_transitive_includes).
+    # NOTE: //build/config/fuchsia:zircon_asserts (ZX_ASSERT_LEVEL) is not
+    # supported OOT.
+    oot_only_cflags = [] if use_default_build_flags else [
+        _flag_configs.debuginfo,
+        _flag_configs.libcpp_remove_transitive_includes,
+    ]
+
     in_tree_remaining_conlyflags = [
         default_system_flags,
+    ]
+
+    # Already in @fuchsia_build_info//default_build_flags (language):
+    oot_only_conlyflags = [] if use_default_build_flags else [
+        _flag_configs.language_c11,
     ]
 
     in_tree_remaining_ccflags = [
@@ -365,10 +398,14 @@ def get_default_compile_flags_feature(
         _flag_configs.relpath_debug_info,
     ]
 
-    # Already in @fuchsia_build_info//default_build_flags (language, no_exceptions):
-    oot_only_ccflags = [
+    # Already in @fuchsia_build_info//default_build_flags (language, no_exceptions,
+    # no-template-backtrace-limit):
+    oot_only_ccflags = [] if use_default_build_flags else [
+        # NOTE: In-tree //build/config:language uses -std=c++23, but OOT keeps
+        # -std=c++20 to avoid breaking petals.
         _flag_configs.language_cxx20,
         _flag_configs.no_exceptions,
+        _flag_configs.no_template_backtrace_limit,
     ]
 
     in_tree_remaining_ldflags = [
@@ -377,14 +414,15 @@ def get_default_compile_flags_feature(
         _flag_configs.color_diagnostics,
         _flag_configs.no_frame_pointers,
         _flag_configs.linker_gc,
-        _flag_configs.debuginfo,
         _flag_configs.no_rtti,
         _flag_configs.pic,
         _flag_configs.relpath_debug_info,
     ]
 
-    # Already in @fuchsia_build_info//default_build_flags (no_exceptions, icf):
-    oot_only_ldflags = [
+    # Already in @fuchsia_build_info//default_build_flags (default_debuginfo,
+    # no_exceptions, icf):
+    oot_only_ldflags = [] if use_default_build_flags else [
+        _flag_configs.debuginfo,
         _flag_configs.no_exceptions,
         _flag_configs.icf,
     ]
@@ -396,7 +434,7 @@ def get_default_compile_flags_feature(
             flag_set(
                 actions = _all_compile_actions,
                 flag_groups = _iter_cflags(
-                    in_tree_remaining_cflags + (
+                    in_tree_remaining_cflags + oot_only_cflags + (
                         [
                             # TODO(b/430020292): Re-enable werror for
                             # strict-prototypes on host when we have a better
@@ -415,7 +453,7 @@ def get_default_compile_flags_feature(
             flag_set(
                 actions = _all_conly_compile_actions,
                 flag_groups = _iter_conlyflags(
-                    in_tree_remaining_conlyflags,
+                    in_tree_remaining_conlyflags + oot_only_conlyflags,
                 ),
             ),
             # These are ccflags that will be added to all builds
