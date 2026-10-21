@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::conversion::convert_start_args;
+use crate::conversion::{
+    convert_health_check_error, convert_health_check_request, convert_health_check_response,
+    convert_start_args,
+};
 use crate::loader::{Library, LoaderService};
 use crate::modules::ModulesAndSymbols;
 use crate::utils::*;
@@ -21,9 +24,10 @@ use fidl_next_fuchsia_driver_framework as fidl_next_fdf;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::future::FusedFuture;
-use futures::{FutureExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::warn;
 use namespace::Namespace;
+use std::collections::HashMap;
 use std::ffi::c_char;
 use std::ptr::NonNull;
 use std::sync::{Arc, Weak};
@@ -280,6 +284,31 @@ impl Drop for DriverInner {
 }
 
 impl DriverInner {
+    fn new(
+        hooks: Hooks,
+        legacy_state: Option<LegacyDynamicallyLinkedState>,
+        node_token: Option<fidl::Event>,
+        power_element: PowerElementState,
+    ) -> Self {
+        Self {
+            legacy_state,
+            hooks,
+            dispatcher: None,
+            always_on_dispatcher: None,
+            token: None,
+            shutdown_signaler: None,
+            node_token,
+            power_element,
+            active_lease: None,
+            stop_lease: None,
+            power_state: DriverPowerState::Resumed,
+            resume_sender: None,
+            internal_stop_tx: None,
+            power_element_runner_task: None,
+            resume_requester: None,
+        }
+    }
+
     fn destroy(&mut self) {
         if let Some(token) = self.token.take() {
             self.hooks.destroy(token);
@@ -452,23 +481,7 @@ impl Driver {
             url: url.clone(),
             node_name,
             runtime_handle: Mutex::new(None),
-            inner: Mutex::new(DriverInner {
-                legacy_state,
-                hooks,
-                dispatcher: None,
-                always_on_dispatcher: None,
-                token: None,
-                shutdown_signaler: None,
-                node_token,
-                power_element,
-                active_lease: None,
-                stop_lease: None,
-                power_state: DriverPowerState::Resumed,
-                resume_sender: None,
-                internal_stop_tx: None,
-                power_element_runner_task: None,
-                resume_requester: None,
-            }),
+            inner: Mutex::new(DriverInner::new(hooks, legacy_state, node_token, power_element)),
         });
         let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
 
@@ -568,23 +581,7 @@ impl Driver {
             url: url.clone(),
             node_name,
             runtime_handle: Mutex::new(None),
-            inner: Mutex::new(DriverInner {
-                legacy_state: None,
-                hooks,
-                dispatcher: None,
-                always_on_dispatcher: None,
-                token: None,
-                shutdown_signaler: None,
-                node_token,
-                power_element,
-                active_lease: None,
-                stop_lease: None,
-                power_state: DriverPowerState::Resumed,
-                resume_sender: None,
-                internal_stop_tx: None,
-                power_element_runner_task: None,
-                resume_requester: None,
-            }),
+            inner: Mutex::new(DriverInner::new(hooks, None, node_token, power_element)),
         });
         let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
 
@@ -732,36 +729,113 @@ impl Driver {
         let mut internal_stop_receiver = internal_stop_rx.fuse();
 
         let (resume_sender, resume_receiver) = oneshot::channel();
+        // In-flight health checks are polled concurrently with the request stream and dropped
+        // when the loop exits, so a hung check never blocks Stop. An empty `FuturesUnordered`
+        // reports itself as terminated, which `select!` skips. The responders are kept out of
+        // the futures so that every check still in flight when the loop exits can be answered
+        // before the channel is closed (see below).
+        let mut health_checks = futures::stream::FuturesUnordered::new();
+        let mut health_check_responders: HashMap<u64, fdh::DriverHealthCheckResponder> =
+            HashMap::new();
+        let mut next_health_check_id: u64 = 0;
 
-        let should_stop = futures::select! {
-            res = driver_request_stream.try_next().fuse() => {
-                match res {
-                    Ok(Some(request)) => match request {
-                        fdh::DriverRequest::Stop { control_handle: _ } => {
-                            Driver::handle_stop_request(weak_self.clone(), resume_sender)
+        let should_stop = loop {
+            futures::select! {
+                res = driver_request_stream.try_next().fuse() => {
+                    match res {
+                        Ok(Some(request)) => match request {
+                            fdh::DriverRequest::Stop { control_handle: _ } => {
+                                break Driver::handle_stop_request(weak_self.clone(), resume_sender);
+                            }
+                            fdh::DriverRequest::HealthCheck { request, responder } => {
+                                // A suspended driver's dispatchers are stopped by the runtime,
+                                // so forwarding the check to the driver's `fdf::Health` server
+                                // (via `client` below) would only time out and misreport a
+                                // correctly suspended driver as wedged. `driver-host` is the
+                                // sole enforcement point for the protocol invariant that
+                                // `fdf::Health.HealthCheck` is never sent between `Suspend` and
+                                // the completion of `Resume`; the C++ and Rust SDK servers rely
+                                // on this and do not track suspend state themselves.
+                                let power_state =
+                                    weak_self.upgrade().map(|driver| driver.inner.lock().power_state);
+                                if power_state != Some(DriverPowerState::Resumed) {
+                                    log::warn!(
+                                        "HealthCheck received while driver is not resumed \
+                                         (state: {power_state:?}); answering INVALID_STATE"
+                                    );
+                                    let _ = responder
+                                        .send(Err(fidl_fdf::HealthCheckError::InvalidState));
+                                    continue;
+                                }
+                                let id = next_health_check_id;
+                                next_health_check_id += 1;
+                                health_check_responders.insert(id, responder);
+                                let client_clone = client.clone();
+                                let req_next = convert_health_check_request(request);
+                                health_checks.push(async move {
+                                    let res = match client_clone.health_check(req_next).await {
+                                        Ok(Ok(resp)) => {
+                                            Ok(convert_health_check_response(resp))
+                                        }
+                                        Ok(Err(err)) => Err(convert_health_check_error(err)),
+                                        // A driver built against an SDK that predates
+                                        // HealthCheck answers the flexible method with
+                                        // UNKNOWN_METHOD. That is expected, not an error.
+                                        Err(fidl_next::Error::Protocol(
+                                            fidl_next::ProtocolError::FrameworkError(
+                                                fidl_next::FrameworkError::UnknownMethod,
+                                            ),
+                                        )) => Err(fidl_fdf::HealthCheckError::NotSupported),
+                                        Err(e) => {
+                                            log::warn!(
+                                                "Failed to forward HealthCheck to driver: {e:?}"
+                                            );
+                                            Err(fidl_fdf::HealthCheckError::InternalError)
+                                        }
+                                    };
+                                    (id, res)
+                                });
+                            }
+                        },
+                        Ok(None) => {
+                            log::warn!("Driver request stream closed unexpectedly");
+                            break false;
                         }
-                    },
-                    Ok(None) => {
-                        log::warn!("Driver request stream closed unexpectedly");
-                        false
-                    }
-                    Err(e) => {
-                        log::warn!("Error in driver request stream: {e:?}");
-                        false
+                        Err(e) => {
+                            log::warn!("Error in driver request stream: {e:?}");
+                            break false;
+                        }
                     }
                 }
-            }
-            res = internal_stop_receiver => {
-                log::warn!("Power transition failed, stopping driver internally {:?}", res);
-                // Unblock the resume_receiver.
-                resume_sender.send(()).ok();
-                true
-            }
-            res = client_dispatcher_done => {
-                log::warn!("Client dispatcher finished unexpectedly: {:?}", res);
-                false
+                (id, res) = health_checks.select_next_some() => {
+                    if let Some(responder) = health_check_responders.remove(&id) {
+                        // Generated Rust FIDL table responders take
+                        // `Result<&HealthCheckResponse, HealthCheckError>`.
+                        let _ = responder.send(res.as_ref().map_err(|e| *e));
+                    }
+                }
+                res = &mut internal_stop_receiver => {
+                    log::warn!("Power transition failed, stopping driver internally {:?}", res);
+                    // Unblock the resume_receiver.
+                    resume_sender.send(()).ok();
+                    break true;
+                }
+                res = &mut client_dispatcher_done => {
+                    log::warn!("Client dispatcher finished unexpectedly: {:?}", res);
+                    break false;
+                }
             }
         };
+
+        // Abandon the in-flight checks, then answer each of them with INVALID_STATE: the driver
+        // is no longer running. Every HealthCheck must be answered before the channel is closed
+        // below, because the C++ client bindings in driver_manager cannot represent a two-way
+        // call that is cut short by a ZX_OK epitaph. This also releases the responders'
+        // references before `driver_request_stream` is unwrapped.
+        drop(health_checks);
+        for (_, responder) in health_check_responders.drain() {
+            let _ = responder.send(Err(fidl_fdf::HealthCheckError::InvalidState));
+        }
 
         if should_stop {
             // Ignore the result as its possible we dropped the sender by not assigning it
@@ -1538,5 +1612,234 @@ mod tests {
             }
         }
         scope.abort().await;
+    }
+}
+
+#[cfg(test)]
+mod health_check_tests {
+    use super::*;
+    use fdf::OnDispatcher;
+    use fidl_next::{Request, Responder, ServerDispatcher, ServerEnd as NextServerEnd};
+    use fidl_next_fuchsia_driver_framework::{DriverServerHandler, driver};
+    use std::ffi::c_void;
+    use std::num::NonZero;
+    use std::ptr::NonNull;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    static SUSPEND_TEST_HEALTH_CHECK_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    type Transport = fdf_fidl::DriverChannel<fdf::AsyncDispatcher>;
+
+    struct MockDriverServer {
+        count_calls: AtomicBool,
+        fidl_server: fidl_next::Server<fidl_next_fdf::Driver, Transport>,
+    }
+
+    impl DriverServerHandler<Transport> for MockDriverServer {
+        async fn start(
+            &mut self,
+            request: Request<driver::Start, Transport>,
+            responder: Responder<driver::Start, Transport>,
+        ) {
+            let count_calls = request.payload().start_args.url.as_deref() == Some("suspend-test");
+            self.count_calls.store(count_calls, Ordering::SeqCst);
+            let _ = responder.respond(()).await;
+        }
+
+        async fn stop(&mut self) {
+            self.fidl_server.close();
+        }
+
+        async fn suspend(&mut self, responder: Responder<driver::Suspend, Transport>) {
+            let _ = responder.respond(()).await;
+        }
+
+        async fn resume(
+            &mut self,
+            _request: Request<driver::Resume, Transport>,
+            responder: Responder<driver::Resume, Transport>,
+        ) {
+            let _ = responder.respond(()).await;
+        }
+
+        async fn health_check(
+            &mut self,
+            request: Request<driver::HealthCheck, Transport>,
+            responder: Responder<driver::HealthCheck, Transport>,
+        ) {
+            if self.count_calls.load(Ordering::SeqCst) {
+                SUSPEND_TEST_HEALTH_CHECK_CALLS.fetch_add(1, Ordering::SeqCst);
+            }
+            match request.payload().request {
+                fidl_next_fdf::HealthCheckRequest::Deep => {
+                    let _ =
+                        responder.respond_err(fidl_next_fdf::HealthCheckError::NotSupported).await;
+                }
+                _ => {
+                    let _ = responder
+                        .respond(fidl_next_fdf::HealthCheckResponse {
+                            conditions: Some(vec![fidl_next_fdf::HealthCondition {
+                                status: Some(fidl_next_fdf::HealthStatus::Degraded),
+                                reason_code: Some("HOST_FORWARD_OK".to_string()),
+                                last_observed: Some(7),
+                                ..Default::default()
+                            }]),
+                            ..Default::default()
+                        })
+                        .await;
+                }
+            }
+        }
+    }
+
+    unsafe extern "C" fn mock_initialize(server_handle: fdf_sys::fdf_handle_t) -> *mut c_void {
+        let root_dispatcher =
+            NonNull::new(unsafe { fdf_sys::fdf_dispatcher_get_current_dispatcher() })
+                .expect("Non-null current dispatcher");
+        let channel = unsafe {
+            fdf::Channel::<[fidl_next::Chunk]>::from_driver_handle(
+                fdf::DriverHandle::new_unchecked(
+                    NonZero::new(server_handle).expect("valid driver handle"),
+                ),
+            )
+        };
+        let root_dispatcher = unsafe { fdf::DriverDispatcherRef::from_raw(root_dispatcher) };
+        let always_on = fdf::AsyncDispatcher::new(&root_dispatcher.always_on_dispatcher());
+        let server_end: NextServerEnd<fidl_next_fdf::Driver, Transport> =
+            NextServerEnd::from_untyped(fdf_fidl::DriverChannel::new_with_dispatcher(
+                always_on.clone(),
+                channel,
+            ));
+        let dispatcher = ServerDispatcher::new(server_end);
+        let handler = MockDriverServer {
+            count_calls: AtomicBool::new(false),
+            fidl_server: dispatcher.server(),
+        };
+        always_on.spawn(async move {
+            let _ = dispatcher.run(handler).await;
+        });
+        std::ptr::dangling_mut()
+    }
+
+    unsafe extern "C" fn mock_destroy(_token: *mut c_void) {}
+
+    static MOCK_REGISTRATION: fdf_sys::DriverRegistration = fdf_sys::DriverRegistration {
+        version: fdf_sys::DRIVER_REGISTRATION_VERSION_MAX,
+        v1: fdf_sys::DriverRegistration_driver_registration_v1 {
+            initialize: Some(mock_initialize),
+            destroy: Some(mock_destroy),
+        },
+    };
+
+    fn create_test_driver(env: &fdf_env::Environment) -> Arc<Driver> {
+        // Hooks::new only reads through the pointer, so casting away const is sound here.
+        let hooks = Hooks::new((&raw const MOCK_REGISTRATION) as *mut _).unwrap();
+        let driver = Arc::new(Driver {
+            url: "fuchsia-boot:///#meta/mock.cm".to_string(),
+            node_name: "mock".to_string(),
+            runtime_handle: Mutex::new(None),
+            inner: Mutex::new(DriverInner::new(hooks, None, None, PowerElementState::NoElement)),
+        });
+        let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
+        let driver_clone = driver.clone();
+        let dispatcher = AutoReleaseDispatcher::from(
+            driver_runtime_handle
+                .new_dispatcher(
+                    fdf::DispatcherBuilder::new().name("mock-default").shutdown_observer(
+                        move |_| {
+                            let _ = driver_clone;
+                        },
+                    ),
+                )
+                .unwrap(),
+        );
+        let always_on_dispatcher = dispatcher.always_on_dispatcher();
+        driver.inner.lock().dispatcher = Some(dispatcher);
+        driver.inner.lock().always_on_dispatcher = Some(always_on_dispatcher);
+        *driver.runtime_handle.lock() = Some(driver_runtime_handle);
+        driver
+    }
+
+    /// Creates a mock driver and starts it, returning the handles a test needs to drive it and
+    /// observe its shutdown. The returned `Scope` must stay alive for the duration of the test.
+    async fn start_test_driver(
+        env: &fdf_env::Environment,
+    ) -> (Arc<Driver>, fdh::DriverProxy, oneshot::Receiver<Weak<Driver>>, fuchsia_async::Scope)
+    {
+        start_test_driver_with_args(env, fidl_fdf::DriverStartArgs::default()).await
+    }
+
+    async fn start_test_driver_with_args(
+        env: &fdf_env::Environment,
+        start_args: fidl_fdf::DriverStartArgs,
+    ) -> (Arc<Driver>, fdh::DriverProxy, oneshot::Receiver<Weak<Driver>>, fuchsia_async::Scope)
+    {
+        let scope = fuchsia_async::Scope::new();
+        let driver = create_test_driver(env);
+        let (driver_proxy, driver_server_end) =
+            fidl::endpoints::create_proxy::<fdh::DriverMarker>();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        driver.start(start_args, driver_server_end, shutdown_tx, &scope).await.unwrap();
+        (driver, driver_proxy, shutdown_rx, scope)
+    }
+
+    #[fuchsia::test]
+    async fn test_run_termination_watcher_forwards_health_check() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, driver_proxy, shutdown_rx, _scope) = start_test_driver(&env).await;
+
+        let fast_res =
+            driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Fast).await.unwrap().unwrap();
+        let conditions = fast_res.conditions.expect("conditions");
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].status, Some(fidl_fdf::HealthStatus::Degraded));
+        assert_eq!(conditions[0].reason_code.as_deref(), Some("HOST_FORWARD_OK"));
+        assert_eq!(conditions[0].last_observed, Some(fidl::BootInstant::from_nanos(7)));
+
+        let deep_res = driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Deep).await.unwrap();
+        assert_eq!(deep_res.unwrap_err(), fidl_fdf::HealthCheckError::NotSupported);
+
+        driver_proxy.stop().unwrap();
+        drop(driver);
+        shutdown_rx.await.unwrap();
+        env.destroy_all_dispatchers();
+    }
+
+    #[fuchsia::test]
+    async fn test_run_termination_watcher_rejects_health_check_while_suspended() {
+        SUSPEND_TEST_HEALTH_CHECK_CALLS.store(0, Ordering::SeqCst);
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, driver_proxy, shutdown_rx, _scope) = start_test_driver_with_args(
+            &env,
+            fidl_fdf::DriverStartArgs {
+                url: Some("suspend-test".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        for state in [
+            DriverPowerState::SuspendRequested,
+            DriverPowerState::Suspended,
+            DriverPowerState::ResumeRequested,
+        ] {
+            driver.inner.lock().power_state = state;
+            let res = driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Fast).await.unwrap();
+            assert_eq!(res.unwrap_err(), fidl_fdf::HealthCheckError::InvalidState);
+            assert_eq!(SUSPEND_TEST_HEALTH_CHECK_CALLS.load(Ordering::SeqCst), 0);
+        }
+
+        driver.inner.lock().power_state = DriverPowerState::Resumed;
+        let fast_res =
+            driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Fast).await.unwrap().unwrap();
+        let conditions = fast_res.conditions.expect("conditions");
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].reason_code.as_deref(), Some("HOST_FORWARD_OK"));
+        assert_eq!(SUSPEND_TEST_HEALTH_CHECK_CALLS.load(Ordering::SeqCst), 1);
+
+        driver_proxy.stop().unwrap();
+        drop(driver);
+        shutdown_rx.await.unwrap();
+        env.destroy_all_dispatchers();
     }
 }

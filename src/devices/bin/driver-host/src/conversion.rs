@@ -340,3 +340,218 @@ pub(crate) fn convert_start_args(
             .map(|props| props.into_iter().map(convert_node_property_entry_2).collect()),
     }
 }
+
+// The health enums below are flexible on both sides with identical wire values, so converting
+// through the primitive preserves unknown ordinals instead of collapsing them to a guess.
+pub(crate) fn convert_health_check_request(
+    req: fidl_fdf::HealthCheckRequest,
+) -> fidl_next_fdf::HealthCheckRequest {
+    fidl_next_fdf::HealthCheckRequest::from(req.into_primitive())
+}
+
+fn convert_health_status(status: fidl_next_fdf::HealthStatus) -> fidl_fdf::HealthStatus {
+    fidl_fdf::HealthStatus::from_primitive_allow_unknown(u32::from(status))
+}
+
+fn convert_health_diagnostics(
+    items: Vec<fidl_next_fdf::HealthDiagnosticItem>,
+) -> Vec<fidl_fdf::HealthDiagnosticItem> {
+    items
+        .into_iter()
+        .filter_map(|item| {
+            let value = match item.value {
+                fidl_next_fdf::HealthDiagnosticValue::StringValue(s) => {
+                    fidl_fdf::HealthDiagnosticValue::StringValue(s)
+                }
+                fidl_next_fdf::HealthDiagnosticValue::IntValue(i) => {
+                    fidl_fdf::HealthDiagnosticValue::IntValue(i)
+                }
+                fidl_next_fdf::HealthDiagnosticValue::UintValue(u) => {
+                    fidl_fdf::HealthDiagnosticValue::UintValue(u)
+                }
+                fidl_next_fdf::HealthDiagnosticValue::BoolValue(b) => {
+                    fidl_fdf::HealthDiagnosticValue::BoolValue(b)
+                }
+                fidl_next_fdf::HealthDiagnosticValue::Timestamp(t) => {
+                    fidl_fdf::HealthDiagnosticValue::Timestamp(fidl::BootInstant::from_nanos(t))
+                }
+                _ => return None,
+            };
+            Some(fidl_fdf::HealthDiagnosticItem { key: item.key, value })
+        })
+        .collect()
+}
+
+fn convert_health_condition(
+    condition: fidl_next_fdf::HealthCondition,
+) -> fidl_fdf::HealthCondition {
+    fidl_fdf::HealthCondition {
+        status: condition.status.map(convert_health_status),
+        reason_code: condition.reason_code,
+        message: condition.message,
+        diagnostics: condition.diagnostics.map(convert_health_diagnostics),
+        first_observed: condition.first_observed.map(fidl::BootInstant::from_nanos),
+        last_observed: condition.last_observed.map(fidl::BootInstant::from_nanos),
+        occurrence_count: condition.occurrence_count,
+        ..Default::default()
+    }
+}
+
+pub(crate) fn convert_health_check_response(
+    resp: fidl_next_fdf::HealthCheckResponse,
+) -> fidl_fdf::HealthCheckResponse {
+    fidl_fdf::HealthCheckResponse {
+        diagnostics: resp.diagnostics.map(convert_health_diagnostics),
+        conditions: resp
+            .conditions
+            .map(|conditions| conditions.into_iter().map(convert_health_condition).collect()),
+        ..Default::default()
+    }
+}
+
+pub(crate) fn convert_health_check_error(
+    err: fidl_next_fdf::HealthCheckError,
+) -> fidl_fdf::HealthCheckError {
+    fidl_fdf::HealthCheckError::from_primitive_allow_unknown(u32::from(err))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fuchsia::test]
+    fn test_convert_health_check_request() {
+        assert_eq!(
+            convert_health_check_request(fidl_fdf::HealthCheckRequest::Ping),
+            fidl_next_fdf::HealthCheckRequest::Ping
+        );
+        assert_eq!(
+            convert_health_check_request(fidl_fdf::HealthCheckRequest::Fast),
+            fidl_next_fdf::HealthCheckRequest::Fast
+        );
+        assert_eq!(
+            convert_health_check_request(fidl_fdf::HealthCheckRequest::Deep),
+            fidl_next_fdf::HealthCheckRequest::Deep
+        );
+
+        // Unknown levels round-trip losslessly instead of being coerced to FAST.
+        let unknown = convert_health_check_request(
+            fidl_fdf::HealthCheckRequest::from_primitive_allow_unknown(99),
+        );
+        assert_eq!(unknown, fidl_next_fdf::HealthCheckRequest::from(99));
+    }
+
+    #[fuchsia::test]
+    fn test_convert_health_check_response_and_error() {
+        let next_resp = fidl_next_fdf::HealthCheckResponse {
+            conditions: Some(vec![fidl_next_fdf::HealthCondition {
+                status: Some(fidl_next_fdf::HealthStatus::Degraded),
+                reason_code: Some("FIFO_UNDERRUN".to_string()),
+                message: Some("Recovered".to_string()),
+                diagnostics: Some(vec![fidl_next_fdf::HealthDiagnosticItem {
+                    key: "underruns".to_string(),
+                    value: fidl_next_fdf::HealthDiagnosticValue::UintValue(2),
+                }]),
+                first_observed: Some(100),
+                last_observed: Some(200),
+                occurrence_count: Some(2),
+            }]),
+            diagnostics: Some(vec![
+                fidl_next_fdf::HealthDiagnosticItem {
+                    key: "str_k".to_string(),
+                    value: fidl_next_fdf::HealthDiagnosticValue::StringValue("val".to_string()),
+                },
+                fidl_next_fdf::HealthDiagnosticItem {
+                    key: "int_k".to_string(),
+                    value: fidl_next_fdf::HealthDiagnosticValue::IntValue(-7),
+                },
+                fidl_next_fdf::HealthDiagnosticItem {
+                    key: "uint_k".to_string(),
+                    value: fidl_next_fdf::HealthDiagnosticValue::UintValue(99),
+                },
+                fidl_next_fdf::HealthDiagnosticItem {
+                    key: "bool_k".to_string(),
+                    value: fidl_next_fdf::HealthDiagnosticValue::BoolValue(true),
+                },
+                fidl_next_fdf::HealthDiagnosticItem {
+                    key: "ts_k".to_string(),
+                    value: fidl_next_fdf::HealthDiagnosticValue::Timestamp(123),
+                },
+            ]),
+        };
+        let converted = convert_health_check_response(next_resp);
+        let diags = converted.diagnostics.expect("diagnostics");
+        assert_eq!(diags.len(), 5);
+        assert_eq!(diags[0].value, fidl_fdf::HealthDiagnosticValue::StringValue("val".to_string()));
+        assert_eq!(diags[1].value, fidl_fdf::HealthDiagnosticValue::IntValue(-7));
+        assert_eq!(diags[2].value, fidl_fdf::HealthDiagnosticValue::UintValue(99));
+        assert_eq!(diags[3].value, fidl_fdf::HealthDiagnosticValue::BoolValue(true));
+        assert_eq!(
+            diags[4].value,
+            fidl_fdf::HealthDiagnosticValue::Timestamp(fidl::BootInstant::from_nanos(123))
+        );
+        let conditions = converted.conditions.expect("conditions");
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].status, Some(fidl_fdf::HealthStatus::Degraded));
+        assert_eq!(conditions[0].reason_code.as_deref(), Some("FIFO_UNDERRUN"));
+        assert_eq!(conditions[0].message.as_deref(), Some("Recovered"));
+        assert_eq!(conditions[0].first_observed, Some(fidl::BootInstant::from_nanos(100)));
+        assert_eq!(conditions[0].last_observed, Some(fidl::BootInstant::from_nanos(200)));
+        assert_eq!(conditions[0].occurrence_count, Some(2));
+        let cond_diags = conditions[0].diagnostics.as_ref().expect("condition diagnostics");
+        assert_eq!(cond_diags.len(), 1);
+        assert_eq!(cond_diags[0].value, fidl_fdf::HealthDiagnosticValue::UintValue(2));
+
+        assert_eq!(
+            convert_health_check_error(fidl_next_fdf::HealthCheckError::Timeout),
+            fidl_fdf::HealthCheckError::Timeout
+        );
+        assert_eq!(
+            convert_health_check_error(fidl_next_fdf::HealthCheckError::InternalError),
+            fidl_fdf::HealthCheckError::InternalError
+        );
+        assert_eq!(
+            convert_health_check_error(fidl_next_fdf::HealthCheckError::NotSupported),
+            fidl_fdf::HealthCheckError::NotSupported
+        );
+        assert_eq!(
+            convert_health_check_error(fidl_next_fdf::HealthCheckError::InvalidState),
+            fidl_fdf::HealthCheckError::InvalidState
+        );
+        assert_eq!(
+            convert_health_check_error(fidl_next_fdf::HealthCheckError::Unavailable),
+            fidl_fdf::HealthCheckError::Unavailable
+        );
+        assert_eq!(
+            convert_health_check_error(fidl_next_fdf::HealthCheckError::CommunicationError),
+            fidl_fdf::HealthCheckError::CommunicationError
+        );
+        assert_eq!(
+            convert_health_check_error(fidl_next_fdf::HealthCheckError::NotFound),
+            fidl_fdf::HealthCheckError::NotFound
+        );
+
+        // Unknown ordinals round-trip as unknown rather than collapsing to a known member.
+        let unknown_status = convert_health_check_response(fidl_next_fdf::HealthCheckResponse {
+            diagnostics: None,
+            conditions: Some(vec![fidl_next_fdf::HealthCondition {
+                status: Some(fidl_next_fdf::HealthStatus::from(99)),
+                reason_code: None,
+                message: None,
+                diagnostics: None,
+                first_observed: None,
+                last_observed: None,
+                occurrence_count: None,
+            }]),
+        })
+        .conditions
+        .expect("conditions")[0]
+            .status
+            .expect("status");
+        assert_eq!(unknown_status, fidl_fdf::HealthStatus::from_primitive_allow_unknown(99));
+        assert!(unknown_status.is_unknown());
+        let unknown_err = convert_health_check_error(fidl_next_fdf::HealthCheckError::from(99));
+        assert_eq!(unknown_err, fidl_fdf::HealthCheckError::from_primitive_allow_unknown(99));
+        assert!(unknown_err.is_unknown());
+    }
+}

@@ -32,6 +32,21 @@ closed protocol Driver {
     /// connection with an epitath. This signals that the Driver has been
     /// stopped.
     strict Stop();
+
+    /// Requests the driver to perform a self-diagnostic check.
+    ///
+    /// The Driver Host enforces per-level deadlines (`PING` 250ms, `FAST` 2s,
+    /// `DEEP` 2min) and fails the call with `TIMEOUT` if the driver does not
+    /// reply in time. A check is only forwarded while the driver is resumed;
+    /// otherwise the Driver Host replies `INVALID_STATE` itself, and a check
+    /// whose completion is observed while the driver is no longer resumed is
+    /// also answered `INVALID_STATE`. A driver built against an SDK without
+    /// `HealthCheck` replies `NOT_SUPPORTED`; other transport failures reply
+    /// `INTERNAL_ERROR`. In-flight checks are answered with `INVALID_STATE`
+    /// when `Stop` is received.
+    strict HealthCheck(struct {
+        request fuchsia.driver.framework.HealthCheckRequest;
+    }) -> (fuchsia.driver.framework.HealthCheckResponse) error fuchsia.driver.framework.HealthCheckError;
 };
 
 /// The lifecycle state of a dispatcher.
