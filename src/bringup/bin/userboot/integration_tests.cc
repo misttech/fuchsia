@@ -73,10 +73,10 @@ zx::vmo CreateBootfsVmo(const std::vector<std::pair<std::string, std::vector<uin
 }
 
 zx::vmo CreateZbiVmo(const std::string& cmdline, const zx::vmo& bootfs_vmo) {
-  zx::vmo zbi_vmo;
-  EXPECT_EQ(zx::vmo::create(0, ZX_VMO_RESIZABLE, &zbi_vmo), ZX_OK);
+  zx::vmo resizable_zbi_vmo;
+  EXPECT_EQ(zx::vmo::create(0, ZX_VMO_RESIZABLE, &resizable_zbi_vmo), ZX_OK);
 
-  zbitl::Image image(zx::unowned_vmo{zbi_vmo});
+  zbitl::Image image(zx::unowned_vmo{resizable_zbi_vmo});
   EXPECT_TRUE(image.clear().is_ok());
 
   if (!cmdline.empty()) {
@@ -94,6 +94,11 @@ zx::vmo CreateZbiVmo(const std::string& cmdline, const zx::vmo& bootfs_vmo) {
       image.Append(zbi_header_t{.type = ZBI_TYPE_STORAGE_BOOTFS}, zbitl::AsBytes(bootfs_data));
   EXPECT_TRUE(res.is_ok());
 
+  uint64_t zbi_size = 0;
+  EXPECT_EQ(resizable_zbi_vmo.get_size(&zbi_size), ZX_OK);
+
+  zx::vmo zbi_vmo;
+  EXPECT_EQ(resizable_zbi_vmo.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, zbi_size, &zbi_vmo), ZX_OK);
   return zbi_vmo;
 }
 

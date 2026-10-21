@@ -13,7 +13,7 @@ use zbi::zbi_format::{
 };
 use zbi::{ZBI_ALIGNMENT_USIZE, ZbiFlags, ZbiHeader, ZbiType};
 use zerocopy::IntoBytes as _;
-use zx::{Name, VmarFlags, Vmo, VmoChildOptions};
+use zx::{Name, VmarFlags, Vmo};
 use zx_libc::sanitizer::Log;
 
 const HEADER_SIZE: u64 = size_of::<ZbiHeader>() as u64;
@@ -147,20 +147,15 @@ pub fn get_bootfs_vmo(zbi_vmo: &Vmo, check_crc: bool, log: &mut Log) -> Result<V
         .checked_add(payload_len as u64)
         .and_then(|end| end.checked_next_multiple_of(page_size))
         .ok_or_else(|| anyhow!("BOOTFS mapping size overflow"))?;
-    let bootfs_slice_vmo = zbi_vmo.create_child(
-        VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE | VmoChildOptions::NO_WRITE,
+    let mut payload_mapping = Mapping::create_from_vmo_with_offset(
+        zbi_vmo,
         map_offset,
-        map_size,
-    )?;
-    let mut payload_mapping = Mapping::create_from_vmo(
-        &bootfs_slice_vmo,
         map_size as usize,
         VmarFlags::PERM_READ | VmarFlags::MAP_RANGE,
     )?;
     let (payload_ptr, payload_map_len) = payload_mapping.as_ptr_len();
-    // SAFETY: `bootfs_slice_vmo` is a read-only snapshot child VMO that is not shared with any
-    // other thread or process, and `payload_mapping` keeps
-    // `payload_ptr..payload_ptr + payload_map_len` mapped read-only for the duration of this
+    // SAFETY: `zbi_vmo` is not modified while `get_bootfs_vmo` is running, and `payload_mapping`
+    // keeps `payload_ptr..payload_ptr + payload_map_len` mapped read-only for the duration of this
     // function.
     let payload = unsafe {
         &slice::from_raw_parts(payload_ptr.cast_const(), payload_map_len)
