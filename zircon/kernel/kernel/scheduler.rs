@@ -756,6 +756,27 @@ impl DequeueResult {
         }
     }
 
+    /// Constructs a result without a pending timeline update. If `thread` is
+    /// null, an empty result is constructed.
+    pub fn from_thread(thread: *mut Thread) -> Self {
+        Self {
+            thread,
+            mono_start_time_ns: SchedTime::from_raw(0),
+            mono_finish_time_ns: SchedTime::from_raw(0),
+        }
+    }
+
+    /// Constructs a result with a pending timeline update.
+    pub fn with_pending_update(
+        thread: *mut Thread,
+        mono_start_time_ns: SchedTime,
+        mono_finish_time_ns: SchedTime,
+    ) -> Self {
+        debug_assert!(!thread.is_null());
+        debug_assert!(mono_start_time_ns.raw_value() != 0 || mono_finish_time_ns.raw_value() != 0);
+        Self { thread, mono_start_time_ns, mono_finish_time_ns }
+    }
+
     /// Updates the thread's start/finish times while holding the thread's lock.
     /// May be called unconditionally and more than once, whether or not there
     /// are pending updates.
@@ -5126,6 +5147,80 @@ impl Scheduler {
         }
     }
 
+    /// Evaluates the given `run_queue` for the thread with the earliest finish time
+    /// that has a start time earlier than or equal to the given `eligible_time` and
+    /// passes the given `predicate`, and asserts that any returned thread is
+    /// associated with this scheduler.
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`, which protects `run_queue` and the
+    /// scheduler state of threads in it.
+    unsafe fn find_earliest_eligible_thread<F>(
+        &self,
+        run_queue: &RunQueue,
+        eligible_time: SchedTime,
+        predicate: F,
+    ) -> *mut Thread
+    where
+        F: Fn(*mut Thread) -> bool,
+    {
+        // SAFETY: `queue_lock_` is held by the caller.
+        let out = unsafe { find_earliest_eligible_thread(run_queue, eligible_time, predicate) };
+        if !out.is_null() {
+            // SAFETY: `out` is in `run_queue` and `queue_lock_` is held.
+            unsafe { self.assert_in_scheduler(out) };
+        }
+        out
+    }
+
+    /// Returns true if there is at least one eligible deadline thread in the
+    /// run queue.
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`.
+    unsafe fn is_deadline_thread_eligible(&self, eligible_time: SchedTime) -> bool {
+        // SAFETY: `queue_lock_` is held by the caller, which guards the deadline run
+        // queues and the `start_time` of threads enqueued in them.
+        unsafe {
+            let critical_queue = self.critical_deadline_queue();
+            let deadline_queue = self.deadline_queue();
+
+            for queue in [critical_queue, deadline_queue] {
+                if let Some(front_ref) = (*queue).front() {
+                    let front = core::ptr::from_ref(front_ref).cast_mut();
+                    self.assert_in_run_queue(front);
+                    let state_ptr = cpp_thread_get_scheduler_state(front);
+                    if (*state_ptr).start_time <= eligible_time {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+    }
+
+    /// Returns true if there is at least one eligible fair thread in the run
+    /// queue.
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`.
+    unsafe fn is_fair_thread_eligible(&self, eligible_time: SchedTime) -> bool {
+        // SAFETY: `queue_lock_` is held by the caller, which guards the fair run
+        // queue, the affine transform, and the `start_time` of enqueued threads.
+        unsafe {
+            let fair_queue = self.fair_run_queue();
+            let Some(front_ref) = (*fair_queue).front() else {
+                return false;
+            };
+
+            let variable_eligible_time = self.monotonic_to_variable(eligible_time);
+            let front = core::ptr::from_ref(front_ref).cast_mut();
+            self.assert_in_run_queue(front);
+            let state_ptr = cpp_thread_get_scheduler_state(front);
+            (*state_ptr).start_time <= variable_eligible_time
+        }
+    }
+
     /// Returns true if the given thread is critical deadline scheduled.
     ///
     /// # Safety
@@ -5173,6 +5268,296 @@ impl Scheduler {
                 (*self.state.get()).fair_affine_transform.slope,
             );
             // LINT.ThenChange(//tools/testing/tefmocheck/check-configs.yaml:scheduler_start_finish_time)
+        }
+    }
+
+    /// Dequeues the eligible thread with the earliest deadline. The caller must
+    /// ensure that there is at least one eligible thread in either the critical
+    /// deadline run queue or the deadline run queue.
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`.
+    unsafe fn dequeue_deadline_thread(&self, eligible_time: SchedTime) -> DequeueResult {
+        let trace = local_ktrace_begin_scope!(DETAILED, "dequeue_deadline_thread");
+        // SAFETY: `queue_lock_` is held by the caller, which guards the deadline run
+        // queues, power level control state, and the SOVs (`start_time`, `finish_time`,
+        // queue node) of threads enqueued in this scheduler (matching C++
+        // `MarkHasOwnedThreadAccess`).
+        unsafe {
+            let critical_queue = self.critical_deadline_queue_mut();
+            let deadline_queue = self.deadline_queue_mut();
+            debug_assert!(!(*critical_queue).is_empty() || !(*deadline_queue).is_empty());
+
+            let critical_thread =
+                self.find_earliest_eligible_thread(&*critical_queue, eligible_time, accept_all);
+
+            let is_oversubscribed =
+                cpp_scheduler_get_normalized_utilization(self) > K_CPU_UTILIZATION_LIMIT;
+
+            let eligible_thread = if is_oversubscribed && !critical_thread.is_null() {
+                critical_thread
+            } else {
+                let normal_thread =
+                    self.find_earliest_eligible_thread(&*deadline_queue, eligible_time, accept_all);
+                // There must be at least one eligible deadline thread, whether critical or
+                // normal.
+                debug_assert!(!critical_thread.is_null() || !normal_thread.is_null());
+                self.earliest_deadline_thread(critical_thread, normal_thread)
+            };
+
+            debug_assert!(
+                !eligible_thread.is_null(),
+                "eligible_time={}",
+                eligible_time.raw_value()
+            );
+
+            // `eligible_thread`'s scheduler variables may be accessed here: `queue_lock_` is held
+            // and the thread is in a run queue protected by the same lock.
+            let is_critical = self.is_critical_deadline_thread(eligible_thread);
+            let queue = if is_critical { critical_queue } else { deadline_queue };
+            (*queue).erase_raw(eligible_thread);
+            self.trace_thread_queue_event(
+                ktrace_rs::resolve_string!("tqe_deque_deadline"),
+                eligible_thread,
+            );
+            debug_assert_eq!(
+                (*cpp_thread_get_queue_state(eligible_thread)).disposition(),
+                QueueDisposition::Associated
+            );
+
+            let state_ptr = cpp_thread_get_scheduler_state(eligible_thread);
+            let start_time = (*state_ptr).start_time;
+            let finish_time = (*state_ptr).finish_time;
+            if finish_time <= eligible_time {
+                COUNTER_DEADLINE_PAST.add(1);
+            }
+
+            ktrace_rs::end_scope!(
+                trace,
+                "start time" => start_time,
+                "finish time" => finish_time,
+            );
+
+            DequeueResult::from_thread(eligible_thread)
+        }
+    }
+
+    /// Dequeues the eligible thread with the earliest virtual finish time. The
+    /// caller must ensure that there is at least one thread in the queue.
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`.
+    unsafe fn dequeue_fair_thread(&self, monotonic_eligible_time: SchedTime) -> DequeueResult {
+        let trace = local_ktrace_begin_scope!(DETAILED, "dequeue_fair_thread");
+        // SAFETY: `queue_lock_` is held by the caller, which guards the fair run
+        // queue, the affine transform, and the SOVs (`start_time`, `finish_time`,
+        // `subtree_invariants`, queue node) of threads enqueued in this scheduler
+        // (matching C++ `MarkHasOwnedThreadAccess`).
+        unsafe {
+            let fair_queue = self.fair_run_queue_mut();
+
+            // Convert monotonic eligible time to variable time to compare with fair run
+            // queue values.
+            let mut variable_eligible_time = self.monotonic_to_variable(monotonic_eligible_time);
+
+            // `earliest_thread`'s scheduler variables may be accessed here: `queue_lock_`
+            // is held and the thread is in a run queue protected by the same lock.
+            let earliest_thread = (*fair_queue)
+                .front()
+                .map_or(core::ptr::null_mut(), |t| core::ptr::from_ref(t).cast_mut());
+            debug_assert!(!earliest_thread.is_null());
+            let earliest_state_ptr = cpp_thread_get_scheduler_state(earliest_thread);
+
+            // If there are no eligible fair threads, snap the variable timeline to the
+            // earliest start time.
+            let earliest_start = (*earliest_state_ptr).start_time;
+            if variable_eligible_time < earliest_start {
+                COUNTER_FAIR_TIMELINE_SNAP_COUNT.add(1);
+                let diff = earliest_start - variable_eligible_time;
+                COUNTER_FAIR_TIMELINE_SNAP_TIME.add(diff.raw_value());
+
+                (*self.state.get())
+                    .fair_affine_transform
+                    .snap(monotonic_eligible_time, earliest_start);
+                variable_eligible_time = earliest_start;
+            }
+
+            let eligible_thread = self.find_earliest_eligible_thread(
+                &*fair_queue,
+                variable_eligible_time,
+                accept_all,
+            );
+            debug_assert!(
+                !eligible_thread.is_null(),
+                "vearliest_start={}, veligible_time={} , vstart_time={}, vfinish_time={}, vmin_finish_time={}!",
+                earliest_start.raw_value(),
+                variable_eligible_time.raw_value(),
+                (*earliest_state_ptr).start_time.raw_value(),
+                (*earliest_state_ptr).finish_time.raw_value(),
+                (*earliest_state_ptr).subtree_invariants.min_finish_time.raw_value(),
+            );
+
+            // Same argument as before for `MarkHasOwnedThreadAccess(*eligible_thread)`:
+            // we are holding `queue_lock_`, and we just found this thread in the scheduler.
+            (*fair_queue).erase_raw(eligible_thread);
+            self.trace_thread_queue_event(
+                ktrace_rs::resolve_string!("tqe_deque_fair"),
+                eligible_thread,
+            );
+            debug_assert_eq!(
+                (*cpp_thread_get_queue_state(eligible_thread)).disposition(),
+                QueueDisposition::Associated
+            );
+
+            let state_ptr = cpp_thread_get_scheduler_state(eligible_thread);
+            let var_start_time = (*state_ptr).start_time;
+            let var_finish_time = (*state_ptr).finish_time;
+            let mono_start_time_ns = self.variable_to_monotonic(var_start_time);
+            let mono_finish_time_ns = self.variable_to_monotonic(var_finish_time);
+
+            ktrace_rs::end_scope!(
+                trace,
+                "var_start_time" => var_start_time,
+                "var_finish_time" => var_finish_time,
+                "mono_start_time" => mono_start_time_ns,
+                "mono_finish_time" => mono_finish_time_ns,
+            );
+
+            DequeueResult::with_pending_update(
+                eligible_thread,
+                mono_start_time_ns,
+                mono_finish_time_ns,
+            )
+        }
+    }
+
+    /// Returns the eligible fair thread in the run queue with a finish time
+    /// earlier than the given finish time, or null if one does not exist.
+    ///
+    /// See the note in `find_earliest_eligible_thread` for lifecycle rules for the
+    /// returned pointer (if any).
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`.
+    unsafe fn find_earlier_fair_thread(
+        &self,
+        eligible_time: SchedTime,
+        finish_time: SchedTime,
+    ) -> *mut Thread {
+        // SAFETY: `queue_lock_` is held by the caller, which guards the fair run
+        // queue, the affine transform, and the `finish_time` of enqueued threads
+        // (matching C++ `MarkHasOwnedThreadAccess`).
+        unsafe {
+            let fair_queue = self.fair_run_queue();
+            // Convert monotonic to variable times to compare with fair run queue values.
+            let variable_eligible_time = self.monotonic_to_variable(eligible_time);
+            let variable_finish_time = self.monotonic_to_variable(finish_time);
+
+            let eligible_thread = self.find_earliest_eligible_thread(
+                &*fair_queue,
+                variable_eligible_time,
+                accept_all,
+            );
+
+            if !eligible_thread.is_null() {
+                // `eligible_thread`'s scheduler variables may be accessed here: `queue_lock_` is held
+                // and the thread is in a run queue protected by the same lock.
+                let state_ptr = cpp_thread_get_scheduler_state(eligible_thread);
+                if (*state_ptr).finish_time < variable_finish_time {
+                    return eligible_thread;
+                }
+            }
+            core::ptr::null_mut()
+        }
+    }
+
+    /// Removes the eligible fair thread with a finish time earlier than the given
+    /// finish time and returns it, or an empty result if one does not exist.
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`.
+    unsafe fn dequeue_earlier_fair_thread(
+        &self,
+        eligible_time: SchedTime,
+        finish_time: SchedTime,
+    ) -> DequeueResult {
+        let _trace = local_ktrace_begin_scope!(DETAILED, "dequeue_earlier_fair_thread");
+        // SAFETY: `queue_lock_` is held by the caller, which guards the fair run
+        // queue, the affine transform, and the SOVs (`start_time`, `finish_time`,
+        // queue node) of threads enqueued in this scheduler (matching C++
+        // `MarkHasOwnedThreadAccess`).
+        unsafe {
+            let eligible_thread = self.find_earlier_fair_thread(eligible_time, finish_time);
+            if !eligible_thread.is_null() {
+                // `eligible_thread`'s scheduler variables may be accessed here: `queue_lock_` is held
+                // and the thread is in a run queue protected by the same lock.
+                let fair_queue = self.fair_run_queue_mut();
+                (*fair_queue).erase_raw(eligible_thread);
+                self.trace_thread_queue_event(
+                    ktrace_rs::resolve_string!("tqe_deque_earlier_fair"),
+                    eligible_thread,
+                );
+                debug_assert_eq!(
+                    (*cpp_thread_get_queue_state(eligible_thread)).disposition(),
+                    QueueDisposition::Associated
+                );
+
+                let state_ptr = cpp_thread_get_scheduler_state(eligible_thread);
+                let mono_start_time_ns = self.variable_to_monotonic((*state_ptr).start_time);
+                let mono_finish_time_ns = self.variable_to_monotonic((*state_ptr).finish_time);
+
+                DequeueResult::with_pending_update(
+                    eligible_thread,
+                    mono_start_time_ns,
+                    mono_finish_time_ns,
+                )
+            } else {
+                DequeueResult::empty()
+            }
+        }
+    }
+
+    /// Removes the eligible deadline thread with a finish time earlier than the
+    /// given reference thread's finish time and criticality and returns it, or an
+    /// empty result if one does not exist.
+    ///
+    /// # Safety
+    /// `reference_thread` must point to a valid `Thread`, and the caller must hold
+    /// `queue_lock_` and at least shared access to `reference_thread`'s lock.
+    unsafe fn dequeue_earlier_deadline_thread(
+        &self,
+        eligible_time: SchedTime,
+        reference_thread: *const Thread,
+    ) -> DequeueResult {
+        let _trace = local_ktrace_begin_scope!(DETAILED, "dequeue_earlier_deadline_thread");
+        // SAFETY: `queue_lock_` and `reference_thread`'s lock are held by the caller,
+        // guarding the deadline run queues and the SOVs of enqueued threads (matching
+        // C++ `MarkHasOwnedThreadAccess`).
+        unsafe {
+            let eligible_thread =
+                self.find_earlier_deadline_thread(eligible_time, reference_thread);
+            if !eligible_thread.is_null() {
+                // `eligible_thread`'s scheduler variables may be accessed here: `queue_lock_` is held
+                // and the thread is in a run queue protected by the same lock.
+                let is_critical = self.is_critical_deadline_thread(eligible_thread);
+                let queue = if is_critical {
+                    self.critical_deadline_queue_mut()
+                } else {
+                    self.deadline_queue_mut()
+                };
+                (*queue).erase_raw(eligible_thread);
+                self.trace_thread_queue_event(
+                    ktrace_rs::resolve_string!("tqe_deque_earlier_deadline"),
+                    eligible_thread,
+                );
+                debug_assert_eq!(
+                    (*cpp_thread_get_queue_state(eligible_thread)).disposition(),
+                    QueueDisposition::Associated
+                );
+                DequeueResult::from_thread(eligible_thread)
+            } else {
+                DequeueResult::empty()
+            }
         }
     }
 
@@ -5289,6 +5674,173 @@ impl Scheduler {
             }
         }
     }
+
+    /// Removes the thread at the head of the first eligible run queue. If there is
+    /// an eligible deadline thread, it takes precedence over available fair
+    /// threads. If there is no eligible work, returns `EvaluateResult::steal_work()`
+    /// to indicate that the caller should attempt to steal work from other busy CPUs
+    /// or fall back to this scheduler's idle thread.
+    ///
+    /// In all cases where a thread is returned, the thread will not be locked, and
+    /// will not be a member of any current run queue. One of the following *must*
+    /// happen to the thread after this:
+    ///
+    /// 1) The thread is added back to one of these scheduler's run queues (this
+    ///    is common during a PI interaction involving the thread).
+    /// 2) The thread is flagged as `QueueDisposition::Associated` in its
+    ///    scheduler-owned variables, before becoming the active thread in its
+    ///    scheduler (after dropping the scheduler lock and re-obtaining the
+    ///    thread's lock exclusively). This happens in `reschedule_common_helper`
+    ///    when `evaluate_next_thread` chooses a new thread to run.
+    /// 3) The thread is flagged as `QueueDisposition::Stolen` after being removed
+    ///    from another scheduler's run queue, but before being locked exclusively
+    ///    and re-inserted into its new scheduler's run queue.
+    ///
+    /// Note that these rules apply to *all* the `dequeue_*` methods.
+    ///
+    /// # Safety
+    /// The caller must hold `queue_lock_`.
+    unsafe fn dequeue_thread(&self, now: SchedTime) -> EvaluateResult {
+        // SAFETY: `queue_lock_` is held by the caller.
+        unsafe {
+            if self.is_deadline_thread_eligible(now) {
+                let res = self.dequeue_deadline_thread(now);
+                return EvaluateResult::selected(res);
+            }
+
+            let fair_queue = self.fair_run_queue();
+            if !(*fair_queue).is_empty() {
+                let res = self.dequeue_fair_thread(now);
+                return EvaluateResult::selected(res);
+            }
+
+            EvaluateResult::steal_work()
+        }
+    }
+
+    /// Evaluates the schedule and returns the thread that should execute.
+    ///
+    /// # Safety
+    /// `current_thread` must point to a valid `Thread`, and the caller must hold
+    /// both `queue_lock_` and `current_thread`'s lock exclusively.
+    unsafe fn evaluate_next_thread(
+        &self,
+        now: SchedTime,
+        current_thread: *mut Thread,
+        current_is_migrating: bool,
+    ) -> EvaluateResult {
+        let _trace = local_ktrace_begin_scope!(DETAILED, "find_thread");
+
+        // SAFETY: `current_thread` is valid and both `queue_lock_` and
+        // `current_thread`'s lock are held exclusively by the caller. We use
+        // `state_ptr` rather than holding `&SchedulerState` across
+        // `update_activation` and `queue_thread`, both of which mutate
+        // `current_thread`'s `SchedulerState`.
+        unsafe {
+            // First things first. If we have pending power work, we choose the idle-power thread.
+            if cpp_scheduler_has_pending_power_work(self) {
+                let idle_power_thread = cpp_scheduler_get_idle_thread(self);
+                return EvaluateResult::selected(DequeueResult::from_thread(idle_power_thread));
+            }
+
+            let state_ptr = cpp_thread_get_scheduler_state(current_thread);
+            let is_idle = cpp_thread_is_idle(current_thread);
+            let is_runnable = (*state_ptr).state == ThreadState::Ready;
+            let is_deadline = (*state_ptr).effective_profile.is_deadline();
+
+            if is_runnable && !is_idle && !current_is_migrating {
+                // Start a new activation, if necessary, before comparing with other threads.
+                self.update_activation(current_thread, now);
+
+                // Determine eligibility after updating the activation period.
+                let is_eligible = (*state_ptr).start_time <= now;
+
+                if is_deadline && !is_eligible {
+                    // Ineligible deadline threads must wait until they become eligible again.
+                    return self.dequeue_thread(now);
+                }
+
+                if self.is_deadline_thread_eligible(now) {
+                    if is_deadline {
+                        // The current thread is deadline and eligible. Select the eligible
+                        // thread with the earliest finish time, which may still be the current
+                        // thread.
+                        let earlier_thread_result =
+                            self.dequeue_earlier_deadline_thread(now, current_thread);
+                        if !earlier_thread_result.thread.is_null() {
+                            return EvaluateResult::selected(earlier_thread_result);
+                        }
+
+                        // The current thread is eligible and has the earliest finish time.
+                        return EvaluateResult::selected(DequeueResult::from_thread(
+                            current_thread,
+                        ));
+                    }
+
+                    // The current thread is fair. An eligible deadline thread should preempt
+                    // the current thread.
+                    let res = self.dequeue_deadline_thread(now);
+                    return EvaluateResult::selected(res);
+                }
+
+                if !is_deadline {
+                    if is_eligible {
+                        if self.is_fair_thread_eligible(now) {
+                            // Select the eligible fair thread with the earliest finish time,
+                            // which may still be the current thread.
+                            let finish_time = (*state_ptr).finish_time;
+                            let earlier_thread_result =
+                                self.dequeue_earlier_fair_thread(now, finish_time);
+                            if !earlier_thread_result.thread.is_null() {
+                                return EvaluateResult::selected(earlier_thread_result);
+                            }
+                        }
+
+                        // The current fair thread has the earliest eligible finish time.
+                        return EvaluateResult::selected(DequeueResult::from_thread(
+                            current_thread,
+                        ));
+                    }
+
+                    if self.is_fair_thread_eligible(now) {
+                        // Select an eligible fair thread.
+                        let res = self.dequeue_fair_thread(now);
+                        return EvaluateResult::selected(res);
+                    }
+
+                    // No fair threads are currently eligible. Temporarily add the current
+                    // thread to the run queue, before snapping the variable timeline to the
+                    // earliest eligible time, to simplify selection in the updated timeline.
+                    // Use Placement::Adjustment to avoid emitting inconsistent trace events.
+                    self.queue_thread(current_thread, Placement::Adjustment, now);
+
+                    // Snap the variable timeline to the earliest eligible time and select the
+                    // thread with the earliest eligible finish time.
+                    let next_thread = self.dequeue_fair_thread(now);
+                    debug_assert!(!next_thread.thread.is_null());
+
+                    // If the current thread is not selected to run again, it must be removed
+                    // from the run queue to avoid being stolen during lock juggling. It will
+                    // be returned to the run queue after the lock juggling is completed and
+                    // before switching to the next thread.
+                    if next_thread.thread != current_thread {
+                        self.erase_from_queue(current_thread);
+                    }
+
+                    return EvaluateResult::selected(next_thread);
+                }
+
+                // The current deadline thread has remaining time and no eligible contender.
+                debug_assert!(is_deadline);
+                debug_assert!(is_eligible);
+                return EvaluateResult::selected(DequeueResult::from_thread(current_thread));
+            }
+
+            // The thread is either no longer runnable, migrating, or the idle thread.
+            self.dequeue_thread(now)
+        }
+    }
+
     /// Scales a duration value by the reciprocal of the processing rate.
     ///
     /// # Safety
@@ -5431,7 +5983,7 @@ impl Scheduler {
 
         // SAFETY: `queue_lock_` is held, keeping the run queue and its threads valid.
         let critical_thread = unsafe {
-            find_earliest_eligible_thread(&*critical_deadline_queue, eligible_time, accept_all)
+            self.find_earliest_eligible_thread(&*critical_deadline_queue, eligible_time, accept_all)
         };
 
         // SAFETY: `self` is valid and `queue_lock_` is held, which guards the power
@@ -5444,7 +5996,7 @@ impl Scheduler {
         } else {
             // SAFETY: `queue_lock_` is held, keeping the run queue and its threads valid.
             let normal_thread = unsafe {
-                find_earliest_eligible_thread(&*deadline_queue, eligible_time, accept_all)
+                self.find_earliest_eligible_thread(&*deadline_queue, eligible_time, accept_all)
             };
             // SAFETY: Both threads are either null or in this scheduler's run queues,
             // which `queue_lock_` guards.
@@ -5453,12 +6005,10 @@ impl Scheduler {
 
         let mut selected_thread = core::ptr::null_mut();
         if !eligible_thread.is_null() {
-            // The C++ implementation uses MarkHasOwnedThreadAccess here to satisfy the
-            // static annotations for shared access to the eligible thread's state.
-            // SAFETY: This is acceptable because `queue_lock_` is held and the eligible
-            // thread is in a run queue protected by the same lock, so the fields read
-            // below cannot be concurrently written (see the locking note on
-            // `SchedulerState`).
+            // SAFETY: Shared access to the eligible thread's scheduler state is sound
+            // because `queue_lock_` is held and the eligible thread is in a run queue
+            // protected by the same lock, so the fields read below cannot be
+            // concurrently written (see the locking note on `SchedulerState`).
             let eligible_state = unsafe { &*cpp_thread_get_scheduler_state(eligible_thread) };
             // SAFETY: `reference_thread` is valid and its lock is held at least shared.
             let ref_state =
@@ -6471,6 +7021,56 @@ pub unsafe extern "C" fn rust_scheduler_erase_from_queue(
     unsafe { (*sched).erase_from_queue(thread) };
 }
 
+/// # Safety
+/// `sched` and `current_thread` must be valid, `out_result` must point to an
+/// initialized `DequeueResult` (it is read before it is overwritten), and both
+/// `queue_lock_` and `current_thread`'s lock must be held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_evaluate_next_thread(
+    sched: *const Scheduler,
+    now: SchedTime,
+    current_thread: *mut Thread,
+    current_is_migrating: bool,
+    out_result: *mut DequeueResult,
+) -> bool {
+    // SAFETY: Forwarded from the caller.
+    let mut eval =
+        unsafe { (*sched).evaluate_next_thread(now, current_thread, current_is_migrating) };
+    if eval.status == EvaluateStatus::Selected {
+        let res = DequeueResult {
+            thread: eval.thread,
+            mono_start_time_ns: eval.mono_start_time_ns,
+            mono_finish_time_ns: eval.mono_finish_time_ns,
+        };
+        eval.mono_start_time_ns = SchedTime::from_raw(0);
+        eval.mono_finish_time_ns = SchedTime::from_raw(0);
+        // SAFETY: `out_result` is a valid pointer provided by the caller.
+        unsafe {
+            debug_assert!(!(*out_result).is_updated_pending());
+            out_result.write(res);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// # Safety
+/// `thread` and `out_targets` must be valid, and `thread` must be locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_unblock_common(
+    thread: *mut Thread,
+    now: SchedTime,
+    unblock_type: i32,
+    out_targets: *mut RescheduleTargets,
+) {
+    let ut = if unblock_type == 0 { UnblockType::Normal } else { UnblockType::Synchronous };
+    // SAFETY: Forwarded from the caller.
+    let targets = unsafe { unblock_common(thread, now, ut) };
+    // SAFETY: `out_targets` is a valid pointer provided by the caller.
+    unsafe { out_targets.write(targets) };
+}
+
 /// Initializes a run queue in-place.
 ///
 /// # Safety
@@ -6613,6 +7213,105 @@ pub enum UnblockType {
     /// compatible conditions, the woken thread can replace the current thread on
     /// a CPU as it blocks in the same reschedule operation.
     Synchronous = 1,
+}
+
+/// CPUs to reschedule after changes to active schedulers.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct RescheduleTargets {
+    /// The CPU that the thread was scheduled on.
+    pub target_cpu: CpuNum,
+    /// Other CPUs that should be rescheduled. This is typically due to power
+    /// level changes.
+    pub cpus_to_reschedule: CpuMask,
+}
+
+// RescheduleTargets layout parity
+zr::static_assert!(core::mem::size_of::<RescheduleTargets>() == 8);
+zr::static_assert!(core::mem::align_of::<RescheduleTargets>() == 4);
+zr::static_assert!(core::mem::offset_of!(RescheduleTargets, target_cpu) == 0);
+zr::static_assert!(core::mem::offset_of!(RescheduleTargets, cpus_to_reschedule) == 4);
+
+impl RescheduleTargets {
+    pub fn mask(&self) -> CpuMask {
+        cpu_num_to_mask(self.target_cpu) | self.cpus_to_reschedule
+    }
+}
+
+/// Common logic for unblock API.
+///
+/// # Safety
+/// The caller must ensure `thread` points to a valid initialized `Thread` whose
+/// lock is held exclusively, and that interrupts are disabled.
+pub unsafe fn unblock_common(
+    thread: *mut Thread,
+    now: SchedTime,
+    unblock_type: UnblockType,
+) -> RescheduleTargets {
+    // SAFETY: `thread` is valid and its lock is held by the caller.
+    unsafe { cpp_thread_canary_assert(thread) };
+    // SAFETY: `thread` is valid.
+    let state_ptr = unsafe { cpp_thread_get_scheduler_state(thread) };
+
+    let mut target_cpu;
+    let mut cpus_to_reschedule = 0;
+    loop {
+        // TODO(rudymathu): This target_cpu should be stashed in the thread prior to
+        // adding it to the save_state_list_, as that would allow us to bypass CPU
+        // selection when processing the list so long as the CPU is still online.
+        // SAFETY: `thread` is valid, its lock is held, and interrupts are disabled.
+        target_cpu = unsafe { Scheduler::find_target_cpu(thread, unblock_type) };
+        // SAFETY: `thread` is valid and its lock is held, guarding `last_cpu` and the
+        // migration function and pending flags.
+        let (last_cpu, needs_migration) = unsafe {
+            let last_cpu = (*state_ptr).last_cpu;
+            let needs_migration = last_cpu != INVALID_CPU
+                && target_cpu != last_cpu
+                && cpp_thread_has_migrate_fn(thread)
+                && !cpp_thread_migrate_pending(thread);
+            (last_cpu, needs_migration)
+        };
+
+        if needs_migration {
+            target_cpu = last_cpu;
+        }
+        // SAFETY: `target_cpu` is a valid CPU number, interrupts are disabled, and
+        // `target`'s `queue_lock_` is not already held.
+        let (target, _target_queue_guard) = unsafe {
+            let target = cpp_scheduler_get(target_cpu);
+            (target, QueueLockGuard::acquire(target))
+        };
+
+        // SAFETY: `target` is valid and `_target_queue_guard` holds its `queue_lock_`,
+        // while the caller holds `thread`'s lock exclusively.
+        if unsafe { (*target).is_scheduler_active_locked() } {
+            // SAFETY: `thread` is valid with its lock held exclusively, `target` is valid
+            // with `queue_lock_` held by `_target_queue_guard`, and `target` is active.
+            unsafe {
+                sched_trace_wakeup(thread, target_cpu);
+                cpp_thread_set_ready(thread);
+                cpp_thread_update_runtime_stats(thread, (*state_ptr).state as i32);
+                if needs_migration {
+                    cpp_scheduler_save_state_list_push_front(target, thread);
+                } else {
+                    (*state_ptr).curr_cpu = target_cpu;
+                    (*target).assert_in_scheduler(thread);
+                    (*target).insert(now, thread, Placement::Insertion);
+
+                    // If a power level change was requested during insertion, attempt to
+                    // handle it immediately with the fast path and update any affected
+                    // CPUs. If the fast path is not supported, the request will be left
+                    // pending on the target CPU and flushed during its reschedule.
+                    cpus_to_reschedule = (*target).send_pending_power_level_request();
+                }
+            }
+            break;
+        }
+
+        COUNTER_FIND_TARGET_CPU_RETRIES.add(1);
+    }
+
+    RescheduleTargets { target_cpu, cpus_to_reschedule }
 }
 
 // The threshold for early termination when searching for a CPU to place a
@@ -7521,11 +8220,7 @@ impl Scheduler {
                         });
                     }
 
-                    Some(DequeueResult {
-                        thread,
-                        mono_start_time_ns: SchedTime::from_raw(0),
-                        mono_finish_time_ns: SchedTime::from_raw(0),
-                    })
+                    Some(DequeueResult::from_thread(thread))
                 };
 
                 // Returns true if the given thread in the run queue meets the criteria to

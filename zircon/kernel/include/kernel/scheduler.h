@@ -320,6 +320,11 @@ void rust_scheduler_remove_thread_locked(const Scheduler* sched, SchedTime now, 
 void rust_scheduler_queue_thread(const Scheduler* sched, Thread* thread, int32_t placement,
                                  SchedTime now);
 void rust_scheduler_erase_from_queue(const Scheduler* sched, Thread* thread);
+bool rust_scheduler_evaluate_next_thread(const Scheduler* sched, SchedTime now,
+                                         Thread* current_thread, bool current_is_migrating,
+                                         void* out_result);
+void rust_scheduler_unblock_common(Thread* thread, SchedTime now, int32_t unblock_type,
+                                   void* out_targets);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.
@@ -1347,42 +1352,16 @@ class Scheduler {
   //    another scheduler's run queue, but before being locked exclusively and
   //    re-inserted into its new scheduler's run queue.
   //
-  // Note that these rules apply to *all* the versions of Dequeue listed below.
-  DequeueResult DequeueThread(SchedTime now, Guard<MonitoredSpinLock, NoIrqSave>& queue_guard)
-      TA_REQ(chainlock_transaction_token, queue_lock_);
-
-  // Removes the thread at the head of the fair run queue and returns it.
-  DequeueResult DequeueFairThread(SchedTime eligible_time) TA_REQ(queue_lock_);
-
-  // Removes the eligible fair thread with a finish time earlier than the given
-  // finish time and returns it or nullptr if one does not exist.
-  DequeueResult DequeueEarlierFairThread(SchedTime eligible_time, SchedTime finish_time)
-      TA_REQ(queue_lock_);
-
-  // Removes the eligible deadline thread with the earliest finish time in the
-  // deadline run queue and returns it.
-  DequeueResult DequeueDeadlineThread(SchedTime eligible_time) TA_REQ(queue_lock_);
-
-  // Removes the eligible deadline thread with a finish time earlier than the
-  // given reference thread's finish time and criticality and returns it or
-  // nullptr if one does not exist.
-  DequeueResult DequeueEarlierDeadlineThread(SchedTime eligible_time,
-                                             const Thread* reference_thread) TA_REQ(queue_lock_)
-      TA_REQ_SHARED(reference_thread->get_lock());
-
-  // Returns the eligible fair thread in the run queue with a finish time
-  // earlier than the given finish time, or nullptr if one does not exist.
-  //
-  // See the note in |FindEarliestEligibleThread| for lifecycle rules for the
-  // returned pointer (if any)
-  Thread* FindEarlierFairThread(SchedTime eligible_time, SchedTime finish_time) TA_REQ(queue_lock_);
+  // Note that these rules apply to the Dequeue operations in scheduler.rs.
 
   // Returns the eligible deadline thread in the run queue with a finish time
   // earlier than the given reference thread's finish time and criticality, or
   // nullptr if one does not exist.
   //
-  // See the note in |FindEarliestEligibleThread| for lifecycle rules for the
-  // returned pointer (if any)
+  // Any Thread* returned by this method may only be used as long as the queue
+  // lock is held. Dropping the queue lock allows the thread to be removed from
+  // the scheduler, and potentially exit, destroying the Thread and invalidating
+  // the thread pointer in the process.
   Thread* FindEarlierDeadlineThread(SchedTime eligible_time, const Thread* reference_thread)
       TA_REQ(queue_lock_) TA_REQ_SHARED(reference_thread->get_lock());
 
@@ -1453,36 +1432,6 @@ class Scheduler {
   // Adjusts the given fair thread's bandwidth and dynamic parameters for
   // changes in bandwidth demand since it was last scheduled.
   void AdjustFairBandwidth(Thread* thread, SchedTime now) TA_REQ(queue_lock_, thread->get_lock());
-
-  // Returns true if there is at least one eligible deadline thread in the
-  // run queue.
-  bool IsDeadlineThreadEligible(SchedTime eligible_time) TA_REQ(queue_lock_) {
-    for (const RunQueue* queue :
-         {&rust_state_.critical_deadline_run_queue, &rust_state_.deadline_run_queue}) {
-      if (!queue->is_empty()) {
-        const Thread& front = queue->front();
-        AssertInRunQueue(front);
-        if (front.scheduler_state().start_time() <= eligible_time) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  // Returns true if there is at least one eligible fair thread in the run
-  // queue.
-  bool IsFairThreadEligible(SchedTime eligible_time) TA_REQ(queue_lock_) {
-    if (rust_state_.fair_run_queue.is_empty()) {
-      return false;
-    }
-
-    const SchedTime variable_eligible_time = MonotonicToVariable(eligible_time);
-
-    const Thread& front = rust_state_.fair_run_queue.front();
-    AssertInRunQueue(front);
-    return front.scheduler_state().start_time() <= variable_eligible_time;
-  }
 
   // Updates the total expected runtime estimator and exports the atomic shadow
   // variable for cross-CPU readers.
@@ -1598,24 +1547,6 @@ class Scheduler {
   };
 
  private:
-  // Finds the next eligible thread in the given run queue.
-  //
-  // Note: Any Thread* returned by this method may only be used as long as the
-  // queue lock is held. Dropping the queue lock allows the thread to be removed
-  // from the scheduler, and potentially exit, destroying the Thread and
-  // invalidating the thread pointer in the process.
-  Thread* FindEarliestEligibleThread(RunQueue* run_queue, SchedTime eligible_time)
-      TA_REQ(queue_lock_);
-
-  // Finds the next eligible thread in the given run queue that also passes the
-  // given predicate.
-  //
-  // See the note in |FindEarliestEligibleThread| for lifecycle rules for the
-  // returned pointer (if any)
-  template <typename Predicate>
-  Thread* FindEarliestEligibleThread(RunQueue* run_queue, SchedTime eligible_time,
-                                     Predicate&& predicate) TA_REQ(queue_lock_);
-
   // Emits queue event tracers for trace-based scheduler performance analysis.
   inline void TraceThreadQueueEvent(const fxt::InternedString& name, const Thread* thread) const
       TA_REQ(queue_lock_) TA_REQ_SHARED(thread->get_lock());

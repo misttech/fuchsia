@@ -62,10 +62,6 @@ using ffl::Round;
 // also the comment where this counter is used.
 KCOUNTER(counter_preempt_past, "scheduler.preempt_past")
 
-// Counts the number of times we dequeue a deadline thread whose finish_time is
-// earlier than its eligible_time.
-KCOUNTER(counter_deadline_past, "scheduler.deadline_past")
-
 // Counts the number of times a thread's effective profile or affinity changed
 // while transitioning from READY to RUNNING.
 KCOUNTER(counter_update_in_transition, "scheduler.update_in_transition")
@@ -73,14 +69,6 @@ KCOUNTER(counter_update_in_transition, "scheduler.update_in_transition")
 // Counts the number of times we had to run FindTargetCpu again because our
 // selected Target became in-active after we chose it.
 KCOUNTER(counter_find_target_cpu_retries, "scheduler.find_target_cpu.retries")
-
-// Counts the number of times the fair timeline was snapped forward to make a
-// fair thread eligible to run.
-KCOUNTER(counter_fair_timeline_snap_count, "scheduler.fair-timeline-snap.count")
-
-// Counts the amount of variable time the fair timeline was snapped forward to
-// make a fair thread eligible to run.
-KCOUNTER(counter_fair_timeline_snap_time, "scheduler.fair-timeline-snap.time")
 
 namespace {
 
@@ -202,44 +190,6 @@ size_t Scheduler::GetRunnableTasks() const {
   Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
   const int64_t total_runnable_tasks = runnable_task_count();
   return static_cast<size_t>(total_runnable_tasks);
-}
-
-// Performs an augmented binary search for the task with the earliest finish
-// time that also has a start time equal to or later than the given eligible
-// time. An optional predicate may be supplied to filter candidates based on
-// additional conditions.
-//
-// The tree is ordered by start time and is augmented by maintaining an
-// additional invariant: each task node in the tree stores the minimum finish
-// time of its descendents, including itself, in addition to its own start and
-// finish time. The combination of these three values permits traversinng the
-// tree along a perfect partition of minimum finish times with eligible start
-// times.
-//
-// See fbl/wavl_tree_best_node_observer.h for an explanation of how the
-// augmented invariant is maintained.
-Thread* Scheduler::FindEarliestEligibleThread(RunQueue* run_queue, SchedTime eligible_time) {
-  Thread* out = rust_kernel_run_queue_find_earliest_eligible_thread(run_queue, eligible_time,
-                                                                    nullptr, nullptr);
-  if (out != nullptr) {
-    AssertInScheduler(*out);
-  }
-  return out;
-}
-
-template <typename Predicate>
-Thread* Scheduler::FindEarliestEligibleThread(RunQueue* run_queue, SchedTime eligible_time,
-                                              Predicate&& predicate) {
-  Thread* out = rust_kernel_run_queue_find_earliest_eligible_thread(
-      run_queue, eligible_time,
-      [](const Thread* iter, const void* ctx) {
-        return (*static_cast<ktl::remove_reference_t<Predicate>*>(const_cast<void*>(ctx)))(iter);
-      },
-      &predicate);
-  if (out != nullptr) {
-    AssertInScheduler(*out);
-  }
-  return out;
 }
 
 Scheduler* Scheduler::Get() { return Get(arch_curr_cpu_num()); }
@@ -423,7 +373,15 @@ FFI_ALWAYS_INLINE void cpp_scheduler_unlock_queue_irq_restore(Scheduler* sched, 
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_scheduler_has_pending_power_work(const Scheduler* sched) {
-  return static_cast<bool>(percpu::Get(sched->this_cpu()).idle_power_thread.pending_power_work());
+  if (IdlePowerThread::PendingPowerWorkPredicate pending_work =
+          percpu::Get(sched->this_cpu()).idle_power_thread.pending_power_work()) {
+    // If the idle power thread is in the (offline, offline) state, CPU hot
+    // plugging attempted to block before restoring the idle power thread.
+    DEBUG_ASSERT(pending_work.current() != IdlePowerThread::State::Offline ||
+                 pending_work.target() != IdlePowerThread::State::Offline);
+    return true;
+  }
+  return false;
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -731,38 +689,6 @@ void Scheduler::RemoveFirstThread(Thread* thread) {
   }
 }
 
-// Removes the thread at the head of the first eligible run queue. If there is
-// an eligible deadline thread, it takes precedence over available fair
-// threads. If there is no eligible work, attempt to steal work from other busy
-// CPUs.
-Scheduler::DequeueResult Scheduler::DequeueThread(
-    SchedTime now, Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
-  if (IsDeadlineThreadEligible(now)) {
-    return DequeueDeadlineThread(now);
-  }
-  if (likely(!rust_state_.fair_run_queue.is_empty())) {
-    return DequeueFairThread(now);
-  }
-
-  // Release the queue lock while attempting to steal work, leaving IRQs
-  // disabled.  Latch our scale up factor to use while determining whether or
-  // not we can steal a given thread before we drop our lock.
-  // TODO(eieio): Since the processing rate is CPU-local and not accessed across
-  // processors, it should be unnecessary to latch the value. Change the
-  // annotations to allow this.
-  DequeueResult result;
-  queue_guard.CallUnlocked([&, processing_rate = power_level_control_.processing_rate()] {
-    ChainLockTransaction::AssertActive();
-    result = StealWork(now, processing_rate);
-  });
-
-  if (result) {
-    return result;
-  }
-
-  return &percpu::Get(this_cpu()).idle_power_thread.thread();
-}
-
 // Attempts to steal work from other busy CPUs and move it to the local run
 // queues. Returns a pointer to the stolen thread that is now associated with
 // the local Scheduler instance, or nullptr is no work was stolen.
@@ -772,141 +698,6 @@ Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate
   return result;
 }
 
-// Dequeues the eligible thread with the earliest virtual finish time. The
-// caller must ensure that there is at least one thread in the queue.
-Scheduler::DequeueResult Scheduler::DequeueFairThread(SchedTime monotonic_eligible_time) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_fair_thread");
-
-  // Convert monotonic eligible time to variable time to compare with fair run
-  // queue values.
-  SchedTime variable_eligible_time =
-      rust_state_.fair_affine_transform.MonotonicToVariable(monotonic_eligible_time);
-
-  // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
-  // access to the thread's COVs and exclusive access to the thread's SOVs. This
-  // is acceptable because the queue lock is required by this method and the
-  // thread is in a queue protectect by the same lock.
-  const auto& earliest_thread = rust_state_.fair_run_queue.front();
-  MarkHasOwnedThreadAccess(earliest_thread);
-
-  // If there are no eligible fair threads, snap the variable timeline to the
-  // earliest start time.
-  const SchedTime earliest_start = earliest_thread.scheduler_state().start_time_;
-  if (variable_eligible_time < earliest_start) {
-    counter_fair_timeline_snap_count.Add(1);
-    counter_fair_timeline_snap_time.Add(Round<int64_t>(earliest_start - variable_eligible_time));
-
-    rust_state_.fair_affine_transform.Snap(monotonic_eligible_time, earliest_start);
-    variable_eligible_time = earliest_start;
-  }
-
-  Thread* const eligible_thread =
-      FindEarliestEligibleThread(&rust_state_.fair_run_queue, variable_eligible_time);
-
-  DEBUG_ASSERT_MSG(
-      eligible_thread != nullptr,
-      "vearliest_start=%" PRId64 ", veligible_time=%" PRId64 " , vstart_time=%" PRId64
-      ", vfinish_time=%" PRId64 ", vmin_finish_time=%" PRId64 "!",
-      earliest_start.raw_value(), variable_eligible_time.raw_value(),
-      earliest_thread.scheduler_state().start_time_.raw_value(),
-      earliest_thread.scheduler_state().finish_time_.raw_value(),
-      earliest_thread.scheduler_state().subtree_invariants_.min_finish_time.raw_value());
-
-  // Same argument as before for the use of the no-op assert.  We are holding
-  // the queue lock, and we just found this thread in the scheduler.
-  MarkHasOwnedThreadAccess(*eligible_thread);
-  rust_state_.fair_run_queue.erase(*eligible_thread);
-  TraceThreadQueueEvent("tqe_deque_fair"_intern, eligible_thread);
-  DEBUG_ASSERT(eligible_thread->disposition() == Disposition::Associated);
-
-  const SchedulerState& state = const_cast<const Thread*>(eligible_thread)->scheduler_state();
-  const SchedTime mono_start_time_ns =
-      rust_state_.fair_affine_transform.VariableToMonotonic(state.start_time());
-  const SchedTime mono_finish_time_ns =
-      rust_state_.fair_affine_transform.VariableToMonotonic(state.finish_time());
-
-  trace = KTRACE_END_SCOPE(("var_start_time", state.start_time().raw_value()),
-                           ("var_finish_time", state.finish_time().raw_value()),
-                           ("mono_start_time", mono_start_time_ns.raw_value()),
-                           ("mono_finish_time", mono_finish_time_ns.raw_value()));
-
-  return DequeueResult{eligible_thread, mono_start_time_ns, mono_finish_time_ns};
-}
-
-// Dequeues the eligible thread with the earliest deadline. The caller must
-// ensure that there is at least one eligible thread in either the critical
-// deadline run queue or the deadline run queue.
-Scheduler::DequeueResult Scheduler::DequeueDeadlineThread(SchedTime eligible_time) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_deadline_thread");
-  DEBUG_ASSERT(!rust_state_.critical_deadline_run_queue.is_empty() ||
-               !rust_state_.deadline_run_queue.is_empty());
-
-  const Thread* critical_thread =
-      FindEarliestEligibleThread(&rust_state_.critical_deadline_run_queue, eligible_time);
-  const bool is_oversubscribed =
-      power_level_control_.normalized_deadline_utilization() > kCpuUtilizationLimit;
-
-  const Thread* eligible_thread = nullptr;
-
-  if (is_oversubscribed && critical_thread) {
-    eligible_thread = critical_thread;
-  } else {
-    const Thread* normal_thread =
-        FindEarliestEligibleThread(&rust_state_.deadline_run_queue, eligible_time);
-
-    // There must be at least one eligible deadline thread, whether critical or
-    // normal.
-    DEBUG_ASSERT(critical_thread || normal_thread);
-
-    eligible_thread = EarliestDeadlineThread(critical_thread, normal_thread);
-  }
-
-  DEBUG_ASSERT_MSG(eligible_thread != nullptr, "eligible_time=%" PRId64, eligible_time.raw_value());
-
-  // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
-  // access to the thread's COVs and exclusive access to the thread's SOVs. This
-  // is acceptable because the queue lock is required by this method and the
-  // thread is in a queue protectect by the same lock.
-  MarkHasOwnedThreadAccess(*eligible_thread);
-  RunQueue* target_queue = IsCriticalDeadlineThread(eligible_thread)
-                               ? &rust_state_.critical_deadline_run_queue
-                               : &rust_state_.deadline_run_queue;
-  target_queue->erase(*const_cast<Thread*>(eligible_thread));
-  TraceThreadQueueEvent("tqe_deque_deadline"_intern, eligible_thread);
-  DEBUG_ASSERT(eligible_thread->disposition() == Disposition::Associated);
-
-  const SchedulerState& state = eligible_thread->scheduler_state();
-  if (state.finish_time() <= eligible_time) {
-    kcounter_add(counter_deadline_past, 1);
-  }
-  trace =
-      KTRACE_END_SCOPE(("start time", state.start_time()), ("finish time", state.finish_time()));
-  return const_cast<Thread*>(eligible_thread);
-}
-
-Thread* Scheduler::FindEarlierFairThread(SchedTime eligible_time, SchedTime finish_time) {
-  // Convert monotonic to variable times to compare with fair run queue values.
-  const SchedTime variable_eligible_time = MonotonicToVariable(eligible_time);
-  const SchedTime variable_finish_time = MonotonicToVariable(finish_time);
-
-  Thread* const eligible_thread =
-      FindEarliestEligibleThread(&rust_state_.fair_run_queue, variable_eligible_time);
-
-  if (eligible_thread != nullptr) {
-    // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
-    // access to the thread's COVs and exclusive access to the thread's SOVs.
-    // This is acceptable because the queue lock is required by this method and
-    // the thread is in a queue protectect by the same lock.
-    MarkHasOwnedThreadAccess(*eligible_thread);
-    if (const_cast<const Thread*>(eligible_thread)->scheduler_state().finish_time() <
-        variable_finish_time) {
-      return eligible_thread;
-    }
-  }
-
-  return nullptr;
-}
-
 Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
                                              const Thread* reference_thread) {
   return rust_scheduler_find_earlier_deadline_thread(this, eligible_time, reference_thread);
@@ -914,56 +705,6 @@ Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
 
 SchedTime Scheduler::GetNextEligibleTime() const {
   return rust_scheduler_get_next_eligible_time(this);
-}
-
-Scheduler::DequeueResult Scheduler::DequeueEarlierFairThread(SchedTime eligible_time,
-                                                             SchedTime finish_time) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_earlier_fair_thread");
-  Thread* const eligible_thread = FindEarlierFairThread(eligible_time, finish_time);
-
-  if (eligible_thread != nullptr) {
-    // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
-    // access to the thread's COVs and exclusive access to the thread's SOVs.
-    // This is acceptable because the queue lock is required by this method and
-    // the thread is in a queue protectect by the same lock.
-    MarkHasOwnedThreadAccess(*eligible_thread);
-    rust_state_.fair_run_queue.erase(*eligible_thread);
-    TraceThreadQueueEvent("tqe_deque_earlier_fair"_intern, eligible_thread);
-    DEBUG_ASSERT(eligible_thread->disposition() == Disposition::Associated);
-
-    const SchedulerState& state = const_cast<const Thread*>(eligible_thread)->scheduler_state();
-    const SchedTime mono_start_time_ns =
-        rust_state_.fair_affine_transform.VariableToMonotonic(state.start_time());
-    const SchedTime mono_finish_time_ns =
-        rust_state_.fair_affine_transform.VariableToMonotonic(state.finish_time());
-
-    return DequeueResult{eligible_thread, mono_start_time_ns, mono_finish_time_ns};
-  }
-
-  return nullptr;
-}
-
-Scheduler::DequeueResult Scheduler::DequeueEarlierDeadlineThread(SchedTime eligible_time,
-                                                                 const Thread* reference_thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_earlier_deadline_thread");
-  Thread* const eligible_thread = FindEarlierDeadlineThread(eligible_time, reference_thread);
-
-  if (eligible_thread != nullptr) {
-    // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
-    // access to the thread's COVs and exclusive access to the thread's SOVs.
-    // This is acceptable because the queue lock is required by this method and
-    // the thread is in a queue protected by the same lock.
-    MarkHasOwnedThreadAccess(*eligible_thread);
-    if (IsCriticalDeadlineThread(eligible_thread)) {
-      rust_state_.critical_deadline_run_queue.erase(*eligible_thread);
-    } else {
-      rust_state_.deadline_run_queue.erase(*eligible_thread);
-    }
-    TraceThreadQueueEvent("tqe_deque_earlier_deadline"_intern, eligible_thread);
-    DEBUG_ASSERT(eligible_thread->disposition() == Disposition::Associated);
-  }
-
-  return eligible_thread;
 }
 
 bool Scheduler::NeedsMigration(Thread* thread) {
@@ -987,107 +728,24 @@ bool Scheduler::NeedsMigration(Thread* thread) {
 Scheduler::DequeueResult Scheduler::EvaluateNextThread(
     SchedTime now, Thread* current_thread, bool current_is_migrating,
     Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "find_thread");
-
-  // First things first.  If we have pending power work, we choose the idle-power thread.
-  {
-    percpu& self = percpu::Get(this_cpu());
-    if (IdlePowerThread::PendingPowerWorkPredicate pending_work =
-            self.idle_power_thread.pending_power_work()) {
-      // If the idle power thread is in the (offline, offline) state, CPU hot
-      // plugging attempted to block before restoring the idle power thread.
-      DEBUG_ASSERT(pending_work.current() != IdlePowerThread::State::Offline ||
-                   pending_work.target() != IdlePowerThread::State::Offline);
-      return &self.idle_power_thread.thread();
-    }
+  DequeueResult result;
+  if (rust_scheduler_evaluate_next_thread(this, now, current_thread, current_is_migrating,
+                                          &result)) {
+    return result;
   }
 
-  const bool is_idle = current_thread->IsIdle();
-  const bool is_runnable = current_thread->state() == THREAD_READY;
-  const bool is_deadline = IsDeadlineThread(current_thread);
+  // Release the queue lock while attempting to steal work, leaving IRQs
+  // disabled.
+  queue_guard.CallUnlocked([&, processing_rate = power_level_control_.processing_rate()] {
+    ChainLockTransaction::AssertActive();
+    result = StealWork(now, processing_rate);
+  });
 
-  if (is_runnable && !is_idle && !current_is_migrating) {
-    // Start a new activation, if necessary, before comparing with other threads.
-    UpdateActivation(current_thread, now);
-
-    // Determine eligibility after updating the activation period.
-    const bool is_eligible = current_thread->scheduler_state().start_time() <= now;
-
-    if (is_deadline && !is_eligible) {
-      // Ineligible deadline threads must wait until they become eligible again.
-      return DequeueThread(now, queue_guard);
-    }
-
-    if (IsDeadlineThreadEligible(now)) {
-      if (is_deadline) {
-        // The current thread is deadline and eligible. Select the eligible
-        // thread with the earliest finish time, which may still be the current
-        // thread.
-        if (DequeueResult earlier_thread_result =
-                DequeueEarlierDeadlineThread(now, current_thread)) {
-          return earlier_thread_result;
-        }
-
-        // The current thread is eligible and has the earliest finish time.
-        return current_thread;
-      }
-
-      // The current thread is fair. An eligible deadline thread should preempt
-      // the current thread.
-      return DequeueDeadlineThread(now);
-    }
-
-    if (!is_deadline) {
-      if (is_eligible) {
-        if (IsFairThreadEligible(now)) {
-          // Select the eligible fair thread with the earliest finish time,
-          // which may still be the current thread.
-          const SchedTime finish_time = current_thread->scheduler_state().finish_time();
-          if (DequeueResult earlier_thread_result = DequeueEarlierFairThread(now, finish_time)) {
-            return earlier_thread_result;
-          }
-        }
-
-        // The current fair thread has the earliest eligible finish time.
-        return current_thread;
-      }
-
-      if (IsFairThreadEligible(now)) {
-        // Select an eligible fair thread.
-        return DequeueFairThread(now);
-      }
-
-      // No fair threads are currently eligible. Temporarily add the current
-      // thread to the run queue, before snapping the variable timeline to the
-      // earliest eligible time, to simplify selection in the updated timeline.
-      // Use Placement::Adjustment to avoid emitting inconsistent trace events.
-      QueueThread(current_thread, Placement::Adjustment);
-
-      // Snap the variable timeline to the earliest eligible time and select the
-      // thread with the earliest eligible finish time.
-      DequeueResult next_thread = DequeueFairThread(now);
-      DEBUG_ASSERT(next_thread);
-
-      // If the current thread is not selected to run again, it must be removed
-      // from the run queue to avoid being stolen during lock juggling. It will
-      // be returned to the run queue after the lock juggling is completed and
-      // before switching to the next thread.
-      if (next_thread.thread() != current_thread) {
-        MarkHasOwnedThreadAccess(*current_thread);
-        EraseFromQueue(current_thread);
-      }
-
-      return next_thread;
-    }
-
-    // The current deadline thread has remaining time and no eligible contender.
-    DEBUG_ASSERT(is_deadline);
-    DEBUG_ASSERT(is_eligible);
-    return current_thread;
+  if (result) {
+    return result;
   }
 
-  // The thread is either no longer runnable, migrating, or the idle thread.
-  return DequeueThread(now, queue_guard);
+  return &percpu::Get(this_cpu()).idle_power_thread.thread();
 }
 
 cpu_num_t Scheduler::FindTargetCpu(Thread* thread, UnblockType unblock_type) {
@@ -1922,49 +1580,10 @@ void Scheduler::Block(Thread* const current_thread) {
 
 Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime now,
                                                       UnblockType unblock_type) {
-  thread->canary().Assert();
-
-  cpu_num_t target_cpu = INVALID_CPU;
-  cpu_mask_t cpus_to_reschedule = 0;
-  while (true) {
-    // TODO(rudymathu): This target_cpu should be stashed in the thread prior to
-    // adding it to the save_state_list_, as that would allow us to bypass CPU
-    // selection when processing the list so long as the CPU is still online.
-    target_cpu = FindTargetCpu(thread, unblock_type);
-    const cpu_num_t last_cpu = thread->scheduler_state().last_cpu();
-    const bool needs_migration = (last_cpu != INVALID_CPU && target_cpu != last_cpu &&
-                                  thread->has_migrate_fn() && !thread->migrate_pending());
-    if (needs_migration) {
-      target_cpu = last_cpu;
-    }
-    Scheduler* const target = Get(target_cpu);
-    Guard<MonitoredSpinLock, NoIrqSave> target_queue_guard{&target->queue_lock_, SOURCE_TAG};
-
-    if (target->IsSchedulerActiveLocked()) {
-      SchedTraceWakeup(thread, target_cpu);
-      thread->set_ready();
-      thread->UpdateRuntimeStats(thread->state());
-      if (needs_migration) {
-        MarkHasOwnedThreadAccess(*thread);
-        target->save_state_list_.push_front(thread);
-      } else {
-        thread->scheduler_state().curr_cpu_ = target_cpu;
-        target->AssertInScheduler(*thread);
-        target->Insert(now, thread);
-
-        // If a power level change was requested during insertion, attempt to
-        // handle it immediately with the fast path and update any affected
-        // CPUs. If the fast path is not supported, the request will be left
-        // pending on the target CPU and flushed during its reschedule.
-        cpus_to_reschedule =
-            target->power_level_control_.SendPendingPowerLevelRequest(target_queue_guard);
-      }
-      break;
-    }
-
-    IncFindTargetCpuRetriesKcounter();
-  }
-  return {.target_cpu = target_cpu, .cpus_to_reschedule = cpus_to_reschedule};
+  RescheduleTargets targets;
+  rust_scheduler_unblock_common(thread, now, unblock_type == UnblockType::Synchronous ? 1 : 0,
+                                &targets);
+  return targets;
 }
 
 void Scheduler::Unblock(Thread* thread) {
