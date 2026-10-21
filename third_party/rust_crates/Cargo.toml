@@ -1300,7 +1300,6 @@ visibility = [
   "//src/connectivity/lib/net-declare:*",
   "//src/connectivity/lib/net-types:*",
   "//src/connectivity/lowpan/lib/spinel_pack/spinel_pack_macros:*",
-  "//src/connectivity/network/lib/todo_unused:*",
   "//src/connectivity/network/netstack3/core/macros:*",
   "//src/connectivity/network/tests/integration/macros:*",
   "//src/connectivity/network/tests/integration/multicast-forwarding/macros:*",

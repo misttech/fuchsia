@@ -224,7 +224,6 @@ regex_visibility = [
   "//examples/intl/wisdom/tests:*",
   "//src/connectivity/bluetooth/tools/bt-cli:*",
   "//src/connectivity/lowpan/drivers/lowpan-ot-driver:*",
-  "//src/connectivity/network/lib/todo_unused:*",
   "//src/connectivity/network/tests/integration/inspect:*",
   "//src/connectivity/wlan/lib/ieee80211-testutils:*",
   "//src/connectivity/wlan/lib/sme:*",

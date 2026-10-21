@@ -22868,7 +22868,6 @@ rustc_library("syn-v1_0_109") {
   visibility += [ "//src/connectivity/lib/net-types:*" ]
   visibility +=
       [ "//src/connectivity/lowpan/lib/spinel_pack/spinel_pack_macros:*" ]
-  visibility += [ "//src/connectivity/network/lib/todo_unused:*" ]
   visibility += [ "//src/connectivity/network/netstack3/core/macros:*" ]
   visibility += [ "//src/connectivity/network/tests/integration/macros:*" ]
   visibility += [ "//src/connectivity/network/tests/integration/multicast-forwarding/macros:*" ]
