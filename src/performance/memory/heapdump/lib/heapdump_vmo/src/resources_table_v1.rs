@@ -23,6 +23,8 @@ type StackTraceLength = u16;
 const NUM_STACK_BUCKETS: usize = 1 << 13;
 type StackBucketHeads = [Offset; NUM_STACK_BUCKETS];
 
+const CRC32_TABLE: crc::Crc<u32> = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
+
 /// A resource key is just an offset into the VMO.
 #[derive(Clone, Copy, Debug, Eq, FromBytes, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -117,8 +119,8 @@ impl ResourcesTableWriter {
 
     /// This is the hash function for stack traces.
     fn compute_bucket_index(compressed_stack_trace: &[u8]) -> usize {
-        let tmp = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(compressed_stack_trace);
-        tmp as usize % NUM_STACK_BUCKETS
+        let crc = CRC32_TABLE.checksum(compressed_stack_trace);
+        crc as usize % NUM_STACK_BUCKETS
     }
 
     /// Returns a mutable reference to the head of a given bucket's linked list.
