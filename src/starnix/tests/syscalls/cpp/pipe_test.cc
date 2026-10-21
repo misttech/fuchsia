@@ -4,6 +4,8 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/poll.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -299,6 +301,154 @@ TEST(PipeTest, PolloutFragmentation) {
   // Now POLLOUT will finally be asserted.
   EXPECT_EQ(poll(&p, 1, 0), 1);
   EXPECT_EQ(p.revents, POLLOUT);
+}
+
+TEST(PipeTest, PartialEfaultRollbackAndShortCounts) {
+  const size_t page_size = sysconf(_SC_PAGE_SIZE);
+  auto mapping = test_helper::ScopedMMap::MMap(nullptr, 2 * page_size, PROT_READ | PROT_WRITE,
+                                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+  char* valid_page = static_cast<char*>(mapping->mapping());
+  char* bad_page = valid_page + page_size;
+  ASSERT_EQ(mprotect(bad_page, page_size, PROT_NONE), 0);
+  memset(valid_page, 'X', page_size);
+
+  // 1. Sub-PIPE_BUF writev with a trailing faulting iovec must fail atomically with EFAULT and
+  // leave 0 bytes in the pipe.
+  {
+    test_helper::ScopedPipe pipe(O_NONBLOCK);
+
+    iovec iov[2] = {
+        {.iov_base = valid_page, .iov_len = 100},
+        {.iov_base = bad_page, .iov_len = 100},
+    };
+    EXPECT_THAT(writev(pipe.WriteSide().get(), iov, 2), SyscallFailsWithErrno(EFAULT));
+    int avail = -1;
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, 0);
+  }
+
+  // 2. Multi-page write and writev spanning [valid_page, bad_page] must commit the first page and
+  // return a short write count of page_size rather than failing with EFAULT.
+  {
+    test_helper::ScopedPipe pipe(O_NONBLOCK);
+
+    EXPECT_THAT(write(pipe.WriteSide().get(), valid_page, 2 * page_size),
+                SyscallSucceedsWithValue(static_cast<ssize_t>(page_size)));
+    int avail = -1;
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, static_cast<int>(page_size));
+
+    std::vector<char> drain(page_size);
+    EXPECT_THAT(read(pipe.ReadSide().get(), drain.data(), page_size),
+                SyscallSucceedsWithValue(static_cast<ssize_t>(page_size)));
+
+    iovec iov[2] = {
+        {.iov_base = valid_page, .iov_len = page_size},
+        {.iov_base = bad_page, .iov_len = page_size},
+    };
+    EXPECT_THAT(writev(pipe.WriteSide().get(), iov, 2),
+                SyscallSucceedsWithValue(static_cast<ssize_t>(page_size)));
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, static_cast<int>(page_size));
+  }
+
+  // 3. vmsplice from a PROT_NONE page fails with EFAULT, while vmsplice across
+  // [valid_page, bad_page] returns a short count of page_size.
+  {
+    test_helper::ScopedPipe pipe(O_NONBLOCK);
+
+    iovec bad_iov = {.iov_base = bad_page, .iov_len = page_size};
+    EXPECT_THAT(vmsplice(pipe.WriteSide().get(), &bad_iov, 1, SPLICE_F_NONBLOCK),
+                SyscallFailsWithErrno(EFAULT));
+    int avail = -1;
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, 0);
+
+    iovec mixed_iov[2] = {
+        {.iov_base = valid_page, .iov_len = page_size},
+        {.iov_base = bad_page, .iov_len = page_size},
+    };
+    EXPECT_THAT(vmsplice(pipe.WriteSide().get(), mixed_iov, 2, SPLICE_F_NONBLOCK),
+                SyscallSucceedsWithValue(static_cast<ssize_t>(page_size)));
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, static_cast<int>(page_size));
+  }
+
+  // 4. read, readv, and vmsplice from a pipe into a faulting buffer mid-message must roll back the
+  // partial copy, return EFAULT, and preserve the unread message in the pipe.
+  {
+    test_helper::ScopedPipe pipe(O_NONBLOCK);
+
+    ASSERT_EQ(write(pipe.WriteSide().get(), "AAAABBBB", 8), 8);
+
+    EXPECT_THAT(read(pipe.ReadSide().get(), bad_page, 8), SyscallFailsWithErrno(EFAULT));
+    int avail = -1;
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, 8);
+
+    iovec fault_iov[2] = {
+        {.iov_base = valid_page, .iov_len = 4},
+        {.iov_base = bad_page, .iov_len = 4},
+    };
+    EXPECT_THAT(readv(pipe.ReadSide().get(), fault_iov, 2), SyscallFailsWithErrno(EFAULT));
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, 8);
+
+    EXPECT_THAT(vmsplice(pipe.ReadSide().get(), fault_iov, 2, SPLICE_F_NONBLOCK),
+                SyscallFailsWithErrno(EFAULT));
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, 8);
+
+    char verify_buf[8] = {};
+    ASSERT_EQ(read(pipe.ReadSide().get(), verify_buf, 8), 8);
+    EXPECT_EQ(std::string(verify_buf, 8), "AAAABBBB");
+  }
+
+  // 5. readv and vmsplice across two separate 4-byte pipe buffers (enqueued via vmsplice so Linux
+  // does not merge them with PIPE_BUF_FLAG_CAN_MERGE) with [4B valid, 4B PROT_NONE] must consume
+  // the first buffer, preserve the second buffer on EFAULT, and return 4.
+  {
+    test_helper::ScopedPipe pipe(O_NONBLOCK);
+
+    char msg1[4] = {'A', 'A', 'A', 'A'};
+    char msg2[4] = {'B', 'B', 'B', 'B'};
+    iovec init_iov[2] = {
+        {.iov_base = msg1, .iov_len = 4},
+        {.iov_base = msg2, .iov_len = 4},
+    };
+    ASSERT_EQ(vmsplice(pipe.WriteSide().get(), init_iov, 2, 0), 8);
+
+    iovec fault_iov[2] = {
+        {.iov_base = valid_page, .iov_len = 4},
+        {.iov_base = bad_page, .iov_len = 4},
+    };
+    EXPECT_THAT(readv(pipe.ReadSide().get(), fault_iov, 2), SyscallSucceedsWithValue(4));
+    EXPECT_EQ(std::string(valid_page, 4), "AAAA");
+
+    int avail = -1;
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, 4);
+
+    char rem_buf[4] = {};
+    ASSERT_EQ(read(pipe.ReadSide().get(), rem_buf, 4), 4);
+    EXPECT_EQ(std::string(rem_buf, 4), "BBBB");
+
+    char msg3[4] = {'C', 'C', 'C', 'C'};
+    char msg4[4] = {'D', 'D', 'D', 'D'};
+    iovec init_iov2[2] = {
+        {.iov_base = msg3, .iov_len = 4},
+        {.iov_base = msg4, .iov_len = 4},
+    };
+    ASSERT_EQ(vmsplice(pipe.WriteSide().get(), init_iov2, 2, 0), 8);
+    EXPECT_THAT(vmsplice(pipe.ReadSide().get(), fault_iov, 2, SPLICE_F_NONBLOCK),
+                SyscallSucceedsWithValue(4));
+    EXPECT_EQ(std::string(valid_page, 4), "CCCC");
+    SAFE_SYSCALL(ioctl(pipe.ReadSide().get(), FIONREAD, &avail));
+    EXPECT_EQ(avail, 4);
+    ASSERT_EQ(read(pipe.ReadSide().get(), rem_buf, 4), 4);
+    EXPECT_EQ(std::string(rem_buf, 4), "DDDD");
+  }
 }
 
 // Verify that when the only writer (a child process) exits, the pipe is immediately closed even if

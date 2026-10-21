@@ -214,9 +214,17 @@ impl<D: MessageData> MessageQueue<D> {
                 self.write_front(message);
                 break;
             }
+            let bytes_read = match message.data.copy_to_user(data) {
+                Ok(bytes_read) => bytes_read,
+                Err(e) => {
+                    self.write_front(message);
+                    if total_bytes_read > 0 {
+                        break;
+                    }
+                    return Err(e);
+                }
+            };
             messages_read += 1;
-
-            let bytes_read = message.data.copy_to_user(data)?;
             total_bytes_read += bytes_read;
 
             if let Some(remaining_message) = message.split_off(bytes_read) {
@@ -284,11 +292,17 @@ impl<D: MessageData> MessageQueue<D> {
             {
                 break;
             }
+            let bytes_read = match message.data.copy_to_user(data) {
+                Ok(bytes_read) => bytes_read,
+                Err(e) => {
+                    if total_bytes_read > 0 {
+                        break;
+                    }
+                    return Err(e);
+                }
+            };
             messages_peeked += 1;
-
             ancillary_data.extend(message.ancillary_data.iter().cloned());
-
-            let bytes_read = message.data.copy_to_user(data)?;
             total_bytes_read += bytes_read;
 
             if bytes_read < message.len() || !message.ancillary_data.is_empty() {

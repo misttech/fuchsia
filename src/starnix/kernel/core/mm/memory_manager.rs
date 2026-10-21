@@ -2573,35 +2573,101 @@ impl MemoryManagerState {
             .sum()
     }
 
+    /// Builds a list of page-bounded [`VmsplicePayload`] segments covering up to `max_bytes`
+    /// from `buffers`.
+    ///
+    /// Stops at the first unmapped address, unreadable mapping, or address overflow:
+    /// - If at least one segment has already been collected, returns `Ok(vmsplice_mappings)` so
+    ///   `vmsplice` reports a short transfer count for the valid prefix.
+    /// - If the very first byte faults or is unreadable, returns `Err(EFAULT)`.
     fn get_mappings_for_vmsplice(
         &self,
         mm: &Arc<MemoryManager>,
         buffers: &UserBuffers,
+        max_bytes: usize,
     ) -> Result<Vec<Arc<VmsplicePayload>>, Errno> {
+        let page_size = *PAGE_SIZE as usize;
         let mut vmsplice_mappings = Vec::new();
+        let mut remaining = max_bytes;
 
         for UserBuffer { mut address, length } in buffers.iter().copied() {
-            let mappings = self.get_contiguous_mappings_at(address, length, &mm.mapping_context)?;
-            for (mapping, length) in mappings {
-                let vmsplice_payload = match self.get_mapping_backing(mapping) {
-                    MappingBacking::Memory(m) => VmsplicePayloadSegment {
-                        addr_offset: address,
-                        length,
-                        memory: m.memory().clone(),
-                        memory_offset: m.address_to_offset(address),
-                        should_snapshot_on_unmap: false,
-                    },
-                    MappingBacking::PrivateAnonymous => VmsplicePayloadSegment {
-                        addr_offset: address,
-                        length,
-                        memory: mm.mapping_context.private_anonymous.backing.clone(),
-                        memory_offset: address.ptr() as u64,
-                        should_snapshot_on_unmap: true,
-                    },
+            if remaining == 0 {
+                break;
+            }
+            // Cap the transfer to the remaining capacity in the destination pipe.
+            let length = std::cmp::min(length, remaining);
+            if length == 0 {
+                continue;
+            }
+            // Look up contiguous mappings starting at `address`. If `address` itself is invalid,
+            // return any segments already collected from earlier buffers before failing.
+            let mappings =
+                match self.get_contiguous_mappings_at(address, length, &mm.mapping_context) {
+                    Ok(mappings) => mappings,
+                    Err(e) => {
+                        if vmsplice_mappings.is_empty() {
+                            return Err(e);
+                        }
+                        return Ok(vmsplice_mappings);
+                    }
                 };
-                vmsplice_mappings.push(VmsplicePayload::new(Arc::downgrade(mm), vmsplice_payload));
+            let mut covered = 0;
+            for (mapping, mut seg_len) in mappings {
+                // `vmsplice` from user memory into a pipe reads from the mapping; reject mappings
+                // without read permission (such as `PROT_NONE` or write-only pages).
+                if !mapping.can_read() {
+                    if vmsplice_mappings.is_empty() {
+                        return error!(EFAULT);
+                    }
+                    return Ok(vmsplice_mappings);
+                }
+                // Split each mapping into page-aligned chunks so that each `VmsplicePayload`
+                // spans at most a single page, matching Linux's per-page `pipe_buffer` granularity
+                // and preserving partial progress up to a faulting page boundary.
+                while seg_len > 0 && remaining > 0 {
+                    let max_in_page = page_size - (address.ptr() % page_size);
+                    let chunk_len = std::cmp::min(seg_len, std::cmp::min(max_in_page, remaining));
+                    // Validate `next_address` before constructing `VmsplicePayload`, because
+                    // `VmsplicePayload::new` registers the payload in `inflight_vmspliced_payloads`.
+                    let Some(next_address) = address.checked_add(chunk_len) else {
+                        if vmsplice_mappings.is_empty() {
+                            return error!(EFAULT);
+                        }
+                        return Ok(vmsplice_mappings);
+                    };
+                    let vmsplice_payload = match self.get_mapping_backing(mapping) {
+                        MappingBacking::Memory(m) => VmsplicePayloadSegment {
+                            addr_offset: address,
+                            length: chunk_len,
+                            memory: m.memory().clone(),
+                            memory_offset: m.address_to_offset(address),
+                            should_snapshot_on_unmap: false,
+                        },
+                        MappingBacking::PrivateAnonymous => VmsplicePayloadSegment {
+                            addr_offset: address,
+                            length: chunk_len,
+                            memory: mm.mapping_context.private_anonymous.backing.clone(),
+                            memory_offset: address.ptr() as u64,
+                            should_snapshot_on_unmap: true,
+                        },
+                    };
+                    vmsplice_mappings
+                        .push(VmsplicePayload::new(Arc::downgrade(mm), vmsplice_payload));
 
-                address = (address + length)?;
+                    address = next_address;
+                    seg_len -= chunk_len;
+                    covered += chunk_len;
+                    remaining -= chunk_len;
+                }
+            }
+            // `get_contiguous_mappings_at` stops at the first unmapped page. If it covered fewer
+            // than `length` bytes, this buffer hit an unmapped gap; stop immediately rather than
+            // continuing to subsequent `iovec` entries.
+            if covered < length {
+                if vmsplice_mappings.is_empty() {
+                    return error!(EFAULT);
+                }
+                return Ok(vmsplice_mappings);
             }
         }
 
@@ -3481,11 +3547,14 @@ impl MemoryManager {
         }
     }
 
+    /// Returns page-bounded [`VmsplicePayload`] segments for up to `max_bytes` across `buffers`,
+    /// stopping at the first unmapped or unreadable page.
     pub fn get_mappings_for_vmsplice(
         self: &Arc<MemoryManager>,
         buffers: &UserBuffers,
+        max_bytes: usize,
     ) -> Result<Vec<Arc<VmsplicePayload>>, Errno> {
-        self.state.read().get_mappings_for_vmsplice(self, buffers)
+        self.state.read().get_mappings_for_vmsplice(self, buffers, max_bytes)
     }
 
     pub fn has_same_address_space(&self, other: &Self) -> bool {

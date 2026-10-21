@@ -450,12 +450,27 @@ impl<'a, M: TaskMemoryAccessor> Buffer for UserBuffersOutputBuffer<'a, M> {
 
 impl<'a, M: TaskMemoryAccessor> OutputBuffer for UserBuffersOutputBuffer<'a, M> {
     fn write(&mut self, mut bytes: &[u8]) -> Result<usize, Errno> {
-        self.write_each_inner(|buflen| {
-            let bytes_len = std::cmp::min(bytes.len(), buflen);
-            let (to_write, remaining) = bytes.split_at(bytes_len);
+        let mut bytes_written = 0;
+        for buffer in self.buffers.iter().rev() {
+            if buffer.is_empty() {
+                continue;
+            }
+            if bytes.is_empty() {
+                break;
+            }
+            let len = std::cmp::min(buffer.length, bytes.len());
+            let (to_write, remaining) = bytes.split_at(len);
+            bytes_written += self.mm.write_memory(buffer.address, to_write)?;
             bytes = remaining;
-            Ok(to_write)
-        })
+            if len != buffer.length {
+                break;
+            }
+        }
+        // SAFETY: `bytes_written` bytes were initialized by `self.mm.write_memory` above.
+        unsafe {
+            self.advance(bytes_written)?;
+        }
+        Ok(bytes_written)
     }
 
     fn write_each(&mut self, callback: &mut OutputBufferCallback<'_>) -> Result<usize, Errno> {

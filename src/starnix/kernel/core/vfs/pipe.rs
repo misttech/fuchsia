@@ -9,8 +9,9 @@ use crate::security;
 use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::buffers::{
-    Buffer, InputBuffer, InputBufferCallback, MessageData, MessageQueue, OutputBuffer,
-    OutputBufferCallback, PeekBufferSegmentsCallback, PipeMessageData, UserBuffersOutputBuffer,
+    Buffer, InputBuffer, InputBufferCallback, InputBufferExt, MessageData, MessageQueue,
+    OutputBuffer, OutputBufferCallback, PeekBufferSegmentsCallback, PipeMessageData,
+    UserBuffersOutputBuffer,
 };
 use crate::vfs::fs_registry::FsRegistry;
 use crate::vfs::{
@@ -178,6 +179,10 @@ impl Pipe {
         self.messages.is_empty()
     }
 
+    fn readable_len(&self) -> usize {
+        self.messages.len()
+    }
+
     fn capacity(&self) -> usize {
         self.messages.capacity()
     }
@@ -242,11 +247,27 @@ impl Pipe {
             return error!(EPIPE);
         }
 
-        if !self.is_writable(data.available()) {
+        let total_requested = data.available().saturating_add(data.bytes_read());
+        if !self.is_writable(total_requested) {
             return error!(EAGAIN);
         }
 
-        self.messages.write_stream(data, None, &mut vec![])
+        let page_size = *PAGE_SIZE as usize;
+        let mut total_written = 0;
+        while self.messages.available_capacity() > 0 && data.available() > 0 {
+            let chunk_len = std::cmp::min(
+                self.messages.available_capacity(),
+                std::cmp::min(data.available(), page_size),
+            );
+            let bytes = data.read_to_vec_limited(chunk_len)?;
+            let actual = bytes.len();
+            if actual == 0 {
+                break;
+            }
+            self.messages.write_message(PipeMessageData::from(bytes).into());
+            total_written += actual;
+        }
+        Ok(total_written)
     }
 
     fn query_events(&self, flags: OpenFlags) -> FdEvents {
@@ -302,7 +323,7 @@ impl Pipe {
         match request {
             FIONREAD => {
                 let addr = UserRef::<i32>::new(user_addr);
-                let value: i32 = self.messages.len().try_into().map_err(|_| errno!(EINVAL))?;
+                let value: i32 = self.readable_len().try_into().map_err(|_| errno!(EINVAL))?;
                 current_task.write_object(addr, &value)?;
                 Ok(SUCCESS)
             }
@@ -500,12 +521,17 @@ impl FileOps for PipeFileObject {
             let mut pipe = self.pipe.lock();
             let offset_before = data.bytes_read();
             let bytes_written = match pipe.write(data) {
-                Err(e) if e == EPIPE => {
-                    std::mem::drop(pipe);
-                    send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+                Err(e) => {
+                    if data.bytes_read() > offset_before {
+                        pipe.notify_fd_events(FdEvents::POLLIN);
+                    }
+                    if e == EPIPE {
+                        std::mem::drop(pipe);
+                        send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+                    }
                     return Err(e);
                 }
-                result => result?,
+                Ok(bytes_written) => bytes_written,
             };
             debug_assert!(data.bytes_read() - offset_before == bytes_written);
             if bytes_written > 0 {
@@ -941,25 +967,16 @@ impl PipeFileObject {
         if available == 0 {
             return Ok(0);
         }
-        let mappings = current_task.mm()?.get_mappings_for_vmsplice(&iovec)?;
 
-        let mut pipe =
-            self.lock_pipe_for_writing(current_task, self_file, non_blocking, available)?;
-
-        let mut remaining = std::cmp::min(available, pipe.messages.available_capacity());
+        let mut pipe = self.lock_pipe_for_writing(current_task, self_file, non_blocking, 1)?;
+        let max_bytes = std::cmp::min(available, pipe.messages.available_capacity());
+        let mappings = current_task.mm()?.get_mappings_for_vmsplice(&iovec, max_bytes)?;
 
         let mut bytes_transferred = 0;
-        for mut mapping in mappings.into_iter() {
-            mapping.truncate(remaining);
+        for mapping in mappings.into_iter() {
             let actual = mapping.len();
-
             pipe.messages.write_message(PipeMessageData::Vmspliced(mapping).into());
-            remaining -= actual;
             bytes_transferred += actual;
-
-            if remaining == 0 {
-                break;
-            }
         }
         if bytes_transferred > 0 {
             pipe.notify_fd_events(FdEvents::POLLIN);
@@ -1041,9 +1058,11 @@ pub struct PipeOperands<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mm::ProtectionFlags;
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-    use crate::testing::{anon_test_file, spawn_kernel_and_run};
-    use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
+    use crate::testing::{anon_test_file, fill_page, map_memory, spawn_kernel_and_run};
+    use crate::vfs::buffers::{UserBuffersInputBuffer, VecInputBuffer, VecOutputBuffer};
+    use smallvec::smallvec;
 
     struct StaticSourceFile {
         payload: &'static [u8],
@@ -1176,6 +1195,160 @@ mod tests {
                 0
             );
             assert!(!current_task.write().signals_mut().has_queued(SIGPIPE));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_readv_writev_vmsplice_partial_efault_short_counts_and_rollback() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let page_size = *PAGE_SIZE as usize;
+            let two_pages = map_memory(&current_task, UserAddress::default(), (*PAGE_SIZE) * 2);
+            let bad_page = (two_pages + *PAGE_SIZE).unwrap();
+            fill_page(&current_task, two_pages, 'M');
+            current_task
+                .mm()
+                .unwrap()
+                .protect(&current_task, bad_page, page_size, ProtectionFlags::empty())
+                .unwrap();
+
+            // 1. Multi-page `writev` (`[page_size valid, page_size PROT_NONE]`) enqueues the first
+            // page and returns a short count (`page_size`).
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let mut writev_buf = UserBuffersInputBuffer::unified_new(
+                &current_task,
+                smallvec![
+                    UserBuffer { address: two_pages, length: page_size },
+                    UserBuffer { address: bad_page, length: page_size },
+                ],
+            )
+            .unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut writev_buf).unwrap(), page_size);
+            assert_eq!(
+                pipe_out.downcast_file::<PipeFileObject>().unwrap().pipe.lock().readable_len(),
+                page_size
+            );
+            std::mem::drop((pipe_out, pipe_in));
+
+            // 2. Sub-PIPE_BUF `writev` (`[100B valid, 100B PROT_NONE]`) preserves POSIX PIPE_BUF
+            // atomicity on EFAULT, returning EFAULT with 0 bytes queued.
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let mut sub_pipe_buf = UserBuffersInputBuffer::unified_new(
+                &current_task,
+                smallvec![
+                    UserBuffer { address: two_pages, length: 100 },
+                    UserBuffer { address: bad_page, length: 100 },
+                ],
+            )
+            .unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut sub_pipe_buf), error!(EFAULT));
+            assert_eq!(
+                pipe_out.downcast_file::<PipeFileObject>().unwrap().pipe.lock().readable_len(),
+                0
+            );
+            std::mem::drop((pipe_out, pipe_in));
+
+            // 3. `vmsplice_from` with `[page_size valid, page_size PROT_NONE]` enqueues the valid
+            // prefix and returns `page_size`, while `[PROT_NONE]` alone returns `EFAULT`.
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let pipe_in_ops = pipe_in.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(
+                pipe_in_ops.vmsplice_from(
+                    &current_task,
+                    &pipe_in,
+                    smallvec![UserBuffer { address: bad_page, length: page_size }],
+                    true,
+                ),
+                error!(EFAULT)
+            );
+            assert_eq!(
+                pipe_in_ops
+                    .vmsplice_from(
+                        &current_task,
+                        &pipe_in,
+                        smallvec![
+                            UserBuffer { address: two_pages, length: page_size },
+                            UserBuffer { address: bad_page, length: page_size },
+                        ],
+                        true,
+                    )
+                    .unwrap(),
+                page_size
+            );
+            assert_eq!(
+                pipe_out.downcast_file::<PipeFileObject>().unwrap().pipe.lock().readable_len(),
+                page_size
+            );
+            std::mem::drop((pipe_out, pipe_in));
+
+            // 4. `read` into a `PROT_NONE` buffer returns `EFAULT` and preserves the 4-byte
+            // message at the front of the pipe.
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAA")).unwrap(), 4);
+            let mut bad_out =
+                UserBuffersOutputBuffer::unified_new_at(&current_task, bad_page, 4).unwrap();
+            assert_eq!(pipe_out.read(&current_task, &mut bad_out), error!(EFAULT));
+            assert_eq!(
+                pipe_out.downcast_file::<PipeFileObject>().unwrap().pipe.lock().readable_len(),
+                4
+            );
+            std::mem::drop((pipe_out, pipe_in));
+
+            // 5. `readv` and `vmsplice_to` with `[4B valid, 4B PROT_NONE]` against a single 8-byte
+            // message roll back the partial copy, return `EFAULT`, and preserve all 8 bytes.
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let pipe_out_ops = pipe_out.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(
+                pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAABBBB")).unwrap(),
+                8
+            );
+            let fault_iov = smallvec![
+                UserBuffer { address: two_pages, length: 4 },
+                UserBuffer { address: bad_page, length: 4 },
+            ];
+            assert_eq!(
+                pipe_out_ops.vmsplice_to(&current_task, &pipe_out, fault_iov.clone(), true),
+                error!(EFAULT)
+            );
+            assert_eq!(pipe_out_ops.pipe.lock().readable_len(), 8);
+
+            let mut readv_out =
+                UserBuffersOutputBuffer::unified_new(&current_task, fault_iov.clone()).unwrap();
+            assert_eq!(pipe_out.read(&current_task, &mut readv_out), error!(EFAULT));
+            assert_eq!(readv_out.bytes_written(), 0);
+            assert_eq!(pipe_out_ops.pipe.lock().readable_len(), 8);
+            std::mem::drop((pipe_out, pipe_in));
+
+            // 6. `vmsplice_to` and `readv` with `[4B valid, 4B PROT_NONE]` across two separate
+            // 4-byte messages consume the first message, re-queue the second message on EFAULT,
+            // and return the short count (`4`).
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let pipe_out_ops = pipe_out.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAA")).unwrap(), 4);
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"BBBB")).unwrap(), 4);
+            assert_eq!(
+                pipe_out_ops
+                    .vmsplice_to(&current_task, &pipe_out, fault_iov.clone(), true)
+                    .unwrap(),
+                4
+            );
+            assert_eq!(pipe_out_ops.pipe.lock().readable_len(), 4);
+            let mut rem_buf = VecOutputBuffer::new(4);
+            assert_eq!(pipe_out.read(&current_task, &mut rem_buf).unwrap(), 4);
+            assert_eq!(rem_buf.data(), b"BBBB");
+
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"CCCC")).unwrap(), 4);
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"DDDD")).unwrap(), 4);
+            let mut readv_out2 =
+                UserBuffersOutputBuffer::unified_new(&current_task, fault_iov).unwrap();
+            assert_eq!(pipe_out.read(&current_task, &mut readv_out2).unwrap(), 4);
+            assert_eq!(pipe_out_ops.pipe.lock().readable_len(), 4);
+            let mut rem_buf2 = VecOutputBuffer::new(4);
+            assert_eq!(pipe_out.read(&current_task, &mut rem_buf2).unwrap(), 4);
+            assert_eq!(rem_buf2.data(), b"DDDD");
         })
         .await;
     }
