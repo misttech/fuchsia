@@ -145,7 +145,7 @@ pub unsafe fn qcom_rng_init(config: &DcfgQcomRng) {
     kprint!(
         "QCOM HWRNG: Registered {{mmio={:u},flags={:u}}}.\n",
         config.mmio_phys,
-        config.mmio_phys
+        config.flags.bits()
     );
 }
 
