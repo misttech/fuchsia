@@ -2,9 +2,39 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/pkg-cache.bootstrap_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+# The GN build uses the `fuchsia_component_manifest("manifest")` target defined
+# above the bazel2gn sentinel in BUILD.gn instead.
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "manifest",
+    component_name = "pkg-cache",
+    includes = [
+        "//sdk/lib/inspect:client.shard.cml",
+        "//sdk/lib/inspect:offer.shard.cml",
+        "//sdk/lib/inspect:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/pkg-cache.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "config_lib",
+    cm_label = ":manifest",
+    crate_name = "pkg_cache_config",
 )
