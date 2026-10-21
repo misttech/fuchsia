@@ -4687,7 +4687,7 @@ To override the set of CPU architectures, see `idk_buildable_cpus`.
 Do not use the `platform_version` member directly.
 LINT.IfChange
 
-**Current value (from the default):** `[27, 28, 29, 30, 31, 32, "NEXT"]`
+**Current value (from the default):** `[27, 28, 29, 30, 31, 32, 33, "NEXT"]`
 
 From //build/config/fuchsia/platform_version.gni:44
 
@@ -9351,7 +9351,7 @@ functions.
 
 **Current value (from the default):** `false`
 
-From //sdk/lib/c/libc.gni:21
+From //sdk/lib/c/libc.gni:22
 
 ### use_null_vulkan_on_host
 
