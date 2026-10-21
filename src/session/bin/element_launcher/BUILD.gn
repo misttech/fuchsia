@@ -39,18 +39,12 @@ fuchsia_component("element_launcher_component") {
   deps = [ ":element_launcher_bin" ]
 }
 
-fuchsia_structured_config_values("element_launcher_empty_config") {
-  cm_label = ":element_launcher_component_manifest"
-  values_source = "//src/ui/bin/element_launcher/meta/empty_config.json5"
-}
-
 fuchsia_package("element_launcher") {
   package_name = "element_launcher"
 
   deps = [
     ":element_launcher_component",
     ":element_launcher_component_manifest",
-    ":element_launcher_empty_config",
   ]
 }
 

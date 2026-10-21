@@ -16,22 +16,13 @@
             protocol: [ "fuchsia.element.Manager" ],
         },
         {
-            // If `fuchsia.element.MainElementUrl` is offered, the element
-            // launcher will propose an element with the specified URL.
-            // Otherwise, it will look for the URL config within its package.
-            from: "parent",
+            // This URL specifies which, if any, element to launch on startup.
             config: "fuchsia.element.MainElementUrl",
             key: "main_element_url",
             availability: "transitional",
             type: "string",
             max_size: 256,
+            default: "",
         },
     ],
-    config: {
-        // This URL specifies which, if any, element to launch on startup.
-        main_element_url: {
-            type: "string",
-            max_size: 256,
-        },
-    },
 }

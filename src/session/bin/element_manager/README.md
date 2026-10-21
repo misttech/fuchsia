@@ -60,6 +60,21 @@ Once available, session manifests should instead include
 }
 ```
 
+### Configuration
+
+`element_manager` accepts two configuration capabilities from its parent session:
+
+* `fuchsia.element.UrlToCollection` (`vector<string:512>:100`, default `[]`):
+  Mappings from element component URL to the collection name in which that
+  component should be launched. Each entry is encoded as `url|collection` (for
+  example, `"fuchsia-pkg://chromium.org/chrome#meta/chrome.cm|chrome_collection"`).
+  A malformed entry without a single `|` separator causes `element_manager` to
+  panic and stop at startup.
+* `fuchsia.element.DefaultCollection` (`string:512`, default `"elements"`):
+  The collection name used for any component URL not listed in
+  `fuchsia.element.UrlToCollection`. When using the default, the parent session
+  must declare an `elements` collection.
+
 ## Testing
 
 Unit tests for `element_manager` are available in the `element_manager_tests`

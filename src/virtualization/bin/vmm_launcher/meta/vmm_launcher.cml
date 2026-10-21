@@ -27,6 +27,15 @@
             protocol: "fuchsia.component.Realm",
             from: "framework",
         },
+        {
+            // Optional so parents can route from `void` to fall back to `default`.
+            config: "fuchsia.virtualization.VmmComponentUrl",
+            key: "vmm_component_url",
+            type: "string",
+            max_size: 512,
+            availability: "optional",
+            default: "#meta/vmm.cm",
+        },
     ],
     offer: [
         {
@@ -68,10 +77,4 @@
             from: "self",
         },
     ],
-    config: {
-        vmm_component_url: {
-            type: "string",
-            max_size: 512,
-        },
-    },
 }

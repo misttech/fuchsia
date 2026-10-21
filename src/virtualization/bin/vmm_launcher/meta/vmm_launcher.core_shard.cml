@@ -70,6 +70,13 @@
             dependency: "weak",
             source_availability: "unknown",
         },
+        {
+            // Route from `void` so `#vmm_launcher` uses the `default` in `vmm_launcher.cml`.
+            config: "fuchsia.virtualization.VmmComponentUrl",
+            from: "void",
+            to: "#vmm_launcher",
+            availability: "optional",
+        },
     ],
     expose: [
         {

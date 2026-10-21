@@ -69,24 +69,13 @@ fuchsia_structured_config_rust_lib("element_config") {
   cm_label = ":manifest"
 }
 
-fuchsia_structured_config_values("sc_values") {
-  cm_label = ":manifest"
-  values = {
-    url_to_collection = []
-    default_collection = "elements"
-  }
-}
-
 fuchsia_component("element_manager_comp") {
   cm_label = ":manifest"
   deps = [ ":element_manager_bin" ]
 }
 
 fuchsia_package("element_manager") {
-  deps = [
-    ":element_manager_comp",
-    ":sc_values",
-  ]
+  deps = [ ":element_manager_comp" ]
 }
 
 # Make `element_manager` available to products assembled with Bazel.

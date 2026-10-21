@@ -121,6 +121,15 @@
             from: "framework",
             to: "#element_manager",
         },
+        {
+            config: [
+                "fuchsia.element.DefaultCollection",
+                "fuchsia.element.UrlToCollection",
+            ],
+            from: "void",
+            to: "#element_manager",
+            availability: "optional",
+        },
 
         // Dependencies for tiling_wm
         {

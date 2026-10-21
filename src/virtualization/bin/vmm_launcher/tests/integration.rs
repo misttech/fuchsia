@@ -2,25 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_component::{ChildIteratorMarker, RealmProxy};
 use fidl_fuchsia_component_decl as cdecl;
 use fidl_fuchsia_virtualization::{GuestError, GuestLifecycleProxy};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 
-static VMM_URL: &'static str = "#meta/vmm.cm";
-
-async fn build_test_realm(vmm_url: &'static str) -> Result<RealmInstance, Error> {
+async fn build_test_realm() -> Result<RealmInstance, Error> {
     let builder = RealmBuilder::new().await?;
     let vmm_launcher = builder
         .add_child("vmm_launcher", "#meta/vmm_launcher.cm", ChildOptions::new().eager())
         .await
         .expect("Failed to add vmm_launcher child");
 
-    // Override the component_url for the vmm so that we can test both the C++ and Rust vmm
-    // binaries.
-    builder.init_mutable_config_from_package(&vmm_launcher).await.unwrap();
-    builder.set_config_value(&vmm_launcher, "vmm_component_url", vmm_url.into()).await.unwrap();
+    // Route the VMM component URL config from void as in production.
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration("fuchsia.virtualization.VmmComponentUrl"))
+                .from(Ref::void())
+                .to(&vmm_launcher),
+        )
+        .await?;
 
     builder
         .add_route(
@@ -82,19 +85,19 @@ async fn start_vmm(realm: &RealmInstance) -> Result<GuestLifecycleProxy, Error> 
     Ok(lifecycle)
 }
 
-async fn vmm_launcher_launches_vmm(url: &'static str) -> Result<(), Error> {
-    let realm = build_test_realm(url).await.unwrap();
+async fn vmm_launcher_launches_vmm() -> Result<(), Error> {
+    let realm = build_test_realm().await.unwrap();
     let _lifecycle = start_vmm(&realm).await.expect("Failed to start VMM");
     Ok(())
 }
 
 #[fuchsia::test]
 async fn test_vmm_launcher_launches_vmm() -> Result<(), Error> {
-    vmm_launcher_launches_vmm(VMM_URL).await
+    vmm_launcher_launches_vmm().await
 }
 
-async fn spawn_component_per_connection(url: &'static str) -> Result<(), Error> {
-    let test_realm = build_test_realm(url).await.unwrap();
+async fn spawn_component_per_connection() -> Result<(), Error> {
+    let test_realm = build_test_realm().await.unwrap();
 
     // Expect no children to start.
     let children = list_realm_children(&test_realm).await.unwrap();
@@ -115,11 +118,11 @@ async fn spawn_component_per_connection(url: &'static str) -> Result<(), Error> 
 
 #[fuchsia::test]
 async fn test_component_per_connection_vmm() -> Result<(), Error> {
-    spawn_component_per_connection(VMM_URL).await
+    spawn_component_per_connection().await
 }
 
-async fn drop_guest_lifecycle_terminates_component(url: &'static str) -> Result<(), Error> {
-    let test_realm = build_test_realm(url).await.unwrap();
+async fn drop_guest_lifecycle_terminates_component() -> Result<(), Error> {
+    let test_realm = build_test_realm().await.unwrap();
 
     // Expect no children to start.
     let children = list_realm_children(&test_realm).await.unwrap();
@@ -145,5 +148,5 @@ async fn drop_guest_lifecycle_terminates_component(url: &'static str) -> Result<
 
 #[fuchsia::test]
 async fn test_drop_guest_lifecycle_terminates_vmm() -> Result<(), Error> {
-    drop_guest_lifecycle_terminates_component(VMM_URL).await
+    drop_guest_lifecycle_terminates_component().await
 }

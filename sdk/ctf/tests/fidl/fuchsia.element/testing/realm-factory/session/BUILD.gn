@@ -58,7 +58,6 @@ executable("reference-session-bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//src/session/bin/element_manager:element_manager_comp",
-    "//src/session/bin/element_manager:sc_values",
   ]
 }
 
