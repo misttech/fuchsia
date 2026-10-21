@@ -2,24 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/test.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-test("closure-queue") {
-  output_name = "closure-queue-test"
-  sources = [ "closure-queue-test.cc" ]
-  deps = [
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fdio",
-    "//zircon/system/ulib/closure-queue",
-    "//zircon/system/ulib/zxtest",
-  ]
-}
-
-fuchsia_unittest_package("closure-queue-test-pkg") {
-  package_name = "closure-queue-test"
-  deps = [ ":closure-queue" ]
+bazel_test_suite("closure-queue-test-pkg") {
+  target_tests =
+      [ "//zircon/system/ulib/closure-queue/test:closure-queue-test-pkg" ]
 }
 
 group("tests") {

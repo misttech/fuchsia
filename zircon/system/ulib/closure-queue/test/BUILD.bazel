@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "closure-queue",
+    testonly = True,
+    srcs = ["closure-queue-test.cc"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/closure-queue",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "closure-queue-test-pkg",
+    package_name = "closure-queue-test",
+    unit_tests = [":closure-queue"],
+)
