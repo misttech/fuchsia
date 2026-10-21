@@ -1533,12 +1533,20 @@ impl Task {
         drop(command_guard);
 
         if is_leader {
-            if let Some(notifier) = &self.thread_group().read().notifier {
-                let _ = notifier.send(MemoryAttributionLifecycleEvent::name_change(self.tid.id));
+            let tasks = {
+                let thread_group = self.thread_group().read();
+                if let Some(notifier) = &thread_group.notifier {
+                    let _ =
+                        notifier.send(MemoryAttributionLifecycleEvent::name_change(self.tid.id));
+                }
+                thread_group.tasks()
+            };
+            for task in tasks {
+                if let Err(err) = task.sync_scheduler_state_to_role() {
+                    log_warn!(err:?; "Failed to update scheduler role after process name change.");
+                }
             }
-        }
-
-        if let Err(err) = self.sync_scheduler_state_to_role() {
+        } else if let Err(err) = self.sync_scheduler_state_to_role() {
             log_warn!(err:?; "Failed to update scheduler role after thread name change.");
         }
     }
@@ -1839,6 +1847,69 @@ mod test {
             let renamed_state = current_task.scheduler_state.lock().clone();
             let renamed_role = scheduler.role_name(current_task, &renamed_state).unwrap();
             assert_eq!(renamed_role, "test-role");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_set_command_name_on_leader_syncs_sibling_scheduler_roles() {
+        use crate::task::{RoleOverrides, SchedulerManager};
+        use fidl_fuchsia_scheduler::{
+            RoleManagerMarker, RoleManagerRequest, RoleManagerSetRoleResponse,
+        };
+        use futures::StreamExt as _;
+        use starnix_sync::Mutex;
+
+        let (role_manager, server_end) = fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
+        let committed_roles = Arc::new(Mutex::new(Vec::<String>::new()));
+        let committed_roles_server = committed_roles.clone();
+        std::thread::spawn(move || {
+            let mut executor = fuchsia_async::LocalExecutor::default();
+            executor.run_singlethreaded(async move {
+                let mut stream = server_end.into_stream();
+                while let Some(Ok(request)) = stream.next().await {
+                    match request {
+                        RoleManagerRequest::GetProfileForRole { responder, .. } => {
+                            let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
+                        }
+                        RoleManagerRequest::SetRole { payload, responder } => {
+                            committed_roles_server.lock().push(payload.role.unwrap().role);
+                            let _ = responder.send(Ok(RoleManagerSetRoleResponse::default()));
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            });
+        });
+
+        let mut builder = RoleOverrides::new();
+        builder.add("my-app", "my-app", None, "leader-role");
+        builder.add("my-app", "RenderThread", None, "render-role");
+        let overrides = builder.build().unwrap();
+        let scheduler_manager = SchedulerManager::new_for_tests(Some(role_manager), overrides);
+
+        spawn_kernel_with_scheduler_and_run_sync(scheduler_manager, move |current_task| {
+            let sibling = current_task.clone_task_for_test(
+                (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
+                Some(SIGCHLD),
+            );
+            assert!(!sibling.is_leader());
+            let leader_thread = current_task.running_state().thread.get().unwrap().clone();
+            sibling.running_state().thread.set(leader_thread).unwrap();
+
+            // Rename the sibling thread before the leader renames the process. Because the leader's
+            // command name is still "test-task", the sibling does not match "my-app" yet.
+            sibling.set_command_name(TaskCommand::new(b"RenderThread"));
+            assert!(!committed_roles.lock().contains(&"render-role".to_string()));
+
+            committed_roles.lock().clear();
+
+            // Renaming the thread group leader updates the process name and re-evaluates scheduler
+            // roles for all sibling threads in the thread group.
+            current_task.set_command_name(TaskCommand::new(b"my-app"));
+            let roles = committed_roles.lock().clone();
+            assert!(roles.contains(&"leader-role".to_string()), "roles: {roles:?}");
+            assert!(roles.contains(&"render-role".to_string()), "roles: {roles:?}");
         })
         .await;
     }
