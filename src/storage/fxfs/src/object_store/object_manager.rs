@@ -502,7 +502,7 @@ impl Inner {
             || self
                 .stores
                 .get(&object_id)
-                .is_some_and(|s| !s.is_locked() && s.tree().immutable_layer_count() > 1)
+                .is_some_and(|s| s.can_flush_unlocked() && s.tree().immutable_layer_count() > 1)
     }
 
     // Determines whether `object_id` should be forced to perform a major compaction during a

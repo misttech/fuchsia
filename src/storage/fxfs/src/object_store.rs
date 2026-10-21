@@ -2398,6 +2398,12 @@ impl ObjectStore {
         self.store_info.lock().as_ref().unwrap().mutations_key.is_some()
     }
 
+    /// Returns true if the store is unencrypted or unlocked (writable) so its layers can be
+    /// compacted via `flush_unlocked`.
+    pub(crate) fn can_flush_unlocked(&self) -> bool {
+        matches!(&*self.lock_state.lock(), LockState::Unencrypted | LockState::Unlocked { .. })
+    }
+
     // Locks a store.
     // This operation will take a flush lock on the store, in case any flushes are ongoing.  Any
     // ongoing store accesses might be interrupted by this.  See `Self::crypt`.

@@ -22,7 +22,7 @@ use crate::object_store::{
     layer_size_from_encrypted_mutations_size, tree,
 };
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
-use anyhow::{Context, Error, anyhow};
+use anyhow::{Context, Error, anyhow, bail};
 use fxfs_crypto::UnwrappedKey;
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
@@ -62,6 +62,15 @@ impl ObjectStore {
                 // the list of stores that need compacting.  This is benign.
                 return Ok(LATEST_VERSION);
             }
+            LockState::Invalid => {
+                // An invalid store can't be flushed (e.g. its store info might have been discarded
+                // if locking it failed). Fail before committing anything, rather than panicking
+                // later.
+                bail!(
+                    anyhow!(FxfsError::Internal)
+                        .context(format!("Cannot flush invalid store {}", self.store_object_id))
+                );
+            }
             LockState::Locked | LockState::UnlockedReadOnly(..) => true,
             _ => false,
         };
@@ -74,7 +83,7 @@ impl ObjectStore {
         if (reason == FlushReason::Journal(ForceMajor::False) && !needs_flush)
             || (reason == FlushReason::Journal(ForceMajor::True)
                 && !needs_flush
-                && (self.is_locked() || self.tree.immutable_layer_count() <= 1))
+                && (flush_as_locked || self.tree.immutable_layer_count() <= 1))
             || (reason == FlushReason::UpgradeVersion && earliest_version == LATEST_VERSION)
             || (reason == FlushReason::EncryptedMutations
                 && self.store_info().unwrap().encrypted_mutations_object_id == INVALID_OBJECT_ID)
@@ -780,7 +789,7 @@ mod tests {
             .new_volume(
                 "test",
                 NewChildStoreOptions {
-                    options: StoreOptions { crypt: Some(crypt), ..StoreOptions::default() },
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
                     ..Default::default()
                 },
             )
@@ -821,6 +830,27 @@ mod tests {
 
         let info = store.load_store_info().await.expect("load_store_info failed");
         assert_eq!(info.layers.len(), 2, "Should have 2 layers before major flush");
+
+        // While unlocked read-only with 2 layers and no journal mutations, a major flush must
+        // early-exit rather than calling `flush_locked` and creating an empty encrypted_mutations
+        // file.
+        store.lock().await.expect("lock failed");
+        store.unlock_read_only(crypt.clone()).await.expect("unlock_read_only failed");
+        assert!(!fs.object_manager().needs_flush(store.store_object_id()));
+        fs.object_manager()
+            .flush(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("read-only major flush failed");
+        assert_eq!(
+            store
+                .load_store_info()
+                .await
+                .expect("load_store_info failed")
+                .encrypted_mutations_object_id,
+            INVALID_OBJECT_ID
+        );
+        store.lock_read_only();
+        store.unlock(crypt).await.expect("unlock failed");
 
         // Now, do a major compaction when there are NO journal mutations in ObjectManager.
         assert!(!fs.object_manager().needs_flush(store.store_object_id()));
