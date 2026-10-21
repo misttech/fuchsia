@@ -44,6 +44,7 @@ rustc_library("vmo-blob") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   visibility = [
     ":*",
+    "//src/storage/benchmarks/starnix:*",
     "//src/storage/lib/blob_pager_and_verifier:*",
     "//src/sys/pkg/lib/blobfs:*",
   ]

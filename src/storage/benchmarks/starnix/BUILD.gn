@@ -25,6 +25,7 @@ rustc_binary("storage_starnix_benchmarks_runner") {
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.power.cpu.manager:fuchsia.power.cpu.manager_rust",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
@@ -35,9 +36,55 @@ rustc_binary("storage_starnix_benchmarks_runner") {
   ]
 }
 
+rustc_binary("test_fxblob_bin") {
+  testonly = true
+  edition = "2024"
+  source_root = "src/test_fxblob.rs"
+  sources = [ source_root ]
+  deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+    "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/storage/benchmarks:framework",
+    "//src/storage/benchmarks/fuchsia:framework",
+    "//src/storage/erofs/serializer",
+    "//src/storage/ext4/lib/metadata",
+    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+    "//src/storage/lib/delivery_blob",
+    "//src/storage/lib/vfs/rust:vfs",
+    "//src/storage/lib/vmo-blob",
+    "//src/sys/pkg/lib/fuchsia-merkle",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:rand_xorshift",
+  ]
+}
+
+fuchsia_component("test_fxblob") {
+  testonly = true
+  manifest = "meta/test_fxblob.cml"
+  deps = [ ":test_fxblob_bin" ]
+}
+
+fuchsia_component("erofs_container") {
+  testonly = true
+  manifest = "meta/erofs_container.cml"
+}
+
 fuchsia_component("storage_starnix_data_benchmark_app") {
   testonly = true
   manifest = "meta/storage_starnix_data_benchmark_app.cml"
+  deps = [ ":storage-starnix-benchmarks-bin" ]
+}
+
+fuchsia_component("storage_starnix_erofs_benchmark_app") {
+  testonly = true
+  manifest = "meta/storage_starnix_erofs_benchmark_app.cml"
   deps = [ ":storage-starnix-benchmarks-bin" ]
 }
 
@@ -54,6 +101,13 @@ fuchsia_test_component("storage-starnix-data-benchmarks") {
   test_type = "storage"
 }
 
+fuchsia_test_component("storage-starnix-erofs-benchmarks") {
+  component_name = "storage-starnix-erofs-benchmarks"
+  manifest = "meta/storage-starnix-erofs-benchmarks.cml"
+  deps = [ ":storage_starnix_benchmarks_runner" ]
+  test_type = "storage"
+}
+
 fuchsia_test_component("storage-starnix-tmp-benchmarks") {
   component_name = "storage-starnix-tmp-benchmarks"
   manifest = "meta/storage-starnix-tmp-benchmarks.cml"
@@ -64,16 +118,23 @@ fuchsia_test_component("storage-starnix-tmp-benchmarks") {
 fuchsia_test_package("storage-starnix-benchmarks") {
   test_components = [
     ":storage-starnix-data-benchmarks",
+    ":storage-starnix-erofs-benchmarks",
     ":storage-starnix-tmp-benchmarks",
   ]
   deps = [
+    ":erofs_container",
     ":storage_starnix_data_benchmark_app",
+    ":storage_starnix_erofs_benchmark_app",
     ":storage_starnix_tmp_benchmark_app",
+    ":test_fxblob",
     "//src/starnix/containers/debian:container_resources",
+    "//src/storage/crypt/fxfs",
+    "//src/storage/fxfs:fxfs_component",
   ]
   subpackages = [
     "//src/starnix/kernel:starnix_kernel_package",
     "//src/starnix/containers/debian:debian_package",
+    "//src/storage/erofs/component:erofs",
   ]
   test_specs = {
     build_only = true
@@ -88,6 +149,22 @@ fuchsia_component_perf_test("storage_starnix_data_benchmarks") {
   expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.storage.starnix_data.txt"
   use_component_builtin_args = true
   test_type = "storage"
+}
+
+fuchsia_component_perf_test("storage_starnix_erofs_benchmarks") {
+  package = ":storage-starnix-benchmarks"
+  component_name = "storage-starnix-erofs-benchmarks"
+  expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.storage.starnix_erofs.txt"
+  use_component_builtin_args = true
+  test_type = "storage"
+
+  # These benchmarks require a GPT partition and aren't enabled on Astro,
+  # Nelson, or Sherlock (which use FVM).
+  environments = performance_testing_environments - [
+                   astro_env,
+                   nelson_env,
+                   sherlock_env,
+                 ]
 }
 
 fuchsia_component_perf_test("storage_starnix_tmp_benchmarks") {
@@ -109,6 +186,7 @@ group("benchmarks") {
   if (!is_asan && host_os == "linux") {
     deps += [
       ":storage_starnix_data_benchmarks",
+      ":storage_starnix_erofs_benchmarks",
       ":storage_starnix_tmp_benchmarks",
     ]
   }

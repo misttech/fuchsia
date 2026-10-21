@@ -1,0 +1,125 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [
+        "//sdk/lib/inspect/client.shard.cml",
+        "//sdk/lib/sys/testing/elf_test_runner.shard.cml",
+        "//sdk/lib/syslog/client.shard.cml",
+        "//sdk/lib/trace/client.shard.cml",
+    ],
+    program: {
+        binary: "bin/storage_starnix_benchmarks_runner",
+    },
+    children: [
+        {
+            name: "kernel",
+            url: "starnix_kernel#meta/starnix_kernel.cm",
+        },
+        {
+            name: "debian_container",
+            url: "#meta/erofs_container.cm",
+            environment: "#starnix_kernel_env",
+        },
+        {
+            name: "benchmark_app",
+            url: "#meta/storage_starnix_erofs_benchmark_app.cm",
+            environment: "#debian_container_env",
+        },
+        {
+            name: "erofs",
+            url: "erofs#meta/erofs.cm",
+        },
+        {
+            name: "test_fxblob",
+            url: "#meta/test_fxblob.cm",
+        },
+    ],
+    use: [
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "#benchmark_app",
+        },
+        {
+            protocol: "fuchsia.process.lifecycle.Lifecycle",
+            from: "#test_fxblob",
+        },
+        {
+            protocol: [ "fuchsia.power.cpu.manager.Boost" ],
+            availability: "optional",
+        },
+    ],
+    offer: [
+        {
+            protocol: [ "fuchsia.kernel.VmexResource" ],
+            from: "parent",
+            to: "#kernel",
+        },
+        {
+            protocol: [ "fuchsia.erofs.Erofs" ],
+            from: "#erofs",
+            to: "#kernel",
+        },
+        {
+            directory: "boot",
+            from: "parent",
+            as: "boot-kernel",
+            to: [ "#kernel" ],
+            subdir: "kernel",
+        },
+        {
+            storage: "data",
+            from: "parent",
+            to: [
+                "#debian_container",
+                "#test_fxblob",
+            ],
+        },
+        {
+            directory: "erofs_blobs",
+            from: "#test_fxblob",
+            to: [ "#debian_container" ],
+        },
+        {
+            storage: "custom_artifacts",
+            from: "parent",
+            to: [ "#benchmark_app" ],
+        },
+        {
+            service: [ "fuchsia.storage.partitions.PartitionService" ],
+            from: "parent",
+            to: "#test_fxblob",
+            source_availability: "unknown",
+            availability: "optional",
+        },
+        {
+            protocol: [ "fuchsia.storage.partitions.PartitionsManager" ],
+            from: "parent",
+            to: "#test_fxblob",
+            source_availability: "unknown",
+            availability: "optional",
+        },
+    ],
+    environments: [
+        {
+            name: "starnix_kernel_env",
+            extends: "realm",
+            runners: [
+                {
+                    runner: "starnix",
+                    from: "#kernel",
+                },
+            ],
+        },
+        {
+            name: "debian_container_env",
+            extends: "realm",
+            runners: [
+                {
+                    runner: "starnix_container",
+                    from: "#debian_container",
+                },
+            ],
+        },
+    ],
+}

@@ -20,6 +20,7 @@ rustc_library(
         "//src/starnix/kernel/core:__pkg__",
         "//src/starnix/lib/starnix_container:__pkg__",
         "//src/starnix/tools/tar_to_pkg:__pkg__",
+        "//src/storage/benchmarks/starnix:__pkg__",
         "//src/storage/ext4/lib/ext4_extract:__pkg__",
         "//src/storage/ext4/tests:__pkg__",
         "//vendor/google:__subpackages__",
