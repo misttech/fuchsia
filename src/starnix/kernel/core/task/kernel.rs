@@ -1306,6 +1306,15 @@ fn arm32_hwcap(cpu_feature_flags: CpuFeatureFlags) -> HwCap {
             _ => {}
         }
     }
+    // Both FEAT_FHM and FEAT_SVE architecturally require FEAT_FP16 (which is defined for both
+    // AArch64 and AArch32 execution states).
+    // TODO(https://fxbug.dev/42081850): Expose a dedicated `ZX_ARM64_FEATURE_ISA_FP16` flag from
+    // Zircon so standalone Armv8.2 FEAT_FP16 cores without FHM or SVE also report FP16 hwcaps.
+    if cpu_feature_flags
+        .intersects(CpuFeatureFlags::ARM64_FEATURE_ISA_FHM | CpuFeatureFlags::ARM64_FEATURE_ISA_SVE)
+    {
+        hwcap |= arch32::HWCAP_FPHP | arch32::HWCAP_ASIMDHP;
+    }
     HwCap { hwcap, hwcap2 }
 }
 
@@ -1343,6 +1352,17 @@ fn arm64_hwcap(
             CpuFeatureFlags::ARM64_FEATURE_ISA_SVE => hwcap |= starnix_uapi::HWCAP_SVE,
             _ => {}
         }
+    }
+    // Both FEAT_FHM and FEAT_SVE architecturally require FEAT_FP16 (HWCAP_FPHP and HWCAP_ASIMDHP).
+    // Per ACLE Function Multi-Versioning (FMV) dependency rules (used by LLVM/compiler-rt), "sve"
+    // and "sve2" targets transitively require FEAT_FP | FEAT_FP16 | FEAT_SVE, where compiler-rt
+    // derives FEAT_FP16 from HWCAP_FPHP.
+    // TODO(https://fxbug.dev/42081850): Expose a dedicated `ZX_ARM64_FEATURE_ISA_FP16` flag from
+    // Zircon so standalone Armv8.2 FEAT_FP16 cores without FHM or SVE also report FP16 hwcaps.
+    if cpu_feature_flags
+        .intersects(CpuFeatureFlags::ARM64_FEATURE_ISA_FHM | CpuFeatureFlags::ARM64_FEATURE_ISA_SVE)
+    {
+        hwcap |= starnix_uapi::HWCAP_FPHP | starnix_uapi::HWCAP_ASIMDHP;
     }
     if cpu_feature_flags.contains(CpuFeatureFlags::ARM64_FEATURE_ISA_SVE) {
         for feature in cpu_sve_feature_flags.iter() {
@@ -1430,12 +1450,39 @@ mod test {
         assert_eq!(empty.arch64.hwcap, 0);
         assert_eq!(empty.arch64.hwcap2, 0);
 
+        let expected_sve_hwcap =
+            starnix_uapi::HWCAP_SVE | starnix_uapi::HWCAP_FPHP | starnix_uapi::HWCAP_ASIMDHP;
         let sve_only = HwCaps::from_cpu_feature_flags(
             CpuFeatureFlags::ARM64_FEATURE_ISA_SVE,
             CpuSveFeatureFlags::empty(),
         );
-        assert_eq!(sve_only.arch64.hwcap, starnix_uapi::HWCAP_SVE);
+        assert_eq!(sve_only.arch64.hwcap, expected_sve_hwcap);
         assert_eq!(sve_only.arch64.hwcap2, 0);
+        assert_eq!(
+            sve_only.arch32.hwcap,
+            empty.arch32.hwcap
+                | starnix_uapi::arch32::HWCAP_FPHP
+                | starnix_uapi::arch32::HWCAP_ASIMDHP
+        );
+        assert_eq!(sve_only.arch32.hwcap2, 0);
+
+        let fhm_only = HwCaps::from_cpu_feature_flags(
+            CpuFeatureFlags::ARM64_FEATURE_ISA_FHM,
+            CpuSveFeatureFlags::empty(),
+        );
+        assert_eq!(
+            fhm_only.arch64.hwcap,
+            starnix_uapi::HWCAP_ASIMDFHM | starnix_uapi::HWCAP_FPHP | starnix_uapi::HWCAP_ASIMDHP
+        );
+        assert_eq!(fhm_only.arch64.hwcap2, 0);
+        assert_eq!(
+            fhm_only.arch32.hwcap,
+            empty.arch32.hwcap
+                | starnix_uapi::arch32::HWCAP_ASIMDFHM
+                | starnix_uapi::arch32::HWCAP_FPHP
+                | starnix_uapi::arch32::HWCAP_ASIMDHP
+        );
+        assert_eq!(fhm_only.arch32.hwcap2, 0);
 
         let cases = [
             (CpuSveFeatureFlags::ARM64_FEATURE_ISA_SVEI8MM, starnix_uapi::HWCAP2_SVEI8MM),
@@ -1458,7 +1505,7 @@ mod test {
             assert_eq!(without_sve.arch64.hwcap2, 0);
 
             let caps = HwCaps::from_cpu_feature_flags(CpuFeatureFlags::ARM64_FEATURE_ISA_SVE, flag);
-            assert_eq!(caps.arch64.hwcap, starnix_uapi::HWCAP_SVE);
+            assert_eq!(caps.arch64.hwcap, expected_sve_hwcap);
             assert_eq!(caps.arch64.hwcap2, hwcap2_bit);
             all_sve_flags |= flag;
             expected_hwcap2 |= hwcap2_bit;
@@ -1466,7 +1513,7 @@ mod test {
 
         let all_caps =
             HwCaps::from_cpu_feature_flags(CpuFeatureFlags::ARM64_FEATURE_ISA_SVE, all_sve_flags);
-        assert_eq!(all_caps.arch64.hwcap, starnix_uapi::HWCAP_SVE);
+        assert_eq!(all_caps.arch64.hwcap, expected_sve_hwcap);
         assert_eq!(all_caps.arch64.hwcap2, expected_hwcap2);
     }
 
@@ -1474,9 +1521,20 @@ mod test {
     #[test]
     fn test_arm64_hwcap_sve_gating_and_linux_abi() {
         // The HWCAP bit positions are part of the Linux ABI
-        // (`arch/arm64/include/uapi/asm/hwcap.h`). Pin them, so that a wrong uapi binding or a
-        // transposed mapping in `arm64_hwcap` is caught immediately.
+        // (`arch/arm64/include/uapi/asm/hwcap.h` and `arch/arm/include/uapi/asm/hwcap.h`). Pin
+        // them, so that a wrong uapi binding or a transposed mapping in `arm64_hwcap` /
+        // `arm32_hwcap` is caught immediately.
+        assert_eq!(starnix_uapi::HWCAP_FP, 1 << 0);
+        assert_eq!(starnix_uapi::HWCAP_ASIMD, 1 << 1);
+        assert_eq!(starnix_uapi::HWCAP_FPHP, 1 << 9);
+        assert_eq!(starnix_uapi::HWCAP_ASIMDHP, 1 << 10);
         assert_eq!(starnix_uapi::HWCAP_SVE, 1 << 22);
+        assert_eq!(starnix_uapi::HWCAP_ASIMDFHM, 1 << 23);
+        assert_eq!(starnix_uapi::arch32::HWCAP_FPHP, 1 << 22);
+        assert_eq!(starnix_uapi::arch32::HWCAP_ASIMDHP, 1 << 23);
+        assert_eq!(starnix_uapi::arch32::HWCAP_ASIMDFHM, 1 << 25);
+        let expected_sve_hwcap =
+            starnix_uapi::HWCAP_SVE | starnix_uapi::HWCAP_FPHP | starnix_uapi::HWCAP_ASIMDHP;
         let sve_mappings = [
             (CpuSveFeatureFlags::ARM64_FEATURE_ISA_SVE2, starnix_uapi::HWCAP2_SVE2, 1 << 1),
             (CpuSveFeatureFlags::ARM64_FEATURE_ISA_SVEAES, starnix_uapi::HWCAP2_SVEAES, 1 << 2),
@@ -1549,9 +1607,14 @@ mod test {
                 non_sve_cpu_flags | CpuFeatureFlags::ARM64_FEATURE_ISA_SVE,
                 sve_flags,
             );
-            assert_eq!(enabled.arch64.hwcap, non_sve_hwcap | starnix_uapi::HWCAP_SVE);
+            assert_eq!(enabled.arch64.hwcap, non_sve_hwcap | expected_sve_hwcap);
             assert_eq!(enabled.arch64.hwcap2, non_sve_hwcap2 | all_sve_hwcap2);
-            assert_eq!(enabled.arch32.hwcap, baseline.arch32.hwcap);
+            assert_eq!(
+                enabled.arch32.hwcap,
+                baseline.arch32.hwcap
+                    | starnix_uapi::arch32::HWCAP_FPHP
+                    | starnix_uapi::arch32::HWCAP_ASIMDHP
+            );
             assert_eq!(enabled.arch32.hwcap2, baseline.arch32.hwcap2);
         }
 
@@ -1562,7 +1625,7 @@ mod test {
                 CpuFeatureFlags::ARM64_FEATURE_ISA_SVE,
                 all_sve_flags.difference(flag),
             );
-            assert_eq!(all_but_one.arch64.hwcap, starnix_uapi::HWCAP_SVE, "{flag:?}");
+            assert_eq!(all_but_one.arch64.hwcap, expected_sve_hwcap, "{flag:?}");
             assert_eq!(all_but_one.arch64.hwcap2, all_sve_hwcap2 & !hwcap2_bit, "{flag:?}");
         }
     }
