@@ -55,4 +55,7 @@ THREAD_SAFETY_CFLAGS = [
     "-Wno-unknown-warning-option",
     "-Wno-thread-safety-reference-return",
 ]
-# LINT.ThenChange(//build/config/BUILD.gn:thread_safety_annotations)
+# LINT.ThenChange(
+#     //build/config/BUILD.bazel:thread_safety_annotations,
+#     //build/config/BUILD.gn:thread_safety_annotations,
+# )

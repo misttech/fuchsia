@@ -1414,7 +1414,10 @@ config("thread_safety_annotations") {
   }
 }
 
-# LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/default_flag_values.bzl:thread_safety_annotations)
+# LINT.ThenChange(
+#   BUILD.bazel:thread_safety_annotations,
+#   //build/bazel_sdk/fuchsia_rules_common/build_flags/default_flag_values.bzl:thread_safety_annotations,
+# )
 
 # Generally, we don't want to opt out of thread safety annotations, but
 # occasionally, we get false positives, and need to work around them when

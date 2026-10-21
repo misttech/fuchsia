@@ -5,6 +5,11 @@
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load(
+    "@fuchsia_rules_common//build_flags:default_flag_values.bzl",
+    "THREAD_SAFETY_CFLAGS",
+    "THREAD_SAFETY_DEFINES",
+)
+load(
     "//build/bazel/config/derived:fuchsia_cxx_version.bzl",
     "fuchsia_cxx_version",
     "fuchsia_sdk_cxx_supported_versions",
@@ -154,6 +159,19 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:auto_var_init)
+
+# LINT.IfChange(thread_safety_annotations)
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "thread_safety_annotations",
+    cflags = THREAD_SAFETY_CFLAGS,
+    defines = THREAD_SAFETY_DEFINES,
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(
+#     BUILD.gn:thread_safety_annotations,
+#     //build/bazel_sdk/fuchsia_rules_common/build_flags/default_flag_values.bzl:thread_safety_annotations,
+# )
 
 # LINT.IfChange(libcpp_remove_transitive_includes)
 build_flags(
