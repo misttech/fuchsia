@@ -1589,6 +1589,278 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<
+        'a,
+        ___E,
+        T0,
+        T1,
+        T2,
+        T3,
+        T4,
+        T5,
+        T6,
+        T7,
+        T8,
+        T9,
+        T10,
+        T11,
+        T12,
+        T13,
+        T14,
+        T15,
+        T16,
+        T17,
+        T18,
+        T19,
+        T20,
+        T21,
+        T22,
+        T23,
+        T24,
+        T25,
+        T26,
+    > ::fidl_next::Encode<crate::wire::Resource<'static>, ___E>
+        for &'a Resource<
+            T0,
+            T1,
+            T2,
+            T3,
+            T4,
+            T5,
+            T6,
+            T7,
+            T8,
+            T9,
+            T10,
+            T11,
+            T12,
+            T13,
+            T14,
+            T15,
+            T16,
+            T17,
+            T18,
+            T19,
+            T20,
+            T21,
+            T22,
+            T23,
+            T24,
+            T25,
+            T26,
+        >
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        &'a T2: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+        &'a T3: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+        &'a T4: ::fidl_next::Encode<crate::wire::ResourceStruct, ___E>,
+        &'a T5: ::fidl_next::Encode<crate::wire::ResourceTable<'static>, ___E>,
+        &'a T6: ::fidl_next::Encode<crate::wire::ResourceUnion<'static>, ___E>,
+        &'a T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalNullableHandle, ___E>,
+        &'a T8: ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalVmo, ___E>,
+        &'a T9: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<
+                    crate::Protocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+        &'a T10: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<
+                    crate::Protocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+        &'a T11:
+            ::fidl_next::Encode<::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>, ___E>,
+        &'a T12: ::fidl_next::Encode<crate::wire_optional::ResourceUnion<'static>, ___E>,
+        &'a T13: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::NullableHandle; 5], ___E>,
+        &'a T14: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::Vmo; 5], ___E>,
+        &'a T15: ::fidl_next::Encode<
+                [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>; 5],
+                ___E,
+            >,
+        &'a T16: ::fidl_next::Encode<
+                [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>; 5],
+                ___E,
+            >,
+        &'a T17: ::fidl_next::Encode<[crate::wire::ResourceStruct; 5], ___E>,
+        &'a T18: ::fidl_next::Encode<[crate::wire::ResourceTable<'static>; 5], ___E>,
+        &'a T19: ::fidl_next::Encode<[crate::wire::ResourceUnion<'static>; 5], ___E>,
+        &'a T20: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::NullableHandle>,
+                ___E,
+            >,
+        &'a T21: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Vmo>,
+                ___E,
+            >,
+        &'a T22: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<
+                    'static,
+                    ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
+                >,
+                ___E,
+            >,
+        &'a T23: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<
+                    'static,
+                    ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
+                >,
+                ___E,
+            >,
+        &'a T24: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, crate::wire::ResourceStruct>,
+                ___E,
+            >,
+        &'a T25: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, crate::wire::ResourceTable<'static>>,
+                ___E,
+            >,
+        &'a T26: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, crate::wire::ResourceUnion<'static>>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Resource<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Resource {
+                    handle,
+                    vmo,
+                    client_end,
+                    server_end,
+                    struct_,
+                    table,
+                    union,
+                    opt_handle,
+                    opt_vmo,
+                    opt_client_end,
+                    opt_server_end,
+                    opt_struct,
+                    opt_union,
+                    array_handle,
+                    array_vmo,
+                    array_client_end,
+                    array_server_end,
+                    array_struct,
+                    array_table,
+                    array_union,
+                    vector_handle,
+                    vector_vmo,
+                    vector_client_end,
+                    vector_server_end,
+                    vector_struct,
+                    vector_table,
+                    vector_union,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.handle, encoder_, handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.vmo, encoder_, vmo, ())?;
+
+            ::fidl_next::Encode::encode(&self.client_end, encoder_, client_end, ())?;
+
+            ::fidl_next::Encode::encode(&self.server_end, encoder_, server_end, ())?;
+
+            ::fidl_next::Encode::encode(&self.struct_, encoder_, struct_, ())?;
+
+            ::fidl_next::Encode::encode(&self.table, encoder_, table, ())?;
+
+            ::fidl_next::Encode::encode(&self.union, encoder_, union, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_handle, encoder_, opt_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_vmo, encoder_, opt_vmo, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_client_end, encoder_, opt_client_end, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_server_end, encoder_, opt_server_end, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_struct, encoder_, opt_struct, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_union, encoder_, opt_union, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_handle, encoder_, array_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_vmo, encoder_, array_vmo, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_client_end, encoder_, array_client_end, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_server_end, encoder_, array_server_end, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_struct, encoder_, array_struct, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_table, encoder_, array_table, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_union, encoder_, array_union, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_handle,
+                encoder_,
+                vector_handle,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(&self.vector_vmo, encoder_, vector_vmo, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_client_end,
+                encoder_,
+                vector_client_end,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_server_end,
+                encoder_,
+                vector_server_end,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_struct,
+                encoder_,
+                vector_struct,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_table,
+                encoder_,
+                vector_table,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_union,
+                encoder_,
+                vector_union,
+                (4294967295, ()),
+            )?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

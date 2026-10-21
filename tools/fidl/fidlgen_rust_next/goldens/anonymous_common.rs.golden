@@ -601,15 +601,14 @@ pub mod natural {
                     })
                 }),
 
-                args:
-                    args.map(|envelope| {
-                        ::fidl_next::FromWire::from_wire(unsafe {
-                            envelope.read_unchecked::<::fidl_next::wire::Vector<
+                args: args.map(|envelope| {
+                    ::fidl_next::FromWire::from_wire(unsafe {
+                        envelope.read_unchecked::<::fidl_next::wire::Vector<
                                 'de,
                                 crate::wire_optional::Expression<'de>,
                             >>()
-                        })
-                    }),
+                    })
+                }),
 
                 flags: flags.map(|envelope| {
                     ::fidl_next::FromWire::from_wire(unsafe {
@@ -630,15 +629,14 @@ pub mod natural {
                     })
                 }),
 
-                args:
-                    wire.table.get(3).map(|envelope| {
-                        ::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                            envelope.deref_unchecked::<::fidl_next::wire::Vector<
+                args: wire.table.get(3).map(|envelope| {
+                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                        envelope.deref_unchecked::<::fidl_next::wire::Vector<
                                 'de,
                                 crate::wire_optional::Expression<'de>,
                             >>()
-                        })
-                    }),
+                    })
+                }),
 
                 flags: wire.table.get(4).map(|envelope| {
                     ::fidl_next::FromWireRef::from_wire_ref(unsafe {
@@ -3168,6 +3166,41 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::OverrideTest<'static>, ___E>
+        for &'a OverrideTest<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::Op, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire_optional::Expression<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<crate::wire_optional::Expression<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::OverrideTest<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::OverrideTest {
+                    op,
+                    left,
+                    right,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.op, encoder_, op, ())?;
+
+            ::fidl_next::Encode::encode(&self.left, encoder_, left, ())?;
+
+            ::fidl_next::Encode::encode(&self.right, encoder_, right, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`TableData`].
     pub struct TableData<T0> {
         pub data: T0,
@@ -3193,6 +3226,31 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.data, encoder_, data, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::TableData, ___E> for &'a TableData<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<u8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::TableData>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::TableData {
+                    data,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.data, encoder_, data, ())?;
 
             Ok(())
         }
@@ -3239,6 +3297,40 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::SomeProtocolSomeMethodRequest<'static>, ___E>
+        for &'a SomeProtocolSomeMethodRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::UnionMember<'static>, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::TableMember<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::SomeProtocolSomeMethodRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SomeProtocolSomeMethodRequest {
+                    union_member,
+                    table_member,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.union_member, encoder_, union_member, ())?;
+
+            ::fidl_next::Encode::encode(&self.table_member, encoder_, table_member, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`SomeProtocolSomeMethodResponse`].
     pub struct SomeProtocolSomeMethodResponse<T0> {
         pub bits_member: T0,
@@ -3265,6 +3357,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.bits_member, encoder_, bits_member, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::SomeProtocolSomeMethodResponse, ___E>
+        for &'a SomeProtocolSomeMethodResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire::BitsMember, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::SomeProtocolSomeMethodResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SomeProtocolSomeMethodResponse {
+                    bits_member,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.bits_member, encoder_, bits_member, ())?;
 
             Ok(())
         }

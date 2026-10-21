@@ -1316,6 +1316,71 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5>
+        ::fidl_next::Encode<crate::wire::HandlesInTypes<'static>, ___E>
+        for &'a HandlesInTypes<T0, T1, T2, T3, T4, T5>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        &'a T1: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Vmo>,
+                ___E,
+            >,
+        &'a T2: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::Vmo; 5], ___E>,
+        &'a T3: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, [::fidl_next::wire::fuchsia::Vmo; 5]>,
+                ___E,
+            >,
+        &'a T4: ::fidl_next::Encode<crate::wire::TableWithHandle<'static>, ___E>,
+        &'a T5: ::fidl_next::Encode<crate::wire::UnionWithHandle<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::HandlesInTypes<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::HandlesInTypes {
+                    normal_handle,
+                    handle_in_vec,
+                    handle_in_array,
+                    handle_in_mixed_vec_array,
+                    table_with_handle,
+                    union_with_handle,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.normal_handle, encoder_, normal_handle, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.handle_in_vec,
+                encoder_,
+                handle_in_vec,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(&self.handle_in_array, encoder_, handle_in_array, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.handle_in_mixed_vec_array,
+                encoder_,
+                handle_in_mixed_vec_array,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(&self.table_with_handle, encoder_, table_with_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.union_with_handle, encoder_, union_with_handle, ())?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

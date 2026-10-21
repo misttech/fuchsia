@@ -1405,6 +1405,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ExampleProtocolMethodRequest, ___E>
+        for &'a ExampleProtocolMethodRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next_common_test_exampleusing::wire::Empty, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleProtocolMethodRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ExampleProtocolMethodRequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ExampleStruct`].
     pub struct ExampleStruct<T0> {
         pub member: T0,
@@ -1430,6 +1456,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.member, encoder_, member, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ExampleStruct, ___E>
+        for &'a ExampleStruct<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleStruct>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ExampleStruct {
+                    member,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.member, encoder_, member, ())?;
 
             Ok(())
         }

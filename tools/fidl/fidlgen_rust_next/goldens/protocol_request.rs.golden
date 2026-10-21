@@ -726,6 +726,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ParentGetChildResponse, ___E>
+        for &'a ParentGetChildResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ParentGetChildResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ParentGetChildResponse {
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ParentGetChildRequestResponse`].
     pub struct ParentGetChildRequestResponse<T0> {
         pub r: T0,
@@ -756,6 +786,36 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.r, encoder_, r, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ParentGetChildRequestResponse, ___E>
+        for &'a ParentGetChildRequestResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ParentGetChildRequestResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ParentGetChildRequestResponse {
+                    r,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.r, encoder_, r, ())?;
 
             Ok(())
         }
@@ -796,6 +856,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ParentTakeChildRequest, ___E>
+        for &'a ParentTakeChildRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ParentTakeChildRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ParentTakeChildRequest {
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ParentTakeChildRequestRequest`].
     pub struct ParentTakeChildRequestRequest<T0> {
         pub r: T0,
@@ -826,6 +916,36 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.r, encoder_, r, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ParentTakeChildRequestRequest, ___E>
+        for &'a ParentTakeChildRequestRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ParentTakeChildRequestRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ParentTakeChildRequestRequest {
+                    r,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.r, encoder_, r, ())?;
 
             Ok(())
         }

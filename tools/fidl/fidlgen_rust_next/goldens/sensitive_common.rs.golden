@@ -2256,6 +2256,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::SensitiveStruct<'static>, ___E>
+        for &'a SensitiveStruct<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::SensitiveStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SensitiveStruct {
+                    field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.field, encoder_, field, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ContainerWithPropagation`].
     pub struct ContainerWithPropagation<T0, T1, T2, T3> {
         pub unannotated_field: T0,
@@ -2327,6 +2354,66 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3>
+        ::fidl_next::Encode<crate::wire::ContainerWithPropagation<'static>, ___E>
+        for &'a ContainerWithPropagation<T0, T1, T2, T3>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::SensitiveStruct<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<crate::wire::SensitiveTable<'static>, ___E>,
+        &'a T3: ::fidl_next::Encode<crate::wire::SensitiveUnion<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ContainerWithPropagation<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ContainerWithPropagation {
+                    unannotated_field,
+                    sensitive_struct_field,
+                    sensitive_table_field,
+                    sensitive_union_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.unannotated_field,
+                encoder_,
+                unannotated_field,
+                4294967295,
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.sensitive_struct_field,
+                encoder_,
+                sensitive_struct_field,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.sensitive_table_field,
+                encoder_,
+                sensitive_table_field,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.sensitive_union_field,
+                encoder_,
+                sensitive_union_field,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Empty`].
     pub type Empty = ();
 
@@ -2369,6 +2456,48 @@ pub mod generic {
 
             ::fidl_next::Encode::encode(
                 self.sensitive_struct_field,
+                encoder_,
+                sensitive_struct_field,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::NonSensitiveStruct<'static>, ___E>
+        for &'a NonSensitiveStruct<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::SensitiveStruct<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::NonSensitiveStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::NonSensitiveStruct {
+                    sensitive_field,
+                    sensitive_struct_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.sensitive_field,
+                encoder_,
+                sensitive_field,
+                4294967295,
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.sensitive_struct_field,
                 encoder_,
                 sensitive_struct_field,
                 (),

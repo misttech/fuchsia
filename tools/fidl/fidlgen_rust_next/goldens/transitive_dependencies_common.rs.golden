@@ -248,6 +248,31 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::Baz, ___E> for &'a Baz<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next_common_test_middle::wire::Bar, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Baz>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Baz {
+                    g,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.g, encoder_, g, ())?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

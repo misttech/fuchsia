@@ -398,6 +398,39 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::NonInlineStructTestStruct<'static>, ___E>
+        for &'a NonInlineStructTestStruct<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Box<'static, crate::wire::Int16Int8>, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::NonInlineStructTestStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::NonInlineStructTestStruct {
+                    element,
+                    h,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.element, encoder_, element, ())?;
+
+            ::fidl_next::Encode::encode(&self.h, encoder_, h, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`TopLevelStruct`].
     pub struct TopLevelStruct<T0, T1> {
         pub a: T0,
@@ -432,6 +465,38 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::TopLevelStruct<'static>, ___E>
+        for &'a TopLevelStruct<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::NonInlineStructTestStruct<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::TopLevelStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::TopLevelStruct {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }

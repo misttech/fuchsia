@@ -339,6 +339,51 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::ExampleUseOfVectors<'static>, ___E>
+        for &'a ExampleUseOfVectors<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, u8>, ___E>,
+        &'a T1: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Vector<'static, bool>>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleUseOfVectors<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ExampleUseOfVectors {
+                    vector_of_uint8,
+                    vector_of_vector_of_bool,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.vector_of_uint8,
+                encoder_,
+                vector_of_uint8,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_of_vector_of_bool,
+                encoder_,
+                vector_of_vector_of_bool,
+                (4294967295, (4294967295, ())),
+            )?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

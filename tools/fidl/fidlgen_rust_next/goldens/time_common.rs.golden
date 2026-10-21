@@ -831,6 +831,44 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0, T1, T2, T3> ::fidl_next::Encode<crate::wire::AllInstants, ___E>
+        for &'a AllInstants<T0, T1, T2, T3>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T3: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::AllInstants>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::AllInstants {
+                    monotonic,
+                    boot,
+                    monotonic_ticks,
+                    boot_ticks,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.monotonic, encoder_, monotonic, ())?;
+
+            ::fidl_next::Encode::encode(&self.boot, encoder_, boot, ())?;
+
+            ::fidl_next::Encode::encode(&self.monotonic_ticks, encoder_, monotonic_ticks, ())?;
+
+            ::fidl_next::Encode::encode(&self.boot_ticks, encoder_, boot_ticks, ())?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

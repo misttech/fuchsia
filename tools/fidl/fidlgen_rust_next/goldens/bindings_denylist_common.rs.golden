@@ -8157,6 +8157,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding4, ___E>
+        for &'a ShouldNeverAppearInAnyBinding4<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ShouldNeverAppearInAnyBinding4>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ShouldNeverAppearInAnyBinding4 {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`AllowedDeniedResponse`].
     pub struct AllowedDeniedResponse<T0, T1, T2> {
         pub should_never_appear_in_any_binding_4: T0,
@@ -8217,6 +8243,57 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::AllowedDeniedResponse<'static>, ___E>
+        for &'a AllowedDeniedResponse<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding4, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding5<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding6<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::AllowedDeniedResponse<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::AllowedDeniedResponse {
+                    should_never_appear_in_any_binding_4,
+                    should_never_appear_in_any_binding_5,
+                    should_never_appear_in_any_binding_6,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_4,
+                encoder_,
+                should_never_appear_in_any_binding_4,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_5,
+                encoder_,
+                should_never_appear_in_any_binding_5,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_6,
+                encoder_,
+                should_never_appear_in_any_binding_6,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ShouldNeverAppearInAnyBinding1`].
     pub struct ShouldNeverAppearInAnyBinding1<T0> {
         pub a: T0,
@@ -8243,6 +8320,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding1, ___E>
+        for &'a ShouldNeverAppearInAnyBinding1<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ShouldNeverAppearInAnyBinding1>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ShouldNeverAppearInAnyBinding1 {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
 
             Ok(())
         }
@@ -8310,6 +8413,59 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'static>, ___E>
+        for &'a DeniedShouldNeverAppearInAnyBindingRequest<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding1, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding2<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding3<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DeniedShouldNeverAppearInAnyBindingRequest {
+                    should_never_appear_in_any_binding_1,
+                    should_never_appear_in_any_binding_2,
+                    should_never_appear_in_any_binding_3,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_1,
+                encoder_,
+                should_never_appear_in_any_binding_1,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_2,
+                encoder_,
+                should_never_appear_in_any_binding_2,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_3,
+                encoder_,
+                should_never_appear_in_any_binding_3,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ShouldNeverAppearInAnyBinding7`].
     pub struct ShouldNeverAppearInAnyBinding7<T0> {
         pub a: T0,
@@ -8336,6 +8492,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding7, ___E>
+        for &'a ShouldNeverAppearInAnyBinding7<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ShouldNeverAppearInAnyBinding7>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ShouldNeverAppearInAnyBinding7 {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
 
             Ok(())
         }
@@ -8400,6 +8582,57 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::DeniedAnonymous<'static>, ___E>
+        for &'a DeniedAnonymous<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding7, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding8<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<crate::wire::ShouldNeverAppearInAnyBinding9<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DeniedAnonymous<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DeniedAnonymous {
+                    should_never_appear_in_any_binding_7,
+                    should_never_appear_in_any_binding_8,
+                    should_never_appear_in_any_binding_9,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_7,
+                encoder_,
+                should_never_appear_in_any_binding_7,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_8,
+                encoder_,
+                should_never_appear_in_any_binding_8,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.should_never_appear_in_any_binding_9,
+                encoder_,
+                should_never_appear_in_any_binding_9,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`DenyEachBindingOnlyDenyCppRequest`].
     pub struct DenyEachBindingOnlyDenyCppRequest<T0> {
         pub a: T0,
@@ -8426,6 +8659,33 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyCppRequest, ___E>
+        for &'a DenyEachBindingOnlyDenyCppRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyCppRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyCppRequest {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
 
             Ok(())
         }
@@ -8462,6 +8722,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyCppResponse, ___E>
+        for &'a DenyEachBindingOnlyDenyCppResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyCppResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyCppResponse {
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`DenyEachBindingOnlyDenyDartRequest`].
     pub struct DenyEachBindingOnlyDenyDartRequest<T0> {
         pub a: T0,
@@ -8488,6 +8775,33 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyDartRequest, ___E>
+        for &'a DenyEachBindingOnlyDenyDartRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyDartRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyDartRequest {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
 
             Ok(())
         }
@@ -8525,6 +8839,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyDartResponse, ___E>
+        for &'a DenyEachBindingOnlyDenyDartResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyDartResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyDartResponse {
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`DenyEachBindingOnlyDenyGoRequest`].
     pub struct DenyEachBindingOnlyDenyGoRequest<T0> {
         pub a: T0,
@@ -8556,6 +8897,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoRequest, ___E>
+        for &'a DenyEachBindingOnlyDenyGoRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyGoRequest {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`DenyEachBindingOnlyDenyGoResponse`].
     pub struct DenyEachBindingOnlyDenyGoResponse<T0> {
         pub b: T0,
@@ -8582,6 +8950,33 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyGoResponse, ___E>
+        for &'a DenyEachBindingOnlyDenyGoResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyGoResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyGoResponse {
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -8619,6 +9014,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyPythonRequest, ___E>
+        for &'a DenyEachBindingOnlyDenyPythonRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyPythonRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyPythonRequest {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`DenyEachBindingOnlyDenyPythonResponse`].
     pub struct DenyEachBindingOnlyDenyPythonResponse<T0> {
         pub b: T0,
@@ -8646,6 +9068,33 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyPythonResponse, ___E>
+        for &'a DenyEachBindingOnlyDenyPythonResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyPythonResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyPythonResponse {
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -8682,6 +9131,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyRustRequest, ___E>
+        for &'a DenyEachBindingOnlyDenyRustRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyRustRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyRustRequest {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`DenyEachBindingOnlyDenyRustResponse`].
     pub struct DenyEachBindingOnlyDenyRustResponse<T0> {
         pub b: T0,
@@ -8709,6 +9185,33 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenyRustResponse, ___E>
+        for &'a DenyEachBindingOnlyDenyRustResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DenyEachBindingOnlyDenyRustResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenyRustResponse {
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -8748,6 +9251,35 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenySyzkallerRequest, ___E>
+        for &'a DenyEachBindingOnlyDenySyzkallerRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::DenyEachBindingOnlyDenySyzkallerRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenySyzkallerRequest {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`DenyEachBindingOnlyDenySyzkallerResponse`].
     pub struct DenyEachBindingOnlyDenySyzkallerResponse<T0> {
         pub b: T0,
@@ -8777,6 +9309,35 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::DenyEachBindingOnlyDenySyzkallerResponse, ___E>
+        for &'a DenyEachBindingOnlyDenySyzkallerResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::DenyEachBindingOnlyDenySyzkallerResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DenyEachBindingOnlyDenySyzkallerResponse {
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -8814,6 +9375,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::MemberOnlyAppearsInImportingLibrary, ___E>
+        for &'a MemberOnlyAppearsInImportingLibrary<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::MemberOnlyAppearsInImportingLibrary>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MemberOnlyAppearsInImportingLibrary {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`OnlyAppearsInImportingLibrary`].
     pub struct OnlyAppearsInImportingLibrary<T0> {
         pub member_only_appears_in_importing_library: T0,
@@ -8841,6 +9429,37 @@ pub mod generic {
 
             ::fidl_next::Encode::encode(
                 self.member_only_appears_in_importing_library,
+                encoder_,
+                member_only_appears_in_importing_library,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::OnlyAppearsInImportingLibrary, ___E>
+        for &'a OnlyAppearsInImportingLibrary<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire::MemberOnlyAppearsInImportingLibrary, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::OnlyAppearsInImportingLibrary>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::OnlyAppearsInImportingLibrary {
+                    member_only_appears_in_importing_library,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.member_only_appears_in_importing_library,
                 encoder_,
                 member_only_appears_in_importing_library,
                 (),

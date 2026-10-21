@@ -7254,6 +7254,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ResultProtocolARequest, ___E>
+        for &'a ResultProtocolARequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResultProtocolARequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ResultProtocolARequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ResultProtocolAResponse`].
     pub struct ResultProtocolAResponse<T0> {
         pub result: T0,
@@ -7280,6 +7306,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.result, encoder_, result, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ResultProtocolAResponse, ___E>
+        for &'a ResultProtocolAResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResultProtocolAResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ResultProtocolAResponse {
+                    result,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.result, encoder_, result, ())?;
 
             Ok(())
         }
@@ -7316,6 +7368,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ResultProtocolBRequest, ___E>
+        for &'a ResultProtocolBRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResultProtocolBRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ResultProtocolBRequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ResultProtocolBResponse`].
     pub struct ResultProtocolBResponse<T0> {
         pub result: T0,
@@ -7342,6 +7420,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.result, encoder_, result, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ResultProtocolBResponse, ___E>
+        for &'a ResultProtocolBResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResultProtocolBResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ResultProtocolBResponse {
+                    result,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.result, encoder_, result, ())?;
 
             Ok(())
         }
@@ -7390,6 +7494,49 @@ pub mod generic {
 
             ::fidl_next::Encode::encode(
                 self.result_vector,
+                encoder_,
+                result_vector,
+                (4294967295, ()),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::ResultStruct<'static>, ___E>
+        for &'a ResultStruct<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>,
+        &'a T1: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::StatusResult; 10], ___E>,
+        &'a T2: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::StatusResult>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResultStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ResultStruct {
+                    result,
+                    result_array,
+                    result_vector,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.result, encoder_, result, ())?;
+
+            ::fidl_next::Encode::encode(&self.result_array, encoder_, result_array, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.result_vector,
                 encoder_,
                 result_vector,
                 (4294967295, ()),
@@ -7448,6 +7595,48 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::ResultStructAlias<'static>, ___E>
+        for &'a ResultStructAlias<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+        &'a T1: ::fidl_next::Encode<[::fidl_next::wire::Int32; 10], ___E>,
+        &'a T2:
+            ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ResultStructAlias<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ResultStructAlias {
+                    result,
+                    result_array,
+                    result_vector,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.result, encoder_, result, ())?;
+
+            ::fidl_next::Encode::encode(&self.result_array, encoder_, result_array, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.result_vector,
+                encoder_,
+                result_vector,
+                (4294967295, ()),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StatusProtocolARequest`].
     pub struct StatusProtocolARequest<T0> {
         pub arg: T0,
@@ -7474,6 +7663,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.arg, encoder_, arg, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StatusProtocolARequest, ___E>
+        for &'a StatusProtocolARequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Status, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StatusProtocolARequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StatusProtocolARequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, ())?;
 
             Ok(())
         }
@@ -7510,6 +7725,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StatusProtocolAResponse, ___E>
+        for &'a StatusProtocolAResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Status, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StatusProtocolAResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StatusProtocolAResponse {
+                    status,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.status, encoder_, status, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StatusProtocolBRequest`].
     pub struct StatusProtocolBRequest<T0> {
         pub arg: T0,
@@ -7541,6 +7782,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StatusProtocolBRequest, ___E>
+        for &'a StatusProtocolBRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StatusProtocolBRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StatusProtocolBRequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StatusProtocolBResponse`].
     pub struct StatusProtocolBResponse<T0> {
         pub status: T0,
@@ -7567,6 +7834,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.status, encoder_, status, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StatusProtocolBResponse, ___E>
+        for &'a StatusProtocolBResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StatusProtocolBResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StatusProtocolBResponse {
+                    status,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.status, encoder_, status, ())?;
 
             Ok(())
         }
@@ -7624,6 +7917,49 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::StatusStruct<'static>, ___E>
+        for &'a StatusStruct<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Status, ___E>,
+        &'a T1: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::Status; 10], ___E>,
+        &'a T2: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Status>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StatusStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StatusStruct {
+                    status,
+                    status_array,
+                    status_vector,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.status, encoder_, status, ())?;
+
+            ::fidl_next::Encode::encode(&self.status_array, encoder_, status_array, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.status_vector,
+                encoder_,
+                status_vector,
+                (4294967295, ()),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StatusStructAlias`].
     pub struct StatusStructAlias<T0, T1, T2> {
         pub status: T0,
@@ -7664,6 +8000,48 @@ pub mod generic {
 
             ::fidl_next::Encode::encode(
                 self.status_vector,
+                encoder_,
+                status_vector,
+                (4294967295, ()),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::StatusStructAlias<'static>, ___E>
+        for &'a StatusStructAlias<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+        &'a T1: ::fidl_next::Encode<[::fidl_next::wire::Int32; 10], ___E>,
+        &'a T2:
+            ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StatusStructAlias<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StatusStructAlias {
+                    status,
+                    status_array,
+                    status_vector,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.status, encoder_, status, ())?;
+
+            ::fidl_next::Encode::encode(&self.status_array, encoder_, status_array, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.status_vector,
                 encoder_,
                 status_vector,
                 (4294967295, ()),

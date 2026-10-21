@@ -2936,6 +2936,34 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::ChannelProtocolTakeHandleRequest, ___E>
+        for &'a ChannelProtocolTakeHandleRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChannelProtocolTakeHandleRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChannelProtocolTakeHandleRequest {
+                    h,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.h, encoder_, h, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ChannelProtocolMutateSocketRequest`].
     pub struct ChannelProtocolMutateSocketRequest<T0> {
         pub a: T0,
@@ -2963,6 +2991,34 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::ChannelProtocolMutateSocketRequest, ___E>
+        for &'a ChannelProtocolMutateSocketRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChannelProtocolMutateSocketRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChannelProtocolMutateSocketRequest {
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
 
             Ok(())
         }
@@ -2996,6 +3052,34 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::ChannelProtocolMutateSocketResponse, ___E>
+        for &'a ChannelProtocolMutateSocketResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChannelProtocolMutateSocketResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChannelProtocolMutateSocketResponse {
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -3036,6 +3120,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::HandleRightsProtocolNoResponseMethodRequest, ___E>
+        for &'a HandleRightsProtocolNoResponseMethodRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::HandleRightsProtocolNoResponseMethodRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::HandleRightsProtocolNoResponseMethodRequest {
+                    h,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.h, encoder_, h, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`HandleRightsProtocolResponseMethodRequest`].
     pub struct HandleRightsProtocolResponseMethodRequest<T0> {
         pub h: T0,
@@ -3066,6 +3180,36 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.h, encoder_, h, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::HandleRightsProtocolResponseMethodRequest, ___E>
+        for &'a HandleRightsProtocolResponseMethodRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::HandleRightsProtocolResponseMethodRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::HandleRightsProtocolResponseMethodRequest {
+                    h,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.h, encoder_, h, ())?;
 
             Ok(())
         }
@@ -3106,6 +3250,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::HandleRightsProtocolResponseMethodResponse, ___E>
+        for &'a HandleRightsProtocolResponseMethodResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::HandleRightsProtocolResponseMethodResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::HandleRightsProtocolResponseMethodResponse {
+                    h,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.h, encoder_, h, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`HandleRightsProtocolAnEventRequest`].
     pub struct HandleRightsProtocolAnEventRequest<T0> {
         pub h: T0,
@@ -3133,6 +3307,34 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.h, encoder_, h, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::HandleRightsProtocolAnEventRequest, ___E>
+        for &'a HandleRightsProtocolAnEventRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::HandleRightsProtocolAnEventRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::HandleRightsProtocolAnEventRequest {
+                    h,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.h, encoder_, h, ())?;
 
             Ok(())
         }
@@ -3212,6 +3414,69 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3> ::fidl_next::Encode<crate::wire::ProtocolEnds, ___E>
+        for &'a ProtocolEnds<T0, T1, T2, T3>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::Channel,
+                >,
+                ___E,
+            >,
+        &'a T1: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::Channel,
+                >,
+                ___E,
+            >,
+        &'a T2: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+        &'a T3: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ProtocolEnds>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ProtocolEnds {
+                    client,
+                    server,
+                    client_opt,
+                    server_opt,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.client, encoder_, client, ())?;
+
+            ::fidl_next::Encode::encode(&self.server, encoder_, server, ())?;
+
+            ::fidl_next::Encode::encode(&self.client_opt, encoder_, client_opt, ())?;
+
+            ::fidl_next::Encode::encode(&self.server_opt, encoder_, server_opt, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`WithErrorSyntaxHandleInResultResponse`].
     pub struct WithErrorSyntaxHandleInResultResponse<T0> {
         pub h: T0,
@@ -3240,6 +3505,34 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.h, encoder_, h, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::WithErrorSyntaxHandleInResultResponse, ___E>
+        for &'a WithErrorSyntaxHandleInResultResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::WithErrorSyntaxHandleInResultResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithErrorSyntaxHandleInResultResponse {
+                    h,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.h, encoder_, h, ())?;
 
             Ok(())
         }
@@ -3283,6 +3576,40 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::WithProtocolEndsClientEndsRequest, ___E>
+        for &'a WithProtocolEndsClientEndsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::Channel,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::WithProtocolEndsClientEndsRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithProtocolEndsClientEndsRequest {
+                    in_,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.in_, encoder_, in_, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`WithProtocolEndsClientEndsResponse`].
     pub struct WithProtocolEndsClientEndsResponse<T0> {
         pub out: T0,
@@ -3316,6 +3643,40 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.out, encoder_, out, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::WithProtocolEndsClientEndsResponse, ___E>
+        for &'a WithProtocolEndsClientEndsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::WithProtocolEndsClientEndsResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithProtocolEndsClientEndsResponse {
+                    out,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.out, encoder_, out, ())?;
 
             Ok(())
         }
@@ -3359,6 +3720,40 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::WithProtocolEndsServerEndsRequest, ___E>
+        for &'a WithProtocolEndsServerEndsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::WithProtocolEndsServerEndsRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithProtocolEndsServerEndsRequest {
+                    in_,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.in_, encoder_, in_, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`WithProtocolEndsServerEndsResponse`].
     pub struct WithProtocolEndsServerEndsResponse<T0> {
         pub out: T0,
@@ -3392,6 +3787,40 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.out, encoder_, out, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::WithProtocolEndsServerEndsResponse, ___E>
+        for &'a WithProtocolEndsServerEndsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<
+                    crate::DiscoverableProtocol,
+                    ::fidl_next::wire::fuchsia::Channel,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::WithProtocolEndsServerEndsResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithProtocolEndsServerEndsResponse {
+                    out,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.out, encoder_, out, ())?;
 
             Ok(())
         }
@@ -3432,6 +3861,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::WithProtocolEndsStructContainingEndsRequest, ___E>
+        for &'a WithProtocolEndsStructContainingEndsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::ProtocolEnds, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithProtocolEndsStructContainingEndsRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithProtocolEndsStructContainingEndsRequest {
+                    in_,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.in_, encoder_, in_, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`WithProtocolEndsStructContainingEndsResponse`].
     pub struct WithProtocolEndsStructContainingEndsResponse<T0> {
         pub out: T0,
@@ -3462,6 +3921,36 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.out, encoder_, out, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::WithProtocolEndsStructContainingEndsResponse, ___E>
+        for &'a WithProtocolEndsStructContainingEndsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::ProtocolEnds, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithProtocolEndsStructContainingEndsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithProtocolEndsStructContainingEndsResponse {
+                    out,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.out, encoder_, out, ())?;
 
             Ok(())
         }

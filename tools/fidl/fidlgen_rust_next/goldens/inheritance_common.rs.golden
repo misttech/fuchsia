@@ -469,6 +469,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::SuperFooRequest<'static>, ___E>
+        for &'a SuperFooRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::SuperFooRequest<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SuperFooRequest {
+                    s,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.s, encoder_, s, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`SuperFooResponse`].
     pub struct SuperFooResponse<T0> {
         pub y: T0,
@@ -495,6 +522,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.y, encoder_, y, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::SuperFooResponse, ___E>
+        for &'a SuperFooResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::SuperFooResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SuperFooResponse {
+                    y,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.y, encoder_, y, ())?;
 
             Ok(())
         }

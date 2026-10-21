@@ -1906,6 +1906,38 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'static>,
+            ___E,
+        > for &'a ProtocolRequestStrictResponseFlexibleRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::StrictFoo<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ProtocolRequestStrictResponseFlexibleRequest {
+                    s,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.s, encoder_, s, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ProtocolRequestStrictResponseFlexibleResponse`].
     pub struct ProtocolRequestStrictResponseFlexibleResponse<T0> {
         pub f: T0,
@@ -1938,6 +1970,38 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.f, encoder_, f, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'static>,
+            ___E,
+        > for &'a ProtocolRequestStrictResponseFlexibleResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::FlexibleFoo<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ProtocolRequestStrictResponseFlexibleResponse {
+                    f,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.f, encoder_, f, ())?;
 
             Ok(())
         }
@@ -1980,6 +2044,38 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'static>,
+            ___E,
+        > for &'a ProtocolRequestFlexibleResponseStrictRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::FlexibleFoo<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ProtocolRequestFlexibleResponseStrictRequest {
+                    s,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.s, encoder_, s, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ProtocolRequestFlexibleResponseStrictResponse`].
     pub struct ProtocolRequestFlexibleResponseStrictResponse<T0> {
         pub f: T0,
@@ -2012,6 +2108,38 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.f, encoder_, f, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'static>,
+            ___E,
+        > for &'a ProtocolRequestFlexibleResponseStrictResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::StrictFoo<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ProtocolRequestFlexibleResponseStrictResponse {
+                    f,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.f, encoder_, f, ())?;
 
             Ok(())
         }

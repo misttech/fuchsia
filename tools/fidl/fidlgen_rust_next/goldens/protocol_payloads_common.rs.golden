@@ -1963,6 +1963,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::LocalStructPayload, ___E>
+        for &'a LocalStructPayload<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::LocalStructPayload>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::LocalStructPayload {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`MainProtocolOneWayAnonRequest`].
     pub struct MainProtocolOneWayAnonRequest<T0, T1> {
         pub a: T0,
@@ -1995,6 +2025,37 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::MainProtocolOneWayAnonRequest, ___E>
+        for &'a MainProtocolOneWayAnonRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::MainProtocolOneWayAnonRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MainProtocolOneWayAnonRequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -2037,6 +2098,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::MainProtocolTwoWayAnonRequest, ___E>
+        for &'a MainProtocolTwoWayAnonRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::MainProtocolTwoWayAnonRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MainProtocolTwoWayAnonRequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`MainProtocolTwoWayAnonResponse`].
     pub struct MainProtocolTwoWayAnonResponse<T0, T1> {
         pub a: T0,
@@ -2069,6 +2161,37 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::MainProtocolTwoWayAnonResponse, ___E>
+        for &'a MainProtocolTwoWayAnonResponse<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::MainProtocolTwoWayAnonResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MainProtocolTwoWayAnonResponse {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -2114,6 +2237,39 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::MainProtocolTwoWayAnonWithErrorRequest, ___E>
+        for &'a MainProtocolTwoWayAnonWithErrorRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::MainProtocolTwoWayAnonWithErrorRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MainProtocolTwoWayAnonWithErrorRequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`MainProtocolTwoWayAnonWithErrorResponse`].
     pub struct MainProtocolTwoWayAnonWithErrorResponse<T0, T1> {
         pub a: T0,
@@ -2154,6 +2310,39 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::MainProtocolTwoWayAnonWithErrorResponse, ___E>
+        for &'a MainProtocolTwoWayAnonWithErrorResponse<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MainProtocolTwoWayAnonWithErrorResponse {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`MainProtocolOnAnonRequest`].
     pub struct MainProtocolOnAnonRequest<T0, T1> {
         pub a: T0,
@@ -2186,6 +2375,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::MainProtocolOnAnonRequest, ___E>
+        for &'a MainProtocolOnAnonRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::MainProtocolOnAnonRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MainProtocolOnAnonRequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }

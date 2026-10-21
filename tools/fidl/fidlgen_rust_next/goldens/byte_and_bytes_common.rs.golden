@@ -246,6 +246,32 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ByteAndBytes, ___E>
+        for &'a ByteAndBytes<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<u8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ByteAndBytes>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ByteAndBytes {
+                    single_byte,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.single_byte, encoder_, single_byte, ())?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

@@ -1575,6 +1575,52 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::FdfHandles, ___E>
+        for &'a FdfHandles<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fdf_fidl::wire::DriverChannel, ___E>,
+        &'a T1: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
+                ___E,
+            >,
+        &'a T2: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::FdfHandles>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::FdfHandles {
+                    fdf_channel_handle,
+                    client_end_driver,
+                    server_end_driver,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.fdf_channel_handle,
+                encoder_,
+                fdf_channel_handle,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(&self.client_end_driver, encoder_, client_end_driver, ())?;
+
+            ::fidl_next::Encode::encode(&self.server_end_driver, encoder_, server_end_driver, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Handles`].
     pub struct Handles<
         T0,
@@ -1942,6 +1988,274 @@ pub mod generic {
 
             ::fidl_next::Encode::encode(
                 self.request_some_protocol,
+                encoder_,
+                request_some_protocol,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<
+        'a,
+        ___E,
+        T0,
+        T1,
+        T2,
+        T3,
+        T4,
+        T5,
+        T6,
+        T7,
+        T8,
+        T9,
+        T10,
+        T11,
+        T12,
+        T13,
+        T14,
+        T15,
+        T16,
+        T17,
+        T18,
+        T19,
+        T20,
+        T21,
+        T22,
+        T23,
+        T24,
+        T25,
+        T26,
+        T27,
+        T28,
+        T29,
+        T30,
+        T31,
+        T32,
+        T33,
+        T34,
+    > ::fidl_next::Encode<crate::wire::Handles, ___E>
+        for &'a Handles<
+            T0,
+            T1,
+            T2,
+            T3,
+            T4,
+            T5,
+            T6,
+            T7,
+            T8,
+            T9,
+            T10,
+            T11,
+            T12,
+            T13,
+            T14,
+            T15,
+            T16,
+            T17,
+            T18,
+            T19,
+            T20,
+            T21,
+            T22,
+            T23,
+            T24,
+            T25,
+            T26,
+            T27,
+            T28,
+            T29,
+            T30,
+            T31,
+            T32,
+            T33,
+            T34,
+        >
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Bti, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Channel, ___E>,
+        &'a T3: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Clock, ___E>,
+        &'a T4: ::fidl_next::Encode<::fidl_next::wire::fuchsia::DebugLog, ___E>,
+        &'a T5: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Event, ___E>,
+        &'a T6: ::fidl_next::Encode<::fidl_next::wire::fuchsia::EventPair, ___E>,
+        &'a T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Exception, ___E>,
+        &'a T8: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Fifo, ___E>,
+        &'a T9: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Guest, ___E>,
+        &'a T10: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Interrupt, ___E>,
+        &'a T11: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Iob, ___E>,
+        &'a T12: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Iommu, ___E>,
+        &'a T13: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Job, ___E>,
+        &'a T14: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        &'a T15: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Pager, ___E>,
+        &'a T16: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Pmt, ___E>,
+        &'a T17: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Port, ___E>,
+        &'a T18: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Process, ___E>,
+        &'a T19: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Profile, ___E>,
+        &'a T20: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Resource, ___E>,
+        &'a T21: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+        &'a T22: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Stream, ___E>,
+        &'a T23: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        &'a T24: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Thread, ___E>,
+        &'a T25: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Timer, ___E>,
+        &'a T26: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vcpu, ___E>,
+        &'a T27: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmar, ___E>,
+        &'a T28: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        &'a T29: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        &'a T30: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        &'a T31: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        &'a T32: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        &'a T33: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+        &'a T34: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Handles>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Handles {
+                    plain_handle,
+                    bti_handle,
+                    channel_handle,
+                    clock_handle,
+                    debuglog_handle,
+                    event_handle,
+                    eventpair_handle,
+                    exception_handle,
+                    fifo_handle,
+                    guest_handle,
+                    interrupt_handle,
+                    iob_handle,
+                    iommu_handle,
+                    job_handle,
+                    msi_handle,
+                    pager_handle,
+                    pmt_handle,
+                    port_handle,
+                    process_handle,
+                    profile_handle,
+                    resource_handle,
+                    socket_handle,
+                    stream_handle,
+                    suspendtoken_handle,
+                    thread_handle,
+                    timer_handle,
+                    vcpu_handle,
+                    vmar_handle,
+                    vmo_handle,
+                    rights_handle,
+                    aliased_plain_handle_field,
+                    aliased_subtype_handle_field,
+                    aliased_rights_handle_field,
+                    some_protocol,
+                    request_some_protocol,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.plain_handle, encoder_, plain_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.bti_handle, encoder_, bti_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.channel_handle, encoder_, channel_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.clock_handle, encoder_, clock_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.debuglog_handle, encoder_, debuglog_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.event_handle, encoder_, event_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.eventpair_handle, encoder_, eventpair_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.exception_handle, encoder_, exception_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.fifo_handle, encoder_, fifo_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.guest_handle, encoder_, guest_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.interrupt_handle, encoder_, interrupt_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.iob_handle, encoder_, iob_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.iommu_handle, encoder_, iommu_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.job_handle, encoder_, job_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.msi_handle, encoder_, msi_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.pager_handle, encoder_, pager_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.pmt_handle, encoder_, pmt_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.port_handle, encoder_, port_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.process_handle, encoder_, process_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.profile_handle, encoder_, profile_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.resource_handle, encoder_, resource_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.socket_handle, encoder_, socket_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.stream_handle, encoder_, stream_handle, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.suspendtoken_handle,
+                encoder_,
+                suspendtoken_handle,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(&self.thread_handle, encoder_, thread_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.timer_handle, encoder_, timer_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.vcpu_handle, encoder_, vcpu_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.vmar_handle, encoder_, vmar_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.vmo_handle, encoder_, vmo_handle, ())?;
+
+            ::fidl_next::Encode::encode(&self.rights_handle, encoder_, rights_handle, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.aliased_plain_handle_field,
+                encoder_,
+                aliased_plain_handle_field,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.aliased_subtype_handle_field,
+                encoder_,
+                aliased_subtype_handle_field,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.aliased_rights_handle_field,
+                encoder_,
+                aliased_rights_handle_field,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(&self.some_protocol, encoder_, some_protocol, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.request_some_protocol,
                 encoder_,
                 request_some_protocol,
                 (),

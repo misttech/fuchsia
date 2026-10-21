@@ -997,6 +997,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::EmptyProtocolSendRequest, ___E>
+        for &'a EmptyProtocolSendRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire::Empty, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::EmptyProtocolSendRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::EmptyProtocolSendRequest {
+                    e,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.e, encoder_, e, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`EmptyProtocolReceiveRequest`].
     pub struct EmptyProtocolReceiveRequest<T0> {
         pub e: T0,
@@ -1023,6 +1049,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.e, encoder_, e, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::EmptyProtocolReceiveRequest, ___E>
+        for &'a EmptyProtocolReceiveRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire::Empty, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::EmptyProtocolReceiveRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::EmptyProtocolReceiveRequest {
+                    e,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.e, encoder_, e, ())?;
 
             Ok(())
         }
@@ -1059,6 +1111,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::EmptyProtocolSendAndReceiveRequest, ___E>
+        for &'a EmptyProtocolSendAndReceiveRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire::Empty, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::EmptyProtocolSendAndReceiveRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::EmptyProtocolSendAndReceiveRequest {
+                    e,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.e, encoder_, e, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`EmptyProtocolSendAndReceiveResponse`].
     pub struct EmptyProtocolSendAndReceiveResponse<T0> {
         pub e: T0,
@@ -1086,6 +1165,33 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.e, encoder_, e, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::EmptyProtocolSendAndReceiveResponse, ___E>
+        for &'a EmptyProtocolSendAndReceiveResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire::Empty, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::EmptyProtocolSendAndReceiveResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::EmptyProtocolSendAndReceiveResponse {
+                    e,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.e, encoder_, e, ())?;
 
             Ok(())
         }

@@ -386,6 +386,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ParentFirstRequest, ___E>
+        for &'a ParentFirstRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ParentFirstRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ParentFirstRequest {
+                    request,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.request, encoder_, request, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ChildSecondRequest`].
     pub struct ChildSecondRequest<T0> {
         pub request: T0,
@@ -416,6 +446,36 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.request, encoder_, request, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ChildSecondRequest, ___E>
+        for &'a ChildSecondRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::Channel>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChildSecondRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChildSecondRequest {
+                    request,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.request, encoder_, request, ())?;
 
             Ok(())
         }

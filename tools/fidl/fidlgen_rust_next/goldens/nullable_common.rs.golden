@@ -2061,6 +2061,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::Int32Wrapper, ___E>
+        for &'a Int32Wrapper<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int32Wrapper>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Int32Wrapper {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`SimpleProtocolAddRequest`].
     pub struct SimpleProtocolAddRequest<T0, T1> {
         pub a: T0,
@@ -2098,6 +2124,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::SimpleProtocolAddRequest, ___E>
+        for &'a SimpleProtocolAddRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::SimpleProtocolAddRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SimpleProtocolAddRequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`SimpleProtocolAddResponse`].
     pub struct SimpleProtocolAddResponse<T0> {
         pub sum: T0,
@@ -2124,6 +2180,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.sum, encoder_, sum, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::SimpleProtocolAddResponse, ___E>
+        for &'a SimpleProtocolAddResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::SimpleProtocolAddResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SimpleProtocolAddResponse {
+                    sum,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.sum, encoder_, sum, ())?;
 
             Ok(())
         }
@@ -2161,6 +2243,34 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::StructWithNullableString<'static>, ___E>
+        for &'a StructWithNullableString<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::OptionalString<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableString<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableString {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StructWithNullableStruct`].
     pub struct StructWithNullableStruct<T0> {
         pub val: T0,
@@ -2188,6 +2298,35 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::StructWithNullableStruct<'static>, ___E>
+        for &'a StructWithNullableStruct<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0:
+            ::fidl_next::Encode<::fidl_next::wire::Box<'static, crate::wire::Int32Wrapper>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableStruct {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, ())?;
 
             Ok(())
         }
@@ -2224,6 +2363,32 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StructWithNullableUnion, ___E>
+        for &'a StructWithNullableUnion<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire_optional::SimpleUnion, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableUnion>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableUnion {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StructWithNullableVector`].
     pub struct StructWithNullableVector<T0> {
         pub val: T0,
@@ -2254,6 +2419,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.val, encoder_, val, (4294967295, ()))?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::StructWithNullableVector<'static>, ___E>
+        for &'a StructWithNullableVector<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::wire::OptionalVector<'static, ::fidl_next::wire::Int32>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableVector<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableVector {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, (4294967295, ()))?;
 
             Ok(())
         }

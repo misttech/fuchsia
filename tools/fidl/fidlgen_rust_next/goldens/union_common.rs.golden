@@ -11522,6 +11522,35 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::Pizza<'static>, ___E> for &'a Pizza<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Pizza<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Pizza {
+                    toppings,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.toppings, encoder_, toppings, (4294967295, 16))?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Pasta`].
     pub struct Pasta<T0> {
         pub sauce: T0,
@@ -11548,6 +11577,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.sauce, encoder_, sauce, 16)?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::Pasta<'static>, ___E> for &'a Pasta<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Pasta<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Pasta {
+                    sauce,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.sauce, encoder_, sauce, 16)?;
 
             Ok(())
         }
@@ -11585,6 +11640,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::NullableUnionStruct<'static>, ___E>
+        for &'a NullableUnionStruct<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire_optional::Union<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::NullableUnionStruct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::NullableUnionStruct {
+                    the_union,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.the_union, encoder_, the_union, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StructWithNullableUnion`].
     pub struct StructWithNullableUnion<T0> {
         pub x1: T0,
@@ -11612,6 +11694,34 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.x1, encoder_, x1, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::StructWithNullableUnion<'static>, ___E>
+        for &'a StructWithNullableUnion<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire_optional::OlderSimpleUnion<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableUnion<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableUnion {
+                    x1,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.x1, encoder_, x1, ())?;
 
             Ok(())
         }
@@ -11656,6 +11766,40 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'static>,
+            ___E,
+        > for &'a TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::StrictBoundedUnion<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<
+                    'static,
+                >,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse {
+                    xu,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.xu, encoder_, xu, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse`].
     pub struct TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<T0> {
         pub xu: T0,
@@ -11690,6 +11834,40 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.xu, encoder_, xu, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'static>,
+            ___E,
+        > for &'a TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::OlderSimpleUnion<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<
+                    'static,
+                >,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse {
+                    xu,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.xu, encoder_, xu, ())?;
 
             Ok(())
         }
@@ -11734,6 +11912,41 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.u, encoder_, u, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::UnionSandwich<'static>, ___E>
+        for &'a UnionSandwich<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::ExplicitFlexibleUnion<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::UnionSandwich<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnionSandwich {
+                    a,
+                    u,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.u, encoder_, u, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }

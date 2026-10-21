@@ -967,6 +967,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Int16Int8, ___E>
+        for &'a Int16Int8<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int16, ___E>,
+        &'a T1: ::fidl_next::Encode<i8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int16Int8>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Int16Int8 {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ArrayInt16Int8`].
     pub struct ArrayInt16Int8<T0> {
         pub arr: T0,
@@ -992,6 +1022,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.arr, encoder_, arr, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E>
+        for &'a ArrayInt16Int8<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<[crate::wire::Int16Int8; 3], ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ArrayInt16Int8>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ArrayInt16Int8 {
+                    arr,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arr, encoder_, arr, ())?;
 
             Ok(())
         }
@@ -1028,6 +1084,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Int8Int32, ___E>
+        for &'a Int8Int32<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<i8, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int8Int32>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Int8Int32 {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -1071,6 +1157,41 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.inner, encoder_, inner, ())?;
 
             ::fidl_next::Encode::encode(self.array, encoder_, array, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>
+        for &'a StructPaddingTestStruct<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<crate::wire::Int16Int8, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::Int8Int32, ___E>,
+        &'a T2: ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructPaddingTestStruct>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructPaddingTestStruct {
+                    trailing,
+                    inner,
+                    array,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.trailing, encoder_, trailing, ())?;
+
+            ::fidl_next::Encode::encode(&self.inner, encoder_, inner, ())?;
+
+            ::fidl_next::Encode::encode(&self.array, encoder_, array, ())?;
 
             Ok(())
         }

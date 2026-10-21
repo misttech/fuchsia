@@ -3129,6 +3129,44 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::SandwichUnionSize12Alignment4<'static>, ___E>
+        for &'a SandwichUnionSize12Alignment4<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::UnionSize12Alignment4<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::SandwichUnionSize12Alignment4<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SandwichUnionSize12Alignment4 {
+                    before,
+                    union,
+                    after,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.before, encoder_, before, ())?;
+
+            ::fidl_next::Encode::encode(&self.union, encoder_, union, ())?;
+
+            ::fidl_next::Encode::encode(&self.after, encoder_, after, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StructSize16Alignment8`].
     pub struct StructSize16Alignment8<T0, T1> {
         pub f1: T0,
@@ -3161,6 +3199,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.f1, encoder_, f1, ())?;
 
             ::fidl_next::Encode::encode(self.f2, encoder_, f2, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::StructSize16Alignment8, ___E>
+        for &'a StructSize16Alignment8<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructSize16Alignment8>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructSize16Alignment8 {
+                    f1,
+                    f2,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.f1, encoder_, f1, ())?;
+
+            ::fidl_next::Encode::encode(&self.f2, encoder_, f2, ())?;
 
             Ok(())
         }
@@ -3213,6 +3281,44 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::SandwichUnionSize24Alignment8<'static>, ___E>
+        for &'a SandwichUnionSize24Alignment8<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::UnionSize24Alignment8<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::SandwichUnionSize24Alignment8<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SandwichUnionSize24Alignment8 {
+                    before,
+                    union,
+                    after,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.before, encoder_, before, ())?;
+
+            ::fidl_next::Encode::encode(&self.union, encoder_, union, ())?;
+
+            ::fidl_next::Encode::encode(&self.after, encoder_, after, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`SandwichUnionSize36Alignment4`].
     pub struct SandwichUnionSize36Alignment4<T0, T1, T2> {
         pub before: T0,
@@ -3260,6 +3366,44 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::SandwichUnionSize36Alignment4<'static>, ___E>
+        for &'a SandwichUnionSize36Alignment4<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::UnionSize36Alignment4<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::SandwichUnionSize36Alignment4<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SandwichUnionSize36Alignment4 {
+                    before,
+                    union,
+                    after,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.before, encoder_, before, ())?;
+
+            ::fidl_next::Encode::encode(&self.union, encoder_, union, ())?;
+
+            ::fidl_next::Encode::encode(&self.after, encoder_, after, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`SandwichUnionSize8Alignment4`].
     pub struct SandwichUnionSize8Alignment4<T0, T1, T2> {
         pub before: T0,
@@ -3299,6 +3443,41 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.union, encoder_, union, ())?;
 
             ::fidl_next::Encode::encode(self.after, encoder_, after, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::SandwichUnionSize8Alignment4, ___E>
+        for &'a SandwichUnionSize8Alignment4<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::UnionSize8Alignment4, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::SandwichUnionSize8Alignment4>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::SandwichUnionSize8Alignment4 {
+                    before,
+                    union,
+                    after,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.before, encoder_, before, ())?;
+
+            ::fidl_next::Encode::encode(&self.union, encoder_, union, ())?;
+
+            ::fidl_next::Encode::encode(&self.after, encoder_, after, ())?;
 
             Ok(())
         }

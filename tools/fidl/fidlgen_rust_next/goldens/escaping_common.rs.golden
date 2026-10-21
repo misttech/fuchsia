@@ -257,6 +257,33 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::DocCommentWithStars<'static>, ___E>
+        for &'a DocCommentWithStars<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::DocCommentWithStars<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::DocCommentWithStars {
+                    field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.field, encoder_, field, 4294967295)?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

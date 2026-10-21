@@ -4685,6 +4685,83 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>
+        ::fidl_next::Encode<crate::wire::ArrayBasic<'static>, ___E>
+        for &'a ArrayBasic<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<[u8; 5], ___E>,
+        &'a T1: ::fidl_next::Encode<[::fidl_next::wire::Uint16; 5], ___E>,
+        &'a T2: ::fidl_next::Encode<[::fidl_next::wire::Uint32; 5], ___E>,
+        &'a T3: ::fidl_next::Encode<[::fidl_next::wire::Uint64; 5], ___E>,
+        &'a T4: ::fidl_next::Encode<[i8; 5], ___E>,
+        &'a T5: ::fidl_next::Encode<[::fidl_next::wire::Int16; 5], ___E>,
+        &'a T6: ::fidl_next::Encode<[::fidl_next::wire::Int32; 5], ___E>,
+        &'a T7: ::fidl_next::Encode<[::fidl_next::wire::Int64; 5], ___E>,
+        &'a T8: ::fidl_next::Encode<[::fidl_next::wire::Float32; 5], ___E>,
+        &'a T9: ::fidl_next::Encode<[::fidl_next::wire::Float64; 5], ___E>,
+        &'a T10: ::fidl_next::Encode<[::fidl_next::wire::String<'static>; 5], ___E>,
+        &'a T11: ::fidl_next::Encode<[::fidl_next::wire::OptionalString<'static>; 5], ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ArrayBasic<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ArrayBasic {
+                    array_uint8,
+                    array_uint16,
+                    array_uint32,
+                    array_uint64,
+                    array_int8,
+                    array_int16,
+                    array_int32,
+                    array_int64,
+                    array_float32,
+                    array_float64,
+                    array_string,
+                    array_opt_string,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.array_uint8, encoder_, array_uint8, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_uint16, encoder_, array_uint16, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_uint32, encoder_, array_uint32, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_uint64, encoder_, array_uint64, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_int8, encoder_, array_int8, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_int16, encoder_, array_int16, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_int32, encoder_, array_int32, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_int64, encoder_, array_int64, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_float32, encoder_, array_float32, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_float64, encoder_, array_float64, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_string, encoder_, array_string, 4294967295)?;
+
+            ::fidl_next::Encode::encode(
+                &self.array_opt_string,
+                encoder_,
+                array_opt_string,
+                4294967295,
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Struct`].
     pub type Struct = ();
 
@@ -4757,6 +4834,59 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6>
+        ::fidl_next::Encode<crate::wire::ArrayCompound<'static>, ___E>
+        for &'a ArrayCompound<T0, T1, T2, T3, T4, T5, T6>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<[crate::wire::Bits; 5], ___E>,
+        &'a T1: ::fidl_next::Encode<[crate::wire::Enum; 5], ___E>,
+        &'a T2: ::fidl_next::Encode<[crate::wire::Struct; 5], ___E>,
+        &'a T3: ::fidl_next::Encode<[crate::wire::Table<'static>; 5], ___E>,
+        &'a T4: ::fidl_next::Encode<[crate::wire::Union<'static>; 5], ___E>,
+        &'a T5:
+            ::fidl_next::Encode<[::fidl_next::wire::Box<'static, crate::wire::Struct>; 5], ___E>,
+        &'a T6: ::fidl_next::Encode<[crate::wire_optional::Union<'static>; 5], ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ArrayCompound<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ArrayCompound {
+                    array_bits,
+                    array_enum,
+                    array_struct,
+                    array_table,
+                    array_union,
+                    array_opt_struct,
+                    array_opt_union,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.array_bits, encoder_, array_bits, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_enum, encoder_, array_enum, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_struct, encoder_, array_struct, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_table, encoder_, array_table, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_union, encoder_, array_union, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_opt_struct, encoder_, array_opt_struct, ())?;
+
+            ::fidl_next::Encode::encode(&self.array_opt_union, encoder_, array_opt_union, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ArrayVectorNested`].
     pub struct ArrayVectorNested<T0, T1, T2, T3> {
         pub array_array_uint8: T0,
@@ -4817,6 +4947,64 @@ pub mod generic {
 
             ::fidl_next::Encode::encode(
                 self.vector_vector_uint8,
+                encoder_,
+                vector_vector_uint8,
+                (4294967295, (4294967295, ())),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2, T3>
+        ::fidl_next::Encode<crate::wire::ArrayVectorNested<'static>, ___E>
+        for &'a ArrayVectorNested<T0, T1, T2, T3>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<[[u8; 5]; 5], ___E>,
+        &'a T1: ::fidl_next::Encode<[::fidl_next::wire::Vector<'static, u8>; 5], ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, [u8; 5]>, ___E>,
+        &'a T3: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Vector<'static, u8>>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ArrayVectorNested<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ArrayVectorNested {
+                    array_array_uint8,
+                    array_vector_uint8,
+                    vector_array_uint8,
+                    vector_vector_uint8,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.array_array_uint8, encoder_, array_array_uint8, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.array_vector_uint8,
+                encoder_,
+                array_vector_uint8,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_array_uint8,
+                encoder_,
+                vector_array_uint8,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_vector_uint8,
                 encoder_,
                 vector_vector_uint8,
                 (4294967295, (4294967295, ())),
@@ -4925,6 +5113,78 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>
+        ::fidl_next::Encode<crate::wire::Basic<'static>, ___E>
+        for &'a Basic<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<u8, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T3: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+        &'a T4: ::fidl_next::Encode<i8, ___E>,
+        &'a T5: ::fidl_next::Encode<::fidl_next::wire::Int16, ___E>,
+        &'a T6: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+        &'a T7: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T8: ::fidl_next::Encode<::fidl_next::wire::Float32, ___E>,
+        &'a T9: ::fidl_next::Encode<::fidl_next::wire::Float64, ___E>,
+        &'a T10: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+        &'a T11: ::fidl_next::Encode<::fidl_next::wire::OptionalString<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Basic<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Basic {
+                    uint8,
+                    uint16,
+                    uint32,
+                    uint64,
+                    int8,
+                    int16,
+                    int32,
+                    int64,
+                    float32,
+                    float64,
+                    string,
+                    opt_string,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.uint8, encoder_, uint8, ())?;
+
+            ::fidl_next::Encode::encode(&self.uint16, encoder_, uint16, ())?;
+
+            ::fidl_next::Encode::encode(&self.uint32, encoder_, uint32, ())?;
+
+            ::fidl_next::Encode::encode(&self.uint64, encoder_, uint64, ())?;
+
+            ::fidl_next::Encode::encode(&self.int8, encoder_, int8, ())?;
+
+            ::fidl_next::Encode::encode(&self.int16, encoder_, int16, ())?;
+
+            ::fidl_next::Encode::encode(&self.int32, encoder_, int32, ())?;
+
+            ::fidl_next::Encode::encode(&self.int64, encoder_, int64, ())?;
+
+            ::fidl_next::Encode::encode(&self.float32, encoder_, float32, ())?;
+
+            ::fidl_next::Encode::encode(&self.float64, encoder_, float64, ())?;
+
+            ::fidl_next::Encode::encode(&self.string, encoder_, string, 4294967295)?;
+
+            ::fidl_next::Encode::encode(&self.opt_string, encoder_, opt_string, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Compound`].
     pub struct Compound<T0, T1, T2, T3, T4, T5, T6> {
         pub bits: T0,
@@ -4989,6 +5249,58 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.opt_struct, encoder_, opt_struct, ())?;
 
             ::fidl_next::Encode::encode(self.opt_union, encoder_, opt_union, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6>
+        ::fidl_next::Encode<crate::wire::Compound<'static>, ___E>
+        for &'a Compound<T0, T1, T2, T3, T4, T5, T6>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::Bits, ___E>,
+        &'a T1: ::fidl_next::Encode<crate::wire::Enum, ___E>,
+        &'a T2: ::fidl_next::Encode<crate::wire::Struct, ___E>,
+        &'a T3: ::fidl_next::Encode<crate::wire::Table<'static>, ___E>,
+        &'a T4: ::fidl_next::Encode<crate::wire::Union<'static>, ___E>,
+        &'a T5: ::fidl_next::Encode<::fidl_next::wire::Box<'static, crate::wire::Struct>, ___E>,
+        &'a T6: ::fidl_next::Encode<crate::wire_optional::Union<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Compound<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Compound {
+                    bits,
+                    enum_,
+                    struct_,
+                    table,
+                    union,
+                    opt_struct,
+                    opt_union,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.bits, encoder_, bits, ())?;
+
+            ::fidl_next::Encode::encode(&self.enum_, encoder_, enum_, ())?;
+
+            ::fidl_next::Encode::encode(&self.struct_, encoder_, struct_, ())?;
+
+            ::fidl_next::Encode::encode(&self.table, encoder_, table, ())?;
+
+            ::fidl_next::Encode::encode(&self.union, encoder_, union, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_struct, encoder_, opt_struct, ())?;
+
+            ::fidl_next::Encode::encode(&self.opt_union, encoder_, opt_union, ())?;
 
             Ok(())
         }
@@ -5160,6 +5472,153 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>
+        ::fidl_next::Encode<crate::wire::VectorBasic<'static>, ___E>
+        for &'a VectorBasic<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, u8>, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint16>, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint32>, ___E>,
+        &'a T3: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint64>, ___E>,
+        &'a T4: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, i8>, ___E>,
+        &'a T5:
+            ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int16>, ___E>,
+        &'a T6:
+            ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>, ___E>,
+        &'a T7:
+            ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int64>, ___E>,
+        &'a T8: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float32>,
+                ___E,
+            >,
+        &'a T9: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float64>,
+                ___E,
+            >,
+        &'a T10: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
+                ___E,
+            >,
+        &'a T11: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::OptionalString<'static>>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::VectorBasic<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::VectorBasic {
+                    vector_uint8,
+                    vector_uint16,
+                    vector_uint32,
+                    vector_uint64,
+                    vector_int8,
+                    vector_int16,
+                    vector_int32,
+                    vector_int64,
+                    vector_float32,
+                    vector_float64,
+                    vector_string,
+                    vector_opt_string,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.vector_uint8,
+                encoder_,
+                vector_uint8,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_uint16,
+                encoder_,
+                vector_uint16,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_uint32,
+                encoder_,
+                vector_uint32,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_uint64,
+                encoder_,
+                vector_uint64,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_int8,
+                encoder_,
+                vector_int8,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_int16,
+                encoder_,
+                vector_int16,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_int32,
+                encoder_,
+                vector_int32,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_int64,
+                encoder_,
+                vector_int64,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_float32,
+                encoder_,
+                vector_float32,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_float64,
+                encoder_,
+                vector_float64,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_string,
+                encoder_,
+                vector_string,
+                (4294967295, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_opt_string,
+                encoder_,
+                vector_opt_string,
+                (4294967295, 4294967295),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`VectorCompound`].
     pub struct VectorCompound<T0, T1, T2, T3, T4, T5, T6> {
         pub vector_bits: T0,
@@ -5269,6 +5728,108 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6>
+        ::fidl_next::Encode<crate::wire::VectorCompound<'static>, ___E>
+        for &'a VectorCompound<T0, T1, T2, T3, T4, T5, T6>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, crate::wire::Bits>, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, crate::wire::Enum>, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, crate::wire::Struct>, ___E>,
+        &'a T3: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, crate::wire::Table<'static>>,
+                ___E,
+            >,
+        &'a T4: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, crate::wire::Union<'static>>,
+                ___E,
+            >,
+        &'a T5: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<
+                    'static,
+                    ::fidl_next::wire::Box<'static, crate::wire::Struct>,
+                >,
+                ___E,
+            >,
+        &'a T6: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, crate::wire_optional::Union<'static>>,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::VectorCompound<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::VectorCompound {
+                    vector_bits,
+                    vector_enum,
+                    vector_struct,
+                    vector_table,
+                    vector_union,
+                    vector_opt_struct,
+                    vector_opt_union,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.vector_bits,
+                encoder_,
+                vector_bits,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_enum,
+                encoder_,
+                vector_enum,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_struct,
+                encoder_,
+                vector_struct,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_table,
+                encoder_,
+                vector_table,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_union,
+                encoder_,
+                vector_union,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_opt_struct,
+                encoder_,
+                vector_opt_struct,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.vector_opt_union,
+                encoder_,
+                vector_opt_union,
+                (4294967295, ()),
+            )?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`VectorOptional`].
     pub struct VectorOptional<T0, T1, T2, T3> {
         pub opt_vector_uint8: T0,
@@ -5343,6 +5904,78 @@ pub mod generic {
 
             ::fidl_next::Encode::encode(
                 self.opt_vector_opt_struct,
+                encoder_,
+                opt_vector_opt_struct,
+                (4294967295, ()),
+            )?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2, T3>
+        ::fidl_next::Encode<crate::wire::VectorOptional<'static>, ___E>
+        for &'a VectorOptional<T0, T1, T2, T3>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::OptionalVector<'static, u8>, ___E>,
+        &'a T1: ::fidl_next::Encode<
+                ::fidl_next::wire::OptionalVector<'static, ::fidl_next::wire::String<'static>>,
+                ___E,
+            >,
+        &'a T2: ::fidl_next::Encode<
+                ::fidl_next::wire::OptionalVector<'static, crate::wire::Struct>,
+                ___E,
+            >,
+        &'a T3: ::fidl_next::Encode<
+                ::fidl_next::wire::OptionalVector<
+                    'static,
+                    ::fidl_next::wire::Box<'static, crate::wire::Struct>,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::VectorOptional<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::VectorOptional {
+                    opt_vector_uint8,
+                    opt_vector_string,
+                    opt_vector_struct,
+                    opt_vector_opt_struct,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.opt_vector_uint8,
+                encoder_,
+                opt_vector_uint8,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.opt_vector_string,
+                encoder_,
+                opt_vector_string,
+                (4294967295, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.opt_vector_struct,
+                encoder_,
+                opt_vector_struct,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.opt_vector_opt_struct,
                 encoder_,
                 opt_vector_opt_struct,
                 (4294967295, ()),

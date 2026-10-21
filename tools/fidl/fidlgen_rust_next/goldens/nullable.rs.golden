@@ -589,6 +589,33 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StructWithNullableHandle, ___E>
+        for &'a StructWithNullableHandle<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalVmo, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableHandle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableHandle {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StructWithNullableProtocol`].
     pub struct StructWithNullableProtocol<T0> {
         pub val: T0,
@@ -627,6 +654,39 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StructWithNullableProtocol, ___E>
+        for &'a StructWithNullableProtocol<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<
+                    crate::SimpleProtocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableProtocol>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableProtocol {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`StructWithNullableRequest`].
     pub struct StructWithNullableRequest<T0> {
         pub val: T0,
@@ -660,6 +720,39 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::StructWithNullableRequest, ___E>
+        for &'a StructWithNullableRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<
+                    crate::SimpleProtocol,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
+                >,
+                ___E,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructWithNullableRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::StructWithNullableRequest {
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.val, encoder_, val, ())?;
 
             Ok(())
         }

@@ -4659,6 +4659,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::ChannelProtocolMethodARequest, ___E>
+        for &'a ChannelProtocolMethodARequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChannelProtocolMethodARequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChannelProtocolMethodARequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ChannelProtocolEventARequest`].
     pub struct ChannelProtocolEventARequest<T0, T1> {
         pub a: T0,
@@ -4691,6 +4722,37 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::ChannelProtocolEventARequest, ___E>
+        for &'a ChannelProtocolEventARequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChannelProtocolEventARequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChannelProtocolEventARequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -4733,6 +4795,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::ChannelProtocolMethodBRequest, ___E>
+        for &'a ChannelProtocolMethodBRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChannelProtocolMethodBRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChannelProtocolMethodBRequest {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`ChannelProtocolMethodBResponse`].
     pub struct ChannelProtocolMethodBResponse<T0> {
         pub result: T0,
@@ -4759,6 +4852,32 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.result, encoder_, result, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0> ::fidl_next::Encode<crate::wire::ChannelProtocolMethodBResponse, ___E>
+        for &'a ChannelProtocolMethodBResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ChannelProtocolMethodBResponse>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ChannelProtocolMethodBResponse {
+                    result,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.result, encoder_, result, ())?;
 
             Ok(())
         }
@@ -4912,6 +5031,105 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14>
+        ::fidl_next::Encode<crate::wire::ManyParametersFifteenRequest, ___E>
+        for &'a ManyParametersFifteenRequest<
+            T0,
+            T1,
+            T2,
+            T3,
+            T4,
+            T5,
+            T6,
+            T7,
+            T8,
+            T9,
+            T10,
+            T11,
+            T12,
+            T13,
+            T14,
+        >
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<bool, ___E>,
+        &'a T1: ::fidl_next::Encode<bool, ___E>,
+        &'a T2: ::fidl_next::Encode<bool, ___E>,
+        &'a T3: ::fidl_next::Encode<bool, ___E>,
+        &'a T4: ::fidl_next::Encode<bool, ___E>,
+        &'a T5: ::fidl_next::Encode<bool, ___E>,
+        &'a T6: ::fidl_next::Encode<bool, ___E>,
+        &'a T7: ::fidl_next::Encode<bool, ___E>,
+        &'a T8: ::fidl_next::Encode<bool, ___E>,
+        &'a T9: ::fidl_next::Encode<bool, ___E>,
+        &'a T10: ::fidl_next::Encode<bool, ___E>,
+        &'a T11: ::fidl_next::Encode<bool, ___E>,
+        &'a T12: ::fidl_next::Encode<bool, ___E>,
+        &'a T13: ::fidl_next::Encode<bool, ___E>,
+        &'a T14: ::fidl_next::Encode<bool, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ManyParametersFifteenRequest>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ManyParametersFifteenRequest {
+                    p1,
+                    p2,
+                    p3,
+                    p4,
+                    p5,
+                    p6,
+                    p7,
+                    p8,
+                    p9,
+                    p10,
+                    p11,
+                    p12,
+                    p13,
+                    p14,
+                    p15,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.p1, encoder_, p1, ())?;
+
+            ::fidl_next::Encode::encode(&self.p2, encoder_, p2, ())?;
+
+            ::fidl_next::Encode::encode(&self.p3, encoder_, p3, ())?;
+
+            ::fidl_next::Encode::encode(&self.p4, encoder_, p4, ())?;
+
+            ::fidl_next::Encode::encode(&self.p5, encoder_, p5, ())?;
+
+            ::fidl_next::Encode::encode(&self.p6, encoder_, p6, ())?;
+
+            ::fidl_next::Encode::encode(&self.p7, encoder_, p7, ())?;
+
+            ::fidl_next::Encode::encode(&self.p8, encoder_, p8, ())?;
+
+            ::fidl_next::Encode::encode(&self.p9, encoder_, p9, ())?;
+
+            ::fidl_next::Encode::encode(&self.p10, encoder_, p10, ())?;
+
+            ::fidl_next::Encode::encode(&self.p11, encoder_, p11, ())?;
+
+            ::fidl_next::Encode::encode(&self.p12, encoder_, p12, ())?;
+
+            ::fidl_next::Encode::encode(&self.p13, encoder_, p13, ())?;
+
+            ::fidl_next::Encode::encode(&self.p14, encoder_, p14, ())?;
+
+            ::fidl_next::Encode::encode(&self.p15, encoder_, p15, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`MethodWithUnionUnionMethodRequest`].
     pub struct MethodWithUnionUnionMethodRequest<T0> {
         pub u: T0,
@@ -4947,6 +5165,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::MethodWithUnionUnionMethodRequest<'static>, ___E>
+        for &'a MethodWithUnionUnionMethodRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire::TheUnion<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::MethodWithUnionUnionMethodRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MethodWithUnionUnionMethodRequest {
+                    u,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.u, encoder_, u, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`MethodWithUnionUnionMethodResponse`].
     pub struct MethodWithUnionUnionMethodResponse<T0> {
         pub u: T0,
@@ -4977,6 +5225,36 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.u, encoder_, u, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::MethodWithUnionUnionMethodResponse<'static>, ___E>
+        for &'a MethodWithUnionUnionMethodResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<crate::wire_optional::TheUnion<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::MethodWithUnionUnionMethodResponse<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::MethodWithUnionUnionMethodResponse {
+                    u,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.u, encoder_, u, ())?;
 
             Ok(())
         }
@@ -5019,6 +5297,38 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>,
+            ___E,
+        > for &'a WithAndWithoutRequestResponseNoRequestWithResponseResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse {
+                    ret,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.ret, encoder_, ret, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`WithAndWithoutRequestResponseWithRequestNoResponseRequest`].
     pub struct WithAndWithoutRequestResponseWithRequestNoResponseRequest<T0> {
         pub arg: T0,
@@ -5051,6 +5361,38 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.arg, encoder_, arg, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'static>,
+            ___E,
+        > for &'a WithAndWithoutRequestResponseWithRequestNoResponseRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, 4294967295)?;
 
             Ok(())
         }
@@ -5093,6 +5435,38 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'static>,
+            ___E,
+        > for &'a WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`WithAndWithoutRequestResponseWithRequestWithResponseRequest`].
     pub struct WithAndWithoutRequestResponseWithRequestWithResponseRequest<T0> {
         pub arg: T0,
@@ -5125,6 +5499,38 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.arg, encoder_, arg, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest<'static>,
+            ___E,
+        > for &'a WithAndWithoutRequestResponseWithRequestWithResponseRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseRequest {
+                    arg,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.arg, encoder_, arg, 4294967295)?;
 
             Ok(())
         }
@@ -5167,6 +5573,38 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>,
+            ___E,
+        > for &'a WithAndWithoutRequestResponseWithRequestWithResponseResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse {
+                    ret,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.ret, encoder_, ret, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`WithAndWithoutRequestResponseOnWithResponseRequest`].
     pub struct WithAndWithoutRequestResponseOnWithResponseRequest<T0> {
         pub ret: T0,
@@ -5199,6 +5637,38 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.ret, encoder_, ret, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'static>,
+            ___E,
+        > for &'a WithAndWithoutRequestResponseOnWithResponseRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'static>,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest {
+                    ret,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.ret, encoder_, ret, 4294967295)?;
 
             Ok(())
         }
@@ -5245,6 +5715,43 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
 
             ::fidl_next::Encode::encode(self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::WithErrorSyntaxResponseAsStructResponse, ___E>
+        for &'a WithErrorSyntaxResponseAsStructResponse<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::WithErrorSyntaxResponseAsStructResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::WithErrorSyntaxResponseAsStructResponse {
+                    a,
+                    b,
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(&self.c, encoder_, c, ())?;
 
             Ok(())
         }

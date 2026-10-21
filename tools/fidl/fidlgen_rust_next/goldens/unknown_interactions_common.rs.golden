@@ -21829,6 +21829,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse`].
     pub type UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse = ();
 
@@ -21868,6 +21899,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse`].
     pub struct UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse<T0> {
         pub some_field: T0,
@@ -21899,6 +21961,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -21943,6 +22036,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsAjarProtocolStrictEventFieldsRequest`].
     pub struct UnknownInteractionsAjarProtocolStrictEventFieldsRequest<T0> {
         pub some_field: T0,
@@ -21974,6 +22098,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsAjarProtocolStrictEventFieldsRequest,
+            ___E,
+        > for &'a UnknownInteractionsAjarProtocolStrictEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsAjarProtocolStrictEventFieldsRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarProtocolStrictEventFieldsRequest {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22015,6 +22170,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest,
+            ___E,
+        > for &'a UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse`].
     pub struct UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse<T0> {
         pub some_field: T0,
@@ -22046,6 +22232,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22090,6 +22307,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse`].
     pub struct UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse<T0> {
         pub some_field: T0,
@@ -22121,6 +22369,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22165,6 +22444,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsClosedProtocolStrictEventFieldsRequest`].
     pub struct UnknownInteractionsClosedProtocolStrictEventFieldsRequest<T0> {
         pub some_field: T0,
@@ -22201,6 +22511,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsClosedProtocolStrictEventFieldsRequest,
+            ___E,
+        > for &'a UnknownInteractionsClosedProtocolStrictEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsClosedProtocolStrictEventFieldsRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsClosedProtocolStrictEventFieldsRequest {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse`].
     pub struct UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse<T0> {
         pub some_field: T0,
@@ -22232,6 +22573,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22276,6 +22648,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsDriverProtocolFlexibleTwoWayResponse`].
     pub type UnknownInteractionsDriverProtocolFlexibleTwoWayResponse = ();
 
@@ -22310,6 +22713,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22354,6 +22788,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsProtocolStrictTwoWayFieldsResponse`].
     pub struct UnknownInteractionsProtocolStrictTwoWayFieldsResponse<T0> {
         pub some_field: T0,
@@ -22385,6 +22850,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22429,6 +22925,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsProtocolFlexibleTwoWayResponse`].
     pub type UnknownInteractionsProtocolFlexibleTwoWayResponse = ();
 
@@ -22463,6 +22990,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse,
+            ___E,
+        > for &'a UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22507,6 +23065,37 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse,
+            ___E,
+        > for &'a UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`UnknownInteractionsProtocolStrictEventFieldsRequest`].
     pub struct UnknownInteractionsProtocolStrictEventFieldsRequest<T0> {
         pub some_field: T0,
@@ -22536,6 +23125,35 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<crate::wire::UnknownInteractionsProtocolStrictEventFieldsRequest, ___E>
+        for &'a UnknownInteractionsProtocolStrictEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsProtocolStrictEventFieldsRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolStrictEventFieldsRequest {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }
@@ -22572,6 +23190,37 @@ pub mod generic {
             }
 
             ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0>
+        ::fidl_next::Encode<
+            crate::wire::UnknownInteractionsProtocolFlexibleEventFieldsRequest,
+            ___E,
+        > for &'a UnknownInteractionsProtocolFlexibleEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::UnknownInteractionsProtocolFlexibleEventFieldsRequest,
+            >,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolFlexibleEventFieldsRequest {
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.some_field, encoder_, some_field, ())?;
 
             Ok(())
         }

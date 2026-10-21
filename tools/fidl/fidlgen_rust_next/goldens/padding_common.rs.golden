@@ -4011,6 +4011,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding1ByteEnd, ___E>
+        for &'a Padding1ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T1: ::fidl_next::Encode<u8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding1ByteEnd>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding1ByteEnd {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding1ByteMiddle`].
     pub struct Padding1ByteMiddle<T0, T1> {
         pub a: T0,
@@ -4043,6 +4073,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding1ByteMiddle, ___E>
+        for &'a Padding1ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<u8, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding1ByteMiddle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding1ByteMiddle {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -4092,6 +4152,41 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2>
+        ::fidl_next::Encode<crate::wire::Padding2ByteAlignmentLength6, ___E>
+        for &'a Padding2ByteAlignmentLength6<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<u8, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T2: ::fidl_next::Encode<u8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding2ByteAlignmentLength6>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding2ByteAlignmentLength6 {
+                    a,
+                    b,
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(&self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding2ByteEnd`].
     pub struct Padding2ByteEnd<T0, T1> {
         pub a: T0,
@@ -4124,6 +4219,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding2ByteEnd, ___E>
+        for &'a Padding2ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding2ByteEnd>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding2ByteEnd {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -4166,6 +4291,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding2ByteMiddle, ___E>
+        for &'a Padding2ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding2ByteMiddle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding2ByteMiddle {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding3ByteEnd`].
     pub struct Padding3ByteEnd<T0, T1> {
         pub a: T0,
@@ -4203,6 +4358,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding3ByteEnd, ___E>
+        for &'a Padding3ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<u8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding3ByteEnd>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding3ByteEnd {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding3ByteMiddle`].
     pub struct Padding3ByteMiddle<T0, T1> {
         pub a: T0,
@@ -4235,6 +4420,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding3ByteMiddle, ___E>
+        for &'a Padding3ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<u8, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding3ByteMiddle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding3ByteMiddle {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -4290,6 +4505,45 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2, T3>
+        ::fidl_next::Encode<crate::wire::Padding4ByteAlignmentLength12, ___E>
+        for &'a Padding4ByteAlignmentLength12<T0, T1, T2, T3>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<u8, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T3: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding4ByteAlignmentLength12>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding4ByteAlignmentLength12 {
+                    a,
+                    b,
+                    c,
+                    d,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(&self.c, encoder_, c, ())?;
+
+            ::fidl_next::Encode::encode(&self.d, encoder_, d, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding4ByteEnd`].
     pub struct Padding4ByteEnd<T0, T1> {
         pub a: T0,
@@ -4327,6 +4581,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding4ByteEnd, ___E>
+        for &'a Padding4ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding4ByteEnd>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding4ByteEnd {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding4ByteMiddle`].
     pub struct Padding4ByteMiddle<T0, T1> {
         pub a: T0,
@@ -4359,6 +4643,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding4ByteMiddle, ___E>
+        for &'a Padding4ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding4ByteMiddle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding4ByteMiddle {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -4407,6 +4721,40 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::Padding5ByteEnd, ___E>
+        for &'a Padding5ByteEnd<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T2: ::fidl_next::Encode<u8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding5ByteEnd>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding5ByteEnd {
+                    a,
+                    b,
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(&self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding5ByteMiddle`].
     pub struct Padding5ByteMiddle<T0, T1, T2> {
         pub a: T0,
@@ -4450,6 +4798,40 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::Padding5ByteMiddle, ___E>
+        for &'a Padding5ByteMiddle<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T1: ::fidl_next::Encode<u8, ___E>,
+        &'a T2: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding5ByteMiddle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding5ByteMiddle {
+                    a,
+                    b,
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(&self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding6ByteEnd`].
     pub struct Padding6ByteEnd<T0, T1> {
         pub a: T0,
@@ -4482,6 +4864,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding6ByteEnd, ___E>
+        for &'a Padding6ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding6ByteEnd>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding6ByteEnd {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }
@@ -4524,6 +4936,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding6ByteMiddle, ___E>
+        for &'a Padding6ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint16, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding6ByteMiddle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding6ByteMiddle {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding7ByteEnd`].
     pub struct Padding7ByteEnd<T0, T1> {
         pub a: T0,
@@ -4561,6 +5003,36 @@ pub mod generic {
         }
     }
 
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding7ByteEnd, ___E>
+        for &'a Padding7ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+        &'a T1: ::fidl_next::Encode<u8, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding7ByteEnd>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding7ByteEnd {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
     /// The generic type corresponding to [`Padding7ByteMiddle`].
     pub struct Padding7ByteMiddle<T0, T1> {
         pub a: T0,
@@ -4593,6 +5065,36 @@ pub mod generic {
             ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
 
             ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<'a, ___E, T0, T1> ::fidl_next::Encode<crate::wire::Padding7ByteMiddle, ___E>
+        for &'a Padding7ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        &'a T0: ::fidl_next::Encode<u8, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::Uint64, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Padding7ByteMiddle>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Padding7ByteMiddle {
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             Ok(())
         }

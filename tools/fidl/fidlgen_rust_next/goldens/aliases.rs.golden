@@ -590,6 +590,108 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4, T5, T6, T7>
+        ::fidl_next::Encode<crate::wire::ExampleOfUseOfAliases<'static>, ___E>
+        for &'a ExampleOfUseOfAliases<T0, T1, T2, T3, T4, T5, T6, T7>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
+        &'a T1: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
+                ___E,
+            >,
+        &'a T2: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
+                ___E,
+            >,
+        &'a T3: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
+                ___E,
+            >,
+        &'a T4: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<
+                    'static,
+                    ::fidl_next_test_someotherlibrary::wire::ReferenceMe,
+                >,
+                ___E,
+            >,
+        &'a T5: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Channel, ___E>,
+        &'a T6: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Channel, ___E>,
+        &'a T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalChannel, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleOfUseOfAliases<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::ExampleOfUseOfAliases {
+                    field_of_u32,
+                    field_of_vec_of_strings,
+                    field_of_vec_of_strings_at_most_nine,
+                    field_of_vec_of_strings_at_most_5,
+                    field_of_vec_of_ref_me_at_most_5,
+                    field_of_channel,
+                    field_of_client_end,
+                    field_of_nullable_client_end,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(&self.field_of_u32, encoder_, field_of_u32, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.field_of_vec_of_strings,
+                encoder_,
+                field_of_vec_of_strings,
+                (4294967295, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.field_of_vec_of_strings_at_most_nine,
+                encoder_,
+                field_of_vec_of_strings_at_most_nine,
+                (9, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.field_of_vec_of_strings_at_most_5,
+                encoder_,
+                field_of_vec_of_strings_at_most_5,
+                (5, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.field_of_vec_of_ref_me_at_most_5,
+                encoder_,
+                field_of_vec_of_ref_me_at_most_5,
+                (5, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(&self.field_of_channel, encoder_, field_of_channel, ())?;
+
+            ::fidl_next::Encode::encode(
+                &self.field_of_client_end,
+                encoder_,
+                field_of_client_end,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.field_of_nullable_client_end,
+                encoder_,
+                field_of_nullable_client_end,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;

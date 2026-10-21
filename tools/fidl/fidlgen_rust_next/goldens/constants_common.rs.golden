@@ -993,6 +993,59 @@ pub mod generic {
             Ok(())
         }
     }
+
+    unsafe impl<'a, ___E, T0, T1, T2, T3, T4>
+        ::fidl_next::Encode<crate::wire::Struct<'static>, ___E> for &'a Struct<T0, T1, T2, T3, T4>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        &'a T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        &'a T1: ::fidl_next::Encode<::fidl_next::wire::String<'static>, ___E>,
+        &'a T2: ::fidl_next::Encode<bool, ___E>,
+        &'a T3: ::fidl_next::Encode<crate::wire::Enum, ___E>,
+        &'a T4: ::fidl_next::Encode<crate::wire::Bits, ___E>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Struct<'static>>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let crate::wire::Struct {
+                    int64_with_default,
+                    string_with_default,
+                    bool_with_default,
+                    enum_with_default,
+                    bits_with_default,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(
+                &self.int64_with_default,
+                encoder_,
+                int64_with_default,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                &self.string_with_default,
+                encoder_,
+                string_with_default,
+                4294967295,
+            )?;
+
+            ::fidl_next::Encode::encode(&self.bool_with_default, encoder_, bool_with_default, ())?;
+
+            ::fidl_next::Encode::encode(&self.enum_with_default, encoder_, enum_with_default, ())?;
+
+            ::fidl_next::Encode::encode(&self.bits_with_default, encoder_, bits_with_default, ())?;
+
+            Ok(())
+        }
+    }
 }
 
 pub use self::natural::*;
