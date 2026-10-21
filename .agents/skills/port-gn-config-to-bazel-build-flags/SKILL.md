@@ -52,6 +52,25 @@ Defined in `//build/bazel_sdk/fuchsia_rules_common/build_flags/build_flags.bzl`,
 *(Note: `cflags_objc`, `cflags_objcc`, and `asmflags` are not separate
 attributes on `build_flags()`.)*
 
+### The `extra_linker_flags()` Rule
+Defined in
+`//build/bazel_sdk/fuchsia_rules_common/build_flags/extra_linker_flags.bzl`,
+`extra_linker_flags()` provides `BuildFlagsInfo` for targets that require
+linker-specific flags, linker action inputs (e.g. linker scripts or stub files),
+or linker library dependencies (`CcInfo`):
+
+| GN `config()` / `variant()` Attribute / Need | Bazel `extra_linker_flags()` Attribute | Notes |
+|---|---|---|
+| `ldflags` | `ldflags` | Linker flags |
+| `inputs` (for linker action) | `link_inputs` | Additional linker input files |
+| Library dependency (e.g. `-lc`, `-lm`, `libs = [...]`, `deps = [...]`) | `link_deps` | Linked into all linking targets (executables and shared libraries) |
+| Variant `executable_deps` (e.g. `:asan_default_options`, `:autobind`) | `executable_link_deps` | Linked into executables only (ignored for shared libraries) |
+
+`extra_linker_flags()` only accepts `ldflags`, `link_inputs`, `link_deps`, and
+`executable_link_deps`. It can be referenced directly in `build_flags = [...]`
+on `fx_cc_*()` targets or included via `subflags = [...]` in `build_flags()` and
+`compiler_build_flags()` targets.
+
 ### Default Toolchain Config Discovery
 During `fx gen` / `fx build`, `//build/bazel/config:bazel_default_configs_json`
 writes the default Fuchsia and Host config lists to
@@ -264,6 +283,13 @@ no direct Bazel equivalent and require a distinct Bazel-specific design:
       - `//build/config/rust:incremental`: Rust incremental compilation
         (`-Cincremental=...`) is incompatible with Bazel's sandboxed and remote
         execution model.
+4.  **GN `inputs` and implicit `libs` in configs**:
+    - Compiler-side action inputs are not supported in `build_flags()`.
+    - Linker action inputs (such as linker scripts) and library dependencies
+      (`CcInfo`) can be ported using `extra_linker_flags(ldflags = [...],
+      link_inputs = [...], link_deps = [...], executable_link_deps = [...])`,
+      which can be referenced directly or included via `subflags` of a
+      `build_flags()` target.
 
 ---
 

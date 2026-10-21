@@ -87,9 +87,10 @@ def get_build_flags_targets_from_ast(
         if not isinstance(call_node.func, ast.Name):
             return
         func_name = call_node.func.id
-        if func_name != "build_flags" and not func_name.endswith(
-            "_build_flags"
-        ):
+        if func_name not in (
+            "build_flags",
+            "extra_linker_flags",
+        ) and not func_name.endswith("_build_flags"):
             return
         for kw in call_node.keywords:
             if kw.arg == "name":

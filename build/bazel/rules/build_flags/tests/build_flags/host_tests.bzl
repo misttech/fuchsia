@@ -5,6 +5,7 @@
 """Helper rules for verifying `BuildFlagsInfo` providers in host tests."""
 
 load("@fuchsia_rules_common//build_flags:providers.bzl", "BuildFlagsInfo")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 
 visibility("private")
@@ -29,6 +30,24 @@ def _verify_build_flags_bin_impl(ctx):
     _assert_list_equals(failures, "include_dirs", ctx.attr.expected_include_dirs, info.include_dirs)
     _assert_list_equals(failures, "ldflags", ctx.attr.expected_ldflags, info.ldflags)
     _assert_list_equals(failures, "lib_dirs", ctx.attr.expected_lib_dirs, info.lib_dirs)
+    _assert_list_equals(
+        failures,
+        "link_inputs",
+        [f.short_path for f in ctx.files.expected_link_inputs],
+        [f.short_path for f in info.link_inputs],
+    )
+    _assert_list_equals(
+        failures,
+        "link_deps",
+        [dep[CcInfo] for dep in ctx.attr.expected_link_deps],
+        info.link_deps,
+    )
+    _assert_list_equals(
+        failures,
+        "executable_link_deps",
+        [dep[CcInfo] for dep in ctx.attr.expected_executable_link_deps],
+        info.executable_link_deps,
+    )
     _assert_list_equals(failures, "rustenv", ctx.attr.expected_rustenv, info.rustenv)
     _assert_list_equals(failures, "rustflags", ctx.attr.expected_rustflags, info.rustflags)
 
@@ -67,6 +86,9 @@ _verify_build_flags_bin = rule(
         "expected_include_dirs": attr.string_list(default = []),
         "expected_ldflags": attr.string_list(default = []),
         "expected_lib_dirs": attr.string_list(default = []),
+        "expected_link_inputs": attr.label_list(allow_files = True, default = []),
+        "expected_link_deps": attr.label_list(providers = [CcInfo], default = []),
+        "expected_executable_link_deps": attr.label_list(providers = [CcInfo], default = []),
         "expected_rustenv": attr.string_list(default = []),
         "expected_rustflags": attr.string_list(default = []),
     },

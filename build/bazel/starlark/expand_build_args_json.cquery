@@ -50,7 +50,8 @@ def format(target):
         lib_dirs.extend(info.lib_dirs)
         rustflags.extend(info.rustflags)
         rustenv.extend(info.rustenv)
-        # LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/build_flags.bzl:BuildFlagsInfo)
+        # Note: link_inputs, link_deps, and executable_link_deps in BuildFlagsInfo are not command-line flags.
+        # LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/providers.bzl:BuildFlagsInfo)
 
         # For debuggability, record the labels of the input build_flags()
         sources.append(str(info.label))

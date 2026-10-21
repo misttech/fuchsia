@@ -422,15 +422,39 @@ Bazel doesn't allow its C++ rules to specify assembler-specific flags at all.
 If you really need them, you will need to split your targets and use standard
 `copts` (or `build_flags()` with `cflags`) to specify them.
 
-## No support for `inputs` or `libs`
+## Linker inputs and library dependencies (`extra_linker_flags`)
 
-These `config()` arguments can be used to specify extra inputs to the
-compiler or link actions. However, there is *no way* to implement a similar
-functionality in Bazel, so they are simply not available as `build_flags()`
-attributes.
+In GN, `config()` arguments such as `inputs` or `libs` are sometimes used to specify
+extra linker inputs (such as linker scripts) or library dependencies. Additionally,
+GN `variant()` targets define `executable_deps` for dependencies (like sanitizer default
+options or instrumentation autobind) that must only be linked into executables.
 
-Any GN `config()` definitions that rely on these, will require an
-alternative mechanism. Which one to use will depend on the use case.
+The `build_flags()` and `compiler_build_flags()` rules intentionally do *not* support
+`inputs` or `libs` attributes. Compiler-side action inputs are not supported by build flags.
+
+However, for linker-specific requirements, the `extra_linker_flags()` rule is provided in
+`@fuchsia_rules_common//build_flags:extra_linker_flags.bzl`:
+
+```py
+extra_linker_flags(
+    name = "custom_linker_script",
+    ldflags = [ "-Wl,-T,$(location script.ld)" ],
+    link_inputs = [ "script.ld" ],
+    link_deps = [ ":custom_runtime_lib" ],
+    executable_link_deps = [ ":executable_only_options" ],
+)
+```
+
+`extra_linker_flags()` only accepts `ldflags`, `link_inputs` (files needed in the linker sandbox),
+`link_deps` (targets providing `CcInfo` to link into all linking targets, executables and shared
+libraries), and `executable_link_deps` (targets providing `CcInfo` to link into executables only).
+It provides `BuildFlagsInfo`, which allows it to be used directly in `build_flags = [...]` on
+`fx_cc_*()` targets, or referenced in `subflags = [...]` of `build_flags()` and `compiler_build_flags()`
+targets.
+
+Keeping this functionality in a dedicated `extra_linker_flags()` rule ensures that linker inputs
+and library dependencies are seldom used, easy to search for in the codebase, and isolated from
+general compiler flags.
 
 ## No support for `cflags_objc`, `cflags_objcc` or `swiftflags`
 
@@ -504,8 +528,14 @@ cc_binary(
     srcs = [ "main.cc" ],
     copts = [ "@$(location :bin1.cc_compile.build_flags)" ],
     linkopts = [ "@$(location :bin1.cc_link.build_flags)" ],
-    deps = [ ":bin1.cc_compile.build_flags" ],
-    additional_linker_inputs = [ ":bin1.cc_link.build_flags" ],
+    deps = [
+        ":bin1.cc_compile.build_flags",
+        ":bin1.final_build_flags",
+    ],
+    additional_linker_inputs = [
+        ":bin1.cc_link.build_flags",
+        ":bin1.final_build_flags",
+    ],
     features = [ "-fuchsia_default_build_flags" ],
 )
 ```
@@ -514,10 +544,12 @@ Where:
 
 - `bin1.final_build_flags` is a target that computes the final set
   of `build_flags()` labels that apply to a given target, and makes
-  it available as a provider. This doesn't generate any artifact, and
-  is where all the logic dealing with default build_flags() labels
-  and de-duplication happens. Note the use of `target_type = "executable"`
-  to match the generation of an executable binary.
+  it available as a provider. This target provides `BuildFlagsListInfo`,
+  `DefaultInfo(files = link_inputs)`, and `CcInfo(linking_context = ...)`.
+  When added to `additional_linker_inputs` and `deps`, any `link_inputs`,
+  `link_deps`, and (for executables) `executable_link_deps` collected from
+  `extra_linker_flags()` targets are forwarded to the linking action. Note the use
+  of `target_type = "executable"` to match the generation of an executable binary.
 
 - `bin1.cc_compile.build_flags` is a target that generates a
   response file for the compiler action, computed by processing the list

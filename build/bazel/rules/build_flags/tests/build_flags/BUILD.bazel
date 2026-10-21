@@ -4,6 +4,8 @@
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(":host_tests.bzl", "build_flags_info_test")
 
 package(default_applicable_licenses = ["//:license"])
@@ -208,4 +210,45 @@ build_flags_info_test(
         "-Ctarget-feature=+sub-feat",
     ],
     target_under_test = ":compiler_flags_select",
+)
+
+cc_library(
+    name = "dummy_link_dep",
+)
+
+cc_library(
+    name = "dummy_exec_link_dep",
+)
+
+extra_linker_flags(
+    name = "extra_link_flags_1",
+    executable_link_deps = [":dummy_exec_link_dep"],
+    ldflags = ["-Wl,-z,defs"],
+    link_deps = [":dummy_link_dep"],
+    link_inputs = ["BUILD.bazel"],
+)
+
+build_flags_info_test(
+    name = "extra_link_flags_1_test",
+    expected_executable_link_deps = [":dummy_exec_link_dep"],
+    expected_ldflags = ["-Wl,-z,defs"],
+    expected_link_deps = [":dummy_link_dep"],
+    expected_link_inputs = ["BUILD.bazel"],
+    target_under_test = ":extra_link_flags_1",
+)
+
+build_flags(
+    name = "build_flags_with_extra_link_subflags",
+    cflags = ["-O2"],
+    subflags = [":extra_link_flags_1"],
+)
+
+build_flags_info_test(
+    name = "build_flags_with_extra_link_subflags_test",
+    expected_cflags = ["-O2"],
+    expected_executable_link_deps = [":dummy_exec_link_dep"],
+    expected_ldflags = ["-Wl,-z,defs"],
+    expected_link_deps = [":dummy_link_dep"],
+    expected_link_inputs = ["BUILD.bazel"],
+    target_under_test = ":build_flags_with_extra_link_subflags",
 )

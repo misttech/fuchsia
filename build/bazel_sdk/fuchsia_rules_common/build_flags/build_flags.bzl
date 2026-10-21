@@ -39,6 +39,9 @@ def create_build_flags_info(
     include_dirs = list(ctx.attr.include_dirs)
     ldflags = list(ctx.attr.ldflags) + extra_ldflags
     lib_dirs = list(ctx.attr.lib_dirs)
+    link_inputs = []
+    link_deps = []
+    executable_link_deps = []
     rustenv = list(ctx.attr.rustenv)
     rustflags = list(ctx.attr.rustflags) + extra_rustflags
 
@@ -58,6 +61,9 @@ def create_build_flags_info(
         include_dirs.extend(info.include_dirs)
         ldflags.extend(info.ldflags)
         lib_dirs.extend(info.lib_dirs)
+        link_inputs.extend(info.link_inputs)
+        link_deps.extend(info.link_deps)
+        executable_link_deps.extend(info.executable_link_deps)
         rustenv.extend(info.rustenv)
         rustflags.extend(info.rustflags)
 
@@ -70,6 +76,9 @@ def create_build_flags_info(
         include_dirs = include_dirs,
         ldflags = ldflags,
         lib_dirs = lib_dirs,
+        link_inputs = link_inputs,
+        link_deps = link_deps,
+        executable_link_deps = executable_link_deps,
         rustenv = rustenv,
         rustflags = rustflags,
     )

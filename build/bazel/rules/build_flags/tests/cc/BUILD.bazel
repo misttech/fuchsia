@@ -4,6 +4,7 @@
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
@@ -181,4 +182,114 @@ build_flags_cc_binary_host_test(
     name = "check_compiler_build_flags_select_cpp",
     srcs = ["check_cflags_cpp.cc"],
     build_flags = [":compiler_flags_select_cc"],
+)
+
+# Tests for extra_linker_flags(): link_inputs, link_deps, and disable_build_flags.
+
+extra_linker_flags(
+    name = "flags_link_inputs",
+    ldflags = ["-ltest_prebuilt"],
+    link_inputs = ["test_lib_dir/libtest_prebuilt.a"],
+)
+
+build_flags(
+    name = "flags_includes_lib_dirs_and_link_inputs",
+    include_dirs = ["build/bazel/rules/build_flags/tests/cc/test_include_dir"],
+    lib_dirs = ["build/bazel/rules/build_flags/tests/cc/test_lib_dir"],
+    subflags = [":flags_link_inputs"],
+)
+
+# Notice: Unlike check_includes_and_lib_dirs above, this target does NOT set
+# additional_linker_inputs manually on the binary; link_inputs is automatically
+# passed through flags_includes_lib_dirs_and_link_inputs -> flags_link_inputs!
+build_flags_cc_binary_host_test(
+    name = "check_extra_linker_flags_link_inputs",
+    srcs = [
+        "check_includes_and_lib_dirs.cc",
+        "test_include_dir/test_header.h",
+    ],
+    build_flags = [":flags_includes_lib_dirs_and_link_inputs"],
+)
+
+extra_linker_flags(
+    name = "flags_link_deps",
+    link_deps = [":fx_cc_library_for_test"],
+)
+
+# Notice: Unlike fx_cc_binary_test_bin above, this target does NOT set
+# deps = [":fx_cc_library_for_test"] manually on the binary; the library is
+# automatically linked via flags_link_deps!
+build_flags_cc_binary_host_test(
+    name = "check_extra_linker_flags_link_deps",
+    srcs = ["fx_cc_binary_test.cc"],
+    build_flags = [
+        ":flags1",
+        ":flags_link_deps",
+    ],
+)
+
+extra_linker_flags(
+    name = "extra_flags_invalid_ldflags",
+    ldflags = ["-Wl,--this-is-an-invalid-linker-flag-xyz"],
+)
+
+# Verify that disable_build_flags removes extra_linker_flags targets.
+build_flags_cc_binary_host_test(
+    name = "check_disable_extra_linker_flags",
+    srcs = ["check_cflags_cpp.cc"],
+    build_flags = [
+        ":flags1",
+        ":extra_flags_invalid_ldflags",
+    ],
+    disable_build_flags = [":extra_flags_invalid_ldflags"],
+)
+
+extra_linker_flags(
+    name = "flags_executable_link_deps",
+    executable_link_deps = [":fx_cc_library_for_test"],
+)
+
+# Notice: Like check_extra_linker_flags_link_deps, this executable binary
+# does NOT set deps = [":fx_cc_library_for_test"] manually; it is linked
+# via executable_link_deps!
+build_flags_cc_binary_host_test(
+    name = "check_extra_linker_flags_executable_link_deps",
+    srcs = ["fx_cc_binary_test.cc"],
+    build_flags = [
+        ":flags1",
+        ":flags_executable_link_deps",
+    ],
+)
+
+# Create an undefined symbol in a library with alwayslink = True
+cc_library(
+    name = "undefined_symbol_lib",
+    srcs = ["undefined_symbol_for_test.cc"],
+    alwayslink = True,
+)
+
+extra_linker_flags(
+    name = "flags_executable_link_deps_with_undefined",
+    executable_link_deps = [":undefined_symbol_lib"],
+)
+
+# A shared library that includes flags_executable_link_deps_with_undefined.
+# If executable_link_deps were mistakenly linked into shared libraries,
+# this target would fail to build because undefined_symbol_lib has an unresolved symbol
+# and shared libraries are linked with -Wl,--no-undefined.
+fx_cc_binary(
+    name = "shared_lib_ignoring_exec_link_deps",
+    srcs = ["check_cflags_cpp.cc"],
+    build_flags = [
+        ":flags1",
+        ":flags_executable_link_deps_with_undefined",
+    ],
+    linkshared = True,
+)
+
+build_flags_cc_binary_host_test(
+    name = "check_shared_library_ignores_executable_link_deps",
+    srcs = ["check_cflags_cpp.cc"],
+    build_flags = [":flags1"],
+    data = [":shared_lib_ignoring_exec_link_deps"],
 )

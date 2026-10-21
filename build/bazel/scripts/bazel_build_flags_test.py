@@ -266,6 +266,11 @@ riscv64_abi_build_flags(
     exclude_letters = ["v"],
 )
 
+extra_linker_flags(
+    name = "extra_link",
+    ldflags = ["-Wl,-z,now"],
+)
+
 [
     compiler_build_flags(
         name = v,
@@ -300,6 +305,7 @@ compiler_build_flags(
             targets,
             {
                 "abi",
+                "extra_link",
                 "no-vector",
                 "v9",
                 "v9.1",
