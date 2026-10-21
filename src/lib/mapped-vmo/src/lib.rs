@@ -81,7 +81,20 @@ impl Mapping {
         size: usize,
         flags: zx::VmarFlags,
     ) -> Result<Self, zx::Status> {
-        Self::create_from_vmo_with_vmar(vmo, &vmar_root_self(), size, flags)
+        Self::create_from_vmo_with_vmar_and_offset(vmo, &vmar_root_self(), 0, size, flags)
+    }
+
+    /// Create a `Mapping` from an existing VMO at `vmo_offset`.
+    ///
+    /// `vmo_offset` must be page-aligned. Requires that the VMO was not created
+    /// with the `RESIZABLE` option, and returns `ZX_ERR_NOT_SUPPORTED` otherwise.
+    pub fn create_from_vmo_with_offset(
+        vmo: &zx::Vmo,
+        vmo_offset: u64,
+        size: usize,
+        flags: zx::VmarFlags,
+    ) -> Result<Self, zx::Status> {
+        Self::create_from_vmo_with_vmar_and_offset(vmo, &vmar_root_self(), vmo_offset, size, flags)
     }
 
     /// Create a `Mapping` from an existing VMO in the specified `vmar`.
@@ -94,9 +107,23 @@ impl Mapping {
         size: usize,
         flags: zx::VmarFlags,
     ) -> Result<Self, zx::Status> {
+        Self::create_from_vmo_with_vmar_and_offset(vmo, vmar, 0, size, flags)
+    }
+
+    /// Create a `Mapping` from an existing VMO in the specified `vmar` at `vmo_offset`.
+    ///
+    /// `vmo_offset` must be page-aligned. Requires that the VMO was not created
+    /// with the `RESIZABLE` option, and returns `ZX_ERR_NOT_SUPPORTED` otherwise.
+    pub fn create_from_vmo_with_vmar_and_offset(
+        vmo: &zx::Vmo,
+        vmar: &zx::Vmar,
+        vmo_offset: u64,
+        size: usize,
+        flags: zx::VmarFlags,
+    ) -> Result<Self, zx::Status> {
         let vmar = vmar.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let flags = flags | zx::VmarFlags::REQUIRE_NON_RESIZABLE;
-        let addr = vmar.map(0, vmo, 0, size, flags)?;
+        let addr = vmar.map(0, vmo, vmo_offset, size, flags)?;
 
         // Safety:
         //
@@ -187,6 +214,26 @@ mod tests {
         let mut buf = [0u8; 17];
         vmo.read(&mut buf, 0).unwrap();
         assert_eq!(s, &buf);
+    }
+
+    #[test]
+    fn test_create_from_vmo_with_offset() {
+        let flags = zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE;
+        let vmo = zx::Vmo::create((PAGE_SIZE * 2) as u64).unwrap();
+        let s = b"Hello non-zero VMO offset";
+        vmo.write(s, PAGE_SIZE as u64).unwrap();
+
+        let mapping =
+            Mapping::create_from_vmo_with_offset(&vmo, PAGE_SIZE as u64, PAGE_SIZE, flags).unwrap();
+        assert_eq!(PAGE_SIZE, mapping.len());
+
+        let mut buf = [0u8; 25];
+        mapping.read(&mut buf);
+        assert_eq!(s, &buf);
+
+        let unaligned_err =
+            Mapping::create_from_vmo_with_offset(&vmo, 1, PAGE_SIZE, flags).unwrap_err();
+        assert_eq!(zx::Status::INVALID_ARGS, unaligned_err);
     }
 
     #[test]
