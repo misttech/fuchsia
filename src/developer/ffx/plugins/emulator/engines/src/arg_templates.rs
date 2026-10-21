@@ -327,7 +327,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use emulator_instance::{DeviceConfig, GuestConfig, HostConfig, NetworkingMode, VirtualCpu};
+    use emulator_instance::{
+        AccelerationMode, DeviceConfig, EngineType, GuestConfig, HostConfig, NetworkingMode,
+        OperatingSystem, RuntimeConfig, VirtualCpu,
+    };
     use ffx_emulator_config::AudioModel;
     use serde::Serialize;
 
@@ -1144,6 +1147,139 @@ mod tests {
         .collect();
 
         assert_eq!(actual.args, expected_args)
+    }
+
+    /// Returns the configuration of an x64 guest which is booted from a kernel and a disk image by
+    /// the QEMU engine, accelerated by KVM on a Linux host.
+    fn kvm_accelerated_x64_config() -> EmulatorConfiguration {
+        EmulatorConfiguration {
+            guest: GuestConfig {
+                disk_image: Some(DiskImage::Fxfs("/path/to/fxfs.blk".into())),
+                kernel_image: Some(PathBuf::from("/path/to/kernel")),
+                ..Default::default()
+            },
+            host: HostConfig {
+                acceleration: AccelerationMode::Hyper,
+                networking: NetworkingMode::None,
+                os: OperatingSystem::Linux,
+                ..Default::default()
+            },
+            device: DeviceConfig {
+                cpu: VirtualCpu { architecture: sdk_metadata::CpuArchitecture::X64, count: 2 },
+                ..Default::default()
+            },
+            runtime: RuntimeConfig { engine_type: EngineType::Qemu, ..Default::default() },
+            ..Default::default()
+        }
+    }
+
+    /// Returns the argument which follows the given flag in the emulator's arguments.
+    fn flag_value<'a>(flags: &'a FlagData, flag: &str) -> &'a str {
+        let index = flags
+            .args
+            .iter()
+            .position(|arg| arg == flag)
+            .unwrap_or_else(|| panic!("{flag} not found in {:?}", flags.args));
+        &flags.args[index + 1]
+    }
+
+    #[fuchsia::test]
+    fn test_default_template_snapshots_disabled() {
+        let config = kvm_accelerated_x64_config();
+        assert!(!config.runtime.snapshots_enabled);
+
+        let flags = process_flag_template(&config).expect("ok processing");
+
+        // By default the disk is a raw image, and the guest is given all of the host's CPU
+        // features, including the ones which keep its state from being saved.
+        assert_eq!(
+            flag_value(&flags, "-drive"),
+            "file=/path/to/fxfs.blk,format=raw,if=none,id=vdisk,cache=unsafe"
+        );
+        assert_eq!(flag_value(&flags, "-cpu"), "host,migratable=no,+invtsc");
+        assert!(flags.args.contains(&"-enable-kvm".to_string()));
+    }
+
+    #[fuchsia::test]
+    fn test_default_template_snapshots_enabled() {
+        let mut config = kvm_accelerated_x64_config();
+        config.guest.disk_image = Some(DiskImage::Fxfs("/path/to/fxfs.blk.qcow2".into()));
+        config.runtime.snapshots_enabled = true;
+
+        let flags = process_flag_template(&config).expect("ok processing");
+
+        // The disk is in a format which can hold snapshots, and the CPU model does not include
+        // the non-migratable features which block the VM's state from being saved.
+        assert_eq!(
+            flag_value(&flags, "-drive"),
+            "file=/path/to/fxfs.blk.qcow2,format=qcow2,if=none,id=vdisk,cache=unsafe"
+        );
+        assert_eq!(flag_value(&flags, "-cpu"), "host");
+        assert!(flags.args.contains(&"-enable-kvm".to_string()));
+    }
+
+    #[fuchsia::test]
+    fn test_default_template_snapshots_enabled_avx2_disabled() {
+        let mut config = kvm_accelerated_x64_config();
+        config.runtime.snapshots_enabled = true;
+        config.device.avx2_enabled = false;
+
+        let flags = process_flag_template(&config).expect("ok processing");
+
+        let cpu_flags = flag_value(&flags, "-cpu");
+        assert!(cpu_flags.starts_with("host,-avx2,-avx512f,"), "unexpected cpu flags: {cpu_flags}");
+        assert!(!cpu_flags.contains("migratable=no"), "unexpected cpu flags: {cpu_flags}");
+        assert!(!cpu_flags.contains("invtsc"), "unexpected cpu flags: {cpu_flags}");
+
+        // Without snapshots, the non-migratable features come before the disabled ones.
+        config.runtime.snapshots_enabled = false;
+        let flags = process_flag_template(&config).expect("ok processing");
+        let cpu_flags = flag_value(&flags, "-cpu");
+        assert!(
+            cpu_flags.starts_with("host,migratable=no,+invtsc,-avx2,-avx512f,"),
+            "unexpected cpu flags: {cpu_flags}"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_default_template_snapshots_enabled_without_acceleration() {
+        let mut config = kvm_accelerated_x64_config();
+        config.host.acceleration = AccelerationMode::None;
+        let cpu_flags_without_snapshots =
+            flag_value(&process_flag_template(&config).expect("ok processing"), "-cpu").to_string();
+
+        config.runtime.snapshots_enabled = true;
+        let flags = process_flag_template(&config).expect("ok processing");
+
+        // The emulated CPU model is the same with and without snapshots; only the format of the
+        // disk changes.
+        assert_eq!(flag_value(&flags, "-cpu"), cpu_flags_without_snapshots);
+        assert!(cpu_flags_without_snapshots.starts_with("Haswell,"));
+        assert_eq!(
+            flag_value(&flags, "-drive"),
+            "file=/path/to/fxfs.blk,format=qcow2,if=none,id=vdisk,cache=unsafe"
+        );
+        assert!(!flags.args.contains(&"-enable-kvm".to_string()));
+    }
+
+    #[fuchsia::test]
+    fn test_default_template_snapshots_enabled_riscv64() {
+        let mut config = kvm_accelerated_x64_config();
+        config.device.cpu.architecture = sdk_metadata::CpuArchitecture::Riscv64;
+        config.host.acceleration = AccelerationMode::None;
+
+        let flags = process_flag_template(&config).expect("ok processing");
+        assert_eq!(
+            flag_value(&flags, "-drive"),
+            "file=/path/to/fxfs.blk,format=raw,if=none,id=vdisk"
+        );
+
+        config.runtime.snapshots_enabled = true;
+        let flags = process_flag_template(&config).expect("ok processing");
+        assert_eq!(
+            flag_value(&flags, "-drive"),
+            "file=/path/to/fxfs.blk,format=qcow2,if=none,id=vdisk"
+        );
     }
 
     #[test]

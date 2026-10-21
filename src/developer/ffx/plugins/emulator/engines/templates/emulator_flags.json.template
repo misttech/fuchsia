@@ -40,11 +40,13 @@
             {{/if}}
         {{/if}}
         {{#if guest.disk_image}}
+            {{! When snapshots are enabled the disk image is staged as qcow2, which unlike
+                a raw image can hold snapshots of the VM. }}
             {{#if (eq device.cpu.architecture "riscv64")}}
-                "-drive", "file={{di guest.disk_image}},format=raw,if=none,id=vdisk",
+                "-drive", "file={{di guest.disk_image}},format={{#if runtime.snapshots_enabled}}qcow2{{else}}raw{{/if}},if=none,id=vdisk",
                 "-device", "virtio-blk-pci,drive=vdisk",
             {{else}}
-               "-drive", "file={{di guest.disk_image}},format=raw,if=none,id=vdisk,cache=unsafe",
+               "-drive", "file={{di guest.disk_image}},format={{#if runtime.snapshots_enabled}}qcow2{{else}}raw{{/if}},if=none,id=vdisk,cache=unsafe",
                "-object", "iothread,id=iothread0",
                "-device", "virtio-blk-pci,drive=vdisk,iothread=iothread0",
             {{/if}}
@@ -114,7 +116,14 @@
                 "Haswell,+smap,-check,-fsgsbase{{~#unless device.avx2_enabled~}},-avx2,-avx512f,-avx512pf,-avx512er,-avx512cd,-avx512vl,-avx512bw,-avx512dq,-avx512ifma,-avx512vbmi,-avx512-vpopcntdq,-avx512vnni,-avx512vbmi2,-gfni,-vaes,-vpclmulqdq,-avx512bitalg{{~/unless~}}",
             {{else}}
                 {{#if (eq host.os "linux")}}
-                    "host,migratable=no,+invtsc{{~#unless device.avx2_enabled~}},-avx2,-avx512f,-avx512pf,-avx512er,-avx512cd,-avx512vl,-avx512bw,-avx512dq,-avx512ifma,-avx512vbmi,-avx512-vpopcntdq,-avx512vnni,-avx512vbmi2,-gfni,-vaes,-vpclmulqdq,-avx512bitalg{{~/unless~}}",
+                    {{! The invariant TSC is a non-migratable CPU feature, and QEMU refuses
+                        to save the state of a VM which has one, so it is left out when
+                        snapshots are enabled. Zircon still uses the TSC as its clock source
+                        without it, because under KVM it relies on the paravirtualized clock
+                        to tell whether the TSC is stable: the x86 timer initialization in
+                        //zircon/kernel/platform/pc/timer.cc sets invariant_tsc from
+                        pv_clock_is_stable() when the hypervisor provides a pv clock. }}
+                    "host{{~#unless runtime.snapshots_enabled~}},migratable=no,+invtsc{{~/unless~}}{{~#unless device.avx2_enabled~}},-avx2,-avx512f,-avx512pf,-avx512er,-avx512cd,-avx512vl,-avx512bw,-avx512dq,-avx512ifma,-avx512vbmi,-avx512-vpopcntdq,-avx512vnni,-avx512vbmi2,-gfni,-vaes,-vpclmulqdq,-avx512bitalg{{~/unless~}}",
                     "-enable-kvm",
                 {{/if}}
                 {{#if (eq host.os "macos")}}

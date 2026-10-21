@@ -111,10 +111,18 @@ pub struct StartCommand {
     #[argh(switch)]
     pub edit: bool,
 
+    /// set up the emulator so that snapshots of its state can be saved and loaded. The disk
+    /// image is staged in the qcow2 format, which can hold snapshots, and the guest is given a
+    /// CPU model whose state can be saved. Snapshots are only supported by the "qemu" engine,
+    /// and cannot be used together with `--uefi`.
+    #[argh(switch)]
+    pub enable_snapshots: bool,
+
     /// emulation engine to use for this instance. Allowed values are "femu" which is based on
     /// Android Emulator, and "qemu" which uses the version of Qemu packaged with Fuchsia. Default
     /// is "femu", which can be overridden by running `ffx config set emu.engine <type>`. Engine
-    /// defaults are overridden to "qemu" in cases of incompatibility (cross cpu or uefi emulation).
+    /// defaults are overridden to "qemu" in cases of incompatibility (cross cpu or uefi emulation,
+    /// or snapshots).
     #[argh(option)]
     pub engine: Option<String>,
 

@@ -61,6 +61,12 @@ if (is_host) {
       "templates/emulator_flags.json.template",
       "templates/efi_flags.json.template",
     ]
+
+    # Each test writes the fake tools which it then runs. When tests run at the
+    # same time, the fork of one test's child can overlap the write of another
+    # test's script, and the exec of that script then fails with ETXTBSY; so the
+    # tests run one at a time.
+    args = [ "--test-threads=1" ]
   }
 
   group("tests") {

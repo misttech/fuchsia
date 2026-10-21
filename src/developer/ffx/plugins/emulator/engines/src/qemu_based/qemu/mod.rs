@@ -12,14 +12,14 @@ use crate::qemu_based::QemuBasedEngine;
 use crate::qemu_based::comms::QemuSocket;
 use async_trait::async_trait;
 use emulator_instance::{
-    CpuArchitecture, EmulatorConfiguration, EmulatorInstanceData, EmulatorInstanceInfo,
+    CpuArchitecture, DiskImage, EmulatorConfiguration, EmulatorInstanceData, EmulatorInstanceInfo,
     EmulatorInstances, EngineState, EngineType, NetworkingMode, PointingDevice, write_to_disk,
 };
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::QEMU_TOOL;
 use ffx_emulator_common::find_unused_vsock_cid;
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
-use fho::{Result, bug, return_bug, user_error};
+use fho::{Result, bug, return_bug, return_user_error, user_error};
 use serde_json::{Deserializer, Value, json};
 use std::env;
 use std::io::Write;
@@ -60,10 +60,41 @@ impl QemuEngine {
         }
         self.validate_network_flags(&self.data.get_emulator_configuration())
             .and_then(|()| self.check_required_files(&self.data.get_emulator_configuration().guest))
+            .and_then(|()| self.validate_snapshot_support())
     }
 
     fn validate_staging(&self) -> Result<()> {
         self.check_required_files(&self.data.get_emulator_configuration().guest)
+    }
+
+    /// Checks that snapshots, if they are enabled, are supported for the way the guest is booted.
+    fn validate_snapshot_support(&self) -> Result<()> {
+        let emu_config = self.data.get_emulator_configuration();
+        if !emu_config.runtime.snapshots_enabled {
+            return Ok(());
+        }
+        // Booting through UEFI uses additional writable firmware and disk images, which are not
+        // set up to hold snapshots. That is how --uefi boots the guest, and also how the guests
+        // of some products are booted without it.
+        if emu_config.guest.is_gpt {
+            return_user_error!(
+                "Snapshots are not supported for emulators which boot using UEFI. \
+                Start the emulator without --uefi to use snapshots."
+            );
+        }
+        if emu_config.guest.is_efi() {
+            return_user_error!(
+                "Snapshots are not supported for emulators which boot using UEFI, and the guest \
+                of this product bundle is booted using UEFI."
+            );
+        }
+        match emu_config.guest.disk_image {
+            Some(DiskImage::Fvm(_)) | Some(DiskImage::Fxfs(_)) => Ok(()),
+            _ => return_user_error!(
+                "Snapshots are saved in the emulator's disk image, but the product bundle does \
+                not provide a disk image which supports them."
+            ),
+        }
     }
 }
 
@@ -364,6 +395,55 @@ mod tests {
     use std::ffi::OsStr;
     use std::fs;
     use tempfile::tempdir;
+
+    #[fuchsia::test]
+    fn test_validate_snapshot_support() {
+        let env = ffx_config::test_init().unwrap();
+        let validate = |cfg: &EmulatorConfiguration| {
+            let data = EmulatorInstanceData::new(cfg.clone(), EngineType::Qemu, EngineState::New);
+            QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()))
+                .validate_snapshot_support()
+        };
+
+        // Guests which boot from a kernel and a FVM or Fxfs disk image support snapshots.
+        let mut cfg = EmulatorConfiguration::default();
+        cfg.runtime.snapshots_enabled = true;
+        cfg.guest.kernel_image = Some("/path/to/kernel".into());
+        cfg.guest.disk_image = Some(DiskImage::Fxfs("/path/to/fxfs.blk".into()));
+        assert!(validate(&cfg).is_ok());
+        cfg.guest.disk_image = Some(DiskImage::Fvm("/path/to/fvm.blk".into()));
+        assert!(validate(&cfg).is_ok());
+
+        // There has to be a disk image for the snapshots to be saved in.
+        cfg.guest.disk_image = None;
+        let err = validate(&cfg).expect_err("no disk image").to_string();
+        assert!(err.contains("does not provide a disk image"), "unexpected error: {err}");
+
+        // Guests which boot using UEFI don't support snapshots. Only --uefi can be left out to
+        // boot the guest differently.
+        cfg.guest.disk_image = Some(DiskImage::Gpt("/path/to/gpt.img".into()));
+        cfg.guest.is_gpt = true;
+        let err = validate(&cfg).expect_err("GPT disk image").to_string();
+        assert!(err.contains("boot using UEFI"), "unexpected error: {err}");
+        assert!(err.contains("without --uefi"), "unexpected error: {err}");
+
+        cfg.guest.disk_image = Some(DiskImage::Fat("/path/to/bootloader.fat".into()));
+        cfg.guest.kernel_image = None;
+        cfg.guest.is_gpt = false;
+        let err = validate(&cfg).expect_err("EFI bootloader").to_string();
+        assert!(err.contains("boot using UEFI"), "unexpected error: {err}");
+        assert!(!err.contains("--uefi"), "unexpected error: {err}");
+
+        cfg.guest.disk_image = Some(DiskImage::Fxfs("/path/to/fxfs.blk".into()));
+        cfg.guest.kernel_image = Some("/path/to/kernel.efi".into());
+        let err = validate(&cfg).expect_err("EFI kernel").to_string();
+        assert!(err.contains("boot using UEFI"), "unexpected error: {err}");
+        assert!(!err.contains("--uefi"), "unexpected error: {err}");
+
+        // None of this matters when snapshots are not enabled.
+        cfg.runtime.snapshots_enabled = false;
+        assert!(validate(&cfg).is_ok());
+    }
 
     #[fuchsia::test]
     fn test_configure_assigns_host_ports() {

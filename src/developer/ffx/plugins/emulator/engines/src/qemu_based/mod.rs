@@ -105,6 +105,30 @@ pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<
     }
 }
 
+/// The disk image tool which is distributed alongside the QEMU binary.
+const QEMU_IMG_TOOL: &str = "qemu-img";
+
+/// Returns the path to the `qemu-img` tool, which is located next to the QEMU binary.
+fn get_qemu_img_tool(context: &EnvironmentContext) -> Result<PathBuf> {
+    let qemu_path = get_host_tool(context, config::QEMU_TOOL)
+        .map_err(|e| bug!("Cannot find {} in the SDK: {e}", config::QEMU_TOOL))?;
+    let qemu_path = qemu_path.canonicalize().map_err(|e| {
+        bug!("Failed to canonicalize the path to the emulator binary: {qemu_path:?}: {e}")
+    })?;
+    let tool_path = qemu_path.with_file_name(QEMU_IMG_TOOL);
+    if !tool_path.is_file() {
+        return_bug!("Cannot find the {QEMU_IMG_TOOL} tool. Tried {tool_path:?}");
+    }
+    Ok(tool_path)
+}
+
+/// Returns the path at which the qcow2 version of the raw disk image at `raw_path` is staged.
+fn qcow2_image_path(raw_path: &Path) -> PathBuf {
+    let mut file_name = raw_path.file_name().unwrap_or_default().to_os_string();
+    file_name.push(".qcow2");
+    raw_path.with_file_name(file_name)
+}
+
 const KNOCK_TARGET_TIMEOUT: Duration = Duration::from_secs(6);
 
 pub(crate) mod comms;
@@ -271,9 +295,17 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             let dest_path = instance_root.join(
                 src_path.file_name().ok_or_else(|| bug!("cannot read disk image file name"))?,
             );
+            // Snapshots can only be stored in a qcow2 image, so when they are enabled the raw
+            // image staged at `dest_path` is converted, and the emulator runs from the qcow2
+            // image instead.
+            let staged_path = if emu_config.runtime.snapshots_enabled {
+                qcow2_image_path(&dest_path)
+            } else {
+                dest_path.clone()
+            };
 
-            if dest_path.exists() && reuse {
-                log::debug!("Using existing file for {:?}", dest_path.file_name().unwrap());
+            if staged_path.exists() && reuse {
+                log::debug!("Using existing file for {:?}", staged_path.file_name().unwrap());
             } else {
                 let original_size: u64 = src_path.metadata().map_err(|e| bug!("{e}"))?.len();
 
@@ -343,12 +375,39 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     // GPT images are resized during staging when calling into make_fuchsia_vol.
                     DiskImage::Fat(_) | DiskImage::Gpt(_) => (),
                 };
+
+                if emu_config.runtime.snapshots_enabled {
+                    match disk_image {
+                        DiskImage::Fvm(_) | DiskImage::Fxfs(_) => {
+                            Self::convert_to_qcow2(env, &dest_path, &staged_path)?;
+                        }
+                        DiskImage::Fat(_) | DiskImage::Gpt(_) => {
+                            return_user_error!(
+                                "Snapshots are not supported for emulators which boot from a \
+                                FAT or GPT disk image."
+                            );
+                        }
+                    }
+                } else {
+                    // If the instance had snapshots enabled before it was staged again, the qcow2
+                    // image it ran from is still there, along with its snapshots. Nothing uses it
+                    // any more, so it is removed rather than left behind.
+                    let unused_path = qcow2_image_path(&dest_path);
+                    if unused_path.exists() {
+                        fs::remove_file(&unused_path).map_err(|e| {
+                            bug!(
+                                "Error removing the unused disk image {}: {e}",
+                                unused_path.display()
+                            )
+                        })?;
+                    }
+                }
             }
             // Update the guest config to reference the staged disk image.
             updated_guest.disk_image = match disk_image {
                 DiskImage::Fat(_) => Some(disk_image.clone()),
-                DiskImage::Fvm(_) => Some(DiskImage::Fvm(dest_path)),
-                DiskImage::Fxfs(_) => Some(DiskImage::Fxfs(dest_path)),
+                DiskImage::Fvm(_) => Some(DiskImage::Fvm(staged_path)),
+                DiskImage::Fxfs(_) => Some(DiskImage::Fxfs(staged_path)),
                 DiskImage::Gpt(_) => Some(DiskImage::Gpt(instance_root.join("gpt_disk.img"))),
             };
         } else {
@@ -435,6 +494,33 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             );
         }
         Ok(())
+    }
+
+    /// Converts the raw disk image at `raw_path` into a qcow2 image at `qcow2_path`, and removes
+    /// the raw image. The conversion is done by the `qemu-img` tool which is distributed
+    /// alongside the QEMU binary.
+    fn convert_to_qcow2(
+        env: &EnvironmentContext,
+        raw_path: &Path,
+        qcow2_path: &Path,
+    ) -> Result<()> {
+        let qemu_img = get_qemu_img_tool(env)?;
+        let mut convert_command = Command::new(&qemu_img);
+        convert_command.args(["convert", "-f", "raw", "-O", "qcow2"]).arg(raw_path).arg(qcow2_path);
+        log::debug!("Running command to convert the disk image: {:?}", convert_command);
+
+        let convert_result = convert_command
+            .output()
+            .map_err(|e| bug!("Error running {}: {e}", qemu_img.display()))?;
+        if !convert_result.status.success() {
+            return_bug!(
+                "Error converting {} to qcow2: {}",
+                raw_path.display(),
+                String::from_utf8_lossy(&convert_result.stderr)
+            );
+        }
+        fs::remove_file(raw_path)
+            .map_err(|e| bug!("Error removing {} after conversion: {e}", raw_path.display()))
     }
 
     fn validate_network_flags(&self, emu_config: &EmulatorConfiguration) -> Result<()> {
@@ -1127,6 +1213,14 @@ pub(crate) mod tests {
         fs::set_permissions(&fake_qemu, fs::Permissions::from_mode(0o770))
             .expect("setting permissions");
 
+        // The qemu-img tool is looked up next to the QEMU binary. This fake version records the
+        // arguments it is called with in its last argument, which is the image it should create.
+        const FAKE_QEMU_IMG_CONTENTS: &str = "#!/bin/bash\necho \"$@\" > \"${@: -1}\"";
+        let fake_qemu_img = isolate_root.join(QEMU_IMG_TOOL);
+        fs::write(&fake_qemu_img, FAKE_QEMU_IMG_CONTENTS).expect("fake qemu-img");
+        fs::set_permissions(&fake_qemu_img, fs::Permissions::from_mode(0o770))
+            .expect("setting permissions");
+
         let fake_aemu = isolate_root.join("fake_aemu");
         fs::write(&fake_aemu, ECHO_SCRIPT_CONTENTS).expect("fake aemu");
         fs::set_permissions(&fake_aemu, fs::Permissions::from_mode(0o770))
@@ -1661,6 +1755,196 @@ pub(crate) mod tests {
         assert!(!disk_image.metadata().expect("get metadata").permissions().readonly());
 
         Ok(())
+    }
+
+    /// Stages a guest with the given disk image format and with snapshots enabled, and checks
+    /// that the disk image is converted to qcow2. Then stages it again, to check whether the
+    /// converted image is reused or replaced, and finally without snapshots, to check that the
+    /// converted image is removed.
+    async fn test_staging_snapshots_enabled_common(
+        disk_image_format: DiskImageFormat,
+    ) -> Result<()> {
+        let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder
+            .user_config(config::EMU_INSTANCE_ROOT_DIR, root.display().to_string())
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]))
+            .build()
+            .expect("test env");
+
+        let instance_name = "test-instance";
+        let mut emu_config = EmulatorConfiguration::default();
+        emu_config.runtime.snapshots_enabled = true;
+        emu_config.device.storage = DataAmount { quantity: 32, units: DataUnits::Bytes };
+        setup_files(&mut emu_config.guest, &temp, disk_image_format).await?;
+        write_to(emu_config.guest.disk_image.as_ref().unwrap(), ORIGINAL)?;
+
+        let raw_path = root.join(instance_name).join("disk");
+        let qcow2_path = root.join(instance_name).join("disk.qcow2");
+        // The fake qemu-img tool writes the arguments it was called with to the converted image.
+        let conversion =
+            format!("convert -f raw -O qcow2 {} {}\n", raw_path.display(), qcow2_path.display());
+
+        let staged = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            false,
+        )
+        .await?;
+
+        // The emulator is given the converted image, and the raw image it was made from is gone.
+        assert_eq!(staged.disk_image, Some(disk_image_format.as_disk_image(&qcow2_path)));
+        assert_eq!(fs::read_to_string(&qcow2_path).expect("read converted image"), conversion);
+        assert!(!raw_path.exists(), "the raw disk image should be removed after conversion");
+
+        // When the instance is reused the converted image, which holds the snapshots, is kept.
+        const SNAPSHOTS: &str = "this image now contains snapshots";
+        fs::write(&qcow2_path, SNAPSHOTS).expect("write converted image");
+        let staged = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            true,
+        )
+        .await?;
+        assert_eq!(staged.disk_image, Some(disk_image_format.as_disk_image(&qcow2_path)));
+        assert_eq!(fs::read_to_string(&qcow2_path).expect("read converted image"), SNAPSHOTS);
+        assert!(!raw_path.exists());
+
+        // When the instance is not reused, the disk image is staged and converted again.
+        let staged = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            false,
+        )
+        .await?;
+        assert_eq!(staged.disk_image, Some(disk_image_format.as_disk_image(&qcow2_path)));
+        assert_eq!(fs::read_to_string(&qcow2_path).expect("read converted image"), conversion);
+        assert!(!raw_path.exists());
+
+        // When the instance is staged again without snapshots, the emulator runs from a raw image
+        // again, and the converted image, which nothing uses any more, is removed.
+        emu_config.runtime.snapshots_enabled = false;
+        let staged = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            false,
+        )
+        .await?;
+        assert_eq!(staged.disk_image, Some(disk_image_format.as_disk_image(&raw_path)));
+        assert!(raw_path.exists());
+        assert!(!qcow2_path.exists(), "the unused qcow2 disk image should be removed");
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_staging_snapshots_enabled_fvm() -> Result<()> {
+        test_staging_snapshots_enabled_common(DiskImageFormat::Fvm).await
+    }
+
+    #[fuchsia::test]
+    async fn test_staging_snapshots_enabled_fxfs() -> Result<()> {
+        test_staging_snapshots_enabled_common(DiskImageFormat::Fxfs).await
+    }
+
+    #[fuchsia::test]
+    async fn test_staging_snapshots_enabled_gpt() -> Result<()> {
+        let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder
+            .user_config(config::EMU_INSTANCE_ROOT_DIR, root.display().to_string())
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]))
+            .build()
+            .expect("test env");
+
+        let instance_name = "test-instance";
+        let mut emu_config = EmulatorConfiguration::default();
+        emu_config.runtime.snapshots_enabled = true;
+        emu_config.device.storage = DataAmount { quantity: 32, units: DataUnits::Bytes };
+        setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Gpt).await?;
+
+        // GPT disk images need a vbmeta for the ZBI, which is signed with these keys. The fake
+        // zbi tool does not stage the ZBI, so place a file for it to be generated from.
+        emu_config.guest.vbmeta_key_file = Some(root.join("atx_psk.pem"));
+        emu_config.guest.vbmeta_key_metadata_file = Some(root.join("avb_atx_metadata.bin"));
+        fs::write(emu_config.guest.vbmeta_key_file.as_ref().unwrap(), VBMETA_TEST_KEY)
+            .expect("write test key file");
+        fs::write(
+            emu_config.guest.vbmeta_key_metadata_file.as_ref().unwrap(),
+            VBMETA_TEST_KEY_METADATA,
+        )
+        .expect("write test key metadata file");
+        fs::create_dir_all(&root.join(instance_name)).expect("create test-instance dir");
+        fs::write(&root.join(instance_name).join("zbi"), ORIGINAL).expect("write fake zbi file");
+
+        // Snapshots are not supported for GPT disk images. The engine reports this when it is
+        // configured, but staging must not silently carry on with a raw image either.
+        let err = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            instance_name,
+            &emu_config,
+            false,
+        )
+        .await
+        .expect_err("staging a GPT image with snapshots enabled");
+        assert!(err.to_string().contains("Snapshots are not supported"), "unexpected error: {err}");
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_staging_snapshots_enabled_without_qemu_img() -> Result<()> {
+        let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
+        let builder = ffx_config::test_env();
+        let mut builder = make_fake_sdk(builder).await;
+        // Remove the tool which the fake SDK provides next to the QEMU binary.
+        fs::remove_file(builder.isolate_root().join(QEMU_IMG_TOOL)).expect("remove fake qemu-img");
+        let env = builder
+            .user_config(config::EMU_INSTANCE_ROOT_DIR, root.display().to_string())
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]))
+            .build()
+            .expect("test env");
+
+        let mut emu_config = EmulatorConfiguration::default();
+        emu_config.runtime.snapshots_enabled = true;
+        emu_config.device.storage = DataAmount { quantity: 32, units: DataUnits::Bytes };
+        setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fxfs).await?;
+
+        let err = <TestEngine as QemuBasedEngine>::stage_image_files(
+            &env.context,
+            "test-instance",
+            &emu_config,
+            false,
+        )
+        .await
+        .expect_err("staging without the qemu-img tool");
+        assert!(
+            err.to_string().contains("Cannot find the qemu-img tool"),
+            "unexpected error: {err}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_qcow2_image_path() {
+        assert_eq!(
+            qcow2_image_path(Path::new("/instances/fuchsia-emulator/fxfs.sparse.blk")),
+            PathBuf::from("/instances/fuchsia-emulator/fxfs.sparse.blk.qcow2")
+        );
+        assert_eq!(qcow2_image_path(Path::new("fvm.blk")), PathBuf::from("fvm.blk.qcow2"));
     }
 
     #[fuchsia::test]

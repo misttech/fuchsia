@@ -114,6 +114,14 @@
       "hidden": false
     },
     {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--enable-snapshots",
+      "short": null,
+      "description": "set up the emulator so that snapshots of its state can be saved and loaded. The disk image is staged in the qcow2 format, which can hold snapshots, and the guest is given a CPU model whose state can be saved. Snapshots are only supported by the \"qemu\" engine, and cannot be used together with `--uefi`.",
+      "hidden": false
+    },
+    {
       "kind": {
         "Option": {
           "arg_name": "engine"
@@ -122,7 +130,7 @@
       "optionality": "optional",
       "long": "--engine",
       "short": null,
-      "description": "emulation engine to use for this instance. Allowed values are \"femu\" which is based on Android Emulator, and \"qemu\" which uses the version of Qemu packaged with Fuchsia. Default is \"femu\", which can be overridden by running `ffx config set emu.engine <type>`. Engine defaults are overridden to \"qemu\" in cases of incompatibility (cross cpu or uefi emulation).",
+      "description": "emulation engine to use for this instance. Allowed values are \"femu\" which is based on Android Emulator, and \"qemu\" which uses the version of Qemu packaged with Fuchsia. Default is \"femu\", which can be overridden by running `ffx config set emu.engine <type>`. Engine defaults are overridden to \"qemu\" in cases of incompatibility (cross cpu or uefi emulation, or snapshots).",
       "hidden": false
     },
     {
