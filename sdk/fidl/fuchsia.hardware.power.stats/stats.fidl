@@ -21,8 +21,10 @@ type StateResidency = struct {
     ///  Total number of times that the state was entered since boot.
     entry_count uint32;
 
-    /// Last time this state was entered, in milliseconds on the boot timeline
-    /// (see `zx_clock_get_boot`), or 0 if the provider does not track it.
+    /// Last time this state was entered, in milliseconds on the timeline of the
+    /// hardware counter that timestamps the state's transitions, or 0 if the
+    /// provider does not track it. This timeline can run ahead of the boot
+    /// timeline (`zx_clock_get_boot`) by the time spent before the kernel started.
     last_entry_timestamp_ms uint64;
 };
 
