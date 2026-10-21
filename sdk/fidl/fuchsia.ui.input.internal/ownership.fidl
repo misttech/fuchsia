@@ -12,8 +12,9 @@ using zx;
 type InputOwnershipError = flexible enum {
     /// `target` was set to an unsupported variant or an unknown union variant.
     INVALID_TARGET = 1;
-    /// The `ViewRef` is well-formed but names no view known to this server,
-    /// including a view destroyed before this call was handled.
+    /// The `ViewRef` has `ZX_KOID_INVALID` or its `ViewRefControl` peer is closed
+    /// (indicating the view was destroyed before this call was handled). This error
+    /// is not returned merely because the view has not attached to the `ViewTree` yet.
     UNKNOWN_VIEW = 2;
     /// The caller is not permitted to observe ownership for `target`.
     ACCESS_DENIED = 3;
@@ -78,6 +79,11 @@ type InputOwnershipSignal = flexible bits : uint32 {
 /// consumers (both direct clients and the platform pipeline) must pause reading
 /// and processing hardware input reports until their respective ownership signal
 /// is asserted.
+///
+/// Security note:
+/// A `ViewRef` is a duplicable identity token rather than proof of view ownership,
+/// and any caller with access to this protocol can replace the registered `ViewRef`.
+/// Therefore, `InputOwnership` must only be routed to trusted system components.
 @discoverable
 @available(added=HEAD)
 closed protocol InputOwnership {
@@ -94,6 +100,39 @@ closed protocol InputOwnership {
     ///   input iff both `InputOwnershipSignal.DISPLAY_PLATFORM_OWNED` and
     ///   `InputOwnershipSignal.INPUT_PLATFORM_OWNED` are asserted (pauses whenever
     ///   `DISPLAY_UNOWNED` or `INPUT_CLIENT_OWNED` is asserted).
+    ///
+    /// Requesting direct input ownership:
+    ///
+    /// Calling `GetEvent` with `target` = `view_ref` is also how a view requests
+    /// direct input ownership; there is no separate request method. `GetEvent`
+    /// supports pre-registering a valid `ViewRef` before the view is created or
+    /// attached to the `ViewTree`. On success, the server registers the `ViewRef`
+    /// as the system-wide direct input client, immediately evaluates it against
+    /// the latest `ViewTree` snapshot if one exists, and continues evaluating it
+    /// against the single-view + full-screen criteria on every subsequent `ViewTree`
+    /// update. `INPUT_CLIENT_OWNED` is asserted only while the registered view
+    /// meets those criteria; otherwise `INPUT_PLATFORM_OWNED` is asserted.
+    ///
+    /// - Registration is singleton and last-writer-wins: a successful call with
+    ///   a different `ViewRef` replaces any previously registered view. This
+    ///   mechanism is intended for a single trusted client replacing its own view
+    ///   rather than independent concurrent components: because every `GetEvent`
+    ///   call returns a handle to the same shared kernel `ownership_event`, replacing
+    ///   the registered `ViewRef` does not silence earlier callers' handles when
+    ///   their view is unlinked or destroyed and the new view goes fullscreen.
+    /// - If the `ViewTree` contains more than one view or overlay competing
+    ///   with the registered view, the criteria are not met and ownership
+    ///   falls back to the platform. Thus, when multiple views request direct
+    ///   input while coexisting in the `ViewTree`, none of them is granted
+    ///   direct input, regardless of which one registered last.
+    /// - Registration is tied to the lifetime of the view, not to this
+    ///   channel or the returned event. Unlinking the view from the `ViewTree`
+    ///   (placing it in `unconnected_views`) reverts ownership to
+    ///   `INPUT_PLATFORM_OWNED` while retaining the registration, so re-linking
+    ///   fullscreen restores `INPUT_CLIENT_OWNED`. Destroying the view permanently
+    ///   drops the registration, at which point ownership reverts to the platform.
+    /// - Calls with `virtcon: {}` or `platform: {}` only observe ownership and
+    ///   do not modify the registered direct client.
     ///
     /// If `target` is set to an unsupported or unknown variant, the call
     /// returns `InputOwnershipError.INVALID_TARGET`.
