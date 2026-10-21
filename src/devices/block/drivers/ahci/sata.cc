@@ -312,13 +312,11 @@ void SataDevice::OnRequests(std::span<block_server::Request> requests) {
 
     uint64_t length = 0;
     uint64_t offset_dev = 0;
-    uint64_t offset_vmo = 0;
 
     switch (request.operation.tag) {
       case block_server::Operation::Tag::Read:
         length = request.operation.read.block_count;
         offset_dev = request.operation.read.device_block_offset;
-        offset_vmo = request.operation.read.vmo_offset / partition_info_.block_size;
         txn->device = 0x40;
         txn->cmd = use_command_queue_ ? SATA_CMD_READ_FPDMA_QUEUED : SATA_CMD_READ_DMA_EXT;
         fdf::trace("read {} @ {}", length, offset_dev);
@@ -326,7 +324,6 @@ void SataDevice::OnRequests(std::span<block_server::Request> requests) {
       case block_server::Operation::Tag::Write:
         length = request.operation.write.block_count;
         offset_dev = request.operation.write.device_block_offset;
-        offset_vmo = request.operation.write.vmo_offset / partition_info_.block_size;
         txn->device = 0x40;
         txn->cmd = use_command_queue_ ? SATA_CMD_WRITE_FPDMA_QUEUED : SATA_CMD_WRITE_DMA_EXT;
         if (request.operation.write.options.flags.is_force_access()) {
