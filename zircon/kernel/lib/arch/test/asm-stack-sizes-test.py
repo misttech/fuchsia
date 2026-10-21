@@ -61,7 +61,8 @@ def main():
 
     expected = expected_stack_sizes(file_data["FileSummary"]["Arch"])
     sizes = sorted(
-        sorted(entry["Entry"].items()) for entry in file_data["StackSizes"]
+        sorted((k, v) for k, v in entry["Entry"].items() if k != "Address")
+        for entry in file_data["StackSizes"]
     )
     assert sizes == expected, f"{sizes=} != {expected=}"
 
