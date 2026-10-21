@@ -607,12 +607,9 @@ zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct v
   }
 
   struct brcmf_if* ifp;
-  const char* iface_role_name;
 
   switch (role) {
     case fuchsia_wlan_common::WlanMacRole::kAp:
-      iface_role_name = "ap";
-
       if (mac_addr && brcmf_is_existing_macaddr(drvr, mac_addr->byte, true)) {
         return ZX_ERR_ALREADY_EXISTS;
       }
@@ -635,8 +632,6 @@ zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct v
 
       break;
     case fuchsia_wlan_common::WlanMacRole::kClient: {
-      iface_role_name = "client";
-
       if (mac_addr && brcmf_is_existing_macaddr(drvr, mac_addr->byte, false)) {
         return ZX_ERR_ALREADY_EXISTS;
       }

@@ -802,7 +802,6 @@ static zx_status_t brcmf_chip_dmp_get_regaddr(struct brcmf_chip_priv* ci, uint32
                                               uint32_t* regbase, uint32_t* wrapbase) {
   uint8_t desc;
   uint32_t val;
-  uint8_t mpnum = 0;
   uint8_t stype, sztype, wraptype;
 
   *regbase = 0;
@@ -810,7 +809,6 @@ static zx_status_t brcmf_chip_dmp_get_regaddr(struct brcmf_chip_priv* ci, uint32
 
   val = brcmf_chip_dmp_get_desc(ci, eromaddr, &desc);
   if (desc == DMP_DESC_MASTER_PORT) {
-    mpnum = (val & DMP_MASTER_PORT_NUM) >> DMP_MASTER_PORT_NUM_S;
     wraptype = DMP_SLAVE_TYPE_MWRAP;
   } else if (desc == DMP_DESC_ADDRESS) {
     /* revert erom address */
@@ -879,7 +877,7 @@ static zx_status_t brcmf_chip_dmp_erom_scan(struct brcmf_chip_priv* ci) {
   uint8_t desc_type = 0;
   uint32_t val;
   uint16_t id;
-  uint8_t nmp, nsp, nmw, nsw, rev;
+  uint8_t nmw, nsw, rev;
   uint32_t base, wrap;
   zx_status_t err;
 
@@ -908,9 +906,6 @@ static zx_status_t brcmf_chip_dmp_erom_scan(struct brcmf_chip_priv* ci) {
       return ZX_ERR_WRONG_TYPE;
     }
 
-    /* only look at cores with master port(s) */
-    nmp = (val & DMP_COMP_NUM_MPORT) >> DMP_COMP_NUM_MPORT_S;
-    nsp = (val & DMP_COMP_NUM_SPORT) >> DMP_COMP_NUM_SPORT_S;
     nmw = (val & DMP_COMP_NUM_MWRAP) >> DMP_COMP_NUM_MWRAP_S;
     nsw = (val & DMP_COMP_NUM_SWRAP) >> DMP_COMP_NUM_SWRAP_S;
     rev = (val & DMP_COMP_REVISION) >> DMP_COMP_REVISION_S;
