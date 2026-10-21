@@ -22,6 +22,7 @@ cc_library(
         "zircon/hw/debug/arm64.h",
         "zircon/hw/debug/x86.h",
         "zircon/limits.h",
+        "zircon/listnode.h",
         "zircon/processargs.h",
         "zircon/rights.h",
         "zircon/syscalls.h",

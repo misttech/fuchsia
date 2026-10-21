@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "listnode",
+    hdrs = ["listnode.h"],
+    visibility = [
+        "//src/camera/drivers/usb_video:__pkg__",
+        "//src/connectivity/bluetooth/hci/transport/usb:__pkg__",
+        "//src/connectivity/ethernet/drivers/third_party/igc:__pkg__",
+        "//src/devices/block/drivers/virtio:__pkg__",
+        "//src/sys/bin/psutils:__pkg__",
+        "//src/ui/input/bin/hid:__pkg__",
+    ],
+    alwayslink = True,
+)
+
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "listnode-tests",
+    testonly = True,
+    # listnode should work in both C and C++.
+    srcs = [
+        "listnode-test.c",
+        "listnode-test.cc",
+    ],
+    copts = ["-Wno-vla-cxx-extension"],
+    tags = ["manual"],
+    deps = [
+        ":listnode",
+        "//zircon/system/ulib/zxtest",
+    ] + select({
+        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+host_test(
+    name = "listnode_host_tests",
+    binary = ":listnode-tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib:__pkg__"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "listnode-package",
+    unit_tests = [":listnode-tests"],
+    visibility = ["//src/lib:__pkg__"],
+)
