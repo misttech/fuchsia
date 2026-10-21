@@ -4,12 +4,13 @@
 {
     name: "pciroot-banjo-adapter",
     program: {
-        // Banjo ops and context pointers are only valid in the parent's process.
+        // banjo ops and context pointers are only valid in the parent's process.
         colocate: "true",
         bind: { banjo: "fuchsia.pci.BIND_PROTOCOL.ROOT" },
     },
     capabilities: [
         { service: "fuchsia.hardware.pci.root.RootService" },
+        { service: "fuchsia.hardware.pci.root.ConfigService" },
         { service: "fuchsia.hardware.pci.BoardConfiguration" },
     ],
     use: [
@@ -23,6 +24,10 @@
     expose: [
         {
             service: "fuchsia.hardware.pci.root.RootService",
+            from: "self",
+        },
+        {
+            service: "fuchsia.hardware.pci.root.ConfigService",
             from: "self",
         },
         {

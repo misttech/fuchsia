@@ -16,6 +16,7 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.pci.root.RootService" },
+        { service: "fuchsia.hardware.pci.root.ConfigService" },
         { service: "fuchsia.hardware.pci.BoardConfiguration" },
     ],
     use: [
@@ -28,6 +29,10 @@
     expose: [
         {
             service: "fuchsia.hardware.pci.root.RootService",
+            from: "self",
+        },
+        {
+            service: "fuchsia.hardware.pci.root.ConfigService",
             from: "self",
         },
         {

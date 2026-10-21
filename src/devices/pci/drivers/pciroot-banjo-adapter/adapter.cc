@@ -25,6 +25,16 @@
 
 namespace pciroot_banjo_adapter {
 
+namespace {
+pci_bdf_t ToBanjoBdf(const fuchsia_hardware_pci::wire::Bdf& bdf) {
+  return pci_bdf_t{
+      .bus_id = bdf.bus_id,
+      .device_id = bdf.device_id,
+      .function_id = bdf.function_id,
+  };
+}
+}  // namespace
+
 zx::result<> Adapter::Start(fdf::DriverContext context) {
   auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
@@ -60,6 +70,10 @@ zx::result<> Adapter::Start(fdf::DriverContext context) {
       fdf::MakeOffer2<fuchsia_hardware_pci_root::RootService>(),
   };
 
+  if (zx::result result = ServeConfigService(offers); result.is_error()) {
+    return result.take_error();
+  }
+
   if (zx::result result = ServeMetadata(offers, incoming->svc_dir()); result.is_error()) {
     return result.take_error();
   }
@@ -75,6 +89,23 @@ zx::result<> Adapter::Start(fdf::DriverContext context) {
   }
   node_controller_ = std::move(child.value());
 
+  return zx::ok();
+}
+
+zx::result<> Adapter::ServeConfigService(std::vector<fuchsia_driver_framework::Offer>& offers) {
+  if (!pciroot_.DriverShouldProxyConfig()) {
+    return zx::ok();
+  }
+  fuchsia_hardware_pci_root::ConfigService::InstanceHandler config_handler({
+      .config = config_bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+  });
+  if (zx::result result = outgoing()->AddService<fuchsia_hardware_pci_root::ConfigService>(
+          std::move(config_handler));
+      result.is_error()) {
+    fdf::error("Failed to add ConfigService: {}", result);
+    return result.take_error();
+  }
+  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_pci_root::ConfigService>());
   return zx::ok();
 }
 
@@ -248,6 +279,66 @@ void Adapter::GetMsiHandle(GetMsiHandleRequestView request,
     return;
   }
   completer.ReplySuccess(std::move(interrupt));
+}
+
+void Adapter::Read8(Read8RequestView request, Read8Completer::Sync& completer) {
+  pci_bdf_t addr = ToBanjoBdf(request->address);
+  uint8_t value = 0;
+  if (zx_status_t status = pciroot_.ReadConfig8(&addr, request->offset, &value); status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess(value);
+}
+
+void Adapter::Read16(Read16RequestView request, Read16Completer::Sync& completer) {
+  pci_bdf_t addr = ToBanjoBdf(request->address);
+  uint16_t value = 0;
+  if (zx_status_t status = pciroot_.ReadConfig16(&addr, request->offset, &value); status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess(value);
+}
+
+void Adapter::Read32(Read32RequestView request, Read32Completer::Sync& completer) {
+  pci_bdf_t addr = ToBanjoBdf(request->address);
+  uint32_t value = 0;
+  if (zx_status_t status = pciroot_.ReadConfig32(&addr, request->offset, &value); status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess(value);
+}
+
+void Adapter::Write8(Write8RequestView request, Write8Completer::Sync& completer) {
+  pci_bdf_t addr = ToBanjoBdf(request->address);
+  if (zx_status_t status = pciroot_.WriteConfig8(&addr, request->offset, request->value);
+      status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess();
+}
+
+void Adapter::Write16(Write16RequestView request, Write16Completer::Sync& completer) {
+  pci_bdf_t addr = ToBanjoBdf(request->address);
+  if (zx_status_t status = pciroot_.WriteConfig16(&addr, request->offset, request->value);
+      status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess();
+}
+
+void Adapter::Write32(Write32RequestView request, Write32Completer::Sync& completer) {
+  pci_bdf_t addr = ToBanjoBdf(request->address);
+  if (zx_status_t status = pciroot_.WriteConfig32(&addr, request->offset, request->value);
+      status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess();
 }
 
 }  // namespace pciroot_banjo_adapter

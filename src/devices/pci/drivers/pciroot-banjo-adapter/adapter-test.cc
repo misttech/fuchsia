@@ -80,6 +80,9 @@ class FixtureConfig final {
 
 class PcirootBanjoAdapterTest : public ::testing::Test {
  protected:
+  inline static const fuchsia_hardware_pci::Bdf kBdf0{
+      {.bus_id = 0, .device_id = 0, .function_id = 0}};
+
   void TearDown() override {
     if (driver_started_) {
       ASSERT_OK(driver_test_.StopDriver());
@@ -88,6 +91,7 @@ class PcirootBanjoAdapterTest : public ::testing::Test {
 
   struct Clients {
     fidl::SyncClient<fuchsia_hardware_pci_root::Root> root;
+    fidl::SyncClient<fuchsia_hardware_pci_root::Config> config;
   };
 
   Clients StartDriver() {
@@ -95,9 +99,14 @@ class PcirootBanjoAdapterTest : public ::testing::Test {
     driver_started_ = true;
     auto root_client_end = driver_test_.Connect<fuchsia_hardware_pci_root::RootService::Root>();
     EXPECT_TRUE(root_client_end.is_ok());
+    auto config_client_end =
+        driver_test_.Connect<fuchsia_hardware_pci_root::ConfigService::Config>();
+    EXPECT_TRUE(config_client_end.is_ok());
     return Clients{
         .root =
             fidl::SyncClient<fuchsia_hardware_pci_root::Root>(std::move(root_client_end.value())),
+        .config = fidl::SyncClient<fuchsia_hardware_pci_root::Config>(
+            std::move(config_client_end.value())),
     };
   }
 
@@ -119,12 +128,12 @@ TEST_F(PcirootBanjoAdapterTest, StartFailsWhenGetPciPlatformInfoFails) {
 TEST_F(PcirootBanjoAdapterTest, PlatformInfoNonEmpty) {
   driver_test_.RunInEnvironmentTypeContext([](auto& env) {
     env.fake().routing_entries().push_back(pci_irq_routing_entry_t{
-        .port_device_id = 0,
-        .port_function_id = 0,
+        .port_device_id = 2,
+        .port_function_id = 3,
         .device_id = 1,
         .pins = {10, 11, 12, 13},
     });
-    env.fake().acpi_devices().push_back(pci_bdf_t{.bus_id = 0, .device_id = 1, .function_id = 0});
+    env.fake().acpi_devices().push_back(pci_bdf_t{.bus_id = 1, .device_id = 2, .function_id = 3});
   });
 
   Clients clients = StartDriver();
@@ -137,6 +146,8 @@ TEST_F(PcirootBanjoAdapterTest, PlatformInfoNonEmpty) {
   EXPECT_EQ(info.segment_group(), 0u);
 
   ASSERT_EQ(info.irq_routing().size(), 1u);
+  EXPECT_EQ(info.irq_routing()[0].port_device_id(), 2u);
+  EXPECT_EQ(info.irq_routing()[0].port_function_id(), 3u);
   EXPECT_EQ(info.irq_routing()[0].device_id(), 1u);
   EXPECT_EQ(info.irq_routing()[0].pins()[0], 10u);
   EXPECT_EQ(info.irq_routing()[0].pins()[1], 11u);
@@ -147,9 +158,9 @@ TEST_F(PcirootBanjoAdapterTest, PlatformInfoNonEmpty) {
   EXPECT_EQ(info.parent_bdfs()->Which(), fuchsia_hardware_pci_root::ParentBdfs::Tag::kAcpi);
   ASSERT_TRUE(info.parent_bdfs()->acpi().has_value());
   ASSERT_EQ(info.parent_bdfs()->acpi()->size(), 1u);
-  EXPECT_EQ(info.parent_bdfs()->acpi()->at(0).bus_id(), 0u);
-  EXPECT_EQ(info.parent_bdfs()->acpi()->at(0).device_id(), 1u);
-  EXPECT_EQ(info.parent_bdfs()->acpi()->at(0).function_id(), 0u);
+  EXPECT_EQ(info.parent_bdfs()->acpi()->at(0).bus_id(), 1u);
+  EXPECT_EQ(info.parent_bdfs()->acpi()->at(0).device_id(), 2u);
+  EXPECT_EQ(info.parent_bdfs()->acpi()->at(0).function_id(), 3u);
 
   // Stop driver to test devicetree BDFs in a second call.
   StopDriver();
@@ -158,7 +169,7 @@ TEST_F(PcirootBanjoAdapterTest, PlatformInfoNonEmpty) {
   driver_test_.RunInEnvironmentTypeContext([](auto& env) {
     env.fake().acpi_devices().clear();
     env.fake().devicetree_devices().push_back(
-        pci_bdf_t{.bus_id = 0, .device_id = 2, .function_id = 0});
+        pci_bdf_t{.bus_id = 4, .device_id = 5, .function_id = 6});
   });
 
   clients = StartDriver();
@@ -169,9 +180,9 @@ TEST_F(PcirootBanjoAdapterTest, PlatformInfoNonEmpty) {
   EXPECT_EQ(info2.parent_bdfs()->Which(), fuchsia_hardware_pci_root::ParentBdfs::Tag::kDevicetree);
   ASSERT_TRUE(info2.parent_bdfs()->devicetree().has_value());
   ASSERT_EQ(info2.parent_bdfs()->devicetree()->size(), 1u);
-  EXPECT_EQ(info2.parent_bdfs()->devicetree()->at(0).bus_id(), 0u);
-  EXPECT_EQ(info2.parent_bdfs()->devicetree()->at(0).device_id(), 2u);
-  EXPECT_EQ(info2.parent_bdfs()->devicetree()->at(0).function_id(), 0u);
+  EXPECT_EQ(info2.parent_bdfs()->devicetree()->at(0).bus_id(), 4u);
+  EXPECT_EQ(info2.parent_bdfs()->devicetree()->at(0).device_id(), 5u);
+  EXPECT_EQ(info2.parent_bdfs()->devicetree()->at(0).function_id(), 6u);
 }
 
 TEST_F(PcirootBanjoAdapterTest, PlatformInfoAllEmpty) {
@@ -271,6 +282,26 @@ TEST_F(PcirootBanjoAdapterTest, GetLegacyInterrupt) {
   EXPECT_EQ(not_found_result.error_value().domain_error(), ZX_ERR_NOT_FOUND);
 }
 
+TEST_F(PcirootBanjoAdapterTest, BanjoErrorStatusForwarded) {
+  driver_test_.RunInEnvironmentTypeContext([](auto& env) {
+    env.fake().enable_driver_should_proxy_config(true);
+    env.fake().enable_config_read(false);
+  });
+
+  Clients clients = StartDriver();
+  auto r8 = clients.config->Read8({{.address = kBdf0, .offset = 0}});
+  ASSERT_TRUE(r8.is_error());
+  EXPECT_EQ(r8.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+
+  auto r16 = clients.config->Read16({{.address = kBdf0, .offset = 0}});
+  ASSERT_TRUE(r16.is_error());
+  EXPECT_EQ(r16.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+
+  auto r32 = clients.config->Read32({{.address = kBdf0, .offset = 0}});
+  ASSERT_TRUE(r32.is_error());
+  EXPECT_EQ(r32.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+}
+
 TEST_F(PcirootBanjoAdapterTest, ChildNodeAndProperties) {
   Clients clients = StartDriver();
 
@@ -332,6 +363,64 @@ TEST_F(PcirootBanjoAdapterTest, AllocateMsiAndGetMsiHandle) {
   }});
   ASSERT_TRUE(irq_result.is_ok());
   EXPECT_TRUE(irq_result->interrupt().is_valid());
+}
+
+TEST_F(PcirootBanjoAdapterTest, ConfigProxyFalse) {
+  driver_test_.RunInEnvironmentTypeContext(
+      [](auto& env) { env.fake().enable_driver_should_proxy_config(false); });
+
+  Clients clients = StartDriver();
+  auto result = clients.config->Read8({{.address = kBdf0, .offset = 0}});
+  EXPECT_TRUE(result.is_error());
+  EXPECT_TRUE(result.error_value().is_framework_error());
+  EXPECT_EQ(result.error_value().framework_error().status(), ZX_ERR_PEER_CLOSED);
+}
+
+TEST_F(PcirootBanjoAdapterTest, ConfigReadWriteRoundTrip) {
+  driver_test_.RunInEnvironmentTypeContext([](auto& env) {
+    env.InitFake(/*is_extended=*/true);
+    env.fake().enable_driver_should_proxy_config(true);
+  });
+
+  Clients clients = StartDriver();
+
+  const fuchsia_hardware_pci::Bdf kTargetBdf{{.bus_id = 0, .device_id = 3, .function_id = 5}};
+
+  ASSERT_OK(clients.config->Write8({{.address = kTargetBdf, .offset = 0x10, .value = 0xAB}}));
+  auto r8 = clients.config->Read8({{.address = kTargetBdf, .offset = 0x10}});
+  ASSERT_TRUE(r8.is_ok());
+  EXPECT_EQ(r8->value(), 0xAB);
+
+  ASSERT_OK(clients.config->Write16({{.address = kTargetBdf, .offset = 0x20, .value = 0x1234}}));
+  auto r16 = clients.config->Read16({{.address = kTargetBdf, .offset = 0x20}});
+  ASSERT_TRUE(r16.is_ok());
+  EXPECT_EQ(r16->value(), 0x1234);
+
+  ASSERT_OK(
+      clients.config->Write32({{.address = kTargetBdf, .offset = 0x104, .value = 0x89ABCDEF}}));
+  auto r32 = clients.config->Read32({{.address = kTargetBdf, .offset = 0x104}});
+  ASSERT_TRUE(r32.is_ok());
+  EXPECT_EQ(r32->value(), 0x89ABCDEF);
+
+  driver_test_.RunInEnvironmentTypeContext([](auto& env) {
+    auto view = env.fake().ecam().get_config_view({.bus_id = 0, .device_id = 3, .function_id = 5});
+    EXPECT_EQ(view.Read8(0x10), 0xAB);
+    EXPECT_EQ(view.Read16(0x20), 0x1234);
+    EXPECT_EQ(view.Read32(0x104), 0x89ABCDEF);
+
+    // Verify neighbouring BDFs (function 4 or device 2) are untouched.
+    auto neighbor_fn_view =
+        env.fake().ecam().get_config_view({.bus_id = 0, .device_id = 3, .function_id = 4});
+    EXPECT_EQ(neighbor_fn_view.Read8(0x10), 0u);
+    EXPECT_EQ(neighbor_fn_view.Read16(0x20), 0u);
+    EXPECT_EQ(neighbor_fn_view.Read32(0x104), 0u);
+
+    auto neighbor_dev_view =
+        env.fake().ecam().get_config_view({.bus_id = 0, .device_id = 2, .function_id = 5});
+    EXPECT_EQ(neighbor_dev_view.Read8(0x10), 0u);
+    EXPECT_EQ(neighbor_dev_view.Read16(0x20), 0u);
+    EXPECT_EQ(neighbor_dev_view.Read32(0x104), 0u);
+  });
 }
 
 TEST_F(PcirootBanjoAdapterTest, GetAddressSpace) {
@@ -448,6 +537,26 @@ TEST_F(PcirootBanjoAdapterTest, MetadataForwarded) {
           driver_test_.ConnectToDriverSvcDir());
   ASSERT_TRUE(metadata.is_ok());
   EXPECT_TRUE(metadata->use_intx_workaround().has_value());
+}
+
+TEST_F(PcirootBanjoAdapterTest, ConfigWriteErrorForwarded) {
+  driver_test_.RunInEnvironmentTypeContext([](auto& env) {
+    env.fake().enable_driver_should_proxy_config(true);
+    env.fake().enable_config_write(false);
+  });
+
+  Clients clients = StartDriver();
+  auto w8 = clients.config->Write8({{.address = kBdf0, .offset = 0, .value = 0x12}});
+  ASSERT_TRUE(w8.is_error());
+  EXPECT_EQ(w8.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+
+  auto w16 = clients.config->Write16({{.address = kBdf0, .offset = 0, .value = 0x1234}});
+  ASSERT_TRUE(w16.is_error());
+  EXPECT_EQ(w16.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+
+  auto w32 = clients.config->Write32({{.address = kBdf0, .offset = 0, .value = 0x12345678}});
+  ASSERT_TRUE(w32.is_error());
+  EXPECT_EQ(w32.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
 }
 
 TEST_F(PcirootBanjoAdapterTest, GetAddressSpaceErrorForwarded) {
