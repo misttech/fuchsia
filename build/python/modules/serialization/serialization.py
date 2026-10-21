@@ -96,7 +96,7 @@ import json
 import types
 import typing
 from collections.abc import Callable
-from typing import Any, TypeVar, Union, get_type_hints
+from typing import Any
 
 __all__ = [
     "instance_from_dict",
@@ -127,17 +127,13 @@ class JSONValue:
         raise RuntimeError("JSONValue cannot be instantiated.")
 
 
-# The placeholder for the Class of the object that's being serialized or
-# deserialized.
-C = TypeVar("C")
-
 ####
 #
 #  Deserialization Flow
 #
 
 
-def instance_from_dict(cls: type[C], a_dict: dict[str, Any]) -> C:
+def instance_from_dict[C](cls: type[C], a_dict: dict[str, Any]) -> C:
     """Instantiate an object from a dictionary of its field values.
 
     The default strategy is to instantiate a default instance of the class, and
@@ -242,10 +238,14 @@ def _has_default_value(cls: type[Any], field: str) -> Any:
     return False
 
 
-def _parse_value_into(
+def _parse_value_into[
+    C
+](
     value: Any,
     cls: type[Any],
-) -> dict[str, Any] | list[Any] | tuple[Any, ...] | set[Any] | C | None:
+) -> (
+    dict[str, Any] | list[Any] | tuple[Any, ...] | set[Any] | C | None
+):
     """For a class, attempt to parse it from the value."""
     if value is None:
         return None
@@ -318,10 +318,10 @@ def _parse_value_into(
                 f"cannot parse {cls} from a non-list value ({type(value)})"
             )
 
-    elif (
-        typing.get_origin(cls) is Union
-        or typing.get_origin(cls) is types.UnionType
-    ):
+    # TODO(https://github.com/python/mypy/issues/21588): Use typing.Union
+    # instead of types.UnionType once typeshed (python/typeshed#13740) and
+    # mypy support it in isinstance().
+    elif isinstance(cls, types.UnionType):
         # Unions are special, because we don't know what value we can make, so
         # just try them all, in order, until we get one that works.
         errors: list[BaseException] = []
@@ -464,7 +464,7 @@ def make_dict_value_for(obj: Any) -> dict[str, Any] | list[Any] | str | int:
 #
 
 
-def json_loads(cls: type[C], s: str) -> C:
+def json_loads[C](cls: type[C], s: str) -> C:
     """Deserialize an instance of type 'cls' from JSON in the string 's'.
 
     This supports classes that use PEP-526 type annotations, and is meant to
@@ -481,7 +481,7 @@ def json_loads(cls: type[C], s: str) -> C:
     return instance_from_dict(cls, json.loads(s))
 
 
-def json_load(cls: type[C], fp: io.IOBase) -> C:
+def json_load[C](cls: type[C], fp: io.IOBase) -> C:
     """Deserialize an instance of type 'cls' from JSON read from a read()-
     supporting object.
 
@@ -545,7 +545,7 @@ def json_dumps(instance: Any, **kwargs: Any) -> str:
 #
 
 
-def serialize_dict(cls: type[C]) -> type[C]:
+def serialize_dict[C](cls: type[C]) -> type[C]:
     """A decorator that adds dictionary-based serialization and deserialization
     fns to the class, which operate using the type annotations for the class's
     members and the params of the __init__() fn.
@@ -588,7 +588,7 @@ def serialize_dict(cls: type[C]) -> type[C]:
 # WARNING: DEPRECATED: This decorator defeats mypy's static analysis and will
 # result in typing errors at build time for any code that uses it. Use
 # serialization.{json_load, json_loads, json_dump, json_dumps} directly instead.
-def serialize_json(cls: type[C]) -> type[C]:
+def serialize_json[C](cls: type[C]) -> type[C]:
     """A decorator that adds JSON serialization and deserialization fns to the
     class, which follow the [`json.load()`], [`json.dumps()`], etc. functions.
     They operate using the type annotations for the class's members and the
@@ -638,7 +638,7 @@ def serialize_json(cls: type[C]) -> type[C]:
     return wrap(cls)
 
 
-def serialize_fields_as(**kwargs: Any) -> Callable[[type[C]], type[C]]:
+def serialize_fields_as[C](**kwargs: Any) -> Callable[[type[C]], type[C]]:
     """Adds serialization metadata to the class, which is used to augment the
     PEP 526 __annotations__ to determine how to serialize the fields of the
     given class.
@@ -678,7 +678,7 @@ def serialize_fields_as(**kwargs: Any) -> Callable[[type[C]], type[C]]:
 #
 
 
-def _bind_class_fn(cls: type[C], fn: Any, name: str | None = None) -> None:
+def _bind_class_fn[C](cls: type[C], fn: Any, name: str | None = None) -> None:
     """Creates a class-fn for a class by binding the passed-in class as the first
     param of the passed-in function, and then adding it as a callable attribute
     to the class.
@@ -688,7 +688,9 @@ def _bind_class_fn(cls: type[C], fn: Any, name: str | None = None) -> None:
     setattr(cls, name, functools.partial(fn, cls))
 
 
-def _bind_instance_fn(cls: type[C], fn: Any, name: str | None = None) -> None:
+def _bind_instance_fn[
+    C
+](cls: type[C], fn: Any, name: str | None = None) -> None:
     """Creates an instance-fn for a class by adding it as a callable attribute
     of the class.
     """
@@ -697,10 +699,10 @@ def _bind_instance_fn(cls: type[C], fn: Any, name: str | None = None) -> None:
     setattr(cls, name, fn)
 
 
-def _process_metadata(cls: type[C], **kwargs: Any) -> type[C]:
+def _process_metadata[C](cls: type[C], **kwargs: Any) -> type[C]:
     for name in kwargs.keys():
         if not hasattr(cls, name):
-            annotations = get_type_hints(cls)
+            annotations = typing.get_type_hints(cls)
             if name not in annotations:
                 raise ValueError(f"{cls} does not have a field named: {name}:")
     if kwargs:
