@@ -16,7 +16,7 @@ def bug_urls(ctx):
     """
     correct_format = "https://fxbug.dev/"
     for f, meta in ctx.scm.affected_files().items():
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             for match in ctx.re.allmatches(
                 r"(https?://)?fxb(ug\.dev)?/(\d+)",
                 line,

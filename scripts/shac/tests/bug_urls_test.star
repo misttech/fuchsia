@@ -58,7 +58,7 @@ def test_bug_urls_markdown_link_title():
     })
     asserts.eq(res.findings, ())
 
-def test_bug_urls_only_new_lines():
+def test_bug_urls_only_affected_lines():
     res = testing.run(bug_urls, files = {
         "foo.cc": testing.file(
             content = "%s1\nok\n" % _SHORT,

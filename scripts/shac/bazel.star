@@ -119,12 +119,12 @@ def _make_bazel_lint_check(check_name, *, applies_to_globs, enforcement = "all")
             # Record the 1-based line numbers of added or modified lines in
             # each affected file so line-specific findings on unchanged lines
             # can be filtered out below. All affected files (including those
-            # that only delete lines, where `meta.new_lines()` is empty) are
+            # that only delete lines, where `meta.affected_lines()` is empty) are
             # still checked so that file-level findings (`line == None`), such
             # as a check requiring a file to define a specific target, are
             # still reported when lines are deleted.
             new_lines_by_file = {
-                path: {num: True for num, _ in meta.new_lines()}
+                path: {num: True for num, _ in meta.affected_lines()}
                 for path, meta in affected.items()
             }
         elif enforcement == "all":
@@ -235,7 +235,7 @@ def _bazel_no_repo_rules_canonical_names(ctx):
     # scheme aren't flagged.
     files = ctx.scm.affected_files(glob = ["*.bazel", "*.bzl", "*.py"])
     for path, meta in files.items():
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             for match in ctx.re.allmatches(pattern, line):
                 ctx.emit.finding(
                     level = "error",
@@ -317,7 +317,7 @@ def _check_allowlisted_matches(ctx, allowlist_path, find_func, message, descript
     for path, meta in files.items():
         if is_allowed(path):
             continue
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             for match in find_func(ctx, line):
                 ctx.emit.finding(
                     level = "error",

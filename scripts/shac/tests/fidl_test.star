@@ -48,7 +48,7 @@ def test_fidl_comment_check():
         _finding("foo.fidl", 17),
     ))
 
-def test_fidl_comment_check_only_new_lines():
+def test_fidl_comment_check_only_affected_lines():
     res = testing.run(_fidl_comment_check, files = {
         "foo.fidl": testing.file(content = _FIDL, new_lines = {16: "// Should also be a doc comment,"}),
     })

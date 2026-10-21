@@ -20,7 +20,7 @@ The tool is integrated into Fuchsia's presubmit and host static analysis pipelin
 When run under Shac (`//scripts/shac/rust_unsafe_analyzer.star`), the analyzer runs against affected
 `.rs` files outside `third_party/`. Shac filters findings by checking whether the exact line number
 of the `unsafe` keyword token (`unsafe_line`) is in the set of newly added or modified lines in the
-change (`meta.new_lines()`). Existing untouched `unsafe` code in an affected file is ignored.
+change (`meta.affected_lines()`). Existing untouched `unsafe` code in an affected file is ignored.
 
 ---
 

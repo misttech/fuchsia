@@ -77,7 +77,7 @@ def _fidl_comment_check(ctx):
         lines = content.split("\n")
 
         in_allowed_block = False
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             idx = num - 1
 
             if not ctx.re.allmatches(r"^\s*//($|[^/])", line):

@@ -94,7 +94,7 @@ def _codelinks(ctx):
     # documentation files by path (e.g. "//docs/foo/bar.md") rather than URL,
     # with some exceptions for reference docs.
     for f, meta in ctx.scm.affected_files(glob = ["!/docs/**"]).items():
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             for match in ctx.re.allmatches(
                 r"(https?://)?fuchsia.googlesource.com/fuchsia/\+/(refs/heads/)?\w+/docs/(?P<path>\S+)\.md",
                 line,

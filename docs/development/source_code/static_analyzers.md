@@ -25,7 +25,7 @@ exists, pointing the user to use “https://” instead.
 ```python
 def http_links(ctx):
     for path, meta in ctx.scm.affected_files().items():
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             matches = ctx.re.allmatches(r"(http://)\w+", line)
             if not matches:
                 continue

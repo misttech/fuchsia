@@ -19,7 +19,7 @@ _MISLEADING_CHARS_RE = "|".join(misleading_characters.keys())
 # documentation.
 def confusing_characters(ctx):
     for path, meta in ctx.scm.affected_files().items():
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             for match in ctx.re.allmatches(_MISLEADING_CHARS_RE, line):
                 c = match.groups[0]
                 ctx.emit.finding(

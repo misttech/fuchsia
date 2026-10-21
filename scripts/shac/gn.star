@@ -13,7 +13,7 @@ def gn_no_print(ctx):
         ctx: A ctx instance.
     """
     for path, meta in ctx.scm.affected_files(glob = ["*.gn", "*.gni"]).items():
-        for num, line in meta.new_lines():
+        for num, line in meta.affected_lines():
             if line.strip().startswith("#"):
                 continue
 
