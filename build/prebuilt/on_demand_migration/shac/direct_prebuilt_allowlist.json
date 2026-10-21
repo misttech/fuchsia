@@ -314,7 +314,6 @@
     "tools/devshell/tests/subcommands/fx_ssh_test": 1,
     "tools/devshell/tests/subcommands/fx_vendor_test": 2,
     "tools/emulator/BUILD.gn": 2,
-    "tools/fidl/fidlgen_go/BUILD.gn": 1,
     "tools/fidl/fidlgen_python/BUILD.gn": 1,
     "tools/gn_desc/tests/BUILD.gn": 1,
     "tools/integration/bootstrap.sh": 1,

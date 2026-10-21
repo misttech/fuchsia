@@ -5,7 +5,6 @@
 # First, import the gni files that define the names of the other toolchains, and
 # the "is_<foo>_toolchain" variables that are used throughout this file.
 import("//build/fidl/toolchain.gni")
-import("//build/go/toolchain.gni")
 import("//build/testing/host_test_data.gni")
 
 # LINT.IfChange(fidl)
@@ -17,14 +16,12 @@ import("//build/testing/host_test_data.gni")
 
 # Declares a FIDL library.
 #
-# Supported backends: Rust, C++, HLCPP, banjo_{c,cpp,rust},
-# Go, and Zither.
+# Supported backends: Rust, C++, HLCPP, banjo_{c,cpp,rust}, and Zither.
 #
 # Subtargets:
 #  * `${target_name}`: available only in the FIDL toolchain
 #  * `${target_name}_sdk`: available only in the FIDL toolchain
-#  * `${target_name}_go`: available only in the Go toolchain
-#  * `${target_name}_${backend_name}`: available in every toolchain but Go
+#  * `${target_name}_${backend_name}`: available in every toolchain
 #  * `${target_name}_host_test_data`: available on host toolchain
 #
 # Parameters
@@ -410,33 +407,6 @@ template("fidl") {
         ]
       }
     }
-  }
-
-  if (is_go_toolchain) {
-    # Only import the fidl_go() template when in the Go toolchain.
-    import("//build/go/fidl_go.gni")
-
-    # Define the Go bindings
-    fidl_go("${target_name}_go") {
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
-                               "testonly",
-                               "visibility",
-                               "public_deps",
-                             ])
-      forward_variables_from(common_parameters, "*")
-      fidl_gen_dir += "/go"
-    }
-
-    # This template does not accept `deps`, but it will have an indirect
-    # dependency on the SDK category marker via `fidl_ir_target`.
-
-    not_needed(invoker,
-               [
-                 "contains_drivers",
-                 "sdk_category",
-               ])
   }
 
   if (is_fidl_toolchain || toolchain_variant.supports_cpp ||

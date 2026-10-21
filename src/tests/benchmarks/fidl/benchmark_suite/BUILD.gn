@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/fidl/fidl.gni")
-import("//build/go/go_library.gni")
 import("//tools/fidl/gidl/gidl.gni")
 import("benchmark_suite.gni")
 
@@ -52,19 +51,17 @@ template("benchmark_fidl") {
   }
 }
 
-if (current_toolchain != go_toolchain) {
-  seen = []
-  foreach(suite, benchmark_suites) {
-    # Only generate each FIDL library target once.
-    if (seen != seen + [ suite.fidl_target ] - [ suite.fidl_target ] +
-                [ suite.fidl_target ]) {
-      seen += [ suite.fidl_target ]
+seen = []
+foreach(suite, benchmark_suites) {
+  # Only generate each FIDL library target once.
+  if (seen != seen + [ suite.fidl_target ] - [ suite.fidl_target ] +
+              [ suite.fidl_target ]) {
+    seen += [ suite.fidl_target ]
 
-      benchmark_fidl(get_label_info(suite.fidl_target, "name")) {
-        fidl_library_suffix = suite.fidl_library_suffix
-        sources = suite.fidl
-        forward_variables_from(suite, [ "contains_drivers" ])
-      }
+    benchmark_fidl(get_label_info(suite.fidl_target, "name")) {
+      fidl_library_suffix = suite.fidl_library_suffix
+      sources = suite.fidl
+      forward_variables_from(suite, [ "contains_drivers" ])
     }
   }
 }

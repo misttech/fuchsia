@@ -32,7 +32,6 @@ test_suite(
         "//tools/dart_test_parser:dart_test_parser_lib_tests",
         "//tools/debug/debugsyms:debugsyms_tests",
         "//tools/debug/generate_breakpad:generate_breakpad_tests",
-        "//tools/fidl/fidlgen_go:fidlgen_go_lib_tests",
         "//tools/fidl/fidlgen_rust/codegen:fidlgen_rust_lib_tests",
         "//tools/fidl/gidl-format:gidl_format_tests",
         "//tools/fidl/gidl/lib/mixer:gidl_mixer_tests",

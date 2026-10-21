@@ -233,7 +233,6 @@ type FscryptPolicy = struct {
     flags FscryptPolicyFlags;
 };
 
-// TODO(https://fxbug.dev/42057114): Inline this into its only reference when fidlgen_go is fixed.
 type ConnectionInfo = resource table {
     /// The rights possessed by the current connection. Note: `rights` limits
     /// the set of operations allowed on the connection, but does not guarantee

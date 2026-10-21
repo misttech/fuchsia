@@ -11,7 +11,7 @@ import("//build/toolchain/default_tools.gni")
 #   expected_label: Optional
 #     If provided, this template will assert that the full toolchain label
 #     matches this value. This is useful when the definition should match
-#     a global variable (e.g. go_toolchain or dart_toolchain).
+#     a global variable (e.g. dart_toolchain).
 #     Type: GN label
 #
 #  toolchain_args: Optional

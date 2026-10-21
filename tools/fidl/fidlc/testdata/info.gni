@@ -15,13 +15,13 @@ import("//build/fidl/toolchain.gni")
 #
 #   denylist
 #     List of tools that should not generate golden files.
-#     Allowed items: fidldoc, fidlgen_banjo, fidlgen_go,
+#     Allowed items: fidldoc, fidlgen_banjo,
 #       fidlgen_hlcpp, fidlgen_cpp, fidlgen_rust, fidlgen_syzkaller.
 #     To exclude a library from fidlc goldens, simply comment the whole item.
 #
 #   build_denylist
 #     List of tools that should not compile golden bindings.
-#     Allowed items: fidlgen_go, fidlgen_hlcpp, fidlgen_cpp, fidlgen_rust.
+#     Allowed items: fidlgen_hlcpp, fidlgen_cpp, fidlgen_rust.
 #     Tools from `denylist` are implicitly included.
 #
 #   host_build_denylist
@@ -89,7 +89,6 @@ fidl_testdata_info = [
       # TODO(https://fxbug.dev/42140924): Insert enum/bits <-> primitive conversions.
       "fidlgen_hlcpp",
       "fidlgen_cpp",
-      "fidlgen_go",
     ]
     host_build_denylist = [
       # Host-side FIDL doesn't support handles
@@ -103,7 +102,6 @@ fidl_testdata_info = [
       # TODO(https://fxbug.dev/42121484): Implement const expressions in fidlgen.
       "fidlgen_hlcpp",
       "fidlgen_cpp",
-      "fidlgen_go",
     ]
   },
   {
@@ -128,10 +126,6 @@ fidl_testdata_info = [
   {
     name = "driver_handle"
     target = "//tools/fidl/fidlc/testdata:test.driverhandle"
-    build_denylist = [
-      # TODO(https://fxbug.dev/42068210): Unused import error.
-      "fidlgen_go",
-    ]
     host_build_denylist = [
       "fidlgen_cpp",
 
@@ -150,7 +144,6 @@ fidl_testdata_info = [
     build_denylist = [
       # TODO(https://fxbug.dev/42057119): These bindings don't support driver protocols in
       # services.
-      "fidlgen_go",
       "fidlgen_hlcpp",
       "fidlgen_syzkaller",
     ]
@@ -220,10 +213,6 @@ fidl_testdata_info = [
   {
     name = "foreign_type_in_response_used_through_compose"
     target = "//tools/fidl/fidlc/testdata/foreign_type_in_response_used_through_compose:test.foreigntypeinresponseusedthroughcompose"
-    build_denylist = [
-      # TODO(https://fxbug.dev/42068209): Unused import.
-      "fidlgen_go",
-    ]
     host_build_denylist = [
       # TODO(https://fxbug.dev/42140981): Add ifdefs so that protocols compile on host.
       "fidlgen_cpp",
@@ -277,7 +266,6 @@ fidl_testdata_info = [
       # TODO(https://fxbug.dev/42158155): Handle the IR changes for each language binding and other tools
       "fidldoc",
       "fidlgen_banjo",
-      "fidlgen_go",
       "fidlgen_hlcpp",
       "fidlgen_cpp",
       "fidlgen_rust",
@@ -321,9 +309,6 @@ fidl_testdata_info = [
     denylist = [
       # TODO(https://fxbug.dev/42178414): Possibly add backend support for syzkaller.
       "fidlgen_syzkaller",
-
-      # TODO(https://fxbug.dev/42068207): Re-enable when fixed.
-      "fidlgen_go",
     ]
   },
   {
@@ -485,7 +470,6 @@ fidl_testdata_info = [
     denylist = [
       "fidldoc",
       "fidlgen_banjo",
-      "fidlgen_go",
       "fidlgen_hlcpp",
       "fidlgen_cpp",
       "fidlgen_python",
@@ -500,7 +484,6 @@ fidl_testdata_info = [
     denylist = [
       "fidldoc",
       "fidlgen_banjo",
-      "fidlgen_go",
       "fidlgen_hlcpp",
       "fidlgen_cpp",
       "fidlgen_python",
@@ -515,7 +498,6 @@ fidl_testdata_info = [
     denylist = [
       "fidldoc",
       "fidlgen_banjo",
-      "fidlgen_go",
       "fidlgen_hlcpp",
       "fidlgen_cpp",
       "fidlgen_python",

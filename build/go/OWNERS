@@ -1,4 +1,2 @@
 mdempsky@google.com
 olivernewman@google.com
-
-per-file fidl_go.gni = file: /src/fidl/OWNERS

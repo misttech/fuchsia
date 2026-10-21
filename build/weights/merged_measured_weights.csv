@@ -1604,7 +1604,6 @@ obj/tools/rust_test_parser/rust_test_parser.host.bazel_target_can_only_be_refere
 obj/tools/fidl/fidl_api_diff/fidl_api_diff.host.bazel_target_can_only_be_referenced_by_one_bazel_action,80666
 obj/tools/fidl/fidl_api_summarize/fidl_api_summarize.host.bazel_target_can_only_be_referenced_by_one_bazel_action,80666
 obj/tools/fidl/fidlcparsequality/fidlcparsequality.host.bazel_target_can_only_be_referenced_by_one_bazel_action,80666
-obj/tools/fidl/fidlgen_go/fidlgen_go.host.bazel_target_can_only_be_referenced_by_one_bazel_action,80666
 obj/tools/fidl/fidlgen_python/fidlgen_python.host.bazel_target_can_only_be_referenced_by_one_bazel_action,80666
 obj/tools/fidl/fidlgen_syzkaller/fidlgen_syzkaller.host.bazel_target_can_only_be_referenced_by_one_bazel_action,80666
 obj/tools/fidl/gidl-format/gidl-format.host.bazel_target_can_only_be_referenced_by_one_bazel_action,80666
@@ -1660,7 +1659,6 @@ obj/build/bazel/host/bazel_build_group_outputs/rust_test_parser,80666
 obj/build/bazel/host/bazel_build_group_outputs/fidl_api_diff,80666
 obj/build/bazel/host/bazel_build_group_outputs/fidl_api_summarize,80666
 obj/build/bazel/host/bazel_build_group_outputs/fidlcparsequality,80666
-obj/build/bazel/host/bazel_build_group_outputs/fidlgen_go,80666
 obj/build/bazel/host/bazel_build_group_outputs/fidlgen_python,80666
 obj/build/bazel/host/bazel_build_group_outputs/fidlgen_syzkaller,80666
 obj/build/bazel/host/bazel_build_group_outputs/gidl-format,80666
