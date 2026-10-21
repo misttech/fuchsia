@@ -861,8 +861,8 @@ async fn create_container(
     // Lots of software assumes that the pid for the init process is 1.
     debug_assert_eq!(init_tid, 1);
 
-    let system_task = create_system_task(&kernel, Arc::clone(&fs_context))
-        .source_context("create system task")?;
+    let system_task =
+        create_system_task(&kernel, fs_context).source_context("create system task")?;
     // The system task gives pid 2. This value is less critical than giving
     // pid 1 to init, but this value matches what is supposed to happen.
     debug_assert_eq!(system_task.tid.id, 2);
@@ -956,7 +956,7 @@ async fn create_container(
     log_info!("Creating init process.");
     node.record_int("init_started_at", zx::MonotonicInstant::get().into_nanos());
     let init_task =
-        create_init_process(&kernel, init_pid, initial_name, Arc::clone(&fs_context), &rlimits)
+        create_init_process(&kernel, init_pid, initial_name, system_task.fs().fork(), &rlimits)
             .with_source_context(|| format!("creating init task: {:?}", start_info.program.init))?;
 
     execute_task_with_prerun_result(
