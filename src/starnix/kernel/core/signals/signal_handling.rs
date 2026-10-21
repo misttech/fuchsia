@@ -360,6 +360,9 @@ fn deliver_signal(
                     };
                     task.thread_group().signal_actions.set(signal, new_sigaction);
                 }
+                let core_dump_during_shutdown = task.kernel().is_shutting_down()
+                    && action_for_signal(&siginfo, sigaction_t::default())
+                        == DeliveryAction::CoreDump;
                 if let Err(err) = dispatch_signal_handler(
                     task,
                     arch_width,
@@ -375,6 +378,9 @@ fn deliver_signal(
                     }
                     siginfo = SignalInfo::forced(SIGSEGV);
                     continue;
+                }
+                if core_dump_during_shutdown {
+                    task_state.set_flags(TaskFlags::IN_CORE_DUMP_SIGNAL_HANDLER, true);
                 }
             }
             DeliveryAction::Terminate => {
@@ -564,9 +570,9 @@ pub fn restore_from_signal_handler(current_task: &mut CurrentTask) -> Result<(),
     restore_registers(current_task, &signal_stack_frame, signal_frame_address)?;
 
     // Restore the stored signal mask.
-    current_task
-        .write()
-        .set_signal_mask(signal_stack_frame.get_signal_mask(current_task.is_arch32()));
+    let mut task_state = current_task.write();
+    task_state.set_signal_mask(signal_stack_frame.get_signal_mask(current_task.is_arch32()));
+    task_state.set_flags(TaskFlags::IN_CORE_DUMP_SIGNAL_HANDLER, false);
 
     Ok(())
 }

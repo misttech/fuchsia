@@ -21,6 +21,7 @@ use starnix_uapi::signals::{SIGCHLD, Signal};
 use starnix_uapi::{errno, error, from_status_like_fdio, rlimit};
 use std::ffi::CString;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Result returned when creating new Zircon processes for tasks.
 ///
@@ -34,6 +35,16 @@ pub struct TaskInfo {
     pub memory_manager: Option<Arc<MemoryManager>>,
 }
 
+/// Whether `create_zircon_process()` may create a process while the kernel shuts down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CreateDuringShutdown {
+    /// Never, e.g. when the kernel starts a process.
+    Never,
+    /// Until the deferred shutdown deadline, when a deferred shutdown process creates it. See
+    /// `ThreadGroupMutableState::is_deferred_shutdown_process()`.
+    UntilDeadline,
+}
+
 pub fn create_zircon_process(
     kernel: &Arc<Kernel>,
     parent: Option<ThreadGroupWriteGuard<'_>>,
@@ -41,10 +52,19 @@ pub fn create_zircon_process(
     exit_signal: Option<Signal>,
     signal_actions: Arc<SignalActions>,
     name: TaskCommand,
+    create_during_shutdown: CreateDuringShutdown,
 ) -> Result<TaskInfo, Errno> {
-    // Don't allow new processes to be created once the kernel has started shutting down.
-    if kernel.is_shutting_down() {
-        return error!(EBUSY);
+    // During shutdown, only deferred shutdown processes may create processes, and only until the
+    // deferred shutdown deadline. The processes they create are deferred shutdown processes too.
+    // This keeps Kernel::run_shutdown() finite. See
+    // ThreadGroupMutableState::is_deferred_shutdown_process().
+    let deferred_shutdown_deadline = kernel.deferred_shutdown_deadline();
+    if let Some(deadline) = deferred_shutdown_deadline {
+        if create_during_shutdown == CreateDuringShutdown::Never
+            || zx::MonotonicInstant::get() >= deadline
+        {
+            return error!(EBUSY);
+        }
     }
     let (process, root_vmar) =
         create_shared(&kernel.kthreads.starnix_process, zx::ProcessOptions::empty(), name)
@@ -64,6 +84,9 @@ pub fn create_zircon_process(
         exit_signal,
         signal_actions,
     );
+    if deferred_shutdown_deadline.is_some() {
+        thread_group.created_during_shutdown.store(true, Ordering::Relaxed);
+    }
 
     Ok(TaskInfo { thread_group, memory_manager: None })
 }
@@ -165,6 +188,7 @@ pub fn create_init_child_process(
                 Some(SIGCHLD),
                 SignalActions::default(),
                 initial_name.clone(),
+                CreateDuringShutdown::Never,
             )
         },
         creds.into(),
@@ -226,6 +250,7 @@ pub fn create_init_process(
                 Some(SIGCHLD),
                 SignalActions::default(),
                 initial_name.clone(),
+                CreateDuringShutdown::Never,
             )
         },
         Credentials::root(),

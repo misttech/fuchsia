@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::arch::task::handle_hardware_exception;
-use crate::execution::{TaskInfo, create_zircon_process};
+use crate::execution::{CreateDuringShutdown, TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::ptrace::{PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
@@ -1672,10 +1672,18 @@ impl CurrentTask {
             // new task because of CLONE_PARENT.
             let weak_original_parent;
             let original_parent;
+            // Whether this process may create processes during shutdown. Determined before
+            // CLONE_PARENT switches to the original parent's state.
+            let create_during_shutdown;
 
             // Make sure to drop these locks ASAP to avoid inversion
             let (thread_group_state, creator_task) = {
                 let thread_group_state = self.thread_group().write();
+                create_during_shutdown = if thread_group_state.is_deferred_shutdown_process() {
+                    CreateDuringShutdown::UntilDeadline
+                } else {
+                    CreateDuringShutdown::Never
+                };
                 if clone_parent {
                     // With the CLONE_PARENT flag, the parent of the new task is our parent
                     // instead of ourselves.
@@ -1737,6 +1745,7 @@ impl CurrentTask {
                         child_exit_signal,
                         signal_actions,
                         command.clone(),
+                        create_during_shutdown,
                     )?
                 };
 

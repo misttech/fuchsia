@@ -24,6 +24,11 @@ starnix_linux_executable("exit_on_sigterm_bin") {
   sources = [ "exit_on_sigterm.cc" ]
 }
 
+starnix_linux_executable("crash_during_shutdown_bin") {
+  testonly = true
+  sources = [ "crash_during_shutdown.cc" ]
+}
+
 rustc_test("starnix_shutdown_test_runner") {
   testonly = true
   edition = "2024"
@@ -58,6 +63,16 @@ fuchsia_test_component("stopped_last") {
   deps = [ ":exit_on_sigterm_bin" ]
 }
 
+fuchsia_test_component("crash_during_shutdown") {
+  manifest = "meta/crash_during_shutdown.cml"
+  deps = [ ":crash_during_shutdown_bin" ]
+}
+
+fuchsia_test_component("crash_past_deadline") {
+  manifest = "meta/crash_past_deadline.cml"
+  deps = [ ":crash_during_shutdown_bin" ]
+}
+
 fuchsia_component("container") {
   testonly = true
   manifest = "meta/container.cml"
@@ -78,6 +93,8 @@ fuchsia_test_package("starnix_shutdown_test") {
   test_components = [ ":starnix_shutdown_test_component" ]
   deps = [
     ":container",
+    ":crash_during_shutdown",
+    ":crash_past_deadline",
     ":realm",
     ":stopped_first",
     ":stopped_last",

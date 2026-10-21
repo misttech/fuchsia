@@ -1,0 +1,13 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    program: {
+        runner: "starnix_container",
+        binary: "data/tests/crash_during_shutdown_bin",
+
+        // Longer than the 3s deferred shutdown deadline.
+        args: [ "10000" ],
+        uid: "0",
+    },
+}

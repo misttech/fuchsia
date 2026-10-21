@@ -14,12 +14,10 @@ use crate::signals::{
     DeliveryAction, IntoSignalInfoOptions, QueuedSignals, SignalActions, SignalDetail, SignalInfo,
     UncheckedSignalInfo, action_for_signal, send_standard_signal,
 };
-#[cfg(doc)]
-use crate::task::TaskFlags;
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
-    CurrentTask, ExitStatus, Kernel, Pid, PidEntry, PidTableGuard, Task, TaskMutableState,
-    TaskPersistentInfo, TypedWaitQueue, WaitResult, ZombieProcess, ZombieState,
+    CurrentTask, ExitStatus, Kernel, Pid, PidEntry, PidTableGuard, Task, TaskFlags,
+    TaskMutableState, TaskPersistentInfo, TypedWaitQueue, WaitResult, ZombieProcess, ZombieState,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
 use fuchsia_rcu::subtle::RcuPtr;
@@ -340,6 +338,10 @@ pub struct ThreadGroup {
 
     /// Whether to log syscalls at INFO level for this thread group.
     log_syscalls_as_info: AtomicBool,
+
+    /// Whether this process was created during shutdown, which only deferred shutdown processes
+    /// may do. See `create_zircon_process()`.
+    pub created_during_shutdown: AtomicBool,
 }
 
 impl fmt::Debug for ThreadGroup {
@@ -673,6 +675,7 @@ impl ThreadGroup {
                 }
                 .into(),
                 log_syscalls_as_info: AtomicBool::new(false),
+                created_during_shutdown: AtomicBool::new(false),
             };
 
             if let Some(mut parent) = parent {
@@ -2045,13 +2048,20 @@ impl ThreadGroup {
     }
 
     /// Drive this `ThreadGroup` to exit, allowing it time to handle SIGTERM before sending SIGKILL.
+    /// A deferred shutdown process (still handling a core-dump signal it got during shutdown, or
+    /// created during shutdown) may run until `deferred_shutdown_deadline` before it is sent
+    /// SIGKILL.
     ///
     /// Returns once `ThreadGroup::exit()` has completed.
     ///
     /// Must be called from the system task.
-    pub async fn shut_down(this: Weak<Self>) {
+    pub async fn shut_down(this: Weak<Self>, deferred_shutdown_deadline: zx::MonotonicInstant) {
         const SHUTDOWN_SIGNAL_HANDLING_TIMEOUT: zx::MonotonicDuration =
             zx::MonotonicDuration::from_seconds(1);
+        // How long after the deferred shutdown deadline a crashing process whose dumper was killed
+        // may run to report its crash. Comes out of the margin left by `DEFERRED_SHUTDOWN_TIMEOUT`.
+        const SHUTDOWN_CRASH_REPORT_TIMEOUT: zx::MonotonicDuration =
+            zx::MonotonicDuration::from_millis(500);
 
         // Prepare for shutting down the thread group.
         let (tg_name, mut on_exited) = {
@@ -2076,21 +2086,66 @@ impl ThreadGroup {
             (tg_name, on_exited)
         };
 
-        log_debug!(tg:% = tg_name; "shutting down thread group, sending SIGTERM");
-        this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::kernel(SIGTERM)));
+        // Waits until the thread group exits or `deadline` passes. Returns whether it exited.
+        async fn exited_by(
+            on_exited: &mut futures::channel::oneshot::Receiver<()>,
+            deadline: zx::MonotonicInstant,
+        ) -> bool {
+            let timeout = fuchsia_async::Timer::new(deadline);
+            futures::pin_mut!(timeout);
+            futures::select_biased! {
+                _ = &mut *on_exited => true,
+                _ = timeout => false,
+            }
+        }
 
-        // Give thread groups some time to handle SIGTERM, proceeding early if they exit
-        let timeout = fuchsia_async::Timer::new(SHUTDOWN_SIGNAL_HANDLING_TIMEOUT);
-        futures::pin_mut!(timeout);
+        // A process created during shutdown (e.g. a crash dumper) is a deferred shutdown process, so
+        // it isn't asked to exit before the deferred shutdown deadline.
+        let created_during_shutdown =
+            this.upgrade().is_some_and(|tg| tg.created_during_shutdown.load(Ordering::Relaxed));
+        let mut exited = false;
+        if !created_during_shutdown {
+            log_debug!(tg:% = tg_name; "shutting down thread group, sending SIGTERM");
+            this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::kernel(SIGTERM)));
 
-        // Use select_biased instead of on_timeout() so that we can await on on_exited later
-        futures::select_biased! {
-            _ = &mut on_exited => (),
-            _ = timeout => {
-                log_debug!(tg:% = tg_name; "sending SIGKILL");
-                this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::kernel(SIGKILL)));
-            },
-        };
+            // Give thread groups some time to handle SIGTERM, proceeding early if they exit.
+            exited = exited_by(
+                &mut on_exited,
+                zx::MonotonicInstant::after(SHUTDOWN_SIGNAL_HANDLING_TIMEOUT),
+            )
+            .await;
+        }
+
+        // So is a running thread group that is still handling a core-dump signal it got during
+        // shutdown: it is likely writing a crash dump (e.g. its handler forked a dumper).
+        let deferred = created_during_shutdown
+            || (!exited
+                && this.upgrade().is_some_and(|tg| {
+                    let state = tg.read();
+                    state.is_running() && state.is_handling_core_dump_signal()
+                }));
+        if deferred {
+            if zx::MonotonicInstant::get() < deferred_shutdown_deadline {
+                log_info!(tg:% = tg_name; "deferred shutdown process, deferring SIGKILL");
+                exited = exited_by(&mut on_exited, deferred_shutdown_deadline).await;
+            }
+            if !exited {
+                this.upgrade().map(|tg| tg.kernel.kill_processes_created_during_shutdown());
+                // Give a crashing process whose dumper was just killed a moment to re-raise the
+                // core-dump signal, so that Starnix files a crash report for it. See
+                // `Kernel::kill_processes_created_during_shutdown()`.
+                exited = exited_by(
+                    &mut on_exited,
+                    zx::MonotonicInstant::after(SHUTDOWN_CRASH_REPORT_TIMEOUT),
+                )
+                .await;
+            }
+        }
+
+        if !exited {
+            log_debug!(tg:% = tg_name; "sending SIGKILL");
+            this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::kernel(SIGKILL)));
+        }
 
         log_debug!(tg:% = tg_name; "waiting for exit");
         // It doesn't matter whether ThreadGroup::exit() was called or the process exited with
@@ -2159,6 +2214,22 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
     pub fn is_running(&self) -> bool {
         matches!(self.run_state, ThreadGroupRunState::Running)
+    }
+
+    /// Whether a task in this thread group is running a handler for a core-dump signal it got
+    /// during shutdown. See `TaskFlags::IN_CORE_DUMP_SIGNAL_HANDLER`.
+    pub fn is_handling_core_dump_signal(&self) -> bool {
+        self.tasks().iter().any(|t| t.flags().contains(TaskFlags::IN_CORE_DUMP_SIGNAL_HANDLER))
+    }
+
+    /// Whether this is a deferred shutdown process, which may create processes during shutdown
+    /// until the deferred shutdown deadline: it is handling a core-dump signal it got during
+    /// shutdown (e.g. forking a crash dumper), or a deferred shutdown process created it during
+    /// shutdown (e.g. the dumper forking). See `ThreadGroup::shut_down()`.
+    pub fn is_deferred_shutdown_process(&self) -> bool {
+        self.base.kernel.is_shutting_down()
+            && (self.base.created_during_shutdown.load(Ordering::Relaxed)
+                || self.is_handling_core_dump_signal())
     }
 
     pub fn is_exited(&self) -> bool {

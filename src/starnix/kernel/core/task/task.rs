@@ -64,6 +64,15 @@ atomic_bitflags! {
         /// Used by reusable kernel worker threads (such as AIO workers) to abort blocking
         /// operations with `EINTR`.
         const WORK_CANCELLED           = 1 << 6;
+        /// Whether this task is running a userspace handler for a signal whose default action is to
+        /// dump core, delivered during shutdown. Cleared on `rt_sigreturn`. Shutdown lets such
+        /// tasks run until the deferred shutdown deadline; see `ThreadGroup::shut_down()`. Known
+        /// limitations, all bounded by that deadline:
+        /// - A handler that isn't writing a crash dump (e.g. one that blocks) gets the time too.
+        /// - It's a single bit, so returning from a nested handler clears it for the outer one.
+        /// - A handler that leaves via `siglongjmp` keeps it set.
+        /// - It isn't set for crashes that started before shutdown.
+        const IN_CORE_DUMP_SIGNAL_HANDLER = 1 << 7;
     }
 }
 

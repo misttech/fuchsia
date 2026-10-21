@@ -59,6 +59,39 @@ async fn test_stop_last_on_shutdown() {
     assert!(first_exited < last_exited, "stop_last_on_shutdown process exited first");
 }
 
+#[fuchsia::test]
+async fn test_crash_during_shutdown() {
+    let realm_instance = build_realm().await;
+    let lifecycle_controller: fsys2::LifecycleControllerProxy =
+        realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap();
+
+    // Run a program that crashes when shutdown asks it to exit, and takes 1.5s, longer than the 1s
+    // SIGTERM timeout, to handle the crash, like debuggerd writing a tombstone.
+    start(&realm_instance, &lifecycle_controller, "./crash_during_shutdown", "[CRASHER_READY]")
+        .await;
+    stop(&lifecycle_controller, "./container").await;
+
+    // The crash handler finished, so the program was allowed to fork during shutdown and wasn't
+    // killed at the SIGTERM timeout.
+    wait_for_kernel_log(&realm_instance, "[CRASH_HANDLER_DONE]").await;
+}
+
+#[fuchsia::test]
+async fn test_crash_handler_past_deadline() {
+    let realm_instance = build_realm().await;
+    let lifecycle_controller: fsys2::LifecycleControllerProxy =
+        realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap();
+
+    // Like test_crash_during_shutdown, but handling the crash takes 10s.
+    start(&realm_instance, &lifecycle_controller, "./crash_past_deadline", "[CRASHER_READY]").await;
+
+    // Shutdown lets the crash handler run until the deadline 3s after shutdown starts, and then
+    // kills it (`stop` fails if that takes more than 5s).
+    let stop_start = zx::MonotonicInstant::get();
+    stop(&lifecycle_controller, "./container").await;
+    assert!(zx::MonotonicInstant::get() - stop_start >= zx::MonotonicDuration::from_seconds(3));
+}
+
 // Starts `moniker` and waits until its program writes `ready_marker` to stdout.
 async fn start(
     realm_instance: &RealmInstance,

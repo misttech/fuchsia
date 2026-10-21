@@ -10,6 +10,7 @@ use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor};
 use crate::power::{SuspendResumeManagerHandle, create_watcher_for_wake_events};
 use crate::ptrace::StopState;
 use crate::security::{self, AuditLogger};
+use crate::signals::SignalInfo;
 use crate::task::container_namespace::ContainerNamespace;
 use crate::task::limits::SystemLimits;
 use crate::task::memory_attribution::MemoryAttributionManager;
@@ -17,8 +18,8 @@ use crate::task::net::NetstackDevices;
 use crate::task::tracing::TracePerformanceEventManager;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, DelayedReleaser,
-    IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager, Syslog, Task,
-    ThreadGroup, UtsNamespace, UtsNamespaceHandle,
+    ExitStatus, IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager,
+    Syslog, Task, ThreadGroup, UtsNamespace, UtsNamespaceHandle,
 };
 use crate::time::{HrTimerManager, HrTimerManagerHandle};
 use crate::vdso::vdso_loader::Vdso;
@@ -57,6 +58,7 @@ use starnix_sync::{
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::signals::SIGKILL;
 use starnix_uapi::{VMADDR_CID_HOST, from_status_like_fdio};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -254,6 +256,21 @@ impl<'a> Drop for MountsWriteGuard<'a> {
     }
 }
 
+/// Maximum time after shutdown starts before deferred-shutdown processes receive SIGKILL.
+///
+/// Deferred-shutdown processes are processes that are still handling a core-dump signal
+/// when their normal shutdown SIGKILL timeout expires (e.g., while writing a crash dump),
+/// along with any child processes they spawn. See `ThreadGroup::shut_down()`.
+///
+/// `component_manager` forcibly kills the container if it does not stop within 5s by
+/// default, which skips filesystem unmounts and `on_stop`. Setting this timeout to 3s
+/// gives crash dumps time to finish (typically 1-2.5s in testing) while leaving 2s for
+/// the remaining shutdown steps (`stop_last_on_shutdown` processes, `init`, unmounts,
+/// and `on_stop`, which took up to 0.6s in testing).
+// TODO(https://fxbug.dev/574471394): Remove once non-forced shutdown lets the container
+// run its own shutdown sequence.
+const DEFERRED_SHUTDOWN_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(3);
+
 /// The shared, mutable state for the entire Starnix kernel.
 ///
 /// The `Kernel` object holds all kernel threads, userspace tasks, and file system resources for a
@@ -420,8 +437,8 @@ pub struct Kernel {
     /// Handler for crashing Linux processes.
     pub crash_reporter: CrashReporter,
 
-    /// Whether this kernel is shutting down. When shutting down, new processes may not be spawned.
-    shutting_down: AtomicBool,
+    /// When this kernel started shutting down, if it has. See `run_shutdown()`.
+    shutdown_start: OnceLock<zx::MonotonicInstant>,
 
     /// True to disable syslog access to unprivileged callers.  This also controls whether read
     /// access to /dev/kmsg requires privileged capabilities.
@@ -621,7 +638,7 @@ impl Kernel {
             hrtimer_manager,
             memory_attribution_manager: MemoryAttributionManager::new(kernel.clone()),
             crash_reporter,
-            shutting_down: AtomicBool::new(false),
+            shutdown_start: OnceLock::new(),
             container_control_handle: Default::default(),
             ebpf_state: Default::default(),
             cgroups: Default::default(),
@@ -687,7 +704,8 @@ impl Kernel {
     ///
     /// Shutdown happens in several phases:
     ///
-    /// 1. Disable launching new processes
+    /// 1. Stop processes from being created, except by deferred shutdown processes until the
+    ///    deferred shutdown deadline
     /// 2. Shut down individual ThreadGroups until only the init and system tasks remain, stopping
     ///    the `stop_last_on_shutdown` ones last
     /// 3. Repeat the above for the init task
@@ -706,16 +724,16 @@ impl Kernel {
         const INIT_PID: i32 = 1;
         const SYSTEM_TASK_PID: i32 = 2;
 
-        // Step 1: Prevent new processes from being created once they observe this update. We don't
-        // want the thread driving shutdown to be racing with other threads creating new processes.
-        if self
-            .shutting_down
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // Step 1: From here on, only deferred shutdown processes may create processes, and only
+        // until the deferred shutdown deadline (see `create_zircon_process()`). This keeps Step 2
+        // finite: each round waits for its thread groups to exit, and after the deadline no new
+        // ones can appear.
+        if self.shutdown_start.set(zx::MonotonicInstant::get()).is_err() {
             log_info!("Additional thread tried to initiate shutdown while already in-progress.");
             return;
         }
+        let deferred_shutdown_deadline =
+            self.deferred_shutdown_deadline().expect("shutdown has started");
 
         log_info!("Shutting down Starnix kernel.");
 
@@ -733,14 +751,17 @@ impl Kernel {
         };
         let mut keep_stop_last = !stop_last.is_empty();
         loop {
-            let tgs = self
-                .pids
-                .get_thread_groups(&RcuReadScope::new())
-                .filter(|tg| {
-                    tg.leader.id != SYSTEM_TASK_PID
-                        && tg.leader.id != INIT_PID
-                        && !(keep_stop_last && is_stop_last(tg))
-                })
+            // Collect under the pid table lock so that no process is caught while it's being
+            // created. `is_stop_last()` runs after the lock is released.
+            let tgs = {
+                let pids = self.pids.lock();
+                pids.get_thread_groups(&RcuReadScope::new())
+                    .filter(|tg| tg.leader.id != SYSTEM_TASK_PID && tg.leader.id != INIT_PID)
+                    .collect::<Vec<_>>()
+            };
+            let tgs = tgs
+                .into_iter()
+                .filter(|tg| !(keep_stop_last && is_stop_last(tg)))
                 .collect::<Vec<_>>();
             if tgs.is_empty() {
                 if keep_stop_last {
@@ -754,7 +775,10 @@ impl Kernel {
             log_info!(tgs:?; "shutting down thread groups");
             let mut tasks = vec![];
             for tg in tgs {
-                let task = fasync::Task::local(ThreadGroup::shut_down(Arc::downgrade(&tg)));
+                let task = fasync::Task::local(ThreadGroup::shut_down(
+                    Arc::downgrade(&tg),
+                    deferred_shutdown_deadline,
+                ));
                 tasks.push(task);
             }
             futures::future::join_all(tasks).await;
@@ -764,7 +788,9 @@ impl Kernel {
         let maybe_init = self.get_init_task().ok().map(|t| Arc::downgrade(&t.thread_group));
         if let Some(init) = maybe_init {
             log_info!("shutting down init");
-            ThreadGroup::shut_down(init).await;
+            ThreadGroup::shut_down(init, deferred_shutdown_deadline).await;
+            // If init forked while handling a core-dump signal, its children can outlive it.
+            self.kill_processes_created_during_shutdown();
         } else {
             log_info!("init already terminated");
         }
@@ -854,7 +880,35 @@ impl Kernel {
     }
 
     pub fn is_shutting_down(&self) -> bool {
-        self.shutting_down.load(Ordering::Acquire)
+        self.shutdown_start.get().is_some()
+    }
+
+    /// Until when deferred shutdown processes may keep running and create processes, or `None` if
+    /// the kernel is not shutting down. See `ThreadGroup::shut_down()`.
+    pub fn deferred_shutdown_deadline(&self) -> Option<zx::MonotonicInstant> {
+        self.shutdown_start.get().map(|start| *start + DEFERRED_SHUTDOWN_TIMEOUT)
+    }
+
+    /// SIGKILLs every process created during shutdown, all of which deferred shutdown processes
+    /// created (e.g. crash dumpers). See `ThreadGroup::shut_down()`.
+    ///
+    /// A dumper that outlives the process it dumps fails, gets reported as a crash and can keep
+    /// that process stopped under ptrace while it does. Processes still handling a core-dump signal
+    /// aren't killed here: after their dumper exits, their handler re-raises the signal so Starnix
+    /// files a crash report, the only record of a crash whose dump missed the deadline. Their own
+    /// `ThreadGroup::shut_down()` gives them a moment to do so before sending SIGKILL.
+    pub fn kill_processes_created_during_shutdown(&self) {
+        // Collect under the pid table lock so that a process being created (which holds it from
+        // the deadline check until its first task is added) is either fully added or not created.
+        let created = {
+            let pids = self.pids.lock();
+            pids.get_thread_groups(&RcuReadScope::new())
+                .filter(|tg| tg.created_during_shutdown.load(Ordering::Relaxed))
+                .collect::<Vec<_>>()
+        };
+        for tg in created {
+            tg.kill(ExitStatus::Kill(SignalInfo::kernel(SIGKILL)), None);
+        }
     }
 
     pub fn allow_unprivileged_bpf(&self) -> bool {
