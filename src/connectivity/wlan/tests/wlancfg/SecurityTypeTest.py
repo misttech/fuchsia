@@ -33,7 +33,6 @@ from openwrt_access_point.lib.access_point_config import (
     LegacyMode,
     Pmf,
     RadioConfig,
-    Security,
     SecurityWep,
     SecurityWpa,
     SecurityWpa2,
@@ -484,18 +483,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             self.access_point.stop_all_aps()
         await super().teardown_test()
 
-    def _skip_if_unsupported_wpa3(self, security: Security) -> None:
-        """Skips WPA3/SAE tests on Iris against OpenWrt APs due to b/510921630."""
-        if (
-            isinstance(security, (SecurityWpa3, SecurityWpa2Wpa3Mixed))
-            and self.dut.board.lower() == "iris"
-            and self.openwrt_ap
-        ):
-            raise signals.TestSkip(
-                "WPA3/SAE on Iris (bcmdhd) against OpenWrt APs is blocked by "
-                "https://fxbug.dev/510921630 (RSNXE mismatch)."
-            )
-
     async def _run_wep_test(self, params: WepTestParams) -> None:
         """Helper to run a WEP test case with static band selection."""
 
@@ -620,7 +607,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def _run_wpa3_test(self, params: Wpa3TestParams) -> None:
         """Helper to run a WPA3 / Transition mode test case with static band selection."""
-        self._skip_if_unsupported_wpa3(params.security)
         band = params.band
         password = AccessPointConfig.random_string(length=10)
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
@@ -682,7 +668,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def _run_boundary_test(self, params: BoundaryTestParams) -> None:
         """Helper to run a boundary test case (WPA/WPA2/WPA3) with static band selection."""
-        self._skip_if_unsupported_wpa3(params.security)
         band = params.band
         if params.password_type == "max_length_password":
             password = AccessPointConfig.random_string(MAX_WPA_PASSWORD_LENGTH)
@@ -752,7 +737,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def _run_utf8_test(self, params: Utf8TestParams) -> None:
         """Helper to run multi-byte UTF-8 width class test cases (2-byte, 3-byte, 4-byte) across bands."""
-        self._skip_if_unsupported_wpa3(params.security)
         band = params.band
         password = params.password
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
@@ -912,7 +896,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def _run_pmf_test(self, params: PmfTestParams) -> None:
         """Helper to run a PMF test case (hybrid)."""
-        self._skip_if_unsupported_wpa3(params.security)
         band = params.band
         password = AccessPointConfig.random_string(length=10)
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
@@ -974,7 +957,6 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def _run_vendor_ie_test(self, params: VendorIeTestParams) -> None:
         """Helper to run a Vendor IE test case (hybrid)."""
-        self._skip_if_unsupported_wpa3(params.security)
         band = params.band
         password = AccessPointConfig.random_string(length=10)
         ssid = AccessPointConfig.random_string(SSID_LENGTH_DEFAULT)
