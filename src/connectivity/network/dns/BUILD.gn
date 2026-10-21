@@ -5,7 +5,6 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
-import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
 rustc_library("lib") {
   name = "dns"
@@ -92,12 +91,13 @@ bin_base = {
   non_rust_deps = []
 }
 
-network_unified_binary("bin") {
+rustc_binary("bin") {
   edition = "2024"
   forward_variables_from(bin_base, "*")
 
   name = "dns_resolver"
   with_unit_tests = true
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_binary("bin_with_fake_time") {
@@ -115,15 +115,15 @@ fuchsia_unittest_package("dns-resolver-tests") {
   deps = [ ":bin_test" ]
 }
 
-network_unified_binary_regular_and_gub_components("component") {
+fuchsia_component("component") {
   component_name = "dns_resolver"
   manifest = "meta/dns_resolver.cml"
-  gub_deps = [ ":bin" ]
+  deps = [ ":bin" ]
 }
 
-network_unified_binary_regular_and_gub_packages("package") {
+fuchsia_package("package") {
   package_name = "dns-resolver"
-  gub_deps = [ ":component" ]
+  deps = [ ":component" ]
   visibility = [ "//bundles/assembly/*" ]
 }
 

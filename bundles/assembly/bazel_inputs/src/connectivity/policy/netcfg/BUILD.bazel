@@ -18,8 +18,3 @@ prebuilt_package(
     name = "package-basic",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic",
 )
-
-prebuilt_package(
-    name = "package-basic_gub",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic_gub",
-)

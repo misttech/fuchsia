@@ -7,7 +7,3 @@ import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 export_fuchsia_package_to_bazel("package") {
   package = "//src/connectivity/policy/reachability:package"
 }
-
-export_fuchsia_package_to_bazel("package_gub") {
-  package = "//src/connectivity/policy/reachability:package_gub"
-}

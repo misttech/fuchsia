@@ -6,8 +6,8 @@ import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
 # Kept in GN because `mock-omaha-server-fuchsia-tests` packages
-# `//src/connectivity/network/netstack3:component-for-tests`, which uses the
-# GN-only `network_unified_binary` template and has no Bazel build yet.
+# `//src/connectivity/network/netstack3:component-for-tests`, which has no
+# Bazel build yet.
 rustc_test("mock-omaha-server-fuchsia_test") {
   edition = "2024"
   output_name = "mock_omaha_server_fuchsia_lib_test"

@@ -13,8 +13,3 @@ prebuilt_package(
     name = "netstack3",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
 )
-
-prebuilt_package(
-    name = "netstack3_gub",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3_gub",
-)

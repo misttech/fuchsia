@@ -7,7 +7,3 @@ import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 export_fuchsia_package_to_bazel("netstack3") {
   package = "//src/connectivity/network:netstack3"
 }
-
-export_fuchsia_package_to_bazel("netstack3_gub") {
-  package = "//src/connectivity/network:netstack3_gub"
-}

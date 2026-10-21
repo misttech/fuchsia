@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
 fuchsia_component("component") {
   component_name = "network"
@@ -19,9 +18,9 @@ fuchsia_component("component-basic") {
   manifest = "meta/network-basic.cml"
 }
 
-network_unified_binary_regular_and_gub_packages("netstack3") {
+fuchsia_package("netstack3") {
   package_name = "netstack3"
-  gub_deps = [
+  deps = [
     # TODO(https://fxbug.dev/42076541): Move this component out of this package
     # and into the network package once both Netstack2 and Netstack3 are using
     # the component for all DHCPv4 functionality.

@@ -15,16 +15,6 @@ prebuilt_package(
 )
 
 prebuilt_package(
-    name = "package_gub",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package_gub",
-)
-
-prebuilt_package(
     name = "google_package",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package",
-)
-
-prebuilt_package(
-    name = "google_package_gub",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package_gub",
 )

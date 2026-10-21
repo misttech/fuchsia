@@ -13,8 +13,3 @@ prebuilt_package(
     name = "package",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package",
 )
-
-prebuilt_package(
-    name = "package_gub",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package_gub",
-)

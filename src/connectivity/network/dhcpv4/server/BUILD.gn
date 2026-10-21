@@ -4,9 +4,8 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
-import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
-network_unified_binary("bin") {
+rustc_binary("bin") {
   name = "dhcpv4_server"
   with_unit_tests = true
   edition = "2024"
@@ -36,6 +35,8 @@ network_unified_binary("bin") {
   test_deps = [ "//third_party/rust_crates:assert_matches" ]
 
   sources = [ "src/main.rs" ]
+
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("dhcpv4_server_bin_test") {
@@ -49,15 +50,15 @@ fuchsia_test_package("dhcpv4-server-tests") {
   deps = [ "//src/sys/stash:stash_secure_v2" ]
 }
 
-network_unified_binary_regular_and_gub_components("component") {
+fuchsia_component("component") {
   component_name = "dhcpv4_server"
   manifest = "meta/dhcpv4_server.cml"
-  gub_deps = [ ":bin" ]
+  deps = [ ":bin" ]
 }
 
-network_unified_binary_regular_and_gub_packages("package") {
+fuchsia_package("package") {
   package_name = "dhcpv4-server"
-  gub_deps = [ ":component" ]
+  deps = [ ":component" ]
   visibility = [ "//bundles/assembly/*" ]
 }
 

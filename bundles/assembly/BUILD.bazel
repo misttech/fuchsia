@@ -1488,8 +1488,7 @@ assembly_input_bundle(
 # Network realm definition.
 #
 # This AIB defines the base network package, which lays out the network realm.
-# It must be used in conjunction with network_realm_packages or
-# network_realm_packages_gub.
+# It must be used in conjunction with network_realm_packages.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "network_realm",
@@ -1520,14 +1519,10 @@ assembly_input_bundle(
     ],
 )
 
-# Network realm packages without unified binary.
+# Network realm packages.
 #
 # This AIB includes all the packages that are common across all products that
-# require networking. It provides the network realm using packages that utilize
-# separate, more-optimized, binaries, trading space for performance. This is
-# the default implementation used.
-#
-# It is mutually-exclusive with 'network_realm_packages_gub'.
+# require networking.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "network_realm_packages",
@@ -1538,27 +1533,6 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
-    ],
-)
-
-# Network realm packages with unified binary.
-#
-# This AIB is equivalent to network_realm_packages. It provides the network
-# realm using packages that utilize a "grand unified binary" (GUB), saving space
-# at the cost of a minor loss in performance.  This is for space- constrained
-# devices that don't have the space for the non-GUB binaries.
-#
-# It is mutually-exclusive with 'network_realm_packages'.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "network_realm_packages_gub",
-    base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package_gub",
-        "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package_gub",
-        "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package_gub",
-        "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package_gub",
-        "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package_gub",
-        "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package_gub",
     ],
 )
 
@@ -1591,8 +1565,7 @@ assembly_input_bundle(
 # This AIB adds the basic networking capabilities. It is mutually-exclusive with
 # networking_with_virtualization.
 #
-# It must be used in conjunction with either network_basic_packages or
-# network_basic_packages_gub.
+# It must be used in conjunction with networking_basic_packages.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "networking_basic",
@@ -1609,28 +1582,14 @@ assembly_input_bundle(
     ],
 )
 
-# Basic networking packages without unified binary.
+# Basic networking packages.
 #
-# This AIB provides packages for the networking_basic configuration. It is
-# mutually exlucisve with networking_basic_packages_gub.
+# This AIB provides packages for the networking_basic configuration.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "networking_basic_packages",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic",
-    ],
-)
-
-# Basic networking packages with unified binary.
-#
-# This AIB provides space-saving equivalent packages for the networking_basic
-# configuration as found in networking_basic_packages. It is mutually exlucisve
-# with networking_basic_packages.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "networking_basic_packages_gub",
-    base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic_gub",
     ],
 )
 
@@ -3767,7 +3726,7 @@ assembly_input_bundle(
 
 # Netstack3 as the netstack for use by base networking.
 #
-# To be used in conjunction with netstack3_packages or netstack3_packages_gub.
+# To be used in conjunction with netstack3_packages.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "netstack3",
@@ -3784,28 +3743,14 @@ assembly_input_bundle(
     ],
 )
 
-# Netstack3 packages without unified binary.
+# Netstack3 packages.
 #
-# This AIB provides packages for the netstack3 configuration. It is mutually
-# exclusive with netstack3_packages_gub.
+# This AIB provides packages for the netstack3 configuration.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "netstack3_packages",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
-    ],
-)
-
-# Netstack3 packages with unified binary.
-#
-# This AIB provides space-saving equivalent packages for the netstack3
-# configuration as found in netstack3_packages. It is mutually exclusive with
-# netstack3_packages.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "netstack3_packages_gub",
-    base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3_gub",
     ],
 )
 

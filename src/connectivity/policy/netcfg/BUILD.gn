@@ -5,7 +5,6 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
-import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
 rustc_library("lib") {
   name = "netcfg"
@@ -107,7 +106,7 @@ rustc_library("lib") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
-network_unified_binary("bin-basic") {
+rustc_binary("bin-basic") {
   edition = "2024"
   name = "netcfg_basic"
   source_root = "src/bin/basic.rs"
@@ -118,6 +117,8 @@ network_unified_binary("bin-basic") {
   ]
 
   sources = [ "src/bin/basic.rs" ]
+
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_binary("bin-advanced") {
@@ -135,15 +136,15 @@ rustc_binary("bin-advanced") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
-network_unified_binary_regular_and_gub_components("component-basic") {
+fuchsia_component("component-basic") {
   component_name = "netcfg-basic"
   manifest = "meta/netcfg-basic.cml"
-  gub_deps = [ ":bin-basic" ]
+  deps = [ ":bin-basic" ]
 }
 
-network_unified_binary_regular_and_gub_packages("package-basic") {
+fuchsia_package("package-basic") {
   package_name = "netcfg-basic"
-  gub_deps = [ ":component-basic" ]
+  deps = [ ":component-basic" ]
   visibility = [ "//bundles/assembly/*" ]
 }
 

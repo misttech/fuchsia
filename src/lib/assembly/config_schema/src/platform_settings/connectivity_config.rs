@@ -79,15 +79,6 @@ pub struct PlatformNetworkConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_client_tcp_receive_buffer_size: Option<NonZeroU64>,
 
-    /// Controls whether the unified binary for networking should be used.
-    ///
-    /// The unified binary provides space savings for space-constrained
-    /// products, trading off multiple small binaries for one large binary that
-    /// is smaller than the sum of its separate parts thanks to linking
-    /// optimizations.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub use_unified_binary: bool,
-
     /// Whether to include network-tun.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub include_tun: bool,

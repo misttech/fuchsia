@@ -11,7 +11,3 @@ export_fuchsia_package_to_bazel("package-advanced") {
 export_fuchsia_package_to_bazel("package-basic") {
   package = "//src/connectivity/policy/netcfg:package-basic"
 }
-
-export_fuchsia_package_to_bazel("package-basic_gub") {
-  package = "//src/connectivity/policy/netcfg:package-basic_gub"
-}

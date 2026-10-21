@@ -4,7 +4,6 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
-import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
 bin_base = {
   edition = "2024"
@@ -43,7 +42,7 @@ bin_base = {
   non_rust_deps = []
 }
 
-network_unified_binary("bin") {
+rustc_binary("bin") {
   name = "reachability"
   version = "0.1.0"
   edition = "2024"
@@ -56,6 +55,8 @@ network_unified_binary("bin") {
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:assert_matches",
   ]
+
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_binary("bin_with_fake_time") {
@@ -104,15 +105,15 @@ fuchsia_unittest_package("reachability-bin-test") {
   deps = [ ":bin_test" ]
 }
 
-network_unified_binary_regular_and_gub_components("component") {
+fuchsia_component("component") {
   component_name = "reachability"
   manifest = "meta/reachability.cml"
-  gub_deps = [ ":bin" ]
+  deps = [ ":bin" ]
 }
 
-network_unified_binary_regular_and_gub_packages("package") {
+fuchsia_package("package") {
   package_name = "reachability"
-  gub_deps = [ ":component" ]
+  deps = [ ":component" ]
   visibility = [ "//bundles/assembly/*" ]
 }
 

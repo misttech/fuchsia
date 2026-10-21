@@ -10,10 +10,8 @@ declare_args() {
 }
 
 import("//build/components.gni")
-import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/toolchain/concurrent_jobs.gni")
-import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
 common_deps = [
   ":config_lib",
@@ -195,7 +193,7 @@ common_sources = [
   "src/main.rs",
 ]
 
-network_unified_binary("bin") {
+rustc_binary("bin") {
   name = "netstack3"
   edition = "2024"
   with_unit_tests = true
@@ -211,24 +209,22 @@ network_unified_binary("bin") {
 
   sources = common_sources
 
-  # Only add the netstack3 configs to the bin, not GUB because O3 in the default
-  # config causes binary size increases here.
-  bin_add_configs = [
+  configs += [
+    "//build/config/rust/lints:deny_unused_results",
     ":netstack3_configs",
     ":netstack3_debug_configs",
   ]
-  add_configs = []
 
   # Both debug and release NS3 builds take a long while to run because of
   # optimizations. Build these on the larger build machines to prevent build
   # times from becoming unreasonably large.
   _concurrent_jobs = concurrent_jobs.rust_highmem
-  add_configs += _concurrent_jobs.configs
-  build_job_vars = _concurrent_jobs.vars
+  configs += _concurrent_jobs.configs
+  forward_variables_from(_concurrent_jobs.vars, "*")
 
-  # Profile the binary and GUB library builds when requested.
+  # Profile the binary build when requested.
   if (netstack3_profile_rustc) {
-    add_configs += [ ":compiler_profile" ]
+    configs += [ ":compiler_profile" ]
   }
 }
 
@@ -292,10 +288,10 @@ fuchsia_component_manifest("component_manifest") {
   manifest = "meta/netstack3_prod.cml"
 }
 
-network_unified_binary_regular_and_gub_components("component") {
+fuchsia_component("component") {
   cm_label = ":component_manifest"
   component_name = "netstack3"
-  gub_deps = [ ":bin" ]
+  deps = [ ":bin" ]
   visibility = [
     ":*",
 

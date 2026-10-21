@@ -13,8 +13,3 @@ prebuilt_package(
     name = "package",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
 )
-
-prebuilt_package(
-    name = "package_gub",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package_gub",
-)

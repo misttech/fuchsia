@@ -8,14 +8,6 @@ export_fuchsia_package_to_bazel("package") {
   package = "//src/connectivity/policy/http-client:package"
 }
 
-export_fuchsia_package_to_bazel("package_gub") {
-  package = "//src/connectivity/policy/http-client:package_gub"
-}
-
 export_fuchsia_package_to_bazel("google_package") {
   package = "//src/connectivity/policy/http-client:google_package"
-}
-
-export_fuchsia_package_to_bazel("google_package_gub") {
-  package = "//src/connectivity/policy/http-client:google_package_gub"
 }
