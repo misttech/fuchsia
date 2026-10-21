@@ -6,6 +6,7 @@ use crate::task::{CurrentTask, RunState};
 use crate::vfs::{EpollEventHandler, FdNumber};
 use bitflags::bitflags;
 use futures::stream::AbortHandle;
+use rustc_hash::FxHashMap;
 use slab::Slab;
 use smallvec::SmallVec;
 use starnix_lifecycle::AtomicCounter;
@@ -19,7 +20,7 @@ use starnix_uapi::error;
 use starnix_uapi::errors::{EINTR, Errno};
 use starnix_uapi::signals::{SIGKILL, SigSet, Signal};
 use starnix_uapi::vfs::FdEvents;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::{Arc, Weak};
 use syncio::zxio::zxio_signals_t;
 use syncio::{ZxioSignals, ZxioWeak};
@@ -367,7 +368,9 @@ bitflags! {
 /// a Waiter should have a single owner. So the Arc is hidden inside Waiter.
 struct PortWaiter {
     port: PortEvent,
-    callbacks: LockDepMutex<HashMap<WaitKey, WaitCallback>, PortWaiterCallbacksLock>, // the key 0 is reserved for 'no handler'
+    // Keys in `callbacks` and `wait_queues` come from `next_key`, so the faster
+    // non-DoS-resistant `FxHashMap` is safe here.
+    callbacks: LockDepMutex<FxHashMap<WaitKey, WaitCallback>, PortWaiterCallbacksLock>, // the key 0 is reserved for 'no handler'
     next_key: AtomicCounter<u64>,
     options: WaiterOptions,
 
@@ -376,7 +379,7 @@ struct PortWaiter {
     ///
     /// This lock is nested inside the WaitQueue.waiters lock.
     wait_queues: LockDepMutex<
-        HashMap<WaitKey, Weak<LockDepMutex<WaitQueueImpl, WaitQueueImplLock>>>,
+        FxHashMap<WaitKey, Weak<LockDepMutex<WaitQueueImpl, WaitQueueImplLock>>>,
         PortWaiterWaitQueuesLock,
     >,
 }

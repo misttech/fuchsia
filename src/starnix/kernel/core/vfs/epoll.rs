@@ -10,15 +10,15 @@ use crate::vfs::{
     Anon, FileHandle, FileObject, FileObjectState, FileOps, WeakFileHandle, fileops_impl_dataless,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use itertools::Itertools;
+use rustc_hash::{FxHashMap, FxHashSet};
 use starnix_logging::log_warn;
 use starnix_sync::{EpollStateLock, EpollWaitableStateLock, LockDepMutex, allow_subclass};
 use starnix_uapi::error;
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::{EpollEvent, FdEvents};
+use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 /// Maximum depth of epoll instances monitoring one another.
@@ -75,7 +75,10 @@ pub struct EpollFileObject {
 struct EpollState {
     /// Any file tracked by this epoll instance
     /// will exist as a key in `wait_objects`.
-    wait_objects: HashMap<ReadyItemKey, WaitObject>,
+    ///
+    /// The keys are kernel-assigned file object IDs, so the faster non-DoS-resistant
+    /// `FxHashMap` is safe here.
+    wait_objects: FxHashMap<ReadyItemKey, WaitObject>,
     /// processing_list is a FIFO of events that are being
     /// processed.
     ///
@@ -417,7 +420,8 @@ impl EpollFileObject {
         let mut result = vec![];
         let mut state = self.state.lock();
         let state = &mut *state;
-        for pending_event in pending_list.iter().unique_by(|e| e.key) {
+        let mut seen = FxHashSet::with_capacity_and_hasher(pending_list.len(), Default::default());
+        for pending_event in pending_list.iter().filter(|e| seen.insert(e.key)) {
             // The wait could have been deleted by here,
             // so ignore the None case.
             let Some(wait) = state.wait_objects.get_mut(&pending_event.key) else { continue };
