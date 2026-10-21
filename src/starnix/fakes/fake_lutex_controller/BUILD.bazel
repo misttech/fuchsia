@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    crate_name = "fake_lutex_controller",
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints",
+    deps = [
+        "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
+        "//sdk/fidl/fuchsia.starnix.binder:fuchsia.starnix.binder_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "fake_lutex_controller_packaged_bin",
+    testonly = True,
+    binary = ":bin",
+    binary_name = "fake_lutex_controller",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "fake_lutex_controller_manifest",
+    testonly = True,
+    component_name = "fake_lutex_controller",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/fake_lutex_controller.cml",
+)
+
+# @bazel2gn:skip
+fx_component(
+    name = "fake_lutex_controller",
+    testonly = True,
+    compiled_manifest = ":fake_lutex_controller_manifest",
+    component_name = "fake_lutex_controller",
+    visibility = ["//src/starnix/fakes:__pkg__"],
+    deps = [":fake_lutex_controller_packaged_bin"],
+)
