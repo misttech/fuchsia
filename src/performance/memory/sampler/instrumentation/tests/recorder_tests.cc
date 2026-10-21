@@ -12,10 +12,12 @@
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/zx/socket.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -37,6 +39,8 @@ struct RecorderTestPeer {
 };
 
 namespace {
+
+// NOLINTNEXTLINE(performance-no-int-to-ptr)
 void* const kTestAddress = reinterpret_cast<void*>(0x1000);
 constexpr size_t kTestSize = 100;
 
@@ -78,9 +82,9 @@ std::vector<uint8_t> ReadDatagram(zx::socket& socket) {
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 void VerifyAllocationDatagram(const std::vector<uint8_t>& datagram, void* expected_address,
-                              size_t expected_size) {
+                              size_t expected_size, uint64_t expected_interval = 1) {
   auto unpersisted = fidl::InplaceUnpersist<fuchsia_memory_sampler::wire::SamplerDatagram>(
-      cpp20::span<uint8_t>(const_cast<uint8_t*>(datagram.data()), datagram.size()));
+      std::span<uint8_t>(const_cast<uint8_t*>(datagram.data()), datagram.size()));
   ASSERT_TRUE(unpersisted.is_ok());
   auto& dg = unpersisted.value();
   EXPECT_TRUE(dg->is_record_allocation());
@@ -88,11 +92,13 @@ void VerifyAllocationDatagram(const std::vector<uint8_t>& datagram, void* expect
   EXPECT_EQ(header.address(), reinterpret_cast<uint64_t>(expected_address));
   EXPECT_EQ(header.size(), expected_size);
   EXPECT_GE(header.stack_trace().stack_frames().size(), 1U);
+  EXPECT_TRUE(header.has_sampling_interval_bytes());
+  EXPECT_EQ(header.sampling_interval_bytes(), expected_interval);
 }
 
 void VerifyDeallocationDatagram(const std::vector<uint8_t>& datagram, void* expected_address) {
   auto unpersisted = fidl::InplaceUnpersist<fuchsia_memory_sampler::wire::SamplerDatagram>(
-      cpp20::span<uint8_t>(const_cast<uint8_t*>(datagram.data()), datagram.size()));
+      std::span<uint8_t>(const_cast<uint8_t*>(datagram.data()), datagram.size()));
   ASSERT_TRUE(unpersisted.is_ok());
   auto& dg = unpersisted.value();
   EXPECT_TRUE(dg->is_record_deallocation());
@@ -105,23 +111,65 @@ void VerifyDeallocationDatagram(const std::vector<uint8_t>& datagram, void* expe
 PoissonSampler& GetSamplerThatAlwaysSamples() {
   class SampleIntervalGenerator : public PoissonSampler::SampleIntervalGenerator {
    public:
-    size_t GetNextSampleInterval(size_t) override { return 1; }
+    size_t GetNextSampleInterval(uint64_t) override { return 1; }
   };
 
-  static PoissonSampler sampler{1, std::make_unique<SampleIntervalGenerator>()};
+  thread_local PoissonSampler sampler{[] -> uint64_t { return 1; },
+                                      std::make_unique<SampleIntervalGenerator>()};
   return sampler;
 }
 
 PoissonSampler& GetSamplerThatNeverSamples() {
   class SamplerIntervalGenerator : public PoissonSampler::SampleIntervalGenerator {
    public:
-    size_t GetNextSampleInterval(size_t) override { return std::numeric_limits<size_t>::max(); }
+    size_t GetNextSampleInterval(uint64_t) override { return std::numeric_limits<size_t>::max(); }
   };
-  static PoissonSampler sampler{1, std::make_unique<SamplerIntervalGenerator>()};
+  thread_local PoissonSampler sampler{[] -> uint64_t { return 1; },
+                                      std::make_unique<SamplerIntervalGenerator>()};
   return sampler;
 }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+// Recorder consulted by `GetSamplerThatFollowsBackpressure`. Tests that
+// exercise backpressure install the recorder under test for their duration
+// using `ScopedBackpressureRecorder`.
+thread_local Recorder* g_backpressure_recorder = nullptr;
+
+// Installs a recorder for `GetSamplerThatFollowsBackpressure` to consult, and
+// uninstalls it on scope exit. Scoped rather than a bare assignment because the
+// sampler outlives any single test: a fatal assertion returning early must not
+// leave a dangling pointer behind for the next one.
+class ScopedBackpressureRecorder {
+ public:
+  explicit ScopedBackpressureRecorder(Recorder* recorder) { g_backpressure_recorder = recorder; }
+  ~ScopedBackpressureRecorder() { g_backpressure_recorder = nullptr; }
+
+  ScopedBackpressureRecorder(const ScopedBackpressureRecorder&) = delete;
+  ScopedBackpressureRecorder& operator=(const ScopedBackpressureRecorder&) = delete;
+};
+
+// A sampler that samples every allocation, like `GetSamplerThatAlwaysSamples`,
+// but whose mean interval tracks the backpressure of `g_backpressure_recorder`
+// the way the production sampler tracks the singleton. The fixed-interval
+// samplers above cannot express this, so a test using them would never see the
+// adapted interval reach a datagram.
+PoissonSampler& GetSamplerThatFollowsBackpressure() {
+  class SampleIntervalGenerator : public PoissonSampler::SampleIntervalGenerator {
+   public:
+    size_t GetNextSampleInterval(uint64_t) override { return 1; }
+  };
+
+  thread_local PoissonSampler sampler{[] {
+                                        if (g_backpressure_recorder == nullptr) {
+                                          return Recorder::kDefaultSamplingIntervalBytes;
+                                        }
+                                        g_backpressure_recorder->ApplyBackpressure();
+                                        return g_backpressure_recorder->GetSamplingIntervalBytes();
+                                      },
+                                      std::make_unique<SampleIntervalGenerator>()};
+  return sampler;
+}
+
 TEST(RecorderTest, MaybeRecordAllocation) {
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
   async_dispatcher_t* dispatcher = loop.dispatcher();
@@ -387,6 +435,7 @@ TEST(RecorderTest, SignalsPeerAndDropsAllocationOnBufferFull) {
   void* overflow_address = nullptr;
   zx_signals_t signals = 0;
   for (uintptr_t i = 1; i <= 10000; ++i) {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     void* addr = reinterpret_cast<void*>(0x10000 + i);
     recorder.MaybeRecordAllocation(addr, kTestSize);
     if (sampler.socket().wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &signals) == ZX_OK &&
@@ -424,7 +473,8 @@ TEST(RecorderTest, SignalsPeerOnDeallocationBufferFull) {
   // Record tracked allocations while the socket has space.
   std::vector<void*> tracked_addresses;
   for (uintptr_t i = 1; i <= 50; ++i) {
-    void* addr = reinterpret_cast<void*>(0x5000 + i * 8);
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    void* addr = reinterpret_cast<void*>(0x5000 + (i * 8));
     recorder.MaybeRecordAllocation(addr, kTestSize);
     tracked_addresses.push_back(addr);
   }
@@ -432,6 +482,7 @@ TEST(RecorderTest, SignalsPeerOnDeallocationBufferFull) {
   // Fill the socket buffer with other allocations until full.
   bool buffer_saturated = false;
   for (uintptr_t i = 1; i <= 10000; ++i) {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     recorder.MaybeRecordAllocation(reinterpret_cast<void*>(0x20000 + i), kTestSize);
     zx_signals_t fill_sigs = 0;
     if (sampler.socket().wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &fill_sigs) ==
@@ -490,6 +541,134 @@ TEST(RecorderTest, DisconnectsOnFidlPeerClosed) {
   recorder.MaybeForgetAllocation(kTestAddress);
   EXPECT_TRUE(recorder.is_disabled());
 }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+// Tests that socket fullness detection via `zx_info_socket_t` functions as expected
+// under `ZX_SOCKET_DATAGRAM`.
+//
+// This test verifies that:
+// 1. An empty socket reports `tx_buf_size == 0` with a non-zero `tx_buf_max`.
+// 2. Writing datagrams dynamically increases `tx_buf_size` by the exact payload size written.
+// 3. Reading datagrams from the peer dynamically decreases `tx_buf_size`.
+// 4. When all datagrams are consumed, `tx_buf_size` returns to 0.
+// 5. As the buffer fills towards capacity, `tx_buf_size / tx_buf_max` reflects the ratio
+//    of buffered data, and when full, writes fail with `ZX_ERR_SHOULD_WAIT`.
+TEST(RecorderTest, SocketFullnessDetectionUnderDatagramMode) {
+  zx::socket writer, reader;
+  ASSERT_EQ(zx::socket::create(ZX_SOCKET_DATAGRAM, &writer, &reader), ZX_OK);
+
+  zx_info_socket_t info;
+  ASSERT_EQ(writer.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  EXPECT_GT(info.tx_buf_max, 0u);
+  EXPECT_EQ(info.tx_buf_size, 0u);
+
+  // Write a 1024-byte datagram.
+  std::vector<uint8_t> payload(1024, 0x42);
+  size_t actual = 0;
+  ASSERT_EQ(writer.write(0, payload.data(), payload.size(), &actual), ZX_OK);
+  EXPECT_EQ(actual, 1024u);
+
+  ASSERT_EQ(writer.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  EXPECT_EQ(info.tx_buf_size, 1024u);
+
+  // Write another 2048-byte datagram.
+  std::vector<uint8_t> payload2(2048, 0x43);
+  ASSERT_EQ(writer.write(0, payload2.data(), payload2.size(), &actual), ZX_OK);
+  EXPECT_EQ(actual, 2048u);
+
+  ASSERT_EQ(writer.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  EXPECT_EQ(info.tx_buf_size, 1024u + 2048u);
+
+  // Read the first datagram from the reader endpoint.
+  std::vector<uint8_t> read_buf(4096);
+  ASSERT_EQ(reader.read(0, read_buf.data(), read_buf.size(), &actual), ZX_OK);
+  EXPECT_EQ(actual, 1024u);
+
+  ASSERT_EQ(writer.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  EXPECT_EQ(info.tx_buf_size, 2048u);
+
+  // Read the second datagram.
+  ASSERT_EQ(reader.read(0, read_buf.data(), read_buf.size(), &actual), ZX_OK);
+  EXPECT_EQ(actual, 2048u);
+
+  ASSERT_EQ(writer.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  EXPECT_EQ(info.tx_buf_size, 0u);
+
+  // Fill up the socket buffer to test high occupancy and boundary behavior.
+  const size_t chunk_size = 4096;
+  std::vector<uint8_t> chunk(chunk_size, 0xAA);
+  size_t total_written = 0;
+  while (true) {
+    zx_status_t status = writer.write(0, chunk.data(), chunk.size(), &actual);
+    if (status == ZX_ERR_SHOULD_WAIT) {
+      break;
+    }
+    ASSERT_EQ(status, ZX_OK);
+    total_written += actual;
+  }
+
+  ASSERT_EQ(writer.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  EXPECT_EQ(info.tx_buf_size, total_written);
+  double usage = static_cast<double>(info.tx_buf_size) / static_cast<double>(info.tx_buf_max);
+  // Transmit buffer should be close to or at capacity.
+  EXPECT_GT(usage, 0.85);
+  EXPECT_LE(usage, 1.0);
+}
+
+// Tests that Recorder adapts its sampling interval based on the socket's occupancy.
+TEST(RecorderTest, DynamicBackpressureAdaptsToSocketOccupancy) {
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  async_dispatcher_t* dispatcher = loop.dispatcher();
+  auto endpoints = fidl::CreateEndpoints<fuchsia_memory_sampler::Sampler>();
+  SamplerImpl sampler{dispatcher, std::move(endpoints->server)};
+
+  auto recorder = memory_sampler::Recorder::CreateRecorderForTesting(
+      fidl::SyncClient{std::move(endpoints->client)}, GetSamplerThatFollowsBackpressure);
+  ScopedBackpressureRecorder scoped_recorder{&recorder};
+
+  loop.RunUntilIdle();
+  ASSERT_TRUE(sampler.socket().is_valid());
+
+  // Initially, socket is empty: sampling interval should be the default.
+  EXPECT_EQ(recorder.GetSamplingIntervalBytes(),
+            memory_sampler::Recorder::kDefaultSamplingIntervalBytes);
+
+  // Fill the socket by recording allocations without reading them on the server side.
+  // Record allocations until the sampling interval increases to the maximum backpressure (8 MiB).
+  for (size_t i = 0; i < 2000; ++i) {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    recorder.MaybeRecordAllocation(reinterpret_cast<void*>(0x2000 + (i * 8)), 100);
+    if (recorder.GetSamplingIntervalBytes() >= static_cast<uint64_t>(8 * 1024 * 1024)) {
+      break;
+    }
+  }
+
+  EXPECT_EQ(recorder.GetSamplingIntervalBytes(), 8 * 1024 * 1024u);
+
+  // Drain the socket from the server side, tracking the intervals that actually
+  // reached the wire. Each datagram reports the interval that was in effect
+  // when its sampling threshold was drawn, so the buffered datagrams should
+  // show the interval climbing above the default as the socket filled up.
+  std::vector<uint8_t> drain_buf(65536);
+  size_t actual = 0;
+  uint64_t max_interval_on_wire = 0;
+  while (sampler.socket().read(0, drain_buf.data(), drain_buf.size(), &actual) == ZX_OK) {
+    auto unpersisted = fidl::InplaceUnpersist<fuchsia_memory_sampler::wire::SamplerDatagram>(
+        std::span<uint8_t>(drain_buf.data(), actual));
+    ASSERT_TRUE(unpersisted.is_ok());
+    auto& datagram = unpersisted.value();
+    ASSERT_TRUE(datagram->is_record_allocation());
+    max_interval_on_wire =
+        std::max(max_interval_on_wire, datagram->record_allocation().sampling_interval_bytes());
+  }
+  EXPECT_GT(max_interval_on_wire, memory_sampler::Recorder::kDefaultSamplingIntervalBytes);
+
+  // Once drained, the next backpressure evaluation should drop back to the default.
+  recorder.ApplyBackpressure();
+  EXPECT_EQ(recorder.GetSamplingIntervalBytes(),
+            memory_sampler::Recorder::kDefaultSamplingIntervalBytes);
+}
+#endif
 
 }  // namespace
 }  // namespace memory_sampler

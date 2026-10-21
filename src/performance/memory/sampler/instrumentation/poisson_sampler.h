@@ -5,7 +5,10 @@
 #ifndef SRC_PERFORMANCE_MEMORY_SAMPLER_INSTRUMENTATION_POISSON_SAMPLER_H_
 #define SRC_PERFORMANCE_MEMORY_SAMPLER_INSTRUMENTATION_POISSON_SAMPLER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace memory_sampler {
@@ -40,31 +43,37 @@ class PoissonSampler {
   class SampleIntervalGenerator {
    public:
     // Compute a suitable interval of seen bytes between samples.
-    virtual size_t GetNextSampleInterval(size_t mean_interval) = 0;
+    virtual size_t GetNextSampleInterval(uint64_t mean_interval) = 0;
     virtual ~SampleIntervalGenerator() = default;
   };
 
+  // Provides the mean number of bytes between samples, which may vary over
+  // time.
+  using MeanIntervalProvider = uint64_t (*)();
+
   // Provide custom sample interval generator.
-  explicit PoissonSampler(size_t mean_interval,
+  explicit PoissonSampler(MeanIntervalProvider get_mean_interval,
                           std::unique_ptr<SampleIntervalGenerator> sample_interval_generator)
-      : mean_interval_(mean_interval),
+      : get_mean_interval_(get_mean_interval),
         sample_interval_generator_(std::move(sample_interval_generator)) {}
 
   // Use provided default Poisson point process appropriate sample
   // interval generator.
-  explicit PoissonSampler(size_t mean_interval);
+  explicit PoissonSampler(MeanIntervalProvider get_mean_interval);
 
-  // Given the size of an allocation, and the current state of the
-  // sampler, decide whether to capture a sample.
+  // Given the size of an allocation, and the current state of the sampler,
+  // decide whether to capture a sample. Returns the sampling interval if the
+  // allocation should be sampled; returns `std::nullopt` otherwise.
   //
   // Note: calling this function progresses the Poisson point process,
   // which is effectful.
-  bool ShouldSampleAllocation(size_t size);
+  std::optional<uint64_t> ShouldSampleAllocation(size_t size);
 
  private:
   size_t bytes_before_next_sample_ = 0;
   bool sampling_interval_initialized_ = false;
-  const size_t mean_interval_;
+  uint64_t interval_used_for_next_sample_ = 0;
+  MeanIntervalProvider get_mean_interval_;
   std::unique_ptr<SampleIntervalGenerator> sample_interval_generator_;
 };
 }  // namespace memory_sampler

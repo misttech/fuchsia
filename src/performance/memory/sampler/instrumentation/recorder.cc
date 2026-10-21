@@ -13,9 +13,12 @@
 #include <pthread.h>
 #include <zircon/assert.h>
 #include <zircon/sanitizer.h>
+#include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
+#include <zircon/time.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <unordered_set>
 #include <vector>
@@ -32,12 +35,25 @@ std::atomic<memory_sampler::Recorder*> singleton;
 // Threshold for truncating overly long stack frames.
 constexpr size_t kMaxStackFramesLength = 512;
 
+constexpr uint64_t kMinSamplingIntervalBytes =
+    memory_sampler::Recorder::kDefaultSamplingIntervalBytes;
+constexpr uint64_t kMaxSamplingIntervalBytes = static_cast<uint64_t>(8 * 1024 * 1024);
+
 // Note: this implementation currently relies on `thread_local` to
 // track the allocated bytes and thresholds, which means that each
 // thread implements a different Poisson process.
 memory_sampler::PoissonSampler& GetNonDeterministicPoissonSampler() {
   thread_local memory_sampler::PoissonSampler sampler{
-      memory_sampler::Recorder::kSamplingIntervalBytes};
+      []
+      // Return a sampling interval fit for the current level of congestion.
+      {
+        auto* recorder = memory_sampler::Recorder::GetIfReady();
+        if (recorder == nullptr) {
+          return memory_sampler::Recorder::kDefaultSamplingIntervalBytes;
+        }
+        recorder->ApplyBackpressure();
+        return recorder->GetSamplingIntervalBytes();
+      }};
   return sampler;
 }
 }  // namespace
@@ -112,10 +128,12 @@ void Recorder::MaybeRecordAllocation(void* address, size_t size) {
     return;
   }
 
-  if (!GetPoissonSampler().ShouldSampleAllocation(size))
+  std::optional<uint64_t> sampling_interval = GetPoissonSampler().ShouldSampleAllocation(size);
+  if (!sampling_interval.has_value()) {
     return;
+  }
 
-  if (!RecordAllocation(address, size)) {
+  if (!RecordAllocation(address, size, *sampling_interval)) {
     return;
   }
 
@@ -128,11 +146,11 @@ void Recorder::MaybeRecordAllocation(void* address, size_t size) {
   }
 }
 
-bool Recorder::RecordAllocation(void* address, size_t size) {
+bool Recorder::RecordAllocation(void* address, size_t size, uint64_t sampling_interval) {
   if (is_disabled_.load(std::memory_order_relaxed)) {
     return false;
   }
-  uint64_t pc_buffer[kMaxStackFramesLength]{0};
+  uint64_t pc_buffer[kMaxStackFramesLength]{};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
@@ -142,6 +160,7 @@ bool Recorder::RecordAllocation(void* address, size_t size) {
           .stack_frames = std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)},
       }}},
       .size = std::optional<uint64_t>{size},
+      .sampling_interval_bytes = std::optional<uint64_t>{sampling_interval},
   }};
 
   if (socket_.is_valid()) {
@@ -249,7 +268,7 @@ void Recorder::ForgetAllocation(void* address) {
   if (is_disabled_.load(std::memory_order_relaxed)) {
     return;
   }
-  uint64_t pc_buffer[kMaxStackFramesLength]{0};
+  uint64_t pc_buffer[kMaxStackFramesLength]{};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
@@ -328,6 +347,45 @@ void Recorder::ForgetAllocation(void* address) {
     Disconnect();
   }
 #endif
+}
+
+void Recorder::ApplyBackpressure() {
+  if (!socket_.is_valid()) {
+    return;
+  }
+
+  zx_info_socket_t info;
+  if (socket_.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr) != ZX_OK) {
+    return;
+  }
+
+  if (info.tx_buf_max == 0) {
+    return;
+  }
+  double usage = static_cast<double>(info.tx_buf_size) / static_cast<double>(info.tx_buf_max);
+
+  uint64_t new_interval;
+  if (usage < 0.125) {
+    new_interval = kMinSamplingIntervalBytes;
+  } else if (usage < 0.25) {
+    new_interval = kMinSamplingIntervalBytes * 2;
+  } else if (usage < 0.375) {
+    new_interval = kMinSamplingIntervalBytes * 4;
+  } else if (usage < 0.50) {
+    new_interval = kMinSamplingIntervalBytes * 8;
+  } else if (usage < 0.625) {
+    new_interval = kMinSamplingIntervalBytes * 16;
+  } else if (usage < 0.75) {
+    new_interval = kMinSamplingIntervalBytes * 32;
+  } else {
+    static_assert(kMaxSamplingIntervalBytes > kMinSamplingIntervalBytes * 32);
+    new_interval = kMaxSamplingIntervalBytes;
+  }
+
+  uint64_t current_interval = current_sampling_interval_bytes_.load(std::memory_order_relaxed);
+  if (new_interval != current_interval) {
+    current_sampling_interval_bytes_.store(new_interval, std::memory_order_relaxed);
+  }
 }
 
 void Recorder::SetModulesInfo() {

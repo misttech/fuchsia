@@ -13,6 +13,7 @@
 #include <lib/zx/socket.h>
 
 #include <atomic>
+#include <cstdint>
 #include <unordered_set>
 
 #include <fbl/macros.h>
@@ -58,7 +59,17 @@ class Recorder {
                                            bool use_socket = true);
 
   // The average count of bytes allocated between two samples.
-  static constexpr size_t kSamplingIntervalBytes = static_cast<size_t>(128 * 1024);
+  static constexpr uint64_t kDefaultSamplingIntervalBytes = static_cast<uint64_t>(128 * 1024);
+
+  // Returns the currently configured mean interval in bytes between two sampled
+  // allocations.
+  uint64_t GetSamplingIntervalBytes() const {
+    return current_sampling_interval_bytes_.load(std::memory_order_relaxed);
+  }
+  // When the transport channel that is used to communicate between this process
+  // and the sampling profiler supports reporting congestion, monitor the
+  // current congestion rate and adjust the sampling rate accordingly.
+  void ApplyBackpressure() __TA_EXCLUDES(&lock_);
 
   // Returns true if the recorder has disconnected from the profiler.
   bool is_disabled() const { return is_disabled_.load(std::memory_order_relaxed); }
@@ -82,12 +93,14 @@ class Recorder {
   zx::socket socket_;
   std::atomic<bool> is_disabled_{false};
   std::atomic<bool> peer_signaled_{false};
+  std::atomic<uint64_t> current_sampling_interval_bytes_{kDefaultSamplingIntervalBytes};
   std::unordered_set<void *> recorded_allocations_ __TA_GUARDED(&lock_);
   std::function<PoissonSampler &()> GetPoissonSampler;
 
   // Records an allocation's address and size and communicates it to
   // the profiler. Returns true if the allocation was successfully recorded.
-  bool RecordAllocation(void *address, size_t size) __TA_EXCLUDES(&lock_);
+  bool RecordAllocation(void *address, size_t size, uint64_t sampling_interval)
+      __TA_EXCLUDES(&lock_);
   // Records a deallocation's address and communicates it to the
   // profiler.
   void ForgetAllocation(void *address) __TA_EXCLUDES(&lock_);

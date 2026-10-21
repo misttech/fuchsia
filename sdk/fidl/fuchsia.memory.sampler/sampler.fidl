@@ -43,6 +43,8 @@ type RecordAllocationEvent = table {
     2: stack_trace StackTrace;
     /// Size (in bytes) of this allocation.
     3: size uint64;
+    /// The sampling interval in effect when this allocation was sampled.
+    4: sampling_interval_bytes uint64;
 };
 
 @available(added=HEAD)

@@ -18,7 +18,7 @@ use crate::pprof;
 
 /// The default sampling rate in bytes (128 KiB). This matches the default
 /// client-side sampling rate configured in the instrumentation library.
-const DEFAULT_SAMPLING_RATE_BYTES: f64 = 131072.0;
+const DEFAULT_SAMPLING_RATE_BYTES: u64 = 131072;
 
 /// The gzip compression level applied to profiles.
 ///
@@ -88,8 +88,11 @@ pub struct ProfileBuilder {
 /// To reconstruct the original unsampled allocation volume, we scale each sampled
 /// allocation's size and count by the inverse of its sampling probability:
 /// $W = 1 / P(S) = 1 / (1 - e^{-S / R})$.
-fn scale_factor(size: u64, rate: f64) -> f64 {
-    if size == 0 { 1.0 } else { -1.0 / (-(size as f64) / rate).exp_m1() }
+///
+/// A rate of 0 is meaningful: it denotes "never wait before sampling again", i.e.
+/// sample every allocation.
+fn scale_factor(size: u64, rate: u64) -> f64 {
+    if size == 0 || rate == 0 { 1.0 } else { -1.0 / (-(size as f64) / (rate as f64)).exp_m1() }
 }
 
 impl ProfileBuilder {
@@ -116,12 +119,23 @@ impl ProfileBuilder {
         };
         self.stack_traces.get(&stack_trace).unwrap().clone()
     }
-    /// Register an allocation. It is considered live until a
-    /// deallocation for the same address has been reported. Note that
-    /// this assumes that allocations and deallocations at a given
-    /// address are ordered.
-    pub fn allocate(&mut self, address: u64, stack_trace: StackTrace, size: u64) {
-        let scale = scale_factor(size, DEFAULT_SAMPLING_RATE_BYTES);
+    /// Register an allocation.
+
+    /// It is considered live until a deallocation for the same address has been
+    /// reported. Note that this assumes that allocations and deallocations at a
+    /// given address are reported in order.
+    ///
+    /// `sampling_rate` is the sampling rate used by the sampler at the time of
+    /// sampling this allocation, and is used to weight the allocation by its
+    /// likelihood to get sampled.
+    pub fn allocate(
+        &mut self,
+        address: u64,
+        stack_trace: StackTrace,
+        size: u64,
+        sampling_rate: Option<u64>,
+    ) {
+        let scale = scale_factor(size, sampling_rate.unwrap_or(DEFAULT_SAMPLING_RATE_BYTES));
         self.allocate_with_scale(address, stack_trace, size, scale);
     }
 
@@ -296,7 +310,7 @@ mod test {
         let stack_trace = vec![];
         let size = 10;
 
-        builder.allocate(address, stack_trace.clone(), size);
+        builder.allocate(address, stack_trace.clone(), size, None);
 
         let allocation =
             builder.live_allocations.get(&address).expect("Could not retrieve live allocation.");
@@ -305,6 +319,8 @@ mod test {
         assert_eq!(size, allocation.size);
         assert!((allocation.scale_factor - expected_scale_factor).abs() < 1e-5);
         assert_eq!(stack_trace, *(allocation.stack_trace));
+        assert_eq!(1.0, super::scale_factor(size, 0));
+        assert_eq!(1.0, super::scale_factor(0, DEFAULT_SAMPLING_RATE_BYTES));
     }
 
     #[fuchsia::test]
@@ -328,7 +344,7 @@ mod test {
         let deallocation_stack_trace = vec![3, 4];
         let size = 10;
 
-        builder.allocate(address, allocation_stack_trace.clone(), size);
+        builder.allocate(address, allocation_stack_trace.clone(), size, None);
         builder.deallocate(address, deallocation_stack_trace.clone());
 
         assert!(builder.live_allocations.is_empty());
@@ -368,7 +384,7 @@ mod test {
         let size = 10;
         let test_index = 42;
 
-        builder.allocate(address, allocation_stack_trace.clone(), size);
+        builder.allocate(address, allocation_stack_trace.clone(), size, None);
         builder.deallocate(address, deallocation_stack_trace.clone());
 
         assert_ne!(0, builder.get_approximate_reclaimable_stack_traces_count());
@@ -410,7 +426,7 @@ mod test {
     fn test_profile_is_compressed() {
         const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
         let mut builder = ProfileBuilder::default();
-        builder.allocate(0x1000, vec![1, 2], 10);
+        builder.allocate(0x1000, vec![1, 2], 10, None);
 
         let ProfileReport::Partial { profile, size, .. } =
             builder.build_partial_profile(0).unwrap()
