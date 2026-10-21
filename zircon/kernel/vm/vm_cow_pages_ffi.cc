@@ -201,4 +201,6 @@ FFI_ALWAYS_INLINE void cpp_vm_cow_pages_debug_dump_reclaim_counters() {
   VmCowPages::DebugDumpReclaimCounters();
 }
 
+FFI_ALWAYS_INLINE void* cpp_vm_cow_pages_state(VmCowPages* cow) { return &cow->opaque_storage_; }
+
 }  // extern "C"

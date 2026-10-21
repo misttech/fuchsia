@@ -12,6 +12,7 @@ use crate::vm::compressor::VmCompressor;
 use crate::vm::discardable_vmo_tracker::DiscardableVmoTracker;
 use crate::vm::page_source::MultiPageRequest;
 use crate::vm::pmm_node::PmmOptDelayReuse;
+use bitflags::bitflags;
 use core::cmp;
 use core::convert::Infallible;
 use core::ffi::c_void;
@@ -19,10 +20,11 @@ use core::marker::{PhantomData, PhantomPinned};
 use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
-use fbl::{HasRefCount, HasRefCountUpgradeable, Recyclable, RefCounted, RefPtr};
+use fbl::{Canary, HasRefCount, HasRefCountUpgradeable, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
 use ksync::{KMutex, KMutexGuard, LockClass, LockToken, RawCriticalMutex};
 use pin_init::{PinInit, pin_data};
+use vm_constants_rs as constants;
 use vm_cow_pages_bindings as bindings;
 use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
 use zx_status::Status;
@@ -313,27 +315,61 @@ pub type DirtyState = bindings::VmCowPages_DirtyState;
 
 pub type EvictionAction = bindings::VmCowPages_EvictionAction;
 
-pub mod options {
-    use vm_cow_pages_bindings as bindings;
-
-    pub const NONE: u32 = bindings::VmCowPagesOptions_kNone;
-    pub const USER_PAGER_BACKED_ROOT: u32 = bindings::VmCowPagesOptions_kUserPagerBackedRoot;
-    pub const PAGE_SOURCE_ROOT: u32 = bindings::VmCowPagesOptions_kPageSourceRoot;
-
-    /// With this clear, zeroing a page tries to decommit the page.  With this set, zeroing never
-    /// decommits the page.  Currently this is only set for contiguous VMOs.
-    //
-    // TODO(dustingreen): Once we're happy with the reliability of page borrowing, we should be able
-    // to relax this restriction.  We may still need to flush zeroes to RAM during reclaim to
-    // mitigate a hypothetical client incorrectly assuming that cache-clean status will remain
-    // intact while pages aren't pinned, but that mitigation should be sufficient (even assuming
-    // such a client) to allow implicit decommit when zeroing or when zero scanning, as long as no
-    // clients are doing DMA to/from contiguous while not pinned.
-    pub const CANNOT_DECOMMIT_ZERO_PAGES: u32 =
-        bindings::VmCowPagesOptions_kCannotDecommitZeroPages;
-
-    pub const HIDDEN: u32 = bindings::VmCowPagesOptions_kHidden;
+#[repr(C)]
+pub struct VmCowPagesState {
+    /// magic value
+    canary: Canary<{ fbl::magic(b"VMCP") }>,
+    pmm_alloc_flags: u32,
+    options: VmCowPagesOptions,
 }
+
+::zr::static_assert_size_and_align!(
+    VmCowPagesState,
+    constants::kVmCowPagesStateSize,
+    constants::kVmCowPagesStateAlign,
+);
+
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub struct VmCowPagesOptions: u32 {
+        // Externally-usable flags:
+        const NONE = 0;
+        const USER_PAGER_BACKED_ROOT = 1 << 0;
+        const PAGE_SOURCE_ROOT = 1 << 1;
+        /// With this clear, zeroing a page tries to decommit the page.  With this set, zeroing
+        /// never decommits the page.  Currently this is only set for contiguous VMOs.
+        //
+        // TODO(dustingreen): Once we're happy with the reliability of page borrowing, we should
+        // be able to relax this restriction.  We may still need to flush zeroes to RAM during
+        // reclaim to mitigate a hypothetical client incorrectly assuming that cache-clean status
+        // will remain intact while pages aren't pinned, but that mitigation should be sufficient
+        // (even assuming such a client) to allow implicit decommit when zeroing or when zero
+        // scanning, as long as no clients are doing DMA to/from contiguous while not pinned.
+        const CANNOT_DECOMMIT_ZERO_PAGES = 1 << 2;
+
+        // Internal-only flags:
+        const HIDDEN = 1 << 3;
+        const INTERNAL_ONLY_MASK = Self::HIDDEN.bits();
+    }
+}
+
+::zr::static_assert!(VmCowPagesOptions::NONE.bits() == bindings::VmCowPagesOptions_kNone);
+::zr::static_assert!(
+    VmCowPagesOptions::USER_PAGER_BACKED_ROOT.bits()
+        == bindings::VmCowPagesOptions_kUserPagerBackedRoot
+);
+::zr::static_assert!(
+    VmCowPagesOptions::PAGE_SOURCE_ROOT.bits() == bindings::VmCowPagesOptions_kPageSourceRoot
+);
+::zr::static_assert!(
+    VmCowPagesOptions::CANNOT_DECOMMIT_ZERO_PAGES.bits()
+        == bindings::VmCowPagesOptions_kCannotDecommitZeroPages
+);
+::zr::static_assert!(VmCowPagesOptions::HIDDEN.bits() == bindings::VmCowPagesOptions_kHidden);
+::zr::static_assert!(
+    VmCowPagesOptions::INTERNAL_ONLY_MASK.bits() == bindings::VmCowPagesOptions_kInternalOnlyMask
+);
 
 /// A copy-on-write page hierarchy.
 #[repr(C)]
@@ -364,6 +400,35 @@ unsafe impl Recyclable for VmCowPages {
 }
 
 impl VmCowPages {
+    /// Non-borrowing accessor to the Rust state in `VmCowPages`.
+    #[inline]
+    fn state(&self) -> &VmCowPagesState {
+        // SAFETY: `self.as_raw()` points to a live `VmCowPages`. `cpp_vm_cow_pages_state` returns
+        // a non-null, suitably aligned pointer to the `VmCowPagesState` that the C++ constructor
+        // initialised via `rust_vm_cow_pages_state_init`. It lives as long as `self`, and C++
+        // never writes to it after construction, so creating a shared reference is sound.
+        unsafe {
+            bindings::cpp_vm_cow_pages_state(self.as_raw())
+                .cast::<VmCowPagesState>()
+                .as_ref_unchecked()
+        }
+    }
+
+    #[inline]
+    pub(crate) fn options(&self) -> VmCowPagesOptions {
+        self.state().options
+    }
+
+    #[inline]
+    pub(crate) fn pmm_alloc_flags(&self) -> u32 {
+        self.state().pmm_alloc_flags
+    }
+
+    #[inline]
+    pub(crate) fn assert_canary(&self) {
+        self.state().canary.assert();
+    }
+
     /// Domain-specific conversion: returns raw pointer for `VmCowPages`.
     #[inline]
     pub fn as_raw(&self) -> *mut bindings::VmCowPages {
@@ -873,6 +938,62 @@ fn initialize_page_cache(level: init::LkInitLevel) {
 
 // Initialize the cache after the percpu data structures are initialized.
 init::lk_init_hook!(vm_cow_pages_cache_init, initialize_page_cache, init::LK_INIT_LEVEL_KERNEL);
+
+/// # Safety
+///
+/// * The pointer passed for `storage` must be non-null, suitably aligned, point to
+///   `kVmCowPagesStateSize` bytes of storage, and must not be aliased for the duration of the call.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_cow_pages_state_init(
+    storage: &mut MaybeUninit<VmCowPagesState>,
+    pmm_alloc_flags: u32,
+    options: u32,
+) {
+    storage.write(VmCowPagesState {
+        canary: Canary::default(),
+        pmm_alloc_flags,
+        options: VmCowPagesOptions::from_bits_retain(options),
+    });
+}
+
+/// # Safety
+///
+/// * The pointer passed for `storage` must be non-null, suitably aligned, point to
+///   `kVmCowPagesStateSize` bytes of initialized storage, and must not be aliased for the duration
+///   of the call.
+/// * After this call returns, the caller must not use `storage` again as an initialized
+///   `VmCowPagesState`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_cow_pages_destruct(storage: &mut MaybeUninit<VmCowPagesState>) {
+    // SAFETY: The caller guarantees `storage` is initialised and is not used afterwards.
+    unsafe {
+        storage.assume_init_drop();
+    }
+}
+
+/// # Safety
+///
+/// * `cow` must point to a valid `VmCowPages`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_cow_pages_assert_canary(cow: &VmCowPages) {
+    cow.assert_canary();
+}
+
+/// # Safety
+///
+/// * `cow` must point to a valid `VmCowPages`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_cow_pages_options(cow: &VmCowPages) -> u32 {
+    cow.options().bits()
+}
+
+/// # Safety
+///
+/// * `cow` must point to a valid `VmCowPages`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_cow_pages_pmm_alloc_flags(cow: &VmCowPages) -> u32 {
+    cow.pmm_alloc_flags()
+}
 
 #[cfg(ktest)]
 #[unittest::suite]

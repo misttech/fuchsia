@@ -199,6 +199,7 @@ kernel_bindgen_crate("vm-constants-rs") {
     "kRefCountedAdoptionValidator",
     "kVmAddressRegionState.*",
     "kVmMappingState.*",
+    "kVmCowPagesState.*",
     "kPhysicalPageProviderState.*",
     "kVmPageList.*",
     "kPmmNodeIndexZeroBits",
@@ -1390,6 +1391,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
 
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_cow_pages_state",
     "cpp_vm_cow_pages_free",
     "cpp_vm_cow_pages_get_ref_counted",
     "cpp_vm_cow_pages_initialize_page_cache",

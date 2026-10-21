@@ -19,6 +19,8 @@
 #include "vm/vm_cow_pages.h"
 __BEGIN_CDECLS
 
+FFI_ALWAYS_INLINE void* cpp_vm_cow_pages_state(VmCowPages* cow);
+
 // The Rust `VmCowRange` in vm_cow_pages.rs mirrors this struct.
 static_assert(sizeof(VmCowRange) == 16);
 static_assert(alignof(VmCowRange) == 8);
