@@ -2,6 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_rules_common//packages:resources.bzl", "resource")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -10,4 +22,118 @@ exports_files(
         "meta/omaha_client_service.system_update_shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+# `omaha-client` is conceptually a binary, but is built as a lib here so it can
+# be aggregated into //src/sys/pkg/bin/grand-swd-binary to save disk space.
+#
+# The unit tests (`:lib_test`, `:omaha-client-service-bin-tests-test-driver`,
+# and `:omaha-client-service-bin-tests`) stay in BUILD.gn because
+# `:omaha-client-service-bin-tests` packages GN-only components
+# (`//src/power/shutdown-shim/tests:shutdown_shim_component`,
+# `//src/sys/pkg/bin/fake-channel-control`, and `//src/sys/stash:stash2_v2`)
+# and `:lib_test` transitively depends on `//src/storage/lib/vfs/rust:vfs`
+# (`rustc_dylib("vfs_dylib")`).
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/api_metrics.rs",
+        "src/channel.rs",
+        "src/configuration.rs",
+        "src/feedback_annotation.rs",
+        "src/fidl.rs",
+        "src/inspect.rs",
+        "src/main.rs",
+        "src/metrics.rs",
+        "src/observer.rs",
+        "src/observer/crash_report.rs",
+        "src/observer/platform.rs",
+        "src/policy.rs",
+        "src/policy/rate_limiter.rs",
+        "src/storage.rs",
+        "src/storage/stash.rs",
+    ],
+    crate_name = "omaha_client_service",
+    crate_root = "src/main.rs",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//src/sys/pkg/bin/grand-swd-binary:__pkg__"],
+    deps = [
+        ":mos_metrics_registry_rustlib",
+        ":omaha-client-structured-config-lib",
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//sdk/fidl/fuchsia.power:fuchsia.power_rust",
+        "//sdk/fidl/fuchsia.power.internal:fuchsia.power.internal_rust",
+        "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
+        "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
+        "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust",
+        "//sdk/fidl/fuchsia.update.config:fuchsia.update.config_rust",
+        "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+        "//sdk/rust/zx",
+        "//src/lib/cobalt/rust/builders",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl/rust/fidl-contrib",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
+        "//src/sys/pkg/lib/bounded-node",
+        "//src/sys/pkg/lib/channel-config",
+        "//src/sys/pkg/lib/eager-package-config",
+        "//src/sys/pkg/lib/event-queue",
+        "//src/sys/pkg/lib/fidl-fuchsia-update-ext",
+        "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
+        "//src/sys/pkg/lib/omaha-client-fuchsia",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:omaha_client",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# The GN build uses the `fuchsia_component_manifest("manifest")` target defined
+# above the bazel2gn sentinel in BUILD.gn instead.
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "manifest",
+    component_name = "omaha-client-service",
+    includes = [
+        "//sdk/lib/inspect:client.shard.cml",
+        "//sdk/lib/inspect:offer.shard.cml",
+        "//sdk/lib/inspect:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/omaha-client-service.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "omaha-client-structured-config-lib",
+    cm_label = ":manifest",
+    crate_name = "omaha_client_structured_config",
+)
+
+metrics_registry(
+    name = "mos_metrics_registry",
+    generate_binarypb = False,
+    generate_rust = True,
+    # This must match the ID of our Cobalt project as specified in:
+    # third_party/cobalt_config/projects.yaml
+    project_id = 285903809,
+)
+
+# @bazel2gn:skip
+resource(
+    name = "omaha-client-channels-test-config",
+    testonly = True,
+    src = "test_data/test_channel_config.json",
+    dest = "test-config-data/omaha-client-service-bin-tests/channel_config.json",
 )
