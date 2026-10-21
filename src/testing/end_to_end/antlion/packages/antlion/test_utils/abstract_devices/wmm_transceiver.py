@@ -7,6 +7,7 @@
 # Blanket ignores to enable mypy in Antlion
 # mypy: disable-error-code="no-untyped-def"
 import asyncio
+import ipaddress
 import logging
 import multiprocessing
 import time
@@ -14,7 +15,6 @@ from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
 
-from antlion import utils
 from honeydew.affordances.connectivity.netstack.errors import (
     HoneydewNetstackError,
 )
@@ -604,9 +604,9 @@ class WmmTransceiver(object):
                         or iface.port_class == PortClass.WLAN_CLIENT
                     ):
                         for ipv4_addr in iface.ipv4_addresses:
-                            if ipv4_addr.is_private and utils.ip_in_subnet(
-                                str(ipv4_addr), subnet
-                            ):
+                            if ipv4_addr.is_private and ipaddress.ip_address(
+                                ipv4_addr
+                            ) in ipaddress.ip_network(subnet):
                                 return (str(ipv4_addr), reserved_server.port)
             else:
                 assert isinstance(
@@ -616,7 +616,9 @@ class WmmTransceiver(object):
                     self._test_interface
                 )
                 for addr in addresses["ipv4_private"]:
-                    if utils.ip_in_subnet(addr, subnet):
+                    if ipaddress.ip_address(addr) in ipaddress.ip_network(
+                        subnet
+                    ):
                         return (addr, reserved_server.port)
             await asyncio.sleep(1)
         raise AttributeError(

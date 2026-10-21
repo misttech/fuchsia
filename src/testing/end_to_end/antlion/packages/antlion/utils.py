@@ -415,16 +415,3 @@ class PingResult:
             self.received == self.requested
             and self.transmitted == self.requested
         )
-
-
-def ip_in_subnet(ip: str, subnet: str) -> bool:
-    """Validate that ip is in a given subnet.
-
-    Args:
-        ip: string, ip address to verify (eg. '192.168.42.158')
-        subnet: string, subnet to check (eg. '192.168.42.0/24')
-
-    Returns:
-        True, if ip in subnet, else False
-    """
-    return ipaddress.ip_address(ip) in ipaddress.ip_network(subnet)
