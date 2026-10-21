@@ -24,6 +24,8 @@ from libs.ssh import formatter
 from mobly import logger
 
 
+# TODO(https://fxbug.dev/567167756): Merge SshConnection and SSHProvider into a
+# single SSH library.
 class SshConnection(Runner):
     """Provides a connection to a remote machine through ssh.
 

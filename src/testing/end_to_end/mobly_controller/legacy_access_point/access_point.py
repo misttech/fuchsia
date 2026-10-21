@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import Any, FrozenSet
 
 from antlion import utils
-from antlion.capabilities.ssh import SSHConfig, SSHProvider
 from antlion.controllers.pdu import PduDevice, get_pdu_port_for_device
 from honeydew.typing.custom_types import MacAddress
 from legacy_access_point.ap_lib import hostapd_constants
@@ -48,6 +47,7 @@ from libs.commands.date import LinuxDateCommand
 from libs.commands.tcpdump import LinuxTcpdumpCommand
 from libs.proc.runner import CalledProcessError
 from libs.ssh import connection, settings
+from libs.ssh.provider import SSHConfig, SSHProvider
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly import logger
@@ -153,7 +153,8 @@ class AccessPoint:
 
         self.ssh = connection.SshConnection(self.ssh_settings)
 
-        # TODO(http://b/278758876): Replace self.ssh with self.ssh_provider
+        # TODO(https://fxbug.dev/567167756): Merge self.ssh (SshConnection) and
+        # self.ssh_provider (SSHProvider) into a single SSH library.
         self.ssh_provider = SSHProvider(
             SSHConfig(
                 self.ssh_settings.username,

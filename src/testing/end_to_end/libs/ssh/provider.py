@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from typing import IO, Mapping
 
-from antlion.net import wait_for_port
+from libs.net import wait_for_port
 from libs.proc.runner import (
     CalledProcessError,
     CalledProcessTransportError,
@@ -25,6 +25,9 @@ from libs.proc.runner import (
 from libs.types import Json
 from libs.validation import MapValidator
 from mobly import logger, signals
+
+# TODO(https://fxbug.dev/567167756): Merge SSHProvider and SshConnection into a
+# single SSH library.
 
 DEFAULT_SSH_PORT: int = 22
 DEFAULT_SSH_TIMEOUT_SEC: float = 60.0

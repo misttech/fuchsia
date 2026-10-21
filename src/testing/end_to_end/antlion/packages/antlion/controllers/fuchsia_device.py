@@ -18,7 +18,6 @@ from typing import Any, Tuple
 import fuchsia_async_extension
 import honeydew
 from antlion import utils
-from antlion.capabilities.ssh import DEFAULT_SSH_PORT, SSHConfig
 from antlion.controllers import pdu
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_controller import (
     WlanController,
@@ -44,6 +43,7 @@ from honeydew.auxiliary_devices.power_switch.power_switch_using_dmc import (
 from honeydew.transports.ffx.config import FfxConfig
 from honeydew.transports.ffx.ffx import FFX
 from honeydew.typing.custom_types import DeviceInfo, FidlEndpoint, IpPort
+from libs.ssh.provider import DEFAULT_SSH_PORT, SSHConfig
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly import logger, signals

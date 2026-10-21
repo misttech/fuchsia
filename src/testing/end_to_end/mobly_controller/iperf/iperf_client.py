@@ -14,9 +14,8 @@ import subprocess
 import threading
 from abc import ABC, abstractmethod
 
-from antlion.capabilities.ssh import SSHConfig
-from antlion.controllers.fuchsia_lib.ssh import SSHProvider
 from libs.commands.date import LinuxDateCommand
+from libs.ssh.provider import SSHConfig, SSHProvider
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 

@@ -60,8 +60,6 @@ python_library("antlion") {
   sources = [
     "__init__.py",
     "base_test.py",
-    "capabilities/__init__.py",
-    "capabilities/ssh.py",
     "controllers/__init__.py",
     "controllers/fuchsia_device.py",
     "controllers/fuchsia_lib/__init__.py",
@@ -80,7 +78,6 @@ python_library("antlion") {
     "libs/__init__.py",
     "libs/proc/__init__.py",
     "libs/proc/process.py",
-    "net.py",
     "test_utils/__init__.py",
     "test_utils/abstract_devices/__init__.py",
     "test_utils/abstract_devices/wlan_device.py",

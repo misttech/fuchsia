@@ -11,11 +11,11 @@ import unittest
 
 import mock
 from antlion import utils
-from antlion.capabilities.ssh import SSHConfig, SSHResult
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.fuchsia_lib.ssh import FuchsiaSSHProvider
 from libs.proc import job
 from libs.ssh.connection import SshConnection
+from libs.ssh.provider import SSHConfig, SSHResult
 
 PROVISIONED_STATE_GOOD = 1
 
@@ -176,7 +176,7 @@ class IpAddressUtilTest(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     @mock.patch("antlion.controllers.fuchsia_lib.ssh.FuchsiaSSHProvider.run")
-    @mock.patch("antlion.capabilities.ssh.SSHProvider.wait_until_reachable")
+    @mock.patch("libs.ssh.provider.SSHProvider.wait_until_reachable")
     @mock.patch(
         "antlion.controllers.fuchsia_device."
         "FuchsiaDevice._generate_ssh_config"
@@ -217,7 +217,7 @@ class IpAddressUtilTest(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     @mock.patch("antlion.controllers.fuchsia_lib.ssh.FuchsiaSSHProvider.run")
-    @mock.patch("antlion.capabilities.ssh.SSHProvider.wait_until_reachable")
+    @mock.patch("libs.ssh.provider.SSHProvider.wait_until_reachable")
     @mock.patch(
         "antlion.controllers.fuchsia_device."
         "FuchsiaDevice._generate_ssh_config"
