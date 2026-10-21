@@ -171,6 +171,7 @@
 //src/devices/nand/drivers/skip-block:driver
 //src/devices/pci/drivers/pci/test:pci_fake-driver
 //src/devices/pci/drivers/pci:bus-pci-driver
+//src/devices/pci/drivers/pciroot-banjo-adapter:pciroot-banjo-adapter-driver
 //src/devices/power/drivers/aml-meson-power:aml-meson-power-driver
 //src/devices/power/drivers/aml-pwm-regulator:aml-pwm-regulator-driver
 //src/devices/power/drivers/fusb302:fusb302-driver

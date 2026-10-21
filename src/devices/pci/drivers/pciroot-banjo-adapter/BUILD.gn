@@ -1,0 +1,99 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/components.gni")
+import("//build/drivers.gni")
+import("//build/test.gni")
+
+fuchsia_driver_dml("pciroot-banjo-adapter-dml") {
+  dml = "meta/pciroot-banjo-adapter.dml"
+  driver_name = "pciroot-banjo-adapter"
+}
+
+driver_bind_rules("pciroot-banjo-adapter-bind") {
+  dml_label = ":pciroot-banjo-adapter-dml"
+  bind_output = "pciroot-banjo-adapter.bindbc"
+
+  # bus-pci still binds the Banjo pciroot node directly; keep the adapter from
+  # competing for it until bus-pci moves onto fuchsia.hardware.pci.root.
+  disable_autobind = true
+  deps = [
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.pci",
+  ]
+}
+
+source_set("common") {
+  sources = [
+    "adapter.cc",
+    "adapter.h",
+  ]
+  public_deps = [
+    "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    "//sdk/fidl/fuchsia.hardware.pci.root:fuchsia.hardware.pci.root_cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/metadata/cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//zircon/system/ulib/zx",
+  ]
+  deps = [
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/logging/cpp",
+  ]
+}
+
+fuchsia_cc_driver("pciroot-banjo-adapter-driver") {
+  output_name = "pciroot-banjo-adapter"
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
+}
+
+fuchsia_driver_component("pciroot-banjo-adapter-component") {
+  dml_label = ":pciroot-banjo-adapter-dml"
+  component_name = "pciroot-banjo-adapter"
+  deps = [
+    ":pciroot-banjo-adapter-bind",
+    ":pciroot-banjo-adapter-driver",
+  ]
+  info = "meta/pciroot-banjo-adapter-info.json"
+}
+
+group("component") {
+  deps = [ ":pciroot-banjo-adapter-component" ]
+}
+
+test("pciroot-banjo-adapter-test-bin") {
+  output_name = "pciroot-banjo-adapter-test"
+  sources = [ "adapter-test.cc" ]
+  deps = [
+    ":common",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/metadata/cpp",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/devices/pci/drivers/pci/test:fakes",
+    "//src/devices/testing/fake-msi",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//third_party/googletest:gtest",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+fuchsia_unittest_package("pciroot-banjo-adapter-test") {
+  deps = [ ":pciroot-banjo-adapter-test-bin" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":pciroot-banjo-adapter-test" ]
+}

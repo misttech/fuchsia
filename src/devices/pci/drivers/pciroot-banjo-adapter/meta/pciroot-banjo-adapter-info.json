@@ -1,0 +1,13 @@
+{
+    "short_description": "PCI root Banjo adapter driver",
+    "manufacturer": "",
+    "families": [
+        "generic"
+    ],
+    "models": [
+        "generic"
+    ],
+    "areas": [
+        "PCI"
+    ]
+}

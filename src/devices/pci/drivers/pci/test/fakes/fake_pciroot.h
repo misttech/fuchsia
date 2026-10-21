@@ -15,6 +15,8 @@
 #include <zircon/errors.h>
 #include <zircon/syscalls/resource.h>
 
+#include <cstring>
+#include <optional>
 #include <vector>
 
 #include <fbl/array.h>

@@ -28,11 +28,13 @@ source_set("fakes") {
     "fakes/fake_pciroot.h",
   ]
   public_deps = [
-    "..:user_pci",
     "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
     "//sdk/lib/driver/mmio/testing/cpp",
+    "//src/devices/pci/lib/cpp:headers",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-resource",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/zx",
   ]
 }
