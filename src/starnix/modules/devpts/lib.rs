@@ -1317,8 +1317,8 @@ mod tests {
         spawn_kernel_and_run(async |task1| {
             let kernel = task1.kernel();
             tty_device_init(kernel).expect("tty_device_init");
-            let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
-            task2.running_state().mm.update(Some(task1.mm().unwrap().clone()));
+            let mut task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task2.set_mm_for_test(task1.mm().unwrap().clone());
             task2.thread_group().setsid().expect("setsid");
 
             let fs = new_pts_fs(kernel);
@@ -1356,10 +1356,10 @@ mod tests {
         spawn_kernel_and_run(async |init| {
             let kernel = init.kernel();
             tty_device_init(kernel).expect("tty_device_init");
-            let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
+            let mut task1 = init.clone_task_for_test(0, Some(SIGCHLD));
             // Share the init task's address space so ioctl usercopy operations can
             // access memory while running on this test thread.
-            task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            task1.set_mm_for_test(init.mm().unwrap().clone());
             task1.thread_group().setsid().expect("setsid");
             let pre_existing_task = task1.clone_task_for_test(0, Some(SIGCHLD));
 
@@ -1379,8 +1379,8 @@ mod tests {
             set_controlling_terminal(&task1, &opened_replica, false).unwrap();
             assert!(pre_existing_task.thread_group().controlling_terminal().is_none());
 
-            let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
-            task2.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task2.set_mm_for_test(init.mm().unwrap().clone());
             task2.thread_group().setpgid(&task2, &task2, &task2.pid).expect("setpgid");
             let task2_pgid = task2.thread_group().pgid();
             assert_ne!(task2_pgid, task1.thread_group().pgid());
@@ -1430,7 +1430,7 @@ mod tests {
         spawn_kernel_and_run(async |task1| {
             let kernel = task1.kernel();
             tty_device_init(kernel).expect("tty_device_init");
-            let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            let mut task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
             task2.thread_group().setsid().expect("setsid");
 
             let fs = new_pts_fs(kernel);
@@ -1448,9 +1448,9 @@ mod tests {
 
             // A non-session-leader child in the same session can detach its own controlling
             // terminal via TIOCNOTTY without detaching the session leader.
-            let task3 = task2.clone_task_for_test(0, Some(SIGCHLD));
-            task3.running_state().mm.update(Some(task1.mm().unwrap().clone()));
-            task2.running_state().mm.update(Some(task1.mm().unwrap().clone()));
+            let mut task3 = task2.clone_task_for_test(0, Some(SIGCHLD));
+            task3.set_mm_for_test(task1.mm().unwrap().clone());
+            task2.set_mm_for_test(task1.mm().unwrap().clone());
             assert!(task3.thread_group().controlling_terminal().is_some());
             assert_eq!(ioctl::<i32>(&task3, &opened_replica, TIOCGPGRP, &0), Ok(task2.pid.id));
 
@@ -1525,8 +1525,8 @@ mod tests {
             let kernel = init.kernel();
             tty_device_init(kernel).expect("tty_device_init");
 
-            let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
-            task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut task1 = init.clone_task_for_test(0, Some(SIGCHLD));
+            task1.set_mm_for_test(init.mm().unwrap().clone());
             task1.thread_group().setsid().expect("setsid");
             let task1_pgid = task1.thread_group().pgid();
 
@@ -1540,14 +1540,14 @@ mod tests {
                 Arc::clone(&task1.thread_group().controlling_terminal().as_ref().unwrap().terminal);
 
             // Spawn two tasks in a new foreground process group.
-            let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
-            task2.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task2.set_mm_for_test(init.mm().unwrap().clone());
             task2.thread_group().setpgid(&task2, &task2, &task2.pid).expect("setpgid task2");
             let task2_pgid = task2.thread_group().pgid();
             let task2_pgid_id = task2_pgid.id;
 
-            let task3 = task1.clone_task_for_test(0, Some(SIGCHLD));
-            task3.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut task3 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task3.set_mm_for_test(init.mm().unwrap().clone());
             task1.thread_group().setpgid(&task1, &task3, &task2_pgid).expect("setpgid task3");
 
             // Set task2's process group as the foreground process group.
@@ -1606,8 +1606,8 @@ mod tests {
             assert_eq!(ioctl::<i32>(&task1, &opened_replica, TIOCGPGRP, &0), Ok(task1_pgid.id));
 
             // Move foreground to another short-lived process group, exit it, and disassociate.
-            let task4 = task1.clone_task_for_test(0, Some(SIGCHLD));
-            task4.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut task4 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task4.set_mm_for_test(init.mm().unwrap().clone());
             task4.thread_group().setpgid(&task4, &task4, &task4.pid).expect("setpgid task4");
             let task4_pgid_id = task4.pid.id;
             ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &task4_pgid_id)
@@ -1629,30 +1629,30 @@ mod tests {
             let kernel = init.kernel();
             tty_device_init(kernel).expect("tty_device_init");
 
-            let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
-            task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut task1 = init.clone_task_for_test(0, Some(SIGCHLD));
+            task1.set_mm_for_test(init.mm().unwrap().clone());
             task1.thread_group().setsid().expect("setsid task1");
             task1.write().set_signal_mask(SigSet::from(SIGTTOU));
             let task1_pgid = task1.thread_group().pgid();
 
-            let child_a = task1.clone_task_for_test(0, Some(SIGCHLD));
-            child_a.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut child_a = task1.clone_task_for_test(0, Some(SIGCHLD));
+            child_a.set_mm_for_test(init.mm().unwrap().clone());
             child_a
                 .thread_group()
                 .setpgid(&child_a, &child_a, &child_a.pid)
                 .expect("setpgid child_a");
             let child_a_pgid = child_a.pid.clone();
 
-            let child_b = task1.clone_task_for_test(0, Some(SIGCHLD));
-            child_b.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut child_b = task1.clone_task_for_test(0, Some(SIGCHLD));
+            child_b.set_mm_for_test(init.mm().unwrap().clone());
             child_b
                 .thread_group()
                 .setpgid(&child_b, &child_b, &child_b.pid)
                 .expect("setpgid child_b");
             let child_b_pgid = child_b.pid.clone();
 
-            let child_m = task1.clone_task_for_test(0, Some(SIGCHLD));
-            child_m.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut child_m = task1.clone_task_for_test(0, Some(SIGCHLD));
+            child_m.set_mm_for_test(init.mm().unwrap().clone());
 
             let fs = new_pts_fs(kernel);
             let _opened_main = open_ptmx_and_unlock(init, &fs).expect("ptmx 0");
@@ -1663,8 +1663,8 @@ mod tests {
                 Arc::clone(&task1.thread_group().controlling_terminal().as_ref().unwrap().terminal);
 
             // Create a second session leader and terminal to stress concurrent disassociation.
-            let task_s2 = init.clone_task_for_test(0, Some(SIGCHLD));
-            task_s2.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut task_s2 = init.clone_task_for_test(0, Some(SIGCHLD));
+            task_s2.set_mm_for_test(init.mm().unwrap().clone());
             task_s2.thread_group().setsid().expect("setsid task_s2");
             task_s2.write().set_signal_mask(SigSet::from(SIGTTOU));
             let task_s2_pgid = task_s2.pid.clone();
@@ -1769,8 +1769,8 @@ mod tests {
             let kernel = init.kernel();
             tty_device_init(kernel).expect("tty_device_init");
 
-            let leader = init.clone_task_for_test(0, Some(SIGCHLD));
-            leader.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut leader = init.clone_task_for_test(0, Some(SIGCHLD));
+            leader.set_mm_for_test(init.mm().unwrap().clone());
             leader.thread_group().setsid().expect("setsid");
 
             let fs = new_pts_fs(kernel);
@@ -1780,8 +1780,8 @@ mod tests {
                 .expect("set controlling terminal");
 
             // Spawn a non-leader process in the same session.
-            let child = leader.clone_task_for_test(0, Some(SIGCHLD));
-            child.running_state().mm.update(Some(init.mm().unwrap().clone()));
+            let mut child = leader.clone_task_for_test(0, Some(SIGCHLD));
+            child.set_mm_for_test(init.mm().unwrap().clone());
             assert!(leader.thread_group().controlling_terminal().is_some());
             assert!(child.thread_group().controlling_terminal().is_some());
 

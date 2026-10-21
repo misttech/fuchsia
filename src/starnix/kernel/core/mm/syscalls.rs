@@ -123,7 +123,7 @@ pub fn do_mmap(
         return error!(EINVAL);
     }
 
-    let file = if flags & MAP_ANONYMOUS != 0 { None } else { Some(current_task.files().get(fd)?) };
+    let file = if flags & MAP_ANONYMOUS != 0 { None } else { Some(current_task.get_file(fd)?) };
 
     // With `READ_IMPLIES_EXEC`, `PROT_READ` implies `PROT_EXEC` (see personality(2)). Files that
     // cannot be executed (e.g. on a `noexec` mount), or whose `mmap()` can't map them executable
@@ -388,7 +388,7 @@ pub fn sys_process_mrelease(
     if flags != 0 {
         return error!(EINVAL);
     }
-    let file = current_task.files().get(pidfd)?;
+    let file = current_task.get_file(pidfd)?;
     // From <https://man7.org/linux/man-pages/man2/process_mrelease.2.html>:
     //
     //   The pidfd argument is a PID file descriptor (see pidfd_open(2)) that

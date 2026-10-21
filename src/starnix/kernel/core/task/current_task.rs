@@ -141,6 +141,9 @@ pub struct CurrentTask {
     /// cache a reference to its `FdTable`.
     pub files: RefCell<Option<Arc<FdTable>>>,
 
+    /// The cached memory manager of the task.
+    pub mm: Option<Arc<MemoryManager>>,
+
     /// The current subjective credentials of the task.
     // TODO(https://fxbug.dev/433548348): Avoid interior mutability here by passing a
     // &mut CurrentTask around instead of &CurrentTask.
@@ -198,11 +201,13 @@ impl CurrentTask {
         let current_creds = RefCell::new(CurrentCreds::Cached(task.clone_creds()));
         let running_state = task.running_state().expect("CurrentTask must have TaskRunningState");
         let files = running_state.files().expect("CurrentTask must have FdTable");
+        let mm = running_state.mm.upgrade();
         Self {
             task,
             thread_state,
             running_state: Some(running_state),
             files: RefCell::new(Some(files)),
+            mm,
             current_creds,
             security_state: Default::default(),
             _local_marker: Default::default(),
@@ -256,6 +261,7 @@ impl CurrentTask {
         }
 
         *self.files.borrow_mut() = None;
+        self.mm = None;
         self.task.running_state.update(None);
 
         self.trigger_delayed_releaser();
@@ -302,6 +308,31 @@ impl CurrentTask {
     #[track_caller]
     pub fn files(&self) -> Arc<FdTable> {
         self.files.borrow().as_ref().expect("CurrentTask must have FdTable").clone()
+    }
+
+    /// Looks up a file descriptor in the cached [`FdTable`] without cloning the [`Arc<FdTable>`].
+    #[inline]
+    pub fn get_file(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
+        self.files.borrow().as_ref().expect("CurrentTask must have FdTable").get(fd)
+    }
+
+    /// Looks up a file descriptor (allowing `O_PATH`) in the cached [`FdTable`] without cloning
+    /// the [`Arc<FdTable>`].
+    #[inline]
+    pub fn get_file_allowing_opath(&self, fd: FdNumber) -> Result<FileHandle, Errno> {
+        self.files.borrow().as_ref().expect("CurrentTask must have FdTable").get_allowing_opath(fd)
+    }
+
+    /// Returns the cached [`MemoryManager`] for the [`CurrentTask`], avoiding RCU read-scope and
+    /// [`Arc`] reference-count traffic on every user memory access.
+    #[inline]
+    pub fn mm(&self) -> Result<&Arc<MemoryManager>, Errno> {
+        self.mm.as_ref().ok_or_else(|| errno!(EINVAL))
+    }
+
+    pub fn set_mm_for_test(&mut self, mm: Arc<MemoryManager>) {
+        self.running_state().mm.update(Some(mm.clone()));
+        self.mm = Some(mm);
     }
 
     /// Returns the [`FsContext`] for the [`Task`].
@@ -667,7 +698,7 @@ impl CurrentTask {
             //   directory.
             //
             // See https://man7.org/linux/man-pages/man2/open.2.html
-            let file = self.files().get_allowing_opath(dir_fd)?;
+            let file = self.get_file_allowing_opath(dir_fd)?;
             file.name.to_passive()
         };
 
@@ -1187,11 +1218,12 @@ impl CurrentTask {
         let mm = {
             let new_mm = MemoryManager::exec(
                 self.thread_group().root_vmar.unowned(),
-                self.mm().ok(),
+                self.mm().ok().cloned(),
                 resolved_program.file.name().to_passive(),
                 elf_arch_width,
             )?;
             self.running_state().mm.update(Some(new_mm.clone()));
+            self.mm = Some(new_mm.clone());
             new_mm
         };
         // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
@@ -1720,7 +1752,7 @@ impl CurrentTask {
             if clone_thread {
                 TaskInfo {
                     thread_group: self.thread_group().clone(),
-                    memory_manager: self.mm().ok(),
+                    memory_manager: self.mm().ok().cloned(),
                 }
             } else {
                 // Drop the lock on this task before entering `create_zircon_process`, because it will
@@ -1868,7 +1900,7 @@ impl CurrentTask {
                 // supported.
                 assert!(!clone_thread);
                 let child_mm = MemoryManager::snapshot_of(
-                    &self.mm()?,
+                    self.mm()?,
                     child.thread_group.root_vmar.unowned(),
                     self.thread_state.arch_width(),
                 )?;
@@ -1898,7 +1930,7 @@ impl CurrentTask {
             // by making a copy-on-write clone of the memory from the original process.
             if clone_vm && !clone_thread {
                 let child_mm = MemoryManager::snapshot_of(
-                    &self.mm()?,
+                    self.mm()?,
                     child.thread_group.root_vmar.unowned(),
                     self.thread_state.arch_width(),
                 )?;

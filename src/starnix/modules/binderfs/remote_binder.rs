@@ -1593,7 +1593,7 @@ mod tests {
             REMOTE_CONTROLLER_CLIENT.lock().insert(service_name.clone(), remote_controller_client);
             let fs = init_task.fs().clone();
             let kernel = init_task.kernel().clone();
-            let memory_manager = init_task.mm().ok();
+            let memory_manager = init_task.mm().ok().cloned();
             let init_thread_group = init_task.thread_group().clone();
             let (thread_group_sender, thread_group_receiver) = oneshot::channel();
 

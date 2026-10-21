@@ -6511,7 +6511,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_mm_exec() {
         spawn_kernel_and_run(async |current_task| {
-            let mm = current_task.mm().unwrap();
+            let mm = current_task.mm().unwrap().clone();
 
             let has = |addr: UserAddress| -> bool {
                 let state = mm.state.read();
@@ -6541,7 +6541,7 @@ mod tests {
                 ArchWidth::Arch64,
             )
             .expect("failed to exec memory manager");
-            current_task.running_state().mm.update(Some(new_mm));
+            current_task.set_mm_for_test(new_mm);
 
             assert!(!has(brk_addr));
             assert!(!has(mapped_addr));
