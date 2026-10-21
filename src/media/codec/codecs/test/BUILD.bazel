@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "timestamp_extrapolator_test_bin",
+    testonly = True,
+    srcs = ["timestamp_extrapolator_tests.cc"],
+    tags = ["manual"],
+    deps = [
+        "//src/lib/fxl/test:gtest_main",
+        "//src/media/codec/codecs:timestamp_extrapolator",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "timestamp_extrapolator_tests",
+    package_name = "timestamp_extrapolator_tests",
+    unit_tests = [":timestamp_extrapolator_test_bin"],
+)

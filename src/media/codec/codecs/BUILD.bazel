@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "timestamp_extrapolator",
+    srcs = ["timestamp_extrapolator.cc"],
+    hdrs = ["timestamp_extrapolator.h"],
+    includes = ["."],
+    public_configs = [":local_header_include_config"],
+    visibility = [
+        "//src/media/codec/codecs/sw/sbc:__pkg__",
+        "//src/media/codec/codecs/test:__pkg__",
+    ],
+    deps = ["//zircon/system/ulib/zx"],
+    alwayslink = True,
+)
