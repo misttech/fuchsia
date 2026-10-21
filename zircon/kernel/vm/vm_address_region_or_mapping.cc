@@ -29,26 +29,11 @@ VmAddressRegionOrMapping::VmAddressRegionOrMapping(vaddr_t base, size_t size, ui
 }
 
 zx_status_t VmAddressRegionOrMapping::Destroy() {
-  AssertRegionOrMappingCanary();
-  Guard<CriticalMutex> region_guard{aspace()->region_lock()};
-  Guard<CriticalMutex> guard{aspace()->lock()};
-  if (state_locked() != LifeCycleState::ALIVE) {
-    return ZX_ERR_BAD_STATE;
-  }
-
-  return DestroyLocked();
+  return rust_vm_address_region_or_mapping_destroy(this);
 }
 
 VmAddressRegionOrMapping::~VmAddressRegionOrMapping() {
-  LTRACEF("%p\n", this);
-
-  ASSERT([&]() TA_NO_THREAD_SAFETY_ANALYSIS { return state_locked() != LifeCycleState::ALIVE; }());
-
-  DEBUG_ASSERT([&]() TA_NO_THREAD_SAFETY_ANALYSIS {
-    return memory_priority_locked() == MemoryPriority::DEFAULT;
-  }());
-
-  rust_vm_address_region_or_mapping_destruct(&opaque_storage_);
+  rust_vm_address_region_or_mapping_destruct(this);
 }
 
 zx_status_t VmAddressRegionOrMapping::DestroyLocked() {

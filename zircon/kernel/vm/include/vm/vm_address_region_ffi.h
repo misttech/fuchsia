@@ -44,9 +44,10 @@ VmAddressRegion* cpp_vm_address_region_or_mapping_as_vm_address_region(
     VmAddressRegionOrMapping* region_or_mapping);
 VmMapping* cpp_vm_address_region_or_mapping_as_vm_mapping(
     VmAddressRegionOrMapping* region_or_mapping);
-zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar);
 zx_status_t cpp_vm_address_region_set_memory_priority(VmAddressRegion* vmar,
                                                       VmAddressRegion::MemoryPriority priority);
+zx_status_t cpp_vm_address_region_set_memory_priority_locked(
+    VmAddressRegion* vmar, VmAddressRegion::MemoryPriority priority);
 zx_status_t cpp_vm_address_region_unmap(VmAddressRegion* vmar, vaddr_t base, size_t size,
                                         VmAddressRegionOpChildren op_children);
 zx_status_t cpp_vm_address_region_protect(VmAddressRegion* vmar, vaddr_t base, size_t size,
@@ -79,7 +80,6 @@ void cpp_vm_address_region_enumerator_resume(CppVmAddressRegionEnumerator* enume
 
 void cpp_vm_mapping_free(VmMapping* mapping);
 void* cpp_vm_mapping_state(VmMapping* mapping);
-zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
                                      bool ignore_existing);
 zx_status_t cpp_vm_mapping_debug_unmap(VmMapping* mapping, vaddr_t base, size_t size);

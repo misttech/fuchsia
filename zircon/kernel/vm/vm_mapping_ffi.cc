@@ -18,9 +18,6 @@ FFI_ALWAYS_INLINE void cpp_vm_mapping_free(VmMapping* mapping) { delete mapping;
 FFI_ALWAYS_INLINE void* cpp_vm_mapping_state(VmMapping* mapping) {
   return &mapping->opaque_storage_;
 }
-FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping) {
-  return mapping->Destroy();
-}
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset,
                                                        size_t len, bool commit,
                                                        bool ignore_existing) {

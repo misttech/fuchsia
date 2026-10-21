@@ -23,7 +23,8 @@ use core::ffi::{CStr, c_char};
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::pin::Pin;
-use core::ptr::NonNull;
+use core::ptr::{self, NonNull};
+use debug::ltracef;
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
 use kprint::kprint;
 use ksync::{KCell, KMutexGuard, LockToken, RawCriticalMutex};
@@ -32,6 +33,8 @@ use vm_constants_rs as constants;
 use zr::Opaque;
 use zx_status::Status;
 use zx_types::{ZX_MAX_NAME_LEN, zx_status_t};
+
+const LOCAL_TRACE: u32 = 0;
 
 pub mod flag {
     use vm_address_region_bindings as bindings;
@@ -393,6 +396,43 @@ impl VmAddressRegionOrMapping {
         (needed & actual) == needed
     }
 
+    /// If a VMO-mapping, unmap all pages and remove dependency on `VmObject` it has a ref to.
+    /// Otherwise recursively destroy child VMARs and transition to the `Dead` state.
+    ///
+    /// Returns `Ok(())` on success, `Err(Status::BAD_STATE)` if already dead, and other
+    /// values on error (typically unmap failure).
+    pub fn destroy(&self) -> Result<(), Status> {
+        self.state().canary.assert();
+
+        ksync::lock!(let mut region_guard = self.region_lock().lock());
+        ksync::lock!(let mut guard = self.lock().lock());
+        if self.state_locked(guard.token()) != LifeCycleState::Alive {
+            return Err(Status::BAD_STATE);
+        }
+
+        match self.downcast() {
+            RegionOrMapping::Mapping(mapping) => VmMapping::destroy_locked(
+                RefPtr::from_ref(mapping),
+                region_guard.as_mut().token_mut(),
+                guard.as_mut().token_mut(),
+            ),
+            RegionOrMapping::Region(region) => VmAddressRegion::destroy_locked(
+                RefPtr::from_ref(region),
+                region_guard.as_mut().token_mut(),
+                guard.as_mut().token_mut(),
+            ),
+        }
+    }
+
+    /// destructor, should only be invoked from `fbl_recycle`
+    fn destruct(&self, token: &LockToken<'_, VmAspaceLockClass>) {
+        ltracef!("{:p}\n", self);
+
+        assert!(self.state_locked(token) != LifeCycleState::Alive);
+
+        debug_assert!(self.memory_priority_locked(token) == MemoryPriority::Default);
+    }
+
     #[inline]
     pub(super) fn state_locked(&self, _token: &LockToken<'_, VmAspaceLockClass>) -> LifeCycleState {
         // SAFETY: The aspace lock is held.
@@ -580,8 +620,9 @@ impl VmAddressRegion {
 
     /// Creates a [`VmMapping`] within this region.
     ///
-    /// To avoid leaks, this should be paired with a call to [`VmMapping::destroy`] if desired;
-    /// dropping `MapResult::mapping` will not destroy the mapping.
+    /// To avoid leaks, this should be paired with a call to
+    /// [`VmAddressRegionOrMapping::destroy`] if desired; dropping `MapResult::mapping` will not
+    /// destroy the mapping.
     #[allow(clippy::too_many_arguments)]
     pub fn create_vm_mapping(
         &self,
@@ -619,10 +660,98 @@ impl VmAddressRegion {
         Ok(MapResult { mapping, base })
     }
 
-    /// Destroys this region and recursively destroys child VMARs.
-    pub fn destroy(&self) -> Result<(), Status> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
-        Status::ok(unsafe { bindings::cpp_vm_address_region_destroy(self.as_ffi_ptr()) })
+    /// Applies the given memory priority to this VMAR, which may or may not result in a change. Up
+    /// to the derived type to know how to apply and update the memory priority.
+    fn set_memory_priority_locked(
+        &self,
+        _token: &mut LockToken<'_, VmAspaceLockClass>,
+        priority: MemoryPriority,
+    ) -> Result<(), Status> {
+        // SAFETY: The aspace lock is held.
+        Status::ok(unsafe {
+            bindings::cpp_vm_address_region_set_memory_priority_locked(
+                self.as_ffi_ptr(),
+                priority.into(),
+            )
+        })
+    }
+
+    fn destroy_locked(
+        this: RefPtr<Self>,
+        region_token: &mut LockToken<'_, VmAspaceRegionLockClass>,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+    ) -> Result<(), Status> {
+        this.state().canary.assert();
+        ltracef!("{:p} '{}'\n", &**this, zr::from_utf8_lossy(this.name().to_bytes()));
+
+        // Remove any applied memory priority.
+        let status = this.set_memory_priority_locked(aspace_token, MemoryPriority::Default);
+        debug_assert!(status.is_ok());
+
+        debug_assert!(this.lock_is_held());
+        debug_assert!(this.region_lock_is_held());
+        // The `cur` reference prevents regions from being destructed after dropping
+        // the last reference to them when removing from their parent.
+        let this_ptr: *const VmAddressRegion = &*this;
+        let mut cur: Option<RefPtr<VmAddressRegion>> = Some(this);
+        while let Some(current) = cur {
+            // Iterate through children destroying mappings. If we find a
+            // subregion, stop so we can traverse down.
+            let mut child_region: Option<RefPtr<VmAddressRegion>> = None;
+            while !region_list::is_empty(&current, aspace_token) && child_region.is_none() {
+                // SAFETY: The list of `current` is not empty.
+                let child = unsafe { region_list::front(&current, aspace_token) };
+                match child.downcast() {
+                    RegionOrMapping::Mapping(mapping) => {
+                        debug_assert!(child.lock_is_held());
+                        debug_assert!(child.region_lock_is_held());
+                        // `destroy_locked` should remove this child from our list on success.
+                        match VmMapping::destroy_locked(
+                            RefPtr::from_ref(mapping),
+                            region_token,
+                            aspace_token,
+                        ) {
+                            Ok(()) => {}
+                            Err(status) => {
+                                // TODO(teisenbe): Do we want to handle this case differently?
+                                return Err(status);
+                            }
+                        }
+                    }
+                    RegionOrMapping::Region(region) => {
+                        child.state().canary.assert();
+                        child_region = Some(RefPtr::from_ref(region));
+                    }
+                }
+            }
+
+            if child_region.is_some() {
+                // If we found a child region, traverse down the tree.
+                cur = child_region;
+            } else {
+                // All children are destroyed, so now destroy the current node.
+                // SAFETY: `parent_locked` is either null or points to a live parent
+                // `VmAddressRegion`.
+                let parent = unsafe { current.parent_locked(aspace_token).as_ref() };
+                if let Some(parent) = parent {
+                    debug_assert!(parent.lock_is_held());
+                    debug_assert!(parent.region_lock_is_held());
+                    // SAFETY: `current` is a child of `parent` and is kept alive by another owning
+                    // reference for the duration of the call.
+                    unsafe {
+                        region_list::remove_region(parent, region_token, aspace_token, &current)
+                    };
+                }
+                current.set_state_locked(region_token, aspace_token, LifeCycleState::Dead);
+                current.set_parent_locked(aspace_token, ptr::null_mut());
+
+                // If we destroyed the original node, stop. Otherwise traverse
+                // up the tree and keep destroying.
+                cur =
+                    if ptr::eq(&*current, this_ptr) { None } else { parent.map(RefPtr::from_ref) };
+            }
+        }
+        Ok(())
     }
 
     /// Returns the name of this region.
@@ -1010,6 +1139,33 @@ pub(super) mod region_list {
         }
     }
 
+    /// Returns whether the region list is empty.
+    #[inline]
+    pub(in crate::vm) fn is_empty(
+        vmar: &VmAddressRegion,
+        _token: &LockToken<'_, VmAspaceLockClass>,
+    ) -> bool {
+        // SAFETY: `vmar` is live and the aspace lock is held.
+        unsafe { bindings::cpp_vm_address_region_subregions_is_empty(vmar.as_ffi_ptr()) }
+    }
+
+    /// Returns the first element of the list.
+    ///
+    /// # Safety
+    ///
+    /// The list is not empty.
+    #[inline]
+    pub(in crate::vm) unsafe fn front<'a>(
+        vmar: &'a VmAddressRegion,
+        _token: &'a LockToken<'_, VmAspaceLockClass>,
+    ) -> &'a VmAddressRegionOrMapping {
+        // SAFETY: `vmar` is live, its list is not empty and the aspace lock is held.
+        unsafe {
+            &*bindings::cpp_vm_address_region_subregions_front(vmar.as_ffi_ptr())
+                .cast::<VmAddressRegionOrMapping>()
+        }
+    }
+
     #[inline]
     pub(in crate::vm) fn size_slow(
         vmar: &VmAddressRegion,
@@ -1073,13 +1229,22 @@ pub extern "C" fn rust_vm_address_region_or_mapping_state_init(
 
 /// # Safety
 ///
-/// `storage` is initialized and is not used afterwards.
+/// `this` points to a `VmAddressRegionOrMapping` whose state is initialized, `this` is not accessed
+/// concurrently, and the state is not used afterwards.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_address_region_or_mapping_destruct(
-    storage: &mut MaybeUninit<VmAddressRegionOrMappingState>,
+    this: &VmAddressRegionOrMapping,
 ) {
-    // SAFETY: `storage` is initialized and valid for drop.
-    unsafe { storage.assume_init_drop() }
+    // SAFETY: `this` is not accessed concurrently.
+    let token = unsafe { LockToken::new() };
+    this.destruct(&token);
+    // SAFETY: The state is initialized and is not used afterwards.
+    unsafe {
+        ptr::drop_in_place(
+            bindings::cpp_vm_address_region_or_mapping_state(this.raw.get())
+                .cast::<VmAddressRegionOrMappingState>(),
+        )
+    };
 }
 
 #[unsafe(no_mangle)]
@@ -1334,4 +1499,37 @@ pub unsafe extern "C" fn rust_vm_address_region_dump_locked(
     // SAFETY: The aspace lock is held by the caller.
     let token = unsafe { LockToken::new() };
     this.dump_locked(&region_token, &token, depth, verbose);
+}
+
+/// # Safety
+///
+/// `this` points to a live `VmAddressRegion`. The region lock and the aspace lock are held, and the
+/// children of the parent are not being iterated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_destroy_locked(
+    this: *const VmAddressRegion,
+) -> zx_status_t {
+    // SAFETY: `this` points to a live `VmAddressRegion`.
+    let this = RefPtr::from_ref(unsafe { &*this });
+    // SAFETY: The region lock is held by the caller.
+    let mut region_token = unsafe { LockToken::new() };
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    Status::result_into_raw(VmAddressRegion::destroy_locked(
+        this,
+        &mut region_token,
+        &mut aspace_token,
+    ))
+}
+
+/// # Safety
+///
+/// `this` points to a live `VmAddressRegionOrMapping` and the caller holds a reference to it for
+/// the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_or_mapping_destroy(
+    this: *const VmAddressRegionOrMapping,
+) -> zx_status_t {
+    // SAFETY: `this` points to a live `VmAddressRegionOrMapping`.
+    Status::result_into_raw(unsafe { &*this }.destroy())
 }

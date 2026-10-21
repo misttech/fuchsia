@@ -411,58 +411,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
 }
 
 zx_status_t VmAddressRegion::DestroyLockedImpl() {
-  AssertCanary();
-  LTRACEF("%p '%s'\n", this, name());
-
-  // Remove any applied memory priority.
-  zx_status_t status = SetMemoryPriorityLocked(MemoryPriority::DEFAULT);
-  DEBUG_ASSERT(status == ZX_OK);
-
-  // The cur reference prevents regions from being destructed after dropping
-  // the last reference to them when removing from their parent.
-  fbl::RefPtr<VmAddressRegion> cur(this);
-  AssertHeld(cur->lock_ref());
-  AssertHeld(cur->region_lock_ref());
-  while (cur) {
-    // Iterate through children destroying mappings. If we find a
-    // subregion, stop so we can traverse down.
-    fbl::RefPtr<VmAddressRegion> child_region = nullptr;
-    while (!cur->subregions_.IsEmpty() && !child_region) {
-      VmAddressRegionOrMapping* child = &cur->subregions_.front();
-      if (child->is_mapping()) {
-        AssertHeld(child->lock_ref());
-        AssertHeld(child->region_lock_ref());
-        // DestroyLocked should remove this child from our list on success.
-        status = child->DestroyLocked();
-        if (status != ZX_OK) {
-          // TODO(teisenbe): Do we want to handle this case differently?
-          return status;
-        }
-      } else {
-        child_region = child->as_vm_address_region();
-      }
-    }
-
-    if (child_region) {
-      // If we found a child region, traverse down the tree.
-      cur = child_region;
-    } else {
-      // All children are destroyed, so now destroy the current node.
-      if (cur->parent_locked()) {
-        AssertHeld(cur->parent_locked()->lock_ref());
-        AssertHeld(cur->parent_locked()->region_lock_ref());
-        cur->parent_locked()->subregions_.RemoveRegion(cur.get());
-      }
-      cur->set_state_locked(LifeCycleState::DEAD);
-      VmAddressRegion* cur_parent = cur->parent_locked();
-      cur->set_parent_locked(nullptr);
-
-      // If we destroyed the original node, stop. Otherwise traverse
-      // up the tree and keep destroying.
-      cur.reset((cur.get() == this) ? nullptr : cur_parent);
-    }
-  }
-  return ZX_OK;
+  return rust_vm_address_region_destroy_locked(this);
 }
 
 fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegion(vaddr_t addr) {

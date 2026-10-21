@@ -177,12 +177,6 @@ impl VmMapping {
         }
     }
 
-    /// Destroys this mapping, unmapping all pages and removing dependencies on the underlying VMO.
-    pub fn destroy(&self) -> Result<(), Status> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        Status::ok(unsafe { bindings::cpp_vm_mapping_destroy(self.as_ffi_ptr()) })
-    }
-
     /// Returns the offset into the underlying VMO for this mapping.
     pub fn object_offset(&self) -> u64 {
         self.state().object_offset
@@ -614,8 +608,8 @@ impl VmMapping {
         assert!(status.is_ok());
     }
 
-    fn destroy_locked(
-        this: &RefPtr<Self>,
+    pub(super) fn destroy_locked(
+        this: RefPtr<Self>,
         region_token: &mut LockToken<'_, VmAspaceRegionLockClass>,
         aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
     ) -> Result<(), Status> {
@@ -624,7 +618,7 @@ impl VmMapping {
         let object = this.object_locked(aspace_token).clone().expect("object must be set");
         ksync::lock!(let mut guard = object.lock_ref().lock());
         Self::destroy_locked_object(
-            this,
+            &this,
             region_token,
             aspace_token,
             guard.as_mut().token_mut(),
@@ -1306,7 +1300,7 @@ pub unsafe extern "C" fn rust_vm_mapping_destroy_locked(this: *const VmMapping) 
     let mut region_token = unsafe { LockToken::new() };
     // SAFETY: The aspace lock is held by the caller.
     let mut aspace_token = unsafe { LockToken::new() };
-    Status::result_into_raw(VmMapping::destroy_locked(&this, &mut region_token, &mut aspace_token))
+    Status::result_into_raw(VmMapping::destroy_locked(this, &mut region_token, &mut aspace_token))
 }
 
 /// # Safety

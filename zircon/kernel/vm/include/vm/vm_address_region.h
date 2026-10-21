@@ -245,7 +245,8 @@ extern "C" {
 void rust_vm_address_region_or_mapping_state_init(void* storage, vaddr_t base, size_t size,
                                                   uint32_t flags, VmAspace* aspace,
                                                   VmAddressRegion* parent, bool is_mapping);
-void rust_vm_address_region_or_mapping_destruct(void* storage);
+void rust_vm_address_region_or_mapping_destruct(VmAddressRegionOrMapping* region_or_mapping);
+zx_status_t rust_vm_address_region_or_mapping_destroy(VmAddressRegionOrMapping* region_or_mapping);
 vaddr_t rust_vm_address_region_or_mapping_base(const VmAddressRegionOrMapping* region_or_mapping);
 size_t rust_vm_address_region_or_mapping_size(const VmAddressRegionOrMapping* region_or_mapping);
 uint32_t rust_vm_address_region_or_mapping_flags(const VmAddressRegionOrMapping* region_or_mapping);
@@ -734,6 +735,8 @@ zx_status_t cpp_vm_address_region_subregions_insert_region(VmAddressRegion* vmar
 size_t cpp_vm_address_region_subregions_size_slow(const VmAddressRegion* vmar);
 void cpp_vm_address_region_subregions_remove_region(VmAddressRegion* vmar,
                                                     VmAddressRegionOrMapping* region);
+bool cpp_vm_address_region_subregions_is_empty(const VmAddressRegion* vmar);
+VmAddressRegionOrMapping* cpp_vm_address_region_subregions_front(VmAddressRegion* vmar);
 void cpp_vm_address_region_subregions_for_each(const VmAddressRegion* vmar,
                                                void (*cb)(VmAddressRegionOrMapping*, void*),
                                                void* ctx);
@@ -859,6 +862,8 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   friend void ::cpp_vm_address_region_subregions_remove_region(VmAddressRegion*,
                                                                VmAddressRegionOrMapping*);
   friend size_t(::cpp_vm_address_region_subregions_size_slow)(const VmAddressRegion*);
+  friend bool ::cpp_vm_address_region_subregions_is_empty(const VmAddressRegion*);
+  friend VmAddressRegionOrMapping* ::cpp_vm_address_region_subregions_front(VmAddressRegion*);
   friend void ::cpp_vm_address_region_subregions_for_each(
       const VmAddressRegion*, void (*)(VmAddressRegionOrMapping*, void*), void*);
 
@@ -938,6 +943,7 @@ VmAddressRegionOrMapping* rust_vm_address_region_find_region(const VmAddressRegi
                                                              vaddr_t addr);
 VmMapping* rust_vm_address_region_find_mapping_locked(const VmAddressRegion* vmar, vaddr_t va);
 zx_status_t rust_vm_address_region_activate(VmAddressRegion* vmar);
+zx_status_t rust_vm_address_region_destroy_locked(VmAddressRegion* vmar);
 void rust_vm_address_region_dump_locked(const VmAddressRegion* vmar, uint32_t depth, bool verbose);
 }
 
