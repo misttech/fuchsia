@@ -560,7 +560,7 @@ async fn test_install_with_local_table<M: Manager>(name: &str) {
 
 // A simplified version of an `fnet_interfaces_ext::Event` for
 // tracking only added and removed events.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 enum InterfaceWatcherEvent {
     Added { id: u64, name: String },
     Removed { id: u64 },
@@ -2957,18 +2957,15 @@ async fn add_blackhole_interface<M: Manager>(name: &str) {
         futures::stream::once(wait_for_netmgr.map(|r| panic!("network manager exited {:?}", r))),
     )
     .fuse();
-    let mut interfaces_stream = pin!(interfaces_stream);
-    // Observe the initially existing loopback interface.
-    let name = assert_matches!(
-        interfaces_stream.select_next_some().await,
-        InterfaceWatcherEvent::Added { id: 1, name } => name
+    let interfaces_stream = pin!(interfaces_stream);
+    // Observe the initially existing loopback interface and the blackhole
+    // interface in any order.
+    let interfaces: HashSet<_> = interfaces_stream.take(2).collect().await;
+    assert_eq!(
+        interfaces,
+        HashSet::from([
+            InterfaceWatcherEvent::Added { id: 1, name: "lo".to_string() },
+            InterfaceWatcherEvent::Added { id: 2, name: "testblackhole".to_string() },
+        ])
     );
-    assert_eq!(name, "lo");
-
-    // Observe the blackhole interface.
-    let name = assert_matches!(
-        interfaces_stream.select_next_some().await,
-        InterfaceWatcherEvent::Added { id: 2, name } => name
-    );
-    assert_eq!(name, "testblackhole");
 }
