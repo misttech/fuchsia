@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "test.wlan.fidlbridge",
+    srcs = [
+        "fidl_bridge.test.fidl",
+    ],
+    contains_drivers = True,
+    visibility = [
+        "//src/connectivity/wlan/drivers/lib/fidl-bridge/cpp/test:__pkg__",
+    ],
+    deps = [
+        "//zircon/vdso/zx",
+    ],
+)
