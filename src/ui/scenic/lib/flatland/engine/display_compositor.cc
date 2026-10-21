@@ -10,10 +10,13 @@
 #include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
 #include <lib/async/time.h>
 #include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/wire/status.h>
+#include <lib/fpromise/promise.h>
+#include <lib/fpromise/single_threaded_executor.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/trace/event.h>
 #include <zircon/status.h>
@@ -185,48 +188,6 @@ bool IsValidBufferImage(const allocation::ImageMetadata& metadata) {
   return true;
 }
 
-bool CheckBuffersAllocated(fidl::SyncClient<fuchsia_sysmem2::BufferCollection>& token) {
-  auto check_status = token->CheckAllBuffersAllocated();
-  return check_status.is_ok();
-}
-
-// Calls `WaitForBuffersAllocated()` on `token` and returns the pixel format of the allocation.
-// `token` must have already checked that buffers are allocated.
-// TODO(https://fxbug.dev/42150686): Delete after we don't need the pixel format anymore.
-fuchsia_images2::PixelFormatModifier GetPixelFormatModifier(
-    fidl::SyncClient<fuchsia_sysmem2::BufferCollection>& token) {
-  auto wait_result = token->WaitForAllBuffersAllocated();
-  FX_DCHECK(wait_result.is_ok()) << "WaitForBuffersAllocated failed: "
-                                 << wait_result.error_value().FormatDescription();
-  return wait_result.value()
-      .buffer_collection_info()
-      .value()
-      .settings()
-      .value()
-      .image_format_constraints()
-      .value()
-      .pixel_format_modifier()
-      .value();
-}
-
-// Consumes `token` and if its allocation is compatible with the display returns its pixel format.
-// Otherwise returns `std::nullopt`.
-// TODO(https://fxbug.dev/42150686): Just return a bool after we don't need the pixel format
-// anymore.
-std::optional<fuchsia_images2::PixelFormatModifier> DetermineDisplaySupportFor(
-    fidl::SyncClient<fuchsia_sysmem2::BufferCollection> token) {
-  std::optional<fuchsia_images2::PixelFormatModifier> result = std::nullopt;
-
-  const bool image_supports_display = CheckBuffersAllocated(token);
-  if (image_supports_display) {
-    result = GetPixelFormatModifier(token);
-  }
-
-  auto release_status = token->Release();
-  (void)release_status;
-  return result;
-}
-
 }  // anonymous namespace
 
 DisplayCompositor::DisplayCompositor(async_dispatcher_t* main_dispatcher,
@@ -250,10 +211,26 @@ DisplayCompositor::DisplayCompositor(async_dispatcher_t* main_dispatcher,
 DisplayCompositor::~DisplayCompositor() {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
 
-  // Destroy all of the display layers.
-  //
-  // TODO(https://fxbug.dev/447261550): this is really bad.  Luckily it doesn't impact production.
+  // Release any buffer collections whose release `ReleaseBufferCollection()` deferred while lazy
+  // image imports were still pending.
+  std::vector<allocation::GlobalBufferCollectionId> collections_to_release_from_gpu;
   {
+    // Acquire `lock_` to access `FXL_GUARDED_BY(lock_)` members and `display_coordinator_`.
+    std::scoped_lock lock(lock_);
+    for (const auto& [collection_id, pending] : pending_collection_releases_) {
+      if (pending.pending_display_imports > 0) {
+        ReleaseDisplayBufferCollection(collection_id);
+      }
+      if (pending.pending_gpu_imports > 0) {
+        collections_to_release_from_gpu.push_back(collection_id);
+      }
+    }
+    pending_collection_releases_.clear();
+    image_import_map_.clear();
+
+    // Destroy all of the display layers.
+    //
+    // TODO(https://fxbug.dev/447261550): this is really bad.  Luckily it doesn't impact production.
     const fidl::OneWayStatus result = display_coordinator_.raw().sync()->DiscardConfig();
     if (!result.ok()) {
       FX_LOGS(ERROR) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
@@ -278,6 +255,9 @@ DisplayCompositor::~DisplayCompositor() {
         }
       }
     }
+  }
+  for (const allocation::GlobalBufferCollectionId collection_id : collections_to_release_from_gpu) {
+    renderer_->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kClientImage);
   }
 
   // TODO(https://fxbug.dev/42063495): Release `render_targets` and `protected_render_targets`
@@ -376,15 +356,8 @@ fpromise::promise<> DisplayCompositor::ImportBufferCollection(
       });
 }
 
-void DisplayCompositor::ReleaseBufferCollection(
-    const allocation::GlobalBufferCollectionId collection_id, const BufferCollectionUsage usage) {
-  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  TRACE_DURATION("gfx", "flatland::DisplayCompositor::ReleaseBufferCollection");
-  FX_DCHECK(usage == BufferCollectionUsage::kClientImage);
-
-  renderer_->ReleaseBufferCollection(collection_id, usage);
-
-  std::scoped_lock lock(lock_);
+void DisplayCompositor::ReleaseDisplayBufferCollection(
+    const allocation::GlobalBufferCollectionId collection_id) {
   FX_DCHECK(display_coordinator_.is_valid());
   const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
@@ -396,6 +369,242 @@ void DisplayCompositor::ReleaseBufferCollection(
   }
   display_buffer_collection_ptrs_.erase(collection_id);
   buffer_collection_supports_display_.erase(collection_id);
+  buffer_collection_tiling_type_map_.erase(collection_id);
+  buffer_collection_metadata_map_.erase(collection_id);
+}
+
+void DisplayCompositor::OnPendingDisplayImportResolved(
+    const allocation::GlobalBufferCollectionId collection_id) {
+  auto it = pending_collection_releases_.find(collection_id);
+  if (it == pending_collection_releases_.end()) {
+    return;
+  }
+  FX_DCHECK(it->second.pending_display_imports > 0);
+  if (--it->second.pending_display_imports == 0) {
+    ReleaseDisplayBufferCollection(collection_id);
+    if (it->second.pending_gpu_imports == 0) {
+      pending_collection_releases_.erase(it);
+    }
+  }
+}
+
+bool DisplayCompositor::OnPendingGpuImportResolved(
+    const allocation::GlobalBufferCollectionId collection_id) {
+  auto it = pending_collection_releases_.find(collection_id);
+  if (it == pending_collection_releases_.end()) {
+    return false;
+  }
+  FX_DCHECK(it->second.pending_gpu_imports > 0);
+  if (--it->second.pending_gpu_imports == 0) {
+    if (it->second.pending_display_imports == 0) {
+      pending_collection_releases_.erase(it);
+    }
+    return true;
+  }
+  return false;
+}
+
+void DisplayCompositor::ReleaseBufferCollection(
+    const allocation::GlobalBufferCollectionId collection_id, const BufferCollectionUsage usage) {
+  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
+  TRACE_DURATION("gfx", "flatland::DisplayCompositor::ReleaseBufferCollection");
+  FX_DCHECK(usage == BufferCollectionUsage::kClientImage);
+
+  // If any images belonging to this collection still have pending lazy imports, defer releasing the
+  // collection from the display coordinator and/or GPU renderer until those pending imports are
+  // either executed or dropped in `ReleaseBufferImage()`.
+  bool release_from_gpu_now = false;
+  {
+    std::scoped_lock lock(lock_);
+    size_t pending_display_imports = 0;
+    size_t pending_gpu_imports = 0;
+    for (const auto& [_, data] : image_import_map_) {
+      if (data.metadata.collection_id == collection_id) {
+        if (data.pending_display_import) {
+          ++pending_display_imports;
+        }
+        if (data.pending_gpu_import) {
+          ++pending_gpu_imports;
+        }
+      }
+    }
+
+    if (pending_display_imports == 0) {
+      ReleaseDisplayBufferCollection(collection_id);
+    }
+    release_from_gpu_now = (pending_gpu_imports == 0);
+
+    if (pending_display_imports > 0 || pending_gpu_imports > 0) {
+      pending_collection_releases_[collection_id] = PendingCollectionRelease{
+          .pending_display_imports = pending_display_imports,
+          .pending_gpu_imports = pending_gpu_imports,
+      };
+    }
+  }
+
+  if (release_from_gpu_now) {
+    renderer_->ReleaseBufferCollection(collection_id, usage);
+  }
+}
+
+bool DisplayCompositor::IsDisplaySupported(
+    const allocation::GlobalBufferCollectionId collection_id) const {
+  const auto it = buffer_collection_supports_display_.find(collection_id);
+  return it != buffer_collection_supports_display_.end() && it->second;
+}
+
+fpromise::result<> DisplayCompositor::EnsureCollectionDisplaySupportDetermined(
+    const allocation::GlobalBufferCollectionId collection_id) {
+  const bool display_support_already_set =
+      buffer_collection_supports_display_.contains(collection_id);
+
+  // When display composition is disabled, the only images that should be imported by the
+  // display are the framebuffers, and their display support is already set in `AddDisplay()`
+  // (instead of below). For every other image with display composition off mode we can early
+  // exit without inserting an entry into `buffer_collection_supports_display_`.
+  if (!config_.enable_direct_to_display && !IsDisplaySupported(collection_id)) {
+    return fpromise::ok();
+  }
+
+  if (!display_support_already_set) {
+    // TODO(https://fxbug.dev/386263977): this makes blocking FIDL calls while `lock_` is
+    // held. This isn't great, because means that a Flatland session thread can block the
+    // render thread.
+    const auto token_it = display_buffer_collection_ptrs_.find(collection_id);
+    if (token_it == display_buffer_collection_ptrs_.end()) {
+      FX_LOGS(ERROR) << "Display buffer collection token not found for collection ID "
+                     << collection_id;
+      return fpromise::error();
+    }
+
+    const auto check_status = token_it->second->CheckAllBuffersAllocated();
+    if (check_status.is_error()) {
+      // If sysmem has not finished allocating the collection yet (`Error::kPending`), fail this
+      // `ImportBufferImage()` call without consuming the token or caching `false` so a subsequent
+      // call after allocation completes can still use the display.
+      if (check_status.error_value().is_domain_error() &&
+          check_status.error_value().domain_error() == fuchsia_sysmem2::Error::kPending) {
+        FX_LOGS(ERROR) << "Buffers have not been allocated yet for collection ID " << collection_id;
+        return fpromise::error();
+      }
+
+      // Otherwise the display token was pruned during sysmem negotiation, meaning the collection
+      // is not display-compatible.
+      auto token = std::move(token_it->second);
+      display_buffer_collection_ptrs_.erase(token_it);
+      auto release_status = token->Release();
+      (void)release_status;
+      buffer_collection_supports_display_[collection_id] = false;
+      return fpromise::ok();
+    }
+
+    auto token = std::move(token_it->second);
+    display_buffer_collection_ptrs_.erase(token_it);
+
+    auto wait_result = token->WaitForAllBuffersAllocated();
+    auto release_status = token->Release();
+    (void)release_status;
+    FX_DCHECK(wait_result.is_ok())
+        << "WaitForAllBuffersAllocated failed: " << wait_result.error_value().FormatDescription();
+
+    const auto& collection_info = wait_result.value().buffer_collection_info().value();
+    const auto& image_constraints =
+        collection_info.settings().value().image_format_constraints().value();
+    buffer_collection_supports_display_[collection_id] = true;
+    buffer_collection_tiling_type_map_[collection_id] =
+        BufferCollectionPixelFormatToImageTilingType(
+            image_constraints.pixel_format_modifier().value());
+
+    DisplayBufferCollectionMetadata metadata_info{
+        .vmo_count = collection_info.buffers().has_value()
+                         ? static_cast<uint32_t>(collection_info.buffers()->size())
+                         : 0u,
+    };
+    if (image_constraints.min_size().has_value()) {
+      metadata_info.min_size = image_constraints.min_size().value();
+    }
+    if (image_constraints.max_size().has_value()) {
+      metadata_info.max_size = image_constraints.max_size().value();
+    }
+    buffer_collection_metadata_map_[collection_id] = metadata_info;
+  }
+
+  return fpromise::ok();
+}
+
+std::optional<uint32_t> DisplayCompositor::ImportBufferImageToDisplayCoordinator(
+    const allocation::ImageMetadata& metadata) {
+  TRACE_DURATION("gfx", "flatland::DisplayCompositor::ImportBufferImageToDisplayCoordinator");
+  FX_DCHECK(display_coordinator_.is_valid());
+
+  const allocation::GlobalBufferCollectionId collection_id = metadata.collection_id;
+  if (EnsureCollectionDisplaySupportDetermined(collection_id).is_error()) {
+    return std::nullopt;
+  }
+
+  if (!IsDisplaySupported(collection_id)) {
+    return std::nullopt;
+  }
+
+  // TODO(https://fxbug.dev/42150686): Pixel format (and hence tiling type) should be ignored
+  // when using sysmem. We do not want to have to deal with this default image format. Work
+  // was in progress to address this, but is currently stalled: see fxr/716543.
+  FX_DCHECK(buffer_collection_tiling_type_map_.contains(collection_id));
+  const uint32_t image_tiling_type = buffer_collection_tiling_type_map_.at(collection_id);
+
+  const auto image_extent = types::Extent2({.width = static_cast<int32_t>(metadata.width),
+                                            .height = static_cast<int32_t>(metadata.height)});
+  const display::WireBufferCollectionId display_collection_id =
+      display::ToDisplayFidlBufferCollectionId(collection_id);
+
+  zx::result<> result =
+      display_coordinator_.ImportImage(image_extent, image_tiling_type, display_collection_id,
+                                       metadata.vmo_index, metadata.identifier);
+  if (result.is_ok()) {
+    return image_tiling_type;
+  }
+
+  FX_LOGS(WARNING) << "Display coordinator could not import image " << metadata.identifier << ": "
+                   << result.status_string();
+  return std::nullopt;
+}
+
+fpromise::promise<> DisplayCompositor::ImportBufferImageToRenderer(
+    const allocation::ImageMetadata& metadata, const BufferCollectionUsage usage) {
+  return renderer_->ImportBufferImage(metadata, usage).or_else([] {
+    FX_LOGS(ERROR) << "Renderer could not import image.";
+    return fpromise::error();
+  });
+}
+
+void DisplayCompositor::EnsureGpuImagesImported(std::span<const ResolvedLayer> layers) {
+  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
+  std::scoped_lock lock(lock_);
+  EnsureGpuImagesImportedLocked(layers);
+}
+
+void DisplayCompositor::EnsureGpuImagesImportedLocked(std::span<const ResolvedLayer> layers) {
+  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
+  // Runs on the main thread only (`main_dispatcher_`). Calling `ImportBufferImageToRenderer()` and
+  // `renderer_->ReleaseBufferCollection()` while holding `lock_` is safe against lock-order
+  // inversion because `Renderer` implementations never acquire `DisplayCompositor::lock_`. Hold
+  // time is bounded because each image's lazy GPU import runs at most once.
+  for (const auto& layer : layers) {
+    if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
+      const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
+      if (auto it = image_import_map_.find(image.image_id);
+          it != image_import_map_.end() && it->second.pending_gpu_import) {
+        it->second.pending_gpu_import = false;
+        auto result = fpromise::run_single_threaded(
+            ImportBufferImageToRenderer(it->second.metadata, BufferCollectionUsage::kClientImage));
+        it->second.imported_to_gpu = result.is_ok();
+        if (OnPendingGpuImportResolved(it->second.metadata.collection_id)) {
+          renderer_->ReleaseBufferCollection(it->second.metadata.collection_id,
+                                             BufferCollectionUsage::kClientImage);
+        }
+      }
+    }
+  }
 }
 
 fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metadata,
@@ -407,76 +616,89 @@ fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::Image
     return fpromise::make_error_promise();
   }
 
-  // NOTE: The `VkRenderer::ImportBufferImage()` is currently synchronous. If we want to improve
-  // latency, we'd need to make it asynchronous and start both import operations concurrently.
-  return renderer_->ImportBufferImage(metadata, usage)
-      .or_else([] {
-        FX_LOGS(ERROR) << "Renderer could not import image.";
-        return fpromise::error();
-      })
-      .and_then([this, metadata]() -> fpromise::result<> {
-        TRACE_DURATION("gfx", "flatland::DisplayCompositor::ImportBufferImage[display]");
-        std::scoped_lock lock(lock_);
-        FX_DCHECK(display_coordinator_.is_valid());
-
-        const allocation::GlobalBufferCollectionId collection_id = metadata.collection_id;
-        const display::WireBufferCollectionId display_collection_id =
-            display::ToDisplayFidlBufferCollectionId(collection_id);
-        const bool display_support_already_set =
-            buffer_collection_supports_display_.contains(collection_id);
-
-        // When display composition is disabled, the only images that should be imported by the
-        // display are the framebuffers, and their display support is already set in `AddDisplay()`
-        // (instead of below). For every other image with display composition off mode we can early
-        // exit.
-        if (!config_.enable_direct_to_display &&
-            (!display_support_already_set || !buffer_collection_supports_display_[collection_id])) {
-          buffer_collection_supports_display_[collection_id] = false;
-          return fpromise::ok();
-        }
-
-        if (!display_support_already_set) {
-          // TODO(https://fxbug.dev/386263977): this makes blocking FIDL calls while `lock_` is
-          // held. This isn't great, because means that a Flatland session thread can block the
-          // render thread.
-          auto node = display_buffer_collection_ptrs_.extract(collection_id);
-          if (node.empty()) {
-            FX_LOGS(ERROR) << "Display buffer collection token not found for collection ID "
-                           << collection_id;
+  // Non-client images are compositor render targets (`kRenderTarget`), allocated in
+  // `AllocateDisplayRenderTargets()` and used on every GPU-composited frame by both the renderer
+  // and the display coordinator, so they are imported eagerly.
+  if (usage != BufferCollectionUsage::kClientImage) {
+    return ImportBufferImageToRenderer(metadata, usage)
+        .and_then([this, metadata]() -> fpromise::result<> {
+          bool display_import_failed = false;
+          {
+            std::scoped_lock lock(lock_);
+            if (const auto tiling_type = ImportBufferImageToDisplayCoordinator(metadata)) {
+              image_import_map_[metadata.identifier] = ImageImportData{
+                  .metadata = metadata,
+                  .imported_to_display = true,
+                  .imported_to_gpu = true,
+                  .tiling_type = *tiling_type,
+              };
+            } else {
+              display_import_failed = true;
+            }
+          }
+          if (display_import_failed) {
+            renderer_->ReleaseBufferImage(metadata.identifier);
             return fpromise::error();
           }
-          const auto pixel_format_modifier = DetermineDisplaySupportFor(std::move(node.mapped()));
-          buffer_collection_supports_display_[collection_id] = pixel_format_modifier.has_value();
-          if (pixel_format_modifier.has_value()) {
-            buffer_collection_tiling_type_map_[collection_id] =
-                BufferCollectionPixelFormatToImageTilingType(pixel_format_modifier.value());
-          }
-        }
-
-        if (!buffer_collection_supports_display_[collection_id]) {
-          // When display isn't supported we fallback to using the renderer.
           return fpromise::ok();
+        });
+  }
+
+  {
+    std::scoped_lock lock(lock_);
+    if (EnsureCollectionDisplaySupportDetermined(metadata.collection_id).is_error()) {
+      return fpromise::make_error_promise();
+    }
+
+    if (IsDisplaySupported(metadata.collection_id)) {
+      if (const auto metadata_it = buffer_collection_metadata_map_.find(metadata.collection_id);
+          metadata_it != buffer_collection_metadata_map_.end()) {
+        const DisplayBufferCollectionMetadata& collection_metadata = metadata_it->second;
+        if (metadata.vmo_index >= collection_metadata.vmo_count) {
+          FX_LOGS(ERROR) << "ImportBufferImage vmo_index " << metadata.vmo_index
+                         << " is out of bounds (vmo_count=" << collection_metadata.vmo_count
+                         << ").";
+          return fpromise::make_error_promise();
         }
-
-        // TODO(https://fxbug.dev/42150686): Pixel format (and hence tiling type) should be ignored
-        // when using sysmem. We do not want to have to deal with this default image format. Work
-        // was in progress to address this, but is currently stalled: see fxr/716543.
-        FX_DCHECK(buffer_collection_tiling_type_map_.contains(collection_id));
-        const uint32_t image_tiling_type = buffer_collection_tiling_type_map_.at(collection_id);
-
-        const auto image_extent = types::Extent2({.width = static_cast<int32_t>(metadata.width),
-                                                  .height = static_cast<int32_t>(metadata.height)});
-
-        zx::result<> result =
-            display_coordinator_.ImportImage(image_extent, image_tiling_type, display_collection_id,
-                                             metadata.vmo_index, metadata.identifier);
-        if (result.is_ok()) {
-          image_tiling_type_map_[metadata.identifier] = image_tiling_type;
-          return fpromise::ok();
+        if (metadata.width < collection_metadata.min_size.width() ||
+            metadata.height < collection_metadata.min_size.height() ||
+            metadata.width > collection_metadata.max_size.width() ||
+            metadata.height > collection_metadata.max_size.height()) {
+          FX_LOGS(ERROR) << "ImportBufferImage dimensions (" << metadata.width << ", "
+                         << metadata.height << ") are outside allocated bounds [("
+                         << collection_metadata.min_size.width() << ", "
+                         << collection_metadata.min_size.height() << "), ("
+                         << collection_metadata.max_size.width() << ", "
+                         << collection_metadata.max_size.height() << ")].";
+          return fpromise::make_error_promise();
         }
+      }
 
-        return fpromise::error();
-      });
+      image_import_map_[metadata.identifier] = ImageImportData{
+          .metadata = metadata,
+          .pending_display_import = true,
+          .pending_gpu_import = true,
+          .imported_to_gpu = false,
+      };
+      return fpromise::make_ok_promise();
+    }
+
+    // If direct-to-display is disabled or the buffer collection does not support display
+    // composition, the image will always be composited on the GPU, so import it on the GPU
+    // immediately. Record the entry before calling `ImportBufferImageToRenderer()` so that a
+    // `ReleaseBufferImage()` call before the returned promise's continuation runs can release the
+    // image and erase the entry instead of leaving a stale entry behind.
+    image_import_map_[metadata.identifier] = ImageImportData{
+        .metadata = metadata,
+        .imported_to_gpu = true,
+    };
+  }
+
+  return ImportBufferImageToRenderer(metadata, usage).or_else([this, id = metadata.identifier] {
+    std::scoped_lock lock(lock_);
+    image_import_map_.erase(id);
+    return fpromise::error();
+  });
 }
 
 void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image_id) {
@@ -484,13 +706,47 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ReleaseBufferImage");
   FX_DCHECK(image_id != allocation::kInvalidImageId);
 
-  renderer_->ReleaseBufferImage(image_id);
+  bool should_release_from_gpu = false;
+  std::optional<allocation::GlobalBufferCollectionId> collection_to_release_from_gpu;
+  {
+    std::scoped_lock lock(lock_);
+    if (auto it = image_import_map_.find(image_id); it != image_import_map_.end()) {
+      const allocation::GlobalBufferCollectionId collection_id = it->second.metadata.collection_id;
+      const bool had_pending_display_import = it->second.pending_display_import;
+      const bool had_pending_gpu_import = it->second.pending_gpu_import;
 
-  std::scoped_lock lock(lock_);
+      should_release_from_gpu = it->second.imported_to_gpu;
+      if (it->second.imported_to_display) {
+        FX_DCHECK(display_coordinator_.is_valid());
+        display_coordinator_.ReleaseImage(display::ImageId(image_id));
+      }
+      image_import_map_.erase(it);
 
-  if (image_tiling_type_map_.erase(image_id) == 1) {
-    FX_DCHECK(display_coordinator_.is_valid());
-    display_coordinator_.ReleaseImage(display::ImageId(image_id));
+      if (had_pending_display_import) {
+        OnPendingDisplayImportResolved(collection_id);
+      }
+      if (had_pending_gpu_import && OnPendingGpuImportResolved(collection_id)) {
+        collection_to_release_from_gpu = collection_id;
+      }
+    }
+  }
+
+  if (should_release_from_gpu) {
+    renderer_->ReleaseBufferImage(image_id);
+  }
+  if (collection_to_release_from_gpu) {
+    // `ReleaseBufferImage()` may be called from a Flatland session thread, whereas
+    // `Renderer::ReleaseBufferCollection()` must run on `main_dispatcher_` (`VkRenderer`
+    // DCHECKs this).
+    if (main_dispatcher_ == async_get_default_dispatcher()) {
+      renderer_->ReleaseBufferCollection(*collection_to_release_from_gpu,
+                                         BufferCollectionUsage::kClientImage);
+    } else {
+      async::PostTask(main_dispatcher_, [renderer = renderer_,
+                                         collection_id = *collection_to_release_from_gpu]() {
+        renderer->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kClientImage);
+      });
+    }
   }
 }
 
@@ -555,7 +811,16 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
     if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
       const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
       const allocation::GlobalImageId image_id = image.image_id;
-      if (image_tiling_type_map_.contains(image_id)) {
+      const auto it = image_import_map_.find(image_id);
+      if (it != image_import_map_.end() && it->second.pending_display_import) {
+        it->second.pending_display_import = false;
+        if (const auto tiling_type = ImportBufferImageToDisplayCoordinator(it->second.metadata)) {
+          it->second.imported_to_display = true;
+          it->second.tiling_type = *tiling_type;
+        }
+        OnPendingDisplayImportResolved(it->second.metadata.collection_id);
+      }
+      if (it != image_import_map_.end() && it->second.imported_to_display) {
         ApplyLayerImage(layers[i], layer, /*wait_id=*/display::kInvalidEventId);
       } else {
         // TODO(https://fxbug.dev/496160334): Previously, the only way this could happen is if the
@@ -648,8 +913,9 @@ void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
   FX_DCHECK(src.width() && src.height()) << "Source frame cannot be empty.";
   FX_DCHECK(dst.width() && dst.height()) << "Destination frame cannot be empty.";
 
-  FX_DCHECK(image_tiling_type_map_.contains(image.image_id));
-  const auto image_tiling_type = image_tiling_type_map_.at(image.image_id);
+  const auto it = image_import_map_.find(image.image_id);
+  FX_DCHECK(it != image_import_map_.end() && it->second.imported_to_display);
+  const uint32_t image_tiling_type = it->second.tiling_type;
   const types::Extent2 image_extent(
       {.width = static_cast<int32_t>(image.width), .height = static_cast<int32_t>(image.height)});
   display_coordinator_.SetLayerPrimaryConfig(layer_id, image_extent, image_tiling_type);
@@ -729,6 +995,9 @@ bool DisplayCompositor::PerformGpuComposition(
                        << render_data.display_id.value() << ".";
       return false;
     }
+
+    EnsureGpuImagesImportedLocked(render_data.layers);
+
     const uint32_t curr_vmo = display_engine_data.curr_vmo;
     display_engine_data.curr_vmo =
         (display_engine_data.curr_vmo + 1) % display_engine_data.vmo_count;

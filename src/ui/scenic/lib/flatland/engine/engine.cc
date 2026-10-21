@@ -311,6 +311,8 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
 
   CullLayersInPlace(&resolved_layers, hw_display->width_in_px(), hw_display->height_in_px());
 
+  flatland_compositor_->EnsureGpuImagesImported(resolved_layers);
+
   return resolved_layers;
 }
 

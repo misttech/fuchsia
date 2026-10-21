@@ -128,7 +128,9 @@ class Engine {
   view_tree::GeneratedSubtreeSnapshot GenerateViewTreeSnapshot(
       const TransformHandle& root_transform);
 
-  // Returns all renderables reachable from the display's root transform.
+  // Returns all renderables reachable from the display's root transform. As a side effect, runs
+  // any pending lazy GPU imports for image layers in the returned renderables via
+  // `DisplayCompositor::EnsureGpuImagesImported()`.
   Renderables GetRenderables(const FlatlandDisplay& display);
 
   static constexpr uint32_t kNumDisplayFramebuffers = 2;

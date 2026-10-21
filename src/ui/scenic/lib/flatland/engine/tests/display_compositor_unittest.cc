@@ -13,11 +13,13 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/fpromise/bridge.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/time.h>
 
 #include <memory>
 #include <span>
+#include <thread>
 
 #include <gmock/gmock.h>
 
@@ -234,11 +236,19 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
     return std::move(client_end);
   }
 
-  void SetDisplaySupported(allocation::GlobalBufferCollectionId id, bool is_supported) {
+  using DisplayBufferCollectionMetadata = DisplayCompositor::DisplayBufferCollectionMetadata;
+
+  void SetDisplaySupported(allocation::GlobalBufferCollectionId id, bool is_supported,
+                           std::optional<DisplayBufferCollectionMetadata> metadata = std::nullopt) {
     std::scoped_lock lock(display_compositor_->lock_);
     display_compositor_->buffer_collection_supports_display_[id] = is_supported;
     display_compositor_->buffer_collection_tiling_type_map_[id] =
         fuchsia_hardware_display_types::kImageTilingTypeLinear;
+    if (metadata.has_value()) {
+      display_compositor_->buffer_collection_metadata_map_[id] = *metadata;
+    } else {
+      display_compositor_->buffer_collection_metadata_map_.erase(id);
+    }
   }
 
   void ForceRendererOnlyMode(bool force_renderer_only) {
@@ -255,14 +265,119 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
 
   bool BufferCollectionSupportsDisplay(allocation::GlobalBufferCollectionId id) {
     std::scoped_lock lock(display_compositor_->lock_);
-    return display_compositor_->buffer_collection_supports_display_.contains(id) &&
-           display_compositor_->buffer_collection_supports_display_[id];
+    return display_compositor_->IsDisplaySupported(id);
+  }
+
+  bool HasDisplaySupportEntry(allocation::GlobalBufferCollectionId id) {
+    std::scoped_lock lock(display_compositor_->lock_);
+    return display_compositor_->buffer_collection_supports_display_.contains(id);
   }
 
   bool TryDirectToDisplay(std::span<const RenderData> render_data_list) {
     std::scoped_lock lock(display_compositor_->lock_);
     return display_compositor_->TryDirectToDisplay(render_data_list, /* frame_number= */ 1,
                                                    /* trace_flow_id= */ 1);
+  }
+
+  // Populates `display_engine_data_map_[display_id]` with a synthetic render target and wait
+  // event so `PerformGpuComposition()` can run without going through `AddDisplay()` sysmem
+  // allocation.
+  void AddSyntheticRenderTarget(display::DisplayId display_id, const ImageMetadata& render_target) {
+    std::scoped_lock lock(display_compositor_->lock_);
+    auto& display_engine_data = display_compositor_->display_engine_data_map_.at(display_id);
+    display_engine_data.vmo_count = 1;
+    display_engine_data.render_targets.push_back(render_target);
+    display_compositor_->image_import_map_[render_target.identifier] =
+        DisplayCompositor::ImageImportData{
+            .metadata = render_target,
+            .imported_to_display = true,
+            .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
+    };
+    zx::event wait_event;
+    FX_CHECK(zx::event::create(0, &wait_event) == ZX_OK);
+    display_engine_data.frame_event_datas.push_back({
+        .wait_id = display::EventId(1),
+        .wait_event = std::move(wait_event),
+    });
+  }
+
+  // Clears the synthetic render target added by `AddSyntheticRenderTarget()`. Call before test
+  // teardown so cleanup does not treat the synthetic render target as a real imported image.
+  void ClearSyntheticRenderTargets(display::DisplayId display_id) {
+    std::scoped_lock lock(display_compositor_->lock_);
+    auto& display_engine_data = display_compositor_->display_engine_data_map_.at(display_id);
+    for (const auto& target : display_engine_data.render_targets) {
+      display_compositor_->image_import_map_.erase(target.identifier);
+    }
+    display_engine_data.frame_event_datas.clear();
+    display_engine_data.render_targets.clear();
+    display_engine_data.vmo_count = 0;
+  }
+
+  // Imports `collection_id` as a display-supported client buffer collection and returns the
+  // renderer token to keep it alive for the duration of the test.
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> ImportDisplaySupportedClientCollection(
+      allocation::GlobalBufferCollectionId collection_id,
+      std::optional<DisplayCompositor::DisplayBufferCollectionMetadata> metadata = std::nullopt) {
+    const display::WireBufferCollectionId display_collection_id =
+        display::ToDisplayFidlBufferCollectionId(collection_id);
+    EXPECT_CALL(
+        *mock_display_coordinator_,
+        ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,
+                                                 Eq(display_collection_id)),
+                               _))
+        .Times(1)
+        .WillOnce(testing::Invoke(
+            [](fuchsia_hardware_display::wire::CoordinatorImportBufferCollectionRequest*,
+               MockDisplayCoordinator::ImportBufferCollectionCompleter::Sync& completer) {
+              completer.Reply(fit::ok());
+            }));
+    EXPECT_CALL(*mock_display_coordinator_,
+                SetBufferCollectionConstraints(
+                    MatchRequestField(SetBufferCollectionConstraints, buffer_collection_id,
+                                      Eq(display_collection_id)),
+                    _))
+        .Times(1)
+        .WillOnce(testing::Invoke(
+            [](fuchsia_hardware_display::wire::CoordinatorSetBufferCollectionConstraintsRequest*,
+               MockDisplayCoordinator::SetBufferCollectionConstraintsCompleter::Sync& completer) {
+              completer.Reply(fit::ok());
+            }));
+
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
+    EXPECT_CALL(*renderer_, ImportBufferCollection(collection_id, _, _, _, _))
+        .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
+          token_ref = std::move(token);
+          return fpromise::make_ok_promise();
+        });
+    EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+        collection_id, sysmem_allocator_, CreateToken(), BufferCollectionUsage::kClientImage,
+        std::nullopt)));
+    SetDisplaySupported(collection_id, true, metadata);
+    return token_ref;
+  }
+
+  // Builds a full-image `ResolvedLayer` for `metadata`.
+  static ResolvedLayer MakeImageLayer(const ImageMetadata& metadata) {
+    return ResolvedLayer{
+        .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                                 .y = 0,
+                                                 .width = static_cast<float>(metadata.width),
+                                                 .height = static_cast<float>(metadata.height)}),
+                              types::RectangleF({.x = 0,
+                                                 .y = 0,
+                                                 .width = static_cast<float>(metadata.width),
+                                                 .height = static_cast<float>(metadata.height)}),
+                              types::RotateFlip::kIdentity()),
+        .multiply_color = {1.f, 1.f, 1.f, 1.f},
+        .blend_mode = BlendMode::kReplace(),
+        .content =
+            ResolvedLayer::ImageContent{
+                .image_id = metadata.identifier,
+                .width = metadata.width,
+                .height = metadata.height,
+            },
+    };
   }
 
   // `AddDisplay()` with the mock expectations it needs. Layer ids are 1 (the
@@ -502,11 +617,7 @@ TEST_F(DisplayCompositorTest,
                                                            Eq(kDisplayBufferCollectionId)),
                                          MatchRequestField(ImportImage, buffer_index, Eq(0))),
                           _))
-      .Times(1)
-      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
-                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
-        completer.Reply(fit::ok());
-      }));
+      .Times(0);
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 
@@ -535,7 +646,9 @@ TEST_F(DisplayCompositorTest,
   }
 
   // `ImportBufferImage()` to confirm that the allocation was handled correctly.
-  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
+  // Because display composition is enabled and the collection supports display, the actual
+  // display and GPU image imports are deferred until the image is used.
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).Times(0);
   ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
                     .identifier = display::ImageId(1),
@@ -544,6 +657,146 @@ TEST_F(DisplayCompositorTest,
                     .height = 1},
       BufferCollectionUsage::kClientImage)));
   EXPECT_TRUE(BufferCollectionSupportsDisplay(kGlobalBufferCollectionId));
+
+  // `ImportBufferImage()` synchronously validates `vmo_index` against the sysmem-allocated buffer
+  // count (2 buffers allocated above).
+  EXPECT_FALSE(RunPromise(display_compositor_->ImportBufferImage(
+      ImageMetadata{.collection_id = kGlobalBufferCollectionId,
+                    .identifier = display::ImageId(2),
+                    .vmo_index = 2,
+                    .width = 1,
+                    .height = 1},
+      BufferCollectionUsage::kClientImage)));
+}
+
+// Verifies that if `ImportBufferImage()` is called before sysmem finishes allocating buffers for a
+// collection (`CheckAllBuffersAllocated()` returns `Error::kPending`), the call fails without
+// consuming the display token or caching `false` in `buffer_collection_supports_display_`, so a
+// subsequent `ImportBufferImage()` after allocation completes still takes the lazy display path.
+TEST_F(DisplayCompositorTest,
+       SysmemNegotiationTest_ImportImageBeforeAllocationCompleteDoesNotCacheDisplayUnsupported) {
+  auto client_token = CreateToken();
+  auto compositor_token = DuplicateToken(client_token);
+
+  const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> display_token;
+  EXPECT_CALL(*mock_display_coordinator_,
+              ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,
+                                                       Eq(kDisplayBufferCollectionId)),
+                                     _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&display_token](
+              fuchsia_hardware_display::wire::CoordinatorImportBufferCollectionRequest* request,
+              MockDisplayCoordinator::ImportBufferCollectionCompleter::Sync& completer) {
+            display_token = std::move(request->buffer_collection_token);
+            completer.Reply(fit::ok());
+          }));
+
+  EXPECT_CALL(*mock_display_coordinator_,
+              SetBufferCollectionConstraints(
+                  MatchRequestField(SetBufferCollectionConstraints, buffer_collection_id,
+                                    Eq(kDisplayBufferCollectionId)),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [this, &display_token](
+              fuchsia_hardware_display::wire::CoordinatorSetBufferCollectionConstraintsRequest*,
+              MockDisplayCoordinator::SetBufferCollectionConstraintsCompleter::Sync& completer) {
+            fuchsia_sysmem2::BufferCollectionConstraints constraints;
+            fuchsia_sysmem2::BufferUsage usage;
+            usage.cpu(fuchsia_sysmem2::kCpuUsageWrite);
+            constraints.usage(std::move(usage));
+            constraints.min_buffer_count(2);
+            constraints.max_buffer_count(3);
+
+            async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+            auto sysmem_allocator =
+                utils::CreateSysmemAllocatorClient(dispatcher(), "MockDisplayCoordinator");
+            SetConstraintsAndClose(sysmem_allocator, std::move(display_token),
+                                   std::move(constraints));
+            loop.RunUntilIdle();
+            completer.Reply(fit::ok());
+          }));
+
+  EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
+      .WillOnce([this](auto id, auto& client, auto renderer_token, auto usage, auto size) {
+        fuchsia_sysmem2::BufferCollectionConstraints constraints;
+        fuchsia_sysmem2::BufferUsage buf_usage;
+        buf_usage.cpu(fuchsia_sysmem2::kCpuUsageWrite);
+        constraints.usage(std::move(buf_usage));
+        constraints.min_buffer_count(1);
+        constraints.max_buffer_count(2);
+        SetConstraintsAndClose(sysmem_allocator_, std::move(renderer_token),
+                               std::move(constraints));
+        return fpromise::make_ok_promise();
+      });
+
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, std::move(compositor_token),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
+
+  const ImageMetadata image_metadata{
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = display::ImageId(1),
+      .vmo_index = 0,
+      .width = 1,
+      .height = 1,
+  };
+
+  // Client constraints have not been set yet, so buffers are not allocated (`Error::kPending`).
+  // `ImportBufferImage()` must fail without calling `renderer_->ImportBufferImage()` or caching
+  // `false` in `buffer_collection_supports_display_`.
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).Times(0);
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  EXPECT_FALSE(HasDisplaySupportEntry(kGlobalBufferCollectionId));
+
+  // Now bind `client_token`, set compatible client constraints, and wait for allocation.
+  auto [client_collection_client_end, client_collection_server_end] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+  fidl::Arena arena;
+  fidl::OneWayStatus bind_result = sysmem_allocator_->BindSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+          .token(std::move(client_token))
+          .buffer_collection_request(std::move(client_collection_server_end))
+          .Build());
+  ASSERT_TRUE(bind_result.ok());
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> client_collection(
+      std::move(client_collection_client_end));
+
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  fuchsia_sysmem2::BufferUsage usage;
+  usage.cpu(fuchsia_sysmem2::kCpuUsageWrite);
+  constraints.usage(std::move(usage));
+  constraints.min_buffer_count(1);
+  constraints.max_buffer_count(3);
+  fuchsia_sysmem2::BufferMemoryConstraints bmc;
+  bmc.min_size_bytes(1);
+  bmc.max_size_bytes(20);
+  constraints.buffer_memory_constraints(std::move(bmc));
+  fuchsia_sysmem2::ImageFormatConstraints ifc;
+  ifc.pixel_format(fuchsia_images2::PixelFormat::kB8G8R8A8);
+  ifc.color_spaces({{fuchsia_images2::ColorSpace::kSrgb}});
+  ifc.min_size(fuchsia_math::SizeU(1, 1));
+  constraints.image_format_constraints({{std::move(ifc)}});
+  set_constraints_request.constraints(std::move(constraints));
+  ASSERT_TRUE(client_collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+  ASSERT_TRUE(client_collection->WaitForAllBuffersAllocated().is_ok());
+
+  // Retry `ImportBufferImage()` now that allocation has succeeded: it must take the lazy display
+  // path without calling `renderer_->ImportBufferImage()`.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).Times(0);
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  EXPECT_TRUE(BufferCollectionSupportsDisplay(kGlobalBufferCollectionId));
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
 
 // This test makes sure the buffer negotiations work as intended.
@@ -804,41 +1057,10 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
   const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
-  // Import buffer collection.
-  EXPECT_CALL(*mock_display_coordinator_,
-              ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,
-                                                       Eq(kDisplayBufferCollectionId)),
-                                     _))
-      .Times(1)
-      .WillOnce(testing::Invoke(
-          [](fuchsia_hardware_display::wire::CoordinatorImportBufferCollectionRequest* request,
-             MockDisplayCoordinator::ImportBufferCollectionCompleter::Sync& completer) {
-            completer.Reply(fit::ok());
-          }));
-  EXPECT_CALL(*mock_display_coordinator_,
-              SetBufferCollectionConstraints(
-                  MatchRequestField(SetBufferCollectionConstraints, buffer_collection_id,
-                                    Eq(kDisplayBufferCollectionId)),
-                  _))
-      .Times(1)
-      .WillOnce(testing::Invoke(
-          [](fuchsia_hardware_display::wire::CoordinatorSetBufferCollectionConstraintsRequest*,
-             MockDisplayCoordinator::SetBufferCollectionConstraintsCompleter::Sync& completer) {
-            completer.Reply(fit::ok());
-          }));
-  // Save token to avoid early token failure.
-  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
-  EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
-        token_ref = std::move(token);
-        return fpromise::make_ok_promise();
-      });
-  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
-      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
-      BufferCollectionUsage::kClientImage, std::nullopt)));
-  SetDisplaySupported(kGlobalBufferCollectionId, true);
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
 
-  // Import image.
+  // Import image. With lazy import enabled for display-supported collections, neither
+  // `ImportImage()` nor `renderer_->ImportBufferImage()` is called during `ImportBufferImage()`.
   ImageMetadata image_metadata = ImageMetadata{
       .collection_id = kGlobalBufferCollectionId,
       .identifier = allocation::GenerateUniqueImageId(),
@@ -846,23 +1068,48 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
       .width = 128,
       .height = 256,
   };
-  EXPECT_CALL(*mock_display_coordinator_,
-              ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
-                                                           Eq(kDisplayBufferCollectionId)),
-                                         MatchRequestField(ImportImage, buffer_index, Eq(0))),
-                          _))
-      .Times(1)
-      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
-                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
-        completer.Reply(fit::ok());
-      }));
-  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
-      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
   EXPECT_TRUE(RunPromise(
       display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  testing::Mock::VerifyAndClearExpectations(mock_display_coordinator_.get());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
 
-  // Release buffer collection. Make sure that does not release Image.
+  // Release buffer collection. `ReleaseBufferCollection()` must not synchronously import the image
+  // or release the collection while lazy imports are still pending for `image_metadata`.
   const display::WireImageId kFidlImageId = image_metadata.identifier.ToFidl();
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
+  EXPECT_CALL(*mock_display_coordinator_,
+              ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(kFidlImageId)), _))
+      .Times(0);
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ReleaseBufferCollection(MatchRequestField(ReleaseBufferCollection, buffer_collection_id,
+                                                Eq(kDisplayBufferCollectionId)),
+                              _))
+      .Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
+                                               BufferCollectionUsage::kClientImage);
+  testing::Mock::VerifyAndClearExpectations(mock_display_coordinator_.get());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // The image remains valid after `ReleaseBufferCollection()`: realizing its GPU import succeeds
+  // and immediately releases the collection from the GPU renderer now that no GPU imports remain.
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer, 1));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Releasing the image drops its unexecuted display import and releases the collection from the
+  // display coordinator without ever importing the image on the display coordinator.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
   EXPECT_CALL(*mock_display_coordinator_,
               ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(kFidlImageId)), _))
       .Times(0);
@@ -873,9 +1120,10 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
                               _))
       .Times(1)
       .WillOnce(Return());
-  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).WillOnce(Return());
-  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
-                                               BufferCollectionUsage::kClientImage);
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
@@ -892,41 +1140,13 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
   const uint32_t kVmoIdx = 1;
   const uint32_t kMaxWidth = 100;
   const uint32_t kMaxHeight = 200;
-  uint32_t num_times_import_image_called = 0;
-
-  EXPECT_CALL(*mock_display_coordinator_,
-              ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,
-                                                       Eq(kDisplayBufferCollectionId)),
-                                     _))
-      .Times(1)
-      .WillOnce(testing::Invoke(
-          [](fuchsia_hardware_display::wire::CoordinatorImportBufferCollectionRequest* request,
-             MockDisplayCoordinator::ImportBufferCollectionCompleter::Sync& completer) {
-            completer.Reply(fit::ok());
-          }));
-  EXPECT_CALL(*mock_display_coordinator_,
-              SetBufferCollectionConstraints(
-                  MatchRequestField(SetBufferCollectionConstraints, buffer_collection_id,
-                                    Eq(kDisplayBufferCollectionId)),
-                  _))
-      .Times(1)
-      .WillOnce(testing::Invoke(
-          [](fuchsia_hardware_display::wire::CoordinatorSetBufferCollectionConstraintsRequest*,
-             MockDisplayCoordinator::SetBufferCollectionConstraintsCompleter::Sync& completer) {
-            completer.Reply(fit::ok());
-          }));
-  // Save token to avoid early token failure.
-  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
-  EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
-        token_ref = std::move(token);
-        return fpromise::make_ok_promise();
-      });
-
-  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
-      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
-      BufferCollectionUsage::kClientImage, std::nullopt)));
-  SetDisplaySupported(kGlobalBufferCollectionId, true);
+  const DisplayBufferCollectionMetadata kCollectionMetadata = {
+      .vmo_count = kVmoCount,
+      .min_size = {1, 1},
+      .max_size = {kMaxWidth, kMaxHeight},
+  };
+  auto token_ref =
+      ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId, kCollectionMetadata);
 
   ImageMetadata metadata = {
       .collection_id = kGlobalBufferCollectionId,
@@ -936,49 +1156,54 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       .height = 30,
   };
 
-  // Make sure that the engine returns true if the display coordinator returns true.
-  EXPECT_CALL(*mock_display_coordinator_,
-              ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
-                                                           Eq(kDisplayBufferCollectionId)),
-                                         MatchRequestField(ImportImage, buffer_index, Eq(kVmoIdx))),
-                          _))
-      .Times(1)
-      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
-                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
-        completer.Reply(fit::ok());
-      }));
-
-  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _)).WillOnce(ReturnPromise(fpromise::ok()));
+  // With lazy import enabled for display-supported collections, `ImportBufferImage()` defers
+  // importing until the image is rendered. Releasing it before rendering should not invoke
+  // `ReleaseImage()` or `ReleaseBufferImage()`.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _)).Times(0);
 
   EXPECT_TRUE(RunPromise(
       display_compositor_->ImportBufferImage(metadata, BufferCollectionUsage::kClientImage)));
 
-  // Make sure we can release the image properly.
   EXPECT_CALL(*mock_display_coordinator_,
               ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(kFidlImageId)), _))
-      .Times(1)
-      .WillOnce(Return());
-  EXPECT_CALL(*renderer_, ReleaseBufferImage(metadata.identifier)).WillOnce(Return());
+      .Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(metadata.identifier)).Times(0);
 
   display_compositor_->ReleaseBufferImage(metadata.identifier);
 
-  // Make sure that the engine returns false if the display coordinator returns an error
-  EXPECT_CALL(*mock_display_coordinator_,
-              ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
-                                                           Eq(kDisplayBufferCollectionId)),
-                                         MatchRequestField(ImportImage, buffer_index, Eq(kVmoIdx))),
-                          _))
-      .Times(1)
-      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
-                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
-        completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
-      }));
+  // Calling `ReleaseBufferImage()` again on an already-released or unknown image is a no-op.
+  display_compositor_->ReleaseBufferImage(metadata.identifier);
 
-  // This should still return false for the engine even if the renderer returns true.
-  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _)).WillOnce(ReturnPromise(fpromise::ok()));
+  // Out-of-bounds `vmo_index` (`>= kVmoCount`) on a display-supported collection must fail
+  // synchronously in `ImportBufferImage()` without calling the display coordinator or renderer.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).Times(0);
+  auto copy_metadata = metadata;
+  copy_metadata.vmo_index = kVmoCount;
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
+
+  // Out-of-bounds dimensions (`> kMaxWidth` or `> kMaxHeight`) on a display-supported collection
+  // must fail synchronously in `ImportBufferImage()`.
+  copy_metadata = metadata;
+  copy_metadata.width = kMaxWidth + 1;
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
+  copy_metadata = metadata;
+  copy_metadata.height = kMaxHeight + 1;
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
+
+  // When the collection does not support display, `ImportBufferImage()` imports on the GPU
+  // immediately and propagates any GPU import error.
+  SetDisplaySupported(kGlobalBufferCollectionId, false);
+  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _))
+      .WillOnce(ReturnPromise(fpromise::error()));
 
   EXPECT_FALSE(RunPromise(
       display_compositor_->ImportBufferImage(metadata, BufferCollectionUsage::kClientImage)));
+  SetDisplaySupported(kGlobalBufferCollectionId, true, kCollectionMetadata);
 
   // Collection ID can't be invalid. This shouldn't reach the display coordinator.
   EXPECT_CALL(*mock_display_coordinator_,
@@ -987,7 +1212,7 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
                                          MatchRequestField(ImportImage, buffer_index, Eq(kVmoIdx))),
                           _))
       .Times(0);
-  auto copy_metadata = metadata;
+  copy_metadata = metadata;
   copy_metadata.collection_id = allocation::kInvalidId;
   EXPECT_FALSE(RunPromise(
       display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
@@ -1152,6 +1377,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   const display::WireImageId fidl_parent_image_id = parent_image_metadata.identifier.ToFidl();
+  // `ImportImage()` on the display coordinator fires lazily during `RenderFrame()` below.
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
                               MatchRequestField(ImportImage, buffer_collection_id,
@@ -1164,14 +1390,14 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
                                    MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
         completer.Reply(fit::ok());
       }));
-  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _))
-      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _)).Times(0);
 
   EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       parent_image_metadata, BufferCollectionUsage::kClientImage)));
 
   const display::WireImageId fidl_child_image_id = child_image_metadata.identifier.ToFidl();
 
+  // `ImportImage()` on the display coordinator fires lazily during `RenderFrame()` below.
   EXPECT_CALL(
       *mock_display_coordinator_,
       ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
@@ -1185,8 +1411,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
         completer.Reply(fit::ok());
       }));
 
-  EXPECT_CALL(*renderer_, ImportBufferImage(child_image_metadata, _))
-      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*renderer_, ImportBufferImage(child_image_metadata, _)).Times(0);
   EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       child_image_metadata, BufferCollectionUsage::kClientImage)));
 
@@ -1376,6 +1601,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   const display::WireImageId fidl_parent_image_id = parent_image_metadata.identifier.ToFidl();
+  // `ImportImage()` on the display coordinator fires lazily during `RenderFrame()` below.
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
                               MatchRequestField(ImportImage, buffer_collection_id,
@@ -1389,8 +1615,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
         completer.Reply(fit::ok());
       }));
 
-  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _))
-      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _)).Times(0);
 
   EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       parent_image_metadata, BufferCollectionUsage::kClientImage)));
@@ -1906,6 +2131,7 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
   };
 
   const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();
+  // `ImportImage()` on the display coordinator fires lazily during `TryDirectToDisplay()` below.
   EXPECT_CALL(
       *mock_display_coordinator_,
       ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
@@ -1918,8 +2144,7 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
                                    MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
         completer.Reply(fit::ok());
       }));
-  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
-      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
 
   EXPECT_TRUE(RunPromise(
       display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
@@ -2953,6 +3178,1056 @@ TEST_F(DisplayCompositorTest, ViewTreeRegeneratesForLinkChangeAfterRender) {
   RunLoopUntilIdle();
 
   ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, LazyImageImport_DirectToDisplayOnlyImportsToDisplay) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+  AddDisplayWithExpectations(&display, display_info);
+
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();
+
+  // `ImportBufferImage()` must not eagerly import to either display or GPU.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  testing::Mock::VerifyAndClearExpectations(mock_display_coordinator_.get());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Rendering via direct-to-display lazily imports the image to the display coordinator once, and
+  // never imports it to the GPU renderer.
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
+                                                   Eq(kDisplayBufferCollectionId)),
+                                 MatchRequestField(ImportImage, buffer_index, Eq(0)),
+                                 MatchRequestField(ImportImage, image_id, Eq(fidl_image_id))),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::ok());
+      }));
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
+
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryPosition(_, _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryAlpha(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
+
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+  RenderData render_data = {
+      .display_id = kDisplayId,
+      .layers = std::span<const ResolvedLayer>(&layer, 1),
+  };
+
+  EXPECT_TRUE(TryDirectToDisplay(std::span<const RenderData>(&render_data, 1)));
+
+  // Releasing the image only releases it from the display coordinator, not the GPU renderer.
+  EXPECT_CALL(*mock_display_coordinator_,
+              ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(fidl_image_id)), _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier)).Times(0);
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, LazyImageImport_ImportedToBothDisplayAndGpuReleasesFromBoth) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+  AddDisplayWithExpectations(&display, display_info);
+
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();
+
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+
+  // First frame uses direct-to-display, importing the image to the display coordinator.
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
+                                                   Eq(kDisplayBufferCollectionId)),
+                                 MatchRequestField(ImportImage, buffer_index, Eq(0)),
+                                 MatchRequestField(ImportImage, image_id, Eq(fidl_image_id))),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::ok());
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryPosition(_, _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryAlpha(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
+
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+  RenderData render_data = {
+      .display_id = kDisplayId,
+      .layers = std::span<const ResolvedLayer>(&layer, 1),
+  };
+  EXPECT_TRUE(TryDirectToDisplay(std::span<const RenderData>(&render_data, 1)));
+
+  // Next, GPU composition (or `EnsureGpuImagesImported()`) imports the same image to the GPU
+  // renderer.
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer, 1));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Releasing the image now releases it from both the display coordinator and the GPU renderer.
+  EXPECT_CALL(*mock_display_coordinator_,
+              ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(fidl_image_id)), _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, LazyImageImport_RendererOnlyModeImportsToGpuImmediately) {
+  ForceRendererOnlyMode(true);
+
+  const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId =
+      allocation::GenerateUniqueBufferCollectionId();
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
+  EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
+        token_ref = std::move(token);
+        return fpromise::make_ok_promise();
+      });
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+
+  // When `enable_direct_to_display` is false, `ImportBufferImage()` immediately imports on the GPU
+  // without populating `buffer_collection_supports_display_`.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  EXPECT_FALSE(HasDisplaySupportEntry(kGlobalBufferCollectionId));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, RendererOnly_UnregisteredCollectionDoesNotPopulateDisplaySupportMap) {
+  ForceRendererOnlyMode(true);
+
+  const allocation::GlobalBufferCollectionId kUnregisteredCollectionId =
+      allocation::GenerateUniqueBufferCollectionId();
+  const ImageMetadata image_metadata = {
+      .collection_id = kUnregisteredCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::error()));
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  EXPECT_FALSE(HasDisplaySupportEntry(kUnregisteredCollectionId));
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, LazyImageImport_EnsureGpuImagesImportedRealizesPendingGpuImport) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+
+  // `EnsureGpuImagesImported()` (used by `Engine::GetRenderables()` for screenshots/screen-capture)
+  // realizes the pending GPU import without importing to the display coordinator.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer, 1));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Subsequent calls are a no-op since the pending GPU import has already been consumed.
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer, 1));
+
+  // Releasing the image releases it from the GPU renderer and not the display coordinator.
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, LazyImageImport_EngineGetRenderablesImportsGpuImages) {
+  auto flatland_presenter =
+      std::make_shared<flatland::FlatlandPresenterImpl>(dispatcher(), fake_frame_scheduler_);
+  auto uber_struct_system = std::make_shared<flatland::UberStructSystem>();
+  auto link_system =
+      std::make_shared<flatland::LinkSystem>(uber_struct_system->GetNextInstanceId());
+
+  flatland::Engine engine(display_compositor_, flatland_presenter, uber_struct_system, link_system,
+                          inspect::Node(),
+                          /*get_root_transform=*/[]() -> std::optional<flatland::TransformHandle> {
+                            return std::nullopt;
+                          });
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  auto display =
+      std::make_shared<display::Display>(display::WireDisplayId{.value = kDisplayId.value()},
+                                         resolution.x, resolution.y, kMaxDisplayLayersCount);
+
+  next_layer_id_ = 1;
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
+      .Times(kMaxDisplayLayersCount + 1)
+      .WillRepeatedly(testing::Invoke(
+          [this](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                     request,
+                 MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, next_layer_id_++);
+            completer.Reply(fit::ok());
+          }));
+  EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_))
+      .WillRepeatedly(Return(kPixelFormat));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).WillRepeatedly(Return());
+
+  engine.AddDisplay(*display, /*num_vmos=*/0);
+  RunLoopUntilIdle();
+
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 100,
+      .height = 100,
+  };
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+
+  const auto session_id = scheduling::GetNextSessionId();
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::FlatlandDisplay>::Create();
+  auto uber_struct_queue = uber_struct_system->AllocateQueueForSession(session_id);
+  auto flatland_display = FlatlandDisplay::New(
+      std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()), std::move(server_end),
+      session_id, display,
+      /*destroy_display_function=*/[] {}, flatland_presenter, link_system, uber_struct_queue);
+
+  auto uber_struct = std::make_unique<flatland::UberStruct>();
+  uber_struct->local_topology = {{flatland_display->root_transform(), 0}};
+  flatland::LayerHandle layer_handle(session_id, 1);
+  uber_struct->layer_stacks[flatland_display->root_transform()] =
+      std::pmr::vector<flatland::LayerHandle>({layer_handle}, uber_struct->resource());
+  flatland::UberStructLayer layer;
+  layer.common.display_rect = types::Rectangle::From(types::Point2({.x = 0, .y = 0}),
+                                                     types::Extent2({.width = 100, .height = 100}));
+  layer.content = flatland::UberStructLayer::ImageModeProperties{
+      .sample_rect = types::RectangleF::From(types::Point2F({.x = 0.f, .y = 0.f}),
+                                             types::Extent2F({.width = 100.f, .height = 100.f})),
+      .image_id = image_metadata.identifier,
+      .image_width = image_metadata.width,
+      .image_height = image_metadata.height,
+  };
+  uber_struct->layers[layer_handle] = layer;
+  uber_struct_queue->Push(/*present_id=*/1, std::move(uber_struct), /*recompute_view_tree=*/false,
+                          /*recompute_scene_state=*/true);
+  uber_struct_system->ForceUpdateAllSessions();
+
+  // `Engine::GetRenderables()` must realize the pending lazy GPU import for `image_metadata`.
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  Renderables renderables = engine.GetRenderables(*flatland_display);
+  EXPECT_EQ(renderables.size(), 1u);
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  flatland_display.reset();
+  RunLoopUntilIdle();
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, LazyImageImport_GpuImportFailure) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+
+  // Defer `ReleaseBufferCollection()` while both display and GPU imports are pending.
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseBufferCollection(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
+                                               BufferCollectionUsage::kClientImage);
+  testing::Mock::VerifyAndClearExpectations(mock_display_coordinator_.get());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+
+  // When the lazy GPU import fails during `EnsureGpuImagesImported()`, the pending GPU import count
+  // still resolves and triggers the deferred `renderer_->ReleaseBufferCollection()`.
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::error()));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer, 1));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Subsequent `EnsureGpuImagesImported()` calls do not retry the failed import.
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).Times(0);
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer, 1));
+
+  // Because GPU import failed, `ReleaseBufferImage()` must not call
+  // `renderer_->ReleaseBufferImage()` and must release the collection from the display coordinator.
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier)).Times(0);
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ReleaseBufferCollection(MatchRequestField(ReleaseBufferCollection, buffer_collection_id,
+                                                Eq(kDisplayBufferCollectionId)),
+                              _))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, LazyImageImport_DisplayImportFailureFallsBackToGpu) {
+  const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId =
+      allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  AddDisplayWithExpectations(&display, display_info);
+
+  // Set up a synthetic render target on the display so `PerformGpuComposition()` can run.
+  const ImageMetadata render_target = {
+      .collection_id = allocation::GenerateUniqueBufferCollectionId(),
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = resolution.x,
+      .height = resolution.y,
+  };
+  AddSyntheticRenderTarget(kDisplayId, render_target);
+
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();
+
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+
+  // When `RenderFrame()` attempts direct-to-display, `mock_display_coordinator_->ImportImage()`
+  // fails. `RenderFrame()` then falls back to `PerformGpuComposition()`, which lazily imports the
+  // image on the GPU via `renderer_->ImportBufferImage()` and renders it.
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
+                                                   Eq(kDisplayBufferCollectionId)),
+                                 MatchRequestField(ImportImage, buffer_index, Eq(0)),
+                                 MatchRequestField(ImportImage, image_id, Eq(fidl_image_id))),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+      }));
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*renderer_, RequiresRenderInProtected(_)).WillOnce(Return(false));
+  EXPECT_CALL(*renderer_, Render(render_target, _, _)).Times(1).WillOnce(Return());
+
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryPosition(_, _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryAlpha(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
+
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+  RenderData render_data = {
+      .display_id = kDisplayId,
+      .layers = std::span<const ResolvedLayer>(&layer, 1),
+  };
+
+  EXPECT_EQ(display_compositor_->RenderFrame(1, zx::time_monotonic(1),
+                                             std::span<const RenderData>(&render_data, 1), {}, {},
+                                             {}, [](const scheduling::Timestamps&) {}),
+            DisplayCompositor::RenderFrameResult::kGpuComposition);
+
+  // Because display import failed and GPU import succeeded, releasing the image only releases it
+  // from the GPU renderer, not the display coordinator.
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  ClearSyntheticRenderTargets(kDisplayId);
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, ImportRenderTargetImage_EagerImportAndRollbackOnDisplayFailure) {
+  const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId =
+      allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata render_target_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  const display::WireImageId fidl_image_id = render_target_metadata.identifier.ToFidl();
+
+  // Case 1: Display coordinator `ImportImage()` fails for `kRenderTarget`; `ImportBufferImage()`
+  // must roll back the renderer import via `renderer_->ReleaseBufferImage()` and return an error.
+  EXPECT_CALL(*renderer_,
+              ImportBufferImage(render_target_metadata, BufferCollectionUsage::kRenderTarget))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
+                                                   Eq(kDisplayBufferCollectionId)),
+                                 MatchRequestField(ImportImage, image_id, Eq(fidl_image_id))),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+      }));
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(render_target_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_FALSE(RunPromise(display_compositor_->ImportBufferImage(
+      render_target_metadata, BufferCollectionUsage::kRenderTarget)));
+  testing::Mock::VerifyAndClearExpectations(mock_display_coordinator_.get());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Case 2: Both renderer and display coordinator imports succeed eagerly for `kRenderTarget`;
+  // `ReleaseBufferImage()` releases from both.
+  EXPECT_CALL(*renderer_,
+              ImportBufferImage(render_target_metadata, BufferCollectionUsage::kRenderTarget))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
+                                                   Eq(kDisplayBufferCollectionId)),
+                                 MatchRequestField(ImportImage, image_id, Eq(fidl_image_id))),
+                  _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::ok());
+      }));
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
+      render_target_metadata, BufferCollectionUsage::kRenderTarget)));
+  testing::Mock::VerifyAndClearExpectations(mock_display_coordinator_.get());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  EXPECT_CALL(*mock_display_coordinator_,
+              ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(fidl_image_id)), _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(render_target_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(render_target_metadata.identifier);
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, ImportBufferImage_EagerGpuImportReleasedBeforePromiseResolves) {
+  ForceRendererOnlyMode(true);
+
+  const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId =
+      allocation::GenerateUniqueBufferCollectionId();
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
+  EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
+        token_ref = std::move(token);
+        return fpromise::make_ok_promise();
+      });
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+
+  fpromise::bridge<> bridge;
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(testing::Invoke([&bridge](const ImageMetadata&, BufferCollectionUsage) {
+        return bridge.consumer.promise();
+      }));
+
+  async::Executor executor(dispatcher());
+  bool promise_completed = false;
+  executor.schedule_task(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)
+          .then([&promise_completed](fpromise::result<>&) { promise_completed = true; }));
+  RunLoopUntilIdle();
+  EXPECT_FALSE(promise_completed);
+
+  // Release the image before `bridge` resolves.
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Resolve the import promise and verify that no stale entry remains in `image_import_map_`.
+  bridge.completer.complete_ok();
+  RunLoopUntilIdle();
+  EXPECT_TRUE(promise_completed);
+
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier)).Times(0);
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest,
+       ReleaseBufferCollection_AfterDisplayImportRealized_ReleasesDisplayImmediatelyAndDefersGpu) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  AddDisplayWithExpectations(&display, display_info);
+
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+
+  // Realize display import via `TryDirectToDisplay()`.
+  libsync::Completion commit_done;
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::ok());
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryPosition(_, _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryAlpha(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&commit_done](fuchsia_hardware_display::wire::CoordinatorCommitConfigRequest*,
+                         MockDisplayCoordinator::CommitConfigCompleter::Sync&) {
+            commit_done.Signal();
+          }));
+
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+  RenderData render_data = {
+      .display_id = kDisplayId,
+      .layers = std::span<const ResolvedLayer>(&layer, 1),
+  };
+  EXPECT_TRUE(TryDirectToDisplay(std::span<const RenderData>(&render_data, 1)));
+  commit_done.Wait();
+
+  // Now `ReleaseBufferCollection()` releases the display collection immediately (no pending display
+  // imports remain) and defers the GPU collection release (GPU import is still pending).
+  libsync::Completion display_collection_released;
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ReleaseBufferCollection(MatchRequestField(ReleaseBufferCollection, buffer_collection_id,
+                                                Eq(kDisplayBufferCollectionId)),
+                              _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&display_collection_released](
+              fuchsia_hardware_display::wire::CoordinatorReleaseBufferCollectionRequest*,
+              MockDisplayCoordinator::ReleaseBufferCollectionCompleter::Sync&) {
+            display_collection_released.Signal();
+          }));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
+                                               BufferCollectionUsage::kClientImage);
+  display_collection_released.Wait();
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // `ReleaseBufferImage()` releases the display image and drops the pending GPU import, triggering
+  // the deferred `renderer_->ReleaseBufferCollection()`.
+  EXPECT_CALL(*mock_display_coordinator_,
+              ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(fidl_image_id)), _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier)).Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest,
+       ReleaseBufferCollection_AfterGpuImportRealized_ReleasesGpuImmediatelyAndDefersDisplay) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+
+  // Realize GPU import first via `EnsureGpuImagesImported()`.
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer, 1));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // `ReleaseBufferCollection()` releases the GPU collection immediately and defers the display
+  // collection release.
+  libsync::Completion display_collection_released;
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ReleaseBufferCollection(MatchRequestField(ReleaseBufferCollection, buffer_collection_id,
+                                                Eq(kDisplayBufferCollectionId)),
+                              _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&display_collection_released](
+              fuchsia_hardware_display::wire::CoordinatorReleaseBufferCollectionRequest*,
+              MockDisplayCoordinator::ReleaseBufferCollectionCompleter::Sync&) {
+            display_collection_released.Signal();
+          }));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
+                                               BufferCollectionUsage::kClientImage);
+  EXPECT_FALSE(display_collection_released.signaled());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // `ReleaseBufferImage()` releases the GPU image and triggers the deferred display collection
+  // release.
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image_metadata.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+  display_collection_released.Wait();
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest,
+       ReleaseBufferCollection_WhileBothPending_ThenDirectToDisplayRealizesDisplayRelease) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  AddDisplayWithExpectations(&display, display_info);
+
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+
+  // Call `ReleaseBufferCollection()` while both display and GPU imports are pending.
+  libsync::Completion display_collection_released;
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ReleaseBufferCollection(MatchRequestField(ReleaseBufferCollection, buffer_collection_id,
+                                                Eq(kDisplayBufferCollectionId)),
+                              _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&display_collection_released](
+              fuchsia_hardware_display::wire::CoordinatorReleaseBufferCollectionRequest*,
+              MockDisplayCoordinator::ReleaseBufferCollectionCompleter::Sync&) {
+            display_collection_released.Signal();
+          }));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
+                                               BufferCollectionUsage::kClientImage);
+  EXPECT_FALSE(display_collection_released.signaled());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Direct-to-display render imports the image to the display coordinator and immediately releases
+  // the display buffer collection.
+  libsync::Completion commit_done;
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _))
+      .Times(1)
+      .WillOnce(testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                                   MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+        completer.Reply(fit::ok());
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryPosition(_, _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryAlpha(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&commit_done](fuchsia_hardware_display::wire::CoordinatorCommitConfigRequest*,
+                         MockDisplayCoordinator::CommitConfigCompleter::Sync&) {
+            commit_done.Signal();
+          }));
+
+  ResolvedLayer layer = MakeImageLayer(image_metadata);
+  RenderData render_data = {
+      .display_id = kDisplayId,
+      .layers = std::span<const ResolvedLayer>(&layer, 1),
+  };
+  EXPECT_TRUE(TryDirectToDisplay(std::span<const RenderData>(&render_data, 1)));
+  display_collection_released.Wait();
+  commit_done.Wait();
+
+  // Releasing the image releases the display image and triggers the deferred GPU collection
+  // release.
+  EXPECT_CALL(*mock_display_coordinator_,
+              ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(fidl_image_id)), _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image_metadata.identifier);
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(
+    DisplayCompositorTest,
+    ReleaseBufferCollection_ReleaseBufferImageFromBackgroundThreadPostsGpuCollectionReleaseToMainDispatcher) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image_metadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
+  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
+                                               BufferCollectionUsage::kClientImage);
+
+  // Calling `ReleaseBufferImage()` from a background thread (where `async_get_default_dispatcher()`
+  // is not `main_dispatcher_`) releases the display collection under `lock_` and posts
+  // `renderer_->ReleaseBufferCollection()` to `main_dispatcher_`.
+  libsync::Completion display_collection_released;
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ReleaseBufferCollection(MatchRequestField(ReleaseBufferCollection, buffer_collection_id,
+                                                Eq(kDisplayBufferCollectionId)),
+                              _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&display_collection_released](
+              fuchsia_hardware_display::wire::CoordinatorReleaseBufferCollectionRequest*,
+              MockDisplayCoordinator::ReleaseBufferCollectionCompleter::Sync&) {
+            display_collection_released.Signal();
+          }));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+
+  std::thread background_thread(
+      [compositor = display_compositor_, image_id = image_metadata.identifier]() {
+        compositor->ReleaseBufferImage(image_id);
+      });
+  background_thread.join();
+  display_collection_released.Wait();
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Running the main loop executes the posted `renderer_->ReleaseBufferCollection()` task on
+  // `main_dispatcher_`.
+  bool released_on_main_dispatcher = false;
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _))
+      .Times(1)
+      .WillOnce(testing::Invoke([this, &released_on_main_dispatcher](
+                                    allocation::GlobalBufferCollectionId, BufferCollectionUsage) {
+        released_on_main_dispatcher = (async_get_default_dispatcher() == dispatcher());
+      }));
+  RunLoopUntilIdle();
+  EXPECT_TRUE(released_on_main_dispatcher);
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest,
+       ReleaseBufferCollection_MultiplePendingImages_ReleasesOnlyWhenLastImageResolves) {
+  const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+  auto token_ref = ImportDisplaySupportedClientCollection(kGlobalBufferCollectionId);
+
+  const ImageMetadata image1 = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 256,
+  };
+  const ImageMetadata image2 = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 1,
+      .width = 128,
+      .height = 256,
+  };
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image1, BufferCollectionUsage::kClientImage)));
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(image2, BufferCollectionUsage::kClientImage)));
+
+  libsync::Completion display_collection_released;
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      ReleaseBufferCollection(MatchRequestField(ReleaseBufferCollection, buffer_collection_id,
+                                                Eq(kDisplayBufferCollectionId)),
+                              _))
+      .Times(1)
+      .WillOnce(testing::Invoke(
+          [&display_collection_released](
+              fuchsia_hardware_display::wire::CoordinatorReleaseBufferCollectionRequest*,
+              MockDisplayCoordinator::ReleaseBufferCollectionCompleter::Sync&) {
+            display_collection_released.Signal();
+          }));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+  display_compositor_->ReleaseBufferCollection(kGlobalBufferCollectionId,
+                                               BufferCollectionUsage::kClientImage);
+  EXPECT_FALSE(display_collection_released.signaled());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Realize `image1` on the GPU: `image2` still has a pending GPU import, so the GPU collection is
+  // not released yet.
+  ResolvedLayer layer1 = MakeImageLayer(image1);
+  EXPECT_CALL(*renderer_, ImportBufferImage(image1, _))
+      .Times(1)
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+  display_compositor_->EnsureGpuImagesImported(std::span<const ResolvedLayer>(&layer1, 1));
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Release `image1`: `image2` still has both display and GPU imports pending, so neither
+  // collection release fires yet.
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _)).Times(0);
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image1.identifier)).Times(1).WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image1.identifier);
+  EXPECT_FALSE(display_collection_released.signaled());
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  // Release `image2`: now the last pending display and GPU imports resolve and both collections are
+  // released.
+  EXPECT_CALL(*renderer_, ReleaseBufferCollection(kGlobalBufferCollectionId, _))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image2.identifier);
+  display_collection_released.Wait();
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
 
 }  // namespace flatland::test
