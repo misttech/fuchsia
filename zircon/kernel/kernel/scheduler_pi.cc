@@ -87,6 +87,20 @@ FFI_ALWAYS_INLINE void cpp_scheduler_save_state_list_move(
   holder->Initialize(ktl::move(sched->save_state_list_));
 }
 
+// Moves the scheduler's save_state_list_ into |holder| under queue_lock_ if it
+// is non-empty. Returns true if |holder| was initialized with the list.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_scheduler_take_save_state_list(
+    Scheduler* sched,
+    ffi::Uninitialized<Thread::SaveStateList>* holder) TA_NO_THREAD_SAFETY_ANALYSIS {
+  Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&sched->queue_lock_, SOURCE_TAG};
+  if (sched->save_state_list_.is_empty()) {
+    return false;
+  }
+  holder->Initialize(ktl::move(sched->save_state_list_));
+  return true;
+}
+
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE Thread* cpp_save_state_list_pop(Thread::SaveStateList* holder) {
   return holder->pop_front();

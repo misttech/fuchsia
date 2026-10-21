@@ -49,6 +49,55 @@ impl ThreadName {
     }
 }
 
+/// Diagnostic state reported when the target preemption time is inconsistent
+/// with the current time slice in `Scheduler::reschedule_common_helper`.
+struct PreemptionTimeDiagnostics {
+    cpu: CpuNum,
+    capacity_ns: SchedDuration,
+    deadline_ns: SchedDuration,
+    finish_time: SchedTime,
+    now: SchedTime,
+    target_preemption_time_ns: SchedTime,
+    start_of_current_time_slice_ns: SchedTime,
+    total_runtime_ns: SchedDuration,
+    actual_runtime_ns: SchedDuration,
+    time_slice_ns: SchedDuration,
+    time_slice_used_ns: SchedDuration,
+    remaining_time_slice_ns: SchedDuration,
+}
+
+/// Panics with the diagnostics logged by the C++ `DEBUG_ASSERT_MSG` in
+/// `RescheduleCommon`. Kept out of line and cold so that the formatting state
+/// does not occupy the stack frame of the reschedule path.
+#[cold]
+#[inline(never)]
+fn panic_preemption_time_inconsistent(d: &PreemptionTimeDiagnostics) -> ! {
+    panic!(
+        "cpu={} capacity_ns={} deadline_ns={}\n\
+         finish_time                   ={:16}\n\
+         now                           ={:16}\n\
+         target_preemption_time_ns     ={:16}\n\
+         start_of_current_time_slice_ns={:16}\n\
+         total_runtime_ns              ={:16}\n\
+         actual_runtime_ns             ={:16}\n\
+         time_slice_ns                 ={:16}\n\
+         time_slice_used_ns            ={:16}\n\
+         remaining_time_slice_ns       ={:16}",
+        d.cpu,
+        d.capacity_ns.raw_value(),
+        d.deadline_ns.raw_value(),
+        d.finish_time.raw_value(),
+        d.now.raw_value(),
+        d.target_preemption_time_ns.raw_value(),
+        d.start_of_current_time_slice_ns.raw_value(),
+        d.total_runtime_ns.raw_value(),
+        d.actual_runtime_ns.raw_value(),
+        d.time_slice_ns.raw_value(),
+        d.time_slice_used_ns.raw_value(),
+        d.remaining_time_slice_ns.raw_value()
+    );
+}
+
 /// Logs the critical deadline utilization warning emitted by `Scheduler::insert`.
 ///
 /// Kept out of line and cold so that the formatting state does not occupy the
@@ -2156,6 +2205,10 @@ unsafe extern "C" {
 
     fn cpp_scheduler_save_state_list_is_empty(sched: *mut Scheduler) -> bool;
     fn cpp_scheduler_save_state_list_move(sched: *mut Scheduler, holder: *mut SaveStateList);
+    fn cpp_scheduler_take_save_state_list(
+        sched: *mut Scheduler,
+        holder: *mut SaveStateList,
+    ) -> bool;
     fn cpp_save_state_list_pop(holder: *mut SaveStateList) -> *mut Thread;
     fn cpp_save_state_list_destroy(holder: *mut SaveStateList);
 
@@ -6196,6 +6249,55 @@ impl Scheduler {
         }
     }
 
+    /// Returns true if the given thread needs to be migrated from this CPU to another.
+    ///
+    /// # Safety
+    /// The caller must ensure that:
+    /// - `thread` points to a valid, initialized `Thread`.
+    /// - An active `ChainLockTransaction` holds `thread`'s lock
+    ///   (`TA_REQ(chainlock_transaction_token, thread->get_lock())`).
+    /// - `self.this_cpu()` has been initialized.
+    #[inline]
+    unsafe fn needs_migration_local(&self, thread: *const Thread) -> bool {
+        // SAFETY: `thread` is valid and locked by the caller.
+        let state = unsafe { &*cpp_thread_get_scheduler_state(thread.cast_mut()) };
+
+        // Threads that are not ready should not be migrated. Check this first to
+        // avoid touching the shared active mask on the common blocking path.
+        if state.state != ThreadState::Ready {
+            return false;
+        }
+
+        // If we have no active CPUs, then we cannot migrate this thread, so return false.
+        let active_mask = peek_active_mask();
+        if active_mask == 0 {
+            return false;
+        }
+
+        // We need to migrate if the set of CPUs this thread can run on does not
+        // include the current CPU.
+        // SAFETY: `this_cpu` is initialized per the caller's contract.
+        let current_cpu_mask = cpu_num_to_mask(unsafe { self.this_cpu() });
+        (state.get_effective_cpu_mask(active_mask) & current_cpu_mask) == 0
+    }
+
+    /// Returns true if the given thread's time slice is adjustable under changes to
+    /// the fair scheduler demand on the CPU.
+    ///
+    /// # Safety
+    /// The caller must ensure `thread` points to a valid, initialized `Thread` whose
+    /// lock is held at least shared (`TA_REQ_SHARED(thread->get_lock())`).
+    #[inline]
+    unsafe fn is_thread_adjustable(thread: *const Thread) -> bool {
+        // Checking the thread state avoids unnecessary adjustments on a thread that
+        // is no longer competing.
+        // SAFETY: `thread` is valid and its lock is held by the caller.
+        let (state, is_idle) = unsafe {
+            (&*cpp_thread_get_scheduler_state(thread.cast_mut()), cpp_thread_is_idle(thread))
+        };
+        !is_idle && state.effective_profile.is_fair() && state.state == ThreadState::Ready
+    }
+
     /// Removes the thread from this CPU's scheduler and updates the current CPU
     /// id. The thread must not be in the run queue.
     ///
@@ -6238,6 +6340,469 @@ impl Scheduler {
             SchedDuration::from(K_EXPECTED_RUNTIME_ALPHA * delta)
         };
         core::cmp::max(scaled_delta, -value)
+    }
+
+    /// Common logic for the reschedule API.
+    ///
+    /// # Safety
+    /// The caller must ensure that:
+    /// - `self` is the current CPU's `Scheduler` with interrupts disabled and
+    ///   `queue_lock_` held (`TA_REQ(queue_lock_)`).
+    /// - `current_thread` is the current CPU's active thread with its lock held
+    ///   exclusively by the active `ChainLockTransaction` using the reserved
+    ///   scheduler token (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+    unsafe fn reschedule_common_helper(
+        &self,
+        current_thread: *mut Thread,
+        now: SchedTime,
+        boot_ticks: zx_types::zx_instant_boot_ticks_t,
+    ) -> RustRescheduleResult {
+        // No spinlocks should be held as we come into a reschedule operation. Only
+        // the current thread's lock and `queue_lock_` should be held.
+        // We keep `current_state` as a raw pointer `*mut SchedulerState` so no `&mut`
+        // reference spans helper calls that also access `current_thread`'s state.
+        // SAFETY: `current_thread` is valid and locked by the caller, and `self`'s
+        // `queue_lock_` is held.
+        let (current_state, current_cpu) =
+            unsafe { (cpp_thread_get_scheduler_state(current_thread), self.this_cpu()) };
+
+        // When calling into reschedule, the current thread is only allowed to be in a
+        // limited number of states, depending on where it came from.
+        //
+        // RUNNING   : Thread is the currently active thread on this CPU.
+        // BLOCKED*  : Thread has been inserted into a wait queue and is in the
+        //             process of de-activating.
+        // SUSPENDED : Thread is in the process of suspending (but is not in any queue).
+        // DEAD      : Thread is in the process of dying, this is its final reschedule.
+        // SAFETY: `current_thread`'s lock and `self`'s `queue_lock_` are held.
+        unsafe {
+            self.assert_in_scheduler(current_thread);
+            debug_assert_ne!((*current_state).state, ThreadState::Ready);
+            if (*current_state).state == ThreadState::Running {
+                debug_assert_eq!(
+                    (*cpp_thread_get_queue_state(current_thread)).disposition(),
+                    QueueDisposition::Associated
+                );
+                (*current_state).state = ThreadState::Ready;
+            }
+        }
+
+        // TODO(https://fxbug.dev/381899402): Find the root cause of small negative
+        // values in the actual runtime calculation.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        let (actual_runtime_ns, total_runtime_ns) = unsafe {
+            let actual = core::cmp::max(
+                now - (*current_state).last_started_running,
+                SchedDuration::from_raw(0),
+            );
+            (*current_state).last_started_running = now;
+            let total = now - self.start_of_current_time_slice_ns();
+            (*current_state).runtime_ns += actual;
+            cpp_thread_update_runtime_stats(current_thread, (*current_state).state as i32);
+            (actual, total)
+        };
+
+        // CRITICAL: Maintain Coherency of Idle and Busy States
+        //
+        // Apply the following rule:
+        //
+        //   1. Initial Update: Always performed under the first lock acquisition to
+        //      account for time elapsed since the last reschedule.
+        //
+        // See update_cpu_stats_segment for the full set of coherency rules.
+        //
+        // It is not yet known whether the CPU is transitioning to/from idle or the
+        // processing rate is changing. Simply advance the CPU stats to reflect the
+        // elapsed idle time or normalized busy time at the last known processing rate
+        // since the last update.
+        // SAFETY: `current_thread` is valid and `queue_lock_` is held.
+        unsafe {
+            self.update_cpu_stats_segment(
+                now,
+                Self::to_cpu_stats_segment_type(current_thread),
+                self.processing_rate(),
+            )
+        };
+
+        // Update the energy consumption accumulators for the current task and
+        // processor.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        unsafe {
+            self.update_estimated_energy_consumption(
+                current_thread,
+                now,
+                boot_ticks,
+                actual_runtime_ns,
+            )
+        };
+
+        // Update the used time slice before evaluating the next task. Scale the
+        // actual runtime of a deadline task by the relative performance of the CPU,
+        // effectively increasing the capacity of the task in proportion to the
+        // performance ratio. The remaining time slice may become negative due to
+        // scheduler overhead.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        let is_deadline = unsafe { (*current_state).effective_profile.is_deadline() };
+        let scaled_runtime = if is_deadline {
+            // SAFETY: `queue_lock_` is held.
+            unsafe { self.scale_down(actual_runtime_ns) }
+        } else {
+            actual_runtime_ns
+        };
+        // SAFETY: `current_thread`'s lock is held exclusively.
+        unsafe {
+            (*current_state).time_slice_used_ns += scaled_runtime;
+        }
+
+        // Adjust the rate of the current thread when fair bandwidth demand changes.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        if unsafe {
+            Self::is_thread_adjustable(current_thread)
+                && self.weight_total() != self.scheduled_weight_total()
+                && (*current_state).remaining_time_slice_ns().raw_value() > 0
+                && (*current_state).finish_time.raw_value() > now.raw_value()
+        } {
+            let _trace_adjust_rate = local_ktrace_begin_scope!(
+                DETAILED,
+                "adjust_rate",
+                "total runtime" => total_runtime_ns
+            );
+            // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+            unsafe {
+                self.set_scheduled_weight_total(self.weight_total());
+                self.adjust_fair_bandwidth(current_thread, now);
+                let target_preemption = (*current_state).remaining_time_slice_ns() + now;
+                let target_preemption = core::cmp::max(target_preemption, now);
+                let target_preemption =
+                    core::cmp::min(target_preemption, (*current_state).finish_time);
+                self.set_target_preemption_time_ns(target_preemption);
+            }
+        }
+
+        // Use a small epsilon to avoid tripping the consistency check due to
+        // rounding when scaling the time slice.
+        let time_slice_epsilon = sched_ns(100);
+        // SAFETY: `current_thread`'s lock is held exclusively.
+        let timeslice_expired = unsafe {
+            now.raw_value() >= (*current_state).finish_time.raw_value()
+                || (*current_state).remaining_time_slice_ns().raw_value()
+                    <= time_slice_epsilon.raw_value()
+        };
+
+        // Check the consistency of the target preemption time and the current time
+        // slice.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        unsafe {
+            if cfg!(debug_assertions)
+                && !(now < self.target_preemption_time_ns() || timeslice_expired)
+            {
+                let ep = &(*current_state).effective_profile;
+                panic_preemption_time_inconsistent(&PreemptionTimeDiagnostics {
+                    cpu: current_cpu,
+                    capacity_ns: if is_deadline { ep.deadline().capacity_ns } else { sched_ns(0) },
+                    deadline_ns: if is_deadline { ep.deadline().deadline_ns } else { sched_ns(0) },
+                    finish_time: (*current_state).finish_time,
+                    now,
+                    target_preemption_time_ns: self.target_preemption_time_ns(),
+                    start_of_current_time_slice_ns: self.start_of_current_time_slice_ns(),
+                    total_runtime_ns,
+                    actual_runtime_ns,
+                    time_slice_ns: (*current_state).time_slice_ns,
+                    time_slice_used_ns: (*current_state).time_slice_used_ns,
+                    remaining_time_slice_ns: (*current_state).remaining_time_slice_ns(),
+                });
+            }
+        }
+
+        // If the current thread needs to be migrated, remove it for migration.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        let current_is_migrating = unsafe { self.needs_migration_local(current_thread) };
+        if current_is_migrating {
+            // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+            unsafe { self.remove(now, current_thread, INVALID_CPU) };
+        }
+
+        // Select the next thread to run.
+        //
+        // WARNING: This method temporarily drops the queue lock during work stealing,
+        // when there are no threads in the run queue and the current thread is no
+        // longer in the running state. Do not split updates to different values
+        // across this call that need to be coherently read from another CPU and
+        // synchronized using the queue lock. Doing so creates an incomplete critical
+        // section that can result in incoherent reads of the values updated in
+        // different acquisitions of the queue lock.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        let mut next_thread_result =
+            unsafe { self.evaluate_next_thread(now, current_thread, current_is_migrating) };
+
+        if next_thread_result.status == EvaluateStatus::StealWork {
+            // Release the queue lock while attempting to steal work, leaving IRQs
+            // disabled. Latch our scale up factor to use while determining whether or
+            // not we can steal a given thread before we drop our lock.
+            // SAFETY: `queue_lock_` is held on entry; we latch `processing_rate` before
+            // unlocking `queue_lock_`, assert the `ChainLockTransaction` is active while
+            // stealing work, and re-acquire `queue_lock_` afterward.
+            let stolen = unsafe {
+                let rate = self.processing_rate();
+                self.unlock_queue();
+                let _ = ChainLockTransaction::assert_active();
+                let stolen = self.steal_work(now, rate);
+                self.lock_queue();
+                stolen
+            };
+
+            if !stolen.thread.is_null() {
+                next_thread_result = EvaluateResult::selected(stolen);
+            } else {
+                // SAFETY: `self` is a valid initialized `Scheduler`.
+                next_thread_result = EvaluateResult::selected(DequeueResult {
+                    thread: unsafe { cpp_scheduler_get_idle_thread(self) },
+                    mono_start_time_ns: SchedTime::from_raw(0),
+                    mono_finish_time_ns: SchedTime::from_raw(0),
+                });
+            }
+        }
+
+        debug_assert!(!next_thread_result.thread.is_null());
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        debug_assert!(!unsafe { (*cpp_thread_get_queue_state(current_thread)).in_queue() });
+
+        // Flush pending preemptions.
+        // SAFETY: `current_thread` is valid and running on the current CPU with IRQs disabled.
+        unsafe {
+            let preempts_pending = cpp_thread_preempts_pending(current_thread);
+            super::mp::reschedule(preempts_pending, 0);
+            cpp_thread_preempts_pending_clear(current_thread);
+        }
+
+        // If the `next_thread` is not the same as the current thread, we will need to
+        // (briefly) drop the scheduler's queue lock in order to acquire the next
+        // thread's lock exclusively. If we have selected the same thread as before,
+        // we can skip this step.
+        //
+        // If we do need to acquire `next_thread`'s lock, we use the same chain lock
+        // token that was used to acquire `current_thread`'s lock. We know this is safe
+        // because:
+        //
+        // TODO(johngro): THIS IS NOT SAFE - FIX THIS COMMENT
+        //
+        // This turned out to not be safe after all. The deadlock potential below is
+        // why we need to switch to the special "scheduler" token at the start of the
+        // operation.
+        //
+        // While there cannot be any cycles in this individual operation (trivial to
+        // show since there are two different locks here), deadlock is still possible.
+        //
+        // The flow is:
+        // 1) T0 is running on CPU X, and is locked entering a reschedule operation.
+        // 2) T1 is selected as the next thread to run, and is being locked
+        //    exclusively (after dropping the scheduler's lock). At the same time:
+        // 3) T2 is running on CPU Y, and is blocking on an OWQ which currently has T0
+        //    as the owner. T1 has been selected as the new owner.
+        // 4) T2 and the queue have been locked by the BAAO operation.
+        // 5) T1 is the start of the new owner chain and is locked.
+        // 6) The next step in the BAAO locking is to lock the old owner chain,
+        //    starting from T0.
+        //
+        // So:
+        // X has T0 and wants T1.
+        // Y has T1 and wants T0.
+        //
+        // CPU Y is in a sequence which obeys the backoff protocol, so as long as its
+        // token value > X's token value, Y will back off and we will be OK. If not,
+        // however, we deadlock. The reschedule operation cannot backoff and drop
+        // T0's lock, so it is stuck trying to get T1 from Y.
+        //
+        // TODO(johngro): END TODO
+        //
+        // 1) `current_thread` is currently running. Because of this, we know that it
+        //    is the target node of its PI graph.
+        // 2) `next_thread` is currently READY, which means it is also the target node
+        //    of its PI graph.
+        // 3) PI graphs always have exactly one target node.
+        // 4) Therefore, current and next cannot be members of the same graph, and can
+        //    both be acquired unconditionally.
+        //
+        // WARNING: This block temporarily drops the queue lock to acquire the next
+        // thread's lock. Do not split updates to different values across this call
+        // that need to be coherently read from another CPU and synchronized using the
+        // queue lock. Doing so creates an incomplete critical section that can result
+        // in incoherent reads of the values updated in different acquisitions of the
+        // queue lock.
+        let next_thread = next_thread_result.thread;
+        if current_thread != next_thread {
+            // The ChainLockTransaction we were in when we entered `reschedule_common` has
+            // already been finalized. We need to restart it in order to obtain new
+            // locks.
+            // SAFETY: The caller entered `reschedule_common` with an active
+            // `ChainLockTransaction` holding `current_thread`'s lock.
+            let token = unsafe { ChainLockTransaction::assert_active() };
+            ChainLockTransaction::active_ref(&token)
+                .restart(clt_tag!("Scheduler::RescheduleCommon (restart)"), &token);
+
+            // Release the queue lock, acquire the next thread lock, and re-acquire the
+            // queue lock. While the queue lock is unlocked, a PI operation or affinity
+            // change can update the next thread's state, since these operations could
+            // already hold the next thread's lock while waiting for the queue lock.
+            // These operations are obligated to reschedule this CPU if they invalidate
+            // the next thread's state, such that a different thread should run or the
+            // current CPU is no longer in the affinity mask. However, since the next
+            // thread is no longer in the run queue, it cannot be discovered and stolen
+            // by another CPU while the queue lock is unlocked.
+            // SAFETY: `queue_lock_` is held on entry and `next_thread` is a valid
+            // runnable or idle thread selected by `evaluate_next_thread` / `steal_work`.
+            unsafe {
+                self.unlock_queue();
+                let _ = ChainLockTransaction::assert_active();
+                // Acquire the lock without backing off using an explicit retry loop
+                // because the current thread's lock is held and ChainLock::Acquire
+                // asserts that no chain locks are currently held to avoid misuse in
+                // the general case.
+                let next_lock = thread_get_lock(next_thread);
+                while !(*next_lock).try_acquire_with_options(
+                    AllowFinalized::No,
+                    RecordBackoff::No,
+                    &token,
+                ) {
+                    Self::arch_yield();
+                }
+                self.lock_queue();
+            }
+            // All of the locks needed to complete the reschedule are held.
+            ChainLockTransaction::finalize(&token);
+        }
+
+        // Update the state of the current and next thread.
+        // SAFETY: `next_thread` is valid and its lock is held (either because
+        // `next_thread == current_thread` or because we acquired it above), and
+        // `queue_lock_` is held.
+        unsafe {
+            let token = ChainLockTransaction::assert_active();
+            let next_lock = thread_get_lock(next_thread);
+            (*next_lock).assert_acquired(&token);
+            self.assert_in_scheduler(next_thread);
+        }
+
+        // Keep `next_state` as a raw pointer `*mut SchedulerState` to avoid creating
+        // aliasing `&mut SchedulerState` references when `current_thread == next_thread`
+        // or across helper calls.
+        // SAFETY: `next_thread` is valid.
+        let next_state = unsafe { cpp_thread_get_scheduler_state(next_thread) };
+
+        // Convert from variable time to monotonic time if necessary.
+        // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+        unsafe { next_thread_result.update_thread_timeline() };
+
+        // If the next thread was just stolen from another CPU, finish associating it
+        // with this CPU and scheduler.
+        // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+        unsafe {
+            let next_queue_state = cpp_thread_get_queue_state(next_thread);
+            if (*next_queue_state).disposition() == QueueDisposition::Stolen {
+                debug_assert_eq!((*next_state).state, ThreadState::Ready);
+                debug_assert_ne!((*next_state).curr_cpu, current_cpu);
+                debug_assert_eq!((*next_queue_state).stolen_by, current_cpu);
+                debug_assert!(!next_thread_result.is_updated_pending());
+                self.insert(now, next_thread, Placement::Association);
+            }
+            debug_assert_eq!((*next_queue_state).disposition(), QueueDisposition::Associated);
+        }
+
+        let mut need_context_switch = false;
+        if current_thread != next_thread {
+            need_context_switch = true;
+            // Update stall contributions of the current and next thread.
+            // SAFETY: Both `current_thread` and `next_thread` are valid and locked.
+            unsafe { cpp_stall_accumulator_apply_context_switch(current_thread, next_thread) };
+
+            // If the current thread is not the idle thread and not migrating, return it
+            // to the run queue or remove its bookkeeping, depending on whether it is
+            // READY.
+            // SAFETY: `current_thread` is valid, and its lock and `queue_lock_` are held.
+            let requeue = unsafe { !cpp_thread_is_idle(current_thread) } && !current_is_migrating;
+            if requeue {
+                // SAFETY: `current_thread`'s lock is held exclusively.
+                if unsafe { (*current_state).state } == ThreadState::Ready {
+                    let placement = if timeslice_expired {
+                        Placement::Insertion
+                    } else {
+                        Placement::Preemption
+                    };
+                    // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+                    unsafe { self.queue_thread(current_thread, placement, now) };
+                } else {
+                    // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+                    unsafe { self.remove_thread_locked(now, current_thread) };
+                }
+            }
+        }
+
+        // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+        unsafe {
+            (*next_state).state = ThreadState::Running;
+            (*next_state).last_cpu = current_cpu;
+            debug_assert_eq!((*next_state).curr_cpu, current_cpu);
+            self.set_active_thread(next_thread);
+
+            // Keep track of the weight of the active thread, since it is not in the run
+            // queue contributing to the min_weight subtree invariant.
+            let active_thread_weight =
+                if !cpp_thread_is_idle(next_thread) && (*next_state).effective_profile.is_fair() {
+                    (*next_state).effective_profile.weight
+                } else {
+                    SchedWeight::max()
+                };
+            self.set_active_thread_weight(active_thread_weight);
+
+            // Handle any pending migration work.
+            cpp_thread_call_migrate_fn_locked(next_thread, MIGRATE_STAGE_RESTORE);
+        }
+
+        // Update the expected runtime of the current thread and the per-CPU total.
+        // Only update the thread and aggregate values if the current thread is still
+        // associated with this CPU or is no longer ready.
+        // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
+        unsafe {
+            let current_queue_state = cpp_thread_get_queue_state(current_thread);
+            let current_is_associated =
+                !(*current_queue_state).active || (*current_state).curr_cpu == current_cpu;
+
+            if !cpp_thread_is_idle(current_thread)
+                && current_is_associated
+                && (timeslice_expired || current_thread != next_thread)
+            {
+                let _trace_update_ema =
+                    local_ktrace_begin_scope!(DETAILED, "update_expected_runtime");
+                // Adjust the runtime for the relative performance of the CPU to account for
+                // different performance levels in the estimate. The relative performance
+                // scale is in the range (0.0, 1.0], such that the adjusted runtime is
+                // always less than or equal to the monotonic runtime.
+                let adjusted_total_runtime_ns = self.scale_down(total_runtime_ns);
+                (*current_state).banked_runtime_ns += adjusted_total_runtime_ns;
+
+                if timeslice_expired || !(*current_queue_state).active {
+                    let delta_ns = Self::peak_decay_delta(
+                        (*current_state).expected_runtime_ns,
+                        (*current_state).banked_runtime_ns,
+                    );
+                    (*current_state).expected_runtime_ns += delta_ns;
+                    (*current_state).banked_runtime_ns = SchedDuration::from_raw(0);
+
+                    // Adjust the aggregate value by the same amount. The adjustment is only
+                    // necessary when the thread is still active on this CPU.
+                    if (*current_queue_state).active {
+                        self.update_total_expected_runtime(delta_ns);
+                    }
+                }
+            }
+        }
+
+        RustRescheduleResult {
+            need_context_switch,
+            timeslice_expired,
+            current_is_migrating,
+            next_thread,
+        }
     }
 }
 
@@ -7071,6 +7636,56 @@ pub unsafe extern "C" fn rust_scheduler_unblock_common(
     unsafe { out_targets.write(targets) };
 }
 
+/// # Safety
+/// Pointers must be valid and thread lock held.
+#[unsafe(export_name = "rust_kernel_scheduler_block")]
+pub unsafe extern "C" fn ffi_scheduler_block(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_kernel_scheduler_block(current_thread) };
+}
+
+/// # Safety
+/// Safe to call from timer interrupt.
+#[unsafe(export_name = "rust_kernel_scheduler_timer_tick")]
+pub unsafe extern "C" fn ffi_scheduler_timer_tick(now: SchedTime) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { rust_kernel_scheduler_timer_tick(now) };
+}
+
+struct CppErasedScope {
+    cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+    ctx: *mut core::ffi::c_void,
+}
+
+impl ktrace_rs::ErasedScope for CppErasedScope {
+    fn end(&mut self) {
+        if let Some(cb) = self.cb.take() {
+            // SAFETY: `cb` and `ctx` were supplied together by the C++ caller of
+            // `rust_scheduler_reschedule_common`, whose `EndTraceCallback` outlives
+            // this scope; `take()` ensures it is invoked at most once.
+            unsafe { cb(self.ctx) };
+        }
+    }
+}
+
+/// # Safety
+/// `sched` and `current_thread` must be valid, with `current_thread` locked.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_scheduler_reschedule_common(
+    sched: *const Scheduler,
+    current_thread: *mut Thread,
+    end_outer_trace_cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+    end_outer_trace_ctx: *mut core::ffi::c_void,
+) {
+    // Only materialize an erased scope when the C++ caller actually has an outer
+    // trace to end; `end_outer_trace_cb` is null otherwise.
+    let mut scope = CppErasedScope { cb: end_outer_trace_cb, ctx: end_outer_trace_ctx };
+    let end_outer_trace =
+        scope.cb.is_some().then_some(&mut scope as &mut dyn ktrace_rs::ErasedScope);
+    // SAFETY: Forwarded from the caller.
+    unsafe { (*sched).reschedule_common(current_thread, end_outer_trace) };
+}
+
 /// Initializes a run queue in-place.
 ///
 /// # Safety
@@ -7196,23 +7811,292 @@ impl Drop for QueueLockIrqSaveGuard {
 const MIGRATE_STAGE_SAVE: i32 = 0;
 const MIGRATE_STAGE_RESTORE: i32 = 1;
 
+/// Reset this CPU's preemption timer to fire at `deadline`.
+///
+/// `current_cpu` is the current CPU.
+///
+/// `now` is the time that was latched when the CPU entered the scheduler.
+///
+/// # Safety
+/// Must be called with interrupts disabled on `current_cpu`, and `current_cpu`
+/// must be a valid initialized CPU number.
+unsafe fn preempt_reset(
+    current_cpu: CpuNum,
+    now: zx_types::zx_instant_mono_t,
+    deadline: zx_types::zx_instant_mono_t,
+) {
+    let _trace = local_ktrace_begin_scope!(
+        DETAILED,
+        "preempt_reset",
+        "now" => now,
+        "deadline" => deadline,
+    );
+    // Setting a preemption time that's prior to the point at which the CPU
+    // entered the scheduler indicates at worst a bug, or at best a wasted
+    // reschedule.
+    //
+    // What do we mean by wasted reschedule? When leaving the scheduler, if the
+    // preemption timer was set to a point prior to entering the scheduler, it
+    // will immediately fire once we've re-enabled interrupts. When it fires,
+    // we'll then re-enter the scheduler (provided that preemption is not
+    // disabled) without running the current task for any appreciable amount of
+    // time. Instead, we should have set the preemption timer to a point that's
+    // after the latched entry time and avoided an unnecessary interrupt and trip
+    // through the scheduler.
+    //
+    // TODO(https://fxbug.dev/42182770): For now, simply count the number of times
+    // this happens. Once we have eliminated all causes of "preemption time in
+    // the past" (whether they are bugs or simply missed optimization
+    // opportunities) replace this counter with a `debug_assert!`.
+    //
+    // Aside from simple bugs, how can we end up with a preemption time that's
+    // earlier than the time at which we last entered the scheduler? Consider the
+    // case where the current thread, A, is blocking and the run queue contains
+    // just one thread, B, that's deadline scheduled and whose finish time has
+    // already elapsed. In other words, B's finish time is earlier than the time
+    // at which we last entered the scheduler. In this case, we'll end up
+    // scheduling B and setting the preemption timer to B's finish time. Longer
+    // term, we should consider resetting or reactivating all eligible tasks whose
+    // finish times would be earlier than the point at which we entered the
+    // scheduler. See also `COUNTER_DEADLINE_PAST`.
+    if deadline < now {
+        COUNTER_PREEMPT_PAST.add(1);
+    }
+    // SAFETY: `current_cpu` is the current CPU with interrupts disabled.
+    unsafe { cpp_timer_queue_preempt_reset(current_cpu, deadline) };
+}
+
 impl Scheduler {
-    /// Completes a lock handoff after a context switch: releases the previous
-    /// thread's lock, restores `saved_state` as the active transaction, and
-    /// re-syncs `current_thread`'s lock to the restored transaction's token.
+    /// Updates bandwidth reservation cache and power level control during reschedule.
     ///
     /// # Safety
-    /// - Interrupts must be disabled and the current CPU's `Scheduler` must have
-    ///   a non-null `previous_thread` recorded by the context switch that
-    ///   resumed or started `current_thread`.
-    /// - An active `ChainLockTransaction` must hold exactly two locks: the
-    ///   previous thread's lock and `current_thread`'s lock, both acquired with
-    ///   the reserved scheduler token.
-    /// - `saved_state` must have been produced by a `ChainLockTransaction` that
-    ///   lives on `current_thread`'s stack and outlives this call.
+    /// The caller must ensure `self` is the current CPU's `Scheduler` with
+    /// interrupts disabled and `queue_lock_` held (`TA_REQ(queue_lock_)`), and
+    /// `next_thread` is a valid `Thread`.
+    unsafe fn reschedule_power_control(&self, now: SchedTime, next_thread: *mut Thread) {
+        // SAFETY: `self`'s `queue_lock_` is held by the caller.
+        if unsafe { self.power_level_control_is_enabled() } {
+            // After the current thread has been potentially removed from this
+            // scheduler, clear or prune the bandwidth demand cache and re-evaluate the
+            // current power level.
+            // SAFETY: `next_thread` is valid and `self`'s `queue_lock_` is held.
+            let clear_cache = unsafe {
+                cpp_thread_is_idle(next_thread)
+                    && rust_kernel_run_queue_is_empty(self.critical_deadline_queue())
+                    && rust_kernel_run_queue_is_empty(self.deadline_queue())
+            };
+            // SAFETY: `self`'s `queue_lock_` is held exclusively, synchronizing access
+            // to `bandwidth_reservation_cache`.
+            let utilization_to_remove = unsafe {
+                let cache = &mut (*self.state.get()).bandwidth_reservation_cache;
+                if clear_cache { cache.clear() } else { cache.prune(now) }
+            };
+            if utilization_to_remove > SchedUtilization::from_raw(0) {
+                local_ktrace_instant!(
+                    QUEUE,
+                    "clear/prune",
+                    "utilization_to_remove" => utilization_to_remove,
+                );
+                // SAFETY: `self`'s `queue_lock_` is held.
+                unsafe {
+                    self.update_total_deadline_utilization(SchedUtilization::from_raw(
+                        -utilization_to_remove.raw_value(),
+                    ));
+                }
+            }
+
+            // SAFETY: `self`'s `queue_lock_` is held with interrupts disabled.
+            unsafe {
+                // Evaluate changing the processing rate when the required utilization
+                // moves outside the bounds of the current power level. All of the
+                // processors in the same domain must be re-evaluated to determine whether
+                // an actual rate change should occur.
+                self.power_level_control_reevaluate_if_needed();
+
+                // Send a pending power level request before updating the processing rate.
+                //
+                // WARNING: This call temporarily drops the queue lock when calling the
+                // fast-path power level controller. Do not split updates to different
+                // values across this call that need to be coherently read from another CPU
+                // and synchronized using the queue lock. Doing so creates an incomplete
+                // critical section that can result in incoherent reads of the values
+                // updated in different acquisitions of the queue lock.
+                let reschedule_mask = self.send_pending_power_level_request();
+                if reschedule_mask != 0 {
+                    // Reschedule the other CPUs affected by the power level change. The
+                    // current CPU is filtered out by `mp::reschedule`.
+                    super::mp::reschedule(reschedule_mask, 0);
+                }
+            }
+        }
+    }
+
+    /// Computes the next preemption time for `next_thread`.
+    ///
+    /// # Safety
+    /// The caller must ensure `self`'s `queue_lock_` and `next_thread`'s lock are
+    /// held (`TA_REQ(queue_lock_, next_thread->get_lock())`), and `current_thread`
+    /// and `next_thread` are valid `Thread` pointers.
+    unsafe fn calculate_preemption_time(
+        &self,
+        current_thread: *mut Thread,
+        next_thread: *mut Thread,
+        now: SchedTime,
+        timeslice_expired: bool,
+        processing_rate_updated: bool,
+    ) -> SchedTime {
+        // SAFETY: `next_thread` is valid.
+        let next_state_ptr = unsafe { cpp_thread_get_scheduler_state(next_thread) };
+        // Each path below must set the preemption time.
+        // TODO(eieio): Debug assert that the value set is >= now.
+        let mut preemption_time_ns;
+
+        // SAFETY: `next_thread` is valid.
+        if unsafe { cpp_thread_is_idle(next_thread) } {
+            let _trace_stop_preemption = local_ktrace_begin_scope!(DETAILED, "idle");
+            // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+            let target = unsafe {
+                (*next_state_ptr).last_started_running = now;
+
+                // If there are no tasks to run in the future or there is idle/power work to
+                // perform, disable the preemption timer. Otherwise, set the preemption
+                // time to the earliest eligible time.
+                let target = if cpp_scheduler_has_pending_power_work(self) {
+                    SchedTime::from_raw(zx_types::ZX_TIME_INFINITE)
+                } else {
+                    self.get_next_eligible_time()
+                };
+                self.set_target_preemption_time_ns(target);
+                target
+            };
+            preemption_time_ns = target;
+        } else if timeslice_expired || current_thread != next_thread {
+            let trace_start_preemption = local_ktrace_begin_scope!(DETAILED, "next_slice");
+
+            // Re-compute the time slice and ideal preemption time for the new thread
+            // based on the latest state.
+            // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+            let target = unsafe {
+                let target = self.next_thread_timeslice(next_thread, now);
+                self.set_target_preemption_time_ns(target);
+                // Update the thread's runtime stats to record the amount of time that it spent in
+                // the run queue.
+                cpp_thread_update_runtime_stats(next_thread, (*next_state_ptr).state as i32);
+                (*next_state_ptr).last_started_running = now;
+                self.set_start_of_current_time_slice_ns(now);
+                self.set_scheduled_weight_total(self.weight_total());
+                target
+            };
+
+            // Adjust the preemption time to account for a deadline thread becoming
+            // eligible before the current time slice expires.
+            // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+            preemption_time_ns = unsafe {
+                if (*next_state_ptr).effective_profile.is_fair() {
+                    self.clamp_to_deadline(target)
+                } else {
+                    self.clamp_to_earlier_deadline(target, next_thread)
+                }
+            };
+            debug_assert!(preemption_time_ns <= target);
+
+            ktrace_rs::end_scope!(
+                trace_start_preemption,
+                "preemption_time" => preemption_time_ns,
+                "target preemption time" => target,
+            );
+
+            // Emit a flow end event to match the flow begin event emitted when the
+            // thread was enqueued. Emitting in this scope ensures that thread just
+            // came from the run queue (and is not the idle thread).
+            // SAFETY: `next_thread` is valid and its lock is held.
+            let (flow_id, tid) =
+                unsafe { ((*next_state_ptr).flow_id, cpp_thread_get_tid(next_thread)) };
+            local_ktrace_flow_end!(
+                FLOW,
+                "sched_latency",
+                flow_id,
+                "tid" => tid,
+            );
+        } else {
+            let trace_continue = local_ktrace_begin_scope!(DETAILED, "continue");
+            debug_assert_eq!(current_thread, next_thread);
+
+            // Update the target preemption time for consistency with the updated CPU
+            // processing rate.
+            // TODO(eieio): Eventually update the effective bandwidth for all threads.
+            // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+            unsafe {
+                if processing_rate_updated && (*next_state_ptr).effective_profile.is_deadline() {
+                    let target = self.next_thread_timeslice(next_thread, now);
+                    self.set_target_preemption_time_ns(target);
+                }
+            }
+
+            // The current thread should continue to run. A throttled deadline thread
+            // might become eligible before the current time slice expires. Figure out
+            // whether to set the preemption time earlier to switch to the newly
+            // eligible thread.
+            //
+            // The preemption time should be set earlier when either:
+            //   * Current is a fair thread and a deadline thread will become eligible
+            //     before its time slice expires.
+            //   * Current is a deadline thread and a deadline thread with an earlier
+            //     deadline will become eligible before its time slice expires.
+            //
+            // Note that the target preemption time remains set to the ideal
+            // preemption time for the current task, even if the preemption timer is set
+            // earlier. If a task that becomes eligible is stolen before the early
+            // preemption is handled, this logic will reset to the original target
+            // preemption time.
+            // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+            let target = unsafe { self.target_preemption_time_ns() };
+            // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
+            preemption_time_ns = unsafe {
+                if (*next_state_ptr).effective_profile.is_fair() {
+                    self.clamp_to_deadline(target)
+                } else {
+                    self.clamp_to_earlier_deadline(target, next_thread)
+                }
+            };
+            debug_assert!(preemption_time_ns <= target);
+
+            ktrace_rs::end_scope!(
+                trace_continue,
+                "preemption_time" => preemption_time_ns,
+                "target preemption time" => target,
+            );
+        }
+
+        // Make sure the bandwidth demand cache will get pruned if there are
+        // remaining valid entries.
+        // SAFETY: `self`'s `queue_lock_` is held.
+        if unsafe { self.power_level_control_is_enabled() } {
+            // SAFETY: `self`'s `queue_lock_` is held exclusively.
+            preemption_time_ns = unsafe {
+                (*self.state.get())
+                    .bandwidth_reservation_cache
+                    .clamp_to_next_finish_time(preemption_time_ns)
+            };
+        }
+
+        debug_assert_ne!(preemption_time_ns, SchedTime::min());
+        preemption_time_ns
+    }
+
+    /// Completes the post-context-switch lock handoff on the current CPU.
+    ///
+    /// # Safety
+    /// - Interrupts must be disabled on the current CPU.
+    /// - An active `ChainLockTransaction` on the current CPU must hold both
+    ///   `previous_thread`'s lock and `current_thread`'s lock with the reserved
+    ///   scheduler token (`TA_REQ(chainlock_transaction_token)`,
+    ///   `TA_REL(previous_thread()->get_lock())`).
+    /// - `saved_state` must belong to a live, stack-pinned `ChainLockTransaction`
+    ///   on `current_thread`'s stack.
     unsafe fn lock_handoff_internal(saved_state: &SavedState, current_thread: *mut Thread) {
         debug_assert!(crate::arch_rs::ints_disabled());
-        // SAFETY: Interrupts are disabled, so the current CPU cannot change and its
+        // SAFETY: Interrupts are disabled, so `curr_cpu_num()` is stable and its
         // `Scheduler` is initialized.
         let scheduler = unsafe { cpp_scheduler_get(crate::arch_rs::curr_cpu_num()) };
         // SAFETY: Interrupts are disabled and `scheduler` is the current CPU's
@@ -7245,6 +8129,383 @@ impl Scheduler {
             (*prev_lock).sync_token(&token);
             (*prev_lock).release(&token);
         }
+    }
+
+    /// Performs the architecture and VMM context switch from `current_thread` to
+    /// `next_thread` and completes the lock handoff when `current_thread` resumes.
+    ///
+    /// # Safety
+    /// - `self` must be the current CPU's `Scheduler`, with interrupts disabled and
+    ///   `queue_lock_` unlocked.
+    /// - `current_thread` and `next_thread` must be distinct, valid `Thread`
+    ///   pointers whose locks are both held by the active `ChainLockTransaction` on
+    ///   the current CPU using the reserved scheduler token (`saved_state`).
+    /// - `saved_state` must refer to a `ChainLockTransaction` pinned on
+    ///   `current_thread`'s stack across the context switch.
+    unsafe fn context_switch(
+        &self,
+        current_thread: *mut Thread,
+        next_thread: *mut Thread,
+        saved_state: &SavedState,
+        end_inner_trace: Option<ktrace_rs::KTraceScope<'static, 0>>,
+        end_outer_trace: Option<&mut dyn ktrace_rs::ErasedScope>,
+    ) {
+        // SAFETY: Both `current_thread` and `next_thread` are valid and locked by
+        // the caller, and interrupts are disabled on `self`'s CPU.
+        unsafe {
+            // Trace the activation of the next thread before context switching.
+            sched_trace_context_switch(current_thread, next_thread, self.this_cpu());
+
+            // We invoke the context switch functions before context switching, so that
+            // they have a chance to correctly perform the actions required. Doing so
+            // after context switching may lead to an invalid CPU state.
+            cpp_thread_call_context_switch_fn_locked(current_thread);
+            cpp_thread_call_context_switch_fn_locked(next_thread);
+
+            // Notes about Thread aspace rules:
+            //
+            // Typically, it is only safe for the current thread to access its aspace
+            // member directly, as only a running thread can change its own aspace, and
+            // if a thread is running, then its process must also be alive and therefore
+            // its aspace must also be alive.
+            //
+            // Context switching is a bit of an edge case. The current thread is
+            // becoming the next thread. Both aspaces must still be alive (even if the
+            // current thread is in the process of becoming rescheduled for the very
+            // last time as it exits), and neither one can change its own aspace right
+            // now (they are not really running).
+            //
+            // Because of this, it should be OK for us to directly access the aspaces
+            // during the context switch, without needing to either check the thread's
+            // state, or add any references to the VmAspace object.
+            let current_aspace = cpp_thread_get_aspace(current_thread);
+            let next_aspace = cpp_thread_get_aspace(next_thread);
+            if current_aspace != next_aspace {
+                cpp_vmm_context_switch(current_aspace, next_aspace);
+            }
+        }
+
+        super::stats::inc_context_switches();
+
+        // Prevent the scheduler durations from spanning the context switch.
+        // Some context switches do not resume within this method on the other
+        // thread, which results in unterminated durations. All of the callers
+        // with durations tail-call this method, so terminating the duration
+        // here should not cause significant inaccuracy of the outer duration.
+        // The inner scope is owned and ends on drop; the outer scope is owned by the
+        // C++ caller and ended through its erased callback.
+        drop(end_inner_trace);
+        if let Some(scope) = end_outer_trace {
+            scope.end();
+        }
+
+        if SCHEDULER_QUEUE_TRACING_ENABLED {
+            let arg0: u64 = 0;
+            // SAFETY: `self` is valid and `this_cpu` is initialized during early boot.
+            let arg1: u64 = core::cmp::min(unsafe { self.this_cpu() } as u64, 0xF) << 16;
+            ktrace_rs::instant!(
+                "kernel:probe",
+                "tqe_afinish",
+                ktrace_rs::Context::Cpu,
+                "arg0" => arg0,
+                "arg1" => arg1,
+            );
+        }
+
+        // SAFETY: Interrupts are disabled, `self` is the current CPU's `Scheduler`,
+        // and both `current_thread` and `next_thread` are locked with the reserved
+        // scheduler token saved in `saved_state`. After `cpp_arch_context_switch`
+        // returns on `current_thread`'s stack, `Self::lock_handoff_internal` looks
+        // up the new CPU's `Scheduler` rather than using `self` or `next_thread`.
+        unsafe {
+            // Time for the context switch. Before actually performing the switch,
+            // record the current thread as the "previous thread" for the next thread
+            // becoming scheduled. The next thread needs to know which thread preceded
+            // it in order to drop its lock before unwinding, and our current stack is
+            // not going to be available to it.
+            debug_assert!(
+                (*self.state.get())
+                    .previous_thread
+                    .load(core::sync::atomic::Ordering::Relaxed)
+                    .is_null()
+            );
+            (*self.state.get())
+                .previous_thread
+                .store(current_thread, core::sync::atomic::Ordering::Relaxed);
+            cpp_arch_context_switch(current_thread, next_thread);
+
+            // We made it to the other side of the switch. We have switched stacks, so
+            // the local variable meanings have become redefined.
+            //
+            // ++ The value of `current_thread` after the context switch is the value of
+            //    `next_thread` before the switch.
+            // ++ The value of `next_thread` after the context switch is the thread that
+            //    the new `current_thread` context-switched to the last time it ran
+            //    through here. We don't even know if this thread exists now, so its
+            //    value is junk.
+            // ++ The value of `current_thread` before the switch has been stashed in
+            //    this scheduler's `previous_thread` member.
+
+            // If the new current thread has a restartable sequence registered, we
+            // need to signal the thread to check for the restartable sequence before
+            // it returns to userspace.
+            cpp_thread_signal_check_restartable_sequence_if_needed(current_thread);
+
+            // We need to drop the old current thread's lock, while continuing to hold
+            // the new current thread's lock as we unwind.
+            // `Self::lock_handoff_internal` will take care of dropping the previous
+            // `current_thread`'s lock.
+            Self::lock_handoff_internal(saved_state, current_thread);
+        }
+    }
+
+    /// Common logic for reschedule API.
+    ///
+    /// # Safety
+    /// The caller must ensure that:
+    /// - `self` is the current CPU's `Scheduler` with interrupts disabled and
+    ///   `queue_lock_` not held (`TA_EXCL(queue_lock_)`).
+    /// - `current_thread` is the current CPU's active thread (`current_get()`),
+    ///   and its lock is the only lock held by an active, finalized
+    ///   `ChainLockTransaction`
+    ///   (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+    unsafe fn reschedule_common(
+        &self,
+        current_thread: *mut Thread,
+        end_outer_trace: Option<&mut dyn ktrace_rs::ErasedScope>,
+    ) {
+        let mut trace = local_ktrace_begin_scope!(DETAILED, "reschedule_common");
+        debug_assert_eq!(current_thread, super::thread::current_get());
+        let current_cpu = crate::arch_rs::curr_cpu_num();
+        // SAFETY: `self` is valid and `this_cpu` is initialized.
+        debug_assert_eq!(current_cpu, unsafe { self.this_cpu() });
+
+        // No spinlocks should be held as we come into a reschedule operation. Only
+        // the current thread's lock should be held.
+        // SAFETY: Querying per-CPU spinlock count with interrupts disabled.
+        debug_assert_eq!(unsafe { cpp_arch_num_spinlocks_held() }, 0);
+        debug_assert!(!crate::arch_rs::blocking_disallowed());
+
+        // SAFETY: The caller guarantees an active `ChainLockTransaction` on the
+        // current CPU.
+        let token = unsafe { ChainLockTransaction::assert_active() };
+        ChainLockTransaction::active_ref(&token).assert_num_locks_held(1);
+        super::stats::inc_reschedules();
+
+        // Prepare for rescheduling by backing up the chain lock context and switching
+        // to the special "sched token" which we use during reschedule operations in
+        // order to guarantee that we will win arbitration with other active
+        // transactions which are not reschedule operations. We will restore this
+        // context at the end of the operation (whether we context switched or not).
+        let saved_state = ChainLockTransaction::save_state_and_use_reserved_token(&token);
+        // SAFETY: `current_thread` is valid and its lock is held by the active
+        // transaction, which now uses the reserved token.
+        let curr_lock = unsafe {
+            let curr_lock = thread_get_lock(current_thread);
+            (*curr_lock).sync_token(&token);
+            curr_lock
+        };
+
+        // Process all threads in the `save_state_list`. We do this before performing any
+        // other reschedule operation.
+        // SAFETY: Interrupts are disabled, `queue_lock_` is not held, and the active
+        // transaction holds the reserved scheduler token.
+        unsafe {
+            self.process_save_state_list();
+        }
+
+        let sched_ptr = self as *const Scheduler as *mut Scheduler;
+        // SAFETY: `sched_ptr` is valid, interrupts are disabled, and `queue_lock_` is
+        // not currently held.
+        unsafe {
+            cpp_scheduler_lock_queue(sched_ptr);
+        }
+
+        // Sample the current time after acquiring the queue lock to avoid large skews
+        // between accounting based on now and trace events that should occur
+        // approximately now.
+        let mut now_ticks =
+            SchedMonoTimeAndBootTicks { mono_time: SchedTime::from_raw(0), boot_ticks: 0 };
+        // SAFETY: `now_ticks` is a valid mutable stack variable.
+        unsafe {
+            cpp_current_mono_time_and_boot_ticks(&mut now_ticks);
+        }
+        let now = now_ticks.mono_time;
+        let boot_ticks = now_ticks.boot_ticks;
+
+        // SAFETY: `self`'s `queue_lock_` and `current_thread`'s lock are held with the
+        // reserved scheduler token.
+        let result = unsafe { self.reschedule_common_helper(current_thread, now, boot_ticks) };
+
+        let next_thread = result.next_thread;
+        // SAFETY: `self`'s `queue_lock_` is held and `next_thread` is valid.
+        unsafe {
+            self.reschedule_power_control(now, next_thread);
+        }
+
+        // Update the current processing rate only after any uses in the reschedule
+        // path above to ensure the scale is applied consistently over the interval
+        // between reschedules (i.e. not earlier than the requested update).
+        //
+        // Updating the processing rate also results in updating the target preemption
+        // time below when the current thread is deadline scheduled.
+        //
+        // TODO(eieio): Shed load when total utilization is above the processing rate.
+        // SAFETY: `self`'s `queue_lock_` is held.
+        let (previous_processing_rate, processing_rate_updated) =
+            unsafe { (self.processing_rate(), self.update_processing_rate(boot_ticks)) };
+
+        // CRITICAL: Maintain Coherency of Idle and Busy States
+        //
+        // Apply the following rules:
+        //
+        //   2. Transition Update: If the CPU's idle state changes, upon re-acquiring
+        //      the lock, stats MUST be updated again using FRESH time samples.
+        //   3. Processing Rate Update: If the CPU's processing rate changes, upon
+        //      re-acquiring the lock, stats MUST be updated again using FRESH time
+        //      samples.
+        //
+        // See `update_cpu_stats_segment` for the full set of coherency rules.
+        //
+        // The queue lock has been released and re-acquired one or more times, each of
+        // which may have been interposed by another CPU sampling the critical values
+        // and forward projecting idle or normalized busy time. If there is transition
+        // to/from idle or the processing rate changed while non-idle, advance the CPU
+        // stats to cover the segment since the initial update.
+        // SAFETY: `next_thread`, `current_thread`, and `self` are valid, and
+        // `queue_lock_` is held.
+        let (next_is_idle, curr_is_idle) =
+            unsafe { (cpp_thread_is_idle(next_thread), cpp_thread_is_idle(current_thread)) };
+        // SAFETY: `queue_lock_` is held.
+        unsafe {
+            self.set_idle(next_is_idle);
+        }
+        if next_is_idle != curr_is_idle || (!curr_is_idle && processing_rate_updated) {
+            // SAFETY: `queue_lock_` is held.
+            unsafe {
+                self.update_cpu_stats_segment(
+                    SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0),
+                    Self::to_cpu_stats_segment_type(current_thread),
+                    previous_processing_rate,
+                );
+            }
+        }
+
+        // SAFETY: `queue_lock_` and `next_thread`'s lock are held.
+        let preemption_time_ns = unsafe {
+            self.calculate_preemption_time(
+                current_thread,
+                next_thread,
+                now,
+                result.timeslice_expired,
+                processing_rate_updated,
+            )
+        };
+        // SAFETY: Interrupts are disabled on `current_cpu`.
+        unsafe {
+            preempt_reset(current_cpu, now.raw_value(), preemption_time_ns.raw_value());
+        }
+
+        // Assert that there is no path beside running the idle thread can leave the
+        // preemption timer unarmed. However, the preemption timer may or may not be
+        // armed when running the idle thread.
+        // SAFETY: `current_cpu` is the current CPU with interrupts disabled.
+        debug_assert!(next_is_idle || unsafe { cpp_timer_queue_preempt_armed(current_cpu) });
+
+        // Almost done, we need to handle the actual context switch (if any).
+        if result.need_context_switch {
+            // SAFETY: Both `current_thread` and `next_thread` are locked, and
+            // `queue_lock_` is held prior to `cpp_scheduler_unlock_queue`.
+            unsafe {
+                let curr_rem_ts =
+                    (*cpp_thread_get_scheduler_state(current_thread)).remaining_time_slice_ns();
+                let next_rem_ts =
+                    (*cpp_thread_get_scheduler_state(next_thread)).remaining_time_slice_ns();
+                local_ktrace_instant!(
+                    DETAILED,
+                    "switch_threads",
+                    "total threads" => self.runnable_task_count(),
+                    "total weight" => self.weight_total().raw_value(),
+                    "current thread time slice" => curr_rem_ts,
+                    "next thread time slice" => next_rem_ts,
+                );
+                self.trace_thread_queue_event(
+                    ktrace_rs::resolve_string!("tqe_astart"),
+                    next_thread,
+                );
+                // Release queue lock before context switching.
+                cpp_scheduler_unlock_queue(sched_ptr);
+
+                // Finish the migration of the current thread, if pending.
+                if result.current_is_migrating {
+                    cpp_thread_call_migrate_fn_locked(current_thread, MIGRATE_STAGE_SAVE);
+                    let target_cpu =
+                        Self::find_active_scheduler_for_thread(current_thread, |thread, target| {
+                            debug_assert!(!core::ptr::eq(target, self));
+                            target.insert(now, thread, Placement::Migration);
+                        });
+                    super::mp::reschedule(cpu_num_to_mask(target_cpu), 0);
+                }
+
+                self.context_switch(
+                    current_thread,
+                    next_thread,
+                    &saved_state,
+                    trace.take(),
+                    end_outer_trace,
+                );
+            }
+        } else {
+            // Restore the transaction state and drop the queue lock before unwinding.
+            // SAFETY: `saved_state` is valid, `curr_lock` is held, and `queue_lock_` is
+            // held on `sched_ptr`.
+            unsafe {
+                ChainLockTransaction::restore_state(saved_state);
+                (*curr_lock).sync_token(&token);
+                cpp_scheduler_unlock_queue(sched_ptr);
+            }
+        }
+    }
+}
+
+/// Callback for `Scheduler::Block`.
+///
+/// # Safety
+/// `current_thread` must be valid and be the current thread, interrupts must be
+/// disabled, an active `ChainLockTransaction` must hold `current_thread`'s lock
+/// (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`), and no
+/// scheduler's `queue_lock_` may be held (`TA_EXCL(queue_lock_)`).
+pub unsafe extern "C" fn rust_kernel_scheduler_block(current_thread: *mut Thread) {
+    let mut trace = local_ktrace_begin_scope!(COMMON, "sched_block");
+    debug_assert_eq!(current_thread, super::thread::current_get());
+    // SAFETY: `current_thread` is valid and locked by the caller.
+    unsafe { cpp_thread_canary_assert(current_thread) };
+    debug_assert!(
+        unsafe { (*cpp_thread_get_scheduler_state(current_thread)).state } != ThreadState::Running
+    );
+    // SAFETY: Interrupts are disabled and `current_thread` is locked on the current
+    // CPU with `queue_lock_` not held.
+    unsafe {
+        let sched = cpp_scheduler_get(crate::arch_rs::curr_cpu_num());
+        (*sched).reschedule_common(
+            current_thread,
+            trace.as_mut().map(|s| s as &mut dyn ktrace_rs::ErasedScope),
+        );
+    }
+}
+
+/// Called when the preemption timer for a CPU has fired.
+///
+/// This function is logically private and should only be called by `timer.cc`.
+///
+/// # Safety
+/// Must be called from the preemption timer interrupt handler on the current
+/// CPU with interrupts disabled, while the current thread is valid.
+pub unsafe extern "C" fn rust_kernel_scheduler_timer_tick(_now: SchedTime) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_timer_tick");
+    // SAFETY: Called from the local CPU's preemption timer interrupt handler.
+    unsafe {
+        cpp_thread_preempt_set_pending();
     }
 }
 
@@ -8464,6 +9725,138 @@ impl Scheduler {
             }
             COUNTER_FIND_TARGET_CPU_RETRIES.add(1);
         }
+    }
+
+    /// Runs the migration functions of threads in the `save_state_list`, placing
+    /// the threads in their target `RunQueue`s when done.
+    ///
+    /// Note that this method is called while holding the special "sched token"
+    /// used during reschedule operations. As a result, it is an absolute
+    /// requirement that any threads we lock in this method are not discoverable
+    /// and lockable from another scheduler that is also holding the "sched token."
+    /// Failure to meet this requirement will result in deadlock.
+    ///
+    /// # Safety
+    /// The caller must ensure that:
+    /// - Interrupts are disabled and `self`'s `queue_lock_` is not held (`TA_EXCL(queue_lock_)`).
+    /// - An active `ChainLockTransaction` is registered on the current CPU using
+    ///   the reserved scheduler token (`TA_REQ(chainlock_transaction_token)`).
+    #[inline]
+    pub unsafe fn process_save_state_list(&self) {
+        debug_assert!(crate::arch_rs::ints_disabled());
+
+        // Move the `save_state_list` to a local, stack allocated list. This allows us to relinquish
+        // the `queue_lock` for the rest of the method. The lock, emptiness check, and move are
+        // combined into a single FFI call so that the common empty case costs one call.
+        let mut local_save_state_list = core::mem::MaybeUninit::<SaveStateList>::uninit();
+        let local_save_state_list_ptr = local_save_state_list.as_mut_ptr();
+
+        // SAFETY: `self` is valid, interrupts are disabled, and `queue_lock_` is not
+        // held. `cpp_scheduler_take_save_state_list` acquires `queue_lock_` and, if it
+        // returns true, has initialized `local_save_state_list_ptr`.
+        let taken = unsafe {
+            cpp_scheduler_take_save_state_list(
+                self as *const Scheduler as *mut Scheduler,
+                local_save_state_list_ptr,
+            )
+        };
+        if !taken {
+            return;
+        }
+
+        // SAFETY: `local_save_state_list_ptr` was initialized by
+        // `cpp_scheduler_take_save_state_list`, and the caller's requirements are
+        // forwarded.
+        unsafe { Self::process_save_state_list_slow(local_save_state_list_ptr) };
+    }
+
+    /// Slow path of `process_save_state_list`: migrates every thread in the
+    /// (non-empty) list `local_save_state_list_ptr` and destroys the list.
+    ///
+    /// Kept out of line and cold so that the migration loop's stack usage and
+    /// spills stay off the hot reschedule path.
+    ///
+    /// # Safety
+    /// Same as `process_save_state_list`, and `local_save_state_list_ptr` must
+    /// point to an initialized `Thread::SaveStateList`.
+    #[cold]
+    #[inline(never)]
+    unsafe fn process_save_state_list_slow(local_save_state_list_ptr: *mut SaveStateList) {
+        // SAFETY: The caller guarantees an active `ChainLockTransaction` on the
+        // current CPU.
+        let token = unsafe { ChainLockTransaction::assert_active() };
+        ChainLockTransaction::active_ref(&token)
+            .restart(clt_tag!("Scheduler::ProcessSaveStateList (restart)"), &token);
+
+        let mut cpus_to_reschedule_mask: CpuMask = 0;
+        loop {
+            // SAFETY: `local_save_state_list_ptr` is initialized per the caller's
+            // contract.
+            let to_migrate = unsafe { cpp_save_state_list_pop(local_save_state_list_ptr) };
+            if to_migrate.is_null() {
+                break;
+            }
+
+            // Acquire the thread's lock without backing off using an explicit retry
+            // loop because the current thread's lock is held and ChainLock::Acquire
+            // asserts that no chain locks are currently held to avoid misuse in the
+            // general case. We also currently hold the special "sched token", meaning
+            // that we will win arbitration against any other chainlock transaction.
+            //
+            // This is safe to do here because we can guarantee that no other scheduler
+            // holds or is attempting to acquire the locks of any of the threads in this
+            // `save_state_list`. The only context in which schedulers attempt to acquire
+            // the locks of threads in other schedulers is during the `steal_work`
+            // routine. However, that routine only looks for threads in the `RunQueue`s
+            // (not `save_state_list`s) and also does not steal threads that have
+            // migration functions. Therefore, it is impossible for another scheduler to
+            // be fighting over this thread's lock.
+            // SAFETY: `to_migrate` is a valid `Thread` popped from `save_state_list`, so
+            // its lock is valid; see above for why acquiring it without backoff while
+            // holding the current thread's lock cannot deadlock.
+            unsafe {
+                let to_migrate_lock = thread_get_lock(to_migrate);
+                while !(*to_migrate_lock).try_acquire_with_options(
+                    AllowFinalized::No,
+                    RecordBackoff::No,
+                    &token,
+                ) {
+                    Self::arch_yield();
+                }
+            }
+
+            // We now have the thread's lock, so run the migrate function.
+            // SAFETY: `to_migrate` is valid and its lock is held.
+            unsafe { cpp_thread_call_migrate_fn_locked(to_migrate, MIGRATE_STAGE_SAVE) };
+
+            // TODO(rudymathu): Threads placed in the `save_state_list` via an `unblock`
+            // operation already performed a `find_target_cpu` call. In a future
+            // optimization, we should be able to reuse that value here and avoid
+            // another CPU search, provided that the CPU is still online and load
+            // balancing constraints still hold.
+            // SAFETY: `to_migrate`'s lock is held with interrupts disabled, and inside
+            // the closure `target`'s `queue_lock_` is held.
+            let target_cpu = unsafe {
+                Self::find_active_scheduler_for_thread(to_migrate, |thread, target| {
+                    let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+                    target.insert(now, thread, Placement::Migration);
+                })
+            };
+
+            cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
+            // SAFETY: `to_migrate` is valid and its lock was acquired above in this loop
+            // iteration.
+            unsafe { (*thread_get_lock(to_migrate)).release(&token) };
+        }
+        ChainLockTransaction::finalize(&token);
+
+        // Issue reschedule IPIs to CPUs with migrated threads.
+        if cpus_to_reschedule_mask != 0 {
+            super::mp::reschedule(cpus_to_reschedule_mask, 0);
+        }
+
+        // SAFETY: The list is initialized and now empty; this ends its lifetime.
+        unsafe { cpp_save_state_list_destroy(local_save_state_list_ptr) };
     }
 }
 

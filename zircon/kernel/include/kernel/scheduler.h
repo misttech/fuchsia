@@ -272,6 +272,8 @@ bool cpp_unblock_list_is_empty(const Thread::UnblockList* holder);
 bool cpp_scheduler_save_state_list_is_empty(Scheduler* sched);
 void cpp_scheduler_save_state_list_move(Scheduler* sched,
                                         ffi::Uninitialized<Thread::SaveStateList>* holder);
+bool cpp_scheduler_take_save_state_list(Scheduler* sched,
+                                        ffi::Uninitialized<Thread::SaveStateList>* holder);
 Thread* cpp_save_state_list_pop(Thread::SaveStateList* holder);
 void cpp_save_state_list_destroy(Thread::SaveStateList* holder);
 void rust_scheduler_update_fair_bandwidth_period(const Scheduler* sched, SchedTime now);
@@ -325,6 +327,8 @@ bool rust_scheduler_evaluate_next_thread(const Scheduler* sched, SchedTime now,
                                          void* out_result);
 void rust_scheduler_unblock_common(Thread* thread, SchedTime now, int32_t unblock_type,
                                    void* out_targets);
+void rust_scheduler_reschedule_common(const Scheduler* sched, Thread* current_thread,
+                                      void (*end_outer_trace_cb)(void*), void* end_outer_trace_ctx);
 }
 // Implements fair and deadline scheduling algorithms and manages the associated
 // per-CPU state.
@@ -891,9 +895,6 @@ class Scheduler {
 
   using SavedState = concurrent::ChainLockTransactionCommon::SavedState;
 
-  static void LockHandoffInternal(SavedState saved_state, Thread* current_thread)
-      TA_REQ(chainlock_transaction_token, current_thread->get_lock());
-
   // Sets the initial values of the CPU performance scales for this Scheduler
   // instance.
   void InitializeProcessingRate(SchedProcessingRate scale) TA_NO_THREAD_SAFETY_ANALYSIS {
@@ -981,20 +982,6 @@ class Scheduler {
       ValidateInvariantsUnconditional();
     }
   }
-
-  // Runs the migration functions of threads in the save_state_list_, placing
-  // the threads in their target RunQueues when done.
-  //
-  // Note that this method is called while holding the special "sched token"
-  // used during reschedule operations. As a result, it is an absolute
-  // requirement that any threads we lock in this method are not discoverable
-  // and lockable from another scheduler that is also holding the "sched token."
-  // Failure to meet this requirement will result in deadlock.
-  void ProcessSaveStateList() TA_REQ(chainlock_transaction_token);
-
-  // Returns true if the given thread needs to be migrated from one CPU to another.
-  static bool NeedsMigration(Thread* thread)
-      TA_REQ(chainlock_transaction_token, thread->get_lock());
 
   // Lockup detector needs to be able to hold a scheduler's lock in order to
   // print diagnostics
@@ -1175,6 +1162,8 @@ class Scheduler {
   friend void cpp_scheduler_save_state_list_move(Scheduler* sched,
                                                  ffi::Uninitialized<Thread::SaveStateList>* holder);
   friend bool cpp_scheduler_save_state_list_is_empty(Scheduler* sched);
+  friend bool cpp_scheduler_take_save_state_list(Scheduler* sched,
+                                                 ffi::Uninitialized<Thread::SaveStateList>* holder);
 
   // Indicates whether the CPU stats being updated is for a busy or idle time
   // segment.
@@ -1941,19 +1930,6 @@ class Scheduler {
     // domain and pends a power level request if the processing rate should be
     // adjusted.
     void ReevaluateCurrentPowerLevel();
-
-    // Sends a pending power level request immediately using the registered
-    // power level controller.
-    //
-    // Because this operation needs to update bookkeeping on other CPUs that are
-    // currently protected by their respective queue locks, the local CPU's
-    // queue lock must be temporarily released, which could result in an
-    // incomplete critical section if local invariants are changed by a remote
-    // processor. Care must be taken to ensure the caller's invariants are
-    // either maintained or re-validated across this operation.
-    //
-    // Returns the mask of CPUs that should be rescheduled immediately.
-    cpu_mask_t SendPendingPowerLevelRequest(Guard<MonitoredSpinLock, NoIrqSave>& queue_guard);
 
     // Returns true if power control is enabled.
     bool is_enabled() const {
