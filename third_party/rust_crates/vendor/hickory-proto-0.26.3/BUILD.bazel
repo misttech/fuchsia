@@ -89,7 +89,7 @@ rust_library(
         "//third_party/rust_crates/vendor/rand-0.10.3:rand",
         "//third_party/rust_crates/vendor/ring-0.17.14:ring",
         "//third_party/rust_crates/vendor/rustls-pki-types-1.15.1:rustls_pki_types",
-        "//third_party/rust_crates/vendor/thiserror-2.0.20:thiserror",
+        "//third_party/rust_crates/vendor/thiserror-2.0.21:thiserror",
         "//third_party/rust_crates/vendor/time-0.3.55:time",
         "//third_party/rust_crates/vendor/tinyvec-1.11.0:tinyvec",
         "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",

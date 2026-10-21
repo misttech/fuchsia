@@ -83,6 +83,6 @@ rust_library(
         "//third_party/rust_crates/vendor/pest-2.9.0:pest",
         "//third_party/rust_crates/vendor/serde-1.0.229:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.151:serde_json",
-        "//third_party/rust_crates/vendor/thiserror-2.0.20:thiserror",
+        "//third_party/rust_crates/vendor/thiserror-2.0.21:thiserror",
     ],
 )

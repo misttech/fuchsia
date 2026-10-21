@@ -83,6 +83,6 @@ rust_library(
         "//third_party/rust_crates/vendor/log-0.4.29:log",
         "//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits",
         "//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot",
-        "//third_party/rust_crates/vendor/thiserror-2.0.20:thiserror",
+        "//third_party/rust_crates/vendor/thiserror-2.0.21:thiserror",
     ],
 )

@@ -453,9 +453,9 @@ CRATE_ANNOTATIONS = {
             gen_build_script = False,
         ),
         crate.annotation(
-            version = "2.0.20",
+            version = "2.0.21",
             rustc_env = {
-                "CARGO_PKG_VERSION_PATCH": "20",
+                "CARGO_PKG_VERSION_PATCH": "21",
             },
             rustc_flags = [
                 "--cfg=error_generic_member_access",
@@ -465,9 +465,9 @@ CRATE_ANNOTATIONS = {
     ],
     "thiserror-impl": [
         crate.annotation(
-            version = "2.0.20",
+            version = "2.0.21",
             rustc_env = {
-                "CARGO_PKG_VERSION_PATCH": "20",
+                "CARGO_PKG_VERSION_PATCH": "21",
             },
         ),
     ],

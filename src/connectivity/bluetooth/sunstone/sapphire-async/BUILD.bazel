@@ -68,6 +68,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/intree/sunstone/sapphire-collections:sapphire_collections",
         "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
-        "//third_party/rust_crates/vendor/thiserror-2.0.20:thiserror",
+        "//third_party/rust_crates/vendor/thiserror-2.0.21:thiserror",
     ],
 )

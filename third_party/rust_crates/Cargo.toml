@@ -255,7 +255,7 @@ termcolor = "1.4.1"
 termion = "4.0.6"
 test-case = "3.3.1"
 textwrap = { version = "0.16.2", default-features = false }
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 toml = "1.1.6"
 toml_edit = "0.24.0"
@@ -1333,18 +1333,18 @@ visibility = [
   "//tools/lib/reference_doc/macro:*",
 ]
 
-[gn.package.thiserror."2.0.20"]
+[gn.package.thiserror."2.0.21"]
 env_vars = [
-  "CARGO_PKG_VERSION_PATCH=20",
+  "CARGO_PKG_VERSION_PATCH=21",
   "OUT_DIR=../../../compat/thiserror",
 ]
 
 [gn.package.thiserror."1.0.69"]
 # Has build script but no config needed.
 
-[gn.package.thiserror-impl."2.0.20"]
+[gn.package.thiserror-impl."2.0.21"]
 env_vars = [
-  "CARGO_PKG_VERSION_PATCH=20",
+  "CARGO_PKG_VERSION_PATCH=21",
   "OUT_DIR=../../../compat/thiserror",
 ]
 
