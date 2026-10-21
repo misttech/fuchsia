@@ -190,7 +190,10 @@ class WaitQueueCollection {
   bool IsEmpty() const { return threads_.is_empty(); }
 
   // The current minimum inheritable relative deadline of the set of blocked threads.
-  SchedDuration MinInheritableRelativeDeadline() const;
+  //
+  // This, `Insert` and `Remove` are defined in <kernel/wait_queue_internal.h> (where `Thread` is
+  // complete), so that they can be inlined into their callers.
+  inline SchedDuration MinInheritableRelativeDeadline() const;
 
   Thread& PeekOnlyThread() {
     DEBUG_ASSERT_MSG(threads_.size() == 1, "Expected size 1, not %zu", threads_.size());
@@ -204,10 +207,10 @@ class WaitQueueCollection {
   inline SchedulerState::WaitQueueInheritedSchedulerState* FindInheritedSchedulerStateStorage();
 
   // Add the Thread into its sorted location in the collection.
-  void Insert(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread));
+  inline void Insert(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread));
 
   // Remove the Thread from the collection.
-  void Remove(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread));
+  inline void Remove(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread));
 
   // Either lock every thread in the collection, or failed with
   // ChainLock::Result::Backoff, releasing any locks which were obtained in the

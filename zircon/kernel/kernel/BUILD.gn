@@ -337,6 +337,8 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
     "OwnedWaitQueue",
     "OwnedWaitQueue::BAAOLockingDetails",
     "OwnedWaitQueue_BAAOLockingDetails",
+    "OwnedWaitQueue::IWakeRequeueHook",
+    "OwnedWaitQueue_IWakeRequeueHook",
     "OwnedWaitQueue::WakeThreadsResult",
     "OwnedWaitQueue_WakeThreadsResult",
     "OwnedWaitQueue::WakeOption",
@@ -344,21 +346,17 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
     "ResourceOwnership",
     "Interruptible",
     "ForceInheritance",
-    "Result",
     "SchedulerState::EffectiveProfile",
     "SchedulerState_EffectiveProfile",
     "Thread::UnblockList",
     "Thread_UnblockList",
   ]
   var_allowlist = [ "OwnedWaitQueue_kOwnedMagic" ]
-  var_blocklist = [
-    "OwnedWaitQueue_AddSingleEdgeOp",
-    "OwnedWaitQueue_RemoveSingleEdgeOp",
-    "OwnedWaitQueue_BaseProfileChangedOp",
-    "OwnedWaitQueue_default_wake_hooks_",
-  ]
+  var_blocklist = [ "OwnedWaitQueue_default_wake_hooks_" ]
   opaque_types = [
     "WaitQueueBase",
+    "OwnedWaitQueue::IWakeRequeueHook",
+    "OwnedWaitQueue_IWakeRequeueHook",
     "SchedulerState::EffectiveProfile",
     "SchedulerState_EffectiveProfile",
     "Thread::UnblockList",
@@ -370,18 +368,10 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
     "ResourceOwnership",
     "Interruptible",
     "ForceInheritance",
-    "Result",
   ]
   type_blocklist = [
     "WaitQueueBase_.*",
-    "OwnedWaitQueue_IWakeRequeueHook",
-    "OwnedWaitQueue_ReplaceOwnerLockingDetails",
-    "OwnedWaitQueue_WakeRequeueThreadDetails",
-    "OwnedWaitQueue_RequeueLockingDetails",
-    "OwnedWaitQueue_PropagateOp",
-    "OwnedWaitQueue_PropagateOpTag",
     "OwnedWaitQueue_DefaultWakeHooks",
-    "OwnedWaitQueue_LockingBehavior",
     "Deadline",
     "SchedulerState_BaseProfile",
     "SchedulerState_WaitQueueInheritedSchedulerState",
