@@ -62,6 +62,7 @@ macro_rules! sysreg_bank {
         ///
         /// Panics if `n` is not below [`DEBUG_BANK_SIZE`].
         #[cfg(target_arch = "aarch64")]
+        #[inline]
         pub fn $read(n: usize) -> $layout {
             match n {
                 $($n => $name.read(),)*
@@ -73,6 +74,7 @@ macro_rules! sysreg_bank {
         ///
         /// Panics if `n` is not below [`DEBUG_BANK_SIZE`].
         #[cfg(target_arch = "aarch64")]
+        #[inline]
         pub fn $write(n: usize, value: $layout) {
             match n {
                 $($n => $name.write(value),)*
@@ -117,3 +119,38 @@ sysreg_bank!(
     8 => DBGWVR8_EL1, 9 => DBGWVR9_EL1, 10 => DBGWVR10_EL1, 11 => DBGWVR11_EL1,
     12 => DBGWVR12_EL1, 13 => DBGWVR13_EL1, 14 => DBGWVR14_EL1, 15 => DBGWVR15_EL1,
 );
+
+/// [arm/sysreg]/mdscr_el1: Monitor Debug System Control Register
+pub const MDSCR_EL1: SysReg<spec::MDSCR_EL1, MonitorDebugSystemControlRegister> = SysReg::new();
+
+layout!({
+    /// The layout of [`MDSCR_EL1`].
+    pub struct MonitorDebugSystemControlRegister(u64);
+    {
+        let __ @ 63..36;
+        let ehbwe @ 35;
+        let enspm @ 34;
+        let tta @ 33;
+        let embwe @ 32;
+        let tfo @ 31; // EDSCR.TFO save/restore (FEAT_TRF)
+        let rxfull @ 30; // EDSCR.RXfull save/restore
+        let txfull @ 29; // EDSCR.TXfull save/restore
+        let __ @ 28;
+        let rxo @ 27; // EDSCR.RXO save/restore
+        let txu @ 26; // EDSCR.TXU save/restore
+        let __ @ 25..24;
+        let intdis @ 23..22; // EDSCR.INTdis save/restore
+        let tda @ 21; // EDSCR.TDA save/restore
+        let __ @ 20;
+        let sc2 @ 19;
+        let __ @ 18..16;
+        let mde @ 15; // Monitor debug events
+        let hde @ 14; // EDSCR.HDE save/restore
+        let kde @ 13; // Local (kernel) debug enable
+        let tdcc @ 12; // Trap EL0 accesses to the DCC registers
+        let __ @ 11..7;
+        let err @ 6; // EDSCR.ERR save/restore
+        let __ @ 5..1;
+        let ss @ 0; // Software step
+    }
+});

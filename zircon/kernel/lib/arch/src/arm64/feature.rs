@@ -641,6 +641,122 @@ layout!({
     }
 });
 
+/// [arm/sysreg]/ID_AA64ZFR0_EL1: SVE Feature ID Register 0
+pub const ID_AA64ZFR0_EL1: SysReg<spec::ID_AA64ZFR0_EL1, SveFeatureRegister0> = SysReg::new();
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0F64mm {
+    None = 0b0000,
+    F64mm = 0b0001, // FEAT_F64MM
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0F32mm {
+    None = 0b0000,
+    F32mm = 0b0001, // FEAT_F32MM
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0F16mm {
+    None = 0b0000,
+    F16mm = 0b0001, // FEAT_F16MM
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0I8mm {
+    None = 0b0000,
+    I8mm = 0b0001, // FEAT_I8MM
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0Sm4 {
+    None = 0b0000,
+    Sm4 = 0b0001, // FEAT_SVE_SM4
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0Sha3 {
+    None = 0b0000,
+    Sha3 = 0b0001, // FEAT_SVE_SHA3
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0B16b16 {
+    None = 0b0000,
+    B16b16 = 0b0001,  // FEAT_SVE_B16B16
+    Bfscale = 0b0010, // FEAT_SVE_BFSCALE
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0Bf16 {
+    None = 0b0000,
+    Bf16 = 0b0001,  // FEAT_BF16
+    Ebf16 = 0b0010, // FEAT_EBF16
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0BitPerm {
+    None = 0b0000,
+    BitPerm = 0b0001, // FEAT_SVE_BitPerm
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0EltPerm {
+    None = 0b0000,
+    EltPerm = 0b0001, // FEAT_SVE_EltPerm
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0Aes {
+    None = 0b0000,
+    Aes = 0b0001,   // FEAT_SVE_AES
+    Pmull = 0b0010, // FEAT_SVE_PMULL128
+    Aes2 = 0b0011,  // FEAT_SVE_AES2
+}
+
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IdAa64Zfr0SveVer {
+    Sve = 0b0000,    // FEAT_SVE
+    Sve2 = 0b0001,   // FEAT_SVE2
+    Sve2p1 = 0b0010, // FEAT_SVE2p1
+    Sve2p2 = 0b0011, // FEAT_SVE2p2
+}
+
+layout!({
+    /// The layout of [`ID_AA64ZFR0_EL1`].
+    pub struct SveFeatureRegister0(u64);
+    {
+        let __ @ 63..60;
+        let f64mm @ 59..56: IdAa64Zfr0F64mm;
+        let f32mm @ 55..52: IdAa64Zfr0F32mm;
+        let f16mm @ 51..48: IdAa64Zfr0F16mm;
+        let i8mm @ 47..44: IdAa64Zfr0I8mm;
+        let sm4 @ 43..40: IdAa64Zfr0Sm4;
+        let __ @ 39..36;
+        let sha3 @ 35..32: IdAa64Zfr0Sha3;
+        let __ @ 31..28;
+        let b16b16 @ 27..24: IdAa64Zfr0B16b16;
+        let bf16 @ 23..20: IdAa64Zfr0Bf16;
+        let bit_perm @ 19..16: IdAa64Zfr0BitPerm;
+        let elt_perm @ 15..12: IdAa64Zfr0EltPerm;
+        let __ @ 11..8;
+        let aes @ 7..4: IdAa64Zfr0Aes;
+        let sve_ver @ 3..0: IdAa64Zfr0SveVer;
+    }
+});
+
 /// [arm/v9]: D24.2.82 ID_AA64MMFR0_EL1, AArch64 Memory Model Feature Register 0
 pub const ID_AA64MMFR0_EL1: SysReg<spec::ID_AA64MMFR0_EL1, MemoryModelFeatureRegister0> =
     SysReg::new();
@@ -795,5 +911,31 @@ layout!({
         let asid2 @ 11..8; // Support for concurrent use of two ASIDs (FEAT_ASID2)
         let eiesb @ 7..4; // Early Implicit Error Synchronization event (FEAT_IESB)
         let __ @ 3..0;
+    }
+});
+
+/// [arm/sysreg]/ID_AA64DFR0_EL1: AArch64 Debug Feature Register 0
+pub const ID_AA64DFR0_EL1: SysReg<spec::ID_AA64DFR0_EL1, DebugFeatureRegister0> = SysReg::new();
+
+layout!({
+    /// The layout of [`ID_AA64DFR0_EL1`].
+    pub struct DebugFeatureRegister0(u64);
+    {
+        let hpmn0 @ 63..60; // MDCR_EL2.HPMN may be zero (FEAT_HPMN0)
+        let ext_trc_buff @ 59..56; // Trace Buffer external mode (FEAT_TRBE_EXT)
+        let brbe @ 55..52; // Branch Record Buffer Extension (FEAT_BRBE)
+        let mtpmu @ 51..48; // Multi-threaded PMU (FEAT_MTPMU); signed field
+        let trace_buffer @ 47..44; // Trace Buffer Extension (FEAT_TRBE)
+        let trace_filt @ 43..40; // Self-hosted Trace Extension (FEAT_TRF)
+        let double_lock @ 39..36; // OS Double Lock (FEAT_DoubleLock); signed field
+        let pms_ver @ 35..32; // Statistical Profiling Extension version
+        let ctx_cmps @ 31..28; // Number of context-aware breakpoints, minus 1
+        let sebep @ 27..24; // Synchronous-exception-based event profiling (FEAT_SEBEP)
+        let wrps @ 23..20; // Number of watchpoints, minus 1
+        let pmss @ 19..16; // PMU snapshot extension (FEAT_PMUv3_SS)
+        let brps @ 15..12; // Number of breakpoints, minus 1
+        let pmu_ver @ 11..8; // Performance Monitors Extension version
+        let trace_ver @ 7..4; // Trace unit System register interface
+        let debug_ver @ 3..0; // Debug architecture version
     }
 });

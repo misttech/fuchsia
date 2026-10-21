@@ -20,6 +20,22 @@ layout!({
     }
 });
 
+/// [arm/sysreg]/midr_el1: Main ID Register
+pub const MIDR_EL1: SysReg<spec::MIDR_EL1, MainIdRegister> = SysReg::new();
+
+layout!({
+    /// The layout of [`MIDR_EL1`].
+    pub struct MainIdRegister(u64);
+    {
+        let __ @ 63..32;
+        let implementer @ 31..24; // Implementer code, e.g. 0x41 ('A') for Arm
+        let variant @ 23..20; // Major revision
+        let architecture @ 19..16; // Architecture; 0b1111 defers to the ID registers
+        let part_num @ 15..4; // Primary part number
+        let revision @ 3..0; // Minor revision
+    }
+});
+
 /// [arm/sysreg]/mpidr_el1: Multiprocessor Affinity Register (EL1)
 pub const MPIDR_EL1: SysReg<spec::MPIDR_EL1, MultiprocessorAffinityRegister> = SysReg::new();
 
