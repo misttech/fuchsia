@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from cpu import (
     CpuPlugin,
+    _analyze_binder_overhead,
     _analyze_core_utilization_from_average,
     _analyze_core_utilization_from_counters,
 )
@@ -29,6 +30,7 @@ class CpuPluginTest(unittest.TestCase):
             "thread_track",
             "counter",
             "process_counter_track",
+            "flow",
         }
 
     def test_analyze_success_flow(self) -> None:
@@ -166,6 +168,33 @@ class CpuPluginTest(unittest.TestCase):
         assert res5 is not None
         self.assertEqual(len(res5), 1)
         self.assertEqual(res5[0]["event_name"], "acquire_wake_lease:power")
+
+    def test_binder_breakdown_counts_starnix_transactions(self) -> None:
+        """Tests that Starnix binder transactions come from the enqueue/dequeue flow chain."""
+        mock_tp = MagicMock()
+        captured: list[str] = []
+
+        def run_query_mock(sql: str) -> list[dict[str, Any]]:
+            captured.append(sql)
+            return []
+
+        mock_tp.run_query.side_effect = run_query_mock
+        _analyze_binder_overhead(mock_tp, self.all_tables, 10)
+        query = captured[0]
+        # Round trip from the client's enqueue_transaction to its dequeue_reply.
+        for step in [
+            "e.name = 'enqueue_transaction'",
+            "d.name = 'dequeue_transaction'",
+            "r.name = 'enqueue_reply'",
+            "c.name = 'dequeue_reply'",
+        ]:
+            with self.subTest(step=step):
+                self.assertIn(step, query)
+        self.assertIn("(c.ts - e.ts) AS dur", query)
+        self.assertIn("e.name = 'enqueue_oneway'", query)
+        self.assertIn("AS oneway_count", query)
+        # Linux ftrace slices still count.
+        self.assertIn("s.name LIKE 'binder transaction%'", query)
 
     def test_analyze_empty_results(self) -> None:
         """Tests that empty query results format as empty lists across all 6 sections."""

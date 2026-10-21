@@ -301,24 +301,54 @@ def _analyze_binder_overhead(
     db_objects: Set[str],
     limit: int,
 ) -> SectionResult:
-    """Analyzes Starnix/Android Binder IPC transaction volume and latencies."""
-    required_tables = {"slice", "thread_track", "thread", "process"}
+    """Analyzes Starnix/Android Binder IPC transaction volume and latencies.
+
+    Starnix binderfs ('starnix:binder') records each transaction as a flow chain between
+    zero-duration instants: `enqueue_transaction` on the client, `dequeue_transaction` and
+    `enqueue_reply` on the server, and `dequeue_reply` back on the client. A two-way
+    transaction counts here with its round trip, from `enqueue_transaction` to
+    `dequeue_reply`, attributed to the client thread; `enqueue_oneway` instants count as
+    oneway transactions with no duration. Linux traces use the ftrace `binder transaction`
+    and `binder reply` slices instead.
+    """
+    required_tables = {"slice", "thread_track", "thread", "process", "flow"}
     query = f"""
+    WITH calls AS (
+      SELECT tt.utid AS utid, (c.ts - e.ts) AS dur, 0 AS oneway
+      FROM slice e
+      JOIN thread_track tt ON e.track_id = tt.id
+      JOIN flow f1 ON f1.slice_out = e.id
+      JOIN slice d ON d.id = f1.slice_in AND d.name = 'dequeue_transaction'
+      JOIN flow f2 ON f2.slice_out = d.id
+      JOIN slice r ON r.id = f2.slice_in AND r.name = 'enqueue_reply'
+      JOIN flow f3 ON f3.slice_out = r.id
+      JOIN slice c ON c.id = f3.slice_in AND c.name = 'dequeue_reply'
+      WHERE e.category = 'starnix:binder' AND e.name = 'enqueue_transaction'
+      UNION ALL
+      SELECT tt.utid, 0, 1
+      FROM slice e
+      JOIN thread_track tt ON e.track_id = tt.id
+      WHERE e.category = 'starnix:binder' AND e.name = 'enqueue_oneway'
+      UNION ALL
+      SELECT tt.utid, s.dur, 0
+      FROM slice s
+      JOIN thread_track tt ON s.track_id = tt.id
+      WHERE s.name LIKE 'binder transaction%' OR s.name LIKE 'binder reply%'
+    )
     SELECT
       t.name AS thread_name,
       t.tid AS tid,
       p.name AS process_name,
       p.pid AS pid,
-      COUNT(*) AS transaction_count,
-      ROUND(COALESCE(SUM(s.dur) / 1e6, 0.0), 2) AS total_duration_ms,
-      ROUND(COALESCE(MAX(s.dur) / 1e6, 0.0), 2) AS max_duration_ms
-    FROM slice s
-    JOIN thread_track tr ON s.track_id = tr.id
+      SUM(calls.oneway = 0) AS transaction_count,
+      SUM(calls.oneway) AS oneway_count,
+      ROUND(COALESCE(SUM(calls.dur) / 1e6, 0.0), 2) AS total_duration_ms,
+      ROUND(COALESCE(MAX(calls.dur) / 1e6, 0.0), 2) AS max_duration_ms
+    FROM calls
     JOIN thread t USING (utid)
     LEFT JOIN process p USING (upid)
-    WHERE s.name LIKE 'binder transaction%' OR s.name LIKE 'binder reply%'
-    GROUP BY utid, t.name, t.tid, p.name, p.pid
-    ORDER BY total_duration_ms DESC
+    GROUP BY calls.utid, t.name, t.tid, p.name, p.pid
+    ORDER BY total_duration_ms DESC, transaction_count + oneway_count DESC
     LIMIT {limit};
     """
     return _perform_analysis_query(
