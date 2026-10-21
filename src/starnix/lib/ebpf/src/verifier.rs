@@ -14,10 +14,10 @@ use crate::{
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use linux_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY};
-#[cfg(target_os = "fuchsia")]
-use starnix_sync::{EbpfVerifierDependenciesLock, LockDepMutex};
+use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
 use std::sync::Arc;
 use zerocopy::IntoBytes;
 
@@ -1121,8 +1121,8 @@ pub fn verify_program(
                 // If the context has a parent, register the data dependencies and try to terminate
                 // it.
                 if let Some(parent) = context.parent.take() {
-                    parent.dependencies.lock().merge(ending_context.dependencies);
-                    if let Some(parent) = Arc::into_inner(parent) {
+                    parent.dependencies.update(|d| d.merge(ending_context.dependencies));
+                    if let Some(parent) = Rc::into_inner(parent) {
                         parent.terminate(&mut verification_context)?;
                     }
                 }
@@ -1153,9 +1153,9 @@ pub fn verify_program(
         // has no successors (i.e. `exit`).
         if let Some((last, rest)) = verification_context.states[first_successor..].split_last_mut()
         {
-            let parent = Arc::new(context);
+            let parent = Rc::new(context);
             for successor in rest {
-                successor.parent = Some(Arc::clone(&parent));
+                successor.parent = Some(Rc::clone(&parent));
             }
             last.parent = Some(parent);
         } else {
@@ -1622,24 +1622,6 @@ macro_rules! bpf_log {
     };
 }
 
-#[cfg(target_os = "fuchsia")]
-type DependenciesMutex = LockDepMutex<DataDependencies, EbpfVerifierDependenciesLock>;
-
-#[cfg(not(target_os = "fuchsia"))]
-#[derive(Debug, Default)]
-struct DependenciesMutex(std::sync::Mutex<DataDependencies>);
-
-#[cfg(not(target_os = "fuchsia"))]
-impl DependenciesMutex {
-    fn lock(&self) -> std::sync::MutexGuard<'_, DataDependencies> {
-        self.0.lock().unwrap()
-    }
-
-    fn get_mut(&mut self) -> &mut DataDependencies {
-        self.0.get_mut().unwrap()
-    }
-}
-
 /// The state of the computation as known by the verifier at a given point in time.
 #[derive(Debug, Default)]
 struct ComputationContext {
@@ -1654,10 +1636,11 @@ struct ComputationContext {
     /// The currently allocated resources.
     resources: BTreeSet<MemoryId>,
     /// The previous context in the computation.
-    parent: Option<Arc<ComputationContext>>,
+    parent: Option<Rc<ComputationContext>>,
     /// The data dependencies of this context. This is used to broaden a known ending context to
-    /// help cutting computation branches.
-    dependencies: DependenciesMutex,
+    /// help cutting computation branches. The verification is single-threaded, and the successors
+    /// holding a reference to their parent add their dependencies to it.
+    dependencies: Cell<DataDependencies>,
 }
 
 #[cfg(test)]
@@ -1746,7 +1729,7 @@ impl ComputationContext {
     /// explicit jumps.
     ///
     /// The returned context has no parent. The parent is set by `verify_program` once the
-    /// current instruction has been fully visited, by moving `self` into an `Arc` shared by all
+    /// current instruction has been fully visited, by moving `self` into an `Rc` shared by all
     /// its successors, instead of cloning it.
     fn jump_with_offset(&self, offset: i16) -> Result<Self, VerifierErrorKind> {
         let pc = self
@@ -2457,7 +2440,7 @@ impl ComputationContext {
 
             // 1. Compute the dependencies of the context using the dependencies of its children
             //    and the actual operation.
-            let mut dependencies = *current.dependencies.get_mut();
+            let mut dependencies = current.dependencies.get();
 
             dependencies
                 .visit(
@@ -2489,10 +2472,10 @@ impl ComputationContext {
             // 4. Register the computed dependencies in our parent, and terminate it if all
             //    dependencies has been computed.
             if let Some(parent) = parent {
-                parent.dependencies.lock().merge(dependencies);
+                parent.dependencies.update(|d| d.merge(dependencies));
                 // To check whether all dependencies have been computed, rely on the fact that the
-                // Arc count of the parent keep track of how many dependencies are left.
-                next = Arc::into_inner(parent);
+                // Rc count of the parent keep track of how many dependencies are left.
+                next = Rc::into_inner(parent);
             }
         }
         Ok(())
@@ -2501,10 +2484,10 @@ impl ComputationContext {
 
 impl Drop for ComputationContext {
     fn drop(&mut self) {
-        let mut next = self.parent.take().and_then(Arc::into_inner);
+        let mut next = self.parent.take().and_then(Rc::into_inner);
         // Because of the potential length of the parent chain, do not use recursion.
         while let Some(mut current) = next {
-            next = current.parent.take().and_then(Arc::into_inner);
+            next = current.parent.take().and_then(Rc::into_inner);
         }
     }
 }
@@ -2617,9 +2600,8 @@ impl DataDependencies {
         }
     }
 
-    fn merge(&mut self, other: Self) {
-        self.registers |= other.registers;
-        self.stack |= other.stack;
+    fn merge(self, other: Self) -> Self {
+        Self { registers: self.registers | other.registers, stack: self.stack | other.stack }
     }
 
     fn alu(&mut self, dst: Register, src: Source) -> Result<(), VerifierErrorKind> {

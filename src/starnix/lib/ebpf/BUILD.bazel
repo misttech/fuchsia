@@ -264,10 +264,5 @@ rustc_library(
         "//third_party/rust_crates/vendor:static_assertions",
         "//third_party/rust_crates/vendor:thiserror",
         "//third_party/rust_crates/vendor:zerocopy",
-    ] + select({
-        "@platforms//os:fuchsia": [
-            "//src/starnix/lib/starnix_sync",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )

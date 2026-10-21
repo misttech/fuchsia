@@ -296,8 +296,7 @@ rustc_library("ebpf") {
     "//third_party/rust_crates:test-case",
   ]
   with_unit_tests = true
-  deps = []
-  deps += [
+  deps = [
     "//src/starnix/lib/linux_uapi",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:byteorder",
@@ -306,7 +305,4 @@ rustc_library("ebpf") {
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]
-  if (is_fuchsia) {
-    deps += [ "//src/starnix/lib/starnix_sync" ]
-  }
 }

@@ -306,7 +306,6 @@ lock_ordering! {
     Terminal(CpuC2ProxyCacheLock),
     Terminal(CpuFreqProxyCacheLock),
     Terminal(DynamicThreadSpawnerLock),
-    Terminal(EbpfVerifierDependenciesLock),
     Terminal(EventFdInnerLock),
     Terminal(EventHandlerReadyQueueLock),
     Terminal(ExpandoLock),
