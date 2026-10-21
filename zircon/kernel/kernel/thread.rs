@@ -17,11 +17,13 @@ use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 
 use crate::kconcurrent::{ChainLock, ChainLockTransactionToken};
+use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use crate::kernel::restricted_state::RestrictedState;
 use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile};
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
 use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
+use fbl::DoublyLinkedList;
 
 pub use crate::kconcurrent::CallsiteInfo as CltTag;
 use crate::kconcurrent::{ChainLockProof, ChainLocked, ClassedChainLock};
@@ -151,6 +153,10 @@ unsafe extern "C" {
     fn cpp_thread_get_scheduler_state(
         thread: *mut Thread,
     ) -> *mut crate::kernel::scheduler::SchedulerState;
+    fn cpp_thread_owned_wait_queues(
+        thread: *mut Thread,
+    ) -> *mut DoublyLinkedList<*mut OwnedWaitQueue>;
+    fn cpp_thread_can_own_wait_queues(thread: *const Thread) -> bool;
     fn cpp_thread_dump_tid(tid: zx_types::zx_koid_t, full: bool);
     fn cpp_thread_dump_tid_during_panic(tid: zx_types::zx_koid_t, full: bool);
     fn cpp_thread_dump_all(match_owner: *const c_char, full: bool);
@@ -414,21 +420,143 @@ impl<'p> ChainLockProof<'p, Thread> {
         unsafe { &*cpp_thread_wait_queue_state(self.owner()) }
     }
 
-    /// Returns a shared reference to this thread's [`SchedulerState`].
+    // TODO(adanis): `scheduler_state::SchedulerState` (the opaque facade returned by the free
+    // function `scheduler_state` and `ThreadLockGuard::scheduler_state`) and
+    // `scheduler::SchedulerState` (the full mirror returned by `scheduler_state_mut` below) are
+    // two Rust views of the same C++ `SchedulerState`, and should be merged into one.
+
+    /// Returns a raw pointer to this thread's
+    /// [`SchedulerState`](crate::kernel::scheduler::SchedulerState).
+    ///
+    /// Some of its fields (`start_time`, `finish_time`, `time_slice_*`, `activation_count` and
+    /// `subtree_invariants`) are guarded by the owning scheduler's `queue_lock_` rather than by
+    /// the thread's lock, and may be written by another CPU while the thread's lock is held. Use
+    /// the field-projecting accessors below to access the fields guarded by the thread's lock
+    /// without forming a reference to the whole struct.
     #[inline]
-    pub fn scheduler_state(&self) -> &SchedulerState {
-        // SAFETY: `self` proves `self.owner().lock()` is held.
-        unsafe { &*cpp_thread_scheduler_state(self.owner()) }
+    fn scheduler_state_ptr(&self) -> *mut crate::kernel::scheduler::SchedulerState {
+        // SAFETY: `cpp_thread_get_scheduler_state` returns a valid pointer to `self.owner()`'s
+        // embedded `SchedulerState`, and only computes its address.
+        unsafe { cpp_thread_get_scheduler_state(self.owner().as_raw()) }
     }
 
-    /// Returns a mutable reference to this thread's [`SchedulerState`].
+    /// Returns a mutable reference to this thread's
+    /// [`SchedulerState`](crate::kernel::scheduler::SchedulerState).
+    ///
+    /// Prefer the field-projecting accessors (such as [`Self::inherited_profile_values_mut`]),
+    /// which do not cover the fields guarded by the owning scheduler's `queue_lock_`.
     #[inline]
-    pub fn scheduler_state_mut(&mut self) -> &mut SchedulerState {
+    pub fn scheduler_state_mut(&mut self) -> &mut crate::kernel::scheduler::SchedulerState {
         // SAFETY: `self` proves `self.owner().lock()` is held exclusively, and the unique borrow
         // of `self` ensures no other reference to `scheduler_state_` is live.
+        unsafe { &mut *self.scheduler_state_ptr() }
+    }
+
+    /// Returns this thread's base profile.
+    #[inline]
+    pub(crate) fn base_profile(&self) -> &crate::kernel::scheduler::BaseProfile {
+        // SAFETY: `self` proves `self.owner().lock()` is held, which guards `base_profile`, and
+        // the reference is formed from the field place (without an intermediate reference to the
+        // whole struct), so that it covers only that field.
+        unsafe { &(*self.scheduler_state_ptr()).base_profile }
+    }
+
+    /// Returns this thread's base profile mutably.
+    #[inline]
+    pub(crate) fn base_profile_mut(&mut self) -> &mut crate::kernel::scheduler::BaseProfile {
+        // SAFETY: As in `base_profile`; the unique borrow of `self` ensures no other reference to
+        // `base_profile` is live.
+        unsafe { &mut (*self.scheduler_state_ptr()).base_profile }
+    }
+
+    /// Returns this thread's inherited profile values.
+    #[inline]
+    pub(crate) fn inherited_profile_values(
+        &self,
+    ) -> &crate::kernel::scheduler::InheritedProfileValues {
+        // SAFETY: `self` proves `self.owner().lock()` is held, which guards
+        // `inherited_profile_values`, and the reference is projected from the raw pointer so that
+        // it covers only that field.
+        unsafe { &(*self.scheduler_state_ptr()).inherited_profile_values }
+    }
+
+    /// Returns this thread's inherited profile values mutably.
+    #[inline]
+    pub(crate) fn inherited_profile_values_mut(
+        &mut self,
+    ) -> &mut crate::kernel::scheduler::InheritedProfileValues {
+        // SAFETY: As in `inherited_profile_values`; the unique borrow of `self` ensures no other
+        // reference to `inherited_profile_values` is live.
+        unsafe { &mut (*self.scheduler_state_ptr()).inherited_profile_values }
+    }
+
+    /// Returns this thread's effective profile mutably (for example, to mark it dirty).
+    #[inline]
+    pub(crate) fn effective_profile_mut(
+        &mut self,
+    ) -> &mut crate::kernel::scheduler::EffectiveProfile {
+        // SAFETY: `self` proves `self.owner().lock()` is held exclusively, which guards writes to
+        // `effective_profile`, the reference is projected from the raw pointer so that it covers
+        // only that field, and the unique borrow of `self` ensures no other reference to it is
+        // live.
+        unsafe { &mut (*self.scheduler_state_ptr()).effective_profile }
+    }
+
+    /// Returns this thread's dynamic scheduling parameters, as
+    /// `(start_time, finish_time, time_slice_ns, time_slice_used_ns)`.
+    ///
+    /// These fields are guarded by the owning scheduler's `queue_lock_`, so the values are only
+    /// stable if the thread is not in a run queue (for example, because it is blocked, or because
+    /// it is the current thread and preemption is disabled).
+    #[inline]
+    pub(crate) fn dynamic_parameters(
+        &self,
+    ) -> (
+        crate::kernel::scheduler::SchedTime,
+        crate::kernel::scheduler::SchedTime,
+        crate::kernel::scheduler::SchedDuration,
+        crate::kernel::scheduler::SchedDuration,
+    ) {
+        let ss = self.scheduler_state_ptr();
+        // SAFETY: `ss` points to `self.owner()`'s live `SchedulerState`. The fields are read by
+        // value through the raw pointer without forming a reference to the whole struct, matching
+        // the C++ reads made while holding only the thread's lock.
         unsafe {
-            &mut *cpp_thread_get_scheduler_state(self.owner().as_raw()).cast::<SchedulerState>()
+            ((*ss).start_time, (*ss).finish_time, (*ss).time_slice_ns, (*ss).time_slice_used_ns)
         }
+    }
+
+    /// Returns the list of [`OwnedWaitQueue`]s currently owned by this thread.
+    #[inline]
+    pub(crate) fn owned_wait_queues(&self) -> &DoublyLinkedList<*mut OwnedWaitQueue> {
+        // SAFETY: `self` proves `self.owner().lock()` is held, which guards
+        // `owned_wait_queues_`, and `cpp_thread_owned_wait_queues` returns a valid pointer to
+        // `self.owner()`'s embedded `fbl::DoublyLinkedList<OwnedWaitQueue*>`. The Rust
+        // `DoublyLinkedList<*mut OwnedWaitQueue>` has the same size and alignment (asserted in
+        // `owned_wait_queue.rs`), and the fbl crate guarantees C++ interop for the head pointer
+        // and sentinel encoding. The reference is tied to the borrow of `self`, so it cannot
+        // overlap with one returned by `owned_wait_queues_mut`.
+        unsafe { &*cpp_thread_owned_wait_queues(self.owner().as_raw()) }
+    }
+
+    /// Returns the list of [`OwnedWaitQueue`]s currently owned by this thread mutably.
+    #[inline]
+    pub(crate) fn owned_wait_queues_mut(
+        &mut self,
+    ) -> Pin<&mut DoublyLinkedList<*mut OwnedWaitQueue>> {
+        // SAFETY: As in `owned_wait_queues`; the unique borrow of `self` ensures no other
+        // reference to `owned_wait_queues_` is live. The list is embedded in the `Thread`, so it
+        // is never moved, and it is only dropped by `~Thread` (which runs the C++ destructor).
+        unsafe { Pin::new_unchecked(&mut *cpp_thread_owned_wait_queues(self.owner().as_raw())) }
+    }
+
+    /// Returns `true` if this thread is still allowed to become the owner of wait queues (it is
+    /// not exiting).
+    #[inline]
+    pub(crate) fn can_own_wait_queues(&self) -> bool {
+        // SAFETY: `self` proves `self.owner().lock()` is held, which guards
+        // `can_own_wait_queues_`.
+        unsafe { cpp_thread_can_own_wait_queues(self.owner()) }
     }
 }
 

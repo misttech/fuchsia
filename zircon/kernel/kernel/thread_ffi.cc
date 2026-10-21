@@ -685,4 +685,18 @@ FFI_ALWAYS_INLINE void cpp_thread_dump_all_during_panic(const char* match_owner,
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_current_reschedule() { Thread::Current::Reschedule(); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE fbl::DoublyLinkedList<OwnedWaitQueue*>* cpp_thread_owned_wait_queues(
+    Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(thread != nullptr);
+  return &thread->owned_wait_queues_;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_can_own_wait_queues(const Thread* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->can_own_wait_queues_;
+}
+
 }  // extern "C"

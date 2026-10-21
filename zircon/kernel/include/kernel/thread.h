@@ -705,6 +705,12 @@ enum class ThreadStallState {
   Stalling,
 };
 
+// These forward declarations are needed so that Thread can friend them before they are defined.
+extern "C" {
+fbl::DoublyLinkedList<OwnedWaitQueue*>* cpp_thread_owned_wait_queues(Thread* thread);
+bool cpp_thread_can_own_wait_queues(const Thread* thread);
+}  // extern "C"
+
 struct Thread : public ChainLockable {
   // TODO(kulakowski) Are these needed?
   // Default constructor/destructor declared to be not-inline in order to
@@ -1329,6 +1335,8 @@ struct Thread : public ChainLockable {
 
   // OwnedWaitQueues manipulate wait queue state.
   friend class OwnedWaitQueue;
+  friend fbl::DoublyLinkedList<OwnedWaitQueue*>* cpp_thread_owned_wait_queues(Thread* thread);
+  friend bool cpp_thread_can_own_wait_queues(const Thread* thread);
 
   // ScopedThreadExceptionContext is the only public way to call
   // SaveUserStateLocked and RestoreUserStateLocked.
