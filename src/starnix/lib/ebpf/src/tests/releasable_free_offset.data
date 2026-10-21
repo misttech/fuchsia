@@ -1,0 +1,18 @@
+# Test that releasing an offset pointer derived from a releasable resource is
+# rejected by the verifier.
+
+-- asm
+# Allocate a 16-byte releasable buffer using malloc (helper 103).
+mov %r1, 16
+call 103
+jne %r0, 0, +2
+mov %r0, 1
+exit
+# Advance the pointer by 8 bytes and attempt to pass it to free (helper 104).
+add %r0, 8
+mov %r1, %r0
+call 104
+mov %r0, 0
+exit
+-- error
+Type mismatch for argument 0 of helper free at pc 7

@@ -1,0 +1,22 @@
+# Test that subtracting two releasable pointers to the same resource yields a
+# scalar, and that the base pointer can still be released afterwards.
+
+-- asm
+# Allocate a 16-byte releasable buffer using malloc (helper 103).
+mov %r1, 16
+call 103
+jne %r0, 0, +2
+mov %r0, 1
+exit
+mov %r6, %r0
+# %r7 = (%r6 + 8) - %r6, where both operands are releasable pointers.
+mov %r7, %r6
+add %r7, 8
+sub %r7, %r6
+# Free the base pointer using free (helper 104).
+mov %r1, %r6
+call 104
+mov %r0, %r7
+exit
+-- result
+8

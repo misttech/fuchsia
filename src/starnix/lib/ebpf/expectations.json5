@@ -6,13 +6,5 @@
                 "*",
             ],
         },
-        {
-            type: "expect_failure",
-            matchers: [
-                // TODO(https://fxbug.dev/564922649): Pointer arithmetic on
-                // Type::Releasable strips the Releasable wrapper.
-                "*releasable_use_after_free_offset*",
-            ],
-        },
     ],
 }

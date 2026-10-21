@@ -1,0 +1,20 @@
+# Test that comparing a releasable pointer after it has been released is
+# rejected by the verifier.
+
+-- asm
+# Allocate a 16-byte releasable buffer using malloc (helper 103).
+mov %r1, 16
+call 103
+jne %r0, 0, +2
+mov %r0, 1
+exit
+mov %r6, %r0
+# Free the buffer using free (helper 104).
+mov %r1, %r6
+call 104
+# Attempt to compare the released pointer in a conditional jump.
+jeq %r6, 0, +1
+mov %r0, 0
+exit
+-- error
+Access to released resource at pc 8

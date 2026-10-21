@@ -518,6 +518,27 @@ impl Type {
         }
     }
 
+    /// Returns a copy of this pointer with its offset replaced by `offset`, looking through
+    /// `Releasable` so that the resource stays tracked. Other types are returned unchanged.
+    fn with_offset(&self, offset: ScalarValueData) -> Self {
+        match self {
+            Self::Releasable { id, inner } => {
+                Self::Releasable { id: id.clone(), inner: Arc::new(inner.with_offset(offset)) }
+            }
+            Self::PtrToMemory { id, buffer_size, origin, .. } => Self::PtrToMemory {
+                id: id.clone(),
+                offset,
+                buffer_size: *buffer_size,
+                origin: *origin,
+            },
+            Self::PtrToStruct { id, descriptor, .. } => {
+                Self::PtrToStruct { id: id.clone(), offset, descriptor: descriptor.clone() }
+            }
+            Self::PtrToArray { id, .. } => Self::PtrToArray { id: id.clone(), offset },
+            _ => self.clone(),
+        }
+    }
+
     /// Constraints `type1` and `type2` for a conditional jump with the specified `jump_type` and
     /// `jump_width`.
     fn constraint(
@@ -673,6 +694,40 @@ impl Type {
                 context.update_array_bounds(id1.clone(), *offset + 1);
                 (type1, type2)
             }
+            (
+                JumpWidth::W64,
+                JumpType::Eq,
+                Type::PtrToMemory { id: id1, offset: offset1, .. },
+                Type::PtrToMemory { id: id2, offset: offset2, .. },
+            )
+            | (
+                JumpWidth::W64,
+                JumpType::Eq,
+                Type::PtrToStruct { id: id1, offset: offset1, .. },
+                Type::PtrToStruct { id: id2, offset: offset2, .. },
+            )
+            | (
+                JumpWidth::W64,
+                JumpType::Eq,
+                Type::PtrToArray { id: id1, offset: offset1 },
+                Type::PtrToArray { id: id2, offset: offset2 },
+            ) if id1 == id2 => {
+                // Both pointers share the same base, so they are equal iff their offsets are
+                // equal. Constrain the offsets, and keep the rest of each type (including any
+                // `Releasable` wrapper) so that neither pointer loses information.
+                let (offset, _) = Self::constraint(
+                    context,
+                    JumpType::Eq,
+                    JumpWidth::W64,
+                    Type::ScalarValue(*offset1),
+                    Type::ScalarValue(*offset2),
+                )?;
+                let offset = match offset {
+                    Type::ScalarValue(offset) => offset,
+                    _ => *offset1,
+                };
+                (type1.with_offset(offset), type2.with_offset(offset))
+            }
             (JumpWidth::W64, JumpType::Eq, _, _) => (type1.clone(), type1),
             _ => (type1, type2),
         };
@@ -807,9 +862,17 @@ impl Type {
                     Err(VerifierErrorKind::ExpectedProgramArgument(*parameter_index))
                 }
             }
-            (Type::ReleaseParameter { id: id1 }, Type::Releasable { id: id2, .. })
+            (Type::ReleaseParameter { id: id1 }, Type::Releasable { id: id2, inner })
                 if id2.has_parent(id1) =>
             {
+                // Only the unmodified base pointer of a releasable resource may be released.
+                let base_offset = match inner.as_ref() {
+                    Type::PtrToMemory { offset, .. } | Type::PtrToStruct { offset, .. } => offset,
+                    _ => return Err(VerifierErrorKind::HelperArgumentTypeMismatch(index)),
+                };
+                if !base_offset.is_zero() {
+                    return Err(VerifierErrorKind::HelperArgumentTypeMismatch(index));
+                }
                 if next.resources.remove(id2) {
                     Ok(())
                 } else {
@@ -2022,34 +2085,18 @@ impl ComputationContext {
             }
             (
                 alu_type,
-                Type::PtrToMemory { id, offset: x, buffer_size, origin },
+                Type::PtrToMemory { offset: x, .. } | Type::PtrToStruct { offset: x, .. },
                 Type::ScalarValue(data),
-            ) if alu_type.is_ptr_compatible() => {
-                let offset = op(*x, *data);
-                Type::PtrToMemory {
-                    id: id.clone(),
-                    offset,
-                    buffer_size: *buffer_size,
-                    origin: *origin,
-                }
-            }
-            (
-                alu_type,
-                Type::PtrToStruct { id, offset: x, descriptor },
-                Type::ScalarValue(data),
-            ) if alu_type.is_ptr_compatible() => {
-                let offset = op(*x, *data);
-                Type::PtrToStruct { id: id.clone(), offset, descriptor: descriptor.clone() }
-            }
-            (AluType::Add, Type::PtrToArray { id, offset: x }, Type::ScalarValue(data)) => {
+            ) if alu_type.is_ptr_compatible() => op1.with_offset(op(*x, *data)),
+            (AluType::Add, Type::PtrToArray { offset: x, .. }, Type::ScalarValue(data)) => {
                 let offset =
                     x.checked_add(*data).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
-                Type::PtrToArray { id: id.clone(), offset }
+                op1.with_offset(offset)
             }
-            (AluType::Sub, Type::PtrToArray { id, offset: x }, Type::ScalarValue(data)) => {
+            (AluType::Sub, Type::PtrToArray { offset: x, .. }, Type::ScalarValue(data)) => {
                 let offset =
                     x.checked_sub(*data).ok_or(VerifierErrorKind::PointerOffsetOverflow)?;
-                Type::PtrToArray { id: id.clone(), offset }
+                op1.with_offset(offset)
             }
             (
                 AluType::Sub,
@@ -2266,7 +2313,9 @@ impl ComputationContext {
         op2: &Type,
         op: impl Fn(ScalarValueData, ScalarValueData) -> Result<Option<bool>, ()>,
     ) -> Result<Option<bool>, VerifierErrorKind> {
-        match (jump_width, op1, op2) {
+        // Unwrap Releasable operands (verifying they have not been released) so
+        // pointer comparisons work on their underlying pointer types.
+        match (jump_width, op1.inner(self)?, op2.inner(self)?) {
             (_, Type::ScalarValue(data1), Type::ScalarValue(data2)) => op(*data1, *data2),
             (JumpWidth::W64, Type::ScalarValue(data), Type::NullOr { .. })
             | (JumpWidth::W64, Type::NullOr { .. }, Type::ScalarValue(data))

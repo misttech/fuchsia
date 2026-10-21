@@ -1,0 +1,27 @@
+# Test that comparing a variable-offset releasable pointer for equality with
+# its base pointer does not prevent releasing the base pointer.
+
+-- asm
+# Allocate a 16-byte releasable buffer using malloc (helper 103).
+mov %r1, 16
+call 103
+jne %r0, 0, +2
+mov %r0, 1
+exit
+mov %r6, %r0
+# Compute a variable offset %r8 in [0, 8] from data unknown to the verifier.
+stdw [%r6], 8
+ldxdw %r8, [%r6]
+and %r8, 8
+# %r7 = %r6 + %r8 points to the same buffer with a variable offset.
+mov %r7, %r6
+add %r7, %r8
+# Compare both pointers for equality. Both branches continue to the free.
+jeq %r7, %r6, +0
+# Free the base pointer using free (helper 104).
+mov %r1, %r6
+call 104
+mov %r0, 42
+exit
+-- result
+42

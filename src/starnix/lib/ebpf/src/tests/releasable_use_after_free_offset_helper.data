@@ -3,16 +3,20 @@
 # released is rejected by the verifier.
 
 -- asm
+# Allocate a 16-byte releasable buffer using malloc (helper 103).
 mov %r1, 16
 call 103
 jne %r0, 0, +2
 mov %r0, 1
 exit
+# Create an offset pointer %r7 = %r6 + 8 before freeing the base pointer %r6.
 mov %r6, %r0
 mov %r7, %r6
 add %r7, 8
+# Free the buffer using free (helper 104).
 mov %r1, %r6
 call 104
+# Attempt to pass the offset pointer to read_only (helper 101) after release.
 mov %r1, %r7
 call 101
 mov %r0, 0

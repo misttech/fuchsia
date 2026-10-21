@@ -3,16 +3,20 @@
 # is released is rejected by the verifier.
 
 -- asm
+# Allocate a 16-byte releasable buffer using malloc (helper 103).
 mov %r1, 16
 call 103
 jne %r0, 0, +2
 mov %r0, 1
 exit
+# Create an offset pointer %r7 = %r6 + 8 before freeing the base pointer %r6.
 mov %r6, %r0
 mov %r7, %r6
 add %r7, 8
+# Free the buffer using free (helper 104).
 mov %r1, %r6
 call 104
+# Attempt to load from the offset pointer after the resource was released.
 ldxdw %r0, [%r7]
 exit
 -- error

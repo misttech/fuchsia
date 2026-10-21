@@ -1,0 +1,26 @@
+# Test that comparing releasable pointers (including after pointer arithmetic)
+# is allowed before the resource is released.
+
+-- asm
+# Allocate a 16-byte releasable buffer using malloc (helper 103).
+mov %r1, 16
+call 103
+jne %r0, 0, +2
+mov %r0, 1
+exit
+# Loop from %r6 = base to %r7 = base + 16 in 8-byte steps, storing 42.
+mov %r6, %r0
+mov %r7, %r6
+add %r7, 16
+mov %r8, 42
+stxdw [%r6], %r8
+add %r6, 8
+jlt %r6, %r7, -3
+# Read back the second 8-byte word and free the base pointer (helper 104).
+ldxdw %r7, [%r0 + 8]
+mov %r1, %r0
+call 104
+mov %r0, %r7
+exit
+-- result
+42
