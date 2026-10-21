@@ -131,6 +131,9 @@ variant("asan") {
     # adding the equivalent frontend flag and we switch back to the frontend
     # flags for rust and clang, then we'll need this again.
     "-asan-use-private-alias=1",
+
+    # Enable ASan runtime checks for __builtin_assume_dereferenceable.
+    "-asan-instrument-assume-dereferenceable=1",
   ]
 
   # Instrumented C++ and Rust code shares the same LLVM instrumentation ->
