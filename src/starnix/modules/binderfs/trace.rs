@@ -23,54 +23,63 @@
 //! ## 2. Synchronous Transaction Flow (`BinderTransaction`)
 //!
 //! Synchronous transactions follow a **4-step round-trip flow lifecycle** across client and
-//! server threads, anchoring directly to enclosing duration slices:
+//! server threads. Each step is a zero-duration instant event (`enqueue_*` / `dequeue_*`) that
+//! carries the flow, nested inside the driver's duration slices. The duration slices themselves
+//! are not flow endpoints:
 //!
 //! ```text
 //! Client Thread Track                                Server Thread Track
 //! ===================                                ===================
 //! [HandleThreadWrite]
-//!   └─ [HandleTransaction] (Step 1: flow_begin!)
-//!        Client enqueues Command::Transaction
-//!        (BC_TRANSACTION)
+//!   └─ [HandleTransaction]
+//!        └─ enqueue_transaction (Step 1: instaflow_begin!)
+//!             Client enqueues Command::Transaction
+//!             (BC_TRANSACTION)
 //!              │
 //!              │ ── (Driver Queue Wait & Wakeup) ────────> │
 //!              │                                           ▼
-//!              │                                 [HandleThreadRead] (Step 2: flow_step!)
-//!              │                                   Server dequeues Command::Transaction
-//!              │                                   (BR_TRANSACTION)
+//!              │                                 [HandleThreadRead]
+//!              │                                   └─ dequeue_transaction
+//!              │                                        (Step 2: instaflow_step!)
+//!              │                                        Server dequeues Command::Transaction
+//!              │                                        (BR_TRANSACTION)
 //!              │                                           │
 //!              │                                           │ (Userspace AIDL Execution)
 //!              │                                           ▼
 //!              │                                 [HandleThreadWrite]
-//!              │                                   └─ [HandleReply] (Step 3: flow_step!)
-//!              │                                        Server enqueues Command::Reply
-//!              │                                        (BC_REPLY)
+//!              │                                   └─ [HandleReply]
+//!              │                                        └─ enqueue_reply
+//!              │                                             (Step 3: instaflow_step!)
+//!              │                                             Server enqueues Command::Reply
+//!              │                                             (BC_REPLY)
 //!              │ <── (Reply Delivery & Wakeup) ─────────── │
 //!              ▼
-//! [HandleThreadRead] (Step 4: flow_end!)
-//!   Client dequeues Command::Reply
-//!   (BR_REPLY)
+//! [HandleThreadRead]
+//!   └─ dequeue_reply (Step 4: instaflow_end!)
+//!        Client dequeues Command::Reply
+//!        (BR_REPLY)
 //! ```
 //!
 //! ### Sequential Chain in Perfetto UI:
-//! In Perfetto UI, this 4-step flow is indexed as a continuous sequential chain:
-//! `HandleTransaction (1)` -> `HandleThreadRead (2)` -> `HandleReply (3)`
-//! -> `HandleThreadRead (4)`.
+//! In Perfetto UI, this 4-step flow is indexed as a continuous sequential chain of instants:
+//! `enqueue_transaction (1)` -> `dequeue_transaction (2)` -> `enqueue_reply (3)`
+//! -> `dequeue_reply (4)`. In the `flow` table, each edge links one instant to the next.
 //!
 //! When inspecting in Perfetto UI:
-//! - Clicking **Step 1 (`HandleTransaction`)**: Shows outgoing flows connecting to the server.
-//! - Clicking **Step 2 (`HandleThreadRead` on Server)**:
-//!   - *Preceding Flow (Incoming)*: `HandleTransaction` (Step 1 from Client).
-//!   - *Following Flows (Downstream)*: `HandleReply` (Step 3 on Server) and `HandleThreadRead`
+//! - Selecting **Step 1 (`enqueue_transaction`)**: Shows the outgoing flow to the server.
+//! - Selecting **Step 2 (`dequeue_transaction` on Server)**:
+//!   - *Preceding Flow (Incoming)*: `enqueue_transaction` (Step 1 from Client).
+//!   - *Following Flows (Downstream)*: `enqueue_reply` (Step 3 on Server) and `dequeue_reply`
 //!     (Step 4 on Client).
-//! - Clicking **Step 3 (`HandleReply` on Server)**: Shows the return flow to the client.
-//! - Clicking **Step 4 (`HandleThreadRead` on Client)**: Shows incoming flow from server reply.
+//! - Selecting **Step 3 (`enqueue_reply` on Server)**: Shows the return flow to the client.
+//! - Selecting **Step 4 (`dequeue_reply` on Client)**: Shows the incoming flow from the server
+//!   reply.
 //!
 //! ### Latency Breakdown Derived from the 4 Steps:
 //! - **Queue Latency (Step 1 → Step 2)**: Time elapsed while the transaction waits in the
 //!   server's command queue until a server thread wakes up and dequeues it.
 //! - **Server Execution Time (Step 2 → Step 3)**: Time spent executing the AIDL method in
-//!   userspace.
+//!   userspace. Both steps are on the same server thread, so this edge is not queueing.
 //! - **Reply Delivery Latency (Step 3 → Step 4)**: Time elapsed while the reply is routed back
 //!   and the client thread wakes up to read the result.
 //!
@@ -99,8 +108,10 @@
 //! ## 4. Asynchronous / Oneway Transactions (`BinderOneway`)
 //!
 //! Asynchronous transactions (`BC_TRANSACTION` with `TF_ONE_WAY`) do not block for a reply:
-//! - **Step 1 (`flow_begin!`)**: Client enqueues `Command::OnewayTransaction` (`"BinderOneway"`).
-//! - **Step 2 (`flow_end!`)**: Server dequeues `Command::OnewayTransaction`.
+//! - **Step 1 (`instaflow_begin!`)**: Client enqueues `Command::OnewayTransaction`
+//!   (`"BinderOneway"`, instant `enqueue_oneway`).
+//! - **Step 2 (`instaflow_end!`)**: Server dequeues `Command::OnewayTransaction` (instant
+//!   `dequeue_oneway`).
 //! - Tracks queueing and dispatch latency without awaiting server execution.
 //!
 //! ## 5. Transaction Complete Acknowledgments

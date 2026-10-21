@@ -12,6 +12,7 @@ from binder import (
     CATEGORY_NOT_FOUND_NOTE,
     BinderPlugin,
     _has_starnix_binder_category,
+    _starnix_binder_delays_query,
 )
 from plugins import PluginArgumentError
 
@@ -298,57 +299,43 @@ class BinderPluginTest(unittest.TestCase):
             "counter",
             "process_counter_track",
         }
+        completed = {
+            "send_ts": 2000,
+            "kind": "two-way",
+            "status": "Completed",
+            "queue_ns": 15000000,
+            "server_ns": 1000,
+            "reply_ns": 1000,
+            "total_ns": 15002000,
+            "client_thread": "sender_thread",
+            "client_tid": 200,
+            "client_process": "client",
+            "server_thread": "binder:100",
+            "server_tid": 100,
+            "server_process": "server",
+            "method": "AIDL::java::IFoo::bar::server",
+        }
+        incomplete = dict(
+            completed,
+            send_ts=1000,
+            status="Incomplete (queued)",
+            queue_ns=50000000,
+            server_ns=None,
+            reply_ns=None,
+            total_ns=50000000,
+            server_thread=None,
+            server_tid=None,
+            server_process=None,
+            method="code: 7",
+        )
 
         def run_query_mock(sql: str) -> list[dict[str, Any]]:
             if "category = 'starnix:binder'" in sql and "SELECT 1" in sql:
                 return [{"1": 1}]
-            if "thread_state" in sql:
-                return []
-            elif "flow" in sql and "SpawnLooper" not in sql:
-                if "UNION ALL" in sql:
-                    # Default: includes incomplete
-                    return [
-                        {
-                            "flow_id": None,
-                            "send_ts": 1000,
-                            "recv_ts": None,
-                            "queue_latency_ns": 50000000,
-                            "sender_thread": "sender_thread",
-                            "sender_tid": 200,
-                            "receiver_thread": None,
-                            "receiver_tid": None,
-                            "status": "Incomplete",
-                            "cmd": "Transaction { ... }",
-                        },
-                        {
-                            "flow_id": 1,
-                            "send_ts": 2000,
-                            "recv_ts": 17000,
-                            "queue_latency_ns": 15000000,
-                            "sender_thread": "sender_thread",
-                            "sender_tid": 200,
-                            "receiver_thread": "binder:100",
-                            "receiver_tid": 100,
-                            "status": "Completed",
-                            "cmd": "Transaction { ... }",
-                        },
-                    ]
-                else:
-                    # complete-only
-                    return [
-                        {
-                            "flow_id": 1,
-                            "send_ts": 2000,
-                            "recv_ts": 17000,
-                            "queue_latency_ns": 15000000,
-                            "sender_thread": "sender_thread",
-                            "sender_tid": 200,
-                            "receiver_thread": "binder:100",
-                            "receiver_tid": 100,
-                            "status": "Completed",
-                            "cmd": "Transaction { ... }",
-                        }
-                    ]
+            if "enqueue_transaction" in sql:
+                if "reply_dequeue_ts IS NOT NULL)" in sql:
+                    return [completed]
+                return [incomplete, completed]
             return []
 
         mock_tp.run_query.side_effect = run_query_mock
@@ -362,22 +349,80 @@ class BinderPluginTest(unittest.TestCase):
             )
             self.assertEqual(len(results_default), 5)
             delays_default = results_default[1].results
-            self.assertIsNotNone(delays_default)
             assert delays_default is not None
             self.assertEqual(len(delays_default), 2)
-            self.assertEqual(delays_default[0]["status"], "Incomplete")
+            self.assertEqual(delays_default[0]["status"], "Incomplete (queued)")
             self.assertEqual(delays_default[1]["status"], "Completed")
 
             # Test --complete-only
             results_complete_only = plugin.analyze(
                 ["--threshold-ms", "10.0", "--complete-only"], "dummy_trace"
             )
-            self.assertEqual(len(results_complete_only), 5)
             delays_complete_only = results_complete_only[1].results
-            self.assertIsNotNone(delays_complete_only)
             assert delays_complete_only is not None
             self.assertEqual(len(delays_complete_only), 1)
             self.assertEqual(delays_complete_only[0]["status"], "Completed")
+
+    def test_starnix_binder_delays_query_follows_instant_flows(self) -> None:
+        """Tests that Starnix transactions are built from the enqueue/dequeue instant chain."""
+        query = _starnix_binder_delays_query(10_000_000, complete_only=False)
+        # Flows attach to the instants, not to the HandleTransaction duration slices.
+        self.assertNotIn("HandleTransaction", query)
+        self.assertIn(
+            "e.name IN ('enqueue_transaction', 'enqueue_oneway')", query
+        )
+        self.assertIn(
+            "d.name IN ('dequeue_transaction', 'dequeue_oneway')", query
+        )
+        self.assertIn("r.name GLOB 'enqueue_*reply'", query)
+        self.assertIn("c.name GLOB 'dequeue_*reply'", query)
+        # Server execution is reported separately from queueing and reply delivery.
+        for column in [
+            "AS queue_ns",
+            "AS server_ns",
+            "AS reply_ns",
+            "AS total_ns",
+        ]:
+            with self.subTest(column=column):
+                self.assertIn(column, query)
+        self.assertIn("a.name GLOB 'AIDL::*::server'", query)
+        self.assertIn("> 10000000", query)
+        self.assertNotIn("reply_dequeue_ts IS NOT NULL)", query)
+        self.assertIn(
+            "reply_dequeue_ts IS NOT NULL)",
+            _starnix_binder_delays_query(10_000_000, complete_only=True),
+        )
+
+    def test_missed_wakeups_include_fuchsia_waking_state(self) -> None:
+        """Tests that FXT 'W' (woken, waiting to run) records count as wakeup latency."""
+        plugin = BinderPlugin()
+        mock_tp = MagicMock()
+        mock_tp.get_tables.return_value = {
+            "thread_state",
+            "slice",
+            "thread_track",
+            "thread",
+            "process",
+        }
+        captured: list[str] = []
+
+        def run_query_mock(sql: str) -> list[dict[str, Any]]:
+            captured.append(sql)
+            if "category = 'starnix:binder'" in sql and "SELECT 1" in sql:
+                return [{"1": 1}]
+            return []
+
+        mock_tp.run_query.side_effect = run_query_mock
+        with patch("binder.PerfettoTraceProcessor") as mock_tp_class:
+            mock_tp_class.return_value.__enter__.return_value = mock_tp
+            results = plugin.analyze([], "dummy_trace")
+
+        wakeups = next(q for q in captured if "FROM thread_state" in q)
+        self.assertIn("ts.state IN ('R', 'R+', 'W')", wakeups)
+        self.assertIn("ts.state as state", wakeups)
+        # Sections Starnix never emits say so.
+        self.assertIn("does not emit", results[3].note or "")
+        self.assertIn("does not emit", results[4].note or "")
 
     def test_has_starnix_binder_category(self) -> None:
         """Tests _has_starnix_binder_category logic."""
@@ -473,7 +518,7 @@ class BinderPluginTest(unittest.TestCase):
         self.assertIn("binder:%", wakeups_query)
         self.assertIn("binder_%", wakeups_query)
         self.assertIn("binder_ioctl", wakeups_query)
-        self.assertIn("ts.state IN ('R', 'R+')", wakeups_query)
+        self.assertIn("ts.state IN ('R', 'R+', 'W')", wakeups_query)
 
         delays_query = [
             q
