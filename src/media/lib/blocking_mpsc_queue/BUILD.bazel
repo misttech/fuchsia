@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "blocking_mpsc_queue",
+    actual = ":blocking_mpsc_queue_sources",
+    visibility = [
+        "//src/media/codec/codecs:__subpackages__",
+        "//src/media/lib:__subpackages__",
+    ],
+)
+
+fx_cc_library(
+    name = "blocking_mpsc_queue_sources",
+    hdrs = ["blocking_mpsc_queue.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/containers/cpp",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "blocking_mpsc_queue_unittest_bin",
+    testonly = True,
+    srcs = ["blocking_mpsc_queue_unittests.cc"],
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":blocking_mpsc_queue",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "blocking_mpsc_queue_unittests",
+    unit_tests = [":blocking_mpsc_queue_unittest_bin"],
+)
