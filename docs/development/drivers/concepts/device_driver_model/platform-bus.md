@@ -1,120 +1,86 @@
 # Platform Bus
 
-Caution: This page may contain information that is specific to the legacy
-version of the driver framework (DFv1).
-
 ## Introduction
 
-The term **platform bus** refers to a specific Fuchsia driver with source code located at
-[//fuchsia/src/devices/bus/drivers/platform/](/src/devices/bus/drivers/platform/).
-However this term also refers to the framework that manages the lower level drivers in Fuchsia.
-In this document, **platform bus driver** refers to a specific driver and **platform bus**
+The platform bus is a framework that allows drivers access to platform-specific hardware resources
+(MMIO, IRQs, BTIs, SMCs).
+
+In the wild, the term **platform bus** can describe two things:
+
+- The driver [//src/devices/bus/drivers/platform/](/src/devices/bus/drivers/platform/).
+- The framework itself.
+
+In this document, **platform bus driver** refers to the specific driver and **platform bus**
 refers to the general framework.
-
-The platform bus as a whole contains several types of drivers:
-
-- The **platform bus driver**, which manages the platform bus. This is a generic driver
-with no hardware specific functionality. The platform bus driver is started automatically
-by the driver manager when the system boots.
-
-- The **board driver**, which is the first driver loaded by the platform bus driver.
-The board driver contains all the platform specific information needed by the platform bus
-and controls what other drivers will be loaded by the platform bus.
-On arm64 platforms, the platform bus driver uses information from the bootloader or boot shim
-to bind the correct board driver for the platform it is running on.
-On x86 platforms, the platform bus driver always loads the x86 board driver and creates platform
-devices based on information from ACPI.
-
-- The **platform device drivers** are the foundations for the higher level drivers in Fuchsia.
-These drivers provide the lowest level of support for a particular feature, like USB,
-eMMC or NAND storage, etc., with higher level drivers loading on top of that.
-
-- The **protocol implementation drivers** are drivers that provide protocols that are needed
-by the board driver. One common example of this is the GPIO driver, which is often needed by the
-board driver for pin-muxing. In the past, the platform bus used to also proxy these drivers'
-protocols to platform devices, but now we use composite devices instead.
-Over time, we will likely phase out the use of protocol implementation drivers in the platform bus
-and replace it with a new approach that does not require blocking to wait for drivers to load.
-
-- Finally, the **platform proxy driver** a companion to the platform bus driver that loads
-into the platform device driver hosts. This driver supports proxying the platform device protocol
-and other resource protocols from the platform device driver to the platform bus driver and
-protocol implementation drivers. This is needed because the platform device drivers run in a
-different driver host process than the platform bus driver and the protocol implementation drivers.
-
-![Fuchsia Platform Bus diagram](images/platform-bus.png)
-[Source](https://docs.google.com/drawings/d/1upwfaYnElEmoMss0s7Wzbbfg8UBsAsdk6W2OhI8MfgM/edit?usp=sharing)
 
 ## Platform Bus Initialization
 
-The platform bus driver is started automatically by the driver manager at boot.
-Since the platform bus driver is a generic driver that contains no information about the
-platform it is running on, it first loads the board driver, which handles platform specific logic.
-To determine which board driver to load, platform bus driver reads the `ZBI_TYPE_PLATFORM_ID`
-record from the [ZBI data](/sdk/lib/zbi-format/include/lib/zbi-format/zbi.h) passed from the
-bootloader. It then adds a device with protocol `ZX_PROTOCOL_PBUS` with the
-`BIND_PLATFORM_DEV_VID` and `BIND_PLATFORM_DEV_PID` binding variables set to the vid and did
-from the platform data record. The correct board driver will bind to this device and continue
-the platform bus initialization process. On x86 platforms, the x86 board driver is loaded
-automatically.
+When the system boots, the driver manager explicitly starts the platform bus driver. The platform
+bus driver is generic and does not know about the hardware it is running on. On start, the driver
+creates a child node for a **board driver** to bind to. Board drivers have knowledge of the hardware
+present on the device/board.
 
-The board driver uses the platform bus protocol to communicate with the platform bus driver.
-After it does its own initialization, the board driver then uses the `ProtocolDeviceAdd()`
-call in the platform bus protocol to load protocol implementation drivers.
-After the protocol implementation driver loads, it must register its protocol with the platform bus
-driver by calling the platform bus `RegisterProtocol()` API.
-`ProtocolDeviceAdd()` will block until the driver calls `RegisterProtocol()`, so the board driver
-must call `RegisterProtocol()` from one of its own threads rather than a driver manager callback like
-`Bind()`.
+It is important that the correct board driver is bound to the node. This is done by setting the bind
+properties of the platform bus driver's child node to allow only a specific board driver to bind to
+it. The platform bus driver sets these properties by inspecting the `ZBI_TYPE_PLATFORM_ID` record
+within the [ZBI data][zbi-data] provided by the bootloader. These bind properties include vendor ID
+(`fuchsia.BIND_PLATFORM_DEV_VID`) and product ID (`fuchsia.BIND_PLATFORM_DEV_PID`).
 
-After the protocol devices are added, the board driver will call the `DeviceAdd()` call
-in the platform bus protocol to create platform devices, which will result in
-platform device drivers loading each in its own driver host.
-After the platform devices are created, the platform bus initialization is complete.
+The platform bus driver exposes the [`fuchsia.hardware.platform.bus/PlatformBus`][platform-bus-fidl]
+and [`fuchsia.hardware.platform.bus/Firmware`][platform-bus-fidl] FIDL protocols to the board
+driver. The board driver uses `PlatformBus` and its knowledge of the hardware to create **platform
+devices**, which is how other drivers gain access to hardware resources.
 
-## Composite Platform Devices
+Modern board drivers use [devicetree][devicetree-overview]
+([//sdk/lib/driver/devicetree/](/sdk/lib/driver/devicetree/)) to discover hardware instead
+of hardcoding that knowledge in the driver. A devicetree board driver calls `Firmware.GetFirmware`
+with `FirmwareType::DEVICE_TREE`, which returns a VMO containing the devicetree blob
+(`ZBI_TYPE_DEVICETREE`) from the ZBI. The board driver reads and parses the devicetree nodes from
+this VMO and publishes the resulting platform devices to `PlatformBus`.
 
-The platform bus also supports adding platform devices to be used as components in composite
-devices. The platform bus `CompositeDeviceAdd()` call adds a composite device, with the zeroth
-component being a platform device described by the provided `PBusDev` struct.
-The binding rules for the remaining components are provided by the `components` parameter.
-The `primary_fragment` is used to specify which driver host the composite device
-should be created in. Specifying `NULL` will result in a new driver host being created for the
-composite device, while a valid string equal to one of the fragment's names will add the composite
-device to the driver host of one of the other fragments. Passing "pdev" is not allowed, since we
-do not want the composite device to be added to the platform bus driver's driver host.
+## Platform Devices
 
-The internals of composite platform devices are a bit different than the non-composite case.
-Instead of using the platform proxy driver, the driver manager **component** and **component proxy** drivers
-proxy the platform device protocol instead. For example, in the diagram above we have a composite device
-for an audio driver with a platform device as its first component and an I2C channel as its second.
-The audio driver is started in a new driver host, and the driver manager component and component proxy drivers
-are responsible for proxying the PDEV and I2C protocols to the audio driver.
+Platform devices are nodes that provide access to platform-specific hardware resources
+for the drivers that bind to them. Examples of such resources include regions of MMIO, interrupts,
+BTIs, and SMCs.
 
-## Platform Device Protocol
+The board driver will send `NodeAdd` or `AddCompositeNodeSpec` requests to the platform
+bus for it to create child nodes that act as the platform devices. The request includes
+the node's name (e.g. `"gpio"`), identifiers used to populate bind properties on the node
+(`fuchsia.BIND_PLATFORM_DEV_VID`, `fuchsia.BIND_PLATFORM_DEV_PID`, `fuchsia.BIND_PLATFORM_DEV_DID`,
+and `fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID`, along with any custom properties such as
+`fuchsia.COMPATIBLE`), and the resources that the node requires (e.g. MMIO ranges, IRQs, BTIs, and
+SMC ranges):
 
-The [platform device protocol](/sdk/fidl/fuchsia.hardware.platform.device/platform-device.fidl)
-(`ZX_PROTOCOL_PDEV`) is the main protocol provided by the platform bus to
-platform device drivers. This protocol provides access to resources like MMIO ranges, interrupts,
-BTIs, and SMC ranges to the platform device driver. Rather than requesting MMIOs and interrupts by
-physical addresses or IRQ numbers, these resource are requested by a zero-based index.
-This allows us to have platform device drivers for particular IP that works across multiple
-platforms, since the knowledge of the exact MMIO addresses and interrupt numbers do not need to be
-known by the driver. Instead, the board driver configures the MMIO addresses and IRQ numbers in the
-`PbusDev` struct passed with `AddDevice()`.
+- **Standalone platform devices** - If a driver only needs platform bus resources, the board driver
+  calls `NodeAdd` and the driver binds directly to the resulting platform device node.
+- **Composite platform devices** - Most hardware devices require platform bus resources alongside
+  capabilities from other drivers (such as GPIO, I2C, or clocks). For these devices, the driver
+  binds to a [composite node][composite-node-spec] where the platform device node is one parent
+  (conventionally named `"pdev"`) and the other capability providers are the remaining parents.
+  Board drivers can create the platform device node and register its composite node specification in
+  one step via `AddCompositeNodeSpec` (or call `NodeAdd` and register the composite specification
+  with `fuchsia.driver.framework/CompositeNodeManager` directly, as devicetree board drivers do).
 
-The platform device protocol is also available to protocol implementation drivers.
-For example, a GPIO driver may use the platform device protocol to access its MMIO and interrupts.
-This allows protocol implementation drivers to be shared among different SOC variants,
-where the functionality may be identical but the MMIO addresses and interrupt numbers may be
-different.
+### Platform Device Protocol
 
-## Platform Bus Protocol
+Each platform device node will offer the
+[`fuchsia.hardware.platform.device/Device`][platform-device-fidl] protocol to the driver that binds
+to it. It provides access to hardware resources allocated to the platform device (as specified by
+the board driver):
 
-The [platform bus protocol](/sdk/fidl/fuchsia.hardware.platform.bus/platform-bus.fidl)
-is used by board drivers and protocol implementation drivers to communicate with the platform
-bus driver. It is only available to drivers running in the platform bus's driver host (in
-particular, it is not accessible to platform device drivers). The purpose of this protocol
-is for the board driver to load protocol implementation drivers and to start platform device
-drivers. It is also used by protocol implementation drivers to register their protocols with
-the platform bus so their protocols can be made available to platform device drivers.
+- **MMIO ranges** - Accessed by index or name via `GetMmioById` / `GetMmioByName`.
+- **Interrupts** - Accessed by index or name via `GetInterruptById` / `GetInterruptByName`.
+- **BTIs (Bus Transaction Initiators)** - Accessed by index or name via `GetBtiById` / `GetBtiByName`.
+- **SMCs (Secure Monitor Calls)** - Accessed by index or name via `GetSmcById` / `GetSmcByName`.
+
+By requesting resources by index or name rather than hardcoding physical addresses or IRQ
+numbers, platform device drivers can be reused across different SoC variants.
+
+<!-- Reference links -->
+
+[zbi-data]: /sdk/lib/zbi-format/include/lib/zbi-format/zbi.h
+[composite-node-spec]: /docs/development/drivers/developer_guide/create-a-composite-node.md
+[devicetree-overview]: /docs/development/boards/devicetree-overview.md
+[platform-device-fidl]: /sdk/fidl/fuchsia.hardware.platform.device/platform-device.fidl
+[platform-bus-fidl]: /sdk/fidl/fuchsia.hardware.platform.bus/platform-bus.fidl
