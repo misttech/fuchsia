@@ -13,6 +13,7 @@
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fit/function.h>
 
+#include <deque>
 #include <format>
 #include <memory>
 #include <string_view>
@@ -134,8 +135,20 @@ class UsbVirtualBus : public fdf::DriverBase2,
 
   friend class UsbVirtualEp;
 
+  enum class OpType : uint8_t {
+    kConnect = 0,
+    kDisconnect = 1,
+  };
+
+  struct PendingOp {
+    OpType type;
+    std::vector<fit::callback<void(zx_status_t)>> callbacks;
+  };
+
   void ConnectInternal(fit::callback<void(zx_status_t)> callback);
   void DisconnectInternal(fit::callback<void(zx_status_t)> callback);
+  void StartNextPendingOp();
+  void CompleteCurrentPendingOp(OpType expected_type, zx_status_t status);
 
   void HciSetConnected();
   void OnHciConnectCompleted(zx_status_t status);
@@ -147,8 +160,7 @@ class UsbVirtualBus : public fdf::DriverBase2,
   void DciSetDisconnected(zx_status_t status);
   void OnDciDisconnectCompleted(zx_status_t status);
 
-  std::vector<fit::callback<void(zx_status_t)>> connect_callbacks_;
-  std::vector<fit::callback<void(zx_status_t)>> disconnect_callbacks_;
+  std::deque<PendingOp> pending_ops_;
   std::vector<fit::callback<void(zx_status_t)>> disable_callbacks_;
 
   void Serve(fidl::ServerEnd<fuchsia_hardware_usb_virtual_bus::Bus> request);

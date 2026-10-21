@@ -185,6 +185,13 @@ void UsbVirtualBus::OnStopDci(fit::callback<void(zx_status_t)> callback) {
 }
 
 void UsbVirtualBus::ConnectInternal(fit::callback<void(zx_status_t)> callback) {
+  if (!disable_callbacks_.empty()) {
+    if (callback) {
+      callback(ZX_ERR_BAD_STATE);
+    }
+    return;
+  }
+
   if (connected_ == ConnectedState::kConnected) {
     if (callback) {
       callback(ZX_OK);
@@ -192,61 +199,128 @@ void UsbVirtualBus::ConnectInternal(fit::callback<void(zx_status_t)> callback) {
     return;
   }
 
-  if (callback) {
-    connect_callbacks_.push_back(std::move(callback));
-  }
-
-  if (connected_ == ConnectedState::kConnecting) {
-    return;
-  }
-
-  if (connected_ != ConnectedState::kDisconnected) {
+  if (connected_ != ConnectedState::kDisconnected && connected_ != ConnectedState::kConnecting) {
     fdf::error("ConnectInternal: failing with BAD_STATE, current state={}", connected_);
-    auto callbacks = std::move(connect_callbacks_);
-    for (auto& cb : callbacks) {
-      cb(ZX_ERR_BAD_STATE);
+    if (callback) {
+      callback(ZX_ERR_BAD_STATE);
     }
     return;
   }
 
-  SetConnectedState(ConnectedState::kConnecting);
+  if (!pending_ops_.empty() && pending_ops_.back().type == OpType::kConnect) {
+    if (callback) {
+      pending_ops_.back().callbacks.push_back(std::move(callback));
+    }
+    return;
+  }
 
-  // We connect phases sequentially: DCI first, then HCI.
-  // This ensures the device is ready to handle requests before the host sees it.
-  DciSetConnected();
+  PendingOp op{.type = OpType::kConnect, .callbacks = {}};
+  if (callback) {
+    op.callbacks.push_back(std::move(callback));
+  }
+  pending_ops_.push_back(std::move(op));
+
+  if (pending_ops_.size() == 1) {
+    StartNextPendingOp();
+  }
 }
 
 void UsbVirtualBus::DisconnectInternal(fit::callback<void(zx_status_t)> callback) {
-  if (connected_ == ConnectedState::kDisconnected) {
+  if (pending_ops_.empty()) {
+    if (connected_ == ConnectedState::kDisconnected) {
+      if (callback) {
+        callback(ZX_OK);
+      }
+      return;
+    }
+    if (connected_ != ConnectedState::kConnected) {
+      if (callback) {
+        callback(ZX_ERR_BAD_STATE);
+      }
+      return;
+    }
+  }
+
+  if (!pending_ops_.empty() && pending_ops_.back().type == OpType::kDisconnect) {
     if (callback) {
-      callback(ZX_OK);
+      pending_ops_.back().callbacks.push_back(std::move(callback));
     }
     return;
   }
 
+  PendingOp op{.type = OpType::kDisconnect, .callbacks = {}};
   if (callback) {
-    disconnect_callbacks_.push_back(std::move(callback));
+    op.callbacks.push_back(std::move(callback));
   }
+  pending_ops_.push_back(std::move(op));
 
-  if (connected_ == ConnectedState::kDisconnecting) {
+  if (pending_ops_.size() == 1) {
+    StartNextPendingOp();
+  }
+}
+
+void UsbVirtualBus::StartNextPendingOp() {
+  if (connected_ == ConnectedState::kConnecting || connected_ == ConnectedState::kDisconnecting) {
     return;
   }
 
-  if (connected_ != ConnectedState::kConnected) {
-    auto callbacks = std::move(disconnect_callbacks_);
-    for (auto& cb : callbacks) {
-      cb(ZX_ERR_BAD_STATE);
+  while (!pending_ops_.empty()) {
+    if (pending_ops_.front().type == OpType::kConnect) {
+      if (!disable_callbacks_.empty()) {
+        auto op = std::move(pending_ops_.front());
+        pending_ops_.pop_front();
+        for (auto& cb : op.callbacks) {
+          cb(ZX_ERR_BAD_STATE);
+        }
+        continue;
+      }
+      if (connected_ == ConnectedState::kConnected) {
+        auto op = std::move(pending_ops_.front());
+        pending_ops_.pop_front();
+        for (auto& cb : op.callbacks) {
+          cb(ZX_OK);
+        }
+        continue;
+      }
+      SetConnectedState(ConnectedState::kConnecting);
+      // We connect phases sequentially: DCI first, then HCI.
+      // This ensures the device is ready to handle requests before the host sees it.
+      DciSetConnected();
+      return;
     }
+
+    if (connected_ == ConnectedState::kDisconnected) {
+      auto op = std::move(pending_ops_.front());
+      pending_ops_.pop_front();
+      for (auto& cb : op.callbacks) {
+        cb(ZX_OK);
+      }
+      continue;
+    }
+    SetConnectedState(ConnectedState::kDisconnecting);
+    for (auto& ep : eps_) {
+      ep.host_.CommonCancelAll();
+      ep.device_.CommonCancelAll();
+    }
+    HciSetDisconnected();
     return;
   }
+}
 
-  SetConnectedState(ConnectedState::kDisconnecting);
-  for (auto& ep : eps_) {
-    ep.host_.CommonCancelAll();
-    ep.device_.CommonCancelAll();
+void UsbVirtualBus::CompleteCurrentPendingOp(OpType expected_type, zx_status_t status) {
+  std::vector<fit::callback<void(zx_status_t)>> callbacks;
+  if (!pending_ops_.empty() && pending_ops_.front().type == expected_type) {
+    callbacks = std::move(pending_ops_.front().callbacks);
+    pending_ops_.pop_front();
+  } else {
+    fdf::error("CompleteCurrentPendingOp: unexpected front op (empty={}, expected={})",
+               pending_ops_.empty(), static_cast<uint8_t>(expected_type));
+    ZX_DEBUG_ASSERT_MSG(false, "CompleteCurrentPendingOp state desynchronization");
   }
-
-  HciSetDisconnected();
+  for (auto& cb : callbacks) {
+    cb(status);
+  }
+  StartNextPendingOp();
 }
 
 void UsbVirtualBus::HciSetDisconnected() {
@@ -301,19 +375,13 @@ void UsbVirtualBus::OnDciDisconnectCompleted(zx_status_t status) {
   dci_connected_ = false;
 
   SetConnectedState(ConnectedState::kDisconnected);
-  auto callbacks = std::move(disconnect_callbacks_);
-  for (auto& cb : callbacks) {
-    cb(status);
-  }
+  CompleteCurrentPendingOp(OpType::kDisconnect, status);
 }
 
 void UsbVirtualBus::DciSetConnected() {
   if (!dci_intf_.is_valid()) {
     SetConnectedState(ConnectedState::kDisconnected);
-    auto callbacks = std::move(connect_callbacks_);
-    for (auto& cb : callbacks) {
-      cb(ZX_ERR_BAD_STATE);
-    }
+    CompleteCurrentPendingOp(OpType::kConnect, ZX_ERR_BAD_STATE);
     return;
   }
   if (dci_connected_) {
@@ -348,21 +416,18 @@ void UsbVirtualBus::OnDciConnectCompleted(zx_status_t status) {
   if (status != ZX_OK) {
     SetConnectedState(ConnectedState::kDisconnected);
     dci_connected_ = false;
-    auto callbacks = std::move(connect_callbacks_);
-    for (auto& cb : callbacks) {
-      cb(status);
-    }
+    CompleteCurrentPendingOp(OpType::kConnect, status);
     return;
   }
 
   dci_connected_ = true;
 
-  if (connected_ != ConnectedState::kConnecting || hci_connected_) {
-    // Already in a correct final state.
-    auto callbacks = std::move(connect_callbacks_);
-    for (auto& cb : callbacks) {
-      cb(ZX_OK);
-    }
+  if (connected_ != ConnectedState::kConnecting) {
+    CompleteCurrentPendingOp(OpType::kConnect, ZX_OK);
+    return;
+  }
+  if (hci_connected_) {
+    OnHciConnectCompleted(ZX_OK);
     return;
   }
 
@@ -402,10 +467,7 @@ void UsbVirtualBus::OnHciConnectCompleted(zx_status_t status) {
     SetConnectedState(ConnectedState::kDisconnected);
   }
 
-  auto callbacks = std::move(connect_callbacks_);
-  for (auto& cb : callbacks) {
-    cb(status);
-  }
+  CompleteCurrentPendingOp(OpType::kConnect, status);
 }
 
 void UsbVirtualBus::Stop(fdf::StopCompleter completer) {
@@ -475,6 +537,40 @@ void UsbVirtualBus::Disable(DisableCompleter::Sync& completer) {
 }
 
 void UsbVirtualBus::Disable(fit::callback<void(zx_status_t)> callback) {
+  std::vector<fit::callback<void(zx_status_t)>> cancelled_connect_callbacks;
+  for (auto it = pending_ops_.begin(); it != pending_ops_.end();) {
+    if (it->type == OpType::kConnect) {
+      for (auto& cb : it->callbacks) {
+        cancelled_connect_callbacks.push_back(std::move(cb));
+      }
+      if (it == pending_ops_.begin()) {
+        // Keep the in-flight front entry so OnDciConnectCompleted / OnHciConnectCompleted
+        // can pop it cleanly when it finishes, then transition into the queued kDisconnect.
+        it->callbacks.clear();
+        ++it;
+      } else {
+        it = pending_ops_.erase(it);
+      }
+    } else {
+      ++it;
+    }
+  }
+  // Coalesce adjacent kDisconnect entries if erasing a middle kConnect brought two together.
+  for (auto it = pending_ops_.begin(); it != pending_ops_.end();) {
+    auto next = std::next(it);
+    if (next != pending_ops_.end() && it->type == next->type) {
+      for (auto& cb : next->callbacks) {
+        it->callbacks.push_back(std::move(cb));
+      }
+      pending_ops_.erase(next);
+    } else {
+      ++it;
+    }
+  }
+  for (auto& cb : cancelled_connect_callbacks) {
+    cb(ZX_ERR_BAD_STATE);
+  }
+
   if (callback) {
     disable_callbacks_.push_back(std::move(callback));
   }
@@ -534,7 +630,7 @@ void UsbVirtualBus::Connect(ConnectCompleter::Sync& completer) {
 }
 
 void UsbVirtualBus::Disconnect(DisconnectCompleter::Sync& completer) {
-  if (!host_ || !device_) {
+  if (!host_ || !device_ || connected_ == ConnectedState::kConnecting) {
     completer.Reply(ZX_ERR_BAD_STATE);
     return;
   }
