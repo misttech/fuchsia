@@ -29,6 +29,7 @@ class MailboxVisitor : public fdf_devicetree::Visitor {
   std::unique_ptr<fdf_devicetree::PropertyParser> mailbox_parser_;
 
   std::map<uint32_t, std::vector<fuchsia_hardware_mailbox::ChannelInfo>> controller_info_;
+  uint32_t next_channel_id_ = 0;
 };
 
 }  // namespace mailbox_dt

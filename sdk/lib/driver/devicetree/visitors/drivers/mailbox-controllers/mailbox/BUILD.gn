@@ -25,16 +25,12 @@ devicetree_visitor("mailbox-visitor") {
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
-    "//src/devices/bind/fuchsia.mailbox",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.mailbox:fuchsia.hardware.mailbox_cpp",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
   ]
-  non_sdk_deps = [
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.mailbox:fuchsia.mailbox_cpp",
-  ]
+  non_sdk_deps = [ "//src/devices/bind/fuchsia:fuchsia_cpp" ]
 
   category = "internal"
 
@@ -52,7 +48,6 @@ test("mailbox-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.mailbox:fuchsia.mailbox_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

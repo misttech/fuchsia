@@ -9,14 +9,9 @@
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/logging/cpp/logger.h>
 
-// TODO(https://fxbug.dev/494450198: Re-add this once the Bazel dependency issue is resoled.
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/mailbox/cpp/bind.h>
 
 namespace {
-
-// TODO(https://fxbug.dev/494450198): Remove this once we fix the Bazel dependency issue for FIDL
-// generated bind cpp headers
 
 constexpr char kMailboxesProperty[] = "mboxes";
 constexpr char kMailboxNamesProperty[] = "mbox-names";
@@ -102,9 +97,11 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
       return spec.take_error();
     }
 
+    const uint32_t id = next_channel_id_++;
+
     fuchsia_hardware_mailbox::ChannelInfo channel_info;
     channel_info.channel(spec->channel);
-    channel_info.id(spec->channel);
+    channel_info.id(id);
     if (spec->client) {
       channel_info.client(*spec->client);
     }
@@ -114,24 +111,17 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
         .bind_rules =
             {
                 fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-                fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID,
-                                        reference.reference_node().id()),
-                fdf::MakeAcceptBindRule(bind_fuchsia::ID, spec->channel),
+                fdf::MakeAcceptBindRule(bind_fuchsia::ID, id),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-                fdf::MakeProperty2(bind_fuchsia::ID, spec->channel),
+                fdf::MakeProperty2(bind_fuchsia::ID, id),
                 fdf::MakeProperty2(bind_fuchsia::NAME, channel_name_it != channel_names.cend()
                                                            ? *channel_name_it
                                                            : "mailbox"),
             },
     }};
-
-    if (spec->client) {
-      parent_spec.bind_rules().push_back(
-          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CLIENT, *spec->client));
-    }
 
     if (channel_name_it != channel_names.cend()) {
       ++channel_name_it;

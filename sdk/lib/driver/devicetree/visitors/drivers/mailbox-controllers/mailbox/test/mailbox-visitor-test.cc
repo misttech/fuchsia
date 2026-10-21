@@ -15,7 +15,6 @@
 #include <string_view>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/mailbox/cpp/bind.h>
 #include <gtest/gtest.h>
 
 namespace {
@@ -78,17 +77,16 @@ TEST(MailboxVisitorTest, TwoControllers) {
   ASSERT_TRUE(controller_0.is_ok());
 
   ASSERT_TRUE(controller_0->id());
-  const uint32_t controller_0_id = *controller_0->id();
 
   ASSERT_TRUE(controller_0->channels());
   ASSERT_EQ(controller_0->channels()->size(), 2u);
 
   auto ch1 = FindChannel(0x1234, *controller_0);
   ASSERT_TRUE(ch1);
-  EXPECT_EQ(ch1->id(), 0x1234u);
+  EXPECT_EQ(ch1->id(), 0u);
   auto ch2 = FindChannel(0x5678, *controller_0);
   ASSERT_TRUE(ch2);
-  EXPECT_EQ(ch2->id(), 0x5678u);
+  EXPECT_EQ(ch2->id(), 1u);
 
   // Second controller metadata
   auto pbus_node_1_list = mailbox_tester->GetPbusNodes("mailbox-abce0000");
@@ -110,13 +108,16 @@ TEST(MailboxVisitorTest, TwoControllers) {
   ASSERT_TRUE(controller_1.is_ok());
 
   ASSERT_TRUE(controller_1->id());
-  const uint32_t controller_1_id = *controller_1->id();
 
   ASSERT_TRUE(controller_1->channels());
   ASSERT_EQ(controller_1->channels()->size(), 2u);
 
-  EXPECT_TRUE(FindChannel(0x9abc, *controller_1));
-  EXPECT_TRUE(FindChannel(0x1234, *controller_1));
+  auto ch3 = FindChannel(0x9abc, *controller_1);
+  ASSERT_TRUE(ch3);
+  EXPECT_EQ(ch3->id(), 2u);
+  auto ch4 = FindChannel(0x1234, *controller_1);
+  ASSERT_TRUE(ch4);
+  EXPECT_EQ(ch4->id(), 3u);
 
   // First client composite node specs
   auto client_0_list = mailbox_tester->GetCompositeNodeSpecs("node-abcf0000");
@@ -130,14 +131,13 @@ TEST(MailboxVisitorTest, TwoControllers) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x1234u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0u),
       },
       (*client_0.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeProperty2(bind_fuchsia::ID, 0x1234u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0u),
           fdf::MakeProperty2(bind_fuchsia::NAME, "mailbox-1-1234"),
       },
       (*client_0.parents2())[1].properties(), false));
@@ -145,14 +145,13 @@ TEST(MailboxVisitorTest, TwoControllers) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x5678u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u),
       },
       (*client_0.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeProperty2(bind_fuchsia::ID, 0x5678u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 1u),
           fdf::MakeProperty2(bind_fuchsia::NAME, "mailbox-1-5678"),
       },
       (*client_0.parents2())[2].properties(), false));
@@ -160,14 +159,13 @@ TEST(MailboxVisitorTest, TwoControllers) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x9abcu),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u),
       },
       (*client_0.parents2())[3].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeProperty2(bind_fuchsia::ID, 0x9abcu),
+          fdf::MakeProperty2(bind_fuchsia::ID, 2u),
           fdf::MakeProperty2(bind_fuchsia::NAME, "mailbox-2-9abc"),
       },
       (*client_0.parents2())[3].properties(), false));
@@ -183,14 +181,13 @@ TEST(MailboxVisitorTest, TwoControllers) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x1234u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 3u),
       },
       (*client_1.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeProperty2(bind_fuchsia::ID, 0x1234u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 3u),
           fdf::MakeProperty2(bind_fuchsia::NAME, "mailbox"),
       },
       (*client_1.parents2())[1].properties(), false));
@@ -231,6 +228,7 @@ TEST(MailboxVisitorTest, TwoCells) {
   auto channel = (*controller_2->channels())[0];
   EXPECT_EQ(channel.channel(), 0x1111u);
   EXPECT_EQ(channel.client(), 0x2222u);
+  EXPECT_EQ(channel.id(), 4u);
 
   // Third client composite node specs
   auto client_2_list = mailbox_tester->GetCompositeNodeSpecs("node-abd10000");
@@ -243,15 +241,13 @@ TEST(MailboxVisitorTest, TwoCells) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, *controller_2->id()),
-          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x1111u),
-          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CLIENT, 0x2222u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 4u),
       },
       (*client_2.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-          fdf::MakeProperty2(bind_fuchsia::ID, 0x1111u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 4u),
           fdf::MakeProperty2(bind_fuchsia::NAME, "mailbox-3-1111-2222"),
       },
       (*client_2.parents2())[1].properties(), false));

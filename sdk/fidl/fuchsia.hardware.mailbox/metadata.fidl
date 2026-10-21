@@ -9,7 +9,7 @@ type ChannelInfo = table {
     1: channel uint32;
     /// Client service ID, unique for this channel. Optional.
     2: client uint32;
-    /// Globally unique ID across all mailbox channels. Optional.
+    /// Globally unique ID across all mailbox channels. Required.
     3: id uint32;
 };
 
