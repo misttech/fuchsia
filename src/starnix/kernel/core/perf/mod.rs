@@ -806,28 +806,31 @@ struct PerfRecordSample<'a> {
     sample_stack_user: u64,
 }
 
-async fn set_up_profiler(
-    sample_period: zx::MonotonicDuration,
-    want_stack_samples: bool,
-) -> Result<(profiler::SessionProxy, fidl::AsyncSocket), Errno> {
-    // Configuration for how we want to sample. Events that asked for register
-    // and stack state (PERF_SAMPLE_REGS_USER / PERF_SAMPLE_STACK_USER) need
-    // raw stack snapshots, which only the DWARF strategy captures. Events that
-    // just want a callchain (PERF_SAMPLE_CALLCHAIN) are served by the
-    // in-kernel sampler, which unwinds via frame pointers without suspending
-    // the sampled thread.
+fn callgraph_config(sample_type: u64, sample_stack_user: u32) -> profiler::CallgraphConfig {
+    // Events that asked for register and stack state (PERF_SAMPLE_REGS_USER /
+    // PERF_SAMPLE_STACK_USER) need raw stack snapshots, which only the DWARF
+    // strategy captures. Events that just want a callchain
+    // (PERF_SAMPLE_CALLCHAIN) are served by the in-kernel sampler, which
+    // unwinds via frame pointers without suspending the sampled thread.
+    let want_stack_samples = (sample_type
+        & (perf_event_sample_format_PERF_SAMPLE_REGS_USER as u64
+            | perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64))
+        != 0;
     let strategy = if want_stack_samples {
         profiler::CallgraphStrategy::Dwarf
     } else {
         profiler::CallgraphStrategy::FramePointer
     };
-    let sample = profiler::Sample {
-        callgraph: Some(profiler::CallgraphConfig {
-            strategy: Some(strategy),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
+    let stack_size = ((sample_type & perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64) != 0)
+        .then_some(u64::from(sample_stack_user));
+    profiler::CallgraphConfig { strategy: Some(strategy), stack_size, ..Default::default() }
+}
+
+async fn set_up_profiler(
+    sample_period: zx::MonotonicDuration,
+    callgraph: profiler::CallgraphConfig,
+) -> Result<(profiler::SessionProxy, fidl::AsyncSocket), Errno> {
+    let sample = profiler::Sample { callgraph: Some(callgraph), ..Default::default() };
 
     let sampling_config = profiler::SamplingConfig {
         period: Some(sample_period.into_nanos() as u64),
@@ -1426,14 +1429,6 @@ pub fn sys_perf_event_open(
 
     let sample_period = sampling_period(&perf_event_file.attr);
 
-    // Events that request register and stack state need the profiler to
-    // capture raw stacks (the DWARF strategy); callchain-only events are
-    // unwound by the in-kernel sampler via frame pointers.
-    let want_stack_samples = (perf_event_file.sample_type
-        & (perf_event_sample_format_PERF_SAMPLE_REGS_USER as u64
-            | perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64))
-        != 0;
-
     // SeqLock does not get instantiated with metadata values until mmap() is called.
     let seq_lock =
         Arc::new(OnceLock::<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>::new());
@@ -1457,15 +1452,18 @@ pub fn sys_perf_event_open(
                 continue;
             };
 
-            let (session_proxy, client) =
-                match set_up_profiler(sample_period, want_stack_samples).await {
-                    Ok(session) => session,
-                    Err(e) => {
-                        log_warn!("Failed to profile: {}", e);
-                        let _ = profiling_complete_receiver.send(());
-                        continue;
-                    }
-                };
+            let callgraph = callgraph_config(
+                perf_event_file.sample_type,
+                perf_event_file.attr.sample_stack_user,
+            );
+            let (session_proxy, client) = match set_up_profiler(sample_period, callgraph).await {
+                Ok(session) => session,
+                Err(e) => {
+                    log_warn!("Failed to profile: {}", e);
+                    let _ = profiling_complete_receiver.send(());
+                    continue;
+                }
+            };
 
             // Record pid/koid mappings before the profiler starts sampling
             // so every sampled thread can be resolved. Dropping the session
@@ -2445,5 +2443,28 @@ mod tests {
         assert_eq!(sample.abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
         assert_eq!(sample.regs, thread_regs[..33].to_vec());
         assert!(sample.stack.is_empty());
+    }
+
+    #[::fuchsia::test]
+    async fn test_callgraph_config_stack_size() {
+        let callchain_only =
+            callgraph_config(perf_event_sample_format_PERF_SAMPLE_CALLCHAIN as u64, 65280);
+        assert_eq!(callchain_only.strategy, Some(profiler::CallgraphStrategy::FramePointer));
+        assert_eq!(callchain_only.stack_size, None);
+
+        let regs_only =
+            callgraph_config(perf_event_sample_format_PERF_SAMPLE_REGS_USER as u64, 65280);
+        assert_eq!(regs_only.strategy, Some(profiler::CallgraphStrategy::Dwarf));
+        assert_eq!(regs_only.stack_size, None);
+
+        let zero_stack =
+            callgraph_config(perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64, 0);
+        assert_eq!(zero_stack.strategy, Some(profiler::CallgraphStrategy::Dwarf));
+        assert_eq!(zero_stack.stack_size, Some(0));
+
+        let custom_stack =
+            callgraph_config(perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64, 65280);
+        assert_eq!(custom_stack.strategy, Some(profiler::CallgraphStrategy::Dwarf));
+        assert_eq!(custom_stack.stack_size, Some(65280));
     }
 }
