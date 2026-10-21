@@ -78,6 +78,7 @@ package_group(
         "//src/developer/ffx/lib/netext",
         "//src/developer/ffx/lib/target_errors",
         "//src/developer/ffx/lib/trace",
+        "//src/developer/ffx/plugins/sdk",
         "//src/developer/ffx/tools/bluetooth/common",
         "//src/lib/analytics/rust",
         "//src/lib/assembly/util",

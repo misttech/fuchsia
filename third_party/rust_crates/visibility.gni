@@ -246,7 +246,6 @@ regex_visibility = [
   "//src/developer/ffx/plugins/profile/memory:*",
   "//src/developer/ffx/plugins/profile/network/activity:*",
   "//src/developer/ffx/plugins/profile/temperature/logger:*",
-  "//src/developer/ffx/plugins/sdk:*",
   "//src/developer/ffx/plugins/setui/keyboard:*",
   "//src/developer/ffx/plugins/target/list:*",
   "//src/developer/ffx/plugins/trace:*",
