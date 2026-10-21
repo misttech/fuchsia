@@ -541,6 +541,43 @@ TEST_F(UsbVirtualBusTest, DciInitiatedConnectOverlapTest) {
   ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnected);
 }
 
+TEST_F(UsbVirtualBusTest, DciInitiatedConnectWhileDisconnectingTest) {
+  EnableAndConnect();
+
+  // 1. Stall RemoveDevice in the fake bus.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_stall_remove_device(true); });
+
+  // 2. Start disconnect asynchronously. It will stall in RemoveDevice.
+  bool disconnect_done = false;
+  virtual_bus()->Disconnect().Then(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_usb_virtual_bus::Bus::Disconnect>& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_EQ(result->status, ZX_OK);
+        disconnect_done = true;
+      });
+
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<bool>(
+        [](TestEnvironment& env) { return env.usb_bus_.has_saved_remove_device_completer(); });
+  });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnecting);
+
+  // 3. Peripheral driver starts DCI while disconnection is in flight.
+  ASSERT_EQ(ManualOnStartDci(), ZX_OK);
+  ASSERT_FALSE(disconnect_done);
+
+  // 4. Unblock RemoveDevice and verify the bus disconnects and then automatically reconnects.
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    env.usb_bus_.set_stall_remove_device(false);
+    env.usb_bus_.signal_remove_device();
+  });
+
+  driver_test().runtime().RunUntil(
+      [&]() { return disconnect_done && GetState() == UsbVirtualBus::ConnectedState::kConnected; });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnected);
+}
+
 TEST_F(UsbVirtualBusTest, ThreeStepConnectDisconnectConnectOverlapTest) {
   Enable();
 
@@ -575,6 +612,42 @@ TEST_F(UsbVirtualBusTest, ThreeStepConnectDisconnectConnectOverlapTest) {
            state == UsbVirtualBus::ConnectedState::kDisconnected;
   });
   ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnected);
+}
+
+TEST_F(UsbVirtualBusTest, ThreeStepDisconnectConnectDisconnectOverlapTest) {
+  EnableAndConnect();
+
+  // 1. Stall RemoveDevice in the fake bus.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_stall_remove_device(true); });
+
+  // 2. Peripheral driver stops DCI (Disconnect #1 enters kDisconnecting and stalls in
+  // RemoveDevice).
+  ASSERT_EQ(ManualOnStopDci(), ZX_OK);
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<bool>(
+        [](TestEnvironment& env) { return env.usb_bus_.has_saved_remove_device_completer(); });
+  });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnecting);
+
+  // 3. While Disconnect #1 is still in kDisconnecting, StartController (OnStartDci) is called
+  // followed by StopController (OnStopDci).
+  ASSERT_EQ(ManualOnStartDci(), ZX_OK);
+  ASSERT_EQ(ManualOnStopDci(), ZX_OK);
+
+  // 4. Unblock RemoveDevice for Disconnect #1, and allow the queued Connect and Disconnect #2 to
+  // run.
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    env.usb_bus_.set_stall_remove_device(false);
+    env.usb_bus_.signal_remove_device();
+  });
+
+  driver_test().runtime().RunUntil([&]() {
+    auto state = GetState();
+    return state == UsbVirtualBus::ConnectedState::kConnected ||
+           state == UsbVirtualBus::ConnectedState::kDisconnected;
+  });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
 }
 
 TEST_F(UsbVirtualBusTest, ConnectWhileDisablingRejectedTest) {

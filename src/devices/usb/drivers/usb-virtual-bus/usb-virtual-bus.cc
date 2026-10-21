@@ -192,19 +192,20 @@ void UsbVirtualBus::ConnectInternal(fit::callback<void(zx_status_t)> callback) {
     return;
   }
 
-  if (connected_ == ConnectedState::kConnected) {
-    if (callback) {
-      callback(ZX_OK);
+  if (pending_ops_.empty()) {
+    if (connected_ == ConnectedState::kConnected) {
+      if (callback) {
+        callback(ZX_OK);
+      }
+      return;
     }
-    return;
-  }
-
-  if (connected_ != ConnectedState::kDisconnected && connected_ != ConnectedState::kConnecting) {
-    fdf::error("ConnectInternal: failing with BAD_STATE, current state={}", connected_);
-    if (callback) {
-      callback(ZX_ERR_BAD_STATE);
+    if (connected_ != ConnectedState::kDisconnected) {
+      fdf::error("ConnectInternal: failing with BAD_STATE, current state={}", connected_);
+      if (callback) {
+        callback(ZX_ERR_BAD_STATE);
+      }
+      return;
     }
-    return;
   }
 
   if (!pending_ops_.empty() && pending_ops_.back().type == OpType::kConnect) {
@@ -620,7 +621,7 @@ void UsbVirtualBus::Disable(fit::callback<void(zx_status_t)> callback) {
 }
 
 void UsbVirtualBus::Connect(ConnectCompleter::Sync& completer) {
-  if (!host_ || !device_) {
+  if (!host_ || !device_ || connected_ == ConnectedState::kDisconnecting) {
     completer.Reply(ZX_ERR_BAD_STATE);
     return;
   }
