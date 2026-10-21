@@ -17,6 +17,9 @@ use std::iter::Sum;
 use std::num::NonZero;
 use std::ops::{Add, Range};
 
+#[cfg(test)]
+use euclid::default::Point2D;
+
 // TODO(armansito): Extend this to support different patterns and tiled image formats.
 
 pub struct MappedImage {
@@ -42,7 +45,7 @@ impl Frame {
         Frame { pos_x: left, pos_y: top, width: right - left, height: bottom - top }
     }
 
-    /// Returns the pixels that are in both `self` and `other`, or None if there are none.
+    /// Returns the pixels that are in both `self` and `other`, or [`None`] if there are none.
     pub fn intersection(&self, other: &Frame) -> Option<Frame> {
         let left = max(self.pos_x, other.pos_x);
         let top = max(self.pos_y, other.pos_y);
@@ -53,6 +56,73 @@ impl Frame {
         } else {
             None
         }
+    }
+
+    /// Returns the pixels that are in `self` but not in `other`, as at most 4 disjoint, non-empty
+    /// frames:
+    /// * the rows of `self` above `other`
+    /// * on the shared rows, the columns of `self` left of `other`
+    /// * on the shared rows, the columns of `self` right of `other`
+    /// * the rows of `self` below `other`
+    ///
+    /// Both frames must end before [`u32::MAX`] in each axis. This holds for frames clipped to a
+    /// surface.
+    pub fn subtract(&self, other: &Frame) -> Vec<Frame> {
+        if self.width == 0 || self.height == 0 {
+            return Vec::new();
+        }
+        let Some(overlap) = self.intersection(other) else {
+            return vec![*self];
+        };
+        let mut parts = Vec::with_capacity(4);
+        if overlap.pos_y > self.pos_y {
+            parts.push(Frame {
+                pos_x: self.pos_x,
+                pos_y: self.pos_y,
+                width: self.width,
+                height: overlap.pos_y - self.pos_y,
+            });
+        }
+        if overlap.pos_x > self.pos_x {
+            parts.push(Frame {
+                pos_x: self.pos_x,
+                pos_y: overlap.pos_y,
+                width: overlap.pos_x - self.pos_x,
+                height: overlap.height,
+            });
+        }
+        if overlap.right() < self.right() {
+            parts.push(Frame {
+                pos_x: overlap.right(),
+                pos_y: overlap.pos_y,
+                width: self.right() - overlap.right(),
+                height: overlap.height,
+            });
+        }
+        if overlap.bottom() < self.bottom() {
+            parts.push(Frame {
+                pos_x: self.pos_x,
+                pos_y: overlap.bottom(),
+                width: self.width,
+                height: self.bottom() - overlap.bottom(),
+            });
+        }
+        parts
+    }
+
+    /// Returns the number of pixels in `self`.
+    #[cfg(test)]
+    pub fn area(&self) -> u64 {
+        u64::from(self.width) * u64::from(self.height)
+    }
+
+    /// True iff the pixel at `point` is inside `self`.
+    #[cfg(test)]
+    pub fn contains(&self, point: Point2D<u32>) -> bool {
+        point.x >= self.pos_x
+            && point.x < self.right()
+            && point.y >= self.pos_y
+            && point.y < self.bottom()
     }
 
     fn right(&self) -> u32 {
@@ -111,9 +181,10 @@ impl SurfaceLayout {
         let mut ranges: Vec<Range<usize>> = Vec::new();
         for frame in frames {
             let frame = self.clip(frame);
-            let (Some(frame_width), Some(frame_height)) =
-                (NonZero::new(frame.width), NonZero::new(frame.height))
-            else {
+            let Some(frame_width) = NonZero::new(frame.width) else {
+                continue;
+            };
+            let Some(frame_height) = NonZero::new(frame.height) else {
                 continue;
             };
             // `frame` is clipped to `self`, so `pos_x + frame_width <= width` and
@@ -551,6 +622,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use euclid::point2;
     use googletest::{expect_eq, expect_true, gtest};
 
     /// The per-pixel algorithm `fill_region` used before rows were copied at once, over a plain
@@ -812,6 +884,180 @@ mod tests {
         expect_eq!(a.bounding_box(&b), expected);
         expect_eq!(b.bounding_box(&a), expected);
         expect_eq!(a.bounding_box(&a), a);
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn frame_area() {
+        expect_eq!(Frame { pos_x: 10, pos_y: 20, width: 30, height: 40 }.area(), 1200);
+        expect_eq!(Frame { pos_x: 10, pos_y: 20, width: 0, height: 40 }.area(), 0);
+        expect_eq!(Frame { pos_x: 0, pos_y: 0, width: u32::MAX, height: 2 }.area(), 0x1_ffff_fffe);
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn frame_contains() {
+        let frame = Frame { pos_x: 10, pos_y: 20, width: 5, height: 3 };
+        expect_true!(frame.contains(point2(10, 20)));
+        expect_true!(frame.contains(point2(14, 22)));
+        expect_true!(!frame.contains(point2(9, 20)));
+        expect_true!(!frame.contains(point2(15, 20)));
+        expect_true!(!frame.contains(point2(10, 19)));
+        expect_true!(!frame.contains(point2(10, 23)));
+        expect_true!(!Frame { pos_x: 10, pos_y: 20, width: 0, height: 3 }.contains(point2(10, 20)));
+    }
+
+    /// Checks `a.subtract(b)` pixel by pixel:
+    /// * at most 4 non-empty parts
+    /// * every pixel of `a` outside `b` is in exactly one part
+    /// * no other pixel is in any part
+    fn check_subtract(a: &Frame, b: &Frame) {
+        let parts = a.subtract(b);
+        expect_true!(parts.len() <= 4, "{:?} - {:?} = {:?}", a, b, parts);
+        for part in &parts {
+            expect_true!(part.width > 0 && part.height > 0, "{:?} - {:?} = {:?}", a, b, parts);
+        }
+        let bounds = parts.iter().fold(a.bounding_box(b), |acc, part| acc.bounding_box(part));
+        for y in 0..=bounds.bottom() {
+            for x in 0..=bounds.right() {
+                let pixel = point2(x, y);
+                let expected = usize::from(a.contains(pixel) && !b.contains(pixel));
+                let count = parts.iter().filter(|part| part.contains(pixel)).count();
+                if count != expected {
+                    expect_eq!(
+                        count,
+                        expected,
+                        "pixel ({}, {}) in {:?} - {:?} = {:?}",
+                        x,
+                        y,
+                        a,
+                        b,
+                        parts
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn subtract_special_cases() {
+        let a = Frame { pos_x: 10, pos_y: 10, width: 20, height: 20 };
+        // Identical, and contained in the subtrahend.
+        expect_eq!(a.subtract(&a), vec![]);
+        expect_eq!(a.subtract(&Frame { pos_x: 0, pos_y: 0, width: 40, height: 40 }), vec![]);
+        // Disjoint, and only touching on each side.
+        expect_eq!(a.subtract(&Frame { pos_x: 50, pos_y: 50, width: 5, height: 5 }), vec![a]);
+        expect_eq!(a.subtract(&Frame { pos_x: 30, pos_y: 10, width: 5, height: 20 }), vec![a]);
+        expect_eq!(a.subtract(&Frame { pos_x: 5, pos_y: 10, width: 5, height: 20 }), vec![a]);
+        expect_eq!(a.subtract(&Frame { pos_x: 10, pos_y: 30, width: 20, height: 5 }), vec![a]);
+        expect_eq!(a.subtract(&Frame { pos_x: 10, pos_y: 5, width: 20, height: 5 }), vec![a]);
+        // Empty frames.
+        expect_eq!(a.subtract(&Frame { pos_x: 15, pos_y: 15, width: 0, height: 5 }), vec![a]);
+        expect_eq!(Frame { pos_x: 15, pos_y: 15, width: 0, height: 5 }.subtract(&a), vec![]);
+        expect_eq!(
+            Frame { pos_x: 15, pos_y: 15, width: 5, height: 0 }.subtract(&Frame {
+                pos_x: 50,
+                pos_y: 50,
+                width: 1,
+                height: 1
+            }),
+            vec![]
+        );
+        // Strictly inside: 4 parts.
+        expect_eq!(
+            a.subtract(&Frame { pos_x: 15, pos_y: 12, width: 5, height: 6 }),
+            vec![
+                Frame { pos_x: 10, pos_y: 10, width: 20, height: 2 },
+                Frame { pos_x: 10, pos_y: 12, width: 5, height: 6 },
+                Frame { pos_x: 20, pos_y: 12, width: 10, height: 6 },
+                Frame { pos_x: 10, pos_y: 18, width: 20, height: 12 },
+            ]
+        );
+        // A square moving right and down by 3: the top and left strips.
+        expect_eq!(
+            a.subtract(&Frame { pos_x: 13, pos_y: 13, width: 20, height: 20 }),
+            vec![
+                Frame { pos_x: 10, pos_y: 10, width: 20, height: 3 },
+                Frame { pos_x: 10, pos_y: 13, width: 3, height: 17 },
+            ]
+        );
+        // Overlap on each side.
+        expect_eq!(
+            a.subtract(&Frame { pos_x: 0, pos_y: 0, width: 40, height: 15 }),
+            vec![Frame { pos_x: 10, pos_y: 15, width: 20, height: 15 }]
+        );
+        expect_eq!(
+            a.subtract(&Frame { pos_x: 0, pos_y: 25, width: 40, height: 15 }),
+            vec![Frame { pos_x: 10, pos_y: 10, width: 20, height: 15 }]
+        );
+        expect_eq!(
+            a.subtract(&Frame { pos_x: 0, pos_y: 0, width: 12, height: 40 }),
+            vec![Frame { pos_x: 12, pos_y: 10, width: 18, height: 20 }]
+        );
+        expect_eq!(
+            a.subtract(&Frame { pos_x: 28, pos_y: 0, width: 12, height: 40 }),
+            vec![Frame { pos_x: 10, pos_y: 10, width: 18, height: 20 }]
+        );
+        for b in [
+            Frame { pos_x: 15, pos_y: 12, width: 5, height: 6 },
+            Frame { pos_x: 13, pos_y: 13, width: 20, height: 20 },
+            Frame { pos_x: 7, pos_y: 7, width: 20, height: 20 },
+            Frame { pos_x: 13, pos_y: 7, width: 20, height: 20 },
+            Frame { pos_x: 7, pos_y: 13, width: 20, height: 20 },
+            Frame { pos_x: 0, pos_y: 0, width: 12, height: 40 },
+            Frame { pos_x: 29, pos_y: 29, width: 1, height: 1 },
+            Frame { pos_x: 10, pos_y: 10, width: 1, height: 1 },
+        ] {
+            check_subtract(&a, &b);
+            check_subtract(&b, &a);
+        }
+    }
+
+    /// Advances the linear congruential generator `state` and returns a value in `0..bound`.
+    fn next_u32(state: &mut u64, bound: u32) -> u32 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*state >> 33) % u64::from(bound)) as u32
+    }
+
+    /// Returns a pseudo-random frame inside a 24 x 16 grid.
+    fn random_frame(state: &mut u64) -> Frame {
+        const WIDTH: u32 = 24;
+        const HEIGHT: u32 = 16;
+        let pos_x = next_u32(state, WIDTH);
+        let pos_y = next_u32(state, HEIGHT);
+        let width = next_u32(state, WIDTH - pos_x + 1);
+        let height = next_u32(state, HEIGHT - pos_y + 1);
+        Frame { pos_x, pos_y, width, height }
+    }
+
+    #[gtest]
+    #[fuchsia::test]
+    fn subtract_random_frames() {
+        // A 24 x 16 grid is small enough that random frame pairs cover disjoint, touching,
+        // overlapping, and contained cases. A fixed seed keeps the test deterministic.
+        let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut disjoint = 0;
+        let mut contained = 0;
+        let mut partial = 0;
+        for _ in 0..3000 {
+            let a = random_frame(&mut state);
+            let b = random_frame(&mut state);
+            check_subtract(&a, &b);
+            match a.intersection(&b) {
+                None => disjoint += 1,
+                Some(overlap) if overlap == a => contained += 1,
+                Some(_) => partial += 1,
+            }
+        }
+        expect_true!(
+            disjoint > 30 && contained > 30 && partial > 30,
+            "disjoint {} contained {} partial {}",
+            disjoint,
+            contained,
+            partial
+        );
     }
 
     /// Returns the total length of the cleans in `ops`.

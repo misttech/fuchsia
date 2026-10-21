@@ -57,6 +57,16 @@ struct BouncingSquaresScene {
 /// The color of the pixels outside all squares. Equals the result of [`Surface::zero`].
 const BACKGROUND: [u8; 4] = [0, 0, 0, 0];
 
+/// True iff `frame` shares a pixel with any frame in `square_frames` other than the one at `index`.
+fn touches_other_square(index: usize, frame: &Frame, square_frames: &[Frame]) -> bool {
+    for (other_index, other_frame) in square_frames.iter().enumerate() {
+        if other_index != index && other_frame.intersection(frame).is_some() {
+            return true;
+        }
+    }
+    false
+}
+
 impl BouncingSquaresScene {
     pub fn new(width: u32, height: u32) -> Self {
         // Construct squares that start out at the 4 corners of the screen.
@@ -100,13 +110,44 @@ impl BouncingSquaresScene {
         match self.drawn.remove(&image_id) {
             Some(old_frames) if old_frames.len() == frames.len() => {
                 // The image holds the background with the squares at `old_frames`. Only pixels in
-                // an old or a new square change. A square moves little between two renders of
-                // the same image, so one rectangle around its old and new frame covers both.
-                let dirty_frames: Vec<Frame> = old_frames
-                    .iter()
-                    .zip(&frames)
-                    .map(|(old, new)| surface.clip(old).bounding_box(&surface.clip(new)))
-                    .collect();
+                // an old or a new square change.
+                let old_frames: Vec<Frame> = old_frames.iter().map(|f| surface.clip(f)).collect();
+                let new_frames: Vec<Frame> = frames.iter().map(|f| surface.clip(f)).collect();
+                let mut clean_frames = Vec::new();
+                let mut dirty_frames = Vec::new();
+                for (index, s) in self.squares.iter().enumerate() {
+                    let old = old_frames[index];
+                    let new = new_frames[index];
+                    if touches_other_square(index, &old, &old_frames)
+                        || touches_other_square(index, &old, &new_frames)
+                        || touches_other_square(index, &new, &old_frames)
+                        || touches_other_square(index, &new, &new_frames)
+                    {
+                        // A square moves little between two renders of the same image, so one
+                        // rectangle around its old and new frame covers both.
+                        dirty_frames.push(old.bounding_box(&new));
+                        continue;
+                    }
+                    // No other square, old or new, covers any pixel of this square's old or new
+                    // frame:
+                    // * Pixels in both frames already hold its color.
+                    // * Pixels only in the old frame become background.
+                    // * Pixels only in the new frame become its color.
+                    for part in old.subtract(&new) {
+                        surface
+                            .fill_region(&BACKGROUND, &part)
+                            .context("failed to erase square")?;
+                    }
+                    for part in new.subtract(&old) {
+                        surface
+                            .fill_region(&s.color, &part)
+                            .context("failed to draw bouncing square")?;
+                    }
+                    // Clean every row of both frames, with one range per row. This also covers
+                    // the unwritten pixels in the overlap, whose cache lines are already clean.
+                    // One cache flush call per row costs less than one per strip.
+                    clean_frames.extend([old, new]);
+                }
                 // Redraw each dirty rectangle in full: background, then every square in order,
                 // clipped to it. Later squares paint over earlier ones, as in a full redraw.
                 for dirty_frame in &dirty_frames {
@@ -121,7 +162,8 @@ impl BouncingSquaresScene {
                         }
                     }
                 }
-                surface.cache_clean_regions(&dirty_frames)?;
+                clean_frames.extend(dirty_frames);
+                surface.cache_clean_regions(&clean_frames)?;
             }
             _ => {
                 surface.zero().context("failed to clear background")?;
@@ -168,10 +210,9 @@ pub async fn run(
     vsync_timeout: Duration,
 ) -> Result<()> {
     // Obtain the display resolution based on the display's preferred mode.
-    let (width, height) = {
-        let mode = &display.0.modes[0];
-        (mode.active_area.width, mode.active_area.height)
-    };
+    let active_area = display.0.modes[0].active_area;
+    let width = active_area.width;
+    let height = active_area.height;
 
     let scene = BouncingSquaresScene::new(width, height);
     let mut double_buffered_fence_loop = DoubleBufferedFenceLoop::new(
@@ -213,6 +254,7 @@ mod tests {
         let reference = testing::new_surface(width, height);
         let mut bounces = HashSet::new();
         let mut overlaps = 0;
+        let mut isolated_frames = 0;
 
         for frame_index in 0..frame_count {
             let velocities: Vec<Vector2D<i64>> = scene.squares.iter().map(|s| s.velocity).collect();
@@ -242,7 +284,9 @@ mod tests {
 
             let image_index = frame_index % 2;
             let surface = &surfaces[image_index];
-            scene.render_surface(ImageId(1 + image_index as u64), surface).expect("render");
+            let image_id = ImageId(1 + image_index as u64);
+            let old_frames = scene.drawn.get(&image_id).cloned();
+            scene.render_surface(image_id, surface).expect("render");
 
             // Every byte written must be cleaned before the image is presented.
             expect_eq!(
@@ -264,7 +308,7 @@ mod tests {
             expect_eq!(first_difference, None, "frame {}", frame_index);
 
             // After the first render of each image, only the parts that changed are drawn, and
-            // only written row segments are cleaned (each byte at most once).
+            // only rows of the old and new squares are cleaned.
             let ByteCounts { written, cleaned } = surface.take_byte_counts();
             if frame_index >= 2 {
                 expect_true!(
@@ -274,16 +318,49 @@ mod tests {
                     written
                 );
                 expect_true!(
-                    cleaned <= written,
-                    "frame {} written {} cleaned {}",
+                    cleaned < u64::from(width) * u64::from(height) * 4,
+                    "frame {} cleaned {}",
                     frame_index,
-                    written,
                     cleaned
                 );
+
+                // When no two squares, old or new, touch, each square only
+                // erases its old frame minus its new one and paints its new
+                // frame minus its old one.
+                let old_frames = old_frames.expect("image was rendered before");
+                if all_squares_isolated(&old_frames, &scene.squares) {
+                    let mut changed = 0;
+                    let mut covered = 0;
+                    for (old, s) in old_frames.iter().zip(&scene.squares) {
+                        let overlap = old.intersection(&s.frame).as_ref().map_or(0, Frame::area);
+                        changed += (old.area() - overlap + (s.frame.area() - overlap)) * 4;
+                        covered += (old.area() - overlap + s.frame.area()) * 4;
+                    }
+                    expect_eq!(written, changed, "frame {}", frame_index);
+                    expect_eq!(cleaned, covered, "frame {}", frame_index);
+                    isolated_frames += 1;
+                }
             }
         }
         expect_eq!(bounces.len(), 4, "bounces: {:?}", bounces);
         expect_true!(overlaps > 0, "the squares never overlapped");
+        expect_true!(isolated_frames > 0, "the squares were never all apart");
+    }
+
+    /// True iff no square's old or new frame shares a pixel with another square's old or new
+    /// frame.
+    fn all_squares_isolated(old_frames: &[Frame], squares: &[BouncingSquare]) -> bool {
+        let new_frames: Vec<Frame> = squares.iter().map(|s| s.frame).collect();
+        for (index, (old, new)) in old_frames.iter().zip(&new_frames).enumerate() {
+            if touches_other_square(index, old, old_frames)
+                || touches_other_square(index, old, &new_frames)
+                || touches_other_square(index, new, old_frames)
+                || touches_other_square(index, new, &new_frames)
+            {
+                return false;
+            }
+        }
+        true
     }
 
     #[gtest]
