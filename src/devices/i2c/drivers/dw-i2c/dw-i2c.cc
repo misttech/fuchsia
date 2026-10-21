@@ -547,6 +547,8 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
       return zx::error(result.ok() ? result->error_value() : result.status());
     }
   }
+  fit::deferred_action disable_powerdomain_on_failure =
+      fit::defer([this]() { (void)powerdomain_->Disable(); });
 
   // Connect and enable clocks.
   {
@@ -564,6 +566,8 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
       return zx::error(result.ok() ? result->error_value() : result.status());
     }
   }
+  fit::deferred_action disable_clock_bus_on_failure =
+      fit::defer([this]() { (void)clock_bus_->Disable(); });
 
   {
     zx::result clock_regs_client =
@@ -581,6 +585,8 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
       return zx::error(result.ok() ? result->error_value() : result.status());
     }
   }
+  fit::deferred_action disable_clock_regs_on_failure =
+      fit::defer([this]() { (void)clock_regs_->Disable(); });
 
   // Connect and release reset.
   {
@@ -647,12 +653,45 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
     return result.take_error();
   }
 
+  disable_clock_regs_on_failure.cancel();
+  disable_clock_bus_on_failure.cancel();
+  disable_powerdomain_on_failure.cancel();
+  resources_enabled_ = true;
   return zx::ok();
 }
 
-void DwI2c::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
+void DwI2c::Stop(fdf::StopCompleter completer) {
+  if (resources_enabled_) {
+    if (auto result = clock_regs_->Disable(); !result.ok()) {
+      fdf::warn("Failed to send Disable request to clock-registers on stop: {}",
+                result.status_string());
+    } else if (result->is_error()) {
+      fdf::warn("Failed to disable clock-registers on stop: {}",
+                zx_status_get_string(result->error_value()));
+    }
+    if (auto result = clock_bus_->Disable(); !result.ok()) {
+      fdf::warn("Failed to send Disable request to clock-bus on stop: {}", result.status_string());
+    } else if (result->is_error()) {
+      fdf::warn("Failed to disable clock-bus on stop: {}",
+                zx_status_get_string(result->error_value()));
+    }
+    if (auto result = powerdomain_->Disable(); !result.ok()) {
+      fdf::warn("Failed to send Disable request to power domain on stop: {}",
+                result.status_string());
+    } else if (result->is_error()) {
+      fdf::warn("Failed to disable power domain on stop: {}",
+                zx_status_get_string(result->error_value()));
+    }
+    resources_enabled_ = false;
+  }
+  completer(zx::ok());
+}
 
 void DwI2c::SystemSuspend(fdf::SuspendCompleter completer) {
+  if (!resources_enabled_) {
+    completer(zx::ok());
+    return;
+  }
   {
     auto result = clock_regs_->Disable();
     if (!result.ok()) {
@@ -702,6 +741,7 @@ void DwI2c::SystemSuspend(fdf::SuspendCompleter completer) {
 
   enable_clock_bus_on_failure.cancel();
   enable_clock_regs_on_failure.cancel();
+  resources_enabled_ = false;
   completer(zx::ok());
 }
 
@@ -793,6 +833,7 @@ void DwI2c::SystemResume(std::optional<fuchsia_power_broker::LeaseToken> pe_leas
   disable_clock_regs_on_failure.cancel();
   disable_clock_bus_on_failure.cancel();
   disable_powerdomain_on_failure.cancel();
+  resources_enabled_ = true;
   completer(zx::ok());
 }
 

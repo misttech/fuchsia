@@ -165,6 +165,7 @@ class DwI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i
   std::optional<fdf::StopCompleter> completer_;
   fdf_metadata::MetadataServer<fuchsia_hardware_i2c_businfo::I2CBusMetadata> metadata_server_;
   bool send_restart_ = false;
+  bool resources_enabled_ = false;
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_bus_;
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_regs_;
   fidl::WireSyncClient<fuchsia_hardware_reset::Reset> reset_;
