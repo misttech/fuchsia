@@ -94,7 +94,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     // `UpdateLinkWatchersAfterViewTreePublished()` observes an empty scene and the next frame
     // with a display performs a full rebuild.
     scene_state_.Clear();
-    SkipRender(std::move(callback));
+    SkipRender(frame_number, std::move(callback));
     return;
   }
 
@@ -156,7 +156,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
       it == seen_display_ids_.end() || !it->second) {
     FLATLAND_VERBOSE_LOG << "Engine::RenderScheduledFrame() frame_number=" << frame_number
                          << " skipped: display not yet added";
-    SkipRender(std::move(callback));
+    SkipRender(frame_number, std::move(callback));
     return;
   }
 
@@ -167,7 +167,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     // LinkWatchers are still updated properly.
     FLATLAND_VERBOSE_LOG << "Engine::RenderScheduledFrame() frame_number=" << frame_number
                          << " skipped: display is dark";
-    SkipRender(std::move(callback));
+    SkipRender(frame_number, std::move(callback));
     return;
   }
 
@@ -214,7 +214,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   // invoke `callback` to continue the render loop.
   if (!first_frame_with_image_is_rendered_) {
     if (resolved_layers.empty()) {
-      SkipRender(std::move(callback));
+      SkipRender(frame_number, std::move(callback));
       return;
     }
     first_frame_with_image_is_rendered_ = true;
@@ -497,16 +497,14 @@ void Engine::SceneState::Clear() {
   cleared = true;
 }
 
-void Engine::SkipRender(scheduling::FramePresentedCallback callback) {
+void Engine::SkipRender(uint64_t frame_number, scheduling::FramePresentedCallback callback) {
   TRACE_DURATION("gfx", "flatland::Engine::SkipRender");
   utils::CheckIsOnMainThread();
 
-  const zx::time now = async::Now(async_get_default_dispatcher());
   auto fences = flatland_presenter_->TakeFences();
-  utils::SignalReleaseFences(fences.release_fences);
-  utils::SignalCounterFences(fences.release_counters, now);
-  utils::SignalCounterFences(fences.present_fences, now);
-  callback({.render_done_time = now, .actual_presentation_time = now});
+  flatland_compositor_->SkipFrame(frame_number, std::move(fences.release_fences),
+                                  std::move(fences.release_counters),
+                                  std::move(fences.present_fences), std::move(callback));
 }
 
 void Engine::AddDisplay(display::Display& display, uint32_t num_vmos) {

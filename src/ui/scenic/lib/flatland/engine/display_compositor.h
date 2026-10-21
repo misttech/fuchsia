@@ -130,6 +130,13 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       // Allows customization of behavior for tests.  Default values are used in production.
       RenderFrameTestArgs test_args = RenderFrameTestArgs::Default()) FXL_LOCKS_EXCLUDED(lock_);
 
+  // Notifies the compositor and `ReleaseFenceManager` that a frame was skipped without rendering.
+  // `frame_number` must exceed every frame number previously passed to `RenderFrame()` or
+  // `SkipFrame()`. Only called from the main thread.
+  void SkipFrame(uint64_t frame_number, std::vector<zx::event> release_fences,
+                 std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
+                 scheduling::FramePresentedCallback callback);
+
   // Register a new display to the `DisplayCompositor`, which also generates the render targets to
   // be presented on the display when compositing on the GPU. If `num_render_targets` is 0, this
   // function will not create any render targets for GPU composition for that display. The buffer
@@ -360,8 +367,8 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // display device.
   std::deque<ApplyConfigInfo> pending_apply_configs_;
 
-  // The last frame number called in `RenderFrame()`, this number is use assert the frame number is
-  // strictly increasing.
+  // The last frame number passed to `RenderFrame()` or `SkipFrame()`, used to assert that the
+  // frame number is strictly increasing.
   std::optional<uint64_t> last_frame_number_;
 
   // Stores the `ConfigStamp` information of the latest frame shown on the display. If no frame

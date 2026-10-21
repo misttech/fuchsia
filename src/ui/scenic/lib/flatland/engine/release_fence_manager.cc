@@ -8,12 +8,22 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
+#include <algorithm>
 #include <iterator>
 
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/logging.h"
 
 namespace flatland {
+
+namespace {
+
+template <typename Fence>
+void AppendFences(std::vector<Fence>& src, std::vector<Fence>& dst) {
+  std::move(std::begin(src), std::end(src), std::back_inserter(dst));
+}
+
+}  // namespace
 
 ReleaseFenceManager::ReleaseFenceManager(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
   FX_DCHECK(dispatcher_);
@@ -32,6 +42,7 @@ void ReleaseFenceManager::OnGpuCompositedFrame(
   record->present_fences = std::move(present_fences);
   SignalOrScheduleSignalForReleaseFences(frame_number, *record, std::move(release_fences),
                                          std::move(release_counters));
+  direct_scanout_on_screen_ = false;
   StashFrameRecord(frame_number, std::move(record));
 }
 
@@ -46,7 +57,26 @@ void ReleaseFenceManager::OnDirectScanoutFrame(
   record->present_fences = std::move(present_fences);
   SignalOrScheduleSignalForReleaseFences(frame_number, *record, std::move(release_fences),
                                          std::move(release_counters));
+  direct_scanout_on_screen_ = true;
   StashFrameRecord(frame_number, std::move(record));
+}
+
+void ReleaseFenceManager::OnSkippedFrame(
+    uint64_t frame_number, std::vector<zx::event> release_fences,
+    std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
+    scheduling::FramePresentedCallback frame_presented_callback) {
+  TRACE_DURATION("gfx", "ReleaseFenceManager::OnSkippedFrame", "frame number", frame_number);
+  FLATLAND_VERBOSE_LOG << "ReleaseFenceManager::OnSkippedFrame() frame_number=" << frame_number;
+
+  auto record = NewSkippedFrameRecord(std::move(frame_presented_callback));
+  record->present_fences = std::move(present_fences);
+  SignalOrScheduleSignalForReleaseFences(frame_number, *record, std::move(release_fences),
+                                         std::move(release_counters));
+  StashFrameRecord(frame_number, std::move(record));
+
+  if (frame_records_.size() == 1) {
+    MaybeInvokeFramePresentedCallback(*frame_records_.begin()->second);
+  }
 }
 
 void ReleaseFenceManager::OnVsync(uint64_t frame_number, zx::time_monotonic timestamp) {
@@ -57,7 +87,7 @@ void ReleaseFenceManager::OnVsync(uint64_t frame_number, zx::time_monotonic time
   last_vsync_frame_number_ = frame_number;
 #endif
 
-  // Any previous frames which haven't already been presented have been skipped; they will never
+  // Any previous frames which haven't already been presented have been dropped; they will never
   // show up on-screen.  Any release fences associated with them should be signaled at this time.
   // Additionally, it *may* be possible to invoke the frame-presented callback for some or all of
   // these frames... but only if all previous callbacks have been invoked.  This is due to the
@@ -77,15 +107,15 @@ void ReleaseFenceManager::OnVsync(uint64_t frame_number, zx::time_monotonic time
 
       utils::SignalCounterFences(record.release_counters_to_signal_when_frame_presented, timestamp);
       record.release_counters_to_signal_when_frame_presented.clear();
+    }
 
-      // The contract with the `FrameScheduler` dictates that callbacks must be invoked in order.
-      // Therefore, if we reach a record whose callback cannot be invoked (e.g. because that frame
-      // is GPU-composited and hasn't finished rendering), then no subsequent callback can be
-      // invoked, even if all other conditions are met.
-      if (all_earlier_callbacks_were_invoked) {
-        if (!MaybeInvokeFramePresentedCallback(record)) {
-          all_earlier_callbacks_were_invoked = false;
-        }
+    // The contract with the `FrameScheduler` dictates that callbacks must be invoked in order.
+    // Therefore, if we reach a record whose callback cannot be invoked (e.g. because that frame
+    // is GPU-composited and hasn't finished rendering), then no subsequent callback can be
+    // invoked, even if all other conditions are met.
+    if (all_earlier_callbacks_were_invoked && !record.callback_invoked) {
+      if (!MaybeInvokeFramePresentedCallback(record)) {
+        all_earlier_callbacks_were_invoked = false;
       }
     }
 
@@ -99,11 +129,30 @@ void ReleaseFenceManager::OnVsync(uint64_t frame_number, zx::time_monotonic time
     // iterator.
     MaybeEraseFrameRecord(it++);
   }
+
+  // Subsequent skipped frames already have `render_finished` and `frame_presented` set, and may
+  // have been waiting only for the frames above to invoke their callbacks.
+  if (all_earlier_callbacks_were_invoked) {
+    for (auto it = end_it; it != frame_records_.end();) {
+      auto current_it = it++;
+      if (!MaybeInvokeFramePresentedCallback(*current_it->second)) {
+        break;
+      }
+      MaybeEraseFrameRecord(current_it);
+    }
+  }
 }
 
 void ReleaseFenceManager::MarkAllFramesPresented(zx::time_monotonic timestamp) {
+  direct_scanout_on_screen_ = false;
   if (frame_records_.empty()) {
     return;
+  }
+  for (auto& [_, record] : frame_records_) {
+    utils::SignalReleaseFences(record->release_fences_to_carry_forward);
+    record->release_fences_to_carry_forward.clear();
+    utils::SignalCounterFences(record->release_counters_to_carry_forward, timestamp);
+    record->release_counters_to_carry_forward.clear();
   }
   OnVsync(frame_records_.rbegin()->first, timestamp);
 }
@@ -162,6 +211,18 @@ void ReleaseFenceManager::SignalOrScheduleSignalForReleaseFences(
   FX_DCHECK(!previous_frame.next_frame_started);
   previous_frame.next_frame_started = true;
 
+  const auto defer_until_next_displayed_frame =
+      [&current_frame](std::vector<zx::event>& fences, std::vector<zx::counter>& counters) {
+        if (current_frame.frame_type == FrameType::kSkipped) {
+          AppendFences(fences, current_frame.release_fences_to_carry_forward);
+          AppendFences(counters, current_frame.release_counters_to_carry_forward);
+        } else {
+          FX_DCHECK(!current_frame.frame_presented);
+          AppendFences(fences, current_frame.release_fences_to_signal_when_frame_presented);
+          AppendFences(counters, current_frame.release_counters_to_signal_when_frame_presented);
+        }
+      };
+
   switch (previous_frame.frame_type) {
     case FrameType::kGpuComposition: {
       // Signal the fences as soon as the previous frame has finished rendering.  This may have
@@ -174,24 +235,47 @@ void ReleaseFenceManager::SignalOrScheduleSignalForReleaseFences(
         utils::SignalCounterFences(release_counters, previous_frame.timestamps.render_done_time);
       } else {
         FX_DCHECK(previous_frame.release_fences_to_signal_when_render_finished.empty());
-        std::move(std::begin(release_fences), std::end(release_fences),
-                  std::back_inserter(previous_frame.release_fences_to_signal_when_render_finished));
+        AppendFences(release_fences, previous_frame.release_fences_to_signal_when_render_finished);
         FX_DCHECK(previous_frame.release_counters_to_signal_when_render_finished.empty());
-        std::move(
-            std::begin(release_counters), std::end(release_counters),
-            std::back_inserter(previous_frame.release_counters_to_signal_when_render_finished));
+        AppendFences(release_counters,
+                     previous_frame.release_counters_to_signal_when_render_finished);
       }
     } break;
     case FrameType::kDirectScanout: {
-      // Stash these fences to be signaled later, when the frame is presented (this will become
-      // known when the manager is notified of a vsync event).
-      FX_DCHECK(!current_frame.frame_presented);
-      FX_DCHECK(current_frame.release_fences_to_signal_when_frame_presented.empty());
-      std::move(std::begin(release_fences), std::end(release_fences),
-                std::back_inserter(current_frame.release_fences_to_signal_when_frame_presented));
-      FX_DCHECK(current_frame.release_counters_to_signal_when_frame_presented.empty());
-      std::move(std::begin(release_counters), std::end(release_counters),
-                std::back_inserter(current_frame.release_counters_to_signal_when_frame_presented));
+      if (direct_scanout_on_screen_) {
+        // Stash these fences to be signaled later, when the next displayed frame is presented (or
+        // when `MarkAllFramesPresented()` runs).
+        defer_until_next_displayed_frame(release_fences, release_counters);
+      } else {
+        // `MarkAllFramesPresented()` cleared the display after `previous_frame`, so nothing of the
+        // client's is on screen.
+        utils::SignalReleaseFences(release_fences);
+        utils::SignalCounterFences(release_counters, async::Now(dispatcher_));
+      }
+    } break;
+    case FrameType::kSkipped: {
+      const auto in_flight_gpu_it =
+          std::find_if(frame_records_.begin(), previous_frame_it, [](const auto& entry) {
+            return entry.second->frame_type == FrameType::kGpuComposition &&
+                   !entry.second->render_finished;
+          });
+      if (in_flight_gpu_it != previous_frame_it) {
+        FrameRecord& gpu_frame = *in_flight_gpu_it->second;
+        AppendFences(release_fences, gpu_frame.release_fences_to_signal_when_render_finished);
+        AppendFences(release_counters, gpu_frame.release_counters_to_signal_when_render_finished);
+      } else if (direct_scanout_on_screen_) {
+        defer_until_next_displayed_frame(previous_frame.release_fences_to_carry_forward,
+                                         previous_frame.release_counters_to_carry_forward);
+        previous_frame.release_fences_to_carry_forward.clear();
+        previous_frame.release_counters_to_carry_forward.clear();
+        defer_until_next_displayed_frame(release_fences, release_counters);
+      } else {
+        FX_DCHECK(previous_frame.release_fences_to_carry_forward.empty());
+        FX_DCHECK(previous_frame.release_counters_to_carry_forward.empty());
+        // Nothing of the client's is on screen; signal release fences immediately.
+        utils::SignalReleaseFences(release_fences);
+        utils::SignalCounterFences(release_counters, async::Now(dispatcher_));
+      }
     } break;
   }
 
@@ -245,6 +329,23 @@ std::unique_ptr<ReleaseFenceManager::FrameRecord> ReleaseFenceManager::NewDirect
   // such values.
   record->render_finished = true;
   record->timestamps.render_done_time = async::Now(dispatcher_);
+
+  return record;
+}
+
+std::unique_ptr<ReleaseFenceManager::FrameRecord> ReleaseFenceManager::NewSkippedFrameRecord(
+    scheduling::FramePresentedCallback frame_presented_callback) {
+  auto record = std::make_unique<ReleaseFenceManager::FrameRecord>();
+  record->frame_type = FrameType::kSkipped;
+  record->frame_presented_callback = std::move(frame_presented_callback);
+
+  // A skipped frame is neither rendered nor presented on screen, so its record starts with
+  // `render_finished` and `frame_presented` preset to the current time; `callback_invoked` stays
+  // false until any earlier frames' callbacks have run in order.
+  const zx::time_monotonic now = async::Now(dispatcher_);
+  record->render_finished = true;
+  record->frame_presented = true;
+  record->timestamps = {.render_done_time = now, .actual_presentation_time = now};
 
   return record;
 }

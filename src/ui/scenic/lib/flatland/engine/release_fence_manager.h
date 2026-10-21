@@ -49,9 +49,10 @@ namespace flatland {
 //
 // === Usage ===
 //
-// `ReleaseFenceManager` is very simple to use.  Each frame, the caller (typically
-// `DisplayCompositor`) calls either `OnGpuCompositedFrame()` or `OnDirectScanoutFrame()`.  The
-// caller has two other responsibilities:
+// `ReleaseFenceManager` is very simple to use.  Each frame number must be reported by the caller
+// (typically `DisplayCompositor`) through exactly one of `OnGpuCompositedFrame()`,
+// `OnDirectScanoutFrame()`, or `OnSkippedFrame()` (for frames that are not rendered).  The caller
+// has two other responsibilities:
 //
 // 1) for GPU-composited frames, to signal the `render_finished_event` (typically done via a Vulkan
 //    semaphore).
@@ -94,6 +95,23 @@ class ReleaseFenceManager final {
                             std::vector<zx::counter> present_fences,
                             scheduling::FramePresentedCallback frame_presented_callback);
 
+  // Stores a record for a frame that was skipped without rendering.  `frame_number` must be one
+  // larger than the previous frame.
+  //   - If the frame before the skip was direct scanout, `release_fences` and `release_counters`
+  //     carry forward and are signaled when the next displayed frame is presented, or in
+  //     `MarkAllFramesPresented()`.
+  //   - If the frame before the skip was GPU-composited, they are signaled at its render-finished.
+  //   - When nothing of the client's is on screen (e.g. before any rendered frame, or when the
+  //     display is dark and `SetDisplayPowerMode()` applied the black config before calling
+  //     `MarkAllFramesPresented()`), they are signaled immediately so clients are not starved of
+  //     buffers while dark.
+  // Invokes `frame_presented_callback` (and signals `present_fences`) once all previous callbacks
+  // have been invoked.
+  void OnSkippedFrame(uint64_t frame_number, std::vector<zx::event> release_fences,
+                      std::vector<zx::counter> release_counters,
+                      std::vector<zx::counter> present_fences,
+                      scheduling::FramePresentedCallback frame_presented_callback);
+
   // Called when the specified frame has appeared on screen.  `frame_number` must monotonically
   // increase with each subsequent call (repeats are OK).
   void OnVsync(uint64_t frame_number, zx::time_monotonic timestamp);
@@ -109,7 +127,7 @@ class ReleaseFenceManager final {
   size_t frame_record_count() const { return frame_records_.size(); }
 
  private:
-  enum class FrameType { kGpuComposition, kDirectScanout };
+  enum class FrameType { kGpuComposition, kDirectScanout, kSkipped };
 
   struct FrameRecord {
     FrameType frame_type;
@@ -120,6 +138,9 @@ class ReleaseFenceManager final {
     std::vector<zx::event> release_fences_to_signal_when_frame_presented;
     std::vector<zx::counter> release_counters_to_signal_when_render_finished;
     std::vector<zx::counter> release_counters_to_signal_when_frame_presented;
+    // Carried across skipped frames while an earlier direct-scanout buffer remains on screen.
+    std::vector<zx::event> release_fences_to_carry_forward;
+    std::vector<zx::counter> release_counters_to_carry_forward;
     std::vector<zx::counter> present_fences;
 
     scheduling::FramePresentedCallback frame_presented_callback;
@@ -151,12 +172,15 @@ class ReleaseFenceManager final {
   std::unique_ptr<FrameRecord> NewDirectScanoutFrameRecord(
       scheduling::FramePresentedCallback frame_presented_callback);
 
+  std::unique_ptr<FrameRecord> NewSkippedFrameRecord(
+      scheduling::FramePresentedCallback frame_presented_callback);
+
   void StashFrameRecord(uint64_t frame_number, std::unique_ptr<FrameRecord> record);
 
   // The strategy used for signaling release fences depends on whether the *previous* frame was
-  // GPU-composited or direct-scanout, not the current frame. Therefore, we factor this into a
-  // separate method, which is called from both `OnGpuCompositedFrame()` and
-  // `OnDirectScanoutFrame()`.
+  // GPU-composited, direct-scanout, or skipped, not only the current frame. Therefore, we factor
+  // this into a separate method called from `OnGpuCompositedFrame()`, `OnDirectScanoutFrame()`,
+  // and `OnSkippedFrame()`.
   void SignalOrScheduleSignalForReleaseFences(uint64_t frame_number,
                                               FrameRecord& current_frame_record,
                                               std::vector<zx::event> release_fences,
@@ -194,6 +218,10 @@ class ReleaseFenceManager final {
   async_dispatcher_t* const dispatcher_;
 
   FrameRecordMap frame_records_;
+
+  // True when client buffers from a direct-scanout frame may still be on screen (until replaced by
+  // a GPU-composited frame or cleared by `MarkAllFramesPresented()`).
+  bool direct_scanout_on_screen_ = false;
 
 #ifndef NDEBUG
   std::optional<uint64_t> first_frame_number_ = std::nullopt;

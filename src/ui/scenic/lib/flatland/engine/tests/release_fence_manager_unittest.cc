@@ -28,7 +28,7 @@
 //    - `SignalingWhenPreviousFrameWasGpuComposited`
 //    - `SignalingWhenPreviousFrameWasDirectScanout`
 //
-// 2) Dropped/Skipped frames.  `OnVsync()` for later frame causes frame callback of earlier frames
+// 2) Dropped frames.  `OnVsync()` for later frame causes frame callback of earlier frames
 //    to be invoked (assuming that all `render_finished_fences` are signaled for earlier
 //    GPU-composited frames).
 //
@@ -66,6 +66,19 @@
 //    Tests:
 //    - `MarkAllFramesPresentedSignalsDirectScanoutFences`
 //    - `MarkAllFramesPresentedKeepsRenderingGpuFrame`
+//
+// 8) `OnSkippedFrame()`: frames that are not rendered maintain sequence continuity, invoke
+//    `FramePresentedCallback`s in order, carry release fences forward when direct-scanout content
+//    remains on screen, wait on in-flight GPU work, and signal immediately when nothing of the
+//    client's is on screen.
+//
+//    Tests:
+//    - `DirectScanoutFrameBeforeSkipCarriesFencesUntilNextVsync`
+//    - `SkippedFrameWhileDarkSignalsFencesImmediately`
+//    - `MultipleConsecutiveSkippedFrames`
+//    - `SkippedFrameWhileGpuFrameInFlight`
+//    - `GpuFrameAfterSkippedFrame`
+//    - `MarkAllFramesPresentedWithSkippedFrame`
 
 namespace flatland::test {
 
@@ -801,6 +814,273 @@ TEST_F(ReleaseFenceManagerTest, MarkAllFramesPresentedKeepsRenderingGpuFrame) {
 
   EXPECT_TRUE(callback_ran);
   EXPECT_EQ(presentation_time.get(), 1000);
+}
+
+TEST_F(ReleaseFenceManagerTest, DirectScanoutFrameBeforeSkipCarriesFencesUntilNextVsync) {
+  ReleaseFenceManager manager(dispatcher());
+
+  // Frame 1: Direct scanout displayed on screen.
+  bool frame1_callback_ran = false;
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 1, {}, {}, {},
+      [&frame1_callback_ran](scheduling::Timestamps) { frame1_callback_ran = true; });
+  manager.OnVsync(/*frame_number*/ 1, zx::time_monotonic(100));
+  EXPECT_TRUE(frame1_callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  // Frame 2: Skipped while Frame 1's buffer is still being scanned out on screen (e.g. null
+  // display). Its callback runs immediately, while its release fences carry forward.
+  std::vector<zx::event> frame2_release_fences = utils::CreateEventArray(1);
+  std::vector<zx::counter> frame2_release_counters = utils::CreateCounterArray(1);
+  bool frame2_callback_ran = false;
+  manager.OnSkippedFrame(
+      /*frame_number*/ 2, utils::CopyZxHandleVector(frame2_release_fences),
+      utils::CopyZxHandleVector(frame2_release_counters), {},
+      [&frame2_callback_ran](scheduling::Timestamps) { frame2_callback_ran = true; });
+  EXPECT_TRUE(frame2_callback_ran);
+  EXPECT_FALSE(utils::IsEventSignalled(frame2_release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_FALSE(utils::IsCounterSignalled(frame2_release_counters[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  // Frame 3: Direct scanout with release fences guarding content latched before the skip.
+  // Neither Frame 2's carried fences nor Frame 3's fences may signal before Frame 3's vsync.
+  std::vector<zx::event> frame3_release_fences = utils::CreateEventArray(2);
+  std::vector<zx::counter> frame3_release_counters = utils::CreateCounterArray(2);
+  bool frame3_callback_ran = false;
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 3, utils::CopyZxHandleVector(frame3_release_fences),
+      utils::CopyZxHandleVector(frame3_release_counters), {},
+      [&frame3_callback_ran](scheduling::Timestamps) { frame3_callback_ran = true; });
+
+  EXPECT_FALSE(utils::IsEventSignalled(frame2_release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_FALSE(utils::IsCounterSignalled(frame2_release_counters[0], ZX_COUNTER_SIGNALED));
+  for (auto& fence : frame3_release_fences) {
+    EXPECT_FALSE(utils::IsEventSignalled(fence, ZX_EVENT_SIGNALED));
+  }
+  for (auto& counter : frame3_release_counters) {
+    EXPECT_FALSE(utils::IsCounterSignalled(counter, ZX_COUNTER_SIGNALED));
+  }
+  EXPECT_FALSE(frame3_callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  const zx::time_monotonic kFrame3VsyncTime(200);
+  manager.OnVsync(/*frame_number*/ 3, kFrame3VsyncTime);
+  EXPECT_TRUE(frame3_callback_ran);
+  EXPECT_TRUE(utils::IsEventSignalled(frame2_release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_TRUE(utils::IsCounterSignalled(frame2_release_counters[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(utils::ReadCounter(frame2_release_counters[0]), kFrame3VsyncTime.get());
+  for (auto& fence : frame3_release_fences) {
+    EXPECT_TRUE(utils::IsEventSignalled(fence, ZX_EVENT_SIGNALED));
+  }
+  for (auto& counter : frame3_release_counters) {
+    EXPECT_TRUE(utils::IsCounterSignalled(counter, ZX_COUNTER_SIGNALED));
+    EXPECT_EQ(utils::ReadCounter(counter), kFrame3VsyncTime.get());
+  }
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+}
+
+TEST_F(ReleaseFenceManagerTest, SkippedFrameWhileDarkSignalsFencesImmediately) {
+  ReleaseFenceManager manager(dispatcher());
+
+  // Frame 1: Direct scanout, followed by powering off the display (`MarkAllFramesPresented()`).
+  bool frame1_callback_ran = false;
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 1, {}, {}, {},
+      [&frame1_callback_ran](scheduling::Timestamps) { frame1_callback_ran = true; });
+  manager.MarkAllFramesPresented(zx::time_monotonic(1000));
+  EXPECT_TRUE(frame1_callback_ran);
+
+  // Advance clock to a nonzero time while dark: skipped Frame 2's fences signal immediately.
+  RunLoopFor(zx::msec(50));
+  std::vector<zx::event> dark_release_fences = utils::CreateEventArray(2);
+  std::vector<zx::counter> dark_release_counters = utils::CreateCounterArray(2);
+  std::vector<zx::counter> dark_present_fences = utils::CreateCounterArray(1);
+  bool frame2_callback_ran = false;
+  manager.OnSkippedFrame(
+      /*frame_number*/ 2, utils::CopyZxHandleVector(dark_release_fences),
+      utils::CopyZxHandleVector(dark_release_counters),
+      utils::CopyZxHandleVector(dark_present_fences),
+      [&frame2_callback_ran](scheduling::Timestamps) { frame2_callback_ran = true; });
+
+  EXPECT_TRUE(frame2_callback_ran);
+  EXPECT_TRUE(utils::IsCounterSignalled(dark_present_fences[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(utils::ReadCounter(dark_present_fences[0]), Now().get());
+  for (auto& fence : dark_release_fences) {
+    EXPECT_TRUE(utils::IsEventSignalled(fence, ZX_EVENT_SIGNALED));
+  }
+  for (auto& counter : dark_release_counters) {
+    EXPECT_TRUE(utils::IsCounterSignalled(counter, ZX_COUNTER_SIGNALED));
+    EXPECT_EQ(utils::ReadCounter(counter), Now().get());
+  }
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  // Frame 3 after waking up also signals release fences immediately because nothing of the
+  // client's was on screen.
+  RunLoopFor(zx::msec(50));
+  std::vector<zx::event> wake_release_fences = utils::CreateEventArray(2);
+  std::vector<zx::counter> wake_release_counters = utils::CreateCounterArray(2);
+  bool frame3_callback_ran = false;
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 3, utils::CopyZxHandleVector(wake_release_fences),
+      utils::CopyZxHandleVector(wake_release_counters), {},
+      [&frame3_callback_ran](scheduling::Timestamps) { frame3_callback_ran = true; });
+
+  for (auto& fence : wake_release_fences) {
+    EXPECT_TRUE(utils::IsEventSignalled(fence, ZX_EVENT_SIGNALED));
+  }
+  for (auto& counter : wake_release_counters) {
+    EXPECT_TRUE(utils::IsCounterSignalled(counter, ZX_COUNTER_SIGNALED));
+    EXPECT_EQ(utils::ReadCounter(counter), Now().get());
+  }
+  EXPECT_FALSE(frame3_callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  manager.OnVsync(/*frame_number*/ 3, zx::time_monotonic(2000));
+  EXPECT_TRUE(frame3_callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+}
+
+TEST_F(ReleaseFenceManagerTest, MultipleConsecutiveSkippedFrames) {
+  ReleaseFenceManager manager(dispatcher());
+
+  // Multiple frames skipped from the start.
+  bool cb1 = false, cb2 = false, cb3 = false;
+  manager.OnSkippedFrame(/*frame_number*/ 1, {}, {}, {},
+                         [&cb1](scheduling::Timestamps) { cb1 = true; });
+  EXPECT_TRUE(cb1);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+  manager.OnSkippedFrame(/*frame_number*/ 2, {}, {}, {},
+                         [&cb2](scheduling::Timestamps) { cb2 = true; });
+  EXPECT_TRUE(cb2);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+  manager.OnSkippedFrame(/*frame_number*/ 3, {}, {}, {},
+                         [&cb3](scheduling::Timestamps) { cb3 = true; });
+  EXPECT_TRUE(cb3);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  // First rendered frame after skips.
+  RunLoopFor(zx::msec(50));
+  std::vector<zx::event> release_fences = utils::CreateEventArray(1);
+  std::vector<zx::counter> release_counters = utils::CreateCounterArray(1);
+  bool frame4_callback_ran = false;
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 4, utils::CopyZxHandleVector(release_fences),
+      utils::CopyZxHandleVector(release_counters), {},
+      [&frame4_callback_ran](scheduling::Timestamps) { frame4_callback_ran = true; });
+
+  EXPECT_TRUE(utils::IsEventSignalled(release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_TRUE(utils::IsCounterSignalled(release_counters[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(utils::ReadCounter(release_counters[0]), Now().get());
+  EXPECT_FALSE(frame4_callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  manager.OnVsync(/*frame_number*/ 4, zx::time_monotonic(100));
+  EXPECT_TRUE(frame4_callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+}
+
+TEST_F(ReleaseFenceManagerTest, SkippedFrameWhileGpuFrameInFlight) {
+  ReleaseFenceManager manager(dispatcher());
+
+  zx::event render_finished_fence = utils::CreateEvent();
+  std::vector<uint64_t> callback_order;
+  zx::time_monotonic presentation_time = zx::time_monotonic::infinite_past();
+  manager.OnGpuCompositedFrame(
+      /*frame_number*/ 1, utils::CopyZxHandle(render_finished_fence), {}, {}, {},
+      [&callback_order, &presentation_time](scheduling::Timestamps timestamps) {
+        callback_order.push_back(1);
+        presentation_time = timestamps.actual_presentation_time;
+      });
+
+  // Vsync arrives for Frame 1, but GPU rendering has not finished yet.
+  manager.OnVsync(/*frame_number*/ 1, zx::time_monotonic(100));
+  EXPECT_TRUE(callback_order.empty());
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  // Frame 2 is skipped while Frame 1's GPU work is still in flight; its fences wait on Frame 1's
+  // render-finished signal and its callback waits behind Frame 1's callback.
+  std::vector<zx::event> skipped_release_fences = utils::CreateEventArray(1);
+  std::vector<zx::counter> skipped_release_counters = utils::CreateCounterArray(1);
+  manager.OnSkippedFrame(
+      /*frame_number*/ 2, utils::CopyZxHandleVector(skipped_release_fences),
+      utils::CopyZxHandleVector(skipped_release_counters), {},
+      [&callback_order](scheduling::Timestamps) { callback_order.push_back(2); });
+  EXPECT_TRUE(callback_order.empty());
+  EXPECT_FALSE(utils::IsEventSignalled(skipped_release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_FALSE(utils::IsCounterSignalled(skipped_release_counters[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(manager.frame_record_count(), 2u);
+
+  // GPU finishes rendering Frame 1.
+  render_finished_fence.signal(0u, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+
+  // `OnRenderFinished()` signals the skipped frame's release fences and invokes Frame 1's and
+  // Frame 2's callbacks in order.
+  EXPECT_EQ(callback_order, (std::vector<uint64_t>{1, 2}));
+  EXPECT_TRUE(utils::IsEventSignalled(skipped_release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_TRUE(utils::IsCounterSignalled(skipped_release_counters[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(presentation_time.get(), 100);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+}
+
+TEST_F(ReleaseFenceManagerTest, GpuFrameAfterSkippedFrame) {
+  ReleaseFenceManager manager(dispatcher());
+
+  manager.OnSkippedFrame(/*frame_number*/ 1, {}, {}, {}, [](scheduling::Timestamps) {});
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  RunLoopFor(zx::msec(50));
+  std::vector<zx::event> release_fences = utils::CreateEventArray(2);
+  std::vector<zx::counter> release_counters = utils::CreateCounterArray(2);
+  zx::event render_finished_fence = utils::CreateEvent();
+  bool frame2_callback_ran = false;
+
+  manager.OnGpuCompositedFrame(
+      /*frame_number*/ 2, utils::CopyZxHandle(render_finished_fence),
+      utils::CopyZxHandleVector(release_fences), utils::CopyZxHandleVector(release_counters), {},
+      [&frame2_callback_ran](scheduling::Timestamps) { frame2_callback_ran = true; });
+
+  // Fences should be signaled immediately with `Now()` because nothing was on screen.
+  for (auto& fence : release_fences) {
+    EXPECT_TRUE(utils::IsEventSignalled(fence, ZX_EVENT_SIGNALED));
+  }
+  for (auto& counter : release_counters) {
+    EXPECT_TRUE(utils::IsCounterSignalled(counter, ZX_COUNTER_SIGNALED));
+    EXPECT_EQ(utils::ReadCounter(counter), Now().get());
+  }
+  EXPECT_FALSE(frame2_callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+}
+
+TEST_F(ReleaseFenceManagerTest, MarkAllFramesPresentedWithSkippedFrame) {
+  ReleaseFenceManager manager(dispatcher());
+
+  std::vector<uint64_t> callback_order;
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 1, {}, {}, {},
+      [&callback_order](scheduling::Timestamps) { callback_order.push_back(1); });
+
+  // Frame 1 is not yet presented, so both Frame 1 and skipped Frame 2 are retained, and Frame 2's
+  // carried release fences remain unsignaled until `MarkAllFramesPresented()`.
+  std::vector<zx::event> skipped_release_fences = utils::CreateEventArray(1);
+  std::vector<zx::counter> skipped_release_counters = utils::CreateCounterArray(1);
+  manager.OnSkippedFrame(
+      /*frame_number*/ 2, utils::CopyZxHandleVector(skipped_release_fences),
+      utils::CopyZxHandleVector(skipped_release_counters), {},
+      [&callback_order](scheduling::Timestamps) { callback_order.push_back(2); });
+  EXPECT_TRUE(callback_order.empty());
+  EXPECT_FALSE(utils::IsEventSignalled(skipped_release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_FALSE(utils::IsCounterSignalled(skipped_release_counters[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(manager.frame_record_count(), 2u);
+
+  // Marking all frames presented signals carried release fences, invokes callbacks in order, and
+  // erases Frame 1.
+  manager.MarkAllFramesPresented(zx::time_monotonic(1000));
+  EXPECT_EQ(callback_order, (std::vector<uint64_t>{1, 2}));
+  EXPECT_TRUE(utils::IsEventSignalled(skipped_release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_TRUE(utils::IsCounterSignalled(skipped_release_counters[0], ZX_COUNTER_SIGNALED));
+  EXPECT_EQ(utils::ReadCounter(skipped_release_counters[0]), 1000);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
 }
 
 }  // namespace flatland::test

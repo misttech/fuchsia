@@ -911,6 +911,21 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
   return RenderFrameResult::kFailure;
 }
 
+void DisplayCompositor::SkipFrame(uint64_t frame_number, std::vector<zx::event> release_fences,
+                                  std::vector<zx::counter> release_counters,
+                                  std::vector<zx::counter> present_fences,
+                                  scheduling::FramePresentedCallback callback) {
+  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
+  TRACE_DURATION("gfx", "flatland::DisplayCompositor::SkipFrame", "frame_number", frame_number);
+  if (last_frame_number_) {
+    FX_CHECK(frame_number > *last_frame_number_);
+  }
+  last_frame_number_ = frame_number;
+  release_fence_manager_.OnSkippedFrame(frame_number, std::move(release_fences),
+                                        std::move(release_counters), std::move(present_fences),
+                                        std::move(callback));
+}
+
 bool DisplayCompositor::TryDirectToDisplay(std::span<const RenderData> render_data_list,
                                            uint64_t frame_number, uint64_t trace_flow_id) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());

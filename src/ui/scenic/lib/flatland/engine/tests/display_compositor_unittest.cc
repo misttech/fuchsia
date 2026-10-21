@@ -2418,6 +2418,171 @@ TEST_F(DisplayCompositorTest,
   ExpectDisplayCleanup();
 }
 
+TEST_F(DisplayCompositorTest, RenderAfterSkippedDarkFrame) {
+  auto flatland_presenter =
+      std::make_shared<flatland::FlatlandPresenterImpl>(dispatcher(), fake_frame_scheduler_);
+  auto uber_struct_system = std::make_shared<flatland::UberStructSystem>();
+  auto link_system =
+      std::make_shared<flatland::LinkSystem>(uber_struct_system->GetNextInstanceId());
+
+  flatland::Engine engine(display_compositor_, flatland_presenter, uber_struct_system, link_system,
+                          inspect::Node(),
+                          /*get_root_transform=*/[]() -> std::optional<flatland::TransformHandle> {
+                            return std::nullopt;
+                          });
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  auto display =
+      std::make_shared<display::Display>(display::WireDisplayId{.value = kDisplayId.value()},
+                                         resolution.x, resolution.y, kMaxDisplayLayersCount);
+
+  const auto flush_coordinator_loop = [this]() {
+    libsync::Completion completion;
+    async::PostTask(display_coordinator_loop_.dispatcher(),
+                    [&completion]() { completion.Signal(); });
+    completion.Wait();
+  };
+
+  next_layer_id_ = 1;
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
+      .Times(kMaxDisplayLayersCount + 1)
+      .WillRepeatedly(testing::Invoke(
+          [this](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                     request,
+                 MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, next_layer_id_++);
+            completer.Reply(fit::ok());
+          }));
+  EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_))
+      .WillRepeatedly(Return(kPixelFormat));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).WillRepeatedly(Return());
+
+  // Register one-way coordinator expectations upfront so background FIDL dispatch on
+  // `display_coordinator_loop_` cannot race mid-test `EXPECT_CALL` registration:
+  //   - `SetDisplayLayers`: frames 1 and 3 set the direct-scanout layer; power-off sets
+  //     `kEmptySceneLayer`.
+  //   - `CheckConfig`: frame 1 and power-off check configs; frame 3 hits the config cache.
+  //   - `CommitConfig`: frame 1, power-off, and frame 3 each commit once.
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).Times(2).WillRepeatedly(Return());
+  const std::vector<display::WireLayerId> expected_empty_layers = {kEmptySceneLayer};
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      SetDisplayLayers(
+          testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId.ToFidl())),
+                         MatchRequestField(SetDisplayLayers, layer_ids,
+                                           testing::ElementsAreArray(expected_empty_layers))),
+          _))
+      .Times(1)
+      .WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(2)
+      .WillRepeatedly(
+          testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+            completer.Reply(display::WireConfigResult::kOk);
+          }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(3).WillRepeatedly(Return());
+
+  engine.AddDisplay(*display, /*num_vmos=*/0);
+  RunLoopUntilIdle();
+
+  const auto session_id = scheduling::GetNextSessionId();
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::FlatlandDisplay>::Create();
+  auto uber_struct_queue = uber_struct_system->AllocateQueueForSession(session_id);
+  auto flatland_display = FlatlandDisplay::New(
+      std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()), std::move(server_end),
+      session_id, display,
+      /*destroy_display_function=*/[] {}, flatland_presenter, link_system, uber_struct_queue);
+
+  auto uber_struct = std::make_unique<flatland::UberStruct>();
+  uber_struct->local_topology = {{flatland_display->root_transform(), 0}};
+  flatland::LayerHandle layer_handle(session_id, 1);
+  uber_struct->layer_stacks[flatland_display->root_transform()] =
+      std::pmr::vector<flatland::LayerHandle>({layer_handle}, uber_struct->resource());
+  flatland::UberStructLayer layer;
+  layer.common.display_rect = types::Rectangle::From(types::Point2({.x = 0, .y = 0}),
+                                                     types::Extent2({.width = 100, .height = 100}));
+  layer.content = flatland::UberStructLayer::SolidColorModeProperties{
+      .color = {1.f, 0.f, 0.f, 1.f},
+  };
+  uber_struct->layers[layer_handle] = layer;
+  uber_struct_queue->Push(/*present_id=*/1, std::move(uber_struct), /*recompute_view_tree=*/true);
+  uber_struct_system->ForceUpdateAllSessions();
+
+  // Frame 1: direct scanout on an active display (config stamp 1).
+  bool frame_1_callback_called = false;
+  engine.RenderScheduledFrame(
+      /*frame_number=*/1, /*presentation_time=*/zx::time(1000), flatland_display.get(),
+      [&frame_1_callback_called](const scheduling::Timestamps&) {
+        frame_1_callback_called = true;
+      });
+  EXPECT_FALSE(frame_1_callback_called);
+
+  // Power display off: commits the empty-scene config (config stamp 2) and flushes frame 1.
+  flush_coordinator_loop();
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOff, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_OK);
+  EXPECT_TRUE(display_compositor_->IsDisplayDark(kDisplayId));
+  EXPECT_TRUE(frame_1_callback_called);
+
+  // Frame 2 while dark: skips rendering, forwards fences/callback through `DisplayCompositor`, and
+  // signals both immediately because nothing of the client's is on screen.
+  auto frame_2_fences = utils::CreateEventArray(1);
+  flatland_presenter->ScheduleUpdateForSession(zx::time(0), {session_id, 2}, /*unsquashable=*/false,
+                                               utils::CopyZxHandleVector(frame_2_fences), {}, {},
+                                               /*schedule_asap=*/false);
+  RunLoopUntilIdle();
+  flatland_presenter->AccumulateFences({{session_id, 2}});
+
+  bool frame_2_callback_called = false;
+  engine.RenderScheduledFrame(
+      /*frame_number=*/2, /*presentation_time=*/zx::time(2000), flatland_display.get(),
+      [&frame_2_callback_called](const scheduling::Timestamps&) {
+        frame_2_callback_called = true;
+      });
+  EXPECT_TRUE(frame_2_callback_called);
+  EXPECT_TRUE(utils::IsEventSignalled(frame_2_fences[0], ZX_EVENT_SIGNALED));
+
+  // Power display back on.
+  flush_coordinator_loop();
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOn, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOn),
+            ZX_OK);
+  EXPECT_FALSE(display_compositor_->IsDisplayDark(kDisplayId));
+
+  // Frame 3 after power-on (config stamp 3): must succeed cleanly after the skipped dark frame,
+  // signaling its release fence immediately and invoking its callback on VSync.
+  auto frame_3_fences = utils::CreateEventArray(1);
+  flatland_presenter->ScheduleUpdateForSession(zx::time(0), {session_id, 3}, /*unsquashable=*/false,
+                                               utils::CopyZxHandleVector(frame_3_fences), {}, {},
+                                               /*schedule_asap=*/false);
+  RunLoopUntilIdle();
+  flatland_presenter->AccumulateFences({{session_id, 3}});
+
+  bool frame_3_callback_called = false;
+  engine.RenderScheduledFrame(
+      /*frame_number=*/3, /*presentation_time=*/zx::time(3000), flatland_display.get(),
+      [&frame_3_callback_called](const scheduling::Timestamps&) {
+        frame_3_callback_called = true;
+      });
+  EXPECT_TRUE(utils::IsEventSignalled(frame_3_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_FALSE(frame_3_callback_called);
+
+  SendOnVsyncEvent(display::WireConfigStamp(3));
+  EXPECT_TRUE(frame_3_callback_called);
+
+  flatland_display.reset();
+  RunLoopUntilIdle();
+  flush_coordinator_loop();
+
+  ExpectDisplayCleanup();
+}
+
 TEST_F(DisplayCompositorTest, RenderScheduledFrameWithoutDisplayClearsViewTree) {
   auto flatland_presenter =
       std::make_shared<flatland::FlatlandPresenterImpl>(dispatcher(), fake_frame_scheduler_);
