@@ -65,21 +65,42 @@ def _autoflake(
     )
 
 
-def _isort(files: Sequence[str], copy_root: Path) -> None:
+def _isort(
+    args: argparse.Namespace, files: Sequence[str], copy_root: Path
+) -> None:
     import isort
 
+    cwd = Path.cwd().resolve()
+    default_config: isort.Config | None = None
     configs: dict[str, isort.Config] = {}
     for f in files:
         # isort's config and its classification of first-party imports depend
         # on where a file lives, so sort each copy as if it were the original
         # file, like `isort --filename <f> -` does.
-        directory = os.path.dirname(f)
+        directory = os.path.dirname(f) or "."
         if directory not in configs:
             # Overriding isort's default skip list keeps it from skipping files
             # under directories with common names like "build".
-            configs[directory] = isort.Config(
-                settings_path=directory, skip=[".venvs"]
-            )
+            config = isort.Config(settings_path=directory, skip=[".venvs"])
+            # isort stops searching upward at a `.git` directory, so in a
+            # subrepo without its own config (like //vendor/google) it finds
+            # nothing in a standard checkout, whereas in a git worktree `.git`
+            # is a regular file and isort walks past the repo root. Fall back
+            # to --pyproject-toml whenever no pyproject.toml is found within
+            # the repo.
+            has_repo_config = any(
+                s.get("source", "").endswith("pyproject.toml")
+                for s in config.sources
+            ) and Path(config.directory).resolve().is_relative_to(cwd)
+            if not has_repo_config:
+                if default_config is None:
+                    default_config = isort.Config(
+                        settings_file=args.pyproject_toml,
+                        directory=str(cwd),
+                        skip=[".venvs"],
+                    )
+                config = default_config
+            configs[directory] = config
         copy = copy_root / f
         try:
             with open(copy, encoding="utf-8", newline="") as file:
@@ -140,7 +161,7 @@ def main() -> None:
         "--pyproject-toml",
         required=True,
         type=os.path.abspath,
-        help="black's config file",
+        help="default pyproject.toml config file",
     )
     parser.add_argument("--output", required=True, help="JSON output file")
     parser.add_argument("files", nargs="+", type=_relative_path)
@@ -162,7 +183,7 @@ def main() -> None:
             shutil.copyfile(f, copy_root / f)
 
         _autoflake(args, args.files, copy_root)
-        _isort(args.files, copy_root)
+        _isort(args, args.files, copy_root)
         _black(args, args.files, copy_root)
 
         formatted = {}

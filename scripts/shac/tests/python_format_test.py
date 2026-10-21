@@ -73,7 +73,9 @@ class TestPythonFormat(unittest.TestCase):
         (self.root / path).parent.mkdir(parents=True, exist_ok=True)
         (self.root / path).write_text(content)
 
-    def _run(self, *files: str) -> subprocess.CompletedProcess[str]:
+    def _run(
+        self, *files: str, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
         output = self.root / "output.json"
         output.unlink(missing_ok=True)
         res = subprocess.run(
@@ -94,7 +96,7 @@ class TestPythonFormat(unittest.TestCase):
                 output,
                 *files,
             ],
-            cwd=self.root,
+            cwd=cwd or self.root,
             capture_output=True,
             text=True,
         )
@@ -102,8 +104,8 @@ class TestPythonFormat(unittest.TestCase):
             res.stdout = output.read_text()
         return res
 
-    def _format(self, *files: str) -> dict[str, str]:
-        res = self._run(*files)
+    def _format(self, *files: str, cwd: Path | None = None) -> dict[str, str]:
+        res = self._run(*files, cwd=cwd)
         self.assertEqual(res.returncode, 0, res.stderr)
         result: dict[str, str] = json.loads(res.stdout)
         return result
@@ -138,6 +140,10 @@ class TestPythonFormat(unittest.TestCase):
         # isort must use the config closest to each original file, and treat
         # modules next to that config as first-party.
         self._write(
+            "pyproject.toml",
+            '[tool.isort]\nprofile = "black"\ndefault_section = "FIRSTPARTY"\n',
+        )
+        self._write(
             "sub/pyproject.toml",
             '[tool.isort]\nprofile = "black"\ndefault_section = "THIRDPARTY"\n',
         )
@@ -147,12 +153,52 @@ class TestPythonFormat(unittest.TestCase):
             "import local_module\nimport requests\n\n"
             "print(local_module, requests)\n",
         )
+        want = (
+            "import requests\n\nimport local_module\n\n"
+            "print(local_module, requests)\n"
+        )
+        self.assertEqual(self._format("sub/main.py"), {"sub/main.py": want})
+        # Also check a top-level file (`os.path.dirname(f) == ""`) when running
+        # in `sub/`, ensuring `./pyproject.toml` takes precedence over
+        # `--pyproject-toml`.
         self.assertEqual(
-            self._format("sub/main.py"),
-            {
-                "sub/main.py": "import requests\n\nimport local_module\n\n"
-                "print(local_module, requests)\n"
-            },
+            self._format("main.py", cwd=self.root / "sub"), {"main.py": want}
+        )
+
+    def test_subrepo_uses_default_pyproject_toml(self) -> None:
+        # A short multi-line import with a trailing comma is preserved when
+        # isort uses `profile = "black"`, but collapsed onto one line if isort
+        # falls back to its built-in defaults (`include_trailing_comma = False`).
+        # Also verify that first-party detection is rooted at the subrepo
+        # (`local_module` in `sub/vendor` is separated from third-party `foo`).
+        self._write("sub/vendor/local_module.py", "")
+        content = (
+            "from foo import (\n    bar,\n)\n\n"
+            "import local_module\n\n"
+            "print(bar, local_module)\n"
+        )
+        self._write("sub/vendor/top.py", content)
+        self._write("sub/vendor/pkg/nested.py", content)
+        # Put a conflicting config in the parent directory to verify that in a
+        # git worktree (where `.git` is a regular file), isort does not walk
+        # past the subrepo root instead of using --pyproject-toml.
+        self._write(
+            "sub/pyproject.toml",
+            "[tool.isort]\ninclude_trailing_comma = false\n",
+        )
+
+        subrepo = self.root / "sub" / "vendor"
+        # Standard checkout: `.git` is a directory.
+        (subrepo / ".git").mkdir()
+        self.assertEqual(
+            self._format("top.py", "pkg/nested.py", cwd=subrepo), {}
+        )
+
+        # Git worktree: `.git` is a regular file.
+        (subrepo / ".git").rmdir()
+        self._write("sub/vendor/.git", "gitdir: /elsewhere\n")
+        self.assertEqual(
+            self._format("top.py", "pkg/nested.py", cwd=subrepo), {}
         )
 
     def test_syntax_error(self) -> None:
