@@ -359,7 +359,6 @@ mod tests {
             }
 
             // Device-less classes.
-            assert!(root.lookup("class/powercap".into()).is_some());
             assert!(root.lookup("class/udc".into()).is_some());
         })
         .await;

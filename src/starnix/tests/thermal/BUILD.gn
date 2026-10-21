@@ -21,6 +21,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
+    "//sdk/fidl/fuchsia.power.powercap:fuchsia.power.powercap_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
@@ -35,6 +36,7 @@ rustc_binary("bin") {
   sources = [
     "src/fake_battery.rs",
     "src/fake_cpu_ctrl.rs",
+    "src/fake_powercap.rs",
     "src/main.rs",
   ]
 }

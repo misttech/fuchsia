@@ -30,6 +30,7 @@ group("tests") {
     "procfs:tests",
     "selinuxfs:tests",
     "syscalls:tests",
+    "thermal:tests",
     "tracefs:tests",
     "usbfs:tests",
   ]

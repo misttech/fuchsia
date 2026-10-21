@@ -7,6 +7,7 @@ use component_events::matcher::EventMatcher;
 use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
 use fidl_fuchsia_power_battery as fbattery;
 use fidl_fuchsia_power_cpu as fcpu;
+use fidl_fuchsia_power_powercap as fpowercap;
 use fidl_fuchsia_thermal as fthermal;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmBuilderParams, Ref, Route,
@@ -15,6 +16,7 @@ use log::info;
 
 mod fake_battery;
 mod fake_cpu_ctrl;
+mod fake_powercap;
 
 #[fuchsia::main]
 async fn main() {
@@ -149,6 +151,28 @@ async fn main() {
                 .capability(Capability::protocol::<fcpu::DomainControllerMarker>())
                 .from(&domain_controller_child)
                 .to(Ref::parent()),
+        )
+        .await
+        .unwrap();
+
+    let powercap_state = fake_powercap::FakePowercapState::new_default();
+    let powercap_mock = builder
+        .add_local_child(
+            "powercap",
+            move |handles: LocalComponentHandles| {
+                Box::pin(fake_powercap::mock_powercap_service(handles, powercap_state.clone()))
+            },
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fpowercap::ClientMarker>())
+                .from(&powercap_mock)
+                .to(Ref::child("kernel")),
         )
         .await
         .unwrap();

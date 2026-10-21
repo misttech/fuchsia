@@ -6,6 +6,7 @@
 
 mod cooling;
 mod family;
+mod powercap;
 mod thermal_zone;
 
 use crate::thermal_zone::{SensorProps, ThermalZone};
@@ -15,6 +16,7 @@ use cooling::cooling_device_init;
 use family::ThermalFamily;
 use fidl_fuchsia_hardware_temperature as ftemperature;
 use fidl_fuchsia_thermal as fthermal;
+use powercap::powercap_device_init;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
@@ -269,9 +271,11 @@ pub fn validate_args(args: &[&str]) -> Result<(), Error> {
     parse_args(args).map(|_| ())
 }
 
-/// Initializes thermal zones and optional cooling devices from module configuration `args`.
+/// Initializes thermal zones, powercap zones, and optional cooling devices from module
+/// configuration `args`.
 pub fn module_init(kernel: &Kernel, args: &[&str]) -> Result<(), Error> {
     let cooling_devices = parse_args(args)?;
+    powercap_device_init(kernel);
     thermal_device_init(kernel)?;
     cooling_device_init(kernel, cooling_devices)
 }

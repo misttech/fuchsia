@@ -62,8 +62,7 @@ impl KObjectStore {
             },
         );
 
-        // TODO(https://fxbug.dev/452096300): Populate or remove stub powercap and udc classes.
-        self.get_or_create_class("powercap".into());
+        // TODO(https://fxbug.dev/452096300): Populate or remove stub udc class.
         self.get_or_create_class("udc".into());
 
         // Board / SoC-specific stub device registrations.
@@ -294,6 +293,11 @@ impl KObjectStore {
     /// Device class used for thermal devices.
     pub fn thermal_class(&self) -> Class {
         self.get_or_create_class("thermal".into())
+    }
+
+    /// Device class used for powercap devices.
+    pub fn powercap_class(&self) -> Class {
+        self.get_or_create_class("powercap".into())
     }
 
     /// Device class used for graphics devices.

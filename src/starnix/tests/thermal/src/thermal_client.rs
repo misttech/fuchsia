@@ -37,6 +37,8 @@ fn main() {
     check_cooling_fcc_is_available();
     check_cooling_fcc();
 
+    check_powercap();
+
     let thermal_mcast_groups = check_thermal_is_available();
     let sampling_group_id =
         thermal_mcast_groups.get(THERMAL_GENL_SAMPLING_GROUP_NAME.to_str().unwrap()).unwrap();
@@ -829,4 +831,110 @@ fn check_thermal_sampling_returns_samples(sampling_group_id: u32) {
     // This assumes the thermal netlink server serves samples every 2 seconds
     // plus some buffer time for test variance.
     assert!(now.elapsed().as_secs() < 10);
+}
+
+fn check_powercap() {
+    let expected_zones = [
+        ("gpc:0", "/sys/devices/virtual/powercap/gpc:0", "gpc"),
+        ("gpc:0:0", "/sys/devices/virtual/powercap/gpc:0/gpc:0:0", "TestZone"),
+        ("gpc:0:0:0", "/sys/devices/virtual/powercap/gpc:0/gpc:0:0/gpc:0:0:0", "LITTLE"),
+        ("gpc:0:0:1", "/sys/devices/virtual/powercap/gpc:0/gpc:0:0/gpc:0:0:1", "MID"),
+        ("gpc:0:0:2", "/sys/devices/virtual/powercap/gpc:0/gpc:0:0/gpc:0:0:2", "BIG"),
+        ("gpc:0:0:3", "/sys/devices/virtual/powercap/gpc:0/gpc:0:0/gpc:0:0:3", "GPU"),
+    ];
+
+    for (zone_path, canonical_dir, expected_name) in expected_zones {
+        let class_link = format!("/sys/class/powercap/{zone_path}");
+        let meta = std::fs::symlink_metadata(&class_link).unwrap();
+        assert!(
+            meta.file_type().is_symlink(),
+            "Expected {class_link} to be a DT_LNK symlink for ThermalHelperImpl"
+        );
+        assert_eq!(
+            std::path::PathBuf::from(canonical_dir),
+            std::fs::canonicalize(&class_link).unwrap()
+        );
+        assert_eq!(format!("{expected_name}\n"), read_sysfs(&format!("{class_link}/name")));
+        assert_eq!(format!("{expected_name}\n"), read_sysfs(&format!("{canonical_dir}/name")));
+    }
+
+    // Invalid, duplicate, orphaned, and cyclic nodes returned by `GetPowercapTree` must be skipped.
+    for rejected in [
+        "gpc:missing-id",
+        "gpc:missing-name",
+        "gpc:dup-id",
+        "gpc:orphan",
+        "gpc:cycle-a",
+        "gpc:cycle-b",
+        "name",
+        "uevent",
+    ] {
+        assert!(
+            !std::fs::exists(format!("/sys/class/powercap/{rejected}")).unwrap(),
+            "Expected rejected zone {rejected} to be absent from /sys/class/powercap"
+        );
+    }
+
+    // `PowercapError::Internal` from `GetPowerLimit` on `gpc:0` maps to `EIO`.
+    let read_err = std::fs::read("/sys/class/powercap/gpc:0/constraint_0_power_limit_uw")
+        .expect_err("Expected EIO when reading gpc:0 constraint_0_power_limit_uw");
+    assert_eq!(read_err.raw_os_error(), Some(libc::EIO));
+
+    // Intermediate aggregator zone (`gpc:0:0`) exposes constraint limits but no discrete power
+    // levels or bypass timer.
+    assert_eq!("TestConstraint\n", read_sysfs("/sys/class/powercap/gpc:0:0/constraint_0_name"));
+    assert_eq!("15000000\n", read_sysfs("/sys/class/powercap/gpc:0:0/constraint_0_max_power_uw"));
+    assert_eq!("1150000\n", read_sysfs("/sys/class/powercap/gpc:0:0/constraint_0_min_power_uw"));
+    assert_eq!("15000000\n", read_sysfs("/sys/class/powercap/gpc:0:0/constraint_0_power_limit_uw"));
+    assert!(!std::fs::exists("/sys/class/powercap/gpc:0:0/power_levels_uw").unwrap());
+    assert!(!std::fs::exists("/sys/class/powercap/gpc:0:0/power_limit_bypass_msec").unwrap());
+
+    // Leaf zone (`gpc:0:0:2` / `BIG`) exposes discrete power levels, writable power limit, and
+    // writable bypass timer.
+    const BIG_CLASS: &str = "/sys/class/powercap/gpc:0:0:2";
+    const BIG_DEV: &str = "/sys/devices/virtual/powercap/gpc:0/gpc:0:0/gpc:0:0:2";
+    assert_eq!("TestConstraint\n", read_sysfs(&format!("{BIG_CLASS}/constraint_0_name")));
+    assert_eq!("4565000\n", read_sysfs(&format!("{BIG_CLASS}/constraint_0_max_power_uw")));
+    assert_eq!("400000\n", read_sysfs(&format!("{BIG_CLASS}/constraint_0_min_power_uw")));
+    assert_eq!(
+        "4565000 3500000 2200000 1100000 400000\n",
+        read_sysfs(&format!("{BIG_CLASS}/power_levels_uw"))
+    );
+    assert_eq!("4565000\n", read_sysfs(&format!("{BIG_CLASS}/constraint_0_power_limit_uw")));
+
+    // Write a new power limit via `/sys/class/powercap` and read back via both paths.
+    std::fs::write(format!("{BIG_CLASS}/constraint_0_power_limit_uw"), "2200000").unwrap();
+    assert_eq!("2200000\n", read_sysfs(&format!("{BIG_CLASS}/constraint_0_power_limit_uw")));
+    assert_eq!("2200000\n", read_sysfs(&format!("{BIG_DEV}/constraint_0_power_limit_uw")));
+
+    // Invalid writes to `constraint_0_power_limit_uw` must fail with EINVAL and preserve the limit,
+    // and `PowercapError::Internal` must map to `EIO`.
+    let mut limit_file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(format!("{BIG_CLASS}/constraint_0_power_limit_uw"))
+        .unwrap();
+    let err = limit_file.write_all(b"invalid").unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
+    let internal_err = limit_file.write_all(u64::MAX.to_string().as_bytes()).unwrap_err();
+    assert_eq!(internal_err.raw_os_error(), Some(libc::EIO));
+    assert_eq!("2200000\n", read_sysfs(&format!("{BIG_CLASS}/constraint_0_power_limit_uw")));
+
+    // Exercise `power_limit_bypass_msec` (used by PowerHAL `CPU_LOAD_SPIKE` / `LAUNCH` hints).
+    assert_eq!("0\n", read_sysfs(&format!("{BIG_CLASS}/power_limit_bypass_msec")));
+    std::fs::write(format!("{BIG_CLASS}/power_limit_bypass_msec"), "100\n").unwrap();
+    assert_eq!("100\n", read_sysfs(&format!("{BIG_CLASS}/power_limit_bypass_msec")));
+    assert_eq!("100\n", read_sysfs(&format!("{BIG_DEV}/power_limit_bypass_msec")));
+
+    let mut bypass_file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(format!("{BIG_CLASS}/power_limit_bypass_msec"))
+        .unwrap();
+    let err = bypass_file.write_all(b"not_a_number").unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
+    let internal_err = bypass_file.write_all(u64::MAX.to_string().as_bytes()).unwrap_err();
+    assert_eq!(internal_err.raw_os_error(), Some(libc::EIO));
+    assert_eq!("100\n", read_sysfs(&format!("{BIG_CLASS}/power_limit_bypass_msec")));
+
+    std::fs::write(format!("{BIG_CLASS}/power_limit_bypass_msec"), "0").unwrap();
+    assert_eq!("0\n", read_sysfs(&format!("{BIG_CLASS}/power_limit_bypass_msec")));
 }
