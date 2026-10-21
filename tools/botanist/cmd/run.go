@@ -96,6 +96,11 @@ type RunCommand struct {
 	// The scale factor to multiply test timeouts by. This may be set if the bot environment
 	// is known to be slower than usual.
 	testTimeoutScaleFactor int
+
+	// ffxMonitorExitTimeout is the upper-bound timeout to wait for the ffx monitor
+	// process to exit cleanly after cancellation. If unset, defaults to
+	// defaultFFXMonitorExitTimeout in getFFXMonitorExitTimeout().
+	ffxMonitorExitTimeout time.Duration
 }
 
 func (*RunCommand) Name() string {
@@ -447,40 +452,52 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 			// errgroup context is cancelled. This ensures that we can gracefully stop
 			// the monitor and flush logs.
 			monitorCtx, cancelMonitor := context.WithCancel(botanist.GetLoggerCtx(ctx))
+			monitorDone := make(chan struct{})
 
 			// Stop the ffx monitor when done
 			defer func() {
 				// Use a separate timeout context for stopping
 				stopCtx, cancelStop := context.WithTimeout(botanist.GetLoggerCtx(ctx), time.Minute)
 				defer cancelStop()
-				if err := ffx.StopFFXMonitor(stopCtx); err != nil {
-					logger.Errorf(ctx, "failed to stop ffx monitor: %s", err)
+				stopErr := ffx.StopFFXMonitor(stopCtx)
+				if stopErr != nil {
+					logger.Errorf(ctx, "failed to stop ffx monitor: %s", stopErr)
 				} else {
 					logger.Debugf(ctx, "ffx monitor stopped")
-					// TODO(https://fxbug.dev/489556654): Move the writing of the summary.json to botanist
-					// Update summary.json to include the monitor aggregation file.
-					summaryPath := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), r.testrunnerOptions.OutDir, runtests.TestSummaryFilename)
-					if data, err := os.ReadFile(summaryPath); err == nil {
-						var summary runtests.TestSummary
-						if err := json.Unmarshal(data, &summary); err == nil {
-							summary.Tests = append(summary.Tests, runtests.TestDetails{
-								Name:      monitorName,
-								Status:    runtests.TestSuccess,
-								StartTime: time.Now(),
-								TestResult: runtests.TestResult{
-									OutputDir:   monitorName,
-									OutputFiles: []string{aggregationFilename},
-								},
-							})
-							if err := jsonutil.WriteToFile(summaryPath, summary); err != nil {
-								logger.Errorf(ctx, "failed to write updated summary.json: %s", err)
+				}
+				cancelMonitor()
+				timer := time.NewTimer(r.getFFXMonitorExitTimeout())
+				defer timer.Stop()
+				select {
+				case <-monitorDone:
+					if stopErr == nil {
+						// TODO(https://fxbug.dev/489556654): Move the writing of the summary.json to botanist
+						// Update summary.json to include the monitor aggregation file.
+						summaryPath := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), r.testrunnerOptions.OutDir, runtests.TestSummaryFilename)
+						if data, err := os.ReadFile(summaryPath); err == nil {
+							var summary runtests.TestSummary
+							if err := json.Unmarshal(data, &summary); err == nil {
+								summary.Tests = append(summary.Tests, runtests.TestDetails{
+									Name:      monitorName,
+									Status:    runtests.TestSuccess,
+									StartTime: time.Now(),
+									TestResult: runtests.TestResult{
+										OutputDir:   monitorName,
+										OutputFiles: []string{aggregationFilename},
+									},
+								})
+								if err := jsonutil.WriteToFile(summaryPath, summary); err != nil {
+									logger.Errorf(ctx, "failed to write updated summary.json: %s", err)
+								}
 							}
 						}
 					}
+				case <-timer.C:
+					logger.Warningf(ctx, "timed out waiting for ffx monitor to exit")
 				}
-				cancelMonitor()
 			}()
 			go func() {
+				defer close(monitorDone)
 				logDir := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), r.testrunnerOptions.OutDir, monitorName)
 				logFile := filepath.Join(logDir, logFileName)
 				aggregationsFile := filepath.Join(logDir, aggregationFilename)
@@ -951,6 +968,23 @@ func (r *RunCommand) deriveTargetsFromFile(ctx context.Context, targetOpts targe
 	}
 
 	return baseTargets, fuchsiaTargets, nil
+}
+
+const defaultFFXMonitorExitTimeout = 12 * time.Second
+
+// getFFXMonitorExitTimeout returns the timeout to wait for the ffx monitor
+// process to exit cleanly after cancellation.
+//
+// Note: testTimeoutScaleFactor is intentionally not applied here. That scale
+// factor exists to compensate for in-guest software CPU emulation (e.g. QEMU
+// with TCG), whereas ffx monitor is a host-side process running directly on
+// the bot where defaultFFXMonitorExitTimeout is always sufficient for
+// SIGTERM/SIGKILL teardown.
+func (r *RunCommand) getFFXMonitorExitTimeout() time.Duration {
+	if r.ffxMonitorExitTimeout > 0 {
+		return r.ffxMonitorExitTimeout
+	}
+	return defaultFFXMonitorExitTimeout
 }
 
 // getBootTimeout returns the boot timeout scaled by testTimeoutScaleFactor if set.

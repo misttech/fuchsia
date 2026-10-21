@@ -14,8 +14,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -101,6 +103,23 @@ func (m *MockTarget) UseFFXExperiment(exp botanist.Experiment) bool {
 func (m *MockTarget) UseProductBundles() bool { return false }
 func (m *MockTarget) FFXEnv() []string        { return nil }
 func (m *MockTarget) GetSharedData() string   { return "" }
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
 
 func TestStartFFXMonitor(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -213,6 +232,116 @@ func TestStartFFXMonitor(t *testing.T) {
 	}
 	if !found {
 		t.Error("ffx_monitor entry not found in summary.json")
+	}
+}
+
+func TestStartFFXMonitorShutdownWait(t *testing.T) {
+	newFFXTarget := func(t *testing.T, tmpDir, script string) *MockTarget {
+		t.Helper()
+		ffxPath := filepath.Join(tmpDir, "ffx")
+		if err := os.WriteFile(ffxPath, []byte(script), 0o755); err != nil {
+			t.Fatalf("failed to write mock ffx tool: %v", err)
+		}
+		sshPriv := filepath.Join(tmpDir, "ssh_priv")
+		sshPub := filepath.Join(tmpDir, "ssh_pub")
+		if err := os.WriteFile(sshPriv, []byte("PRIVATE KEY"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(sshPub, []byte("PUBLIC KEY"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		ffxInstance, err := ffxutil.NewFFXInstance(context.Background(), ffxPath, tmpDir, nil, "target", &ffxutil.SSHInfo{SshPriv: sshPriv, SshPub: sshPub}, tmpDir, ffxutil.UseFFXLegacy)
+		if err != nil {
+			t.Fatalf("failed to create ffx instance: %s", err)
+		}
+		ffxInstance.SetStdoutStderr(io.Discard, io.Discard)
+		return &MockTarget{ffx: &targets.FFXInstance{FFXInstance: ffxInstance}}
+	}
+
+	tests := []struct {
+		name               string
+		timeout            time.Duration
+		script             string
+		markerFile         string
+		wantTimeoutWarning bool
+		cleanup            func(t *testing.T, tmpDir string)
+	}{
+		{
+			name:       "waits for monitor exit before returning",
+			markerFile: "flushed.txt",
+			script: `#!/bin/bash
+if [[ "$*" == *"monitor start"* ]]; then
+  trap 'sleep 0.2; printf flushed > flushed.txt; exit 0' TERM
+  while true; do sleep 5 & wait $!; done
+fi
+`,
+		},
+		{
+			name:               "timeout does not hang when monitor ignores cancellation",
+			timeout:            300 * time.Millisecond,
+			wantTimeoutWarning: true,
+			script: `#!/bin/bash
+if [[ "$*" == *"monitor stop"* ]]; then
+  exit 0
+fi
+if [[ "$*" == *"monitor start"* ]]; then
+  echo $$ > monitor.pid
+  trap '' TERM
+  while true; do sleep 5 & wait $!; done
+fi
+`,
+			cleanup: func(t *testing.T, tmpDir string) {
+				t.Helper()
+				pidBytes, err := os.ReadFile(filepath.Join(tmpDir, "monitor.pid"))
+				if err != nil {
+					return
+				}
+				if pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes))); err == nil && pid > 1 {
+					// Kill the process group to ensure the sleep and script terminate immediately.
+					_ = syscall.Kill(-pid, syscall.SIGKILL)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			t.Setenv(testrunnerconstants.TestOutDirEnvKey, tmpDir)
+
+			target := newFFXTarget(t, tmpDir, tc.script)
+
+			if tc.cleanup != nil {
+				t.Cleanup(func() {
+					tc.cleanup(t, tmpDir)
+				})
+			}
+
+			var logBuf syncBuffer
+			logCtx := logger.WithLogger(context.Background(), logger.NewLogger(logger.DebugLevel, color.NewColor(color.ColorNever), &logBuf, &logBuf, ""))
+
+			cmd := &RunCommand{
+				expectsSSH:            true,
+				productBundles:        "test-bundles",
+				productBundleName:     "test-bundle-name",
+				ffxMonitorExitTimeout: tc.timeout,
+			}
+			eg, ctx := errgroup.WithContext(logCtx)
+			cmd.dispatchTests(ctx, func() {}, eg, nil, []targets.FuchsiaTarget{target}, target, nil, "invalid-tests-path", make(botanist.Experiments))
+			_ = eg.Wait()
+
+			if tc.markerFile != "" {
+				got, err := os.ReadFile(filepath.Join(tmpDir, tc.markerFile))
+				if err != nil || string(got) != "flushed" {
+					t.Fatalf("expected monitor flush marker before dispatchTests returned, got %q (err=%v)", string(got), err)
+				}
+			}
+
+			hasTimeout := strings.Contains(logBuf.String(), "timed out waiting for ffx monitor to exit")
+			if tc.wantTimeoutWarning != hasTimeout {
+				t.Errorf("got timeout warning = %v, want %v (logs: %s)", hasTimeout, tc.wantTimeoutWarning, logBuf.String())
+			}
+		})
 	}
 }
 
