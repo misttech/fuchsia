@@ -112,8 +112,8 @@ exposed as Starlark constants via `@fuchsia_build_info//:args.bzl` or
 ### Category 3: Target Platform, OS, and CPU Variables (Port via `select()`)
 
 When a `config()` branches on target OS or CPU variables (`current_os`,
-`current_cpu`, `is_fuchsia`, `is_linux`, `is_host`, `rust_target`), use Bazel
-`select()` expressions on `build_flags()` attributes:
+`current_cpu`, `is_fuchsia`, `is_linux`, `is_host`, `current_target_tuple`), use
+Bazel `select()` expressions on `build_flags()` attributes:
 
 1.  **OS Conditions (`current_os`, `is_fuchsia`, `is_linux`, `is_host`)**:
     - `is_fuchsia` or `current_os == "fuchsia"`:
@@ -151,7 +151,8 @@ When a `config()` branches on target OS or CPU variables (`current_os`,
     - `current_cpu == "arm64"` -> `"@platforms//cpu:arm64"`
     - `current_cpu == "riscv64"` -> `"@platforms//cpu:riscv64"`
 
-3.  **Combined `(current_os, current_cpu)` Conditions (e.g., `rust_target`)**:
+3.  **Combined `(current_os, current_cpu)` Conditions (e.g.,
+    `current_target_tuple`)**:
     - `//build/bazel/platforms/BUILD.bazel` provides composite `config_setting`
       targets for every `(os, cpu)` pair:
       - `//build/bazel/platforms:is_fuchsia_x64`
@@ -170,24 +171,25 @@ When a `config()` branches on target OS or CPU variables (`current_os`,
       dictionary value should be a flag list:
 
      ```python
-     # //build/bazel/config/derived/rust_target.bzl
-     rust_target_flags__select_args = {
-         "//build/bazel/platforms:is_fuchsia_x64": ["--target", "x86_64-unknown-fuchsia"],
-         "//build/bazel/platforms:is_fuchsia_arm64": ["--target", "aarch64-unknown-fuchsia"],
-         "//build/bazel/platforms:is_fuchsia_riscv64": ["--target", "riscv64gc-unknown-fuchsia"],
-         "//build/bazel/platforms:is_linux_x64": ["--target", "x86_64-unknown-linux-gnu"],
-         "//build/bazel/platforms:is_linux_arm64": ["--target", "aarch64-unknown-linux-gnu"],
+     # //build/bazel/config/derived/current_target_tuple.bzl
+     current_target_tuple_flags__select_args = {
+         "//build/bazel/platforms:is_fuchsia_x64": ["--target=x86_64-unknown-fuchsia"],
+         "//build/bazel/platforms:is_fuchsia_arm64": ["--target=aarch64-unknown-fuchsia"],
+         "//build/bazel/platforms:is_fuchsia_riscv64": ["--target=riscv64-unknown-fuchsia"],
+         "//build/bazel/platforms:is_linux_x64": ["--target=x86_64-unknown-linux-gnu"],
+         "//build/bazel/platforms:is_linux_arm64": ["--target=aarch64-unknown-linux-gnu"],
      }
      ```
 
       Then pass the dictionary to `select()` in `BUILD.bazel`:
 
      ```python
-     load("//build/bazel/config/derived:rust_target.bzl", "rust_target_flags__select_args")
+     load("//build/bazel/config/derived:current_target_tuple.bzl", "current_target_tuple_flags__select_args")
 
      build_flags(
-         name = "target",
-         rustflags = select(rust_target_flags__select_args),
+         name = "compiler_target",
+         cflags = select(current_target_tuple_flags__select_args),
+         ldflags = select(current_target_tuple_flags__select_args),
          visibility = ["//visibility:public"],
      )
      ```
@@ -246,6 +248,22 @@ no direct Bazel equivalent and require a distinct Bazel-specific design:
       ["//", root_gen_dir]`) or `//build/config/linux:sysroot`
       (`rebase_path(sysroot, root_build_dir)`) depend on Ninja's output
       directory layout and cannot be ported 1-to-1 to `build_flags()`.
+3.  **Bazel Toolchain-Intrinsic or Unsupported Configs (Port as Empty No-Op
+    `build_flags()`)**:
+    - Some GN `config()` targets control flags that are intrinsically managed by
+      the Bazel toolchain rules or are incompatible with Bazel's execution
+      model. Port these as empty `build_flags(name = "<name>", ...)` targets
+      with an explanatory comment so default config discovery remains 1-to-1
+      between GN and Bazel:
+      - `//build/config/rust:target`: In Bazel, `@rules_rust`'s
+        `rust_toolchain()` unconditionally emits `--target=<triple>`, and
+        `rustc` rejects duplicate `--target` flags (`error: Option 'target'
+        given more than once`).
+      - `//build/config/rust:error_format_human`: `@rules_rust` controls
+        `--error-format` via its `error_format` setting and process wrapper.
+      - `//build/config/rust:incremental`: Rust incremental compilation
+        (`-Cincremental=...`) is incompatible with Bazel's sandboxed and remote
+        execution model.
 
 ---
 
