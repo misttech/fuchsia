@@ -97,7 +97,6 @@ pub(crate) mod tests {
 
     pub struct SimpleCheck(pub bool);
 
-    #[async_trait(?Send)]
     impl CheckEnv for SimpleCheck {
         async fn check_env(self, _env: &FhoEnvironment) -> Result<()> {
             SIMPLE_CHECK_COUNTER.with(|counter| *counter.borrow_mut() += 1);

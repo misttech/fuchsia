@@ -3,19 +3,17 @@
 // found in the LICENSE file.
 
 use crate::FhoEnvironment;
-use async_trait::async_trait;
 use ffx_command_error::{Result, return_user_error};
+use std::future::Future;
 
-#[async_trait(?Send)]
 pub trait CheckEnv {
-    async fn check_env(self, env: &FhoEnvironment) -> Result<()>;
+    fn check_env(self, env: &FhoEnvironment) -> impl Future<Output = Result<()>>;
 }
 
 /// Checks if the experimental config flag is set. This gates the execution of the command.
 /// If the flag is set to `true`, this returns `Ok(())`, else returns an error.
 pub struct AvailabilityFlag<T>(pub T);
 
-#[async_trait(?Send)]
 impl<T: AsRef<str>> CheckEnv for AvailabilityFlag<T> {
     async fn check_env(self, env: &FhoEnvironment) -> Result<()> {
         let flag = self.0.as_ref();
