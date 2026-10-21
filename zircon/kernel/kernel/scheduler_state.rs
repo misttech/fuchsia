@@ -184,22 +184,6 @@ impl SchedulerStateBaseProfile {
     }
 }
 
-/// An opaque type representing the C++ `SchedulerState::WaitQueueInheritedSchedulerState`
-/// struct.
-#[repr(C)]
-pub struct WaitQueueInheritedSchedulerState {
-    raw: zr::Opaque<bindings::SchedulerState_WaitQueueInheritedSchedulerState>,
-}
-
-zr::static_assert!(
-    size_of::<WaitQueueInheritedSchedulerState>()
-        == size_of::<bindings::SchedulerState_WaitQueueInheritedSchedulerState>()
-);
-zr::static_assert!(
-    align_of::<WaitQueueInheritedSchedulerState>()
-        == align_of::<bindings::SchedulerState_WaitQueueInheritedSchedulerState>()
-);
-
 /// An opaque type representing the C++ `SchedulerState::EffectiveProfile` struct.
 #[repr(C)]
 pub struct SchedulerStateEffectiveProfile {

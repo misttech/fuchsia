@@ -10,7 +10,8 @@ use crate::kconcurrent::{
 };
 use crate::kernel::deadline::Deadline;
 pub use crate::kernel::scheduler_state::SchedulerStateEffectiveProfile;
-use crate::kernel::scheduler_state::{SchedulerStateBaseProfile, WaitQueueInheritedSchedulerState};
+use crate::kernel::scheduler::WaitQueueInheritedSchedulerState;
+use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
 use crate::kernel::thread::{PreemptDisabledToken, Thread, ThreadPtr};
 use crate::kernel::wait_queue::{
     ForceInheritance, Interruptible, ResourceOwnership, WaitQueueBase, WaitQueueCollection,

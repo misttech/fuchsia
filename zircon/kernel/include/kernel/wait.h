@@ -42,6 +42,13 @@ enum class ForceInheritance : bool { No, Yes };
 extern "C" {
 void cpp_wait_queue_collection_insert(WaitQueueCollection* collection, Thread* thread);
 void cpp_wait_queue_collection_remove(WaitQueueCollection* collection, Thread* thread);
+SchedDuration cpp_wait_queue_collection_min_inheritable_relative_deadline(
+    const WaitQueueCollection* collection);
+SchedulerState::WaitQueueInheritedSchedulerState*
+cpp_wait_queue_collection_find_inherited_scheduler_state_storage(WaitQueueCollection* collection);
+Thread* cpp_wait_queue_collection_threads_begin(const WaitQueueCollection* collection);
+Thread* cpp_wait_queue_collection_threads_next(const WaitQueueCollection* collection,
+                                               const Thread* thread);
 bool cpp_wait_queue_lock_ops_lock_for_wake_all_in_queue(WaitQueue* queue,
                                                         zx_status_t wait_queue_error,
                                                         void* unblock_list_out);

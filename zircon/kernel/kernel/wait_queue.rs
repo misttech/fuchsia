@@ -12,8 +12,8 @@ use crate::kconcurrent::{
 };
 use crate::kernel::deadline::Deadline;
 use crate::kernel::owned_wait_queue::{OWNED_MAGIC, OwnedWaitQueue, ThreadUnblockList};
-use crate::kernel::scheduler;
-use crate::kernel::scheduler_state::{ThreadStateKind, WaitQueueInheritedSchedulerState};
+use crate::kernel::scheduler::{self, SchedDuration, WaitQueueInheritedSchedulerState};
+use crate::kernel::scheduler_state::ThreadStateKind;
 use crate::kernel::thread::{PreemptDisabledToken, Thread, ThreadLockClass, ThreadPtr};
 use crate::kernel::timer::{Timer, ZX_CLOCK_MONOTONIC};
 use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
@@ -247,7 +247,12 @@ pub struct ThreadState {
     interruptible: KCell<Interruptible, ThreadLockClass>,
     /// Storage used by an `OwnedWaitQueue`, but held within a thread instance, while that thread
     /// is blocked in the wait queue.
-    inherited_scheduler_state_storage: WaitQueueInheritedSchedulerState,
+    // Safety invariant: Accessed only through raw pointers (Rust's
+    // `inherited_scheduler_state_storage()`, or C++'s `&inherited_scheduler_state_storage_`).
+    // While the thread is blocked in an `OwnedWaitQueue`, it is accessed only while holding that
+    // queue's lock (whether or not the queue currently uses it as its storage); otherwise it is
+    // accessed only while holding the enclosing `Thread`'s lock.
+    inherited_scheduler_state_storage: UnsafeCell<WaitQueueInheritedSchedulerState>,
 }
 
 /// Alias for [`ThreadState`].
@@ -354,6 +359,14 @@ impl ThreadState {
         // SAFETY: `token` proves the enclosing `Thread`'s lock is exclusively held.
         *unsafe { self.interruptible.get_mut(token) } = interruptible;
     }
+
+    /// Returns a pointer to the storage used by an `OwnedWaitQueue`, but held within this thread,
+    /// while the thread is blocked in the wait queue.
+    #[inline]
+    pub fn inherited_scheduler_state_storage(&self) -> NonNull<WaitQueueInheritedSchedulerState> {
+        // SAFETY: `UnsafeCell::get` never returns a null pointer.
+        unsafe { NonNull::new_unchecked(self.inherited_scheduler_state_storage.get()) }
+    }
 }
 
 impl Drop for ThreadState {
@@ -393,6 +406,12 @@ impl WaitQueueCollection {
         })
     }
 
+    /// Returns a raw pointer to the underlying C++ `WaitQueueCollection`.
+    #[inline]
+    fn as_raw(&self) -> *const bindings::WaitQueueCollection {
+        core::ptr::from_ref(self).cast()
+    }
+
     /// Returns a raw mutable pointer to the underlying C++ `WaitQueueCollection`.
     #[inline]
     fn as_raw_mut(&mut self) -> *mut bindings::WaitQueueCollection {
@@ -419,10 +438,54 @@ impl WaitQueueCollection {
         self.threads.is_empty()
     }
 
+    /// The current minimum inheritable relative deadline of the set of blocked threads.
+    #[inline]
+    pub fn min_inheritable_relative_deadline(&self) -> SchedDuration {
+        // SAFETY: `self.as_raw()` is valid, and callers obtain `&WaitQueueCollection` through a
+        // `ChainLockProof` for the enclosing wait queue, which synchronizes access to the threads
+        // in the collection.
+        SchedDuration::from_raw(unsafe {
+            bindings::cpp_wait_queue_collection_min_inheritable_relative_deadline(self.as_raw())
+        })
+    }
+
     /// Peeks at the first [`Thread`] in the collection.
     #[inline]
     pub fn peek_front(&self) -> Option<ThreadPtr> {
         self.threads.front().map(ThreadPtr::from)
+    }
+
+    /// Returns the inherited scheduler state storage of the last [`Thread`] in the collection, or
+    /// `None` if the collection is empty.
+    #[inline]
+    pub fn find_inherited_scheduler_state_storage(
+        &mut self,
+    ) -> Option<NonNull<WaitQueueInheritedSchedulerState>> {
+        // SAFETY: `self.as_raw_mut()` is valid, and callers obtain `&mut WaitQueueCollection`
+        // through a `ChainLockProof` for the enclosing wait queue, which synchronizes access to
+        // the threads in the collection.
+        NonNull::new(
+            unsafe {
+                bindings::cpp_wait_queue_collection_find_inherited_scheduler_state_storage(
+                    self.as_raw_mut(),
+                )
+            }
+            .cast(),
+        )
+    }
+
+    /// Returns an iterator over the [`Thread`]s in the collection.
+    #[inline]
+    pub fn threads(&self) -> WaitQueueCollectionThreads<'_> {
+        // SAFETY: `self.as_raw()` is valid, and callers obtain `&WaitQueueCollection` through a
+        // `ChainLockProof` for the enclosing wait queue. If non-null, the returned pointer points
+        // to a live `Thread` in the collection.
+        let next = unsafe {
+            ThreadPtr::from_raw(
+                bindings::cpp_wait_queue_collection_threads_begin(self.as_raw()).cast(),
+            )
+        };
+        WaitQueueCollectionThreads { collection: self, next }
     }
 
     /// Adds the [`Thread`] into its sorted location in the collection.
@@ -469,6 +532,34 @@ impl WaitQueueCollection {
                 thread.owner().as_raw().cast(),
             );
         }
+    }
+}
+
+/// An iterator over the [`Thread`]s in a [`WaitQueueCollection`].
+pub struct WaitQueueCollectionThreads<'a> {
+    collection: &'a WaitQueueCollection,
+    next: Option<ThreadPtr>,
+}
+
+impl Iterator for WaitQueueCollectionThreads<'_> {
+    type Item = ThreadPtr;
+
+    #[inline]
+    fn next(&mut self) -> Option<ThreadPtr> {
+        let current = self.next?;
+        // SAFETY: `current` is a member of `self.collection`, which cannot change while it is
+        // borrowed (and its wait queue's lock is held). If non-null, the returned pointer points
+        // to a live `Thread` in the collection.
+        self.next = unsafe {
+            ThreadPtr::from_raw(
+                bindings::cpp_wait_queue_collection_threads_next(
+                    self.collection.as_raw(),
+                    current.as_ptr().cast(),
+                )
+                .cast(),
+            )
+        };
+        Some(current)
     }
 }
 
