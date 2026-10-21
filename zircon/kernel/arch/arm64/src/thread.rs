@@ -46,3 +46,14 @@ pub(super) unsafe fn thread_arch(thread: *mut Thread) -> *mut ArchThread {
     // SAFETY: the caller guarantees `thread`, and the facade only offsets the pointer.
     unsafe { get_arch(thread).cast() }
 }
+
+/// [`thread_arch`] for a `*const Thread`, whose arch state is only read.
+///
+/// # Safety
+///
+/// As for [`thread_arch`].
+#[inline(always)]
+pub(super) unsafe fn thread_arch_const(thread: *const Thread) -> *const ArchThread {
+    // SAFETY: As for `thread_arch`, which only offsets the pointer: nothing is written through it.
+    unsafe { thread_arch(thread.cast_mut()) }.cast_const()
+}

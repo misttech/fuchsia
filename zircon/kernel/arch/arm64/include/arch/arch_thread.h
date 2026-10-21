@@ -19,6 +19,13 @@
 #define CURRENT_MDSCR_OFFSET 48
 #endif
 
+// Offsets of the fields of struct fpstate.
+#define FPSTATE_REGS_OFFSET 0
+#define FPSTATE_FPCR_OFFSET 512
+#define FPSTATE_FPSR_OFFSET 516
+#define FPSTATE_P_REGS_OFFSET 520
+#define FPSTATE_FFR_OFFSET 552
+
 #ifndef __ASSEMBLER__
 
 #include <stddef.h>
@@ -142,6 +149,19 @@ static_assert(thread_pointer_offsetof(shadow_call_sp) == CURRENT_SCSP_OFFSET,
 static_assert(CURRENT_SCSP_OFFSET == CURRENT_PERCPU_PTR_OFFSET + 8,
               "shadow call stack pointer not immediately after percpu");
 #endif
+
+static_assert(offsetof(struct fpstate, regs) == FPSTATE_REGS_OFFSET,
+              "fpstate regs offset in wrong place");
+static_assert(sizeof(fpstate::regs) == 16 * 32, "fpstate regs not the size of q0-q31");
+static_assert(offsetof(struct fpstate, fpcr) == FPSTATE_FPCR_OFFSET,
+              "fpstate fpcr offset in wrong place");
+static_assert(offsetof(struct fpstate, fpsr) == FPSTATE_FPSR_OFFSET,
+              "fpstate fpsr offset in wrong place");
+static_assert(offsetof(struct fpstate, p_regs) == FPSTATE_P_REGS_OFFSET,
+              "fpstate p_regs offset in wrong place");
+static_assert(sizeof(fpstate::p_regs) == 16 * 2, "fpstate p_regs not the size of p0-p15");
+static_assert(offsetof(struct fpstate, ffr) == FPSTATE_FFR_OFFSET,
+              "fpstate ffr offset in wrong place");
 
 #endif  // __ASSEMBLER__
 

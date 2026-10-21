@@ -7,6 +7,7 @@
 pub mod cache;
 mod crashlog;
 mod feature;
+mod fpu;
 mod mp;
 mod periphmap;
 mod registers;

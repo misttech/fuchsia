@@ -99,7 +99,7 @@ if (toolchain_environment == "kernel.phys" ||
       "debugger.cc",
       "exceptions.S",
       "exceptions_c.cc",
-      "fpu.cc",
+      "fpu_asm.S",
       "handoff.cc",
       "mmu.cc",
       "mp.cc",
@@ -282,6 +282,11 @@ if (toolchain_environment == "kernel.phys" ||
       "ARM64_MAX_HW_WATCHPOINTS",
       "CURRENT_MDSCR_OFFSET",
       "CURRENT_PERCPU_PTR_OFFSET",
+      "FPSTATE_FFR_OFFSET",
+      "FPSTATE_FPCR_OFFSET",
+      "FPSTATE_FPSR_OFFSET",
+      "FPSTATE_P_REGS_OFFSET",
+      "FPSTATE_REGS_OFFSET",
     ]
     explicit_padding = false
     expect_lints = [ "non_camel_case_types" ]
@@ -314,6 +319,7 @@ if (toolchain_environment == "kernel.phys" ||
       "src/cache.rs",
       "src/crashlog.rs",
       "src/feature.rs",
+      "src/fpu.rs",
       "src/mod.rs",
       "src/mp.rs",
       "src/periphmap.rs",
