@@ -127,6 +127,9 @@ impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
         let scope = if driver.suspend_enabled() {
             let scope = fasync::Scope::new_with_name("suspend");
             if let Some(runner) = runner.take() {
+                let runner = fidl::endpoints::ServerEnd::<fpower_broker::ElementRunnerMarker>::new(
+                    runner.into_untyped(),
+                );
                 let weak_driver = Arc::downgrade(&driver);
                 scope.spawn(
                     async move { run_element_runner(weak_driver, runner.into_stream()).await },

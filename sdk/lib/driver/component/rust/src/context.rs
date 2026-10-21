@@ -13,7 +13,7 @@ use namespace::Namespace;
 use zx::Status;
 
 use fdf::AsyncDispatcher;
-use fidl_fuchsia_driver_framework::DriverStartArgs;
+use fidl_next_fuchsia_driver_framework::DriverStartArgs;
 
 pub use fuchsia_inspect_contrib::content_publisher as inspect_publisher;
 
@@ -42,6 +42,10 @@ impl DriverContext {
     /// arguments.
     pub fn take_node(&mut self) -> Result<Node, Status> {
         let node_client = self.start_args.node.take().ok_or(Status::INVALID_ARGS)?;
+        let node_client =
+            fidl::endpoints::ClientEnd::<fidl_fuchsia_driver_framework::NodeMarker>::new(
+                node_client.into_untyped(),
+            );
         Ok(Node::from(node_client.into_proxy()))
     }
 
@@ -69,6 +73,7 @@ impl DriverContext {
             error!("Tried to serve on outgoing directory but it wasn't available");
             return Err(Status::INVALID_ARGS);
         };
+        let outgoing_dir = fidl::endpoints::ServerEnd::new(outgoing_dir.into_untyped());
         outgoing_fs.serve_connection(outgoing_dir).map_err(|err| {
             error!("Failed to serve outgoing directory: {err}");
             Status::INTERNAL
@@ -137,7 +142,7 @@ impl DriverContext {
             entry.properties.iter().map(move |property| ParentProperty {
                 parent: &entry.name,
                 key: &property.key,
-                value: PropertyValue(property.value.clone()),
+                value: PropertyValue::from(&property.value),
             })
         })
     }
@@ -160,12 +165,16 @@ impl DriverContext {
         root_dispatcher: AsyncDispatcher,
         mut start_args: DriverStartArgs,
     ) -> Result<Self, Status> {
-        let incoming_namespace: Namespace = start_args
-            .incoming
-            .take()
-            .unwrap_or_default()
-            .try_into()
-            .map_err(|_| Status::INVALID_ARGS)?;
+        let mut incoming_namespace = Namespace::new();
+        for entry in start_args.incoming.take().unwrap_or_default() {
+            let path = entry
+                .path
+                .ok_or(Status::INVALID_ARGS)?
+                .parse()
+                .map_err(|_| Status::INVALID_ARGS)?;
+            let directory = entry.directory.ok_or(Status::INVALID_ARGS)?.into_untyped().into();
+            incoming_namespace.add(&path, directory).map_err(|_| Status::INVALID_ARGS)?;
+        }
         let incoming = Incoming::from(incoming_namespace);
         Ok(DriverContext { root_dispatcher, start_args, incoming })
     }

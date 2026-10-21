@@ -11,7 +11,7 @@ use libasync_dispatcher::{
 };
 
 use core::cell::RefCell;
-use core::ffi;
+use core::ffi::{self, CStr};
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ptr::{NonNull, null_mut};
@@ -212,6 +212,15 @@ impl Dispatcher {
     /// be used for non-[`Send`] tasks.
     pub fn allows_thread_migration(&self) -> bool {
         (self.get_raw_flags() & DispatcherBuilder::NO_THREAD_MIGRATION) == 0
+    }
+
+    /// The scheduler role this dispatcher was created with, or an empty string if none was
+    /// specified.
+    pub fn scheduler_role(&self) -> String {
+        // SAFETY: the inner fdf_dispatcher_t is valid by construction, and the runtime returns a
+        // NUL-terminated string that lives as long as the dispatcher, which outlives this call.
+        let role = unsafe { CStr::from_ptr(fdf_dispatcher_get_scheduler_role(self.0.as_ptr())) };
+        role.to_string_lossy().into_owned()
     }
 
     /// Whether this is the dispatcher the current thread is running on
@@ -694,6 +703,18 @@ mod tests {
         with_raw_dispatcher("testing", |dispatcher| {
             println!("hello {dispatcher:?}");
         })
+    }
+
+    #[test]
+    fn scheduler_role() {
+        // Non-empty roles are covered by the runtime's own `DispatcherTest.GetSchedulerRole`;
+        // creating a dispatcher with a role here hits b/488397193.
+        with_raw_dispatcher("no role", |dispatcher| {
+            let dispatcher =
+                DriverDispatcherRef::from_async_dispatcher(dispatcher.as_async_dispatcher_ref());
+            assert_eq!(dispatcher.scheduler_role(), "");
+            assert_eq!(dispatcher.always_on_dispatcher().scheduler_role(), "");
+        });
     }
 
     #[test]

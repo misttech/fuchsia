@@ -288,6 +288,12 @@ __EXPORT void fdf_env_dispatcher_get_dump_deprecated(fdf_dispatcher_t* dispatche
 }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+__EXPORT const char* fdf_dispatcher_get_scheduler_role(const fdf_dispatcher_t* dispatcher) {
+  auto interface = reinterpret_cast<const driver_runtime::DispatcherInterface*>(dispatcher);
+  auto concrete_dispatcher = interface->GetDispatcher();
+  return concrete_dispatcher->scheduler_role().c_str();
+}
+
 namespace {
 
 char* CopyStringToHeap(std::string_view str) {

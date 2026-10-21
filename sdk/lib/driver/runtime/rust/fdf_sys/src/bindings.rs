@@ -180,6 +180,12 @@ unsafe extern "C" {
     pub fn fdf_dispatcher_get_options(dispatcher: *const fdf_dispatcher_t) -> u32;
 }
 unsafe extern "C" {
+    #[doc = " Returns the scheduler role this dispatcher was created with, as a pointer to a\n NUL-terminated string valid for the lifetime of the dispatcher. The string is empty if no\n role was specified.\n\n This lets code running on a dispatcher create further dispatchers with the same role,\n without needing access to the configuration the role originally came from."]
+    pub fn fdf_dispatcher_get_scheduler_role(
+        dispatcher: *const fdf_dispatcher_t,
+    ) -> *const ::core::ffi::c_char;
+}
+unsafe extern "C" {
     #[doc = " Begins shutting down the dispatcher. Shutting down is an asynchronous operation.\n\n Once |fdf_dispatcher_shutdown_async| is called, the dispatcher will no longer\n accept queueing new |async_dispatcher_t| operations or |ChannelRead| callbacks.\n\n The dispatcher will asynchronously wait for all pending |async_dispatcher_t|\n and |ChannelRead| callbacks to complete. Then it will serially cancel all\n remaining callbacks with |ZX_ERR_CANCELED| and call the shutdown handler set\n in |fdf_dispatcher_create|.\n\n If the dispatcher is already shutting down or has completed shutdown, this will do nothing."]
     pub fn fdf_dispatcher_shutdown_async(dispatcher: *mut fdf_dispatcher_t);
 }

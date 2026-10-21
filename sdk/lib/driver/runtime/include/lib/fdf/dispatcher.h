@@ -130,6 +130,15 @@ fdf_dispatcher_t* fdf_dispatcher_get_current_dispatcher(void);
 /// Returns the options set for this dispatcher.
 uint32_t fdf_dispatcher_get_options(const fdf_dispatcher_t* dispatcher);
 
+/// Returns the scheduler role this dispatcher was created with, as a pointer to a
+/// NUL-terminated string valid for the lifetime of the dispatcher. The string is empty if no
+/// role was specified.
+///
+/// This lets code running on a dispatcher create further dispatchers with the same role,
+/// without needing access to the configuration the role originally came from.
+const char* fdf_dispatcher_get_scheduler_role(const fdf_dispatcher_t* dispatcher)
+    ZX_AVAILABLE_SINCE(NEXT);
+
 /// Begins shutting down the dispatcher. Shutting down is an asynchronous operation.
 ///
 /// Once |fdf_dispatcher_shutdown_async| is called, the dispatcher will no longer

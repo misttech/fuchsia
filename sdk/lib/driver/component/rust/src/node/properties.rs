@@ -48,6 +48,21 @@ impl From<bool> for PropertyValue {
     }
 }
 
+impl From<&fidl_next_fuchsia_driver_framework::NodePropertyValue> for PropertyValue {
+    fn from(value: &fidl_next_fuchsia_driver_framework::NodePropertyValue) -> Self {
+        use fidl_next_fuchsia_driver_framework::NodePropertyValue as Next;
+        Self(match value {
+            Next::IntValue(v) => NodePropertyValue::IntValue(*v),
+            Next::StringValue(v) => NodePropertyValue::StringValue(v.clone()),
+            Next::BoolValue(v) => NodePropertyValue::BoolValue(*v),
+            Next::EnumValue(v) => NodePropertyValue::EnumValue(v.clone()),
+            Next::UnknownOrdinal_(unknown_ordinal) => {
+                NodePropertyValue::__SourceBreaking { unknown_ordinal: *unknown_ordinal }
+            }
+        })
+    }
+}
+
 impl PropertyValue {
     /// Creates a value from something that is string-like
     pub fn from_string(value: impl Into<String>) -> Self {

@@ -3701,6 +3701,21 @@ TEST_F(DispatcherTest, SuspendResume) {
   g_suspend_completion = nullptr;
 }
 
+TEST_F(DispatcherTest, GetSchedulerRole) {
+  const void* driver = CreateFakeDriver();
+
+  fdf_dispatcher_t* no_role;
+  ASSERT_NO_FATAL_FAILURE(CreateDispatcher(0, __func__, "", driver, &no_role));
+  EXPECT_STREQ("", fdf_dispatcher_get_scheduler_role(no_role));
+
+  fdf_dispatcher_t* with_role;
+  ASSERT_NO_FATAL_FAILURE(CreateDispatcher(0, __func__, "fuchsia.test.role", driver, &with_role));
+  EXPECT_STREQ("fuchsia.test.role", fdf_dispatcher_get_scheduler_role(with_role));
+  // The always-on veneer reports the role of the dispatcher it fronts.
+  EXPECT_STREQ("fuchsia.test.role", fdf_dispatcher_get_scheduler_role(
+                                        fdf_dispatcher_get_always_on_dispatcher(with_role)));
+}
+
 TEST_F(DispatcherTest, AlwaysOnDispatcher) {
   auto fake_driver = CreateFakeDriver();
   libsync::Completion shutdown_completion;

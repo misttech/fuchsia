@@ -241,6 +241,8 @@ class Dispatcher : public DispatcherInterface,
 
   // Returns the dispatcher options specified by the user.
   uint32_t options() const { return options_; }
+  // Returns the scheduler role specified by the user, or an empty string if none was.
+  const std::string& scheduler_role() const { return scheduler_role_; }
   bool unsynchronized() const { return unsynchronized_; }
   bool allow_sync_calls() const { return allow_sync_calls_.load(); }
 
