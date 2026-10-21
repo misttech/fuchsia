@@ -99,7 +99,6 @@ if (toolchain_environment == "kernel.phys" ||
       "debugger.cc",
       "exceptions.S",
       "exceptions_c.cc",
-      "feature.cc",
       "fpu.cc",
       "handoff.cc",
       "mmu.cc",
@@ -207,6 +206,34 @@ if (toolchain_environment == "kernel.phys" ||
     explicit_padding = false
   }
 
+  kernel_bindgen_crate("arm64-feature-bindings") {
+    headers = [ "include/arch/arm64/feature.h" ]
+    cpp = true
+    non_rust_deps = [
+      ":headers",
+      "//zircon/kernel/lib/ktl:headers",
+    ]
+    notice_year = 2026
+    raw_lines = [ "#![no_std]" ]
+    type_allowlist = [
+      "arm64_asid_width",
+      "arm64_cache_features",
+      "arm64_microarch",
+      "arm64_mmu_features",
+    ]
+
+    # Every value of these types that Rust reads was produced by Rust: the
+    # width fields of arm64_mmu_features, and the arm64_microarch that
+    # midr_to_microarch returns. C++ never stores into a location Rust reads
+    # as these enums.
+    rustified_enum = [
+      "arm64_asid_width",
+      "arm64_microarch",
+    ]
+    explicit_padding = false
+    expect_lints = [ "non_camel_case_types" ]
+  }
+
   kernel_bindgen_crate("arm64-mp-bindings") {
     headers = [ "include/arch/arm64/mp.h" ]
     cpp = true
@@ -264,6 +291,7 @@ if (toolchain_environment == "kernel.phys" ||
     sources = [
       "src/cache.rs",
       "src/crashlog.rs",
+      "src/feature.rs",
       "src/mod.rs",
       "src/mp.rs",
       "src/periphmap.rs",
@@ -280,6 +308,7 @@ if (toolchain_environment == "kernel.phys" ||
       ":arch-arm64-aspace-bindings",
       ":arch-arm64-vm-bindings",
       ":arm64-crashlog-bindings",
+      ":arm64-feature-bindings",
       ":arm64-mp-bindings",
       ":arm64-restricted-bindings",
       ":arm64-thread-bindings",

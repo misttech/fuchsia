@@ -6,6 +6,7 @@
 
 pub mod cache;
 mod crashlog;
+mod feature;
 mod mp;
 mod periphmap;
 mod registers;
@@ -22,7 +23,6 @@ use crate::kernel::types::cpu_num_t;
 use arch_arm64_aspace_bindings as aspace_bindings;
 
 unsafe extern "C" {
-    static arm64_isa_features: u32;
     fn cpp_arm64_cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64;
 }
 
@@ -66,8 +66,9 @@ pub const ARM32_BIT_MODE_REGISTER_COUNT: usize = 15;
 
 #[inline]
 fn arm64_feature_test(feature: u32) -> bool {
-    // SAFETY: Reads global read-only hardware feature mask initialized at boot.
-    unsafe { (arm64_isa_features & feature) != 0 }
+    // SAFETY: Only the boot CPU's `arm64_feature_init` writes the mask, before any other CPU
+    // starts, so no write races with this read.
+    unsafe { (feature::arm64_isa_features & feature) != 0 }
 }
 
 /// Architectural interrupt frame for aarch64 user space entry/exit.
