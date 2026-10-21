@@ -44,6 +44,12 @@ from shared.protocol import (
 # the pipe FD that we pass to it when we start the new process.
 DAEMON_STARTUP_TIMEOUT_SECS: Final[float] = 10.0
 
+# Socket read timeout floor and extra grace beyond a request's internal timeout
+# so the daemon has time to return a structured timeout response before the UDS
+# client disconnects.
+DEFAULT_READ_TIMEOUT_SECS: Final[float] = 15.0
+READ_TIMEOUT_GRACE_SECS: Final[float] = 5.0
+
 
 def request_to_namespace(req: BaseRequest[Any]) -> argparse.Namespace:
     """Converts a BaseRequest to argparse.Namespace for command executors."""
@@ -154,6 +160,7 @@ async def main(args: list[str]) -> int:
 
 
 async def send_command(req: BaseRequest[Any]) -> int:
+    """Sends a serialized request to the daemon and prints the response."""
     if not UDS_PATH.exists():
         print(
             f"Daemon socket not found at {UDS_PATH}.\n\n"
@@ -175,9 +182,19 @@ async def send_command(req: BaseRequest[Any]) -> int:
         writer.write(serialize(req).encode("utf-8"))
         await writer.drain()
 
+        req_timeout = getattr(req, "timeout", None)
+        read_timeout = (
+            max(
+                DEFAULT_READ_TIMEOUT_SECS,
+                float(req_timeout) + READ_TIMEOUT_GRACE_SECS,
+            )
+            if req_timeout is not None
+            else DEFAULT_READ_TIMEOUT_SECS
+        )
+
         try:
             response_line = await asyncio.wait_for(
-                reader.readline(), timeout=5.0
+                reader.readline(), timeout=read_timeout
             )
         except asyncio.TimeoutError:
             print(

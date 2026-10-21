@@ -897,11 +897,16 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(resp.success)
         self.assertEqual(daemon.threads, {})
 
+    @patch("daemon.daemon.UDS_PATH")
     @patch("daemon.daemon.asyncio.start_unix_server")
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_run_cleanup_detach_on_existing_session(
-        self, mock_dap_client_class: Mock, mock_start_unix_server: Mock
+        self,
+        mock_dap_client_class: Mock,
+        mock_start_unix_server: Mock,
+        mock_uds_path: Mock,
     ) -> None:
+        mock_uds_path.exists.return_value = False
         mock_dap_client = mock_dap_client_class.return_value
         mock_dap_client.zxdb_detach = AsyncMock()
         mock_dap_client.close = AsyncMock()
@@ -2513,6 +2518,23 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             )
             mock_stack.assert_not_called()
             assert_state_unchanged()
+
+    def test_update_resumed_threads_clears_orphan_threads(self) -> None:
+        """Verifies whole-system resume clears stopped state on orphan threads."""
+        daemon = Daemon(port=15678)
+        bound_thread = daemon.get_or_create_thread(
+            101, process_id=1001, is_stopped=True
+        )
+        orphan_thread = daemon.get_or_create_thread(
+            102, process_id=None, is_stopped=True
+        )
+        self.assertTrue(bound_thread.is_stopped)
+        self.assertTrue(orphan_thread.is_stopped)
+
+        daemon.update_resumed_threads(thread_id=101, single_thread=False)
+
+        self.assertFalse(bound_thread.is_stopped)
+        self.assertFalse(orphan_thread.is_stopped)
 
 
 class TestDaemonStart(unittest.IsolatedAsyncioTestCase):

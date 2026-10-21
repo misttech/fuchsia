@@ -710,9 +710,7 @@ class Daemon:
         single_thread: bool = False,
     ) -> None:
         """Updates thread stopped state when execution resumes."""
-
-        # |thread_id| cannot be None if |single_thread| is True.
-        if single_thread is True and thread_id is None:
+        if single_thread and thread_id is None:
             raise ValueError(
                 "Single thread resumed without providing thread_id!"
             )
@@ -722,12 +720,14 @@ class Daemon:
             if thread is not None:
                 thread.resume()
         else:
-            # When |single_thread| is False, it means that all threads in the system were resumed
-            # via a Continue request. For now the default behavior of all thread control DAP
-            # commands in zxdb's DAP server will always set single_thread to True, so this case is
-            # only relevant for Continue.
+            # When single_thread is False, all threads in the system were
+            # resumed via a Continue request. Also iterate self.threads
+            # directly so threads recorded before their parent process is
+            # known (process_id=None) have their stopped state cleared.
             for p in self.processes.values():
                 p.resume()
+            for t in self.threads.values():
+                t.resume()
 
     def _handle_breakpoint_changed(self, body: dict[str, Any]) -> None:
         """Handles DAP `breakpoint` events with reason "changed".
