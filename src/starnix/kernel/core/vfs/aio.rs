@@ -3,17 +3,16 @@
 // found in the LICENSE file.
 
 use crate::mm::{
-    DesiredAddress, IOVecPtr, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags,
-    TaskMemoryAccessor,
+    DesiredAddress, IOVecPtr, MappingName, MappingOptions, MemoryAccessorExt, MemoryManager,
+    ProtectionFlags, TaskMemoryAccessor,
 };
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, SimpleWaiter, Task, TaskFlags, WaitQueue};
 use crate::vfs::eventfd::EventFdFileObject;
 use crate::vfs::syscalls::IocbPtr;
 use crate::vfs::{
-    FdNumber, FileHandle, InputBuffer, OutputBuffer, UserBuffersInputBuffer,
-    UserBuffersOutputBuffer, VecInputBuffer, VecOutputBuffer, WeakFileHandle,
-    checked_add_offset_and_length,
+    FdNumber, FileHandle, InputBuffer, UserBuffersInputBuffer, VecInputBuffer, VecOutputBuffer,
+    WeakFileHandle, checked_add_offset_and_length,
 };
 use smallvec::smallvec;
 use starnix_logging::track_stub;
@@ -138,10 +137,10 @@ impl WorkerCompletion {
         // dropped by the user task on `io_destroy`, `munmap`, or task exit (`CurrentTask::exit`).
         // However, because Starnix uses a single `Arc<MemoryManager>` reference count (rather than
         // separate `mm_users` / `mm_count` with an explicit `exit_aio` step on last user exit), a
-        // worker transiently calling `task.mm()` to write into user memory in `IoOperation::do_read`
-        // can race with `CurrentTask::exit` and end up dropping the last `Arc<MemoryManager>` (and
-        // thus `AioContext`) on the worker thread itself. Skip waiting if `stop()` is running on
-        // this worker thread to avoid self-deadlock.
+        // worker transiently upgrading `Weak<MemoryManager>` to write into user memory in
+        // `IoOperation::do_read` can race with `CurrentTask::exit` and end up dropping the last
+        // `Arc<MemoryManager>` (and thus `AioContext`) on the worker thread itself. Skip waiting if
+        // `stop()` is running on this worker thread to avoid self-deadlock.
         if !self.is_current_thread() {
             let _ = self.done.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE);
         }
@@ -322,7 +321,7 @@ impl TryFrom<u32> for OpType {
 }
 
 enum IoOperationType {
-    Read { file: WeakFileHandle, task: Weak<Task>, buffers: UserBuffers },
+    Read { file: WeakFileHandle, mm: Weak<MemoryManager>, buffers: UserBuffers },
     Write { file: FileHandle, buffer: Result<VecInputBuffer, Errno> },
 }
 
@@ -391,11 +390,14 @@ impl IoOperation {
         };
 
         let op = match op_type {
-            OpType::PRead | OpType::PReadV => IoOperationType::Read {
-                file: Arc::downgrade(&file),
-                task: Arc::downgrade(&current_task.task),
-                buffers,
-            },
+            OpType::PRead | OpType::PReadV => {
+                let mm = current_task.mm()?;
+                IoOperationType::Read {
+                    file: Arc::downgrade(&file),
+                    mm: Arc::downgrade(&mm),
+                    buffers,
+                }
+            }
             OpType::PWrite | OpType::PWriteV => {
                 let buffer = UserBuffersInputBuffer::syscall_new(current_task, buffers)
                     .and_then(|mut source| source.read_all())
@@ -417,13 +419,13 @@ impl IoOperation {
     fn execute(&mut self, current_task: &CurrentTask) -> Option<Result<SyscallResult, Errno>> {
         let offset = self.offset;
         let result = match &mut self.op {
-            IoOperationType::Read { file, task, buffers } => {
+            IoOperationType::Read { file, mm, buffers } => {
                 let Some(file) = file.upgrade() else {
                     // The FileHandle can close while async IO operations are ongoing.
                     // Ignore this operation when this happens.
                     return None;
                 };
-                Self::do_read(current_task, file, task, buffers, offset).map(Into::into)
+                Self::do_read(current_task, file, mm, buffers, offset).map(Into::into)
             }
             IoOperationType::Write { file, buffer } => match buffer {
                 Ok(input_buffer) => {
@@ -447,7 +449,7 @@ impl IoOperation {
     fn do_read(
         current_task: &CurrentTask,
         file: FileHandle,
-        task: &Weak<Task>,
+        mm: &Weak<MemoryManager>,
         buffers: &UserBuffers,
         offset: usize,
     ) -> Result<usize, Errno> {
@@ -460,9 +462,22 @@ impl IoOperation {
         }
         drop(file);
 
-        let task = task.upgrade().ok_or_else(|| errno!(EFAULT))?;
-        let mut sink = UserBuffersOutputBuffer::syscall_new(&task, buffers.clone())?;
-        sink.write(&output_buffer.data())
+        let mm = mm.upgrade().ok_or_else(|| errno!(EFAULT))?;
+        let mut bytes = output_buffer.data();
+        let mut bytes_written = 0;
+        for buffer in buffers {
+            if buffer.is_null() {
+                continue;
+            }
+            let bytes_len = std::cmp::min(bytes.len(), buffer.length);
+            let (to_write, remaining) = bytes.split_at(bytes_len);
+            bytes = remaining;
+            bytes_written += mm.syscall_write_memory(buffer.address, to_write)?;
+            if bytes_len < buffer.length {
+                break;
+            }
+        }
+        Ok(bytes_written)
     }
 
     fn do_write(
@@ -663,11 +678,13 @@ mod tests {
     use crate::task::Waiter;
     use crate::testing::{map_memory, spawn_kernel_and_run};
     use crate::vfs::{
-        Anon, FdFlags, FileObject, FileOps, fileops_impl_noop_sync, fileops_impl_seekless,
+        Anon, FdFlags, FileObject, FileOps, OutputBuffer, fileops_impl_noop_sync,
+        fileops_impl_seekless,
     };
     use starnix_sync::Mutex;
     use starnix_uapi::open_flags::OpenFlags;
-    use starnix_uapi::user_address::UserAddress;
+    use starnix_uapi::user_address::{UserAddress, UserRef};
+    use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
 
     struct TestSinkFile {
         written: Arc<Mutex<Vec<u8>>>,
@@ -727,6 +744,39 @@ mod tests {
             let waiter = Waiter::new();
             waiter.wait(current_task)?;
             unreachable!("blocked read should be interrupted on context drop");
+        }
+
+        fn write(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            error!(EINVAL)
+        }
+    }
+
+    struct TestGatedReadFile {
+        unblock: Arc<zx::Event>,
+        payload: Vec<u8>,
+    }
+
+    impl FileOps for TestGatedReadFile {
+        fileops_impl_seekless!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            self.unblock
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE)
+                .map_err(|_| errno!(EINTR))?;
+            data.write(&self.payload)
         }
 
         fn write(
@@ -877,6 +927,150 @@ mod tests {
                 weak_read_file.upgrade().is_none(),
                 "tearing down AioContext must interrupt blocked read and release FileHandle"
             );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_pread_completes_after_submitting_thread_exits() {
+        spawn_kernel_and_run(async |current_task| {
+            let payload = b"pread-after-submitting-thread-exit";
+            let user_buf = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let iocb_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let iocb_ref = IocbPtr::new(current_task, iocb_addr);
+
+            let unblock = Arc::new(zx::Event::create());
+            let read_file = Anon::new_private_file(
+                current_task,
+                Box::new(TestGatedReadFile {
+                    unblock: Arc::clone(&unblock),
+                    payload: payload.to_vec(),
+                }),
+                OpenFlags::RDONLY,
+                "[test-gated-pread]",
+            );
+            let read_fd = current_task.add_file(read_file, FdFlags::empty()).expect("add file");
+
+            let cb = iocb {
+                aio_fildes: read_fd.raw() as u32,
+                aio_lio_opcode: IOCB_CMD_PREAD as u16,
+                aio_buf: user_buf.ptr() as u64,
+                aio_nbytes: payload.len() as u64,
+                aio_offset: 0,
+                aio_data: 0x9abc,
+                ..Default::default()
+            };
+
+            let ctx_id = AioContext::create(current_task, 16).expect("create aio context");
+            let aio_ctx = current_task
+                .mm()
+                .expect("mm")
+                .get_aio_context(ctx_id.into())
+                .expect("get aio context");
+
+            let submitting_thread = current_task
+                .clone_task_for_test((CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64, None);
+            let weak_submitting_task = Arc::downgrade(&submitting_thread.task);
+            aio_ctx.submit(&submitting_thread, cb, iocb_ref).expect("submit pread op");
+            std::mem::drop(submitting_thread);
+            assert!(
+                weak_submitting_task.upgrade().is_none(),
+                "submitting thread Task should be dropped before read completes"
+            );
+
+            unblock.signal(zx::Signals::NONE, zx::Signals::USER_0).expect("signal unblock");
+            let events = aio_ctx
+                .get_events(current_task, 1, 1, zx::MonotonicInstant::INFINITE)
+                .expect("get_events");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].data, 0x9abc);
+            assert_eq!(events[0].res, payload.len() as i64);
+
+            let read_bytes =
+                current_task.read_memory_to_vec(user_buf, payload.len()).expect("read user_buf");
+            assert_eq!(read_bytes.as_slice(), payload);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_preadv_completes_after_submitting_thread_exits() {
+        spawn_kernel_and_run(async |current_task| {
+            let part1 = b"preadv-part1:";
+            let part2 = b"preadv-part2";
+            let mut payload = Vec::new();
+            payload.extend_from_slice(part1);
+            payload.extend_from_slice(part2);
+
+            let part1_buf = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let part2_buf = (part1_buf + part1.len()).expect("part2_buf addr");
+
+            let iovec_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let iovecs = [
+                UserBuffer { address: part1_buf, length: part1.len() },
+                UserBuffer { address: part2_buf, length: part2.len() },
+            ];
+            current_task
+                .write_objects(UserRef::new(iovec_addr), &iovecs)
+                .expect("write iovecs to user memory");
+
+            let iocb_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let iocb_ref = IocbPtr::new(current_task, iocb_addr);
+
+            let unblock = Arc::new(zx::Event::create());
+            let read_file = Anon::new_private_file(
+                current_task,
+                Box::new(TestGatedReadFile {
+                    unblock: Arc::clone(&unblock),
+                    payload: payload.clone(),
+                }),
+                OpenFlags::RDONLY,
+                "[test-gated-preadv]",
+            );
+            let read_fd = current_task.add_file(read_file, FdFlags::empty()).expect("add file");
+
+            let cb = iocb {
+                aio_fildes: read_fd.raw() as u32,
+                aio_lio_opcode: IOCB_CMD_PREADV as u16,
+                aio_buf: iovec_addr.ptr() as u64,
+                aio_nbytes: iovecs.len() as u64,
+                aio_offset: 0,
+                aio_data: 0x9abd,
+                ..Default::default()
+            };
+
+            let ctx_id = AioContext::create(current_task, 16).expect("create aio context");
+            let aio_ctx = current_task
+                .mm()
+                .expect("mm")
+                .get_aio_context(ctx_id.into())
+                .expect("get aio context");
+
+            let submitting_thread = current_task
+                .clone_task_for_test((CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64, None);
+            let weak_submitting_task = Arc::downgrade(&submitting_thread.task);
+            aio_ctx.submit(&submitting_thread, cb, iocb_ref).expect("submit preadv op");
+            std::mem::drop(submitting_thread);
+            assert!(
+                weak_submitting_task.upgrade().is_none(),
+                "submitting thread Task should be dropped before read completes"
+            );
+
+            unblock.signal(zx::Signals::NONE, zx::Signals::USER_0).expect("signal unblock");
+            let events = aio_ctx
+                .get_events(current_task, 1, 1, zx::MonotonicInstant::INFINITE)
+                .expect("get_events");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].data, 0x9abd);
+            assert_eq!(events[0].res, payload.len() as i64);
+
+            let read_part1 =
+                current_task.read_memory_to_vec(part1_buf, part1.len()).expect("read part1_buf");
+            assert_eq!(read_part1.as_slice(), part1);
+
+            let read_part2 =
+                current_task.read_memory_to_vec(part2_buf, part2.len()).expect("read part2_buf");
+            assert_eq!(read_part2.as_slice(), part2);
         })
         .await;
     }

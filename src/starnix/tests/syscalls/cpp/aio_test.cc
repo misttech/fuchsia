@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
-#include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <sched.h>
 #include <signal.h>
@@ -325,77 +324,6 @@ TEST_F(AioWriteTest, WriteCompletesAfterSubmittingProcessExits) {
 
   const std::string expected = std::string(kHeader) + std::string(kBody);
   EXPECT_EQ(ReadFilePrefix(target_fd_.fd(), expected.size()), expected);
-}
-
-// Validates that when a process exits while an `IOCB_CMD_PREAD` operation is blocked waiting for
-// data on a stream FD (such as FunctionFS `/dev/usb-ffs/adb/ep2` or a pipe), `AioContext` teardown
-// interrupts the blocked read worker and releases its upgraded `FileHandle` before the process
-// finishes exiting, so no zombie kernel worker thread keeps the read FD open or steals data written
-// after process exit.
-TEST(AioTest, ExitCancelsBlockedReadAndClosesFileHandle) {
-  auto prev_sigpipe = signal(SIGPIPE, SIG_IGN);
-  ASSERT_NE(prev_sigpipe, SIG_ERR);
-  auto restore_sigpipe = fit::defer([prev_sigpipe] { signal(SIGPIPE, prev_sigpipe); });
-
-  test_helper::ScopedPipe warmup_pipe;
-  test_helper::ScopedPipe rx_pipe;
-
-  test_helper::ForkHelper helper;
-  helper.KillChildrenOnDestroy();
-
-  pid_t child_pid = helper.RunInForkedProcess([&warmup_pipe, &rx_pipe] {
-    warmup_pipe.WriteSide().reset();
-    rx_pipe.WriteSide().reset();
-
-    aio_context_t child_ctx = 0;
-    ASSERT_THAT(io_setup(2, &child_ctx), SyscallSucceeds());
-
-    char warmup_buf[8] = {};
-    char rx_buf[64] = {};
-    constexpr uint64_t kWarmupData = 0x101;
-    constexpr uint64_t kBlockedReadData = 0x102;
-
-    struct iocb warmup_cb = {
-        .aio_data = kWarmupData,
-        .aio_lio_opcode = IOCB_CMD_PREAD,
-        .aio_fildes = static_cast<uint32_t>(warmup_pipe.ReadSide().get()),
-        .aio_buf = ToAioBuf(warmup_buf),
-        .aio_nbytes = sizeof(warmup_buf),
-    };
-
-    struct iocb blocked_read_cb = {
-        .aio_data = kBlockedReadData,
-        .aio_lio_opcode = IOCB_CMD_PREAD,
-        .aio_fildes = static_cast<uint32_t>(rx_pipe.ReadSide().get()),
-        .aio_buf = ToAioBuf(rx_buf),
-        .aio_nbytes = sizeof(rx_buf),
-    };
-
-    struct iocb* ptrs[2] = {&warmup_cb, &blocked_read_cb};
-    // On native Linux, `io_submit` on non-direct pipe reads executes synchronously on the
-    // calling thread. Submit from a background thread so the child can wait for the warmup
-    // event and exit while the second read remains blocked.
-    std::thread([child_ctx, ptrs = static_cast<struct iocb**>(ptrs)]() mutable {
-      EXPECT_THAT(io_submit(child_ctx, 2, ptrs), SyscallSucceedsWithValue(2));
-    }).detach();
-
-    struct io_event ev = {};
-    struct timespec timeout = {.tv_sec = 10, .tv_nsec = 0};
-    ASSERT_THAT(io_getevents(child_ctx, 1, 1, &ev, &timeout), SyscallSucceedsWithValue(1));
-    EXPECT_EQ(ev.data, kWarmupData);
-    EXPECT_EQ(ev.res, 1);
-
-    _exit(testing::Test::HasFailure() ? 1 : 0);
-  });
-  ASSERT_GT(child_pid, 0);
-
-  warmup_pipe.ReadSide().reset();
-  rx_pipe.ReadSide().reset();
-
-  ASSERT_THAT(write(warmup_pipe.WriteSide().get(), "W", 1), SyscallSucceedsWithValue(1));
-  ASSERT_TRUE(helper.WaitForChildren());
-
-  EXPECT_THAT(write(rx_pipe.WriteSide().get(), "X", 1), SyscallFailsWithErrno(EPIPE));
 }
 
 TEST(AioTest, MultiThreadExitGroupDrainsQueuedWrite) {
