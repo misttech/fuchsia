@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -33,4 +35,17 @@ rustc_library(
         "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:futures",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "dispatcher_test",
+    crate = ":dispatcher",
+    edition = "2024",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "libasync_dispatcher_tests",
+    unit_tests = [":dispatcher_test"],
 )
