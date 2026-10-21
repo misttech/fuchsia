@@ -102,20 +102,32 @@ impl FileOps for MemoryDirectoryFile {
         let mut readdir_position = self.readdir_position.lock();
         let scope = RcuReadScope::new();
         file.name.entry.get_children(|children| {
-            for (name, maybe_entry) in children.range((readdir_position.clone(), Bound::Unbounded))
+            let mut last_name = None;
+            let mut result = Ok(());
+            for (name, maybe_entry) in
+                children.range::<DirEntryChildKey, _>((readdir_position.as_ref(), Bound::Unbounded))
             {
                 if let Some(entry) = maybe_entry.upgrade() {
                     let mode = entry.node.info().mode;
-                    sink.add(
+                    if let Err(e) = sink.add(
                         entry.node.ino,
                         sink.offset() + 1,
                         DirectoryEntryType::from_mode(mode),
                         entry.local_name(&scope),
-                    )?;
-                    *readdir_position = Bound::Excluded(name.clone());
+                    ) {
+                        result = Err(e);
+                        break;
+                    }
+                    last_name = Some(name);
                 }
             }
-            Ok(())
+            // Commit the position once after the loop, on success and on any `sink.add` error,
+            // because the entries emitted so far are still returned to the caller. Deferring the
+            // store avoids cloning the key for every entry.
+            if let Some(name) = last_name {
+                *readdir_position = Bound::Excluded(name.clone());
+            }
+            result
         })
     }
 }
