@@ -219,7 +219,6 @@ host_script_test_data("fx_bash_tests") {
         "//tools/devshell/contrib/add-host-test",
         "//tools/devshell/contrib/add-test",
         "//tools/devshell/contrib/ffx",
-        "//tools/devshell/contrib/lint",
         "//tools/devshell/contrib/lib/count-ninja-actions.py",
         "//tools/devshell/contrib/setup-go",
         "//tools/devshell/clean",
