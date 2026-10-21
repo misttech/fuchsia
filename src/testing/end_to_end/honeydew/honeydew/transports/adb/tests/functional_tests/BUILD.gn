@@ -14,11 +14,24 @@ if (is_host) {
     ]
     environments = [ iris_env ]
   }
+
+  python_mobly_test("adb_test_no_root_unroot") {
+    main_source = "test_adb.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    test_cases = [ "re:test_(?!.*root).*" ]
+    environments = [ iris_env ]
+  }
 }
 
 # Group containing all of the ADB transport functional test cases and their
 # dependencies.
 group("tests") {
   testonly = true
-  public_deps = [ ":adb_test($host_toolchain)" ]
+  public_deps = [
+    ":adb_test($host_toolchain)",
+    ":adb_test_no_root_unroot($host_toolchain)",
+  ]
 }
