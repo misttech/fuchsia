@@ -99,7 +99,8 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
   // 2nd parent is ADC CHAN1.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
+        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, ADC_CHAN1_NAME)}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
@@ -109,7 +110,8 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
   // 3rd parent is ADC CHAN2.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
+        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, ADC_CHAN2_NAME)}},
       (*mgr_request_audio.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
@@ -126,7 +128,8 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
   // 2nd parent is ADC CHAN3.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
+        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, ADC_CHAN3_NAME)}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),

@@ -68,7 +68,8 @@ AdcVisitor::AdcController& AdcVisitor::GetController(uint32_t node_id) {
   return controllers_[node_id];
 }
 
-zx::result<> AdcVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t chan_id) {
+zx::result<> AdcVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t chan_id,
+                                          std::string_view chan_name) {
   auto adc_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
@@ -79,6 +80,7 @@ zx::result<> AdcVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
               fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, chan_id),
+              fdf::MakeProperty2(bind_fuchsia::NAME, chan_name),
           },
   }};
   child.AddNodeSpec(adc_node);
@@ -106,7 +108,7 @@ zx::result<> AdcVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
 
   GetController(parent.id()).AddChannel(chan_idx, reference_name, parent.name());
 
-  return AddChildNodeSpec(child, chan_idx);
+  return AddChildNodeSpec(child, chan_idx, reference_name);
 }
 
 zx::result<> AdcVisitor::FinalizeNode(fdf_devicetree::Node& node) {

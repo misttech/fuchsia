@@ -33,7 +33,8 @@ class AdcVisitor : public iio_dt::IioVisitor {
 
   // Return an existing or a new instance of AdcController.
   AdcController& GetController(uint32_t node_id);
-  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t chan_id);
+  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t chan_id,
+                                std::string_view chan_name);
 
   // Mapping of controller node ID to its info.
   std::map<uint32_t, AdcController> controllers_;
