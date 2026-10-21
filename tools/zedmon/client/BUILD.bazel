@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/main.rs",
+        "src/protocol.rs",
+        "src/zedmon.rs",
+    ],
+    crate_name = "zedmon",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:num-derive",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/usb_rs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:clap",
+        "//third_party/rust_crates/vendor:csv",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:regex",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+host_rustc_test(
+    name = "bin_test",
+    crate = ":bin",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//src/lib/test_util",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)

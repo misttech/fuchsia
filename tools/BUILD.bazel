@@ -89,5 +89,6 @@ test_suite(
         "//tools/testing/testparser:testparser_tests",
         "//tools/testing/testrunner:testrunner_lib_tests",
         "//tools/whereiscl:host_tests",
+        "//tools/zedmon/client:bin_test",
     ],
 )

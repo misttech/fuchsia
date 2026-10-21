@@ -3,15 +3,8 @@
 # found in the LICENSE file.
 
 group("zedmon") {
-  testonly = true
   deps = [
-    ":tests",
     "client",
     "fake_zedmon",
   ]
-}
-
-group("tests") {
-  testonly = true
-  public_deps = [ "client:tests" ]
 }

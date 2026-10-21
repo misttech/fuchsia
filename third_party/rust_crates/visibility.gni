@@ -287,7 +287,6 @@ regex_visibility = [
   "//tools/gn_desc/bin:*",
   "//tools/pretty_serial:*",
   "//tools/shush:*",
-  "//tools/zedmon/client:*",
 
   # Allow generic usage within vendor directories without exposing internal
   # paths

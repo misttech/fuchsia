@@ -89,6 +89,7 @@ package_group(
         "//tools/fidl/fidldoc",
         "//tools/gtest_test_parser",
         "//tools/pretty_serial",
+        "//tools/zedmon/client",
 
         # Matches visibility.gni, which allows all of vendor/ without exposing
         # internal paths.
