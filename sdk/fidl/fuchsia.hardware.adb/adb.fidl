@@ -19,11 +19,12 @@ const MAX_ARGS_LENGTH uint64 = 1024;
 closed protocol UsbAdbImpl {
     /// Request transmission of the packet in |data|.
     ///
-    /// Return status indicates queue state:
-    ///   ZX_OK: Packet has been enqueued.
-    ///   Other: Packet could not be enqueued.
-    /// Upon a return of ZX_OK, the packet has been enqueued, but no information is returned as to
-    /// the completion state of the transmission itself.
+    /// Return status indicates transmission result:
+    ///   ZX_OK: Packet has been transmitted over USB to the host.
+    ///   ZX_ERR_INVALID_ARGS: |data| is empty.
+    ///   ZX_ERR_BAD_STATE: USB ADB device is not in an online or waiting state (e.g. stopping).
+    ///   ZX_ERR_IO: Low-level transport error submitting request to the USB endpoint.
+    ///   ZX_ERR_CANCELED: Transmission was canceled prior to completion (e.g. driver reset or teardown).
     strict QueueTx(struct {
         data vector<uint8>:MAX;
     }) -> () error zx.Status;

@@ -111,6 +111,25 @@ class DelayedCancelEndpoint : public fake_usb_endpoint::FakeEndpoint {
     cancel_status_ = status;
   }
 
+  void RequestCompleteAtIndex(size_t index, zx_status_t status, size_t actual) {
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> local_binding;
+    {
+      std::lock_guard<std::mutex> _(lock_);
+      ASSERT_LT(index, requests_.size());
+      local_binding = binding_ref_;
+      auto request = std::move(requests_[index]);
+      requests_.erase(requests_.begin() + static_cast<std::ptrdiff_t>(index));
+      completions.emplace_back(std::move(fuchsia_hardware_usb_endpoint::Completion()
+                                             .request(std::move(request))
+                                             .status(status)
+                                             .transfer_size(actual)));
+    }
+    if (local_binding.has_value()) {
+      EXPECT_TRUE(fidl::SendEvent(*local_binding)->OnCompletion(std::move(completions)).is_ok());
+    }
+  }
+
  private:
   void DoCancelAll(CancelAllCompleter::Async completer, zx_status_t reply_status = ZX_OK) {
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
@@ -2067,6 +2086,160 @@ TEST_F(UsbAdbTest, StartAdbAfterUsbAlreadyOnlineAndDuringStop) {
   usb_impl2 = {};
   async_client = {};
   ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
+TEST_F(UsbAdbTest, QueueTxCompletesOnHardwareTxComplete) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  auto async_usb_impl = fidl::WireClient<fadb::UsbAdbImpl>(
+      usb_impl.TakeClientEnd(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  // Queue a payload without pre-queuing a completion on the fake Bulk IN endpoint.
+  // SendQueued() submits the request to kBulkInEp, while the QueueTx FIDL completer remains
+  // pending until TxComplete() receives the hardware completion.
+  std::vector<uint8_t> payload = {'r', 'e', 's', 't', 'a', 'r', 't', 'i', 'n', 'g'};
+  std::atomic<bool> tx_completed = false;
+  async_usb_impl->QueueTx(fidl::VectorView<uint8_t>::FromExternal(payload.data(), payload.size()))
+      .ThenExactlyOnce([&tx_completed](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+        tx_completed = true;
+      });
+
+  driver_test_.runtime().RunUntil([&] {
+    size_t pending = 0;
+    driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+      pending = env.fake_dev_->fake_endpoint(kBulkInEp).pending_request_count();
+    });
+    return pending == 1u;
+  });
+
+  driver_test_.runtime().RunUntilIdle();
+  EXPECT_FALSE(tx_completed.load());
+
+  // Complete the in-flight Bulk IN request on the endpoint and verify QueueTx completes.
+  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, payload.size());
+  });
+
+  driver_test_.runtime().RunUntil([&] { return tx_completed.load(); });
+
+  async_usb_impl = {};
+  SafeStopDriver();
+}
+
+TEST_F(UsbAdbTest, QueueTxPipelinedFifoAndErrorCompletion) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  auto async_usb_impl = fidl::WireClient<fadb::UsbAdbImpl>(
+      usb_impl.TakeClientEnd(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::vector<uint8_t> payload1 = {1, 2, 3, 4};
+  std::vector<uint8_t> payload2 = {5, 6, 7, 8};
+  std::atomic<bool> tx1_ok = false;
+  std::atomic<bool> tx2_failed = false;
+
+  async_usb_impl->QueueTx(fidl::VectorView<uint8_t>::FromExternal(payload1.data(), payload1.size()))
+      .ThenExactlyOnce([&tx1_ok](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+        tx1_ok = true;
+      });
+  async_usb_impl->QueueTx(fidl::VectorView<uint8_t>::FromExternal(payload2.data(), payload2.size()))
+      .ThenExactlyOnce([&tx2_failed](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_error());
+        tx2_failed = true;
+      });
+
+  driver_test_.runtime().RunUntil([&] {
+    size_t pending = 0;
+    driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+      pending = env.fake_dev_->fake_endpoint(kBulkInEp).pending_request_count();
+    });
+    return pending == 2u;
+  });
+
+  driver_test_.runtime().RunUntilIdle();
+  EXPECT_FALSE(tx1_ok.load());
+  EXPECT_FALSE(tx2_failed.load());
+
+  // Complete first Bulk IN request -> only tx1 resolves; tx2 remains pending.
+  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, payload1.size());
+  });
+  driver_test_.runtime().RunUntil([&] { return tx1_ok.load(); });
+  driver_test_.runtime().RunUntilIdle();
+  EXPECT_FALSE(tx2_failed.load());
+
+  // Complete second Bulk IN request with hardware error -> tx2 resolves with error.
+  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkInEp).RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0);
+  });
+  driver_test_.runtime().RunUntil([&] { return tx2_failed.load(); });
+
+  async_usb_impl = {};
+  SafeStopDriver();
+}
+
+TEST_F(UsbAdbTest, QueueTxOutOfOrderCompletionMatchesByVmoId) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  auto async_usb_impl = fidl::WireClient<fadb::UsbAdbImpl>(
+      usb_impl.TakeClientEnd(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::vector<uint8_t> payload1 = {1, 2, 3, 4};
+  std::vector<uint8_t> payload2 = {5, 6, 7, 8};
+  std::atomic<bool> tx1_ok = false;
+  std::atomic<bool> tx2_ok = false;
+
+  async_usb_impl->QueueTx(fidl::VectorView<uint8_t>::FromExternal(payload1.data(), payload1.size()))
+      .ThenExactlyOnce([&tx1_ok](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+        tx1_ok = true;
+      });
+  async_usb_impl->QueueTx(fidl::VectorView<uint8_t>::FromExternal(payload2.data(), payload2.size()))
+      .ThenExactlyOnce([&tx2_ok](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+        tx2_ok = true;
+      });
+
+  driver_test_.runtime().RunUntil([&] {
+    size_t pending = 0;
+    driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+      pending = env.fake_dev_->fake_endpoint(kBulkInEp).pending_request_count();
+    });
+    return pending == 2u;
+  });
+
+  // Complete the second request (index 1) out of order before the first request (index 0).
+  // Matching by VMO ID must resolve tx2 while keeping tx1 pending until its own request completes.
+  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkInEp).RequestCompleteAtIndex(1, ZX_OK, payload2.size());
+  });
+  driver_test_.runtime().RunUntil([&] { return tx2_ok.load(); });
+  driver_test_.runtime().RunUntilIdle();
+  EXPECT_FALSE(tx1_ok.load());
+
+  // Complete the remaining first request -> tx1 resolves.
+  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkInEp).RequestCompleteAtIndex(0, ZX_OK, payload1.size());
+  });
+  driver_test_.runtime().RunUntil([&] { return tx1_ok.load(); });
+
+  async_usb_impl = {};
+  SafeStopDriver();
 }
 
 }  // namespace usb_adb_function

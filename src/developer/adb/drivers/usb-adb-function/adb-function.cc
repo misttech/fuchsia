@@ -9,6 +9,7 @@
 #include <lib/zx/vmar.h>
 #include <zircon/assert.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 
@@ -59,7 +60,7 @@ void UsbAdbDevice::PurgeOfflineQueues() {
   }
   while (!tx_pending_reqs_.empty()) {
     CompleteTxn(tx_pending_reqs_.front().completer, ZX_ERR_CANCELED);
-    tx_pending_reqs_.pop();
+    tx_pending_reqs_.pop_front();
   }
   UpdateQueueStats();
 }
@@ -270,10 +271,16 @@ void UsbAdbDevice::SendQueued() {
     return;
   }
 
-  while (!tx_pending_reqs_.empty()) {
-    auto& current = tx_pending_reqs_.front();
+  for (auto it = tx_pending_reqs_.begin(); it != tx_pending_reqs_.end();) {
+    if (it->start == it->request.data().size()) {
+      ++it;
+      continue;
+    }
+
     std::vector<fuchsia_hardware_usb_request::Request> requests;
-    while (current.start < current.request.data().size()) {
+    std::vector<uint64_t> queued_vmo_ids;
+    bool copy_failed = false;
+    while (it->start < it->request.data().size()) {
       auto req = bulk_in_ep_.GetRequest();
       if (!req) {
         break;
@@ -281,12 +288,13 @@ void UsbAdbDevice::SendQueued() {
       // Reset request buffers before copying new payload data.
       req->clear_buffers();
 
-      size_t to_copy = std::min(current.request.data().size() - current.start, kVmoDataSize);
+      size_t to_copy = std::min(it->request.data().size() - it->start, kVmoDataSize);
       zx::result<std::vector<size_t>> actual = req->CachedCopyTo(
-          0, current.request.data().data() + current.start, to_copy, bulk_in_ep_.GetMapped());
+          0, it->request.data().data() + it->start, to_copy, bulk_in_ep_.GetMapped());
       if (actual.is_error() || actual->size() != (*req)->data()->size()) {
         zxlogf(ERROR, "CachedCopyTo failed or size mismatch");
         bulk_in_ep_.PutRequest(std::move(req.value()));
+        copy_failed = true;
         break;
       }
       size_t actual_total = 0;
@@ -296,11 +304,24 @@ void UsbAdbDevice::SendQueued() {
         actual_total += (*actual)[i];
       }
 
+      queued_vmo_ids.push_back((*req)->data()->at(0).buffer()->vmo_id().value());
       requests.emplace_back(req->take_request());
-      current.start += actual_total;
+      it->start += actual_total;
     }
 
     if (requests.empty()) {
+      if (copy_failed) {
+        it->status = ZX_ERR_INTERNAL;
+        it->start = it->request.data().size();
+        if (it->in_flight_vmo_ids.empty()) {
+          CompleteTxn(it->completer, it->status);
+          it = tx_pending_reqs_.erase(it);
+          UpdateQueueStats();
+          continue;
+        }
+        ++it;
+        continue;
+      }
       // Out of hardware request descriptors; return until in-flight completions return descriptors.
       return;
     }
@@ -311,21 +332,31 @@ void UsbAdbDevice::SendQueued() {
     auto result = bulk_in_ep_->QueueRequests(std::move(requests));
     if (result.is_error()) {
       zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
-      CompleteTxn(current.completer, ZX_ERR_IO);
-      tx_pending_reqs_.pop();
-      UpdateQueueStats();
+      it->status = ZX_ERR_IO;
+      it->start = it->request.data().size();
+      if (it->in_flight_vmo_ids.empty()) {
+        CompleteTxn(it->completer, it->status);
+        tx_pending_reqs_.erase(it);
+        UpdateQueueStats();
+      }
       return;
     }
 
-    if (current.start == current.request.data().size()) {
-      CompleteTxn(current.completer, ZX_OK);
-      tx_pending_reqs_.pop();
-      UpdateQueueStats();
-    } else {
+    it->in_flight_vmo_ids.insert(it->in_flight_vmo_ids.end(), queued_vmo_ids.begin(),
+                                 queued_vmo_ids.end());
+    if (copy_failed) {
+      it->status = ZX_ERR_INTERNAL;
+      it->start = it->request.data().size();
+      ++it;
+      continue;
+    }
+
+    if (it->start < it->request.data().size()) {
       // Transaction was partially queued due to descriptor exhaustion.
       // Return and wait for in-flight requests to complete before queueing remaining bytes.
       return;
     }
+    ++it;
   }
 }
 
@@ -423,7 +454,7 @@ void UsbAdbDevice::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& comp
       [[fallthrough]];
     case State::kOnline:
     case State::kAwaitingUsbConnection:
-      tx_pending_reqs_.emplace(
+      tx_pending_reqs_.push_back(
           txn_req_t{.request = std::move(request), .start = 0, .completer = completer.ToAsync()});
       UpdateQueueStats();
       SendQueued();
@@ -502,6 +533,13 @@ void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
           }
         }
         usb::FidlRequest req(std::move(completion.request().value()));
+        std::optional<uint64_t> completed_vmo_id;
+        if (req->data().has_value() && !req->data()->empty() &&
+            req->data()->at(0).buffer().has_value() &&
+            req->data()->at(0).buffer()->Which() ==
+                fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) {
+          completed_vmo_id = req->data()->at(0).buffer()->vmo_id().value();
+        }
         size_t size = req.length();
         if (status == ZX_OK) {
           bulk_in_inspect_.AddTxBytes(completion.transfer_size().value_or(0));
@@ -509,6 +547,25 @@ void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
           bulk_in_inspect_.AddFailedTxBytes(size);
         }
         bulk_in_ep_.PutRequest(std::move(req));
+
+        if (completed_vmo_id.has_value()) {
+          for (auto it = tx_pending_reqs_.begin(); it != tx_pending_reqs_.end(); ++it) {
+            auto vmo_it = std::find(it->in_flight_vmo_ids.begin(), it->in_flight_vmo_ids.end(),
+                                    *completed_vmo_id);
+            if (vmo_it != it->in_flight_vmo_ids.end()) {
+              it->in_flight_vmo_ids.erase(vmo_it);
+              if (status != ZX_OK && it->status == ZX_OK) {
+                it->status = status;
+              }
+              if (it->start == it->request.data().size() && it->in_flight_vmo_ids.empty()) {
+                CompleteTxn(it->completer, it->status);
+                tx_pending_reqs_.erase(it);
+              }
+              break;
+            }
+          }
+        }
+        UpdateQueueStats();
 
         // Do not queue requests if status is ZX_ERR_IO_NOT_PRESENT, as the underlying connection
         // could be disconnected or USB_RESET is being processed. Calling adb_send_locked in such

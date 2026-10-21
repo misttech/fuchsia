@@ -18,7 +18,9 @@
 #include <lib/sync/cpp/completion.h>
 #include <zircon/compiler.h>
 
+#include <deque>
 #include <queue>
+#include <vector>
 
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb-inspect/usb-inspect.h>
@@ -141,10 +143,12 @@ class UsbAdbDevice : public fdf::DriverBase2,
 
   fidl::ServerBindingGroup<fadb::Device> device_bindings_;
 
-  // Structure to store pending transfer requests when there are not enough USB request buffers.
+  // Structure to store pending and in-flight transfer requests.
   struct txn_req_t {
     QueueTxRequest request;
     size_t start = 0;
+    std::vector<uint64_t> in_flight_vmo_ids;
+    zx_status_t status = ZX_OK;
     QueueTxCompleter::Async completer;
   };
 
@@ -227,9 +231,8 @@ class UsbAdbDevice : public fdf::DriverBase2,
   // Bulk IN/TX endpoint
   usb::EndpointClient<UsbAdbDevice> bulk_in_ep_{usb::EndpointType::BULK, this,
                                                 std::mem_fn(&UsbAdbDevice::TxComplete)};
-  // Queue of pending transfer requests that need to be transmitted once the BULK IN request buffers
-  // become available.
-  std::queue<txn_req_t> tx_pending_reqs_;
+  // Queue of pending and in-flight transfer requests awaiting BULK IN transmission completion.
+  std::deque<txn_req_t> tx_pending_reqs_;
 
   bool bulk_in_cancelled_ = false;
   bool bulk_out_cancelled_ = false;
