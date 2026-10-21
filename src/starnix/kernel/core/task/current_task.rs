@@ -1347,6 +1347,10 @@ impl CurrentTask {
         // while doing a tsync.  So, you hold the process lock while making any changes.
         let state = self.thread_group().write();
 
+        if self.seccomp_filter_state.get() == SeccompStateValue::Strict {
+            return error!(EINVAL);
+        }
+
         if flags & SECCOMP_FILTER_FLAG_TSYNC != 0 {
             // TSYNC synchronizes all filters for all threads in the current process to
             // the current thread's
@@ -1384,19 +1388,37 @@ impl CurrentTask {
 
                 other_task_state.enable_no_new_privs();
                 other_task_state.seccomp_filters = filters.clone();
+                task.seccomp_filter_state.set_always_allow(&filters.always_allow);
                 task.set_seccomp_state(SeccompStateValue::UserDefined)?;
             }
         } else {
             let mut task_state = self.task.write();
 
             task_state.seccomp_filters.add_filter(new_filter, code.len() as u16)?;
+            let always_allow = task_state.seccomp_filters.always_allow;
+            self.seccomp_filter_state.set_always_allow(&always_allow);
             self.set_seccomp_state(SeccompStateValue::UserDefined)?;
         }
 
         if let Some(fd) = maybe_fd { Ok(fd.into()) } else { Ok(().into()) }
     }
 
+    #[inline]
     pub fn run_seccomp_filters(
+        &mut self,
+        syscall: &Syscall,
+    ) -> Option<Result<SyscallResult, Errno>> {
+        if !self.is_arch32()
+            && self.seccomp_filter_state.is_syscall_always_allowed(syscall.decl.number)
+        {
+            return None;
+        }
+        self.run_seccomp_filters_slow(syscall)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn run_seccomp_filters_slow(
         &mut self,
         syscall: &Syscall,
     ) -> Option<Result<SyscallResult, Errno>> {
@@ -1694,6 +1716,7 @@ impl CurrentTask {
         let scheduler_state;
         let no_new_privs;
         let seccomp_filters;
+        let seccomp_state;
         let robust_list_head = RobustListHeadPtr::null(self);
         let child_signal_mask;
         let timerslack_ns;
@@ -1735,6 +1758,10 @@ impl CurrentTask {
 
             no_new_privs = state.no_new_privs();
             seccomp_filters = state.seccomp_filters.clone();
+            // Capture the seccomp state while holding the task lock so that it stays consistent
+            // with `seccomp_filters`. A concurrent `SECCOMP_FILTER_FLAG_TSYNC` from a sibling
+            // thread updates both under this task's write lock.
+            seccomp_state = SeccompState::from(&self.seccomp_filter_state);
             child_signal_mask = state.signal_mask();
 
             pid = pids.allocate_pid()?;
@@ -1828,7 +1855,7 @@ impl CurrentTask {
             scheduler_state,
             uts_ns,
             no_new_privs,
-            SeccompState::from(&self.seccomp_filter_state),
+            seccomp_state,
             seccomp_filters,
             robust_list_head,
             timerslack_ns,

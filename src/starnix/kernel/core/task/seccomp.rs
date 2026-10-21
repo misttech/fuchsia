@@ -14,9 +14,10 @@ use crate::vfs::{
 };
 use bstr::ByteSlice;
 use ebpf::{
-    BPF_ABS, BPF_IND, BPF_LD, BPF_ST, BPF_W, BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId,
-    NoMap, PointerOrigin, ProgramArgument, Type, bpf_addressing_mode, bpf_class, bpf_size,
-    convert_and_link_cbpf,
+    BPF_A, BPF_ABS, BPF_IMM, BPF_IND, BPF_JA, BPF_JEQ, BPF_JGE, BPF_JGT, BPF_JMP, BPF_JSET, BPF_K,
+    BPF_LD, BPF_RET, BPF_SRC_MASK, BPF_ST, BPF_SUB_OP_MASK, BPF_W, BpfProgramContext, CbpfConfig,
+    EbpfProgram, MemoryId, NoMap, PointerOrigin, ProgramArgument, Type, bpf_addressing_mode,
+    bpf_class, bpf_size, convert_and_link_cbpf,
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
@@ -39,7 +40,7 @@ use starnix_uapi::{
     seccomp_notif, seccomp_notif_resp, sock_filter,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -50,7 +51,9 @@ use starnix_uapi::__NR_clock_gettime;
 #[cfg(target_arch = "aarch64")]
 use starnix_uapi::__NR_gettimeofday;
 #[cfg(target_arch = "aarch64")]
-use starnix_uapi::{AUDIT_ARCH_AARCH64, AUDIT_ARCH_ARM};
+use starnix_uapi::AUDIT_ARCH_AARCH64;
+#[cfg(target_arch = "aarch64")]
+use starnix_uapi::AUDIT_ARCH_ARM;
 
 #[cfg(target_arch = "x86_64")]
 use starnix_uapi::__NR_clock_gettime;
@@ -65,6 +68,16 @@ use starnix_uapi::AUDIT_ARCH_X86_64;
 
 #[cfg(target_arch = "riscv64")]
 use starnix_uapi::{__NR_clock_gettime, AUDIT_ARCH_RISCV64};
+
+const NATIVE_ALWAYS_ALLOW_SYSCALLS: usize = 512;
+const NATIVE_ALWAYS_ALLOW_WORDS: usize = NATIVE_ALWAYS_ALLOW_SYSCALLS / 64;
+
+#[cfg(target_arch = "x86_64")]
+const NATIVE_AUDIT_ARCH: u32 = AUDIT_ARCH_X86_64;
+#[cfg(target_arch = "aarch64")]
+const NATIVE_AUDIT_ARCH: u32 = AUDIT_ARCH_AARCH64;
+#[cfg(target_arch = "riscv64")]
+const NATIVE_AUDIT_ARCH: u32 = AUDIT_ARCH_RISCV64;
 
 pub struct SeccompFilter {
     /// The BPF program associated with this filter.
@@ -81,6 +94,10 @@ pub struct SeccompFilter {
 
     /// The notifier associated with this filter, if it was created with SECCOMP_FILTER_FLAG_NEW_LISTENER
     pub notifier: Option<SeccompNotifierHandle>,
+
+    /// Bitmap of native 64-bit syscall numbers (0..512) that this filter unconditionally allows
+    /// without inspecting `instruction_pointer` or `args[0..5]`.
+    always_allow: [u64; NATIVE_ALWAYS_ALLOW_WORDS],
 }
 
 /// The result of running a set of seccomp filters.
@@ -91,6 +108,83 @@ pub struct SeccompFilterResult {
     /// The filter that returned the highest priority result, as used by SECCOMP_RET_USER_NOTIF,
     /// which has to have access to its cookie value
     filter: Option<Arc<SeccompFilter>>,
+}
+
+/// Evaluates whether a cBPF filter unconditionally returns `SECCOMP_RET_ALLOW` for the given
+/// `(nr, NATIVE_AUDIT_ARCH)` pair without ever reading `instruction_pointer` or `args`.
+fn cbpf_unconditionally_allows_native(code: &[sock_filter], nr: u32) -> bool {
+    const NR_OFFSET: u32 = std::mem::offset_of!(seccomp_data, nr) as u32;
+    const ARCH_OFFSET: u32 = std::mem::offset_of!(seccomp_data, arch) as u32;
+    const BPF_RVAL_MASK: u8 = BPF_K | BPF_A | BPF_SRC_MASK;
+
+    let mut pc = 0usize;
+    let mut a = 0u32;
+    while pc < code.len() {
+        let insn = &code[pc];
+        match bpf_class(insn) {
+            BPF_LD => {
+                if bpf_size(insn) != BPF_W {
+                    return false;
+                }
+                match bpf_addressing_mode(insn) {
+                    BPF_ABS => {
+                        match insn.k {
+                            NR_OFFSET => a = nr,
+                            ARCH_OFFSET => a = NATIVE_AUDIT_ARCH,
+                            _ => return false,
+                        }
+                        pc += 1;
+                    }
+                    BPF_IMM => {
+                        a = insn.k;
+                        pc += 1;
+                    }
+                    _ => return false,
+                }
+            }
+            BPF_JMP => {
+                let op = (insn.code as u8) & BPF_SUB_OP_MASK;
+                let src = (insn.code as u8) & BPF_SRC_MASK;
+                if op == BPF_JA {
+                    pc = pc.saturating_add(1).saturating_add(insn.k as usize);
+                } else if src == BPF_K {
+                    let k = insn.k;
+                    let cond = match op {
+                        BPF_JEQ => a == k,
+                        BPF_JGT => a > k,
+                        BPF_JGE => a >= k,
+                        BPF_JSET => (a & k) != 0,
+                        _ => return false,
+                    };
+                    let offset = if cond { insn.jt as usize } else { insn.jf as usize };
+                    pc = pc.saturating_add(1).saturating_add(offset);
+                } else {
+                    return false;
+                }
+            }
+            BPF_RET => {
+                let rval = (insn.code as u8) & BPF_RVAL_MASK;
+                let ret = match rval {
+                    BPF_K => insn.k,
+                    BPF_A => a,
+                    _ => return false,
+                };
+                return SeccompAction::from_u32(ret) == Some(SeccompAction::Allow);
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+fn compute_always_allow_mask(code: &[sock_filter]) -> [u64; NATIVE_ALWAYS_ALLOW_WORDS] {
+    let mut mask = [0u64; NATIVE_ALWAYS_ALLOW_WORDS];
+    for nr in 0..(NATIVE_ALWAYS_ALLOW_SYSCALLS as u32) {
+        if cbpf_unconditionally_allows_native(code, nr) {
+            mask[(nr as usize) / 64] |= 1u64 << (nr % 64);
+        }
+    }
+    mask
 }
 
 impl SeccompFilter {
@@ -127,8 +221,15 @@ impl SeccompFilter {
             log_warn!("{}", errmsg);
             errno!(EINVAL)
         })?;
+        let always_allow = compute_always_allow_mask(code);
 
-        Ok(SeccompFilter { program, unique_id: maybe_unique_id, log: should_log, notifier })
+        Ok(SeccompFilter {
+            program,
+            unique_id: maybe_unique_id,
+            log: should_log,
+            notifier,
+            always_allow,
+        })
     }
 
     pub fn run(&self, data: &seccomp_data) -> u32 {
@@ -166,7 +267,6 @@ impl ProgramArgument for &'_ SeccompData {
 const SECCOMP_MAX_INSNS_PER_PATH: u16 = 32768;
 
 /// A list of seccomp filters, intended to be associated with a specific process.
-#[derive(Default)]
 pub struct SeccompFilterContainer {
     /// List of currently installed seccomp_filters; most recently added is last.
     pub filters: Vec<Arc<SeccompFilter>>,
@@ -176,6 +276,19 @@ pub struct SeccompFilterContainer {
     // instead of computed because we store seccomp filters in an
     // expanded form, and it is impossible to get the original length.
     pub provided_instructions: u16,
+
+    /// Intersection of `always_allow` bitmaps across all installed filters.
+    pub always_allow: [u64; NATIVE_ALWAYS_ALLOW_WORDS],
+}
+
+impl Default for SeccompFilterContainer {
+    fn default() -> Self {
+        Self {
+            filters: Vec::new(),
+            provided_instructions: 0,
+            always_allow: [u64::MAX; NATIVE_ALWAYS_ALLOW_WORDS],
+        }
+    }
 }
 
 impl Clone for SeccompFilterContainer {
@@ -188,6 +301,7 @@ impl Clone for SeccompFilterContainer {
         SeccompFilterContainer {
             filters: self.filters.clone(),
             provided_instructions: self.provided_instructions,
+            always_allow: self.always_allow,
         }
     }
 }
@@ -209,12 +323,10 @@ fn make_seccomp_data(
     syscall: &Syscall,
     ip: u64,
 ) -> seccomp_data {
-    #[cfg(target_arch = "x86_64")]
-    let arch_val = AUDIT_ARCH_X86_64;
     #[cfg(target_arch = "aarch64")]
-    let arch_val = if current_task.is_arch32() { AUDIT_ARCH_ARM } else { AUDIT_ARCH_AARCH64 };
-    #[cfg(target_arch = "riscv64")]
-    let arch_val = AUDIT_ARCH_RISCV64;
+    let arch_val = if current_task.is_arch32() { AUDIT_ARCH_ARM } else { NATIVE_AUDIT_ARCH };
+    #[cfg(not(target_arch = "aarch64"))]
+    let arch_val = NATIVE_AUDIT_ARCH;
     seccomp_data {
         nr: syscall.decl.number as i32,
         arch: arch_val,
@@ -275,6 +387,9 @@ impl SeccompFilterContainer {
             return error!(ENOMEM);
         }
 
+        for i in 0..NATIVE_ALWAYS_ALLOW_WORDS {
+            self.always_allow[i] &= filter.always_allow[i];
+        }
         self.provided_instructions = maybe_new_length;
         self.filters.push(filter);
         Ok(())
@@ -383,11 +498,32 @@ pub enum SeccompStateValue {
 pub struct SeccompState {
     // This AtomicU8 corresponds to a SeccompStateValue.
     filter_state: AtomicU8,
+    always_allow: [AtomicU64; NATIVE_ALWAYS_ALLOW_WORDS],
 }
 
 impl SeccompState {
     pub fn from(state: &SeccompState) -> SeccompState {
-        SeccompState { filter_state: AtomicU8::new(state.filter_state.load(Ordering::Acquire)) }
+        SeccompState {
+            filter_state: AtomicU8::new(state.filter_state.load(Ordering::Acquire)),
+            always_allow: std::array::from_fn(|i| {
+                AtomicU64::new(state.always_allow[i].load(Ordering::Relaxed))
+            }),
+        }
+    }
+
+    pub fn set_always_allow(&self, mask: &[u64; NATIVE_ALWAYS_ALLOW_WORDS]) {
+        for i in 0..NATIVE_ALWAYS_ALLOW_WORDS {
+            self.always_allow[i].store(mask[i], Ordering::Relaxed);
+        }
+    }
+
+    #[inline]
+    pub fn is_syscall_always_allowed(&self, nr: u64) -> bool {
+        if nr >= NATIVE_ALWAYS_ALLOW_SYSCALLS as u64 {
+            return false;
+        }
+        let word = self.always_allow[(nr as usize) / 64].load(Ordering::Relaxed);
+        (word & (1u64 << (nr % 64))) != 0
     }
 
     fn from_u8(value: u8) -> SeccompStateValue {
@@ -407,10 +543,19 @@ impl SeccompState {
         loop {
             let seccomp_filter_status = self.get();
             if seccomp_filter_status == *state {
+                // The state never changes once it leaves `None`, so storing the same value again
+                // is harmless. The `Release` store publishes any `always_allow` updates made
+                // before this call (e.g. when installing another filter on a task that is already
+                // `UserDefined`) to threads that observe it through the `Acquire` load in `get`.
+                self.filter_state.store(*state as u8, Ordering::Release);
                 return Ok(());
             }
             if seccomp_filter_status != SeccompStateValue::None {
                 return error!(EINVAL);
+            }
+
+            if *state != SeccompStateValue::UserDefined {
+                self.set_always_allow(&[0u64; NATIVE_ALWAYS_ALLOW_WORDS]);
             }
 
             if self
@@ -1104,8 +1249,144 @@ impl FileOps for SeccompNotifierFileObject {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::task::SeccompAction;
     use crate::testing::spawn_kernel_and_run;
+    use linux_uapi::{SECCOMP_RET_ALLOW, SECCOMP_RET_ERRNO, SECCOMP_RET_KILL_PROCESS};
+
+    fn bpf_stmt(code: u8, k: u32) -> sock_filter {
+        sock_filter { code: code as u16, jt: 0, jf: 0, k }
+    }
+
+    fn bpf_jump(code: u8, k: u32, jt: u8, jf: u8) -> sock_filter {
+        sock_filter { code: code as u16, jt, jf, k }
+    }
+
+    #[::fuchsia::test]
+    fn test_cbpf_always_allow_native_arch_and_nr() {
+        let nr_offset = std::mem::offset_of!(seccomp_data, nr) as u32;
+        let arch_offset = std::mem::offset_of!(seccomp_data, arch) as u32;
+        let code = vec![
+            bpf_stmt(BPF_LD | BPF_W | BPF_ABS, arch_offset),
+            bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, NATIVE_AUDIT_ARCH, 0, 3),
+            bpf_stmt(BPF_LD | BPF_W | BPF_ABS, nr_offset),
+            bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 63, 1, 0),
+            bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | 1),
+        ];
+
+        assert!(cbpf_unconditionally_allows_native(&code, 64));
+        assert!(!cbpf_unconditionally_allows_native(&code, 63));
+
+        let mask = compute_always_allow_mask(&code);
+        assert_eq!(mask[1] & (1u64 << (64 % 64)), 1);
+        assert_eq!(mask[0] & (1u64 << 63), 0);
+    }
+
+    #[::fuchsia::test]
+    fn test_cbpf_always_allow_jge_jgt_jset_ja_imm_ret_a() {
+        let nr_offset = std::mem::offset_of!(seccomp_data, nr) as u32;
+        // Policy for nr:
+        // - nr < 100: allow (via BPF_JA -> BPF_LD|BPF_IMM SECCOMP_RET_ALLOW -> BPF_RET|BPF_A)
+        // - nr > 200: deny
+        // - 100 <= nr <= 200: allow if even ((nr & 1) == 0), deny if odd ((nr & 1) != 0)
+        let code = vec![
+            // 0: A = nr
+            bpf_stmt(BPF_LD | BPF_W | BPF_ABS, nr_offset),
+            // 1: if A >= 100 goto 3 (jt=1) else goto 2 (jf=0)
+            bpf_jump(BPF_JMP | BPF_JGE | BPF_K, 100, 1, 0),
+            // 2: unconditional jump to 5 (k=2 -> 2 + 1 + 2 = 5)
+            bpf_stmt(BPF_JMP | BPF_JA, 2),
+            // 3: if A > 200 goto 7 (jt=3) else goto 4 (jf=0)
+            bpf_jump(BPF_JMP | BPF_JGT | BPF_K, 200, 3, 0),
+            // 4: if (A & 1) != 0 goto 7 (jt=2) else goto 5 (jf=0)
+            bpf_jump(BPF_JMP | BPF_JSET | BPF_K, 1, 2, 0),
+            // 5: A = SECCOMP_RET_ALLOW
+            bpf_stmt(BPF_LD | BPF_W | BPF_IMM, SECCOMP_RET_ALLOW),
+            // 6: return A
+            bpf_stmt(BPF_RET | BPF_A, 0),
+            // 7: A = SECCOMP_RET_ERRNO | 1
+            bpf_stmt(BPF_LD | BPF_W | BPF_IMM, SECCOMP_RET_ERRNO | 1),
+            // 8: return A
+            bpf_stmt(BPF_RET | BPF_A, 0),
+        ];
+
+        assert!(cbpf_unconditionally_allows_native(&code, 0));
+        assert!(cbpf_unconditionally_allows_native(&code, 99));
+        assert!(cbpf_unconditionally_allows_native(&code, 100));
+        assert!(!cbpf_unconditionally_allows_native(&code, 101));
+        assert!(cbpf_unconditionally_allows_native(&code, 200));
+        assert!(!cbpf_unconditionally_allows_native(&code, 201));
+    }
+
+    #[::fuchsia::test]
+    fn test_cbpf_always_allow_rejects_arg_inspection() {
+        let nr_offset = std::mem::offset_of!(seccomp_data, nr) as u32;
+        let arg0_offset = std::mem::offset_of!(seccomp_data, args) as u32;
+        let code = vec![
+            bpf_stmt(BPF_LD | BPF_W | BPF_ABS, nr_offset),
+            bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 64, 0, 2),
+            bpf_stmt(BPF_LD | BPF_W | BPF_ABS, arg0_offset),
+            bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 1),
+            bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
+        ];
+
+        assert!(!cbpf_unconditionally_allows_native(&code, 64));
+        assert!(cbpf_unconditionally_allows_native(&code, 65));
+    }
+
+    #[::fuchsia::test]
+    fn test_seccomp_filter_container_intersections_and_state() {
+        let nr_offset = std::mem::offset_of!(seccomp_data, nr) as u32;
+        let filter1 = Arc::new(
+            SeccompFilter::from_cbpf(
+                &vec![
+                    bpf_stmt(BPF_LD | BPF_W | BPF_ABS, nr_offset),
+                    bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 10, 1, 0),
+                    bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+                    bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | 1),
+                ],
+                1,
+                false,
+                None,
+            )
+            .expect("filter1"),
+        );
+        let filter2 = Arc::new(
+            SeccompFilter::from_cbpf(
+                &vec![
+                    bpf_stmt(BPF_LD | BPF_W | BPF_ABS, nr_offset),
+                    bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 20, 1, 0),
+                    bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+                    bpf_stmt(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | 1),
+                ],
+                2,
+                false,
+                None,
+            )
+            .expect("filter2"),
+        );
+
+        let mut container = SeccompFilterContainer::default();
+        container.add_filter(filter1, 4).expect("add filter1");
+        container.add_filter(filter2, 4).expect("add filter2");
+
+        let state = SeccompState::default();
+        state.set_always_allow(&container.always_allow);
+        state.set(&SeccompStateValue::UserDefined).expect("set UserDefined");
+
+        assert!(!state.is_syscall_always_allowed(10));
+        assert!(!state.is_syscall_always_allowed(20));
+        assert!(state.is_syscall_always_allowed(30));
+        assert!(!state.is_syscall_always_allowed(NATIVE_ALWAYS_ALLOW_SYSCALLS as u64));
+
+        // Transitioning a fresh state to Strict clears any pre-populated mask.
+        let strict_state = SeccompState::default();
+        strict_state.set_always_allow(&[u64::MAX; NATIVE_ALWAYS_ALLOW_WORDS]);
+        strict_state.set(&SeccompStateValue::Strict).expect("set Strict");
+        assert!(!strict_state.is_syscall_always_allowed(30));
+    }
 
     #[::fuchsia::test]
     async fn test_actions_logged_accepts_legal_string() {
