@@ -109,3 +109,40 @@ func TestUpdateWithClassifiedFiles_PrimaryLicenseFile(t *testing.T) {
 		t.Errorf("Expected r.Licenses to be ['Apache-2.0'], got: %v", r.Licenses)
 	}
 }
+
+func TestGenerateNoticeContent_PreservesIndentationAndDistinctCopyrights(t *testing.T) {
+	matches := []sourceMatchInfo{
+		{
+			relPath: "file1.c",
+			cf: pipeline.ClassifiedFile{
+				Matches: []pipeline.LicenseMatch{
+					{
+						SPDXID:    "BSD-2-Clause",
+						MatchType: "Approved",
+						Text:      []byte("/*\n * Copyright 2020 Holder A\n *\n * Redistribution and use...\n"),
+					},
+				},
+			},
+		},
+		{
+			relPath: "file2.c",
+			cf: pipeline.ClassifiedFile{
+				Matches: []pipeline.LicenseMatch{
+					{
+						SPDXID:    "BSD-2-Clause",
+						MatchType: "Approved",
+						Text:      []byte(" * Copyright 2021 Holder B\n *\n * Redistribution and use...\n"),
+					},
+				},
+			},
+		},
+	}
+
+	got := generateNoticeContent(matches)
+	if !strings.Contains(got, "/*\n * Copyright 2020 Holder A\n *\n * Redistribution and use...") {
+		t.Errorf("Expected Holder A block with preserved formatting, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\n * Copyright 2021 Holder B\n *\n * Redistribution and use...") {
+		t.Errorf("Expected Holder B block with preserved leading space on line 1, got:\n%s", got)
+	}
+}

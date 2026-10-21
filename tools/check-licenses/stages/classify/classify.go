@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -308,6 +309,9 @@ func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense boo
 	if parser == "" {
 		parser = "Single License" // Default parser behavior
 	}
+	if parser == "Single License" && filepath.Base(path) == "NOTICE.fuchsia" {
+		parser = "Fuchsia"
+	}
 
 	if strings.HasPrefix(parser, "Delimiter: ") {
 		delim := strings.TrimPrefix(parser, "Delimiter: ")
@@ -329,6 +333,8 @@ func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense boo
 			chunks = parseChromium(normalizedText)
 		case "Flutter":
 			chunks = parseFlutter(normalizedText)
+		case "Fuchsia":
+			chunks = parseFuchsia(normalizedText)
 		case "Google":
 			chunks = parseGoogle(normalizedText)
 		case "OneDelimiter":
@@ -344,19 +350,42 @@ func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense boo
 		func() {
 			defer metrics.ClassifierDuration.Track()()
 			results := c.Engine.Match(chunk)
+			var chunkMatches []pipeline.LicenseMatch
 			for _, match := range results.Matches {
 				if match.Name != "" && !strings.HasPrefix(match.MatchType, "_") {
 					metrics.LicenseDetected.Inc(match.Name, "unrecognized", "unrecognized")
-					matches = append(matches, pipeline.LicenseMatch{
+					chunkMatches = append(chunkMatches, pipeline.LicenseMatch{
 						SPDXID:      match.Name,
 						MatchType:   match.MatchType,
 						PatternName: match.Variant,
 						StartLine:   match.StartLine,
 						EndLine:     match.EndLine,
-						Text:        extractLines(chunk, match.StartLine, match.EndLine),
 					})
 				}
 			}
+
+			sort.SliceStable(chunkMatches, func(i, j int) bool {
+				if chunkMatches[i].StartLine != chunkMatches[j].StartLine {
+					return chunkMatches[i].StartLine < chunkMatches[j].StartLine
+				}
+				return chunkMatches[i].EndLine < chunkMatches[j].EndLine
+			})
+
+			lines := bytes.Split(chunk, []byte("\n"))
+			for i := range chunkMatches {
+				startLine := chunkMatches[i].StartLine
+				if chunkMatches[i].IsLicense() {
+					minLine := 1
+					for j := 0; j < i; j++ {
+						if chunkMatches[j].IsLicense() && chunkMatches[j].EndLine < startLine && chunkMatches[j].EndLine >= minLine {
+							minLine = chunkMatches[j].EndLine + 1
+						}
+					}
+					startLine = expandNoticeStartLine(lines, startLine, minLine)
+				}
+				chunkMatches[i].Text = extractLines(chunk, startLine, chunkMatches[i].EndLine)
+			}
+			matches = append(matches, chunkMatches...)
 		}()
 	}
 
@@ -367,4 +396,161 @@ func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense boo
 		AnalyzedText:  normalizedText,
 		Matches:       matches,
 	}, nil
+}
+
+// isCPreprocessorOrShebang returns true if a trimmed '#'-prefixed line is a
+// shebang (#!) or a C/C++ preprocessor directive rather than a license comment.
+func isCPreprocessorOrShebang(trimmed string) bool {
+	if strings.HasPrefix(trimmed, "#!") {
+		return true
+	}
+	directives := []string{
+		"#ifndef", "#define", "#include", "#pragma", "#ifdef", "#if ", "#elif", "#else", "#endif", "#error", "#undef",
+	}
+	for _, d := range directives {
+		if strings.HasPrefix(trimmed, d) {
+			return true
+		}
+	}
+	return false
+}
+
+// linesContainCopyright returns true if any line in slice contains a copyright indicator.
+func linesContainCopyright(slice [][]byte) bool {
+	for _, line := range slice {
+		lower := strings.ToLower(string(line))
+		if strings.Contains(lower, "copyright") || strings.Contains(lower, "(c)") || strings.Contains(lower, "©") {
+			return true
+		}
+	}
+	return false
+}
+
+// expandPrecedingCopyrightBlockComment checks whether a C-style block comment starting at
+// startLine (which does not itself contain a copyright line before matchStartLine) is
+// immediately preceded by an adjacent /* ... */ comment block containing a copyright notice.
+func expandPrecedingCopyrightBlockComment(lines [][]byte, startLine int, matchStartLine int, minLine int) int {
+	if startLine <= minLine || linesContainCopyright(lines[startLine-1:matchStartLine]) {
+		return startLine
+	}
+	prevEnd := startLine - 1
+	if prevEnd < minLine || !strings.HasSuffix(strings.TrimSpace(string(lines[prevEnd-1])), "*/") {
+		return startLine
+	}
+	prevStart := 0
+	for lineNum := prevEnd; lineNum >= minLine; lineNum-- {
+		trimmed := strings.TrimSpace(string(lines[lineNum-1]))
+		if lineNum < prevEnd && strings.HasSuffix(trimmed, "*/") {
+			break
+		}
+		if strings.HasPrefix(trimmed, "/*") {
+			prevStart = lineNum
+			break
+		}
+		if strings.HasPrefix(trimmed, "*") || trimmed == "" {
+			continue
+		}
+		break
+	}
+	if prevStart >= minLine && linesContainCopyright(lines[prevStart-1:prevEnd]) {
+		return prevStart
+	}
+	return startLine
+}
+
+// expandNoticeStartLine walks backwards from matchStartLine (1-based) down to minLine (1-based)
+// to include preceding copyright and authorship lines within the same comment block.
+func expandNoticeStartLine(lines [][]byte, matchStartLine int, minLine int) int {
+	if matchStartLine <= 1 || matchStartLine > len(lines) {
+		return matchStartLine
+	}
+	if minLine < 1 {
+		minLine = 1
+	}
+	if minLine >= matchStartLine {
+		return matchStartLine
+	}
+
+	firstLine := strings.TrimSpace(string(lines[matchStartLine-1]))
+	startLine := matchStartLine
+
+	switch {
+	case strings.HasPrefix(firstLine, "/*"):
+		// The match already begins on the opening line of a C-style block comment.
+		// Check if an immediately adjacent preceding /* ... */ block holds the copyright line.
+		return expandPrecedingCopyrightBlockComment(lines, startLine, matchStartLine, minLine)
+
+	case strings.HasPrefix(firstLine, "*"):
+		// Inside a C-style /* ... */ block comment. Walk backwards to the opening /*.
+		for lineNum := matchStartLine - 1; lineNum >= minLine; lineNum-- {
+			trimmed := strings.TrimSpace(string(lines[lineNum-1]))
+			if strings.HasSuffix(trimmed, "*/") {
+				break
+			}
+			if strings.HasPrefix(trimmed, "/*") {
+				startLine = lineNum
+				break
+			}
+			if strings.HasPrefix(trimmed, "*") || trimmed == "" {
+				startLine = lineNum
+				continue
+			}
+			break
+		}
+		// If we reached the opening /* of this block comment, check if an immediately
+		// adjacent preceding /* ... */ block holds the copyright line.
+		if strings.HasPrefix(strings.TrimSpace(string(lines[startLine-1])), "/*") {
+			startLine = expandPrecedingCopyrightBlockComment(lines, startLine, matchStartLine, minLine)
+		}
+		// If we stopped at minLine inside a shared block comment without hitting /*,
+		// skip any leading empty '*' or blank lines before the copyright header.
+		for startLine < matchStartLine {
+			trimmed := strings.TrimSpace(string(lines[startLine-1]))
+			if trimmed == "*" || trimmed == "" {
+				startLine++
+				continue
+			}
+			break
+		}
+
+	case strings.HasPrefix(firstLine, "//"):
+		// Contiguous // line-comment block.
+		for lineNum := matchStartLine - 1; lineNum >= minLine; lineNum-- {
+			trimmed := strings.TrimSpace(string(lines[lineNum-1]))
+			if strings.HasPrefix(trimmed, "//") {
+				startLine = lineNum
+				continue
+			}
+			break
+		}
+		for startLine < matchStartLine {
+			trimmed := strings.TrimSpace(string(lines[startLine-1]))
+			if trimmed == "//" {
+				startLine++
+				continue
+			}
+			break
+		}
+
+	case strings.HasPrefix(firstLine, "#"):
+		// Contiguous # line-comment block (excluding shebangs and C preprocessor directives).
+		for lineNum := matchStartLine - 1; lineNum >= minLine; lineNum-- {
+			trimmed := strings.TrimSpace(string(lines[lineNum-1]))
+			if strings.HasPrefix(trimmed, "#") && !isCPreprocessorOrShebang(trimmed) {
+				startLine = lineNum
+				continue
+			}
+			break
+		}
+		for startLine < matchStartLine {
+			trimmed := strings.TrimSpace(string(lines[startLine-1]))
+			if trimmed == "#" {
+				startLine++
+				continue
+			}
+			break
+		}
+	}
+
+	return startLine
 }

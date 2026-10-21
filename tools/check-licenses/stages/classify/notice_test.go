@@ -152,3 +152,46 @@ func TestDeduplicateChunks(t *testing.T) {
 		t.Errorf("Expected %v, got %v", expected, unique)
 	}
 }
+
+func TestParseFuchsia(t *testing.T) {
+	content := []byte(`================================================================================
+The following files are covered by this license:
+  - a.c
+  - b.c
+--------------------------------------------------------------------------------
+/*
+ * Copyright 2020 Author A
+ *
+ * MIT License Text for a and b.
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - c.c
+--------------------------------------------------------------------------------
+ * Copyright 2021 Author C
+ *
+ * BSD License Text for c.
+================================================================================
+`)
+	chunks := parseFuchsia(content)
+	if len(chunks) != 2 {
+		t.Fatalf("Expected 2 chunks, got %d", len(chunks))
+	}
+	want0 := "/*\n * Copyright 2020 Author A\n *\n * MIT License Text for a and b."
+	if string(chunks[0]) != want0 {
+		t.Errorf("Unexpected chunk 0:\ngot:  %q\nwant: %q", string(chunks[0]), want0)
+	}
+	want1 := " * Copyright 2021 Author C\n *\n * BSD License Text for c."
+	if string(chunks[1]) != want1 {
+		t.Errorf("Unexpected chunk 1:\ngot:  %q\nwant: %q", string(chunks[1]), want1)
+	}
+}
+
+func TestParseFuchsia_FallbackOnCustomFormat(t *testing.T) {
+	content := []byte("Custom NOTICE.fuchsia without standard 80-char dash separator")
+	chunks := parseFuchsia(content)
+	if len(chunks) != 1 || string(chunks[0]) != string(content) {
+		t.Fatalf("Expected fallback single chunk, got %v", chunks)
+	}
+}

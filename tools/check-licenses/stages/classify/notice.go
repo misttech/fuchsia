@@ -136,3 +136,31 @@ func parseOneDelimiter(content []byte) [][]byte {
 	}
 	return deduplicateChunks(chunks)
 }
+
+// parseFuchsia extracts licenses from Fuchsia generated NOTICE.fuchsia files.
+func parseFuchsia(content []byte) [][]byte {
+	var chunks [][]byte
+	content = bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	blocks := bytes.Split(content, []byte("================================================================================"))
+
+	for _, block := range blocks {
+		block = bytes.TrimSpace(block)
+		if len(block) == 0 {
+			continue
+		}
+
+		parts := bytes.SplitN(block, []byte("--------------------------------------------------------------------------------"), 2)
+		if len(parts) < 2 {
+			continue
+		}
+
+		text := bytes.Trim(parts[1], "\r\n")
+		if len(bytes.TrimSpace(text)) > 0 {
+			chunks = append(chunks, text)
+		}
+	}
+	if len(chunks) == 0 && len(bytes.TrimSpace(content)) > 0 {
+		return [][]byte{content}
+	}
+	return deduplicateChunks(chunks)
+}

@@ -139,3 +139,120 @@ int main() { return 0; }`)
 		t.Errorf("Expected FuchsiaCopyright match to be found in file. Found matches: %v", res.Matches)
 	}
 }
+
+func TestExpandNoticeStartLine(t *testing.T) {
+	tests := []struct {
+		name           string
+		content        string
+		matchStartLine int
+		minLine        int
+		wantStartLine  int
+	}{
+		{
+			name: "C block comment with preceding copyright",
+			content: `/*
+ * Copyright (C) 2020 The Android Open Source Project
+ *
+ * Redistribution and use in source and binary forms...
+ */`,
+			matchStartLine: 4,
+			minLine:        1,
+			wantStartLine:  1,
+		},
+		{
+			name: "C block comment preceded by separate descriptive block comment",
+			content: `/* dscp lookup routines lifted wholesale from openssh */
+
+/*
+ * Copyright (c) 2000 Markus Friedl. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms...
+ */`,
+			matchStartLine: 6,
+			minLine:        1,
+			wantStartLine:  3,
+		},
+		{
+			name: "Second C block comment after first license match",
+			content: `/*
+ * Copyright 2006 Oracle
+ *
+ * Permission is hereby granted...
+ */
+/*
+ * Copyright 2002 Keith Packard
+ *
+ * Permission to use, copy, modify...
+ */`,
+			matchStartLine: 9,
+			minLine:        5,
+			wantStartLine:  6,
+		},
+		{
+			name: "Single-line // comment block",
+			content: `// Copyright (c) 2022 The Fuchsia Authors
+//
+// Permission to use, copy, modify...`,
+			matchStartLine: 3,
+			minLine:        1,
+			wantStartLine:  1,
+		},
+		{
+			name: "Single-line # comment block with shebang",
+			content: `#!/usr/bin/env python3
+# Copyright 2017 The Fuchsia Authors. All rights reserved.
+#
+# Redistribution and use in source and binary forms...`,
+			matchStartLine: 4,
+			minLine:        1,
+			wantStartLine:  2,
+		},
+		{
+			name: "C block comment after #ifndef header guard",
+			content: `#ifndef FOO_H
+#define FOO_H
+/*
+ * Copyright 2020 Author
+ *
+ * Permission to use...
+ */`,
+			matchStartLine: 6,
+			minLine:        1,
+			wantStartLine:  3,
+		},
+		{
+			name: "C block comment preceded by adjacent single-line copyright block comment",
+			content: `/* Copyright (C) 2005, 2007, 2008, 2013 by George Williams */
+/*
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ */`,
+			matchStartLine: 3,
+			minLine:        1,
+			wantStartLine:  1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := splitLinesForTest([]byte(tc.content))
+			got := expandNoticeStartLine(lines, tc.matchStartLine, tc.minLine)
+			if got != tc.wantStartLine {
+				t.Errorf("expandNoticeStartLine() = %d, want %d", got, tc.wantStartLine)
+			}
+		})
+	}
+}
+
+func splitLinesForTest(b []byte) [][]byte {
+	var lines [][]byte
+	start := 0
+	for i := 0; i < len(b); i++ {
+		if b[i] == '\n' {
+			lines = append(lines, b[start:i])
+			start = i + 1
+		}
+	}
+	lines = append(lines, b[start:])
+	return lines
+}

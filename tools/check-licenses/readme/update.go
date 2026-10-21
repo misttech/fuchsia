@@ -230,8 +230,8 @@ func generateNoticeContent(matches []sourceMatchInfo) string {
 			if lm.MatchType == "Copyright" || strings.HasPrefix(lm.MatchType, "_") {
 				continue
 			}
-			txt := strings.TrimSpace(string(lm.Text))
-			if txt == "" {
+			txt := strings.Trim(string(lm.Text), "\r\n")
+			if strings.TrimSpace(txt) == "" {
 				continue
 			}
 			nb, ok := blockMap[txt]

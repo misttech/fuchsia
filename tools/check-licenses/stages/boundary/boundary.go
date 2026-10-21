@@ -251,6 +251,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 						if cleanGNF == relToReadme || cleanGNF == relToFuchsia {
 							listedInReadme = true
 							isLicenseFile = true
+							parser = "Fuchsia"
 							break
 						}
 						if proj, ok := projects[root]; ok && proj.Readme != nil && proj.Readme.Path != "" {
@@ -258,6 +259,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 							if cleanGNF == relToReadmeDir {
 								listedInReadme = true
 								isLicenseFile = true
+								parser = "Fuchsia"
 								break
 							}
 						}
