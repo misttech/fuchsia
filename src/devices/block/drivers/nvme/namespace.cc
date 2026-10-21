@@ -275,19 +275,16 @@ void Namespace::OnRequests(std::span<block_server::Request> requests) {
 
     uint64_t length = 0;
     uint64_t offset_dev = 0;
-    uint64_t offset_vmo = 0;
 
     switch (request.operation.tag) {
       case block_server::Operation::Tag::Read:
         length = request.operation.read.block_count;
         offset_dev = request.operation.read.device_block_offset;
-        offset_vmo = request.operation.read.vmo_offset / block_info_.block_size;
         fdf::trace("Read {} blocks at {}", length, offset_dev);
         break;
       case block_server::Operation::Tag::Write:
         length = request.operation.write.block_count;
         offset_dev = request.operation.write.device_block_offset;
-        offset_vmo = request.operation.write.vmo_offset / block_info_.block_size;
         fdf::trace("Write {} blocks at {}", length, offset_dev);
         break;
       case block_server::Operation::Tag::Flush:
