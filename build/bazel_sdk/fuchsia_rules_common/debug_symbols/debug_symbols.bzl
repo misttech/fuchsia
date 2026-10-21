@@ -84,15 +84,23 @@ def strip_resources(ctx, resources, build_id_path = None, source_search_root = _
     all_maybe_elf_files = []
     all_ids_txt = []
 
+    # Other targets in the same package may strip the same files, e.g. a test
+    # package and a production package that both contain the same shared
+    # library. Without a per-target directory they'd declare the same output
+    # files, so one target's build could delete or replace the copy that the
+    # other target's package manifest points to (https://fxbug.dev/576327980).
+    output_dir = ctx.label.name + "/"
+
     # We need to make sure we have a unique set of inputs. If we have duplicate
     # resources, the `ctx.actions.declare_file` below will fail because it
     # will try to declare the same file twice. We only need to strip the resource
     # once so there is no need to attempt to strip duplicates.
     for r in depset(resources).to_list():
-        ids_txt = ctx.actions.declare_file(r.src.path + ".ids_txt")
+        ids_txt = ctx.actions.declare_file(output_dir + r.src.path + ".ids_txt")
+        stripped = ctx.actions.declare_file(output_dir + r.src.path + "_stripped")
         all_ids_txt.append(ids_txt)
         all_maybe_elf_files.append(r.src)
-        stripped_resources.append(_maybe_process_elf(ctx, r, ids_txt, elf_strip_tool))
+        stripped_resources.append(_maybe_process_elf(ctx, r, stripped, ids_txt, elf_strip_tool))
 
     ctx.actions.run(
         executable = generate_symbols_dir_tool,
@@ -110,9 +118,8 @@ def strip_resources(ctx, resources, build_id_path = None, source_search_root = _
         source_search_root: depset([build_id_dir]),
     })
 
-def _maybe_process_elf(ctx, r, ids_txt, elf_strip_tool):
+def _maybe_process_elf(ctx, r, stripped, ids_txt, elf_strip_tool):
     cc_toolchain = find_cc_toolchain(ctx)
-    stripped = ctx.actions.declare_file(r.src.path + "_stripped")
 
     ctx.actions.run(
         outputs = [stripped, ids_txt],
