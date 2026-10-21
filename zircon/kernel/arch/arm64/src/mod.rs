@@ -8,11 +8,13 @@ pub mod cache;
 mod crashlog;
 mod mp;
 mod periphmap;
+mod registers;
 pub mod restricted;
 pub mod smccc;
 mod spinlock;
 #[cfg(console_enabled)]
 mod sysreg;
+mod thread;
 mod uarch;
 pub mod vm;
 

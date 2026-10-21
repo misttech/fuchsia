@@ -241,6 +241,23 @@ if (toolchain_environment == "kernel.phys" ||
     expect_lints = []
   }
 
+  kernel_bindgen_crate("arm64-thread-bindings") {
+    headers = [ "include/arch/arch_thread.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    notice_year = 2026
+    raw_lines = [ "#![no_std]" ]
+    type_allowlist = [ "arch_thread" ]
+    var_allowlist = [
+      "ARM64_MAX_HW_BREAKPOINTS",
+      "ARM64_MAX_HW_WATCHPOINTS",
+      "CURRENT_MDSCR_OFFSET",
+      "CURRENT_PERCPU_PTR_OFFSET",
+    ]
+    explicit_padding = false
+    expect_lints = [ "non_camel_case_types" ]
+  }
+
   kernel_rust_mod("arch-arm64-rs") {
     output_name = "arch_arm64"
     source_root = "src/mod.rs"
@@ -250,10 +267,12 @@ if (toolchain_environment == "kernel.phys" ||
       "src/mod.rs",
       "src/mp.rs",
       "src/periphmap.rs",
+      "src/registers.rs",
       "src/restricted.rs",
       "src/smccc.rs",
       "src/spinlock.rs",
       "src/sysreg.rs",
+      "src/thread.rs",
       "src/uarch.rs",
       "src/vm.rs",
     ]
@@ -263,6 +282,7 @@ if (toolchain_environment == "kernel.phys" ||
       ":arm64-crashlog-bindings",
       ":arm64-mp-bindings",
       ":arm64-restricted-bindings",
+      ":arm64-thread-bindings",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//src/lib/kprint",
