@@ -39,9 +39,9 @@ the system handles all cases.
 ## Repository {#repository}
 
 The package URL contains a repository [hostname] to identify the package's
-source. [RFC 1123] and [RFC 5890] specified that a hostname is a sequence of dot
-(`.`)-delimited [IDNA A-labels], each of which consists of 1 to 63 of the
-following latin-1 characters in any order:
+source. A hostname is defined as a sequence of dot (`.`)-delimited [LDH labels],
+each of which consists of 1 to 63 of the following latin-1 characters, and does
+not begin or end with a hyphen (`-`):
 
 * Digits (`0` to `9`)
 * Lower-case letters (`a` to `z`)
@@ -200,7 +200,7 @@ fuchsia-pkg://{{ '<var>' }}repository{{ '</var>' }}/{{ '<var>' }}package-name{{ 
 [hostname]: https://en.wikipedia.org/wiki/Hostname
 [RFC 1123]: https://tools.ietf.org/html/rfc1123
 [RFC 5890]: https://tools.ietf.org/html/rfc5890
-[IDNA A-labels]: https://tools.ietf.org/html/rfc5890#section-2.3.2.1
+[LDH labels]: https://tools.ietf.org/html/rfc5890#section-2.3.1
 [Fuchsia filesystem paths]: /docs/concepts/process/namespaces.md#object-relative-path-expressions
 [RFC 3986]: https://tools.ietf.org/html/rfc3986#page-11
 [merkleroot]: /docs/concepts/security/merkleroot.md

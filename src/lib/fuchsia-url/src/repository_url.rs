@@ -16,9 +16,8 @@ pub struct RepositoryUrl {
 }
 
 impl RepositoryUrl {
-    /// Returns an error if the provided hostname does not comply to the package URL spec:
+    /// Returns an error if the provided hostname does not comply with the package URL spec:
     /// https://fuchsia.dev/fuchsia-src/concepts/packages/package_url#repository
-    /// Contains only lowercase ascii letters, digits, a hyphen or the dot delimiter.
     pub fn parse_host(host: String) -> Result<Self, ParseError> {
         Ok(Self { host: Host::parse(host)? })
     }
@@ -111,6 +110,9 @@ mod tests {
             ("fuchsia-boot://example.org", ParseError::InvalidScheme),
             ("fuchsia-pkg://", ParseError::MissingHost),
             ("fuchsia-pkg://exaMple.org", ParseError::InvalidHost),
+            ("fuchsia-pkg://-example.org", ParseError::InvalidHost),
+            ("fuchsia-pkg://example-.org", ParseError::InvalidHost),
+            ("fuchsia-pkg://xn--", ParseError::InvalidHost),
             ("fuchsia-pkg://example.org/path", ParseError::ExtraPathSegments),
             (
                 "fuchsia-pkg://example.org//",
@@ -153,6 +155,7 @@ mod tests {
             ("fuchsia-pkg://example.org", "example.org", "fuchsia-pkg://example.org"),
             ("fuchsia-pkg://example.org/", "example.org", "fuchsia-pkg://example.org"),
             ("fuchsia-pkg://example", "example", "fuchsia-pkg://example"),
+            ("fuchsia-pkg://xn--99999", "xn--99999", "fuchsia-pkg://xn--99999"),
         ] {
             // Creation
             assert_eq!(RepositoryUrl::parse(url).unwrap().host(), host, "the url {:?}", url);
