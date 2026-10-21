@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "omaha_tool",
+    testonly = True,  # @bazel2gn:raw_overwrite:true non_go_deps = [ ":test_tools" ]
+    srcs = [
+        "omaha.go",
+        "omaha_structs.go",
+        "omaha_test.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/src/testing/host-target-testing/omaha_tool",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/testing/host-target-testing/artifacts:__pkg__",
+        "//src/testing/host-target-testing/cli:__pkg__",
+        "//src/testing/host-target-testing/updater:__pkg__",
+    ],
+    deps = [
+        "//tools/lib/color",
+        "//tools/lib/logger",
+    ],
+)
