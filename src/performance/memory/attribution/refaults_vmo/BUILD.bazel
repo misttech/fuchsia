@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "refaults_vmo",
+    srcs = [
+        "src/atomic_vec.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/performance/memory/attribution/monitor:__pkg__",
+        "//src/starnix/runner/lib/kernel_manager:__pkg__",
+        "//src/storage/fxfs/platform:__pkg__",
+        "//src/storage/fxfs/test-fxfs:__pkg__",
+        "//src/storage/fxfs/tools:__pkg__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/performance/memory/memory_mapped_vmo",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "refaults_vmo_test",
+    crate = ":refaults_vmo",
+    edition = "2024",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "tests",
+    package_name = "refaults-vmo-tests",
+    unit_tests = [":refaults_vmo_test"],
+)

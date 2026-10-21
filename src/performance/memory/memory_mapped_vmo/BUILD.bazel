@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "memory_mapped_vmo",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/performance/memory/attribution/refaults_vmo:__pkg__",
+        "//src/performance/memory/heapdump/lib/heapdump_vmo:__pkg__",
+        "//src/performance/memory/stacktrack/lib/stacktrack_vmo:__pkg__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "memory_mapped_vmo_test",
+    crate = ":memory_mapped_vmo",
+    edition = "2024",
+    deps = ["//third_party/rust_crates/vendor:assert_matches"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "tests",
+    package_name = "memory-mapped-vmo-tests",
+    unit_tests = [":memory_mapped_vmo_test"],
+)
