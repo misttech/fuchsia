@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "cpp",
+    srcs = [
+        "power_config.cc",
+    ],
+    hdrs = [
+        "power_config.h",
+    ],
+    implementation_deps = ["//sdk/lib/fdio"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/hci/vendor/broadcom:__pkg__",
+        "//src/devices/block/drivers/sdmmc:__pkg__",
+        "//src/devices/bus/drivers/platform/test/power-integration-test:__pkg__",
+        "//tools/power_config/tests:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    ],
+    alwayslink = True,
+)
