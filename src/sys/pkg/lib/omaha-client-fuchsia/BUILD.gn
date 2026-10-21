@@ -5,10 +5,9 @@
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
-# The library is defined in BUILD.bazel. Its unit tests stay in GN because
-# `:omaha-client-fuchsia_test` depends on
-# `//src/lib/testing/fuchsia-hyper-test-support` and
-# `:omaha-client-fuchsia-tests` packages GN-only components
+# The library and unit test binary are defined in BUILD.bazel. The unit test
+# binary and test package (`:omaha-client-fuchsia-tests`) also stay in GN
+# because `:omaha-client-fuchsia-tests` packages GN-only components
 # (`//src/connectivity/network/dns:component`,
 # `//src/connectivity/network/netstack3:component-for-tests`,
 # `//src/connectivity/policy/http-client:component`,

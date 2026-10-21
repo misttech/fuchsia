@@ -17,5 +17,6 @@ exports_files(
         "//src/sys/pkg/bin/system-update-checker:__pkg__",
         "//src/sys/pkg/bin/system-update-committer:__pkg__",
         "//src/sys/pkg/bin/system-updater:__pkg__",
+        "//src/sys/pkg/lib/omaha-client-fuchsia:__pkg__",
     ],
 )

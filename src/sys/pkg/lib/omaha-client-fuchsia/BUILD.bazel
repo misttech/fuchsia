@@ -2,14 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
 package(default_applicable_licenses = ["//:license"])
 
-# The unit tests (`:omaha-client-fuchsia_test` and `:omaha-client-fuchsia-tests`)
-# stay in BUILD.gn because `:omaha-client-fuchsia_test` depends on
-# `//src/lib/testing/fuchsia-hyper-test-support` and
-# `:omaha-client-fuchsia-tests` packages GN-only components
+# The unit test package (`:omaha-client-fuchsia-tests`) stays in BUILD.gn
+# because it packages GN-only components
 # (`//src/connectivity/network/dns:component`,
 # `//src/connectivity/network/netstack3:component-for-tests`,
 # `//src/connectivity/policy/http-client:component`,
@@ -50,4 +58,60 @@ rustc_library(
         "//third_party/rust_crates/vendor:omaha_client",
         "//third_party/rust_crates/vendor:thiserror",
     ],
+)
+
+# The library is defined in BUILD.bazel. Its unit tests stay in GN because
+# `:omaha-client-fuchsia_test` depends on
+# `//src/lib/testing/fuchsia-hyper-test-support` and
+# `:omaha-client-fuchsia-tests` packages GN-only components
+# (`//src/connectivity/network/dns:component`,
+# `//src/connectivity/network/netstack3:component-for-tests`,
+# `//src/connectivity/policy/http-client:component`,
+# `//src/power/shutdown-shim/tests:shutdown_shim_component`, and
+# `//src/sys/stash:stash2_v2`).
+# @bazel2gn:skip
+rustc_test(
+    name = "omaha-client-fuchsia_test",
+    crate = ":omaha-client-fuchsia",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/testing/fuchsia-hyper-test-support",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "omaha-client-fuchsia_test_packaged_bin",
+    testonly = True,
+    binary = ":omaha-client-fuchsia_test",
+    binary_name = "omaha_client_fuchsia_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "test-driver-manifest",
+    testonly = True,
+    component_name = "test-driver",
+    includes = [
+        "//sdk/lib/inspect:client.shard.cml",
+        "//sdk/lib/inspect:offer.shard.cml",
+        "//sdk/lib/inspect:use.shard.cml",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/test-driver.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "omaha-client-fuchsia-tests-test-driver",
+    compiled_manifest = ":test-driver-manifest",
+    component_name = "test-driver",
+    deps = [":omaha-client-fuchsia_test_packaged_bin"],
 )
