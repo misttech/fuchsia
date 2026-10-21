@@ -308,6 +308,19 @@ class DriverBase2 {
     }
   }
 
+  // Proactively emits an asynchronous `OnHealthAlert` FIDL event over the `Driver` channel to the
+  // Driver Framework. If `alert.Which()` is `HealthAlert::Tag::kSelfFault`, the self-fault
+  // `HealthCheckResponse` is also mirrored into the driver's Inspect tree if `CreateInspector()`
+  // was called.
+  //
+  // Must be called from the driver dispatcher. It is a no-op once the driver has been asked to
+  // stop (after the `Stop` completer is invoked).
+  //
+  // `HealthAlert::Tag::kSelfFault` alerts are edge-triggered: send one when the driver's overall
+  // status worsens and once with an empty `conditions` list (OK) on recovery, never once per
+  // occurrence.
+  void ReportHealthAlert(fuchsia_driver_framework::HealthAlert alert);
+
   // This can be used to log in driver factories:
   // `driver->logger().log(fdf::INFO, "...");`
   Logger& logger() { return *logger_; }
@@ -394,9 +407,15 @@ class DriverBase2 {
   async_dispatcher_t* dispatcher() const { return driver_dispatcher_->async_dispatcher(); }
 
  private:
-  // DriverServer2 drives RecordHealthCheckToInspect.
+  // DriverServer2 installs (and clears) the sink used by ReportHealthAlert and drives
+  // RecordHealthCheckToInspect.
   template <typename DriverBaseImpl>
   friend class fdf_internal::DriverServer2;
+
+  void SetHealthAlertSender(
+      fit::inline_function<void(fuchsia_driver_framework::HealthAlert)> sender) {
+    health_alert_sender_ = std::move(sender);
+  }
 
   // Mirrors the result of the latest health check into the driver's Inspect tree under
   // root/driver_health_check if CreateInspector() was called. `level` is the requested level of
@@ -412,6 +431,7 @@ class DriverBase2 {
   // root/driver_health_check record.
   std::optional<inspect::Inspector> health_check_inspector_;
   std::optional<inspect::Node> health_check_node_;
+  fit::inline_function<void(fuchsia_driver_framework::HealthAlert)> health_alert_sender_;
   std::string name_;
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
   std::shared_ptr<OutgoingDirectory> outgoing_;

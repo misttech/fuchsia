@@ -320,6 +320,12 @@ void DriverBase2::RecordHealthCheckToInspect(
   health_check_node_ = BuildHealthCheckNode(health_check_inspector_->GetRoot(), level, result);
 }
 
+void DriverBase2::ReportHealthAlert(fuchsia_driver_framework::HealthAlert alert) {
+  if (health_alert_sender_) {
+    health_alert_sender_(std::move(alert));
+  }
+}
+
 DriverBase2::~DriverBase2() { Logger::SetGlobalInstance(nullptr); }
 
 }  // namespace fdf

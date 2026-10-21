@@ -54,9 +54,16 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     binding_.emplace(always_on_dispatcher,
                      fdf::ServerEnd<fuchsia_driver_framework::Driver>(fdf::Channel(server_handle)),
                      this, fidl::kIgnoreBindingClosure);
+    driver_->SetHealthAlertSender(fit::bind_member<&DriverServer2::SendHealthAlert>(this));
   }
 
-  ~DriverServer2() final = default;
+  ~DriverServer2() final {
+    // The sender captures `this`; clear it so that a driver destructor calling ReportHealthAlert
+    // cannot reach this partially destroyed server.
+    if (driver_) {
+      driver_->SetHealthAlertSender(nullptr);
+    }
+  }
 
   void Start(StartRequestView request, fdf::Arena& arena,
              StartCompleter::Sync& completer) override {
@@ -181,9 +188,26 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     }
   };
 
+  void SendHealthAlert(const fuchsia_driver_framework::HealthAlert& alert) {
+    if (driver_ && alert.Which() == fuchsia_driver_framework::HealthAlert::Tag::kSelfFault) {
+      // Self-reported faults do not come from a health check request, so no level is recorded.
+      driver_->RecordHealthCheckToInspect(std::nullopt, fit::ok(alert.self_fault().value()));
+    }
+    if (binding_.has_value()) {
+      fdf::Arena arena('HLTH');
+      fidl::OneWayStatus status =
+          fdf::WireSendEvent(*binding_).buffer(arena)->OnHealthAlert(fidl::ToWire(arena, alert));
+      // The logger only exists once Start has run.
+      if (!status.ok() && driver_->logger_) {
+        FDF_LOGL(DEBUG, driver_->logger(), "Failed to send OnHealthAlert: %s",
+                 status.FormatDescription().c_str());
+      }
+    }
+  }
+
   void StopBinding() {
     if (fdf_dispatcher_get_current_dispatcher() == dispatcher_) {
-      binding_.reset();
+      ClearHealthAlertSenderAndBinding();
       return;
     }
 
@@ -193,7 +217,16 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     fdf_dispatcher_t* always_on_dispatcher = dispatcher_;
 #endif
     async::PostTask(fdf_dispatcher_get_async_dispatcher(always_on_dispatcher),
-                    [this]() { binding_.reset(); });
+                    [this]() { ClearHealthAlertSenderAndBinding(); });
+  }
+
+  // Must run on the dispatcher: `ReportHealthAlert` reads the sender from the driver dispatcher, so
+  // clearing it anywhere else would race with an in-flight alert.
+  void ClearHealthAlertSenderAndBinding() {
+    if (driver_) {
+      driver_->SetHealthAlertSender(nullptr);
+    }
+    binding_.reset();
   }
 
   fdf_dispatcher_t* dispatcher_;

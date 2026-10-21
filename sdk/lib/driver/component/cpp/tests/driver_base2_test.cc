@@ -423,4 +423,130 @@ TEST(DriverBase2Test, HealthCheckMirroredToInspect) {
   ASSERT_EQ(ZX_OK, driver_test.StopDriver().status_value());
 }
 
+class HealthAlertEventHandler
+    : public fdf::WireAsyncEventHandler<fuchsia_driver_framework::Driver> {
+ public:
+  void OnHealthAlert(
+      fidl::WireEvent<fuchsia_driver_framework::Driver::OnHealthAlert>* event) override {
+    alerts.push_back(fidl::ToNatural(event->alert));
+  }
+
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_driver_framework::Driver> metadata) override {}
+
+  std::vector<fuchsia_driver_framework::HealthAlert> alerts;
+};
+
+TEST(DriverBase2Test, ReportHealthAlertEmitsEventOverDriverChannel) {
+  fdf_testing::DriverRuntime runtime;
+  auto [client_end, server_end] = fdf::Endpoints<fuchsia_driver_framework::Driver>::Create();
+  void* token =
+      fdf_internal::DriverServer2<TestDriver2>::initialize(server_end.TakeChannel().release());
+  ASSERT_NE(nullptr, token);
+
+  HealthAlertEventHandler event_handler;
+  fdf::WireClient<fuchsia_driver_framework::Driver> client(
+      std::move(client_end), fdf::Dispatcher::GetCurrent()->get(), &event_handler);
+
+  auto* server = static_cast<fdf_internal::DriverServer2<TestDriver2>*>(token);
+  auto* driver = static_cast<TestDriver2*>(server->GetDriverBaseImpl());
+  ASSERT_NE(nullptr, driver);
+
+  driver->ReportHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+      fuchsia_driver_framework::HealthCheckResponse{{
+          .conditions = {{{{
+              .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+              .reason_code = "DMA_RING_STALLED",
+              .message = "TX ring 0 made no progress for 500ms",
+          }}}},
+      }}));
+  driver->ReportHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+      fuchsia_driver_framework::HealthCheckResponse{{
+          .conditions = {{{{
+              .status = fuchsia_driver_framework::HealthStatus::kDegraded,
+              .reason_code = "UPSTREAM_CLOCK_MISSING",
+          }}}},
+      }}));
+
+  runtime.RunUntilIdle();
+  ASSERT_EQ(2u, event_handler.alerts.size());
+  ASSERT_EQ(fuchsia_driver_framework::HealthAlert::Tag::kSelfFault,
+            event_handler.alerts[0].Which());
+  ASSERT_TRUE(event_handler.alerts[0].self_fault()->conditions().has_value());
+  ASSERT_EQ(1u, event_handler.alerts[0].self_fault()->conditions()->size());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy,
+            event_handler.alerts[0].self_fault()->conditions()->at(0).status());
+  EXPECT_EQ("DMA_RING_STALLED",
+            event_handler.alerts[0].self_fault()->conditions()->at(0).reason_code());
+
+  ASSERT_EQ(fuchsia_driver_framework::HealthAlert::Tag::kUpstreamNeighborFault,
+            event_handler.alerts[1].Which());
+  ASSERT_TRUE(event_handler.alerts[1].upstream_neighbor_fault()->conditions().has_value());
+  ASSERT_EQ(1u, event_handler.alerts[1].upstream_neighbor_fault()->conditions()->size());
+  EXPECT_EQ("UPSTREAM_CLOCK_MISSING",
+            event_handler.alerts[1].upstream_neighbor_fault()->conditions()->at(0).reason_code());
+
+  // After Stop clears the alert sink, ReportHealthAlert is a safe no-op.
+  fdf::Arena arena('STOP');
+  ASSERT_TRUE(client.buffer(arena)->Stop().ok());
+  runtime.RunUntilIdle();
+  driver->ReportHealthAlert(fuchsia_driver_framework::HealthAlert::WithDownstreamNeighborFault(
+      fuchsia_driver_framework::HealthCheckResponse{}));
+  runtime.RunUntilIdle();
+  EXPECT_EQ(2u, event_handler.alerts.size());
+
+  client = {};
+  runtime.RunUntilIdle();
+  fdf_internal::DriverServer2<TestDriver2>::destroy(token);
+}
+
+TEST(DriverBase2Test, ReportHealthAlertSelfFaultMirroredToInspect) {
+  fdf_testing::ForegroundDriverTest<InspectHealthCheckFixtureConfig> driver_test;
+  ASSERT_EQ(ZX_OK, driver_test.StartDriver().status_value());
+
+  // Reporting a neighbor fault does not overwrite the driver's own health_check Inspect node.
+  driver_test.driver()->ReportHealthAlert(
+      fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+          fuchsia_driver_framework::HealthCheckResponse{{
+              .conditions = {{{{
+                  .status = fuchsia_driver_framework::HealthStatus::kDegraded,
+                  .reason_code = "NEIGHBOR_TIMEOUT",
+              }}}},
+          }}));
+  {
+    auto hierarchy = inspect::ReadFromVmo(driver_test.driver()->inspector().DuplicateVmo());
+    ASSERT_TRUE(hierarchy.is_ok());
+    EXPECT_EQ(nullptr, hierarchy.value().GetByPath({"driver_health_check"}));
+  }
+
+  // Reporting kSelfFault mirrors the fault details to root/driver_health_check in Inspect.
+  driver_test.driver()->ReportHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+      fuchsia_driver_framework::HealthCheckResponse{{
+          .conditions = {{{{
+              .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+              .reason_code = "SELF_LINK_LOST",
+              .message = "PCIe link down",
+          }}}},
+      }}));
+  {
+    auto hierarchy = inspect::ReadFromVmo(driver_test.driver()->inspector().DuplicateVmo());
+    ASSERT_TRUE(hierarchy.is_ok());
+    const auto* hc_node = hierarchy.value().GetByPath({"driver_health_check"});
+    ASSERT_NE(nullptr, hc_node);
+    EXPECT_EQ("UNHEALTHY",
+              hc_node->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ(nullptr, hc_node->node().get_property<inspect::StringPropertyValue>("level"));
+    const auto* condition_node =
+        hierarchy.value().GetByPath({"driver_health_check", "conditions", "SELF_LINK_LOST"});
+    ASSERT_NE(nullptr, condition_node);
+    EXPECT_EQ("UNHEALTHY",
+              condition_node->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ(
+        "PCIe link down",
+        condition_node->node().get_property<inspect::StringPropertyValue>("message")->value());
+  }
+
+  ASSERT_EQ(ZX_OK, driver_test.StopDriver().status_value());
+}
+
 }  // namespace
