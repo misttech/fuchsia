@@ -66,8 +66,8 @@
     - fidl: 'fuchsia.inspect'
 
 - name: 'Driver SDK'
-  api_primary: 'jocelyndang@google.com'
-  api_secondary: 'surajmalhotra@google.com'
+  api_primary: 'surajmalhotra@google.com'
+  api_secondary: 'cja@google.com'
   description: |
     The set of APIs used to interact with devices via the driver manager. This
     may be used by developers to retrieve information about a device or change
