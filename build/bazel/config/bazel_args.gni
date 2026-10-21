@@ -104,25 +104,26 @@ _has_coverage_rust = _tags + [ "coverage_rust" ] - [ "coverage_rust" ] != _tags
 # Note that currently only C++ rules support all these features.
 # TODO(https://fxbug.dev/447095455): Support variant flags for Rust binaries.
 # TODO(https://fxbug.dev/447095534): Support variant flags for Go binaries.
+_enabled_features = []
 if (_has_hwasan) {
-  _build_args += [ "--features=hwasan" ]
+  _enabled_features += [ "hwasan" ]
 } else if (_has_asan) {
-  _build_args += [ "--features=asan" ]
+  _enabled_features += [ "asan" ]
 }
 if (_has_lsan) {
-  _build_args += [ "--features=lsan" ]
+  _enabled_features += [ "lsan" ]
 }
 if (_has_msan) {
-  _build_args += [ "--features=msan" ]
+  _enabled_features += [ "msan" ]
 }
 if (_has_tsan) {
-  _build_args += [ "--features=tsan" ]
+  _enabled_features += [ "tsan" ]
 }
 if (_has_ubsan) {
-  _build_args += [ "--features=ubsan" ]
+  _enabled_features += [ "ubsan" ]
 }
 if (_has_coverage_clang) {
-  _build_args += [ "--features=coverage" ]
+  _enabled_features += [ "coverage" ]
 }
 if (_has_coverage_rust) {
   if (is_host) {
@@ -173,10 +174,20 @@ if (_is_compilation_mode_dbg) {
 } else if (_is_compilation_mode_opt) {
   _build_args += [ "--compilation_mode=opt" ]
   if (clang_ml_inliner) {
-    _build_args += [ "--features=ml_inliner" ]
+    _enabled_features += [ "ml_inliner" ]
   }
 } else {
   assert(false, "Unsupported mode optimize = $optimize")
+}
+
+# To work around https://github.com/bazelbuild/bazel/issues/22453,
+# Do not pass feature names with a series of `--features=<name>`
+# _build_args values. Instead if a build setting, which
+# is consumed by our C++ toolchain configuration to enable the
+# features from its values.
+if (_enabled_features != []) {
+  _build_args += [ "--@fuchsia_rules_common//build_flags:enabled_features=" +
+                   string_join(",", _enabled_features) ]
 }
 
 _build_args += toolchain_tags_bazel_args

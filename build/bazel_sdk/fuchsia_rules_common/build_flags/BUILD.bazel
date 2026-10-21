@@ -2,7 +2,28 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load(
+    "@bazel_skylib//rules:common_settings.bzl",
+    "bool_flag",
+    "string_list_flag",
+)
+
+# A list of C++ toolchain feature names (e.g., "asan", "hwasan", "coverage",
+# "ml_inliner") that should be enabled by default in the C++ toolchain
+# configuration (`_prebuilt_clang_cc_toolchain_config`) for the current
+# platform.
+#
+# Enabling platform-default C++ toolchain features in the `cc_toolchain_config`
+# via this Starlark flag instead of passing `--features=<name>` in
+# `platform(flags = ...)` works around https://github.com/bazelbuild/bazel/issues/22453,
+# where any `--features` flag in `platform(flags = ...)` overwrites
+# `//command_line_option:features` after Starlark transitions (breaking
+# `--features` transitions such as `features_list_transition`).
+string_list_flag(
+    name = "enabled_features",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
 
 # A toolchain type used to access the default build flags for the C++ and Rust toolchain.
 # See toolchain.bzl for details.

@@ -77,7 +77,8 @@ def _sanitizer_mode_feature(
         name,
         mode,
         extra_compile_flags = [],
-        extra_link_flags = []):
+        extra_link_flags = [],
+        enabled = False):
     """Define a feature that corresponds to Clang -fsanitize=<mode>.
 
     The flag will be added both to compile and link actions, and all
@@ -110,6 +111,7 @@ def _sanitizer_mode_feature(
 
     return feature(
         name = name,
+        enabled = enabled,
         flag_sets = flag_sets,
         implies = ["clang_sanitizer"],
 
@@ -128,7 +130,10 @@ def _sanitizer_mode_feature(
         provides = ["clang_sanitizer_mode"],
     )
 
-def get_sanitizer_features(target_os, use_default_build_flags = False):
+def get_sanitizer_features(
+        target_os,
+        use_default_build_flags = False,
+        enabled_features = []):
     """Return the list of Clang sanitizer feature() definitions for target_os.
 
     Args:
@@ -136,6 +141,7 @@ def get_sanitizer_features(target_os, use_default_build_flags = False):
       use_default_build_flags: True when building in-tree with
           @fuchsia_rules_common//build_flags:use_default_build_flags enabled,
           False in out-of-tree (OOT) SDK workspaces.
+      enabled_features: Optional list of feature names to enable by default.
 
     Returns:
       A list of feature() objects.
@@ -165,6 +171,7 @@ def get_sanitizer_features(target_os, use_default_build_flags = False):
         extra_link_flags = [
             "-Wl,-dynamic-linker=asan/ld.so.1",
         ] if is_fuchsia else [],
+        enabled = "asan" in enabled_features,
     )
     # LINT.ThenChange(//build/config/sanitizers/BUILD.gn:asan)
 
@@ -174,9 +181,14 @@ def get_sanitizer_features(target_os, use_default_build_flags = False):
         extra_link_flags = [
             "-Wl,-dynamic-linker=hwasan/ld.so.1",
         ] if is_fuchsia else [],
+        enabled = "hwasan" in enabled_features,
     )
 
-    msan_feature = _sanitizer_mode_feature("msan", "memory")
+    msan_feature = _sanitizer_mode_feature(
+        "msan",
+        "memory",
+        enabled = "msan" in enabled_features,
+    )
 
     # Out-of-tree SDK workspaces (when use_default_build_flags is False) only
     # export and package ld.so.1 under lib/, lib/asan/, and lib/hwasan/ (via
@@ -191,6 +203,7 @@ def get_sanitizer_features(target_os, use_default_build_flags = False):
         extra_link_flags = [
             "-Wl,-dynamic-linker=tsan/ld.so.1",
         ] if (is_fuchsia and use_default_build_flags) else [],
+        enabled = "tsan" in enabled_features,
     )
 
     # The lsan feature corresponds to -fsanitize=leak which is compatible
@@ -202,6 +215,7 @@ def get_sanitizer_features(target_os, use_default_build_flags = False):
     # are enabled.
     lsan_feature = feature(
         name = "lsan",
+        enabled = "lsan" in enabled_features,
         flag_sets = [
             flag_set(
                 actions = ALL_CC_LINK_ACTION_NAMES,
@@ -263,6 +277,7 @@ def get_sanitizer_features(target_os, use_default_build_flags = False):
 
     ubsan_feature = feature(
         name = "ubsan",
+        enabled = "ubsan" in enabled_features,
         flag_sets = ubsan_flag_sets,
         implies = ["clang_sanitizer"],
     )
