@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":cache_tests($host_toolchain)" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -36,6 +41,19 @@ if (is_host) {
     visibility = [
       ":*",
       "//tools/*",
+    ]
+  }
+}
+if (is_host) {
+  go_test("cache_tests") {
+    sources = [
+      "cache_test.go",
+      "filecache_test.go",
+    ]
+    embed = [ ":cache" ]
+    visibility = [
+      ":*",
+      "//tools:*",
     ]
   }
 }

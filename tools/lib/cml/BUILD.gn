@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":cml_test($host_toolchain)" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -83,4 +88,62 @@ rustc_library("cml") {
     "//tools/lib/config_value_file",
     "//tools/lib/reference_doc",
   ]
+}
+if (is_host) {
+  rustc_test("cml_test") {
+    sources = [
+      "src/error.rs",
+      "src/features.rs",
+      "src/lib.rs",
+      "src/load.rs",
+      "src/one_or_many.rs",
+      "src/translate.rs",
+      "src/types/capability.rs",
+      "src/types/capability_id.rs",
+      "src/types/child.rs",
+      "src/types/collection.rs",
+      "src/types/common.rs",
+      "src/types/document.rs",
+      "src/types/environment.rs",
+      "src/types/expose.rs",
+      "src/types/mod.rs",
+      "src/types/offer.rs",
+      "src/types/program.rs",
+      "src/types/right.rs",
+      "src/types/use.rs",
+      "src/validate.rs",
+    ]
+    edition = "2024"
+    proc_macro_deps = [ "//tools/lib/cml/macro" ]
+    deps = [
+             "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+             "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+             "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+             "//src/lib/directed_graph",
+             "//src/lib/fidl/rust/fidl",
+             "//src/sys/lib/cm_fidl_validator",
+             "//src/sys/lib/cm_rust",
+             "//src/sys/lib/cm_types",
+             "//third_party/rust_crates:indexmap",
+             "//third_party/rust_crates:itertools",
+             "//third_party/rust_crates:json5format",
+             "//third_party/rust_crates:maplit",
+             "//third_party/rust_crates:serde",
+             "//third_party/rust_crates:serde_json",
+             "//third_party/rust_crates:serde_json5",
+             "//third_party/rust_crates:sha2",
+             "//tools/lib/config_value_file",
+             "//tools/lib/reference_doc",
+           ] +
+           [
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:assert_matches",
+             "//third_party/rust_crates:difference",
+             "//third_party/rust_crates:test-case",
+           ]
+    visibility = [
+      ":*",
+      "//tools:*",
+    ]
+  }
 }

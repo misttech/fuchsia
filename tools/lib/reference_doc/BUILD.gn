@@ -4,7 +4,10 @@
 
 group("tests") {
   testonly = true
-  deps = [ "macro:tests($host_toolchain)" ]
+  deps = [
+    ":reference_doc_test($host_toolchain)",
+    "macro:tests($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -42,4 +45,15 @@ rustc_library("reference_doc") {
     "//tools/lib/cml:*",
     "//tools/lib/reference_doc/macro/derive-reference-doc-tests:*",
   ]
+}
+if (is_host) {
+  rustc_test("reference_doc_test") {
+    sources = [ "src/lib.rs" ]
+    edition = "2024"
+    proc_macro_deps = [ "//tools/lib/reference_doc/macro" ]
+    visibility = [
+      ":*",
+      "//tools:*",
+    ]
+  }
 }

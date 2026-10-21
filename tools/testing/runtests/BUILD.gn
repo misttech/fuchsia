@@ -4,6 +4,11 @@
 
 import("//build/go/go_library.gni")
 
+group("tests") {
+  testonly = true
+  deps = [ ":runtests_tests($host_toolchain)" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -49,5 +54,15 @@ if (is_host) {
       "//tools/net/sshutil",
       "//tools/net/tftp",
     ]
+  }
+}
+if (is_host) {
+  go_test("runtests_tests") {
+    sources = [
+      "data_sinks_test.go",
+      "runtests_test.go",
+    ]
+    embed = [ ":runtests" ]
+    visibility = [ "//*" ]
   }
 }

@@ -18,8 +18,6 @@ go_library(
     visibility = ["//tools:__subpackages__"],
 )
 
-# TODO(https://fxbug.dev/574121341): Run this test in GN too.
-# @bazel2gn:skip
 host_go_test(
     name = "hostplatform_tests",
     srcs = ["platform_test.go"],

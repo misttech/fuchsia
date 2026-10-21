@@ -11,6 +11,11 @@ bazel_host_tool("testparser_cmd") {
   output_name = "testparser"
 }
 
+group("tests") {
+  testonly = true
+  deps = [ ":testparser_tests($host_toolchain)" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -54,9 +59,16 @@ if (is_host) {
   }
 }
 if (is_host) {
-  go_library("main") {
-    sources = [ "cmd/main.go" ]
-    visibility = [ "//*" ]
-    deps = [ ":testparser" ]
+  go_test("testparser_tests") {
+    sources = [ "testparser_test.go" ]
+    embed = [ ":testparser" ]
+    visibility = [
+      ":*",
+      "//tools:*",
+    ]
+    deps = [
+      "//third_party/golibs:github.com/google/go-cmp/cmp",
+      "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
+    ]
   }
 }

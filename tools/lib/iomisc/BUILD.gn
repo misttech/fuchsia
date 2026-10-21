@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":iomisc_tests($host_toolchain)" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -40,5 +45,18 @@ if (is_host) {
       "//tools/*",
     ]
     deps = [ "//tools/lib/logger" ]
+  }
+}
+if (is_host) {
+  go_test("iomisc_tests") {
+    sources = [
+      "match_test.go",
+      "reader_test.go",
+    ]
+    embed = [ ":iomisc" ]
+    visibility = [
+      ":*",
+      "//tools:*",
+    ]
   }
 }

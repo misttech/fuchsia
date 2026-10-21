@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":color_tests($host_toolchain)" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -42,5 +47,15 @@ if (is_host) {
       "//zircon/tools/*",
     ]
     deps = [ "//tools/lib/isatty" ]
+  }
+}
+if (is_host) {
+  go_test("color_tests") {
+    sources = [ "color_test.go" ]
+    embed = [ ":color" ]
+    visibility = [
+      ":*",
+      "//tools:*",
+    ]
   }
 }
