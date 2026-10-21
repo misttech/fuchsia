@@ -4,7 +4,10 @@
 
 #include <fcntl.h>
 #include <fidl/fuchsia.examples/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/wire_test_base.h>
+#include <lib/async-loop/cpp/loop.h>
 #include <lib/async-testing/test_loop.h>
+#include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/directory_watcher.h>
 #include <lib/fdio/namespace.h>
 #include <stdlib.h>
@@ -118,6 +121,41 @@ TEST_F(DirectoryWatcherTest, SyncDirectoryWatcher) {
   ASSERT_EQ(watch_result.status_value(), ZX_ERR_STOP);
   // These instances are added by TestBase:
   EXPECT_THAT(instances, ::testing::UnorderedElementsAre("default", "my_instance"));
+}
+
+class FakeDirectory : public fidl::testing::WireTestBase<fuchsia_io::Directory> {
+ public:
+  explicit FakeDirectory(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  void Watch(WatchRequestView request, WatchCompleter::Sync& completer) override {
+    completer.Reply(ZX_OK);
+    async::PostTask(dispatcher_,
+                    [watcher = std::move(request->watcher)]() mutable { watcher.reset(); });
+  }
+  void Close(CloseCompleter::Sync& completer) override { completer.ReplySuccess(); }
+
+ private:
+  async_dispatcher_t* dispatcher_;
+};
+
+TEST(SyncDirectoryWatcherTest, PeerClosed) {
+  std::unique_ptr<FakeDirectory> fake_dir;
+  async::Loop server_loop(&kAsyncLoopConfigNeverAttachToThread);
+  ASSERT_EQ(ZX_OK, server_loop.StartThread("fake-directory-server"));
+
+  auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  fake_dir = std::make_unique<FakeDirectory>(server_loop.dispatcher());
+  fidl::BindServer(server_loop.dispatcher(), std::move(server), fake_dir.get());
+
+  SyncDirectoryWatcher watcher(client.borrow());
+
+  zx::result<std::string> result = watcher.GetNextEntry(false);
+
+  ASSERT_TRUE(result.is_error());
+  EXPECT_EQ(ZX_ERR_PEER_CLOSED, result.error_value());
 }
 
 }  // namespace

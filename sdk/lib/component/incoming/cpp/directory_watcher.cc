@@ -31,7 +31,7 @@ zx_status_t DirectoryWatcher::Begin(fidl::UnownedClientEnd<fuchsia_io::Directory
       new std::array<uint8_t, fuchsia_io::wire::kMaxBuf>);
   client_end_ = client.TakeChannel();
   wait_.set_object(client_end_.get());
-  wait_.set_trigger(ZX_CHANNEL_READABLE);
+  wait_.set_trigger(ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED);
   return wait_.Begin(dispatcher);
 }
 
@@ -132,6 +132,9 @@ zx::result<std::string> SyncDirectoryWatcher::GetNextEntry(bool stop_at_idle, zx
     // Once the queue is emptied, we can let the user know that the idle callback was invoked.
     if (stop_at_idle && idle_called_) {
       return zx::error(ZX_ERR_STOP);
+    }
+    if (!directory_watcher_.is_watching()) {
+      return zx::error(ZX_ERR_PEER_CLOSED);
     }
     // At this point, we are either in a race for the idle signal, or stop_at_idle == false,
     // and we are just waiting for any future file events.

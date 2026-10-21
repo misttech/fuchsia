@@ -42,6 +42,9 @@ class DirectoryWatcher final {
   // Cancels watching for directory entries.
   zx_status_t Cancel();
 
+  // Returns true if the watcher is currently active.
+  bool is_watching() const { return wait_.is_pending(); }
+
  private:
   void OnWatchedEvent(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
                       const zx_packet_signal_t* signal);
@@ -90,8 +93,11 @@ class SyncDirectoryWatcher final {
   std::deque<std::string> entries_;
   std::optional<fidl::UnownedClientEnd<fuchsia_io::Directory>> dir_;
   std::optional<std::string> path_;
-  DirectoryWatcher directory_watcher_;
+  // `loop_` must be declared before `directory_watcher_` so that the loop (and
+  // its dispatcher) outlives the watcher. This prevents use-after-free during
+  // destruction if the watcher has a pending wait on the dispatcher.
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
+  DirectoryWatcher directory_watcher_;
 };
 
 }  // namespace component
