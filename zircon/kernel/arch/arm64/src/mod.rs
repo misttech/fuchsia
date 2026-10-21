@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 pub mod cache;
+mod crashlog;
 mod mp;
 mod periphmap;
 pub mod restricted;

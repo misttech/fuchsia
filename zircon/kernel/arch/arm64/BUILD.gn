@@ -196,6 +196,17 @@ if (toolchain_environment == "kernel.phys" ||
     notice_year = 2026
   }
 
+  kernel_bindgen_crate("arm64-crashlog-bindings") {
+    headers = [ "include/arch/crashlog_regs.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    notice_year = 2026
+    raw_lines = [ "#![no_std]" ]
+    type_allowlist = [ "crashlog_regs_t" ]
+    opaque_types = [ "iframe_t" ]
+    explicit_padding = false
+  }
+
   kernel_bindgen_crate("arm64-mp-bindings") {
     headers = [ "include/arch/arm64/mp.h" ]
     cpp = true
@@ -235,6 +246,7 @@ if (toolchain_environment == "kernel.phys" ||
     source_root = "src/mod.rs"
     sources = [
       "src/cache.rs",
+      "src/crashlog.rs",
       "src/mod.rs",
       "src/mp.rs",
       "src/periphmap.rs",
@@ -248,6 +260,7 @@ if (toolchain_environment == "kernel.phys" ||
     deps = [
       ":arch-arm64-aspace-bindings",
       ":arch-arm64-vm-bindings",
+      ":arm64-crashlog-bindings",
       ":arm64-mp-bindings",
       ":arm64-restricted-bindings",
       "//sdk/rust/zx-status",
@@ -258,6 +271,7 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
       "//zircon/kernel/lib/init:init_rust",
+      "//zircon/kernel/lib/libc:rust",
       "//zircon/kernel/phys/handoff:handoff-rs",
       "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs",
     ]
