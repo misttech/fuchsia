@@ -326,7 +326,7 @@ pub fn run(mut args: TopLevel) -> Result<(), Error> {
     } else {
         None
     };
-    let fxfs_part = if args.fxfs.is_some() {
+    let fxfs_part = if !args.ramdisk_only && args.fxfs.is_some() {
         assert!(fvm_part.is_none(), "Can't have both FVM and Fxfs");
         let size = args.system_disk_size.unwrap_or_else(|| {
             gpt_disk.find_free_sectors().iter().map(|(_offset, length)| length).max().unwrap()
@@ -579,20 +579,28 @@ fn check_args(args: &mut TopLevel) -> Result<(), Error> {
                                 args.blob.get_or_insert_with(|| path.clone());
                             }
                             Image::FxfsSparse { path, .. } => {
-                                if args.use_fxfs {
-                                    args.fxfs.get_or_insert_with(|| path.clone());
-                                }
+                                args.fxfs.get_or_insert_with(|| path.clone());
                             }
                             _ => {}
                         }
                     }
 
                     // fall back to the full (non-sparse) Fxfs image if we didn't find a sparse one.
-                    if args.use_fxfs && args.fxfs.is_none() {
+                    if args.fxfs.is_none() {
                         args.fxfs = system_a.iter().find_map(|i| match i {
                             Image::Fxfs(path) => Some(path.clone()),
                             _ => None,
                         });
+                    }
+
+                    if !args.ramdisk_only && !args.use_sparse_fvm && args.blob.is_none() {
+                        if args.fxfs.is_some() {
+                            args.use_fxfs = true;
+                        } else if args.sparse_fvm.is_none() {
+                            // If the product bundle has no filesystem images in system_a (e.g.
+                            // bringup), build a ramdisk-only UEFI volume.
+                            args.ramdisk_only = true;
+                        }
                     }
                 }
 
@@ -1262,5 +1270,107 @@ mod tests {
         // provide contents equal to the partition size should fail.
         let too_long_commandline = vec![b'a'; QEMU_COMMANDLINE_PARTITION_SIZE as usize];
         assert!(make_vol_with_commandline(from_utf8(&too_long_commandline).unwrap()).is_err());
+    }
+
+    fn write_test_v2_bundle(dir: &Utf8Path, include_fxfs: bool) {
+        let current_exe = std::env::current_exe().unwrap();
+        let test_data_dir = Utf8PathBuf::from_path_buf(
+            current_exe.parent().unwrap().join("make-fuchsia-vol_test_data"),
+        )
+        .unwrap();
+        let mut pb: serde_json::Value =
+            serde_json::from_reader(File::open(test_data_dir.join("product_bundle.json")).unwrap())
+                .unwrap();
+
+        std::fs::create_dir_all(dir.join("partitions")).unwrap();
+        std::fs::write(dir.join("partitions/fuchsia.esp.blk"), b"esp").unwrap();
+        for f in ["fuchsia.zbi", "fuchsia.vbmeta", "zedboot.zbi", "zedboot.vbmeta"] {
+            std::fs::write(dir.join(f), b"stub").unwrap();
+        }
+
+        let mut system_a = vec![
+            serde_json::json!({ "type": "zbi", "name": "zircon-a", "path": "fuchsia.zbi", "signed": false }),
+            serde_json::json!({ "type": "vbmeta", "name": "zircon-a", "path": "fuchsia.vbmeta" }),
+        ];
+        if include_fxfs {
+            std::fs::write(dir.join("fxfs.sparse.blk"), b"fxfs").unwrap();
+            system_a.push(serde_json::json!({
+                "type": "blk",
+                "name": "fxfs.fastboot",
+                "path": "fxfs.sparse.blk",
+                "contents": { "packages": { "base": [], "cache": [] }, "maximum_contents_size": null }
+            }));
+        }
+        pb["system_a"] = serde_json::Value::Array(system_a);
+        pb["system_r"] = serde_json::json!([
+            { "type": "zbi", "name": "zircon-a", "path": "zedboot.zbi", "signed": false },
+            { "type": "vbmeta", "name": "zircon-a", "path": "zedboot.vbmeta" }
+        ]);
+        serde_json::to_writer(File::create(dir.join("product_bundle.json")).unwrap(), &pb).unwrap();
+    }
+
+    #[test]
+    fn test_check_args_v2_bundle_autodetects_fxfs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = Utf8Path::from_path(tmp.path()).unwrap();
+        write_test_v2_bundle(dir, true);
+        let bootloader = dir.join("bootloader.efi");
+        std::fs::write(&bootloader, b"efi").unwrap();
+
+        let mut args = TopLevel::from_args(
+            &["make-fuchsia-vol"],
+            &[
+                dir.join("disk.raw").as_str(),
+                "--bootloader",
+                bootloader.as_str(),
+                "--product-bundle",
+                dir.as_str(),
+            ],
+        )
+        .unwrap();
+        check_args(&mut args).unwrap();
+        assert!(args.use_fxfs);
+        assert!(!args.ramdisk_only);
+        assert_eq!(args.fxfs.unwrap().file_name(), Some("fxfs.sparse.blk"));
+
+        let mut ramdisk_args = TopLevel::from_args(
+            &["make-fuchsia-vol"],
+            &[
+                dir.join("disk.raw").as_str(),
+                "--bootloader",
+                bootloader.as_str(),
+                "--product-bundle",
+                dir.as_str(),
+                "--ramdisk-only",
+            ],
+        )
+        .unwrap();
+        check_args(&mut ramdisk_args).unwrap();
+        assert!(ramdisk_args.ramdisk_only);
+        assert!(!ramdisk_args.use_fxfs);
+    }
+
+    #[test]
+    fn test_check_args_v2_bundle_infers_ramdisk_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = Utf8Path::from_path(tmp.path()).unwrap();
+        write_test_v2_bundle(dir, false);
+        let bootloader = dir.join("bootloader.efi");
+        std::fs::write(&bootloader, b"efi").unwrap();
+
+        let mut args = TopLevel::from_args(
+            &["make-fuchsia-vol"],
+            &[
+                dir.join("disk.raw").as_str(),
+                "--bootloader",
+                bootloader.as_str(),
+                "--product-bundle",
+                dir.as_str(),
+            ],
+        )
+        .unwrap();
+        check_args(&mut args).unwrap();
+        assert!(args.ramdisk_only);
+        assert!(!args.use_fxfs);
     }
 }
