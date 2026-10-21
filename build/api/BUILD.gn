@@ -40,6 +40,20 @@ if (is_host) {
     deps = [ ":debug_symbols" ]
   }
 
+  python_library("elf_sizes") {
+    sources = [ "elf_sizes.py" ]
+    library_deps = [
+      ":debug_symbols",
+      ":gn_ninja_outputs",
+      "//build/bazel/scripts:build_utils",
+    ]
+  }
+
+  python_build_time_tests("elf_sizes_test") {
+    tests = [ "elf_sizes_test.py" ]
+    deps = [ ":elf_sizes" ]
+  }
+
   python_library("file_to_test_package") {
     sources = [ "file_to_test_package.py" ]
     library_deps = [
@@ -98,6 +112,7 @@ if (is_host) {
       ":affected_tests",
       ":build_api_filter",
       ":debug_symbols",
+      ":elf_sizes",
       ":file_to_test_package",
       ":gn_labels",
       ":gn_ninja_outputs",
@@ -126,6 +141,7 @@ if (is_host) {
       ":build_api_filter_test",
       ":client_test",
       ":debug_symbols_test",
+      ":elf_sizes_test",
       ":file_to_test_package_test",
       ":gn_labels_test",
       ":gn_ninja_outputs_test",

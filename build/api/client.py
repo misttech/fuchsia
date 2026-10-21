@@ -442,6 +442,8 @@ class DebugSymbolCommandState(object):
 
         import json
 
+        import elf_sizes
+
         with module.path.open("rt") as f:
             images_json = json.load(f)
 
@@ -451,203 +453,13 @@ class DebugSymbolCommandState(object):
             )
             images_json = api_filter.filter_api_json("images", images_json)
 
-        paths: list[Path] = []
-        for entry in images_json:
-            if entry.get("name") == "elf_sizes.json" and "path" in entry:
-                path = self._build_dir / entry["path"]
-                if last_build_only:
-                    # Verify the build produced the file as it should.
-                    assert (
-                        path.exists()
-                    ), f"Missing elf_sizes.json file from build!: {path}"
-                elif not path.exists():
-                    # There is no guarantee that the file exists.
-                    continue
-
-                paths.append(path)
-        return paths
+        return elf_sizes.extract_elf_sizes_paths(
+            images_json, self._build_dir, last_build_only=last_build_only
+        )
 
     @property
     def debug_symbol_entries(self) -> list[dict[str, T.Any]]:
         return self._debug_parser.entries
-
-    def collect_elf_sizes_verification_inputs(
-        self,
-        fuchsia_dir: Path,
-        host_tag: str,
-        elf_sizes_paths: T.Sequence[Path],
-    ) -> tuple[set[str], set[str]]:
-        """Collect prebuilt blob merkles and exempted runtime build IDs.
-
-        Args:
-            fuchsia_dir: Path to the Fuchsia source checkout directory.
-            host_tag: Host platform/architecture tag (e.g. 'linux-x64').
-            elf_sizes_paths: Sequence of elf_sizes.json manifest paths to scan.
-
-        Returns:
-            A (prebuilt_merkles, exempt_build_ids) tuple where:
-              - prebuilt_merkles is the set of blob merkle roots belonging to
-                prebuilt packages in GN or Bazel package manifests.
-              - exempt_build_ids is the set of GNU build-id hex strings for
-                prebuilt Clang/Rust toolchain runtime shared libraries.
-        """
-        import json
-
-        import build_utils
-        import debug_symbols
-
-        known_build_ids = {
-            entry["elf_build_id"]
-            for entry in self._debug_parser.entries
-            if entry.get("elf_build_id")
-        }
-
-        unmatched_blob_paths: list[str] = []
-        unmatched_build_ids: set[str] = set()
-        for elf_sizes_path in elf_sizes_paths:
-            with elf_sizes_path.open("rt") as f:
-                elf_sizes_json = json.load(f)
-            for entry in elf_sizes_json.get("files", []):
-                build_id = entry.get("build_id", "")
-                if build_id and build_id not in known_build_ids:
-                    unmatched_build_ids.add(build_id)
-                    if "path" in entry:
-                        unmatched_blob_paths.append(entry["path"])
-
-        prebuilt_merkles: set[str] = set()
-        exempt_build_ids: set[str] = set()
-        if not unmatched_build_ids:
-            return prebuilt_merkles, exempt_build_ids
-
-        # 1. GN package manifests via gn_ninja_outputs database.
-        gn_source_merkles: set[str] = set()
-        outputs = load_ninja_outputs_database(self._build_dir)
-        if outputs is not None:
-            for rel_path in outputs.get_paths(sort_result=False):
-                if rel_path.endswith("/package_manifest.json"):
-                    pm_path = self._build_dir / rel_path
-                    if pm_path.exists():
-                        with pm_path.open("rt") as f:
-                            pm = json.load(f)
-                        for blob in pm.get("blobs", []):
-                            merkle = blob.get("merkle")
-                            if not merkle:
-                                continue
-                            src = blob.get("source_path", "")
-                            if (
-                                src.startswith("blobs/")
-                                or "/prebuilt/" in f"/{src}"
-                            ):
-                                prebuilt_merkles.add(merkle)
-                            else:
-                                gn_source_merkles.add(merkle)
-
-        # 2. Bazel unpacked prebuilt packages via BazelPaths.execroot.
-        if (
-            build_utils.is_fuchsia_dir(fuchsia_dir)
-            and (
-                fuchsia_dir / build_utils._BAZEL_TOPDIR_CONFIG_FROM_FUCHSIA_DIR
-            ).exists()
-        ):
-            bazel_execroot = build_utils.BazelPaths(
-                fuchsia_dir, self._build_dir
-            ).execroot
-
-            def _collect_rebased_pm(rebased_pm: Path) -> None:
-                with rebased_pm.open("rt") as f:
-                    pm = json.load(f)
-                for blob in pm.get("blobs", []):
-                    src = blob.get("source_path", "")
-                    if (
-                        src.startswith(("content/blobs/", "blobs/"))
-                        or "/prebuilt/" in f"/{src}"
-                    ):
-                        merkle = blob.get("merkle")
-                        if merkle and merkle not in gn_source_merkles:
-                            prebuilt_merkles.add(merkle)
-
-            visited_dirs: set[Path] = set()
-            for blob_path in unmatched_blob_paths:
-                if "/bazel_inputs/" in blob_path:
-                    continue
-                cur = (bazel_execroot / blob_path).parent
-                while cur not in visited_dirs and cur != cur.parent:
-                    visited_dirs.add(cur)
-                    rebased_pm = cur / "rebased_package_manifest.json"
-                    if rebased_pm.is_file():
-                        _collect_rebased_pm(rebased_pm)
-                        break
-                    if cur == bazel_execroot:
-                        break
-                    cur = cur.parent
-
-            # Also scan Bazel output directories for unpacked fuchsia_prebuilt_package
-            # manifests (rebased_package_manifest.json), since fuchsia_product_configuration
-            # copies package blobs into <product_config>/blobs/<merkle> outside the original
-            # <target>_expanded directory.
-            bazel_out_dir = bazel_execroot / "bazel-out"
-            if bazel_out_dir.is_dir():
-                for cfg_entry in os.scandir(bazel_out_dir):
-                    if not cfg_entry.is_dir():
-                        continue
-                    bin_dir = Path(cfg_entry.path) / "bin"
-                    if not bin_dir.is_dir():
-                        continue
-                    for dirpath, dirnames, filenames in os.walk(bin_dir):
-                        if "rebased_package_manifest.json" in filenames:
-                            _collect_rebased_pm(
-                                Path(dirpath) / "rebased_package_manifest.json"
-                            )
-                        dirnames[:] = [
-                            d
-                            for d in dirnames
-                            if d
-                            not in {
-                                "bazel_inputs",
-                                "blobs",
-                                "content",
-                                "packages",
-                                "subpackages",
-                                "_objs",
-                                "external",
-                            }
-                            and not d.endswith((".runfiles", "_pkg"))
-                        ]
-
-        # 3. Prebuilt toolchain runtime shared libraries (e.g. non-ASAN or
-        #    asan+noexcept multilib libc++/libunwind/libstd on ASAN builds).
-        for tool in ("clang", "rust"):
-            lib_dir = (
-                fuchsia_dir
-                / "prebuilt"
-                / "third_party"
-                / tool
-                / host_tag
-                / "lib"
-            )
-            if not lib_dir.is_dir():
-                continue
-
-            debug_build_id_dir = lib_dir / "debug" / ".build-id"
-            for build_id in list(unmatched_build_ids - exempt_build_ids):
-                rel_debug = Path(build_id[:2]) / f"{build_id[2:]}.debug"
-                if (debug_build_id_dir / rel_debug).exists():
-                    exempt_build_ids.add(build_id)
-
-            if unmatched_build_ids - exempt_build_ids:
-                for dirpath, _, filenames in os.walk(lib_dir):
-                    for filename in filenames:
-                        if ".so" not in filename:
-                            continue
-                        so_path = Path(dirpath) / filename
-                        if not so_path.is_symlink() and so_path.is_file():
-                            extracted = debug_symbols.extract_gnu_build_id(
-                                so_path
-                            )
-                            if extracted and extracted in unmatched_build_ids:
-                                exempt_build_ids.add(extracted)
-
-        return prebuilt_merkles, exempt_build_ids
 
 
 class PrintDebugSymbolsCommand(ScriptCommandBase):
@@ -836,12 +648,18 @@ class ExportLastBuildDebugSymbolsCommand(ScriptCommandBase):
         )
         exporter.parse_debug_symbols(state.debug_symbol_entries)
 
+        import elf_sizes
+
         elf_sizes_paths = state.get_elf_sizes_paths(last_build_only=True)
         (
             prebuilt_merkles,
             exempt_build_ids,
-        ) = state.collect_elf_sizes_verification_inputs(
-            args.fuchsia_dir, args.host_tag, elf_sizes_paths
+        ) = elf_sizes.collect_elf_sizes_verification_inputs(
+            args.build_dir,
+            args.fuchsia_dir,
+            args.host_tag,
+            elf_sizes_paths,
+            state.debug_symbol_entries,
         )
         if not exporter.export_debug_symbols(
             args.output_dir,
