@@ -2,11 +2,50 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 
 package(default_applicable_licenses = ["//:license"])
 
-# LINT.IfChange(implicit-host-libs)
+# LINT.IfChange(compiler)
+build_flags(
+    name = "compiler",
+    rustflags = [
+        # NOTE: In GN, `-Clinker=$rebased_clang_prefix/clang++` is also passed here,
+        # which uses a path relative to the GN/Ninja build directory that does not
+        # resolve inside the Bazel sandbox. In Bazel, `@rules_rust` configures the
+        # linker driver directly from the C++ toolchain (`cc_toolchain`).
+        "-Cdefault-linker-libraries",
+    ],
+    subflags = [
+        ":sysroot",
+        ":target",
+        ":clang_defaults",
+        "//build/config/rust:codegen_units_16",
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(//build/config/linux/BUILD.gn:compiler)
+
+# LINT.IfChange(default_pie)
+# NOTE: This assumes toolchain_variant.is_pic_default=false in Bazel.
+_DEFAULT_PIE_CFLAGS = ["-fPIE"]
+
+_DEFAULT_PIE_LDFLAGS = [
+    "-fPIE",
+    "-pie",
+]
+
+build_flags(
+    name = "default-pie",
+    cflags = _DEFAULT_PIE_CFLAGS,
+    ldflags = _DEFAULT_PIE_LDFLAGS,
+    rustflags = ["-Clink-arg=" + flag for flag in _DEFAULT_PIE_LDFLAGS],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(//build/config/linux/BUILD.gn:default_pie)
+
+# LINT.IfChange(implicit_host_libs)
 # NOTE: The `rustflags` assume is_fuchsia=false, since this config is only used
 # by Linux toolchains.
 _IMPLICIT_HOST_LIBS_LDFLAGS = [
@@ -25,4 +64,50 @@ compiler_build_flags(
     rustflags = ["-Clink-arg=" + flag for flag in _IMPLICIT_HOST_LIBS_LDFLAGS],
     visibility = ["//visibility:public"],
 )
-# LINT.ThenChange(//build/config/linux/BUILD.gn:implicit-host-libs)
+# LINT.ThenChange(//build/config/linux/BUILD.gn:implicit_host_libs)
+
+# LINT.IfChange(sysroot)
+# In Bazel, `--sysroot=...` cannot be set via raw flags in `build_flags()` because
+# the C++ toolchain definition (`define_host_prebuilt_clang_cc_toolchains` in
+# //build/bazel/toolchains/clang/toolchains.bzl) must both pass the sysroot path and
+# declare the sysroot header/library filegroups as action inputs for sandboxing.
+build_flags(
+    name = "sysroot",
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(//build/config/linux/BUILD.gn:sysroot)
+
+# LINT.IfChange(target)
+# In Bazel, `--target=<tuple>` is configured by the C++ and Rust toolchain
+# definitions (`target_system_name` in `cc_toolchain` and `target_triple` in
+# `rust_toolchain`) rather than via `build_flags()`.
+build_flags(
+    name = "target",
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(//build/config/linux/BUILD.gn:target)
+
+# LINT.IfChange(clang_defaults)
+_CLANG_DEFAULTS_LDFLAGS = [
+    "-stdlib=libc++",
+    "--start-no-unused-arguments",
+    "-unwindlib=libunwind",
+    "-rtlib=compiler-rt",
+    "--end-no-unused-arguments",
+    "-fuse-ld=lld",
+    "-Wl,--build-id",
+]
+
+build_flags(
+    name = "clang_defaults",
+    cflags_cc = [
+        "-stdlib=libc++",
+    ],
+    ldflags = _CLANG_DEFAULTS_LDFLAGS + select({
+        "@platforms//cpu:riscv64": ["-Wl,--image-base=0x200000"],
+        "//conditions:default": [],
+    }),
+    rustflags = ["-Clink-arg=" + flag for flag in _CLANG_DEFAULTS_LDFLAGS],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(//build/config/linux/BUILD.gn:clang_defaults)
