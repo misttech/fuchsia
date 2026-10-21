@@ -15,13 +15,7 @@
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN, align=8
   .tlsdesc.lsda kUndefinedWeak
 
-  .llvm.stack_size 0
-
   mrs x0, TPIDR_EL0
-
-  // On exit x0 contains the return value: offset from $tp (TPIDR_EL0).
-  .cfi_undefined x0
-
   neg x0, x0
 
   ret
@@ -31,8 +25,6 @@
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
-
-  .llvm.stack_size 16  // Track two spills, though no .prologue.fp here.
 
   // Only x0 and x30 can be clobbered, so another register must be saved.
   stp x1, xzr, [sp, #-16]!
@@ -65,13 +57,10 @@
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN, align=4
   .tlsdesc.lsda kUndefinedWeak
 
-  .llvm.stack_size 0
-
-  read_tp r0
-
   // On exit r0 contains the return value: offset from $tp (TPIDR_EL0).
   .cfi_undefined r0
 
+  read_tp r0
   neg r0, r0
 
   bx lr
@@ -81,8 +70,6 @@
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
-
-  .llvm.stack_size 4  // Track one spill, though no .prologue.fp here.
 
   // Only r0 and lr can be clobbered, so another register must be saved.
   push.spill r1
@@ -111,8 +98,6 @@
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN, align=4
   .tlsdesc.lsda kUndefinedWeak
 
-  .llvm.stack_size 0
-
   tlsdesc.sub a0, zero, tp
 
   // On exit a0 contains the return value: offset from tp.
@@ -126,8 +111,6 @@
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
-
-  .llvm.stack_size 0
 
   // On entry a0 contains the argument: the address of the GOT slot range.
   tlsdesc.load a0, tlsdesc.value_offset(a0)
@@ -148,8 +131,6 @@
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeak
 
-  .llvm.stack_size 0
-
   // On entry %rax contains the argument: the address of the GOT slot pair.
   // On exit %rax contains the return value: offset from $tp (%fs.base).
   xor %eax, %eax
@@ -163,8 +144,6 @@
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
 .tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
-
-  .llvm.stack_size 0
 
   // On entry %rax contains the argument: the address of the GOT slot pair.
   // On exit %rax contains the return value: offset from $tp (%fs.base).

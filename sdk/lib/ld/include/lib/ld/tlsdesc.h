@@ -105,20 +105,10 @@
 //
 // Other conveniences are defined specific to each machine.
 
-// This is like .function, but adds some appropriate default arguments for
-// TLSDESC resolver functions, and does .tlsdesc.cfi.
-//
-// This annotates the function as never being called via indirect calls; that's
-// obviously not true, since TLSDESC resolver functions are in fact _always_
-// called via indirect calls.  But they don't match any call signatures and the
-// calls to them aren't tracked in .llvm.callgraph as calls of any kind.  Their
-// place in stack size analysis will be a special case: the stack footprint of
-// the function and its own callees can be measured and checked against a
-// specific budget just for this case; but that budget has to be included in a
-// "slop" adjustment to an overall budget where any compiler-generated function
-// might actually be an implicit caller of a TLSDESC resolver function.
-.macro .tlsdesc.function name, scope=global, retain=, align=, callgraph=direct
-  .function \name, scope=\scope, retain=\retain, align=\align, callgraph=\callgraph
+// This is like .function, but adds some appropriate default arguments
+// for TLSDESC resolver functions, and does .tlsdesc.cfi.
+.macro .tlsdesc.function name, scope=global, retain=, align=
+  .function \name, scope=\scope, retain=\retain, align=\align
     .tlsdesc.cfi
 .endm
 

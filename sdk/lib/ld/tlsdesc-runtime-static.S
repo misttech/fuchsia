@@ -18,8 +18,6 @@
 .tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN, align=8
   .tlsdesc.lsda kStatic
 
-  .llvm.stack_size 0
-
   // On entry x0 contains the argument: the address of the GOT slot pair.
   // The first word holds our own PC, the second the static TLS offset.
   ldr tlsdesc_r0, [x0, #tlsdesc.value_offset]
@@ -34,8 +32,6 @@
 
 .tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kStatic
-
-  .llvm.stack_size 0
 
   // On entry r0 contains the argument: the address of the GOT slot pair.
   // The first word holds our own PC, the second the static TLS offset.
@@ -55,8 +51,6 @@
 // only 5 bytes) just to be sure it can never straddle a cache line.
 .tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN, align=8
   .tlsdesc.lsda kStatic
-
-  .llvm.stack_size 0
 
   // On entry %rax contains the argument: the address of the GOT slot pair.
   // The first word holds our own PC, the second the static TLS offset.
@@ -79,8 +73,6 @@
 // can never straddle a cache line.
 .tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN, align=4
   .tlsdesc.lsda kStatic
-
-  .llvm.stack_size 0
 
   // On entry a0 contains the argument: the address of the GOT slot range.
   // The first word holds our own PC, the second the static TLS offset.

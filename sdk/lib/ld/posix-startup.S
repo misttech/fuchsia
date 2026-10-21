@@ -10,17 +10,14 @@
 // the original stack intact.
 // (See posix-startup.cc for definition.)
 
-.function _start, global, callgraph=direct
+.function _start, global
 
   // This can assume the sp is already aligned to 16 by the kernel.
-  // There is no .prologue.fp to leave the incoming stack intact, so
-  // nothing at all is pushed by this frame.
-  .llvm.stack_size 0
 
 #if defined(__aarch64__)
 
   mov x0, sp
-  callgraph.call StartLd
+  bl StartLd
   // The executable's entry point checks x0 for a pointer to pass to atexit.
   mov x16, x0
   mov x0, xzr
@@ -29,7 +26,7 @@
 #elif defined(__arm__)
 
   mov r0, sp
-  callgraph.call StartLd
+  bl StartLd
   mov r12, r0
   mov r0, #0
   bx r12
@@ -37,7 +34,7 @@
 #elif defined(__riscv)
 
   mv a0, sp
-  callgraph.call StartLd
+  call StartLd
   // The executable's entry point checks a5 for a pointer to pass to atexit.
   mv a5, zero
   jr a0
@@ -49,7 +46,7 @@
   mov -8(%rsp), %rbx
 
   mov %rsp, %rdi
-  callgraph.call StartLd
+  call StartLd
   // The executable's entry point checks %rdx for a pointer to pass to atexit.
   xor %rdx, %rdx
   // Restore the saved incoming return address so a special test executable
