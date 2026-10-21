@@ -7,6 +7,7 @@ package bazel2gn
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.starlark.net/syntax"
@@ -40,6 +41,22 @@ func unwrapParenExpr(expr syntax.Expr) syntax.Expr {
 		}
 		expr = paren.X
 	}
+}
+
+// FileToGN converts all statements in a Bazel file to GN.
+func FileToGN(f *syntax.File) ([]string, error) {
+	if err := inlineRustTestCrates(f); err != nil {
+		return nil, err
+	}
+	var lines []string
+	for _, stmt := range f.Stmts {
+		stmtLines, err := StmtToGN(stmt)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, stmtLines...)
+	}
+	return lines, nil
 }
 
 // StmtToGN converts a Bazel statement [0] to GN.
@@ -264,6 +281,7 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	}
 
 	attrsToOmit := attrsToOmitByRules[bazelRule]
+	unsupportedAttrs := unsupportedAttrsByRules[bazelRule]
 
 	// Loops through all arguments to handle special ones first.
 	var name string
@@ -293,6 +311,9 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		}
 		if attrsToOmit[ident.Name] {
 			continue
+		}
+		if unsupportedAttrs[ident.Name] {
+			return nil, fmt.Errorf("bazel2gn doesn't support attribute %q of %s; use # @bazel2gn:skip and write the GN copy by hand", ident.Name, bazelRule)
 		}
 		if ident.Name == "name" {
 			lines, err := exprToGN(binaryExpr.Y, nil)
@@ -324,6 +345,9 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	}
 	if name == "" {
 		return nil, errors.New("missing `name` attribute in Bazel target")
+	}
+	if cond, ok := implicitConditionsByRules[bazelRule]; ok && !slices.Contains(wrappingConditions, cond) {
+		wrappingConditions = append(wrappingConditions, cond)
 	}
 
 	// `compiled_action()` args can refer to outputs, so collect them first.

@@ -318,7 +318,12 @@ fx_unittest_package(
 		},
 		{
 			name: "Bazel host test rules",
-			bazel: `host_go_test(
+			bazel: `wrap_host_rust_test(
+	name = "foo_host_test",
+	test = ":foo_test",
+)
+
+host_go_test(
 	name = "foo_go_test",
 	srcs = ["foo_test.go"],
 	embed = [":foo"],

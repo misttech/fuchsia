@@ -221,6 +221,27 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// sandboxed. The GN rust_proto_library() template discovers imports through a
 	// depfile instead.
 	"rust_proto_library": {"proto_deps": true},
+	// `binary_name` names the inner Bazel test binary that the host test
+	// wraps. GN has no such wrapper.
+	"host_go_test":    {"size": true, "binary_name": true},
+	"host_rustc_test": {"size": true, "binary_name": true},
+}
+
+// unsupportedAttrsByRules lists attributes that bazel2gn can't translate yet.
+// Dropping them would give the GN copy of a test different behavior, so
+// bazel2gn fails instead and the test needs `# @bazel2gn:skip`.
+var unsupportedAttrsByRules = map[string]map[string]bool{
+	"host_go_test":    {"data": true, "test_data": true},
+	"host_rustc_test": {"test_data": true, "test_label": true},
+}
+
+// implicitConditionsByRules maps Bazel rules that are only compatible with
+// some platforms, without setting `target_compatible_with` explicitly, to the
+// GN condition that the generated target is wrapped in.
+var implicitConditionsByRules = map[string]string{
+	// GN's `go_test()` asserts that `args` and `timeout` are only set on host.
+	"host_go_test":    "is_host",
+	"host_rustc_test": "is_host",
 }
 
 // Common Bazel attributes that use different names in GN.
@@ -297,6 +318,16 @@ var ffxPluginAttrMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
 	"args_srcs":       "args_sources",
 	"args_crate_root": "args_source_root",
 })
+
+// hostTestAttrMap maps from attribute names in Bazel host test rules to GN
+// parameter names.
+var hostTestAttrMap = map[string]string{
+	"test_args": "args",
+}
+
+// hostRustTestAttrMap maps from attribute names in `host_rustc_test()` to GN
+// `rustc_test()` parameter names.
+var hostRustTestAttrMap = mustMergeMaps(rustBinAttrMap, hostTestAttrMap)
 
 // fidlAttrMap maps from attribute names in Bazel FIDL rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
@@ -423,6 +454,10 @@ var attrMapsByRules = map[string]map[string]string{
 	"rustc_library":    rustCommonAttrMap,
 	"rustc_proc_macro": rustCommonAttrMap,
 	"rustc_test":       rustBinAttrMap,
+	"host_rustc_test":  hostRustTestAttrMap,
+
+	// Go
+	"host_go_test": hostTestAttrMap,
 
 	// FIDL
 	"fidl_library":        idkFIDLAttrMap,

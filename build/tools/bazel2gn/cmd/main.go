@@ -154,13 +154,9 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 		return fmt.Errorf("parsing input Bazel file %s: %v", bazelInputPath, err)
 	}
 
-	var finalLines []string
-	for _, stmt := range bazelIn.Stmts {
-		lines, err := bazel2gn.StmtToGN(stmt)
-		if err != nil {
-			return fmt.Errorf("converting statement in %s to GN: %v", bazelInputPath, err)
-		}
-		finalLines = append(finalLines, lines...)
+	finalLines, err := bazel2gn.FileToGN(bazelIn)
+	if err != nil {
+		return fmt.Errorf("converting statement in %s to GN: %v", bazelInputPath, err)
 	}
 
 	// Open the GN build file with readonly first, to read the GN targets that

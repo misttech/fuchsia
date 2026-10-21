@@ -13,6 +13,7 @@
 
 import("//build/compiled_action.gni")
 import("//build/components/fuchsia_structured_config.gni")
+import("//build/components/fuchsia_unittest_package.gni")
 import("//build/cpp/sdk_source_set.gni")
 import("//build/fidl/fidl.gni")
 import("//build/go/go_binary.gni")
