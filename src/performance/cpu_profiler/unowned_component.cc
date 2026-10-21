@@ -89,7 +89,29 @@ zx::result<> profiler::UnownedComponent::Start(fxl::WeakPtr<Sampler> notify) {
   if (!moniker_.has_value()) {
     FX_DCHECK(url_.has_value());  // This should have been checked earlier in configuration
     return component_watcher_.WatchForUrl(
-        *url_, [this](ComponentStartEvent event) { on_start_.value()(std::move(event)); });
+        *url_,
+        [this, realm_query_client = std::move(realm_query_client)](ComponentStartEvent event) {
+          // As with attaching by moniker below, also attach to the children of the matched
+          // component. The matched component itself is attached from `event` afterwards.
+          zx::result<> res =
+              profiler::TraverseRealm(event.moniker,
+                                      [this, &client = realm_query_client, &root = event.moniker](
+                                          const std::string& moniker_string) -> zx::result<> {
+                                        if (moniker_string == root) {
+                                          return zx::ok();
+                                        }
+                                        auto moniker = Moniker::Parse(moniker_string);
+                                        if (moniker.is_error()) {
+                                          return moniker.take_error();
+                                        }
+                                        return this->Attach(client, *moniker);
+                                      });
+          if (res.is_error()) {
+            FX_PLOGS(WARNING, res.status_value())
+                << "Failed to attach to children of: " << event.moniker;
+          }
+          on_start_.value()(std::move(event));
+        });
   }
 
   // If the component exists, we'll attach to it, if not, we'll need to wait for it to launch

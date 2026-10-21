@@ -874,6 +874,58 @@ TEST(ProfilerIntegrationTest, DelayedConnectByUrl) {
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
 }
 
+TEST(ProfilerIntegrationTest, DelayedConnectByUrlWithChildren) {
+  // Start profiling targeting a url and check that we attach to the component and its children if
+  // it's launched after profiling started
+
+  zx::result client_end = component::Connect<fprofiler::Session>();
+  ASSERT_TRUE(client_end.is_ok());
+  const fidl::SyncClient client{std::move(*client_end)};
+
+  zx::socket in_socket, outgoing_socket;
+  ASSERT_EQ(zx::socket::create(0u, &in_socket, &outgoing_socket), ZX_OK);
+  const std::string name = "component_with_children";
+  const std::string url = "component_with_children#meta/component_with_children.cm";
+  const std::string moniker = "./launchpad:" + name;
+
+  fprofiler::TargetConfig target_config = fprofiler::TargetConfig::WithComponent(
+      fprofiler::AttachConfig::WithAttachToComponentUrl(url));
+
+  fprofiler::Config config{{
+      .configs = default_sample_configs(),
+      .target = std::move(target_config),
+  }};
+
+  ASSERT_TRUE(client
+                  ->Configure({{
+                      .output = std::move(outgoing_socket),
+                      .config = std::move(config),
+                  }})
+                  .is_ok());
+  SocketReader reader(std::move(in_socket));
+  ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
+
+  auto lifecycle_client_end = component::Connect<fuchsia_sys2::LifecycleController>();
+  ASSERT_TRUE(lifecycle_client_end.is_ok());
+  fidl::SyncClient lifecycle_client{std::move(*lifecycle_client_end)};
+
+  ASSERT_TRUE(RunInstance(lifecycle_client, name, url, moniker).is_ok());
+
+  reader.ReadUntilRecordCount(11, 4, 4);
+
+  auto stop_response = client->Stop();
+  ASSERT_TRUE(stop_response.is_ok());
+  ASSERT_TRUE(stop_response.value().samples_collected().has_value());
+  EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
+
+  ASSERT_TRUE(client->Reset().is_ok());
+
+  // We should see 4 different pids and tids: the parent and its 3 children
+  EXPECT_EQ(reader.tids().size(), size_t{4});
+  EXPECT_EQ(reader.pids().size(), size_t{4});
+  ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
+}
+
 // If a process exits from underneath us, we should still be able to return the samples we got
 TEST(ProfilerIntegrationTest, ExitedProcess) {
   auto lifecycle_client_end = component::Connect<fuchsia_sys2::LifecycleController>();
