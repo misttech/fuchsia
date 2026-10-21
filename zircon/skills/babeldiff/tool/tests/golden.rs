@@ -529,6 +529,29 @@ fn chain_lock_callback_lines_up_with_a_guard() {
 }
 
 #[test]
+fn singleton_mutex_lock_lines_up_with_a_guard() {
+    // `ksync::declare_singleton_mutex!(LampLock)` generates `LampLock::lock()`,
+    // the Rust form of `DECLARE_SINGLETON_MUTEX(LampLock)` and
+    // `Guard<Mutex> guard(LampLock::Get())`.
+    let cpp = "zx_status_t lamp_get(uint32_t* out) {\n  Guard<Mutex> guard(LampLock::Get());\n  // Only a lit lamp has a color.\n  if (!lamp_lit()) {\n    return ZX_ERR_BAD_STATE;\n  }\n  *out = lamp_color();\n  return ZX_OK;\n}\n";
+    let rust = "pub fn lamp_get(out: &mut u32) -> zx_status_t {\n    ksync::lock!(let _guard = LampLock::lock());\n    // Only a lit lamp has a color.\n    if !lamp_lit() {\n        return ZX_ERR_BAD_STATE;\n    }\n    *out = lamp_color();\n    ZX_OK\n}\n";
+    let cs =
+        ChangeSet::from_files(&[("lamp.cc".into(), cpp.into()), ("lamp.rs".into(), rust.into())]);
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 1);
+    let p = &report.pairs[0];
+    let issues: Vec<&str> = p
+        .findings
+        .iter()
+        .filter(|f| f.severity == Severity::Issue)
+        .map(|f| f.message.as_str())
+        .collect();
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(p.summary.cpp_locks, ["lamp_lock"]);
+    assert_eq!(p.summary.cpp_locks, p.summary.rust_locks);
+}
+
+#[test]
 fn unchanged_cpp_comes_from_the_same_architecture() {
     // Rust under arch/x86 with no removed C++ must not be paired with a
     // same-named method under arch/riscv64.

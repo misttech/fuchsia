@@ -76,11 +76,7 @@ pub fn ident(s: &str) -> String {
 
 /// Words of an identifier after normalization.
 pub fn words(s: &str) -> Vec<String> {
-    ident(s)
-        .split('_')
-        .filter(|w| !w.is_empty())
-        .map(str::to_string)
-        .collect()
+    ident(s).split('_').filter(|w| !w.is_empty()).map(str::to_string).collect()
 }
 
 /// Calls that carry no meaning across the two languages (ownership and
@@ -218,9 +214,7 @@ pub fn call(name: &str) -> Option<String> {
     let name = name.trim().trim_end_matches('!');
     // Drop template arguments and take the last path or member segment.
     let name = strip_generics(name);
-    let mut segs = name
-        .rsplit([':', '.', '>', '-'])
-        .filter(|s| !s.trim().is_empty());
+    let mut segs = name.rsplit([':', '.', '>', '-']).filter(|s| !s.trim().is_empty());
     let last = segs.next().unwrap_or(&name);
     let mut n = ident(last);
     // `Type::get(...)` looks up a Type, like C++'s `GetType(...)`.
@@ -239,10 +233,7 @@ pub fn call(name: &str) -> Option<String> {
         }
     }
     // `Foo::new(...)` constructs a Foo, like C++ `Foo foo{...}`.
-    if matches!(
-        n.as_str(),
-        "new" | "default" | "init" | "create_in_place" | "try_new"
-    ) {
+    if matches!(n.as_str(), "new" | "default" | "init" | "create_in_place" | "try_new") {
         if let Some(ty) = segs
             .next()
             .map(str::trim)
@@ -309,11 +300,7 @@ pub fn qualified_call(name: &str) -> Option<String> {
 /// Whether a zero-argument call is likely to change state, so binding its
 /// result is not mere bookkeeping.
 pub fn is_mutating(name: &str) -> bool {
-    let last = name
-        .rsplit(['.', ':', '>'])
-        .next()
-        .unwrap_or(name)
-        .trim_end_matches('!');
+    let last = name.rsplit(['.', ':', '>']).next().unwrap_or(name).trim_end_matches('!');
     let w = ident(last);
     if matches!(w.as_str(), "try_from" | "try_into" | "into" | "into_inner") {
         return false;
@@ -377,9 +364,7 @@ pub fn is_mutating(name: &str) -> bool {
         "adopt",
         "into",
     ];
-    words(&w)
-        .first()
-        .is_some_and(|first| VERBS.contains(&first.as_str()))
+    words(&w).first().is_some_and(|first| VERBS.contains(&first.as_str()))
 }
 
 /// Maps equivalent C++ and Rust spellings onto one name.
@@ -565,35 +550,18 @@ pub fn lock_key(receiver: &str, method: Option<&str>) -> String {
         // ksync's `#[guarded]` generates `lock_<field>()` and its
         // `_policy` and `_aliased` variants for a mutex field.
         if let Some(name) = m.strip_prefix("lock_") {
-            let name = name
-                .trim_end_matches("_policy")
-                .trim_end_matches("_aliased");
-            if !matches!(
-                name,
-                "irqsave" | "irq" | "read" | "write" | "shared" | "policy"
-            ) {
+            let name = name.trim_end_matches("_policy").trim_end_matches("_aliased");
+            if !matches!(name, "irqsave" | "irq" | "read" | "write" | "shared" | "policy") {
                 return name.to_string();
             }
         }
     }
-    const DROP: &[&str] = &[
-        "this", "self", "get", "mut", "ref", "as", "deref", "borrow", "inner",
-    ];
-    let cleaned: String = receiver
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' {
-                c
-            } else {
-                ' '
-            }
-        })
-        .collect();
+    const DROP: &[&str] = &["this", "self", "get", "mut", "ref", "as", "deref", "borrow", "cast"];
+    let cleaned: String =
+        receiver.chars().map(|c| if c.is_alphanumeric() || c == '_' { c } else { ' ' }).collect();
     for comp in cleaned.split_whitespace().rev() {
-        let w: Vec<String> = words(comp)
-            .into_iter()
-            .filter(|w| !DROP.contains(&w.as_str()))
-            .collect();
+        let w: Vec<String> =
+            words(comp).into_iter().filter(|w| !DROP.contains(&w.as_str())).collect();
         if !w.is_empty() {
             return w.join("_");
         }
@@ -648,11 +616,7 @@ pub fn lcs_len<T: PartialEq>(a: &[T], b: &[T]) -> usize {
     let mut cur = vec![0usize; b.len() + 1];
     for x in a {
         for (j, y) in b.iter().enumerate() {
-            cur[j + 1] = if x == y {
-                prev[j] + 1
-            } else {
-                prev[j + 1].max(cur[j])
-            };
+            cur[j + 1] = if x == y { prev[j] + 1 } else { prev[j + 1].max(cur[j]) };
         }
         std::mem::swap(&mut prev, &mut cur);
     }
@@ -697,21 +661,12 @@ mod tests {
 
     #[test]
     fn calls() {
-        assert_eq!(
-            call("vmo->CommitRangeLocked").as_deref(),
-            Some("commit_range_locked")
-        );
-        assert_eq!(
-            call("self.commit_range_locked").as_deref(),
-            Some("commit_range_locked")
-        );
+        assert_eq!(call("vmo->CommitRangeLocked").as_deref(), Some("commit_range_locked"));
+        assert_eq!(call("self.commit_range_locked").as_deref(), Some("commit_range_locked"));
         assert_eq!(call("ktl::move"), None);
         assert_eq!(call("DEBUG_ASSERT").as_deref(), Some("assert"));
         assert_eq!(call("debug_assert!").as_deref(), Some("assert"));
-        assert_eq!(
-            call("fbl::AdoptRef<VmObject>").as_deref(),
-            Some("adopt_ref")
-        );
+        assert_eq!(call("fbl::AdoptRef<VmObject>").as_deref(), Some("adopt_ref"));
         assert_eq!(
             call("AutoExpiringPreemptDisabler::new").as_deref(),
             Some("auto_expiring_preempt_disabler")
@@ -722,18 +677,9 @@ mod tests {
         assert_eq!(call("self.flag.store"), None);
         assert_eq!(call("time.saturating_sub"), None);
         assert_eq!(call("zx_time_add_duration"), None);
-        assert_eq!(
-            call("pmm_count_free_pages").as_deref(),
-            Some("count_free_pages")
-        );
-        assert_eq!(
-            call("pmm::node().count_free_pages").as_deref(),
-            Some("count_free_pages")
-        );
-        assert_eq!(
-            call("pretty::format_size_rs").as_deref(),
-            Some("format_size")
-        );
+        assert_eq!(call("pmm_count_free_pages").as_deref(), Some("count_free_pages"));
+        assert_eq!(call("pmm::node().count_free_pages").as_deref(), Some("count_free_pages"));
+        assert_eq!(call("pretty::format_size_rs").as_deref(), Some("format_size"));
         assert_eq!(call("FormattedBytes").as_deref(), Some("format_size"));
         assert_eq!(call("ispow2").as_deref(), Some("is_power_of_two"));
         assert!(!is_mutating("PressureLevel::try_from"));
@@ -741,22 +687,10 @@ mod tests {
 
     #[test]
     fn errors() {
-        assert_eq!(
-            error_codes("return ZX_ERR_INVALID_ARGS;"),
-            vec!["INVALID_ARGS"]
-        );
-        assert_eq!(
-            error_codes("return Err(Status::NO_MEMORY);"),
-            vec!["NO_MEMORY"]
-        );
-        assert_eq!(
-            error_codes("Err(zx::Status::OUT_OF_RANGE)"),
-            vec!["OUT_OF_RANGE"]
-        );
-        assert_eq!(
-            error_codes("Err(ZxError::ERR_BAD_STATE)"),
-            vec!["BAD_STATE"]
-        );
+        assert_eq!(error_codes("return ZX_ERR_INVALID_ARGS;"), vec!["INVALID_ARGS"]);
+        assert_eq!(error_codes("return Err(Status::NO_MEMORY);"), vec!["NO_MEMORY"]);
+        assert_eq!(error_codes("Err(zx::Status::OUT_OF_RANGE)"), vec!["OUT_OF_RANGE"]);
+        assert_eq!(error_codes("Err(ZxError::ERR_BAD_STATE)"), vec!["BAD_STATE"]);
         assert!(error_codes("Ok(())").is_empty());
     }
 
@@ -772,11 +706,10 @@ mod tests {
         // ksync accessors name the lock field.
         assert_eq!(lock_key("self", Some("lock_mu")), "mu");
         assert_eq!(lock_key("self", Some("lock_mu_policy")), "mu");
+        assert_eq!(lock_key("thread.cast()", None), "thread");
+        assert_eq!(lock_key("&self.inner.get()", None), "inner");
         assert_eq!(lock_key("&mu_", None), "mu");
-        assert_eq!(
-            lock_key("self.spare_list_lock", Some("lock")),
-            "spare_list_lock"
-        );
+        assert_eq!(lock_key("self.spare_list_lock", Some("lock")), "spare_list_lock");
         assert_eq!(lock_key("&spare_list_lock_", None), "spare_list_lock");
         assert_eq!(lock_key("table", Some("write_lock")), "lock");
     }
