@@ -85,6 +85,20 @@ class TestCommitMessageChecker(unittest.TestCase):
         findings = commit_msg_checker.check_commit_message(msg)
         self.assertEqual(findings, [])
 
+    def test_long_footer_lines_exempt(self) -> None:
+        # Footers whose values are labels or commands are indexed by Gerrit
+        # as single lines and must not be wrapped, so they are exempt.
+        label = "//src/connectivity/wlan/drivers/lib/fidl-bridge/cpp/test/fidl"
+        msg = (
+            "Subject line\n\n"
+            "Body line.\n\n"
+            "Bug: 1\n"
+            f"Test: fx bazel build --config=fuchsia_platform @{label}\n"
+            f"Bazel-Migration-Target: {label}\n"
+        )
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertEqual(findings, [])
+
     def test_quoted_revert_long_line_exempt(self) -> None:
         msg = (
             'Revert "Subject"\n\n' "> " + "a" * 80 + "\n\n" "Bug: 1\n" "Test: 1"

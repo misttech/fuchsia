@@ -23,9 +23,11 @@ SUBJECT_WARN_MAX_LEN = 65
 BODY_MAX_LEN = 72
 
 URL_REGEX = re.compile(r"https?://[^\s]+")
-# Footers that are exempt from line length checks
+# Footers that are exempt from line length checks. Gerrit only indexes
+# footers that stay on a single line (e.g. for `hasfooter:` queries), so
+# footers whose values are labels or commands must not be wrapped.
 FOOTER_REGEX = re.compile(
-    r"^(Bug|Fixed|Test|Change-Id|Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV)[:=]"
+    r"^(Bug|Fixed|Test|Bazel-Migration-Target|Change-Id|Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV)[:=]"
 )
 # Reverts, relands, and autosquash commits take the original subject and prepend
 # a prefix. These are exempt from the length check to avoid manual rewrites of
