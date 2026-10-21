@@ -51,15 +51,15 @@ type GetDeclarationError = flexible enum {
     BAD_URL = 6;
 
     /// The call to resolve the component failed.
-    @available(added=NEXT)
+    @available(added=33)
     RESOLVE_FAILED = 7;
 
     /// Failed to open the component's package.
-    @available(added=NEXT)
+    @available(added=33)
     PACKAGE_OPEN_FAILED = 8;
 
     /// Failed to read the component's package.
-    @available(added=NEXT)
+    @available(added=33)
     PACKAGE_READ_FAILED = 9;
 };
 

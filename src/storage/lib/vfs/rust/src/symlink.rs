@@ -233,7 +233,7 @@ impl<T: Symlink> Connection<T> {
                 use fidl::epitaph::ChannelEpitaphExt;
                 let _ = object.close_with_epitaph(Status::NOT_DIR);
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "33")]
             fio::SymlinkRequest::GetToken { responder } => {
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }

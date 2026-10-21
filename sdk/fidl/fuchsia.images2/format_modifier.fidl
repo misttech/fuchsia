@@ -95,11 +95,11 @@ type PixelFormatModifier = flexible enum : uint64 {
     // PowerVR format modifier values
 
     /// PowerVR Framebuffer Compression (FBCDC / PVRIC) 8x8 tile, V14 (FBCDC v4/v5).
-    @available(added=NEXT)
+    @available(added=33)
     PVR_FBCDC_8X8_V14 = 0x9200000000000022;
 
     /// PowerVR Framebuffer Compression (FBCDC / PVRIC) 16x4 tile, V14 (FBCDC v4/v5).
-    @available(added=NEXT)
+    @available(added=33)
     PVR_FBCDC_16X4_V14 = 0x9200000000000027;
 };
 
@@ -141,7 +141,7 @@ const FORMAT_MODIFIER_VENDOR_AMLOGIC uint64 = 0x0a00000000000000;
 @available(added=19)
 const FORMAT_MODIFIER_VENDOR_GOOGLE uint64 = 0x6700000000000000;
 
-@available(added=NEXT)
+@available(added=33)
 const FORMAT_MODIFIER_VENDOR_PVR uint64 = 0x9200000000000000;
 
 //

@@ -1,7 +1,7 @@
 // Copyright 2019 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-@available(added=16, removed=NEXT)
+@available(added=16, removed=33)
 library fuchsia.developer.ffxdaemonlifecycle;
 
 open protocol DaemonLifecycleControl {

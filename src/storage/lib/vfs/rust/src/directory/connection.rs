@@ -274,15 +274,15 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             fio::DirectoryRequest::Unlink { name: _, options: _, responder } => {
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "33")]
             fio::DirectoryRequest::DeprecatedGetToken { responder } => {
                 responder.send(Status::NOT_SUPPORTED.into_raw(), None)?;
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "33")]
             fio::DirectoryRequest::GetToken { responder } => {
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
-            #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+            #[cfg(not(fuchsia_api_level_at_least = "33"))]
             fio::DirectoryRequest::GetToken { responder } => {
                 responder.send(Status::NOT_SUPPORTED.into_raw(), None)?;
             }

@@ -39,7 +39,7 @@ open protocol EpskcConnector {
 
 /// Operational state of the Ephemeral Key Manager.
 /// See https://openthread.io/reference/group/api-border-agent for more details.
-@available(added=NEXT)
+@available(added=33)
 type EphemeralKeyState = flexible enum {
     /// Ephemeral Key Manager is disabled.
     DISABLED = 1;
@@ -124,7 +124,7 @@ open protocol Epskc {
     /// Having more than one concurrent call to this method on the same channel
     /// is an error and will cause the channel to be closed with a
     /// `ZX_ERR_BAD_STATE` epitaph.
-    @available(added=NEXT)
+    @available(added=33)
     flexible WatchEphemeralKeyState() -> (struct {
         state EphemeralKeyState;
     });

@@ -24,7 +24,7 @@ type ChannelBandwidth = flexible enum {
 /// IEEE Std 802.11-2016, 9.4.2.4 - DSSS Parameter Set element
 /// IEEE Std 802.11-2016, 9.4.2.57 - HT Operation element
 /// IEEE Std 802.11-2016, 9.4.2.159 - VHT Operation element
-@available(added=28, removed=NEXT, note="Use ChannelNumber instead")
+@available(added=28, removed=33, note="Use ChannelNumber instead")
 type WlanChannel = struct {
     primary uint8;
     cbw ChannelBandwidth;
@@ -32,7 +32,7 @@ type WlanChannel = struct {
 };
 
 /// Channel information consisting of the frequency band and the channel number.
-@available(added=NEXT)
+@available(added=33)
 type ChannelNumber = struct {
     band WlanBand;
     number uint8;

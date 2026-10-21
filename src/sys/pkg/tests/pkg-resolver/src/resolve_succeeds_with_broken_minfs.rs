@@ -438,7 +438,7 @@ impl OpenRequestHandler for RenameFailOrTempFs {
                         let (status, handle) = tempdir_proxy.deprecated_get_token().await.unwrap();
                         responder.send(status, handle).unwrap();
                     }
-                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    #[cfg(fuchsia_api_level_at_least = "33")]
                     fio::DirectoryRequest::GetToken { responder } => {
                         let response = tempdir_proxy.get_token().await.unwrap();
                         responder.send(response).unwrap();

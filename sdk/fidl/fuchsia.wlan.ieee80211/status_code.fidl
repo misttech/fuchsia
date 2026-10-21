@@ -166,15 +166,15 @@ type StatusCode = flexible enum : uint16 {
     @available(added=31)
     OWE_HANDSHAKE_FAILURE = 260;
     /// No 802.11 MAC-level acknowledgment received from peer.
-    @available(added=NEXT)
+    @available(added=33)
     NO_ACK_FROM_PEER = 261;
     /// Timed out waiting for management response frame from peer.
-    @available(added=NEXT)
+    @available(added=33)
     RESPONSE_TIMEOUT = 262;
     /// Received an unexpected or out-of-sequence response from peer.
-    @available(added=NEXT)
+    @available(added=33)
     UNEXPECTED_RESPONSE = 263;
     /// Connect attempt failed due to an unspecified client, driver, or firmware error.
-    @available(added=NEXT)
+    @available(added=33)
     INTERNAL_FAILURE = 264;
 };

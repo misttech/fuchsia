@@ -2233,7 +2233,7 @@ TEST(ImageFormat, LinearImageSizeWithoutBytesPerRowCrashes) {
   ASSERT_DEATH([&] { ImageFormatImageSize(image_format); });
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
 TEST(ImageFormat, PvricFormats_V2) {
   EXPECT_EQ(fuchsia_images2::kFormatModifierVendorPvr, 0x9200000000000000ul);
   EXPECT_EQ(fidl::ToUnderlying(fuchsia_images2::PixelFormatModifier::kPvrFbcdc8X8V14),
@@ -2444,4 +2444,4 @@ TEST(ImageFormat, PvricFormats_V1_wire) {
   EXPECT_EQ(128u, ImageFormatPlaneRowBytesChecked(image_format, 0).ValueOrDie());
   EXPECT_EQ(2u, ImageFormatPlaneRowBytesChecked(image_format, 3).ValueOrDie());
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(33)

@@ -497,7 +497,7 @@ open protocol Directory {
     /// This method requires following rights: `OpenFlags.RIGHT_WRITABLE`, otherwise returns
     /// `ZX_ERR_BAD_HANDLE`.
     @selector("fuchsia.io1/Directory.GetToken")
-    @available(replaced=NEXT, renamed="DeprecatedGetToken")
+    @available(replaced=33, renamed="DeprecatedGetToken")
     strict GetToken() -> (resource struct {
         s zx.Result;
         token zx.Handle:optional;
@@ -512,7 +512,7 @@ open protocol Directory {
     ///
     /// This method is deprecated: use `fuchsia.io/Node.GetToken` instead (once it is added).
     @selector("fuchsia.io1/Directory.GetToken")
-    @available(added=NEXT)
+    @available(added=33)
     strict DeprecatedGetToken() -> (resource struct {
         s zx.Result;
         token zx.Handle:optional;

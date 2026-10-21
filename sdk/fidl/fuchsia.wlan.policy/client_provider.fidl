@@ -91,7 +91,7 @@ closed protocol ClientController {
     ///
     /// Deprecated in favor of ForgetNetwork, which doesn't require passing in
     /// a credential when removing the network.
-    @available(deprecated=NEXT, note="use ForgetNetwork")
+    @available(deprecated=33, note="use ForgetNetwork")
     strict RemoveNetwork(struct {
         config NetworkConfig;
     }) -> () error NetworkConfigChangeError;
@@ -99,7 +99,7 @@ closed protocol ClientController {
     /// Forgets a saved network configuration, if one exists. This method will
     /// automatically trigger a disconnection if the NetworkIdentifier was used to
     /// establish the current connection.
-    @available(added=NEXT)
+    @available(added=33)
     strict ForgetNetwork(struct {
         id NetworkIdentifier;
     }) -> () error NetworkConfigChangeError;
@@ -255,7 +255,7 @@ type Compatibility = strict enum {
 
 /// Potential error cases for saving and removing network configurations.
 @strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
-type NetworkConfigChangeError = strict(removed=NEXT) flexible(added=NEXT) enum {
+type NetworkConfigChangeError = strict(removed=33) flexible(added=33) enum {
     GENERAL_ERROR = 1;
 
     /// Error for missing network config field (e.g. id, credential, etc.).

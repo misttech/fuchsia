@@ -99,7 +99,7 @@ class TestDirectoryServer : public zxio_tests::TestDirectoryServerBase {
     completer.Reply(ZX_OK, std::move(dup));
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
   void GetToken(GetTokenCompleter::Sync& completer) final {
     zx::event dup;
     zx_status_t status = token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);

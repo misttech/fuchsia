@@ -17,7 +17,7 @@
 /// completed it might be deleted before then.
 // TODO(https://fxbug.dev/42081574): Delete this library once API Version 33
 // is retired.
-@available(added=14, removed=NEXT)
+@available(added=14, removed=33)
 library fuchsia.net.stackmigrationdeprecated;
 
 /// Known Network Stack versions.

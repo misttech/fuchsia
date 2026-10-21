@@ -186,12 +186,12 @@ type CreateCigError = flexible enum {
 
     /// The CIG could not be created because the combination of parameters supplied to CreateCig
     /// for one or more CISes are invalid.
-    @available(replaced=NEXT, renamed="INVALID_PARAMETERS")
+    @available(replaced=33, renamed="INVALID_PARAMETERS")
     INVALID_CIS_PARAMETERS = 3;
 
     /// The CIG could not be created because the parameters supplied to CreateCig for the CIG or
     /// for one or more CISes are invalid.
-    @available(added=NEXT)
+    @available(added=33)
     INVALID_PARAMETERS = 3;
 };
 

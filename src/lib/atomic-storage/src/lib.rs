@@ -634,7 +634,7 @@ mod tests {
                             .send(response.0, response.1)
                             .expect("failed to respond to GetToken request");
                     }
-                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    #[cfg(fuchsia_api_level_at_least = "33")]
                     fio::DirectoryRequest::GetToken { responder } => {
                         let response = self
                             .real_dir

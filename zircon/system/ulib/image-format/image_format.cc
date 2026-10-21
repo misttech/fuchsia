@@ -1095,7 +1095,7 @@ class ArmTELinearFormats : public ImageFormatSet {
   }
 };
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
 class PvricFormats : public ImageFormatSet {
  public:
   const char* Name() const override { return "PvricFormats"; }
@@ -1318,21 +1318,21 @@ class PvricFormats : public ImageFormatSet {
     return num_tiles * kPvricTileByteSize;
   }
 };
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(33)
 
 constexpr IntelTiledFormats kIntelFormats;
 constexpr AfbcFormats kAfbcFormats;
 constexpr ArmTELinearFormats kArmTELinearFormats;
 constexpr GoldfishFormats kGoldfishFormats;
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
 constexpr PvricFormats kPvricFormats;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(33)
 
 constexpr const ImageFormatSet* kImageFormats[] = {
     &kLinearFormats, &kIntelFormats, &kAfbcFormats, &kArmTELinearFormats, &kGoldfishFormats,
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
     &kPvricFormats,
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(33)
 };
 
 }  // namespace

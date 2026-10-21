@@ -17,7 +17,7 @@ const TOUCH_MAX_EVENT uint32 = 128;
 /// in flight reach this limit. Clients should send acknowledgments periodically
 /// (e.g. before reaching the limit, such as within 20 remaining credits) to
 /// avoid being throttled.
-@available(added=NEXT)
+@available(added=33)
 const TOUCH_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS uint32 = 150;
 
 /// A method for a client to receive touch events and respond in a global
@@ -138,7 +138,7 @@ closed protocol TouchSource {
 ///
 /// The position of a touch event is defined in the context of a viewport,
 /// situated in the view, identical to [`TouchSource`].
-@available(added=NEXT)
+@available(added=33)
 open protocol TouchSourceV2 {
     /// Pushes touch events from the server to the client.
     ///

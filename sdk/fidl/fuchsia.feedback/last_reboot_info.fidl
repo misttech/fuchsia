@@ -177,7 +177,7 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     /// The Netstack component is changing versions.
     // TODO(https://fxbug.dev/42081574): Delete this reason once API Version 33
     // is retired.
-    @available(added=26, removed=NEXT)
+    @available(added=26, removed=33)
     NETSTACK_MIGRATION = 20;
 };
 

@@ -124,7 +124,7 @@ type RouteValidatorError = flexible enum {
     /// The component instance could not be resolved.
     INSTANCE_NOT_RESOLVED = 4;
     /// The component instance could not be re-resolved.
-    @available(added=NEXT)
+    @available(added=33)
     INSTANCE_NOT_RERESOLVED = 5;
 };
 

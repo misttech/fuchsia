@@ -327,7 +327,7 @@ impl<N: Node> Connection<N> {
                 trace::duration!("storage", "Node::QueryFilesystem");
                 responder.send(Status::NOT_SUPPORTED.into_raw(), None)?;
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "33")]
             fio::NodeRequest::GetToken { responder } => {
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }

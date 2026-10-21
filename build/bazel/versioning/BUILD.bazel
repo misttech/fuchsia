@@ -106,6 +106,12 @@ config_setting(
 )
 
 config_setting(
+    name = "is_api_level_33",
+    flag_values = {"//build/bazel/versioning:api_level": "33"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
     name = "is_api_level_NEXT",
     flag_values = {"//build/bazel/versioning:api_level": "NEXT"},
     visibility = _api_level_condition_visibility,

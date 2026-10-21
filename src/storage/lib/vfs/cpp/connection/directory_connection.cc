@@ -205,7 +205,7 @@ void DirectoryConnection::UpdateAttributes(fio::wire::MutableNodeAttributes* req
   completer.Reply(Connection::NodeUpdateAttributes(update));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
 void DirectoryConnection::GetToken(GetTokenCompleter::Sync& completer) {
   FS_PRETTY_TRACE_DEBUG("[DirectoryGetToken] our rights: ", rights());
   if (!(rights() & fuchsia_io::Rights::kModifyDirectory)) {
@@ -444,11 +444,11 @@ void DirectoryConnection::Rewind(RewindCompleter::Sync& completer) {
   completer.Reply(ZX_OK);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
 void DirectoryConnection::DeprecatedGetToken(DeprecatedGetTokenCompleter::Sync& completer) {
 #else
 void DirectoryConnection::GetToken(GetTokenCompleter::Sync& completer) {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(33)
   FS_PRETTY_TRACE_DEBUG("[DirectoryGetToken] our rights: ", rights());
   // GetToken exists to support linking, so we must make sure the connection has the permission to
   // modify the directory.

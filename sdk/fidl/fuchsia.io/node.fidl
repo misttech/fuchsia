@@ -623,7 +623,7 @@ open protocol Node {
     /// This method does not require any rights. Note that the token identifies
     /// the connection, hence carries the rights information on this connection.
     @selector("fuchsia.io/Node.GetToken")
-    @available(added=NEXT)
+    @available(added=33)
     flexible GetToken() -> (resource struct {
         token Token;
     }) error zx.Status;

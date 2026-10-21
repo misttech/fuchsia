@@ -101,7 +101,7 @@ type SaeFeature = table {
     3: hash_to_element_supported bool;
     /// Indicates whether the driver enables PMKSA caching during SAE, in which
     /// case it will append a new PMKID to the RSNE in the association request.
-    @available(added=NEXT)
+    @available(added=33)
     4: pmksa_caching_supported bool;
 };
 
@@ -157,7 +157,7 @@ type ApfPacketFilterSupport = table {
 };
 
 /// Firmware RSSI threshold monitoring offload support.
-@available(added=NEXT)
+@available(added=33)
 type RssiMonitorSupport = table {
     1: supported bool;
 };

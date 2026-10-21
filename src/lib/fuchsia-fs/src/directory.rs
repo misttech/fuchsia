@@ -468,10 +468,10 @@ pub async fn rename(dir: &fio::DirectoryProxy, src: &str, dst: &str) -> Result<(
     let src_parent = src_parent.as_ref().unwrap_or(dir);
     let (dst_parent, dst_filename) = split_path(dir, dst).await?;
     let dst_parent = dst_parent.as_ref().unwrap_or(dir);
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "33")]
     let (status, dst_parent_dir_token) =
         dst_parent.deprecated_get_token().await.map_err(RenameError::SendGetTokenRequest)?;
-    #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+    #[cfg(not(fuchsia_api_level_at_least = "33"))]
     let (status, dst_parent_dir_token) =
         dst_parent.get_token().await.map_err(RenameError::SendGetTokenRequest)?;
     zx_status::Status::ok(status).map_err(RenameError::GetTokenError)?;

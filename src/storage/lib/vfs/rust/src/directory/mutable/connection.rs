@@ -67,7 +67,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                 .trace(trace::trace_future_args!("storage", "Directory::Unlink"))
                 .await?;
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "33")]
             fio::DirectoryRequest::DeprecatedGetToken { responder } => {
                 trace::duration!("storage", "Directory::GetToken");
                 let (raw_status, token) = match Self::handle_get_token(this.into_ref()) {
@@ -76,7 +76,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                 };
                 responder.send(raw_status, token)?;
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "33")]
             fio::DirectoryRequest::GetToken { responder } => {
                 trace::duration!("storage", "Directory::GetToken");
                 let res = match Self::handle_get_token(this.into_ref()) {
@@ -85,7 +85,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                 };
                 responder.send(res)?;
             }
-            #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+            #[cfg(not(fuchsia_api_level_at_least = "33"))]
             fio::DirectoryRequest::GetToken { responder } => {
                 trace::duration!("storage", "Directory::GetToken");
                 let (raw_status, token) = match Self::handle_get_token(this.into_ref()) {

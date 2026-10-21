@@ -11,7 +11,7 @@ alias brightness = float32;
 
 /// Reader provides read-only access to current brightness settings and state.
 @discoverable(server="platform")
-@available(added=NEXT)
+@available(added=33)
 open protocol Reader {
     /// Requests the current auto-brightness mode.
     /// This call implements the Hanging Get protocol.
@@ -48,7 +48,7 @@ closed protocol Control {
 
     /// Requests the current auto-brightness mode.
     /// This call implements the Hanging Get protocol.
-    @available(deprecated=NEXT, note="Use fuchsia.ui.brightness.Reader instead.")
+    @available(deprecated=33, note="Use fuchsia.ui.brightness.Reader instead.")
     strict WatchAutoBrightness() -> (struct {
         enabled bool;
     });
@@ -72,7 +72,7 @@ closed protocol Control {
     /// This result is valid for both manual and auto-brightness modes
     /// and is typically used to show the current brightness on a slider.
     /// This call implements the Hanging Get protocol.
-    @available(deprecated=NEXT, note="Use fuchsia.ui.brightness.Reader instead.")
+    @available(deprecated=33, note="Use fuchsia.ui.brightness.Reader instead.")
     strict WatchCurrentBrightness() -> (struct {
         value brightness;
     });
@@ -86,7 +86,7 @@ closed protocol Control {
 
     /// Gets the current auto brightness adjustment.
     /// This call implements the Hanging Get protocol.
-    @available(deprecated=NEXT, note="Use fuchsia.ui.brightness.Reader instead.")
+    @available(deprecated=33, note="Use fuchsia.ui.brightness.Reader instead.")
     strict WatchAutoBrightnessAdjustment() -> (struct {
         adjustment float32;
     });
@@ -100,7 +100,7 @@ closed protocol Control {
     });
 
     /// Gets the maximum supported backlight brightness in nits, if known.
-    @available(deprecated=NEXT, note="Use fuchsia.ui.brightness.Reader instead.")
+    @available(deprecated=33, note="Use fuchsia.ui.brightness.Reader instead.")
     strict GetMaxAbsoluteBrightness() -> (struct {
         max_brightness float64;
     }) error zx.Status;

@@ -36,7 +36,7 @@ type Orientation = strict enum {
 
 /// The set of possible blending functions to choose from when determining how an image should
 /// be composited on top of other images.
-@available(deprecated=NEXT)
+@available(deprecated=33)
 type BlendMode = strict enum {
     /// Indicates that the source pixels replace the destination pixels. In other words,
     /// the source pixels are treated as opaque, regardless of what alpha values are set.
@@ -79,7 +79,7 @@ type ColorRgba = struct {
 
 /// The set of possible image flip functions to choose from when determining how the image texture
 /// should be displayed.
-@available(deprecated=NEXT)
+@available(deprecated=33)
 type ImageFlip = strict enum {
     NONE = 0;
     /// Let V be the vertical axis of reflection, positioned at width/2. Then each pixel's x
@@ -414,13 +414,13 @@ type ViewBoundProtocols = resource table {
     /// Receive touch events that are associated with a View.
     /// Mutually exclusive with `touch_source`. Providing both will result in
     /// a `FlatlandError.BAD_OPERATION` error and channel closure.
-    @available(added=NEXT)
+    @available(added=33)
     5: touch_source_v2 server_end:fuchsia.ui.pointer.TouchSourceV2;
 
     /// Receive mouse events that are associated with a View.
     /// Mutually exclusive with `mouse_source`. Providing both will result in
     /// a `FlatlandError.BAD_OPERATION` error and channel closure.
-    @available(added=NEXT)
+    @available(added=33)
     6: mouse_source_v2 server_end:fuchsia.ui.pointer.MouseSourceV2;
 };
 
@@ -873,7 +873,7 @@ closed protocol Flatland {
     /// destroyed.
     ///
     /// `viewport_id` must satisfy standard [`ContentId`] creation constraints.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict CreateViewport(resource struct {
         viewport_id ContentId;
         /// A typed wrapper for a channel, representing the parent endpoint of the connection
@@ -894,7 +894,7 @@ closed protocol Flatland {
     /// valid range, etc.)
     ///
     /// `image_id` must satisfy standard [`ContentId`] creation constraints.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict CreateImage(resource struct {
         image_id ContentId;
         import_token BufferCollectionImportToken;
@@ -915,7 +915,7 @@ closed protocol Flatland {
     /// (0, 0) and width and height set at ImageProperties from [`CreateImage`].
     ///
     /// `image_id` must refer to a valid, unreleased Image.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetImageSampleRegion(struct {
         image_id ContentId;
         rect fuchsia.math.RectF;
@@ -929,7 +929,7 @@ closed protocol Flatland {
     /// If this method is not called, the default image destination size is the width and height set
     /// at ImageProperties from [`CreateImage`]. The destination size will be affected by scaling if
     /// [`SetScale`] is used on the attached Transform or its parents.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetImageDestinationSize(struct {
         image_id ContentId;
         size fuchsia.math.SizeU;
@@ -940,7 +940,7 @@ closed protocol Flatland {
     /// a call to |CreateImage| or |CreateFilledRect|. For details on the different blend functions
     /// that are available, please refer to the BlendMode enum. If this function is not called, then
     /// the default blendmode is BlendMode::SRC.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetImageBlendingFunction(struct {
         image_id ContentId;
         blend_mode BlendMode;
@@ -951,7 +951,7 @@ closed protocol Flatland {
     /// a call to |CreateImage| or |CreateFilledRect|. For details on the different blend functions
     /// that are available, please refer to the BlendMode2 enum. If this function is not called,
     /// the default blendmode is BlendMode2::REPLACE.
-    @available(added=29, deprecated=NEXT)
+    @available(added=29, deprecated=33)
     strict SetImageBlendMode(struct {
         image_id ContentId;
         blend_mode BlendMode2;
@@ -959,7 +959,7 @@ closed protocol Flatland {
 
     /// Sets an opacity in linear space to be applied to a flatland image. Opacity values must
     /// be in the range [0.0, 1.0].
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetImageOpacity(struct {
         image_id ContentId;
         val float32;
@@ -970,7 +970,7 @@ closed protocol Flatland {
     /// closed due to FlatlandError::BAD_OPERATION. This flip will be applied to the Image before
     /// parent Transform Orientations. If this function is not called, then the default flip value
     /// is ImageFlip::NONE.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetImageFlip(struct {
         image_id ContentId;
         flip ImageFlip;
@@ -982,7 +982,7 @@ closed protocol Flatland {
     /// rectangle having a default size of (0,0) and so it will not show up when rendering.
     ///
     /// `rect_id` must satisfy standard [`ContentId`] creation constraints.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict CreateFilledRect(resource struct {
         rect_id ContentId;
     });
@@ -997,7 +997,7 @@ closed protocol Flatland {
     /// Hence, its bottom right corner will be at (size.width, size.height).
     ///
     /// `rect_id` must refer to a valid, unreleased filled rectangle.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetSolidFill(resource struct {
         rect_id ContentId;
         color ColorRgba;
@@ -1010,7 +1010,7 @@ closed protocol Flatland {
     /// to be used again.
     ///
     /// `rect_id` must refer to a valid, unreleased filled rectangle.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict ReleaseFilledRect(struct {
         rect_id ContentId;
     });
@@ -1030,7 +1030,7 @@ closed protocol Flatland {
     /// Transform.
     ///
     /// `content_id` must refer to a valid, unreleased Content object, or 0 to clear.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetContent(struct {
         transform_id TransformId;
         content_id ContentId;
@@ -1041,7 +1041,7 @@ closed protocol Flatland {
     /// Transforms are usually sufficient to change how Content is presented. Viewports, however,
     /// have special properties that are not part of the Transform hierarchy. Those properties can
     /// be set using this function.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict SetViewportProperties(struct {
         viewport_id ContentId;
         properties ViewportProperties;
@@ -1085,7 +1085,7 @@ closed protocol Flatland {
     /// Despite having a return type, this function is still feed-forward like [`CreateView`] and
     /// requires a call to [`Present`] to be executed. The ViewportCreationToken will be returned
     /// after the presented operations have been executed.
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict ReleaseViewport(struct {
         viewport_id ContentId;
     }) -> (resource struct {
@@ -1103,7 +1103,7 @@ closed protocol Flatland {
     ///
     /// It is an error to call functions with a released id (unless that id has been reused to
     /// construct a new Image).
-    @available(deprecated=NEXT)
+    @available(deprecated=33)
     strict ReleaseImage(struct {
         image_id ContentId;
     });

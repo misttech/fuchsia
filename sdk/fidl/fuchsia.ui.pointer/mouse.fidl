@@ -19,7 +19,7 @@ const MOUSE_MAX_EVENT uint32 = 128;
 /// in flight reach this limit. Clients should send acknowledgments periodically
 /// (e.g. before reaching the limit, such as within 20 remaining credits) to
 /// avoid being throttled.
-@available(added=NEXT)
+@available(added=33)
 const MOUSE_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS uint32 = 150;
 
 /// A method for a client to receive mouse pointer events.
@@ -85,7 +85,7 @@ closed protocol MouseSource {
 ///
 /// The position of a pointer event is defined in the context of a viewport,
 /// situated in the view, identical to [`MouseSource`].
-@available(added=NEXT)
+@available(added=33)
 open protocol MouseSourceV2 {
     /// Pushes mouse pointer events from the server to the client.
     ///

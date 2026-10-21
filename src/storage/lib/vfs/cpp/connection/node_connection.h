@@ -96,7 +96,7 @@ class NodeConnection final : public Connection, public fidl::WireServer<fuchsia_
                                RemoveExtendedAttributeCompleter::Sync& completer) final {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
   void GetToken(GetTokenCompleter::Sync& completer) final {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }

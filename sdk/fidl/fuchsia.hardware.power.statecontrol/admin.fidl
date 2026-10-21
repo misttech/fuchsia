@@ -102,7 +102,7 @@ closed protocol Admin {
     /// provided data ZBI.
     // TODO(https://fxbug.dev/573204187): Delete this method once API level 32
     // is retired.
-    @available(removed=NEXT, note="mexec is no longer supported")
+    @available(removed=33, note="mexec is no longer supported")
     strict Mexec(resource struct {
         kernel_zbi zx.Handle:VMO;
         data_zbi zx.Handle:VMO;
@@ -115,7 +115,7 @@ closed protocol Admin {
     /// Suspend to RAM is not supported. The server always returns ZX_ERR_NOT_SUPPORTED.
     // TODO(https://fxbug.dev/572808810): Delete once all API levels containing this method are
     // retired.
-    @available(removed=NEXT, note="suspend to RAM is not supported")
+    @available(removed=33, note="suspend to RAM is not supported")
     strict SuspendToRam() -> () error zx.Status;
 };
 

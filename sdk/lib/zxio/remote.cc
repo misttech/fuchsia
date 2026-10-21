@@ -1068,7 +1068,7 @@ class Directory : public Remote<fio::Directory> {
   }
 
   zx_status_t TokenGet(zx_handle_t* out_token) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(33)
     const fidl::WireResult result = client()->GetToken();
     if (!result.ok()) {
       return result.status();
@@ -1090,7 +1090,7 @@ class Directory : public Remote<fio::Directory> {
     }
     *out_token = response.token.release();
     return ZX_OK;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(33)
   }
 
   zx_status_t Rename(const char* old_path, size_t old_path_len, zx_handle_t dst_token,

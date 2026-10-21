@@ -854,7 +854,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 .trace(trace::trace_future_args!("storage", "File::Allocate"))
                 .await?;
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "33")]
             fio::FileRequest::GetToken { responder } => {
                 trace::duration!("storage", "File::GetToken");
                 let res = match TokenRegistry::get_token(this.into_ref()) {
