@@ -9,6 +9,7 @@ This document defines guidelines for selecting and formatting `Bazel-Migration-T
 Every migration CL must include one or more `Bazel-Migration-Target:` footers to record the targets migrated in the CL so they can be queried in Gerrit (e.g., `hasfooter:Bazel-Migration-Target` or `footer:Bazel-Migration-Target=...`). Multiple `Bazel-Migration-Target:` lines may be specified when multiple targets are migrated.
 
 - **Single line per target (no line wrapping):** `Bazel-Migration-Target:` lines may exceed the 72-character commit message line limit in order to fit the entire label. They **MUST NOT** be broken across multiple lines.
+- **Alphabetical order:** When multiple `Bazel-Migration-Target:` lines are specified, list them in alphabetical order.
 
 **Example:**
 ```none

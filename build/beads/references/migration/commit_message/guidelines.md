@@ -117,7 +117,7 @@ The commit body must clearly explain the scope and details of the migration so h
    - Adapt `<target-or-directory-description>` to accurately describe whether a single target, a subset of targets in a package, an entire directory/package, or multiple directories were migrated.
 
 2. **Migrated & Unmigrated Target Details:**
-   - List the specific directories or targets converted to Bazel (`BUILD.bazel`).
+   - List the specific directories or targets converted to Bazel (`BUILD.bazel`). Always alphabetize lists of directory paths and target labels.
    - Explicitly identify any targets in the directory that were **not** migrated in this CL and explain why (e.g., blocked on unmigrated dependencies or GN-only templates).
 
 3. **GN & `bazel2gn` Status:**
@@ -152,7 +152,7 @@ List footers in the following exact order (from most relevant to human reviewers
    - For detailed rules on combining targets into a single command, selecting higher-level or dependent targets, and quoting toolchains, see [`determining_appropriate_test_footer.md`](/build/beads/references/migration/commit_message/determining_appropriate_test_footer.md).
 
 3. **`Bazel-Migration-Target:`** *(Required, 1 or more lines)*
-   - Specify the canonical `//...` label(s) of the migrated target(s) to enable Gerrit tracking queries (may exceed 72 characters and **MUST NOT** be wrapped across multiple lines).
+   - Specify the canonical `//...` label(s) of the migrated target(s) in alphabetical order to enable Gerrit tracking queries (may exceed 72 characters and **MUST NOT** be wrapped across multiple lines).
    - See [`determining_appropriate_bazel_migration_target_footer.md`](/build/beads/references/migration/commit_message/determining_appropriate_bazel_migration_target_footer.md) for guidelines on selecting target values.
 
 4. **`Change-Id:`** *(Automated - must be the final line)*
