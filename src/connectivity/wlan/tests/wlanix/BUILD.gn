@@ -74,7 +74,6 @@ antlion_host_test("connect_to_ap_test") {
 antlion_host_test("apf_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/ApfTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/utils:wlan_test_utils",
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
