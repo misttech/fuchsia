@@ -50,6 +50,7 @@ rustc_library("starnix_sync") {
     "src/lock_traits.rs",
     "src/locks.rs",
     "src/port_event.rs",
+    "src/rcu_lock.rs",
     "src/rw_seq_lock.rs",
     "src/thread_affinity.rs",
   ]
@@ -78,6 +79,7 @@ rustc_library("starnix_sync") {
     "//src/lib/diagnostics/inspect/derive",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-rcu",
+    "//src/lib/fuchsia-rcu-collections",
     "//src/lib/fuchsia-sync",
     "//src/starnix/lib/starnix_stack",
     "//third_party/rust_crates:lock_api",
@@ -95,6 +97,7 @@ rustc_test("starnix_sync_lib_test") {
     "src/lock_traits.rs",
     "src/locks.rs",
     "src/port_event.rs",
+    "src/rcu_lock.rs",
     "src/rw_seq_lock.rs",
     "src/thread_affinity.rs",
   ]
@@ -111,6 +114,7 @@ rustc_test("starnix_sync_lib_test") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-rcu",
+    "//src/lib/fuchsia-rcu-collections",
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
     "//src/starnix/lib/starnix_stack",

@@ -57,6 +57,7 @@ rustc_library("fuchsia-rcu-collections") {
     "//src/starnix/kernel/core:*",
     "//src/starnix/lib/selinux:*",
     "//src/starnix/lib/starnix_rcu:*",
+    "//src/starnix/lib/starnix_sync:*",
   ]
   with_unit_tests = true
   deps = [

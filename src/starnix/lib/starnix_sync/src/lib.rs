@@ -12,6 +12,7 @@ mod lock_ordering;
 mod lock_traits;
 mod locks;
 mod port_event;
+mod rcu_lock;
 mod rw_seq_lock;
 mod thread_affinity;
 
@@ -24,6 +25,7 @@ pub use lock_ordering_macro::*;
 pub use lock_traits::*;
 pub use locks::*;
 pub use port_event::*;
+pub use rcu_lock::*;
 pub use rw_seq_lock::*;
 pub use thread_affinity::*;
 

@@ -365,6 +365,7 @@ lock_ordering! {
     Terminal(QbgShutdownLock),
     Terminal(RcuCacheLock),
     Terminal(RcuHashMapLock),
+    Terminal(RcuLockLevel),
     Terminal(ReadWriteBytesFileLock),
     Terminal(RebootErrorStateLock),
     Terminal(RemoteBinderControllerLock),

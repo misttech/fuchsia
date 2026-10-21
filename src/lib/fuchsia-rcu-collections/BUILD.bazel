@@ -25,6 +25,7 @@ rustc_library(
         "//src/starnix/kernel/core:__pkg__",
         "//src/starnix/lib/selinux:__pkg__",
         "//src/starnix/lib/starnix_rcu:__pkg__",
+        "//src/starnix/lib/starnix_sync:__pkg__",
     ],
     with_unit_tests = True,
     deps = [
