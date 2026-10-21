@@ -112,7 +112,8 @@ impl fbl::HasRefCount for VmAspace {
 
 // SAFETY: `VmAspace` represents a C++ `fbl::RefCounted` object.
 unsafe impl fbl::Recyclable for VmAspace {
-    #[inline]
+    #[cold]
+    #[inline(never)]
     unsafe fn recycle(ptr: NonNull<Self>) {
         // SAFETY: Caller attests to preconditions.
         unsafe {
