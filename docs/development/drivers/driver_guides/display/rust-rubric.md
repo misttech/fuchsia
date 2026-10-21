@@ -514,6 +514,24 @@ and its length changes as elements are inserted and removed.
 
 **Explanation:** Matches Rust common practice, such as `Vec::capacity`.
 
+## Comment formatting
+
+**Guideline:** Wrap comments and doc comments manually to stay within the
+100-character line limit.
+
+**Explanation:** Fuchsia's `rustfmt` configuration does not enable the unstable
+[`wrap_comments`][rustfmt-wrap-comments] option. `fx format-code` does not wrap
+comments.
+
+**Guideline:** Do not wrap the following items, even when they exceed the limit:
+
+- `@ref(...)`, `@cite(...)` and `@alias(...)` records. Tools parse each record
+  as one line. See the [referencing guide][referencing-guide].
+- URLs and intra-doc links. Wrapping breaks them.
+- Tokens that can't be split, such as long identifiers or hexadecimal payloads.
+
+**Explanation:** Wrapping these items changes their meaning or breaks tools.
+
 ## Links in documentation
 
 **Guideline:** Link all identifiers supported by
@@ -746,6 +764,7 @@ Display drivers also follow the best practices below.
 [google-cpp-style-integers]: https://google.github.io/styleguide/cppguide.html#Integer_Types
 [inspect-readme]: /docs/development/diagnostics/inspect/README.md
 [logging-rfc]: /docs/contribute/governance/rfcs/0003_logging.md
+[referencing-guide]: /docs/development/drivers/driver_guides/display/referencing.md
 [rust-analyzer]: https://rust-analyzer.github.io/
 [rust-api-guidelines]: https://rust-lang.github.io/api-guidelines/
 [rust-api-guidelines-documentation-links]: https://rust-lang.github.io/api-guidelines/documentation.html#prose-contains-hyperlinks-to-relevant-things-c-link
@@ -755,4 +774,5 @@ Display drivers also follow the best practices below.
 [rust-style-guide]: https://doc.rust-lang.org/style-guide/
 [rustdoc-howto]: https://doc.rust-lang.org/rustdoc/how-to-write-documentation.html
 [rustdoc-link-by-name]: https://doc.rust-lang.org/rustdoc/write-documentation/linking-to-items-by-name.html
+[rustfmt-wrap-comments]: https://rust-lang.github.io/rustfmt/?version=main#wrap_comments
 [rustonomicon]: https://doc.rust-lang.org/nomicon/
