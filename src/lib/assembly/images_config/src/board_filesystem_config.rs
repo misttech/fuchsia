@@ -489,6 +489,10 @@ pub struct Fxfs {
     /// How blobs should be formatted in the base fxfs image during assembly.
     #[serde(skip_serializing_if = "crate::is_default")]
     pub blob_format: FxfsBlobFormat,
+
+    /// If set, pkg-cache acts as the blob pager and the block driver services page-in requests.
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub use_driver_blob_paging: bool,
 }
 
 impl Default for Fxfs {
@@ -499,6 +503,7 @@ impl Default for Fxfs {
             blob_maximum_bytes: None,
             data_maximum_bytes: None,
             blob_format: FxfsBlobFormat::default(),
+            use_driver_blob_paging: false,
         }
     }
 }

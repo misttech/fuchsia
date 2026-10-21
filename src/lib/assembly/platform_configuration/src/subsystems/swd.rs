@@ -116,8 +116,9 @@ impl DefineSubsystemConfiguration<(&SwdConfig, &VolumeConfig)> for SwdSubsystemC
             "fuchsia.pkgcache.EnableUpgradablePackages",
             Config::new(ConfigValueType::Bool, subsystem_config.enable_upgradable_packages.into()),
         )?;
-        let use_driver_blob_paging =
-            matches!(volume_config, VolumeConfig::Fxfs) && subsystem_config.use_driver_blob_paging;
+        let use_driver_blob_paging = matches!(volume_config, VolumeConfig::Fxfs)
+            && (subsystem_config.use_driver_blob_paging
+                || context.board_config.filesystems.fxfs.use_driver_blob_paging);
         builder.set_config_capability(
             "fuchsia.pkgcache.UseDriverBlobPaging",
             Config::new(ConfigValueType::Bool, use_driver_blob_paging.into()),
