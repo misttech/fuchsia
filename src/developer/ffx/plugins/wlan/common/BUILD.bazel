@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ffx-wlan-common",
+    srcs = [
+        "src/args.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/developer/ffx/plugins/wlan/access_point:__pkg__",
+        "//src/developer/ffx/plugins/wlan/client:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_fdomain",
+        "//src/lib/fdomain/client",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:hex",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "ffx-wlan-common_test",
+    crate = ":ffx-wlan-common",
+    edition = "2024",
+)
+
+wrap_host_rust_test(
+    name = "ffx-wlan-common_host_test",
+    binary_name = "ffx-wlan-common_test",
+    visibility = ["//src/developer/ffx:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "ffx-wlan-common-tests",
+    unit_tests = [":ffx-wlan-common_test"],
+    visibility = ["//src/developer/ffx:__pkg__"],
+)
