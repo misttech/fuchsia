@@ -145,7 +145,7 @@ int main(int argc, char** argv) {
   if (power_state_requested || frequency_state_requested) {
     const char* name = frequency_state_requested ? "frequency state" : "power state";
     std::optional<std::vector<int>> parsed_states =
-        frequency_state_requested ? GetStates(frequency_state_string, name, /*min=*/0)
+        frequency_state_requested ? GetStates(frequency_state_string, name, /*min=*/INT_MIN)
                                   : GetStates(power_state_string, name, /*min=*/INT_MIN);
     if (!parsed_states) {
       return -1;
