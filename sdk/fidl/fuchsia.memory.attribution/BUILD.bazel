@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -28,4 +29,12 @@ fidl_library(
     deps = [
         "//zircon/vdso/zx",
     ],
+)
+
+measure_tape(
+    name = "measure_tape_for_attribution",
+    fidls = [":fuchsia.memory.attribution"],
+    target_binding = "rust",
+    target_types = ["fuchsia.memory.attribution/AttributionUpdate"],
+    visibility = ["//src/performance/memory/attribution/server:__pkg__"],
 )

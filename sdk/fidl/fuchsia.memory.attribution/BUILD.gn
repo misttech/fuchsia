@@ -2,14 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//tools/fidl/measure-tape/measure_tape.gni")
-
-measure_tape("measure_tape_for_attribution") {
-  target_binding = "rust"
-  target_types = [ "fuchsia.memory.attribution/AttributionUpdate" ]
-  fidls = [ ":fuchsia.memory.attribution" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -54,4 +46,13 @@ fidl("fuchsia.memory.attribution") {
     "//src/sys/lib/elf_runner/*",
   ]
   public_deps = [ "//zircon/vdso/zx" ]
+}
+measure_tape("measure_tape_for_attribution") {
+  fidls = [ ":fuchsia.memory.attribution" ]
+  target_binding = "rust"
+  target_types = [ "fuchsia.memory.attribution/AttributionUpdate" ]
+  visibility = [
+    ":*",
+    "//src/performance/memory/attribution/server:*",
+  ]
 }
