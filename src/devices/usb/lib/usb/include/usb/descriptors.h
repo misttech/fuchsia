@@ -11,7 +11,6 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
-#include <fuchsia/hardware/usb/c/banjo.h>
 
 #include <type_traits>
 #include <utility>
@@ -489,10 +488,7 @@ inline constexpr uint16_t usb_ep_max_packet(const T& ep) {
          fuchsia_hardware_usb_descriptor::kEndpointMaxPacketSizeMask;
 }
 
-static_assert(sizeof(usb_device_descriptor_t) == 18);
 static_assert(sizeof(usb_configuration_descriptor_t) == 9);
-static_assert(sizeof(usb_interface_descriptor_t) == 9);
-static_assert(sizeof(usb_endpoint_descriptor_t) == 7);
 static_assert(sizeof(usb_device_qualifier_descriptor_t) == 10);
 static_assert(sizeof(usb_bos_descriptor_t) == 5);
 static_assert(sizeof(usb_setup_info_t) == 8);
@@ -502,7 +498,6 @@ static_assert(sizeof(usb_string_descriptor_t) == 2);
 static_assert(sizeof(usb_interface_info_descriptor_t) == 9);
 static_assert(sizeof(usb_endpoint_info_descriptor_t) == 7);
 static_assert(sizeof(usb_ss_ep_comp_descriptor_info_t) == 6);
-static_assert(sizeof(usb_ss_ep_comp_descriptor_t) == 6);
 static_assert(sizeof(usb_ss_isoch_ep_comp_descriptor_t) == 8);
 static_assert(sizeof(usb_interface_assoc_descriptor_t) == 8);
 static_assert(sizeof(usb_cs_interface_descriptor_t) == 3);

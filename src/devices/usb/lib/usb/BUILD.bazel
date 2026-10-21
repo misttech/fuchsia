@@ -18,6 +18,9 @@ cc_library(
         "include",
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "@fuchsia_sdk//fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
+    ],
 )
 
 cc_library(

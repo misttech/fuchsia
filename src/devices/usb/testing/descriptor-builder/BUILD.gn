@@ -4,5 +4,8 @@
 
 source_set("descriptor-builder") {
   sources = []
-  public_deps = [ "//src/devices/usb/lib/usb:descriptors" ]
+  public_deps = [
+    "//src/devices/usb/lib/usb",
+    "//src/devices/usb/lib/usb:descriptors",
+  ]
 }

@@ -50,10 +50,7 @@ source_set("usb") {
 source_set("descriptors") {
   public = [ "include/usb/descriptors.h" ]
   public_configs = [ ":includes" ]
-  public_deps = [
-    "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_c",
-    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
-  ]
+  public_deps = [ "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp" ]
 }
 
 config("enable_dfv2_compat_logging") {
