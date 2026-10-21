@@ -55,13 +55,21 @@ When tasked with implementing or updating a port:
      - Preserve all in-body inline comments (`// ...`) from C++ source and header files
        (`.cc` and `.h`) documenting behavior in the corresponding `.rs` functions during
        implementation, updating identifiers that have changed names so comments make sense with the
-       Rust code.  Automated linters cannot detect missing inline comments; conduct a side-by-side
-       audit of C++ source and header files (`.cc` and `.h`) against the corresponding `.rs` files.
-     - Token-based locking with `ksync` (`RawCriticalMutex`, `RawSpinlock`), matching C++ thread
-       safety annotations.
+       Rust code. Convert C++ declaration comments above functions, types, fields, and constants
+       (including `pub(crate)` and private items) to `///` doc comments. Automated linters cannot
+       detect missing inline comments or plain `//` comments above non-`pub` items; conduct a
+       side-by-side audit of C++ source and header files (`.cc` and `.h`) against the
+       corresponding `.rs` files.
+     - Use token-based locking with `ksync` (`RawCriticalMutex`, `RawSpinlock`) matching C++
+       thread safety annotations, match C++ atomic memory orderings (`Ordering`) with a comment
+       justifying any ordering weaker than `SeqCst`, and preserve cache-line alignment and padding
+       on cross-CPU data structures to avoid false sharing.
      - Preemption disabling via `AutoPreemptDisabler` matching C++ `AutoPreemptDisabler`.
      - Explicit `# Safety` docs on `unsafe fn` and `// SAFETY:` explanations on every `unsafe`
        block.
+     - Preserve write provenance on mutable raw pointers (`*mut T`) by deriving them from `&mut T`,
+       `UnsafeCell::get()`, `addr_of_mut!`, or existing `*mut T` pointers rather than casting from
+       shared references (`&T as *const T as *mut T`).
      - Fallible allocations (`try_new`, `fbl::AllocChecker`, `Status::NO_MEMORY`).
      - Exact memory layout, alignment, and size verification (`zr::static_assert_size_and_align!`).
      - For unported C++ `fbl::RefCounted` types with `bindgen`-generated structs (`bindings::T`),
@@ -70,15 +78,21 @@ When tasked with implementing or updating a port:
      - Re-exports and build integration in `BUILD.gn` and parent module files.
 
 4. **Iteratively Build & Verify**:
-   - Run `./scripts/fx build` using `run_command` after applying code edits.
+   - Always build and test `x86`, any architecture with modified arch-specific files, and any
+     user-requested architectures.
+   - Ensure related test targets are in the build configuration, then run `./scripts/fx build`
+     using `run_command` after applying code edits.
    - Read compiler diagnostics and address all errors and Clippy warnings.
-   - Run relevant tests (`fx test`, `fx core-tests`, or `fx run-boot-test`).
+   - Run relevant tests (`fx test`, `fx core-tests`, or `fx run-boot-test`). If any files under
+     `//zircon/kernel` are modified, run the full `core-tests` suite. When builds and tests finish,
+     run `./scripts/fx bazel shutdown` to release open file descriptors held by the Bazel server.
    - Manually wrap any comments (`//`, `///`), string literals, or macro bodies exceeding 100
      characters (since `fx format-code` does not format them), and then run `./scripts/fx
      format-code` from the repository root.
    - Perform a side-by-side self-check of C++ source and header files (`.cc` and `.h`) vs `.rs`
-     files against the Common Pitfalls Checklist (especially Pitfall 22 on in-body inline comment
-     parity and adapting changed identifier names) before reporting back.
+     files against the Common Pitfalls Checklist (especially Pitfalls 22 and 53 on in-body inline
+     comment parity, adapting changed identifier names, and `///` doc comments) before reporting
+     back.
    - Run `babeldiff` on your changes (`zircon/skills/babeldiff/SKILL.md`). Fix every `!` finding
      or explain in your report why the divergence is intended. Use it as a tool: do not read or
      debug its source during the port.

@@ -75,6 +75,12 @@ The orchestration uses two dedicated, pre-defined subagents:
     * **Role**: Process coordinator and router. Manages subagent lifecycles,
       verifies git repository state via the **Git Verification Gate**, and
       passes messages between Coder and Reviewer.
+    * **Context & Concurrency Discipline**: Passes the commit message (if
+      committed), changed file paths and line ranges, and paired C++/Rust paths
+      in subagent prompts so subagents do not spend turns running `git status`
+      or `git log` to discover the change. Never runs commands that mutate the
+      working tree or build directory (`fx build` or `fx format-code`) while a
+      subagent is reading the working tree.
     * **STRICT PROHIBITION**: The Orchestrator MUST NEVER author code, edit
       files, or perform code reviews directly. If coding work is needed, it must
       be delegated to the Coder. If review is needed, it must be delegated to
@@ -182,8 +188,8 @@ git diff:
 > original C++ implementation (`<cpp_paths>`).
 >
 > In-tree files modified:
-> `<list of modified files from git status -s, or for a committed port, the
-> commits and the files they change>`
+> `<list of modified files and changed line ranges from git status -s / git diff,
+> or for a committed port, the commit message, commits, and files they change>`
 >
 > Please inspect the real files in tree, review against `zircon/skills/cpp-to-rust-rubric/SKILL.md`
 > (and `zircon/skills/cpp-to-rust-dispatcher/SKILL.md` if applicable), and generate a
@@ -229,7 +235,10 @@ Once the Reviewer provides final approval:
 1.  Verify that no lines in modified files exceed 100 characters (remembering
     that `fx format-code` does not wrap comments, strings, or code inside
     macros), and run `fx format-code`.
-2.  Verify the final build with `fx build` and tests with `fx test`.
+2.  Verify the final build with `fx build` and tests with `fx test` (including
+    `x86`, any architecture with modified arch-specific files, and `core-tests`
+    when `//zircon/kernel` is modified), then run `fx bazel shutdown` to
+    release open file descriptors held by the Bazel server.
 3.  Report completion and summary of verified in-tree files to the user.
 4.  Terminate both subagents using `manage_subagents` with `Action: "kill"`.
 

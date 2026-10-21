@@ -56,18 +56,26 @@ When tasked with reviewing a port:
    - Do not read or debug `babeldiff`'s source during the review; note any finding that looks
      wrong in the report.
 
-3. **Audit In-Body Inline Comment Parity**:
+3. **Audit Comment Parity & Doc Comments**:
    - Perform a side-by-side comparative audit of C++ source and header files (`.cc` and `.h`)
      against the corresponding `.rs` files.
    - Verify that all inner inline comments (`// ...`) documenting behavior are preserved and
      that identifiers that have changed names are updated to match the Rust code.
+   - Verify that declaration comments above functions, types, fields, and constants (including
+     `pub(crate)` and private items not covered by `missing_docs`) use `///` doc comments rather
+     than plain `//` comments.
    - Public Rustdoc alone does NOT satisfy comment parity; automated linters cannot detect
-     missing in-body implementation comments.
+     missing in-body implementation comments or plain `//` comments on non-`pub` items.
 
-4. **Scrutinize `unsafe` Code**:
+4. **Scrutinize `unsafe` Code, Provenance, & Concurrency**:
    - Actively question every single `unsafe` block and function.
    - Insist on safe Rust alternatives where possible (e.g., `zerocopy` instead of manual pointer
      casts, RAII wrappers, derive macros).
+   - Verify that mutable raw pointers (`*mut T`) preserve write provenance and are never cast from
+     shared references (`&T as *const T as *mut T`).
+   - Verify that atomic operations match the C++ memory ordering (`Ordering`), that any ordering
+     weaker than `SeqCst` has a comment justifying why it is sufficient, and that cross-CPU data
+     structures preserve cache-line alignment and padding to avoid false sharing.
    - Verify that all `unsafe` blocks have explicit, sound `// SAFETY:` comments explaining
      invariants.
    - Verify that all `unsafe` functions include a `# Safety` section in their doc comments
@@ -77,7 +85,7 @@ When tasked with reviewing a port:
    - Verify every requirement in the **Zircon C++ to Rust Porting Rubric** below (Core Principles,
      Machinery, Detailed Guidelines, and Common Pitfalls Checklist).
    - Verify that the port does not violate any item in the Common Pitfalls & Anti-Patterns
-     Checklist (items 1-50).
+     Checklist (items 1-53).
 
 6. **Generate Structured Review Report**:
    - Always produce your review as a structured markdown report following the exact format
@@ -283,6 +291,11 @@ let slice =
   back to pointers, use `core::ptr::with_exposed_provenance::<T>(addr)` or
   `with_exposed_provenance_mut` instead of raw `as *const T` / `as *mut T`
   casts.
+- Preserve Write Provenance: Never cast a shared reference to a mutable raw
+  pointer (`&T as *const T as *mut T`), which carries read-only provenance and
+  makes writing through it undefined behavior under Stacked/Tree Borrows. Derive
+  mutable raw pointers from `&mut T`, `UnsafeCell::get()`, `addr_of_mut!`, or
+  existing `*mut T` pointers (e.g. via `.wrapping_byte_add(...)`).
 
 ```rust
 /// A read-only view of mapped memory.
@@ -344,6 +357,14 @@ impl Mapping {
   `Guard::CallUnlocked` directly to `guard.as_mut().call_unlocked(|| { ... })`
   rather than splitting a single lock guard scope into separate `{
   ksync::lock!(...); }` blocks.
+- **Atomic Memory Ordering Parity**: When translating C++ atomic operations
+  (`ktl::atomic`), preserve the exact C++ memory ordering (`Ordering::Relaxed`,
+  `Acquire`, `Release`, `AcqRel`, `SeqCst`). Any memory ordering weaker than
+  `SeqCst` must have a comment justifying why it is sufficient (or preserve the
+  C++ rationale).
+- **Cross-CPU Contention**: Data structures used concurrently across CPUs must
+  preserve C++ cache-line alignment and padding to avoid introducing false
+  sharing.
 
 ```rust
 #[guarded]
@@ -606,7 +627,11 @@ Ok(())
 ### 3.15. In-Body Implementation & Inline Comment Parity
 - **Linter Blind Spot**: Automated tools (`clippy`, rustdoc `missing_docs`) only
   enforce outer documentation on public items; they cannot detect missing
-  in-body implementation comments.
+  in-body implementation comments or plain `//` comments above non-`pub` items.
+- **Doc Comments (`///`) Above Declarations**: Convert C++ declaration comments
+  above functions, types, fields, and constants (including `pub(crate)` and
+  private items) to `///` doc comments rather than leaving them as plain `//`
+  comments.
 - **Preserve Comments Documenting Behavior**: Preserve all inline comments (`//
   ...`) from C++ source and header files (`.cc` and `.h`) documenting behavior
   in the corresponding Rust code; it does not matter what behavior is being
@@ -831,3 +856,16 @@ Reviewers and Coders must audit code against this checklist:
      the C++ class, and `cpp_*` FFI shims are strict 1:1 single-call forwards
      without branching (`if`/`else`) or sub-object method chaining
      (`a->b()->c()`).
+51.  [ ] **Atomic Ordering Mismatch, Unjustified Non-`SeqCst`, or False Sharing**:
+     Atomic operations match the C++ memory ordering (`Ordering`), any ordering
+     weaker than `SeqCst` has a comment explaining why it is sufficient, and
+     cross-CPU data structures preserve cache-line alignment and padding to
+     avoid false sharing.
+52.  [ ] **Read-Only Provenance on Mutable Raw Pointers**: Mutable raw pointers
+     (`*mut T`) are derived from `&mut T`, `UnsafeCell::get()`, `addr_of_mut!`,
+     or existing `*mut T` pointers rather than cast from shared references
+     (`&T as *const T as *mut T`).
+53.  [ ] **Plain `//` Comments Above Item Declarations**: Declaration comments
+     above functions, types, fields, and constants (including `pub(crate)` and
+     private items not covered by `missing_docs`) use `///` doc comments rather
+     than plain `//` comments.

@@ -177,6 +177,11 @@ let slice =
   back to pointers, use `core::ptr::with_exposed_provenance::<T>(addr)` or
   `with_exposed_provenance_mut` instead of raw `as *const T` / `as *mut T`
   casts.
+- Preserve Write Provenance: Never cast a shared reference to a mutable raw
+  pointer (`&T as *const T as *mut T`), which carries read-only provenance and
+  makes writing through it undefined behavior under Stacked/Tree Borrows. Derive
+  mutable raw pointers from `&mut T`, `UnsafeCell::get()`, `addr_of_mut!`, or
+  existing `*mut T` pointers (e.g. via `.wrapping_byte_add(...)`).
 
 ```rust
 /// A read-only view of mapped memory.
@@ -238,6 +243,14 @@ impl Mapping {
   `Guard::CallUnlocked` directly to `guard.as_mut().call_unlocked(|| { ... })`
   rather than splitting a single lock guard scope into separate `{
   ksync::lock!(...); }` blocks.
+- **Atomic Memory Ordering Parity**: When translating C++ atomic operations
+  (`ktl::atomic`), preserve the exact C++ memory ordering (`Ordering::Relaxed`,
+  `Acquire`, `Release`, `AcqRel`, `SeqCst`). Any memory ordering weaker than
+  `SeqCst` must have a comment justifying why it is sufficient (or preserve the
+  C++ rationale).
+- **Cross-CPU Contention**: Data structures used concurrently across CPUs must
+  preserve C++ cache-line alignment and padding to avoid introducing false
+  sharing.
 
 ```rust
 #[guarded]
@@ -500,7 +513,11 @@ Ok(())
 ### 3.15. In-Body Implementation & Inline Comment Parity
 - **Linter Blind Spot**: Automated tools (`clippy`, rustdoc `missing_docs`) only
   enforce outer documentation on public items; they cannot detect missing
-  in-body implementation comments.
+  in-body implementation comments or plain `//` comments above non-`pub` items.
+- **Doc Comments (`///`) Above Declarations**: Convert C++ declaration comments
+  above functions, types, fields, and constants (including `pub(crate)` and
+  private items) to `///` doc comments rather than leaving them as plain `//`
+  comments.
 - **Preserve Comments Documenting Behavior**: Preserve all inline comments (`//
   ...`) from C++ source and header files (`.cc` and `.h`) documenting behavior
   in the corresponding Rust code; it does not matter what behavior is being
@@ -725,6 +742,19 @@ Reviewers and Coders must audit code against this checklist:
      the C++ class, and `cpp_*` FFI shims are strict 1:1 single-call forwards
      without branching (`if`/`else`) or sub-object method chaining
      (`a->b()->c()`).
+51.  [ ] **Atomic Ordering Mismatch, Unjustified Non-`SeqCst`, or False Sharing**:
+     Atomic operations match the C++ memory ordering (`Ordering`), any ordering
+     weaker than `SeqCst` has a comment explaining why it is sufficient, and
+     cross-CPU data structures preserve cache-line alignment and padding to
+     avoid false sharing.
+52.  [ ] **Read-Only Provenance on Mutable Raw Pointers**: Mutable raw pointers
+     (`*mut T`) are derived from `&mut T`, `UnsafeCell::get()`, `addr_of_mut!`,
+     or existing `*mut T` pointers rather than cast from shared references
+     (`&T as *const T as *mut T`).
+53.  [ ] **Plain `//` Comments Above Item Declarations**: Declaration comments
+     above functions, types, fields, and constants (including `pub(crate)` and
+     private items not covered by `missing_docs`) use `///` doc comments rather
+     than plain `//` comments.
 
 ---
 
@@ -737,28 +767,40 @@ Reviewers and Coders must audit code against this checklist:
     messages, or artifact scratchpads does NOT count as an implementation.
 2.  **Initial Audit**: Read all relevant C++ headers, source files, and
     unit/fuzz test files.
-3.  **Apply Rubric & Port In-Body Comments**: Implement the Rust port following
-    the patterns in Section 3 and avoiding anti-patterns in Section 4. You MUST
-    copy all in-body inline comments (`// ...`) from C++ source and header files
+3.  **Apply Rubric & Port Comments**: Implement the Rust port following the
+    patterns in Section 3 and avoiding anti-patterns in Section 4. You MUST copy
+    all in-body inline comments (`// ...`) from C++ source and header files
     (`.cc` and `.h`) documenting behavior into the corresponding `.rs` functions
     during implementation, updating identifiers that have changed names so the
-    comments make sense in the Rust code.
-4.  **Verify Build, Line Length, & Format**: Run `fx build` to confirm
-    compilation, and run `fx test` (or `k ut`) to verify test execution.
-    Manually wrap any comments, strings, or macro bodies exceeding 100
-    characters (since `fx format-code` does not format them), and then run `fx
-    format-code`. Run `fx format-code` and `fx clippy` on the files of every
-    commit in the change, not only the final state. Confirm that every function
-    declared in a Rust `extern` block has a C++ definition in the kernel. The
-    default build does not cover the `lk_debug_level` variant toolchains, CFI or
-    LTO, which caused many CQ failures and most reverts of port CLs. When a
-    change adds GN dependencies between kernel targets, C callbacks implemented
-    in Rust, or crate-level attributes, say so in the report so the first CQ dry
-    run includes those builders.
+    comments make sense in the Rust code, and convert C++ declaration comments
+    above functions, types, fields, and constants (including `pub(crate)` and
+    private items) to `///` doc comments.
+4.  **Verify Build, Tests, Line Length, & Format**:
+    * Always build and test `x86`, any architecture with modified arch-specific
+      files (touching shared code alone does not require additional
+      architectures), and any user-requested architectures.
+    * Check that related test targets are in the build configuration (adding any
+      missing ones), run `fx build` to confirm compilation, and run `fx test`
+      (or `k ut`) to verify test execution. If any files under `//zircon/kernel`
+      are modified, run the full `core-tests` suite. When builds and tests
+      finish, run `fx bazel shutdown` to release open file descriptors held by
+      the Bazel server.
+    * Manually wrap any comments, strings, or macro bodies exceeding 100
+      characters (since `fx format-code` does not format them), and then run `fx
+      format-code`. Run `fx format-code` and `fx clippy` on the files of every
+      commit in the change, not only the final state.
+    * Confirm that every function declared in a Rust `extern` block has a C++
+      definition in the kernel. The default build does not cover the
+      `lk_debug_level` variant toolchains, CFI or LTO, which caused many CQ
+      failures and most reverts of port CLs. When a change adds GN dependencies
+      between kernel targets, C callbacks implemented in Rust, or crate-level
+      attributes, say so in the report so the first CQ dry run includes those
+      builders.
 5.  **Self-Check**: Audit your implementation against Section 4 (Common
     Pitfalls) before reporting back, including a side-by-side verification of
-    inline implementation comments against C++ source and header files (`.cc`
-    and `.h`) and verifying that changed identifier names have been updated.
+    inline implementation comments and `///` doc comments against C++ source and
+    header files (`.cc` and `.h`) and verifying that changed identifier names
+    have been updated.
 6.  **Run `babeldiff`**: Build and run `babeldiff`
     (`zircon/skills/babeldiff/SKILL.md`) on your changes, starting with
     `--summary --issues-only` and following up with `--layout stacked
@@ -790,15 +832,22 @@ Reviewers and Coders must audit code against this checklist:
     stated justification. Treat `babeldiff` as a starting point, not a
     substitute for the side-by-side audit. During the review, do not read or
     debug `babeldiff`'s source; note any finding that looks wrong in the report.
-4.  **Audit In-Body Inline Comment Parity**: Perform a side-by-side comparative
+4.  **Audit Comment Parity & Doc Comments**: Perform a side-by-side comparative
     audit of C++ source and header files (`.cc` and `.h`) against the
     corresponding `.rs` files to verify that all inline comments documenting
-    behavior are preserved and that identifiers that have changed names are
-    updated to match the Rust code. Public Rustdoc alone does NOT satisfy
-    comment parity.
-5.  **Scrutinize Unsafe**: Actively question every `unsafe` block. Insist on
-    safe Rust alternatives if possible. Ensure `// SAFETY:` comments are
-    complete and accurate.
+    behavior are preserved, identifiers that have changed names are updated to
+    match the Rust code, and declaration comments above functions, types,
+    fields, and constants (including `pub(crate)` and private items) use `///`
+    doc comments rather than plain `//` comments. Public Rustdoc alone does NOT
+    satisfy comment parity.
+5.  **Scrutinize Unsafe, Provenance, & Concurrency**: Actively question every
+    `unsafe` block, raw pointer conversion (checking that `*mut T` preserves
+    write provenance and is never cast from `&T`), lock acquisition, atomic
+    memory ordering (matching C++ and justifying any ordering weaker than
+    `SeqCst`), and cross-CPU data structure alignment (preserving cache-line
+    alignment and padding to avoid false sharing). Insist on safe Rust
+    alternatives if possible. Ensure `// SAFETY:` comments are complete and
+    accurate.
 6.  **Evaluate against Rubric & Formatting**: Verify every item in Section 3 and
     Section 4, including checking for lines exceeding 100 characters in
     comments, strings, or macros.
