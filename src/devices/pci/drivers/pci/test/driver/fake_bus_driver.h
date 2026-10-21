@@ -4,6 +4,8 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_TEST_DRIVER_FAKE_BUS_DRIVER_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_TEST_DRIVER_FAKE_BUS_DRIVER_H_
 
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
+
 #include <ddktl/device.h>
 
 #include "src/devices/pci/drivers/pci/test/driver/driver_tests.h"
@@ -27,15 +29,20 @@ class FakeBusDriver : public FakeBusDriverType {
     upstream_.DisableDownstream();
     upstream_.UnplugDownstream();
   }
-  zx_status_t CreateDevice(pci_bdf_t bdf, uint8_t* base_cfg, size_t base_cfg_size,
-                           uint16_t vid = PCI_TEST_DRIVER_VID, uint16_t did = PCI_TEST_DRIVER_DID);
+  zx_status_t CreateDevice(fuchsia_hardware_pci::wire::Bdf bdf, uint8_t* base_cfg,
+                           size_t base_cfg_size, uint16_t vid = PCI_TEST_DRIVER_VID,
+                           uint16_t did = PCI_TEST_DRIVER_DID);
 
-  FakePciType0Config* GetDevice(pci_bdf_t bdf) { return bus().pciroot().ecam().get_device(bdf); }
-  FakePciType1Config* GetBridge(pci_bdf_t bdf) { return bus().pciroot().ecam().get_bridge(bdf); }
+  FakePciType0Config* GetDevice(fuchsia_hardware_pci::wire::Bdf bdf) {
+    return bus().pciroot().ecam().get_device(bdf);
+  }
+  FakePciType1Config* GetBridge(fuchsia_hardware_pci::wire::Bdf bdf) {
+    return bus().pciroot().ecam().get_bridge(bdf);
+  }
 
   FakeUpstreamNode& upstream() { return upstream_; }
   FakeBus& bus() { return bus_; }
-  pci_bdf_t test_bdf() { return test_bdf_; }
+  fuchsia_hardware_pci::wire::Bdf test_bdf() { return test_bdf_; }
   void DdkRelease() { delete this; }
 
  private:
@@ -46,7 +53,11 @@ class FakeBusDriver : public FakeBusDriverType {
 
   FakeUpstreamNode upstream_;
   FakeBus bus_;
-  const pci_bdf_t test_bdf_ = {PCI_TEST_BUS_ID, PCI_TEST_DEV_ID, PCI_TEST_FUNC_ID};
+  const fuchsia_hardware_pci::wire::Bdf test_bdf_ = {
+      .bus_id = PCI_TEST_BUS_ID,
+      .device_id = PCI_TEST_DEV_ID,
+      .function_id = PCI_TEST_FUNC_ID,
+  };
 };
 }  // namespace pci
 

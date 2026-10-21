@@ -48,8 +48,8 @@ zx_status_t FakeBusDriver::Create(zx_device_t* parent, const char* name, uint8_t
 }
 
 // Creates a device, seeding the configuration space with a given buffer if provided.
-zx_status_t FakeBusDriver::CreateDevice(pci_bdf_t bdf, uint8_t* base_cfg, size_t base_cfg_size,
-                                        uint16_t vid, uint16_t did) {
+zx_status_t FakeBusDriver::CreateDevice(fuchsia_hardware_pci::wire::Bdf bdf, uint8_t* base_cfg,
+                                        size_t base_cfg_size, uint16_t vid, uint16_t did) {
   fdf::MmioView view = bus_.pciroot().ecam().mmio().View(
       GetConfigOffsetInCam(bdf, 0, /*is_extended=*/bus_.pciroot().is_extended()),
       zx_system_get_page_size());

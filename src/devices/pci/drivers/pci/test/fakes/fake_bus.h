@@ -4,6 +4,7 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_FAKE_BUS_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_FAKE_BUS_H_
 
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/event.h>
@@ -92,7 +93,7 @@ class FakeBus : public BusDeviceInterface {
   }
   zx_status_t RemoveFromSharedIrqList(pci::Device* device, uint32_t vector) final { return ZX_OK; }
 
-  pci::Device& get_device(pci_bdf_t bdf) { return *devices_.at(bdf); }
+  pci::Device& get_device(fuchsia_hardware_pci::wire::Bdf bdf) { return *devices_.at(bdf); }
 
   // For use with Devices that need to link to a Bus.
   BusDeviceInterface* bdi() { return static_cast<BusDeviceInterface*>(this); }

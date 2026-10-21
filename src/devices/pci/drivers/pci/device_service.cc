@@ -119,7 +119,11 @@ void Bus::GetHostBridgeInfo(GetHostBridgeInfoCompleter::Sync& completer) {
 }
 
 void Bus::ReadBar(ReadBarRequestView request, ReadBarCompleter::Sync& completer) {
-  pci_bdf_t bdf = {request->device.bus, request->device.device, request->device.function};
+  fuchsia_hardware_pci::wire::Bdf bdf = {
+      .bus_id = request->device.bus,
+      .device_id = request->device.device,
+      .function_id = request->device.function,
+  };
   uint8_t bar_id = request->bar_id;
 
   fbl::AutoLock devices_lock(&devices_lock_);

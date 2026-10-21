@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/pci/constants.h>
@@ -30,7 +31,9 @@ class PciCapabilityTests : public ::testing::Test {
   PciCapabilityTests() = default;
   fdf::MmioBuffer& mmio() { return *mmio_; }
   fdf::MmioView view() { return mmio_->View(0, mmio_->get_size()); }
-  static pci_bdf_t bdf() { return {0, 0, 0}; }
+  static fuchsia_hardware_pci::wire::Bdf bdf() {
+    return {.bus_id = 0, .device_id = 0, .function_id = 0};
+  }
   static Bar CreateBar(uint8_t bar_id, size_t size) {
     Bar bar = {
         .size = size,

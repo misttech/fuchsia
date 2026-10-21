@@ -38,7 +38,9 @@ namespace pci {
 template <bool IsExtended, UpstreamNode::Type UpstreamType = UpstreamNode::Type::ROOT>
 class PciDeviceTests : public ::testing::Test {
  public:
-  static pci_bdf_t bdf() { return {1, 2, 3}; }
+  static fuchsia_hardware_pci::wire::Bdf bdf() {
+    return {.bus_id = 1, .device_id = 2, .function_id = 3};
+  }
 
  protected:
   FakeBus& bus() { return bus_; }

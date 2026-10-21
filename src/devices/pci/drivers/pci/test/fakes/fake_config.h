@@ -24,7 +24,8 @@ namespace pci {
 
 class FakeMmioConfig final : public MmioConfig {
  public:
-  FakeMmioConfig(pci_bdf_t bdf, fdf::MmioView&& view) : MmioConfig(bdf, view) {}
+  FakeMmioConfig(fuchsia_hardware_pci::wire::Bdf bdf, fdf::MmioView&& view)
+      : MmioConfig(bdf, view) {}
   void MockBarProbeSideEffects(uint32_t bar_id) const {
     uint32_t bar_val = MmioConfig::Read(Config::kBar(bar_id));
     auto reg = config::BaseAddress::Get().FromValue(bar_val);

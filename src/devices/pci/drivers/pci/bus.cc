@@ -156,7 +156,7 @@ zx::result<fdf::MmioBuffer> Bus::MapConfigRegion(zx::vmo cam_vmo) {
   return zx::ok(std::move(*result));
 }
 
-zx::result<std::unique_ptr<Config>> Bus::MakeConfig(pci_bdf_t bdf) {
+zx::result<std::unique_ptr<Config>> Bus::MakeConfig(fuchsia_hardware_pci::wire::Bdf bdf) {
   if (ecam_) {
     zx::result result = MmioConfig::Create(bdf, ecam_.value(), info_.start_bus_num,
                                            info_.end_bus_num, info_.cam.is_extended);
@@ -209,7 +209,11 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
   for (uint8_t dev_id = _dev_id; dev_id < kMaxDevicesPerBus; dev_id++) {
     uint8_t max_functions = _max_functions;
     for (uint8_t func_id = _func_id; func_id < max_functions; func_id++) {
-      pci_bdf_t bdf = {static_cast<uint8_t>(bus_id), dev_id, func_id};
+      fuchsia_hardware_pci::wire::Bdf bdf = {
+          .bus_id = static_cast<uint8_t>(bus_id),
+          .device_id = dev_id,
+          .function_id = func_id,
+      };
       zx::result<std::unique_ptr<Config>> config = MakeConfig(bdf);
       if (config.is_error()) {
         continue;
@@ -291,7 +295,7 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
   }
 }
 
-bool Bus::DeviceHasAcpi(pci_bdf_t bdf) {
+bool Bus::DeviceHasAcpi(fuchsia_hardware_pci::wire::Bdf bdf) {
   auto find_fn = [&bdf](const pci_bdf_t& entry) -> bool {
     return bdf.bus_id == entry.bus_id && bdf.device_id == entry.device_id &&
            bdf.function_id == entry.function_id;
@@ -300,7 +304,7 @@ bool Bus::DeviceHasAcpi(pci_bdf_t bdf) {
          std::end(acpi_devices_);
 }
 
-bool Bus::DeviceHasDevicetree(pci_bdf_t bdf) {
+bool Bus::DeviceHasDevicetree(fuchsia_hardware_pci::wire::Bdf bdf) {
   auto find_fn = [&bdf](const pci_bdf_t& entry) -> bool {
     return bdf.bus_id == entry.bus_id && bdf.device_id == entry.device_id &&
            bdf.function_id == entry.function_id;
@@ -372,7 +376,7 @@ zx_status_t Bus::ConfigureLegacyIrqs() {
     // Pci Bridge to Bridge spec r1.2 Table 9-1
     // PCI Express Base Specification r4.0 Table 2-19
     UpstreamNode* upstream = device->upstream();
-    std::optional<pci_bdf_t> port;
+    std::optional<fuchsia_hardware_pci::wire::Bdf> port;
     while (upstream && upstream->type() == UpstreamNode::Type::BRIDGE) {
       pin = (pin + device->dev_id()) % kMaxLegacyIrqPins;
       auto bridge = static_cast<pci::Bridge*>(upstream);

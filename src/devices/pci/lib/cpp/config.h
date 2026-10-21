@@ -4,17 +4,7 @@
 #ifndef SRC_DEVICES_PCI_LIB_CPP_CONFIG_H_
 #define SRC_DEVICES_PCI_LIB_CPP_CONFIG_H_
 
-#if __has_include(<fuchsia/hardware/pciroot/c/banjo.h>)
-#include <fuchsia/hardware/pciroot/c/banjo.h>
-#else
-struct pci_bdf {
-  uint8_t bus_id;
-  uint8_t device_id;
-  uint8_t function_id;
-};
-using pci_bdf_t = pci_bdf;
-#endif
-
+#include <fidl/fuchsia.hardware.pci/cpp/wire_types.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/pci/constants.h>
 #include <lib/pci/hw.h>
@@ -112,7 +102,7 @@ struct EcamOffset {
 };
 
 template <class CamType>
-constexpr zx_vaddr_t GetConfigOffsetInCam(pci_bdf_t bdf, uint8_t start_bus) {
+constexpr zx_vaddr_t GetConfigOffsetInCam(fuchsia_hardware_pci::wire::Bdf bdf, uint8_t start_bus) {
   zx_vaddr_t bus_offset = CamType().set_bus(start_bus).offset;
   zx_vaddr_t bdf_offset =
       CamType().set_bus(bdf.bus_id).set_device(bdf.device_id).set_function(bdf.function_id).offset;
@@ -124,7 +114,8 @@ constexpr zx_vaddr_t GetConfigOffsetInCam(pci_bdf_t bdf, uint8_t start_bus) {
 // configuration access region of 256 bytes base, 4096 if extended. The base
 // address of the vmo provided to the bus driver corresponds to the
 // start_bus_num, so offset the bdf address based on the bottom of our ecam.
-constexpr zx_vaddr_t GetConfigOffsetInCam(pci_bdf_t bdf, uint8_t start_bus, bool is_extended) {
+constexpr zx_vaddr_t GetConfigOffsetInCam(fuchsia_hardware_pci::wire::Bdf bdf, uint8_t start_bus,
+                                          bool is_extended) {
   if (is_extended) {
     return GetConfigOffsetInCam<EcamOffset>(bdf, start_bus);
   }
@@ -225,7 +216,7 @@ class Config {
   // interrupt pin for a bridge matches the standard 0x3D offset
   static constexpr PciReg16 kBridgeControl = PciReg16(0x3E);
 
-  const pci_bdf_t& bdf() const { return bdf_; }
+  const fuchsia_hardware_pci::wire::Bdf& bdf() const { return bdf_; }
   const char* addr() const { return addr_; }
   virtual const char* type() const = 0;
   // Return a copy of the MmioView backing the Config's MMIO space, if supported.
@@ -241,12 +232,12 @@ class Config {
   virtual ~Config() = default;
 
  protected:
-  explicit Config(pci_bdf_t bdf) : bdf_(bdf) {
+  explicit Config(fuchsia_hardware_pci::wire::Bdf bdf) : bdf_(bdf) {
     snprintf(addr_, sizeof(addr_), "%02x:%02x.%01x", bdf_.bus_id, bdf_.device_id, bdf_.function_id);
   }
 
  private:
-  const pci_bdf_t bdf_;
+  const fuchsia_hardware_pci::wire::Bdf bdf_;
   char addr_[8];
 };
 
@@ -255,9 +246,9 @@ class Config {
 // ecam and can be directly accessed with standard IO operations.
 class MmioConfig : public Config {
  public:
-  static zx::result<std::unique_ptr<Config>> Create(pci_bdf_t bdf, const fdf::MmioBuffer& ecam,
-                                                    uint8_t start_bus, uint8_t end_bus,
-                                                    bool is_extended) {
+  static zx::result<std::unique_ptr<Config>> Create(fuchsia_hardware_pci::wire::Bdf bdf,
+                                                    const fdf::MmioBuffer& ecam, uint8_t start_bus,
+                                                    uint8_t end_bus, bool is_extended) {
     if (bdf.bus_id < start_bus || bdf.bus_id > end_bus || bdf.device_id >= pci::kMaxDevicesPerBus ||
         bdf.function_id >= pci::kMaxFunctionsPerDevice) {
       return zx::error(ZX_ERR_INVALID_ARGS);
@@ -269,8 +260,10 @@ class MmioConfig : public Config {
     return zx::ok(std::make_unique<MmioConfig>(bdf, ecam.View(config_offset, config_size)));
   }
 
-  MmioConfig(pci_bdf_t bdf, const fdf::MmioView& view) : Config(bdf), view_(view) {}
-  explicit MmioConfig(const fdf::MmioView& view, pci_bdf_t bdf = {}) : Config(bdf), view_(view) {}
+  MmioConfig(fuchsia_hardware_pci::wire::Bdf bdf, const fdf::MmioView& view)
+      : Config(bdf), view_(view) {}
+  explicit MmioConfig(const fdf::MmioView& view, fuchsia_hardware_pci::wire::Bdf bdf = {})
+      : Config(bdf), view_(view) {}
 
   uint8_t Read(const PciReg8 addr) const final { return view_.Read<uint8_t>(addr.offset()); }
   uint16_t Read(const PciReg16 addr) const final { return view_.Read<uint16_t>(addr.offset()); }

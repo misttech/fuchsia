@@ -79,7 +79,8 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // Comparator for sorting and looking up devices by BDF address in associative containers.
   struct BdfCompare {
     using is_transparent = void;
-    constexpr bool operator()(const pci_bdf_t& a, const pci_bdf_t& b) const {
+    constexpr bool operator()(const fuchsia_hardware_pci::wire::Bdf& a,
+                              const fuchsia_hardware_pci::wire::Bdf& b) const {
       return std::tie(a.bus_id, a.device_id, a.function_id) <
              std::tie(b.bus_id, b.device_id, b.function_id);
     }

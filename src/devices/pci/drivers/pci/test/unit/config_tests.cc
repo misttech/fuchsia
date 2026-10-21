@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/zx/result.h>
 #include <zircon/limits.h>
@@ -16,8 +17,16 @@
 
 namespace pci {
 
-static constexpr pci_bdf_t kDefaultBdf1 = {0, 1, 2};
-static constexpr pci_bdf_t kDefaultBdf2 = {1, 2, 3};
+static constexpr fuchsia_hardware_pci::wire::Bdf kDefaultBdf1 = {
+    .bus_id = 0,
+    .device_id = 1,
+    .function_id = 2,
+};
+static constexpr fuchsia_hardware_pci::wire::Bdf kDefaultBdf2 = {
+    .bus_id = 1,
+    .device_id = 2,
+    .function_id = 3,
+};
 
 template <bool IsExtended>
 class PciConfigTests : public ::testing::Test {

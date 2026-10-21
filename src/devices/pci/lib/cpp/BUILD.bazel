@@ -16,6 +16,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
+        "@fuchsia_sdk//fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
         "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//pkg/hwreg",
         "@fuchsia_sdk//pkg/zx",

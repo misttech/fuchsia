@@ -11,6 +11,7 @@ library_headers("headers") {
     "include/lib/pci/hw.h",
   ]
   public_deps = [
+    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/zx",

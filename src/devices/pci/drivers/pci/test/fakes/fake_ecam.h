@@ -4,7 +4,6 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_FAKE_ECAM_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_FAKE_ECAM_H_
 
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mmio/cpp/mmio-view.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -234,16 +233,16 @@ class FakeEcam {
     reset();
   }
 
-  fdf::MmioView get_config_view(pci_bdf_t address) {
+  fdf::MmioView get_config_view(fuchsia_hardware_pci::wire::Bdf address) {
     return mmio_.View(pci::GetConfigOffsetInCam(address, bus_start_, is_extended_), config_size_);
   }
 
-  FakePciType0Config* get_device(pci_bdf_t address) {
+  FakePciType0Config* get_device(fuchsia_hardware_pci::wire::Bdf address) {
     zx_vaddr_t offset = pci::GetConfigOffsetInCam(address, bus_start_, is_extended_);
     return reinterpret_cast<FakePciType0Config*>(reinterpret_cast<uintptr_t>(mmio_.get()) + offset);
   }
 
-  FakePciType1Config* get_bridge(pci_bdf_t address) {
+  FakePciType1Config* get_bridge(fuchsia_hardware_pci::wire::Bdf address) {
     zx_vaddr_t offset = pci::GetConfigOffsetInCam(address, bus_start_, is_extended_);
     return reinterpret_cast<FakePciType1Config*>(reinterpret_cast<uintptr_t>(mmio_.get()) + offset);
   }
@@ -264,13 +263,13 @@ class FakeEcam {
   uint8_t bus_cnt() const { return bus_cnt_; }
   uint8_t is_extended() const { return is_extended_; }
   size_t config_size() const { return config_size_; }
-  std::unique_ptr<pci::Config> CreateMmioConfig(pci_bdf_t bdf) {
+  std::unique_ptr<pci::Config> CreateMmioConfig(fuchsia_hardware_pci::wire::Bdf bdf) {
     return std::move(
         pci::MmioConfig::Create(bdf, mmio_, bus_start_, bus_start_ + bus_cnt_, is_extended_)
             .value());
   }
 
-  zx_off_t GetConfigOffset(pci_bdf_t bdf) const {
+  zx_off_t GetConfigOffset(fuchsia_hardware_pci::wire::Bdf bdf) const {
     return pci::GetConfigOffsetInCam(bdf, bus_start_, is_extended_);
   }
 

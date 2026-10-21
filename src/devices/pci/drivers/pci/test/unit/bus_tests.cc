@@ -187,7 +187,7 @@ class TestBus : public pci::Bus {
     return devices().size();
   }
 
-  pci::Device* GetDevice(pci_bdf_t bdf) {
+  pci::Device* GetDevice(fuchsia_hardware_pci::wire::Bdf bdf) {
     fbl::AutoLock _(devices_lock());
     auto it = devices().find(bdf);
     return it != devices().end() ? it->second.get() : nullptr;
@@ -222,7 +222,7 @@ TEST_F(PciBusTests, Lifecycle) {
 }
 
 TEST_F(PciBusTests, BdiGetBti) {
-  pciroot().ecam().get_device(pci_bdf_t{})->set_vendor_id(8086).set_device_id(8086);
+  pciroot().ecam().get_device({})->set_vendor_id(8086).set_device_id(8086);
   auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
                                              pciroot().ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
@@ -231,7 +231,7 @@ TEST_F(PciBusTests, BdiGetBti) {
 
   zx::bti bti = {};
   ASSERT_EQ(bus->GetBti(nullptr, 0, &bti), ZX_ERR_INVALID_ARGS);
-  ASSERT_OK(bus->GetBti(bus->GetDevice(pci_bdf_t{}), 0, &bti));
+  ASSERT_OK(bus->GetBti(bus->GetDevice({}), 0, &bti));
 
   zx_info_bti_t info = {};
   zx_info_bti_t info2 = {};
@@ -280,15 +280,15 @@ TEST_F(PciBusTests, BdiGetMsiHandle) {
 }
 
 TEST_F(PciBusTests, BdiLinkUnlinkDevice) {
-  pciroot().ecam().get_device(pci_bdf_t{})->set_vendor_id(8086).set_device_id(8086);
+  pciroot().ecam().get_device({})->set_vendor_id(8086).set_device_id(8086);
   auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
                                              pciroot().ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 1u);
 
-  auto device = bus->GetDevice(pci_bdf_t{});
-  auto reffed_device = fbl::RefPtr(bus->GetDevice(pci_bdf_t{}));
+  auto device = bus->GetDevice({});
+  auto reffed_device = fbl::RefPtr(bus->GetDevice({}));
   EXPECT_EQ(bus->LinkDevice(reffed_device), ZX_ERR_ALREADY_EXISTS);
   EXPECT_OK(bus->UnlinkDevice(device));
   EXPECT_EQ(bus->GetDeviceCount(), 0u);
@@ -315,7 +315,7 @@ TEST_F(PciBusTests, IrqRoutingEntries) {
     // The bus will take ownership of this.
     (void)interrupt.release();
   }
-  pciroot().ecam().get_device(pci_bdf_t{})->set_vendor_id(1).set_device_id(2).set_interrupt_pin(1);
+  pciroot().ecam().get_device({})->set_vendor_id(1).set_device_id(2).set_interrupt_pin(1);
 
   pciroot().routing_entries().push_back(
       pci_irq_routing_entry_t{.port_device_id = PCI_IRQ_ROUTING_NO_PARENT,
@@ -396,7 +396,7 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
   // the interrupt it must mask the device so the line deasserts; otherwise the
   // kernel re-delivers the still-asserted line in a storm. The mask is cleared
   // again once the driver acknowledges. This test verifies that mask/unmask.
-  pci_bdf_t device = {0, 0, 0};
+  fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
   pciroot()
       .ecam()
       .get_device(device)
@@ -467,7 +467,7 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
 }
 
 TEST_F(PciBusTests, LegacyInterruptLifecycle_SyncWait) {
-  pci_bdf_t device = {0, 0, 0};
+  fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
   pciroot()
       .ecam()
       .get_device(device)
@@ -532,7 +532,7 @@ TEST_F(PciBusTests, LegacyInterruptLifecycle_SyncWait) {
 }
 
 TEST_F(PciBusTests, LegacyInterruptAckLegacyIrqModes) {
-  pci_bdf_t device = {0, 0, 0};
+  fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
   pciroot()
       .ecam()
       .get_device(device)
@@ -564,7 +564,7 @@ TEST_F(PciBusTests, LegacyInterruptAckLegacyIrqModes) {
 }
 
 TEST_F(PciBusTests, LegacyInterruptWaitCancellation) {
-  pci_bdf_t device = {0, 0, 0};
+  fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
   pciroot()
       .ecam()
       .get_device(device)
@@ -617,8 +617,8 @@ TEST_F(PciBusTests, LegacyInterruptWaitCancellation) {
 }
 
 TEST_F(PciBusTests, LegacyInterruptSharedVector_ConcurrentAssert) {
-  pci_bdf_t device_a = {0, 0, 0};
-  pci_bdf_t device_b = {0, 1, 0};
+  fuchsia_hardware_pci::wire::Bdf device_a = {.bus_id = 0, .device_id = 0, .function_id = 0};
+  fuchsia_hardware_pci::wire::Bdf device_b = {.bus_id = 0, .device_id = 1, .function_id = 0};
   pciroot()
       .ecam()
       .get_device(device_a)
@@ -702,8 +702,8 @@ TEST_F(PciBusTests, LegacyInterruptSharedVector_ConcurrentAssert) {
 }
 
 TEST_F(PciBusTests, LegacyInterruptWorkaround_PendingSkip) {
-  pci_bdf_t device_a = {0, 0, 0};
-  pci_bdf_t device_b = {0, 1, 0};
+  fuchsia_hardware_pci::wire::Bdf device_a = {.bus_id = 0, .device_id = 0, .function_id = 0};
+  fuchsia_hardware_pci::wire::Bdf device_b = {.bus_id = 0, .device_id = 1, .function_id = 0};
   pciroot()
       .ecam()
       .get_device(device_a)
@@ -794,7 +794,7 @@ TEST_F(PciBusTests, LegacyInterruptWorkaround_PendingSkip) {
 }
 
 TEST_F(PciBusTests, LegacyIrqHandlerErrorAndEdgeCases) {
-  pci_bdf_t device_bdf = {0, 0, 0};
+  fuchsia_hardware_pci::wire::Bdf device_bdf = {.bus_id = 0, .device_id = 0, .function_id = 0};
   pciroot()
       .ecam()
       .get_device(device_bdf)

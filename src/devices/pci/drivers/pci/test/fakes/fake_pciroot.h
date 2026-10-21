@@ -135,7 +135,13 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
-    *value = ecam_.get_config_view(*address).Read8(offset);
+    *value = ecam_
+                 .get_config_view(fuchsia_hardware_pci::wire::Bdf{
+                     .bus_id = address->bus_id,
+                     .device_id = address->device_id,
+                     .function_id = address->function_id,
+                 })
+                 .Read8(offset);
     return ZX_OK;
   }
   zx_status_t PcirootReadConfig16(const pci_bdf_t* address, uint16_t offset, uint16_t* value) {
@@ -147,7 +153,13 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
       return ZX_ERR_NOT_SUPPORTED;
     }
 
-    *value = ecam_.get_config_view(*address).Read16(offset);
+    *value = ecam_
+                 .get_config_view(fuchsia_hardware_pci::wire::Bdf{
+                     .bus_id = address->bus_id,
+                     .device_id = address->device_id,
+                     .function_id = address->function_id,
+                 })
+                 .Read16(offset);
     return ZX_OK;
   }
   zx_status_t PcirootReadConfig32(const pci_bdf_t* address, uint16_t offset, uint32_t* value) {
@@ -158,7 +170,13 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
     if (address->bus_id < info_.start_bus_num || address->bus_id > info_.end_bus_num) {
       return ZX_ERR_NOT_SUPPORTED;
     }
-    *value = ecam_.get_config_view(*address).Read32(offset);
+    *value = ecam_
+                 .get_config_view(fuchsia_hardware_pci::wire::Bdf{
+                     .bus_id = address->bus_id,
+                     .device_id = address->device_id,
+                     .function_id = address->function_id,
+                 })
+                 .Read32(offset);
     return ZX_OK;
   }
   zx_status_t PcirootWriteConfig8(const pci_bdf_t* address, uint16_t offset, uint8_t value) {
@@ -169,7 +187,13 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
     if (address->bus_id < info_.start_bus_num || address->bus_id > info_.end_bus_num) {
       return ZX_ERR_NOT_SUPPORTED;
     }
-    ecam_.get_config_view(*address).Write(value, offset);
+    ecam_
+        .get_config_view(fuchsia_hardware_pci::wire::Bdf{
+            .bus_id = address->bus_id,
+            .device_id = address->device_id,
+            .function_id = address->function_id,
+        })
+        .Write(value, offset);
     return ZX_OK;
   }
   zx_status_t PcirootWriteConfig16(const pci_bdf_t* address, uint16_t offset, uint16_t value) {
@@ -180,7 +204,13 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
     if (address->bus_id < info_.start_bus_num || address->bus_id > info_.end_bus_num) {
       return ZX_ERR_NOT_SUPPORTED;
     }
-    ecam_.get_config_view(*address).Write(value, offset);
+    ecam_
+        .get_config_view(fuchsia_hardware_pci::wire::Bdf{
+            .bus_id = address->bus_id,
+            .device_id = address->device_id,
+            .function_id = address->function_id,
+        })
+        .Write(value, offset);
     return ZX_OK;
   }
   zx_status_t PcirootWriteConfig32(const pci_bdf_t* address, uint16_t offset, uint32_t value) {
@@ -191,7 +221,13 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
     if (address->bus_id < info_.start_bus_num || address->bus_id > info_.end_bus_num) {
       return ZX_ERR_NOT_SUPPORTED;
     }
-    ecam_.get_config_view(*address).Write(value, offset);
+    ecam_
+        .get_config_view(fuchsia_hardware_pci::wire::Bdf{
+            .bus_id = address->bus_id,
+            .device_id = address->device_id,
+            .function_id = address->function_id,
+        })
+        .Write(value, offset);
     return ZX_OK;
   }
 

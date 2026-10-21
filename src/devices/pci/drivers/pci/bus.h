@@ -42,7 +42,7 @@ namespace pci {
 // DFS traversal of the bus topology while keeping track of nodes upstream.
 struct BusScanEntry {
   static constexpr uint8_t kDefaultMaxFunctions = 1;
-  pci_bdf_t bdf;
+  fuchsia_hardware_pci::wire::Bdf bdf;
   UpstreamNode* upstream;
   uint8_t max_functions = kDefaultMaxFunctions;
 };
@@ -67,7 +67,8 @@ using SharedIrqMap = std::unordered_map<uint32_t, std::unique_ptr<SharedVector>>
 namespace PciFidl = fuchsia_hardware_pci;
 
 // A tree of all pci Device objects in the bus topology, keyed by BDF.
-using DeviceTree = std::map<pci_bdf_t, fbl::RefPtr<pci::Device>, Device::BdfCompare>;
+using DeviceTree =
+    std::map<fuchsia_hardware_pci::wire::Bdf, fbl::RefPtr<pci::Device>, Device::BdfCompare>;
 
 class Bus;
 using PciBusType = ddk::Device<Bus, ddk::Messageable<PciFidl::Debug>::Mixin>;
@@ -128,7 +129,7 @@ class Bus : public PciBusType,
   // Map an ecam VMO for Bus and Config use.
   zx_status_t MapConfigRegion();
   // Creates a Config object for accessing the config space of the device at |bdf|.
-  zx::result<std::unique_ptr<Config>> MakeConfig(pci_bdf_t bdf);
+  zx::result<std::unique_ptr<Config>> MakeConfig(fuchsia_hardware_pci::wire::Bdf bdf);
   // Scan all buses downstream from the root within the start and end
   // bus values given to the Bus driver through Pciroot.
   zx_status_t ScanDownstream();
@@ -137,13 +138,13 @@ class Bus : public PciBusType,
   void ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list);
   // Returns true if a given BDF is present in the list of devices provided by
   // the platform to us that use the ACPI fragment.
-  bool DeviceHasAcpi(pci_bdf_t bdf);
+  bool DeviceHasAcpi(fuchsia_hardware_pci::wire::Bdf bdf);
 
   // Returns true if a given BDF is present in the list of devices that the
   // platform told us are described by the devicetree. For these devices the bus
   // driver publishes only the fragment and leaves composite creation to the
   // devicetree.
-  bool DeviceHasDevicetree(pci_bdf_t bdf);
+  bool DeviceHasDevicetree(fuchsia_hardware_pci::wire::Bdf bdf);
 
   // Creates interrupts corresponding to legacy IRQ vectors and configures devices accordingly.
   zx_status_t ConfigureLegacyIrqs() __TA_EXCLUDES(devices_lock_);
