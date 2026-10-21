@@ -4,7 +4,7 @@
 
 use crate::{SHA256_SALT_PADDING, SHA512_SALT_PADDING};
 use anyhow::{Error, anyhow, ensure};
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io_common as fio;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
 use std::fmt;
 use storage_ptr_slice::PtrByteSlice;
@@ -399,7 +399,7 @@ impl FsVerityHasher {
 mod tests {
     use super::*;
     use crate::{FsVerityHash, MerkleTreeBuilder, Sha256Hash, Sha512Hash};
-    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_io_common as fio;
     use hex::FromHex;
     use test_case::test_case;
 

@@ -28,7 +28,7 @@ rustc_library(
     ],
     with_host_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
         "//sdk/rust/zx-status",
         "//src/lib/mundane",
         "//src/storage/lib/ptr_slice",
