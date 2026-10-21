@@ -79,30 +79,6 @@ pub struct FxblobInstance {
     fxblob: FsManagementFilesystemInstance,
 }
 
-pub struct ErofsMount {
-    root_dir: fio::DirectoryProxy,
-    _parent_vmo: zx::Vmo,
-    shutdown_tx: Option<futures::channel::oneshot::Sender<()>>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-
-impl ErofsMount {
-    pub fn root_dir(&self) -> &fio::DirectoryProxy {
-        &self.root_dir
-    }
-}
-
-impl Drop for ErofsMount {
-    fn drop(&mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
 impl FxblobInstance {
     async fn create_pager_and_verifier(
         fxblob: &FsManagementFilesystemInstance,
@@ -137,47 +113,6 @@ impl FxblobInstance {
     pub fn clear_unreferenced_blobs(&self) {
         if let Some(pager) = &self.pager_and_verifier {
             pager.clear_cache();
-        }
-    }
-
-    pub async fn mount_erofs(&self, blob_hash: &Hash, file_offset: u64) -> ErofsMount {
-        let parent_vmo = self.get_vmo(blob_hash).await;
-        let backing_vmo = if file_offset > 0 {
-            let vmo_size = parent_vmo.get_size().expect("failed to get parent VMO size");
-            parent_vmo
-                .create_child(zx::VmoChildOptions::SLICE, file_offset, vmo_size - file_offset)
-                .expect("failed to create child SLICE of parent VMO")
-        } else {
-            parent_vmo
-                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                .expect("failed to duplicate parent VMO")
-        };
-
-        let (root_dir, root_server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let (shutdown_tx, shutdown_rx) = futures::channel::oneshot::channel::<()>();
-        let thread = std::thread::spawn(move || {
-            let mut executor = fuchsia_async::LocalExecutor::default();
-            executor.run_singlethreaded(async move {
-                let erofs_pager = std::sync::Arc::new(
-                    erofs_component::ErofsPager::new().expect("failed to create ErofsPager"),
-                );
-                erofs_component::ErofsVolume::serve(
-                    backing_vmo,
-                    erofs_pager.clone(),
-                    fio::PERM_READABLE,
-                    root_server,
-                )
-                .expect("failed to serve ErofsVolume");
-                let _ = shutdown_rx.await;
-                erofs_pager.unregister_all();
-            });
-        });
-
-        ErofsMount {
-            root_dir,
-            _parent_vmo: parent_vmo,
-            shutdown_tx: Some(shutdown_tx),
-            thread: Some(thread),
         }
     }
 }

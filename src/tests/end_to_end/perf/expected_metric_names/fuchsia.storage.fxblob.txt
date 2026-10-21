@@ -5,16 +5,6 @@ fuchsia.storage: PageInBlobSequentialCompressed/fxblob
 fuchsia.storage: PageInBlobSequentialCompressed/fxblob_driver
 fuchsia.storage: PageInBlobSequentialUncompressed/fxblob
 fuchsia.storage: PageInBlobSequentialUncompressed/fxblob_driver
-fuchsia.storage: PageInErofsRandomCompressed/fxblob
-fuchsia.storage: PageInErofsRandomCompressed/fxblob_driver
-fuchsia.storage: PageInErofsSequentialCompressed/fxblob
-fuchsia.storage: PageInErofsSequentialCompressed/fxblob_driver
-fuchsia.storage: PageInErofsSequentialUncompressed/fxblob
-fuchsia.storage: PageInErofsSequentialUncompressed/fxblob_driver
-fuchsia.storage: PageInErofsSmallFilesCompressed/fxblob
-fuchsia.storage: PageInErofsSmallFilesCompressed/fxblob_driver
-fuchsia.storage: PageInErofsSmallFilesUncompressed/fxblob
-fuchsia.storage: PageInErofsSmallFilesUncompressed/fxblob_driver
 fuchsia.storage: WriteBlob/2097152/fxblob
 fuchsia.storage: WriteBlob/26214400/fxblob
 fuchsia.storage: WriteRealisticBlobs/fxblob

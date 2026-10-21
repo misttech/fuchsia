@@ -325,21 +325,16 @@ impl Drop for MappedBlob {
     }
 }
 
-/// Returns completely random bytes that shouldn't be compressible.
-fn create_incompressible_bytes(size: usize, rng: &mut XorShiftRng) -> Vec<u8> {
-    let mut data = vec![0; size];
-    rng.fill(data.as_mut_slice());
-    data
-}
-
 /// Returns completely random data that shouldn't be compressible.
 fn create_incompressible_data(size: usize, rng: &mut XorShiftRng) -> DeliveryBlob {
-    DeliveryBlob::new(create_incompressible_bytes(size, rng), CompressionMode::Never)
+    let mut data = vec![0; size];
+    rng.fill(data.as_mut_slice());
+    DeliveryBlob::new(data, CompressionMode::Never)
 }
 
 /// Creates runs of the same byte between 2 and 8 bytes long. This should compress to about 40% of
 /// the original size which is typical for large executable blobs.
-fn create_compressible_bytes(size: usize, rng: &mut XorShiftRng) -> Vec<u8> {
+fn create_compressible_data(size: usize, rng: &mut XorShiftRng) -> DeliveryBlob {
     const RUN_RANGE: Range<usize> = 2..8;
     let mut data = vec![0u8; size];
     let mut rest = data.as_mut_slice();
@@ -351,11 +346,7 @@ fn create_compressible_bytes(size: usize, rng: &mut XorShiftRng) -> Vec<u8> {
         rest = r;
         l.fill(value);
     }
-    data
-}
-
-fn create_compressible_data(size: usize, rng: &mut XorShiftRng) -> DeliveryBlob {
-    DeliveryBlob::new(create_compressible_bytes(size, rng), CompressionMode::Always)
+    DeliveryBlob::new(data, CompressionMode::Always)
 }
 
 /// Returns an iterator to the index of the first byte of every page in sequential order.
@@ -578,218 +569,6 @@ impl Benchmark<FxblobInstance> for ColdPageFaultBenchmark {
     }
 }
 
-const EROFS_FILE_OFFSET: u64 = 4096;
-
-#[derive(Clone)]
-pub struct PageInErofsBenchmark {
-    name: &'static str,
-    page_iter: PageIteration,
-    data_gen: DataGeneration,
-    file_size: usize,
-}
-
-impl PageInErofsBenchmark {
-    pub fn new_sequential_uncompressed(file_size: usize) -> Self {
-        Self {
-            name: "PageInErofsSequentialUncompressed",
-            page_iter: PageIteration::Sequential,
-            data_gen: DataGeneration::Incompressible,
-            file_size,
-        }
-    }
-
-    pub fn new_sequential_compressed(file_size: usize) -> Self {
-        Self {
-            name: "PageInErofsSequentialCompressed",
-            page_iter: PageIteration::Sequential,
-            data_gen: DataGeneration::Compressible,
-            file_size,
-        }
-    }
-
-    pub fn new_random_compressed(file_size: usize) -> Self {
-        Self {
-            name: "PageInErofsRandomCompressed",
-            page_iter: PageIteration::Random,
-            data_gen: DataGeneration::Compressible,
-            file_size,
-        }
-    }
-}
-
-#[async_trait]
-impl Benchmark<FxblobInstance> for PageInErofsBenchmark {
-    async fn run(&self, fs: &mut FxblobInstance) -> Vec<OperationDuration> {
-        storage_trace::duration!(
-            "benchmark",
-            self.name,
-            "file_size" => self.file_size
-        );
-        let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
-        let (file_bytes, mode) = match &self.data_gen {
-            DataGeneration::Incompressible => {
-                (create_incompressible_bytes(self.file_size, &mut rng), CompressionMode::Never)
-            }
-            DataGeneration::Compressible => {
-                (create_compressible_bytes(self.file_size, &mut rng), CompressionMode::Always)
-            }
-        };
-        let page_iter = match &self.page_iter {
-            PageIteration::Sequential => sequential_page_iter(self.file_size),
-            PageIteration::Random => random_page_iter(self.file_size, &mut rng),
-        };
-
-        let erofs_image = erofs_serializer::serialize(&[erofs_serializer::SerializerNode::File {
-            name: "large_file".to_string(),
-            data: file_bytes,
-        }]);
-        let mut blob_bytes = vec![0xABu8; EROFS_FILE_OFFSET as usize];
-        blob_bytes.extend_from_slice(&erofs_image);
-        let blob = DeliveryBlob::new(blob_bytes, mode);
-
-        fs.write_blob(&blob).await;
-
-        // Warm up decompression.
-        {
-            let vmo = fs.get_vmo(&blob.name).await;
-            let mapped = MappedBlob::new(&vmo);
-            std::hint::black_box(mapped.data()[0]);
-        }
-
-        fs.clear_cache().await;
-
-        let erofs = fs.mount_erofs(&blob.name, EROFS_FILE_OFFSET).await;
-        let file =
-            fuchsia_fs::directory::open_file(erofs.root_dir(), "large_file", fio::PERM_READABLE)
-                .await
-                .expect("failed to open large_file in EROFS");
-        let vmo = file
-            .get_backing_memory(fio::VmoFlags::READ)
-            .await
-            .expect("get_backing_memory FIDL error")
-            .expect("get_backing_memory failed");
-        let mapped = MappedBlob::new(&vmo);
-        let data = mapped.data();
-        let mut durations = Vec::with_capacity(page_iter.len());
-        for i in page_iter {
-            storage_trace::duration!("benchmark", "page_in", "offset" => i);
-            let timer = OperationTimer::start();
-            let val = unsafe { std::ptr::read_volatile(data.as_ptr().add(i)) };
-            std::hint::black_box(val);
-            durations.push(timer.stop());
-        }
-        drop(mapped);
-        drop(vmo);
-        drop(file);
-        drop(erofs);
-        fs.remove_blob(&blob.name).await;
-        durations
-    }
-
-    fn name(&self) -> String {
-        self.name.into()
-    }
-}
-
-#[derive(Clone)]
-pub struct PageInErofsSmallFilesBenchmark {
-    name: &'static str,
-    data_gen: DataGeneration,
-}
-
-impl PageInErofsSmallFilesBenchmark {
-    pub fn new_uncompressed() -> Self {
-        Self { name: "PageInErofsSmallFilesUncompressed", data_gen: DataGeneration::Incompressible }
-    }
-
-    pub fn new_compressed() -> Self {
-        Self { name: "PageInErofsSmallFilesCompressed", data_gen: DataGeneration::Compressible }
-    }
-}
-
-#[async_trait]
-impl Benchmark<FxblobInstance> for PageInErofsSmallFilesBenchmark {
-    async fn run(&self, fs: &mut FxblobInstance) -> Vec<OperationDuration> {
-        storage_trace::duration!("benchmark", self.name);
-        let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
-        let mode = match &self.data_gen {
-            DataGeneration::Incompressible => CompressionMode::Never,
-            DataGeneration::Compressible => CompressionMode::Always,
-        };
-
-        // Construct a representative EROFS image with 64 small files across three common layouts:
-        // - 32 tail-only FlatInline files (512 B each, packed ~7 per 4 KiB metadata block)
-        // - 16 single-block FlatPlain files (4,096 B each, 8 per 32 KiB parent chunk)
-        // - 16 multi-extent FlatInline files (4,608 B = 1 full 4 KiB block + 512 B inline tail)
-        let mut nodes = Vec::with_capacity(64);
-        let mut file_names = Vec::with_capacity(64);
-        for i in 0..64 {
-            let size = if i < 32 {
-                512
-            } else if i < 48 {
-                4096
-            } else {
-                4608
-            };
-            let name = format!("small_file_{i:02}");
-            let data = match &self.data_gen {
-                DataGeneration::Incompressible => create_incompressible_bytes(size, &mut rng),
-                DataGeneration::Compressible => create_compressible_bytes(size, &mut rng),
-            };
-            file_names.push(name.clone());
-            nodes.push(erofs_serializer::SerializerNode::File { name, data });
-        }
-
-        let erofs_image = erofs_serializer::serialize(&nodes);
-        let mut blob_bytes = vec![0xABu8; EROFS_FILE_OFFSET as usize];
-        blob_bytes.extend_from_slice(&erofs_image);
-        let blob = DeliveryBlob::new(blob_bytes, mode);
-
-        fs.write_blob(&blob).await;
-
-        // Warm up decompression.
-        {
-            let vmo = fs.get_vmo(&blob.name).await;
-            let mapped = MappedBlob::new(&vmo);
-            std::hint::black_box(mapped.data()[0]);
-        }
-
-        fs.clear_cache().await;
-
-        let erofs = fs.mount_erofs(&blob.name, EROFS_FILE_OFFSET).await;
-        let page_size = zx::system_get_page_size() as usize;
-        let mut durations = Vec::with_capacity(80);
-
-        for name in &file_names {
-            let file = fuchsia_fs::directory::open_file(erofs.root_dir(), name, fio::PERM_READABLE)
-                .await
-                .expect("failed to open small EROFS file");
-            let vmo = file
-                .get_backing_memory(fio::VmoFlags::READ)
-                .await
-                .expect("get_backing_memory FIDL error")
-                .expect("get_backing_memory failed");
-            let mapped = MappedBlob::new(&vmo);
-            let data = mapped.data();
-            for offset in (0..data.len()).step_by(page_size) {
-                storage_trace::duration!("benchmark", "page_in", "offset" => offset);
-                let timer = OperationTimer::start();
-                let val = unsafe { std::ptr::read_volatile(data.as_ptr().add(offset)) };
-                std::hint::black_box(val);
-                durations.push(timer.stop());
-            }
-        }
-
-        drop(erofs);
-        fs.remove_blob(&blob.name).await;
-        durations
-    }
-
-    fn name(&self) -> String {
-        self.name.into()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,57 +632,6 @@ mod tests {
             PageInBlobBenchmark::new_random_compressed(PAGE_COUNT * page_size()),
             Fxblob::new(),
             PAGE_COUNT / 5 * 3,
-        )
-        .await;
-    }
-
-    #[fuchsia::test]
-    async fn page_in_erofs_sequential_uncompressed_test() {
-        check_benchmark(
-            PageInErofsBenchmark::new_sequential_uncompressed(PAGE_COUNT * page_size()),
-            Fxblob::new(),
-            PAGE_COUNT,
-        )
-        .await;
-        check_benchmark(
-            PageInErofsBenchmark::new_sequential_uncompressed(PAGE_COUNT * page_size()),
-            Fxblob::with_driver_paging(),
-            PAGE_COUNT,
-        )
-        .await;
-    }
-
-    #[fuchsia::test]
-    async fn page_in_erofs_sequential_compressed_test() {
-        check_benchmark(
-            PageInErofsBenchmark::new_sequential_compressed(PAGE_COUNT * page_size()),
-            Fxblob::new(),
-            PAGE_COUNT,
-        )
-        .await;
-        check_benchmark(
-            PageInErofsBenchmark::new_sequential_compressed(PAGE_COUNT * page_size()),
-            Fxblob::with_driver_paging(),
-            PAGE_COUNT,
-        )
-        .await;
-    }
-
-    #[fuchsia::test]
-    async fn page_in_erofs_small_files_test() {
-        check_benchmark(PageInErofsSmallFilesBenchmark::new_uncompressed(), Fxblob::new(), 80)
-            .await;
-        check_benchmark(
-            PageInErofsSmallFilesBenchmark::new_uncompressed(),
-            Fxblob::with_driver_paging(),
-            80,
-        )
-        .await;
-        check_benchmark(PageInErofsSmallFilesBenchmark::new_compressed(), Fxblob::new(), 80).await;
-        check_benchmark(
-            PageInErofsSmallFilesBenchmark::new_compressed(),
-            Fxblob::with_driver_paging(),
-            80,
         )
         .await;
     }

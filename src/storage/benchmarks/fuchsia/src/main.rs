@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::blob_benchmarks::{
-    ColdPageFaultBenchmark, OpenAndGetVmoBenchmark, PageInBlobBenchmark, PageInErofsBenchmark,
-    PageInErofsSmallFilesBenchmark, WriteBlob, WriteRealisticBlobs,
+    ColdPageFaultBenchmark, OpenAndGetVmoBenchmark, PageInBlobBenchmark, WriteBlob,
+    WriteRealisticBlobs,
 };
 use fidl_fuchsia_power_cpu_manager as fcpumanager;
 use fuchsia_component::client::connect_to_protocol;
@@ -153,11 +153,6 @@ fn add_blob_benchmarks(benchmark_set: &mut BenchmarkSet) {
     add_benchmarks!(
         benchmark_set,
         [
-            PageInErofsBenchmark::new_sequential_uncompressed(SMALL_BLOB_SIZE),
-            PageInErofsBenchmark::new_sequential_compressed(SMALL_BLOB_SIZE),
-            PageInErofsBenchmark::new_random_compressed(SMALL_BLOB_SIZE),
-            PageInErofsSmallFilesBenchmark::new_uncompressed(),
-            PageInErofsSmallFilesBenchmark::new_compressed(),
             ColdPageFaultBenchmark::new_lz4_40(),
             ColdPageFaultBenchmark::new_lz4_55(),
             ColdPageFaultBenchmark::new_lz4_70(),
