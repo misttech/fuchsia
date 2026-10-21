@@ -52,11 +52,6 @@ pub struct PlatformNetworkConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub netcfg_config_path: Option<Utf8PathBuf>,
 
-    #[walk_paths]
-    #[schemars(schema_with = "crate::option_path_schema")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub netstack_config_path: Option<Utf8PathBuf>,
-
     /// Number of threads used by Netstack3.
     ///
     /// Platform default will be used if unspecified.

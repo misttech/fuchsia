@@ -118,13 +118,6 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 destination: "netcfg_default.json5".into(),
             })?;
 
-            if let Some(netstack_config_path) = &connectivity_config.network.netstack_config_path {
-                builder.package("netstack").config_data(FileEntry {
-                    source: netstack_config_path.clone(),
-                    destination: "default.json".into(),
-                })?;
-            }
-
             if let Some(google_maps_api_key_path) =
                 &connectivity_config.network.google_maps_api_key_path
             {
