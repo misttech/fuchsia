@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 #include <lib/syslog/cpp/macros.h>
+#include <zircon/features.h>
 #include <zircon/hw/debug/arm64.h>
 #include <zircon/status.h>
+#include <zircon/syscalls.h>
 #include <zircon/syscalls/exception.h>
 
 #include <optional>
@@ -45,6 +47,15 @@ zx_status_t ReadGeneralRegs(const zx::thread& thread, std::vector<debug::Registe
   return ZX_OK;
 }
 
+bool HasSve() {
+  static const bool kHasSve = [] {
+    uint32_t features = 0;
+    return zx_system_get_features(ZX_FEATURE_KIND_CPU, &features) == ZX_OK &&
+           (features & ZX_ARM64_FEATURE_ISA_SVE) != 0;
+  }();
+  return kHasSve;
+}
+
 zx_status_t ReadVectorRegs(const zx::thread& thread, std::vector<debug::RegisterValue>& out) {
   zx_thread_state_vector_regs_t vec_regs;
   zx_status_t status = thread.read_state(ZX_THREAD_STATE_VECTOR_REGS, &vec_regs, sizeof(vec_regs));
@@ -53,6 +64,17 @@ zx_status_t ReadVectorRegs(const zx::thread& thread, std::vector<debug::Register
 
   out.emplace_back(RegisterID::kARMv8_fpcr, vec_regs.fpcr);
   out.emplace_back(RegisterID::kARMv8_fpsr, vec_regs.fpsr);
+  if (HasSve()) {
+    // VG is the number of 64-bit granules per Z register, which is 2 for 128-bit SVE.
+    constexpr uint64_t kSve128VectorGranule = sizeof(vec_regs.v[0]) / sizeof(uint64_t);
+    out.emplace_back(RegisterID::kARMv8_vg, kSve128VectorGranule);
+    out.emplace_back(RegisterID::kARMv8_ffr, vec_regs.ffr);
+
+    auto p_base = static_cast<uint32_t>(RegisterID::kARMv8_p0);
+    for (size_t i = 0; i < 16; i++) {
+      out.emplace_back(static_cast<RegisterID>(p_base + i), vec_regs.p[i]);
+    }
+  }
 
   auto base = static_cast<uint32_t>(RegisterID::kARMv8_v0);
   for (size_t i = 0; i < 32; i++)
@@ -231,6 +253,10 @@ zx_status_t WriteVectorRegisters(const std::vector<debug::RegisterValue>& update
                                  zx_thread_state_vector_regs_t* regs) {
   uint32_t begin_vector = static_cast<uint32_t>(RegisterID::kARMv8_v0);
   uint32_t last_vector = static_cast<uint32_t>(RegisterID::kARMv8_v31);
+  uint32_t begin_sve_z = static_cast<uint32_t>(RegisterID::kARMv8_z0);
+  uint32_t last_sve_z = static_cast<uint32_t>(RegisterID::kARMv8_z31);
+  uint32_t begin_sve_p = static_cast<uint32_t>(RegisterID::kARMv8_p0);
+  uint32_t last_sve_p = static_cast<uint32_t>(RegisterID::kARMv8_p15);
 
   for (const auto& reg : updates) {
     zx_status_t status = ZX_OK;
@@ -238,10 +264,15 @@ zx_status_t WriteVectorRegisters(const std::vector<debug::RegisterValue>& update
 
     if (id >= begin_vector && id <= last_vector) {
       status = WriteRegisterValue(reg, &regs->v[id - begin_vector]);
+    } else if (id >= begin_sve_z && id <= last_sve_z) {
+      status = WriteRegisterValue(reg, &regs->v[id - begin_sve_z]);
+    } else if (id >= begin_sve_p && id <= last_sve_p) {
+      status = WriteRegisterValue(reg, &regs->p[id - begin_sve_p]);
     } else {
       switch (reg.id) {
         IMPLEMENT_CASE_WRITE_REGISTER_VALUE(fpcr);
         IMPLEMENT_CASE_WRITE_REGISTER_VALUE(fpsr);
+        IMPLEMENT_CASE_WRITE_REGISTER_VALUE(ffr);
         default:
           status = ZX_ERR_INVALID_ARGS;
           break;

@@ -106,6 +106,10 @@ print -x rax + rbx
 0x2108aa0032a
 ```
 
+On ARM64 targets that support the Scalable Vector Extension (SVE), you can also
+refer to SVE registers (`z0`-`z31`, `p0`-`p15`, `ffr`, and `vg`) in
+expressions.
+
 ### Vector registers {#vector-registers}
 
 Vector registers can be treated as arrays based on the setting of

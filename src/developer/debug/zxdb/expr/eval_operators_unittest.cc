@@ -47,8 +47,7 @@ class EvalOperators : public TestWithLoop {
 
   template <typename T>
   [[clang::no_sanitize("signed-integer-overflow")]]  // Allows -INT32_MAX overflow.
-  void
-  DoUnaryMinusTest(T in) {
+  void DoUnaryMinusTest(T in) {
     ExprValue original(in);
 
     ErrOrValue out = SyncEvalUnaryOperator(ExprTokenType::kMinus, original);
@@ -84,8 +83,6 @@ class EvalOperators : public TestWithLoop {
  private:
   fxl::RefPtr<MockEvalContext> eval_context_;
 };
-
-}  // namespace
 
 TEST_F(EvalOperators, AssignmentMem) {
   auto int32_type = MakeInt32Type();
@@ -163,8 +160,8 @@ TEST_F(EvalOperators, AssignmentBitfieldRegister) {
 
   // Existing register value has each byte numbered. Both reads and writes should be for the
   // canonical register.
-  eval_context()->data_provider()->AddRegisterValue(RegisterID::kX64_rax, false,
-                                                    std::vector<uint8_t>{0, 1, 2, 3, 4, 5, 6, 7});
+  eval_context()->data_provider()->AddRegisterValue(
+      RegisterID::kX64_rax, false, std::vector<uint8_t>{0, 0xf1, 2, 3, 4, 5, 6, 7});
 
   constexpr uint8_t kValue = 0x3;  // Set both bits to 1.
   ExprValue source(kValue);
@@ -179,7 +176,7 @@ TEST_F(EvalOperators, AssignmentBitfieldRegister) {
   auto reg_writes = eval_context()->data_provider()->GetRegisterWrites();
   ASSERT_EQ(1u, reg_writes.size());
   EXPECT_EQ(RegisterID::kX64_rax, reg_writes[0].first);
-  std::vector<uint8_t> expected{0, 7, 2, 3, 4, 5, 6, 7};  // Set bits 1-2 of byte 1.
+  std::vector<uint8_t> expected{0, 0xf7, 2, 3, 4, 5, 6, 7};  // Set bits 1-2 of byte 1.
   EXPECT_EQ(expected, reg_writes[0].second);
 }
 
@@ -217,6 +214,47 @@ TEST_F(EvalOperators, AssignmentVectorRegister) {
   for (size_t i = 0; i < new_data.size(); i++)
     expected[16 + i] = new_data[i];
   EXPECT_EQ(expected, reg_writes[0].second);
+}
+
+TEST_F(EvalOperators, AssignmentNonCanonicalRegister) {
+  // Assign to a full non-canonical register (e.g., SVE z0 which aliases v0).
+  auto uint128_type = fxl::MakeRefCounted<BaseType>(BaseType::kBaseTypeUnsigned, 16, "uint128_t");
+  ExprValue dest(uint128_type, std::vector<uint8_t>(16, 0), ExprValueSource(RegisterID::kARMv8_z0));
+
+  std::vector<uint8_t> original(16, 0xaa);
+  eval_context()->data_provider()->AddRegisterValue(RegisterID::kARMv8_v0, false, original);
+
+  std::vector<uint8_t> new_data{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  ExprValue source(uint128_type, new_data);
+
+  ErrOrValue out = SyncEvalBinaryOperator(dest, ExprTokenType::kEquals, source);
+  ASSERT_FALSE(out.has_error()) << out.err().msg();
+  EXPECT_EQ(source, out.value());
+
+  auto reg_writes = eval_context()->data_provider()->GetRegisterWrites();
+  ASSERT_EQ(1u, reg_writes.size());
+  EXPECT_EQ(RegisterID::kARMv8_v0, reg_writes[0].first);
+  EXPECT_EQ(new_data, reg_writes[0].second);
+
+  // Assign to a sub-width non-canonical register alias (w0 aliases the low 32 bits of x0),
+  // verifying that the low bytes are updated and the upper bytes of x0 are preserved.
+  auto uint32_type = MakeUint32Type();
+  ExprValue sub_dest(static_cast<uint32_t>(0), uint32_type, ExprValueSource(RegisterID::kARMv8_w0));
+  std::vector<uint8_t> x0_original{0xbb, 0xbb, 0xbb, 0xbb, 0xcc, 0xcc, 0xcc, 0xcc};
+  eval_context()->data_provider()->AddRegisterValue(RegisterID::kARMv8_x0, false, x0_original);
+
+  std::vector<uint8_t> w0_new{0x11, 0x22, 0x33, 0x44};
+  ExprValue sub_source(uint32_type, w0_new);
+
+  out = SyncEvalBinaryOperator(sub_dest, ExprTokenType::kEquals, sub_source);
+  ASSERT_FALSE(out.has_error()) << out.err().msg();
+  EXPECT_EQ(sub_source, out.value());
+
+  reg_writes = eval_context()->data_provider()->GetRegisterWrites();
+  ASSERT_EQ(1u, reg_writes.size());
+  EXPECT_EQ(RegisterID::kARMv8_x0, reg_writes[0].first);
+  std::vector<uint8_t> x0_expected{0x11, 0x22, 0x33, 0x44, 0xcc, 0xcc, 0xcc, 0xcc};
+  EXPECT_EQ(x0_expected, reg_writes[0].second);
 }
 
 TEST_F(EvalOperators, AssignmentLocal) {
@@ -683,5 +721,7 @@ TEST_F(EvalOperators, ArrayResize) {
   EXPECT_TRUE(out.has_error());
   EXPECT_EQ("Not an array type.", out.err().msg());
 }
+
+}  // namespace
 
 }  // namespace zxdb

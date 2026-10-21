@@ -77,8 +77,21 @@ TEST(ArchArm64, WriteVectorRegs) {
   v31_value.back()++;
   regs.emplace_back(debug::RegisterID::kARMv8_v31, v31_value);
 
+  std::vector<uint8_t> z1_value = v31_value;
+  z1_value.front()++;
+  z1_value.back()++;
+  regs.emplace_back(debug::RegisterID::kARMv8_z1, z1_value);
+
+  std::vector<uint8_t> z30_value = z1_value;
+  z30_value.front()++;
+  z30_value.back()++;
+  regs.emplace_back(debug::RegisterID::kARMv8_z30, z30_value);
+
   regs.emplace_back(debug::RegisterID::kARMv8_fpcr, std::vector<uint8_t>{5, 6, 7, 8});
   regs.emplace_back(debug::RegisterID::kARMv8_fpsr, std::vector<uint8_t>{9, 0, 1, 2});
+  regs.emplace_back(debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>{0xff, 0x00});
+  regs.emplace_back(debug::RegisterID::kARMv8_p0, std::vector<uint8_t>{0x34, 0x12});
+  regs.emplace_back(debug::RegisterID::kARMv8_p15, std::vector<uint8_t>{0x78, 0x56});
 
   zx_thread_state_vector_regs_t out = {};
   zx_status_t res = WriteVectorRegisters(regs, &out);
@@ -86,11 +99,34 @@ TEST(ArchArm64, WriteVectorRegs) {
 
   EXPECT_EQ(out.v[0].low, 0x0000000000000042u);
   EXPECT_EQ(out.v[0].high, 0x1200000000000000u);
+  EXPECT_EQ(out.v[1].low, 0x0000000000000044u);
+  EXPECT_EQ(out.v[1].high, 0x1400000000000000u);
+  EXPECT_EQ(out.v[30].low, 0x0000000000000045u);
+  EXPECT_EQ(out.v[30].high, 0x1500000000000000u);
   EXPECT_EQ(out.v[31].low, 0x0000000000000043u);
   EXPECT_EQ(out.v[31].high, 0x1300000000000000u);
 
   EXPECT_EQ(out.fpcr, 0x08070605u);
   EXPECT_EQ(out.fpsr, 0x02010009u);
+  EXPECT_EQ(out.ffr, 0x00ffu);
+  EXPECT_EQ(out.p[0], 0x1234u);
+  EXPECT_EQ(out.p[15], 0x5678u);
+
+  // VG is a read-only pseudo-register and cannot be written.
+  std::vector<debug::RegisterValue> vg_regs;
+  vg_regs.emplace_back(debug::RegisterID::kARMv8_vg, uint64_t{2});
+  EXPECT_EQ(WriteVectorRegisters(vg_regs, &out), ZX_ERR_INVALID_ARGS);
+
+  // Invalid byte lengths for SVE registers must be rejected.
+  EXPECT_EQ(
+      WriteVectorRegisters({{debug::RegisterID::kARMv8_ffr, std::vector<uint8_t>(4, 0)}}, &out),
+      ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(
+      WriteVectorRegisters({{debug::RegisterID::kARMv8_p0, std::vector<uint8_t>(4, 0)}}, &out),
+      ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(
+      WriteVectorRegisters({{debug::RegisterID::kARMv8_z0, std::vector<uint8_t>(8, 0)}}, &out),
+      ZX_ERR_INVALID_ARGS);
 }
 
 TEST(ArchArm64, WriteDebugRegs) {

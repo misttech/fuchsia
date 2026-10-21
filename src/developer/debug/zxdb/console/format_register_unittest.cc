@@ -173,6 +173,27 @@ TEST(FormatRegisters, VectorRegistersARM) {
       "     Currently showing vectors of \"double\".)\n"
       "\n",
       FormatRegisters(options, registers).AsString());
+
+  // Add control and SVE predicate registers.
+  registers.emplace_back(RegisterID::kARMv8_fpcr, static_cast<uint32_t>(0));
+  registers.emplace_back(RegisterID::kARMv8_fpsr, static_cast<uint32_t>(0x10));
+  registers.emplace_back(RegisterID::kARMv8_vg, static_cast<uint64_t>(2));
+  registers.emplace_back(RegisterID::kARMv8_ffr, static_cast<uint16_t>(0x00ff));
+  registers.emplace_back(RegisterID::kARMv8_p0, static_cast<uint16_t>(0x55aa));
+  EXPECT_EQ(
+      "Vector Registers\n"
+      "  fpcr    0x0 = 0\n"
+      "  fpsr   0x10 = 16\n"
+      "    vg    0x2 = 2\n"
+      "   ffr   0xff = 255\n"
+      "    p0 0x55aa = 21930\n"
+      "\n"
+      "  Name [1]   [0]\n"
+      "    v5  99 2.718\n"
+      "    (Use \"get/set vector-format\" to control vector register intepretation.\n"
+      "     Currently showing vectors of \"double\".)\n"
+      "\n",
+      FormatRegisters(options, registers).AsString());
 }
 
 TEST(FormatRegisters, VectorRegistersX64) {

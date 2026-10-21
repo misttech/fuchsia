@@ -246,6 +246,20 @@ TEST(Disassembler, Arm64Many) {
   EXPECT_EQ(Row(0x123456784, &data[4], 4, "stp", "x29, x30, [sp, #0x10]", ""), out[1]);
   EXPECT_EQ(Row(0x123456788, &data[8], 3, ".byte", "0xfd 0x43 0x00", "// Invalid instruction."),
             out[2]);
+
+  // Test SVE and SVE2 instructions.
+  const uint8_t sve_data[] = {
+      0x20, 0x50, 0xbf, 0x04,  // rdvl x0, #1 (SVE)
+      0x20, 0xd8, 0x00, 0x45,  // cadd z0.b, z0.b, z1.b, #90 (SVE2)
+      0x20, 0xb0, 0x02, 0x45,  // bext z0.b, z1.b, z2.b (SVE2-BitPerm)
+  };
+  out.clear();
+  consumed = d.DisassembleMany(sve_data, std::size(sve_data), 0x123456780, opts, 0, &out);
+  EXPECT_EQ(std::size(sve_data), consumed);
+  ASSERT_EQ(3u, out.size());
+  EXPECT_EQ(Row(0x123456780, &sve_data[0], 4, "rdvl", "x0, #0x1", ""), out[0]);
+  EXPECT_EQ(Row(0x123456784, &sve_data[4], 4, "cadd", "z0.b, z0.b, z1.b, #90", ""), out[1]);
+  EXPECT_EQ(Row(0x123456788, &sve_data[8], 4, "bext", "z0.b, z1.b, z2.b", ""), out[2]);
 }
 
 TEST(Disassembler, CallX64) {

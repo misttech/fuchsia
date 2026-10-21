@@ -73,6 +73,7 @@ class ArchInfo {
 
   std::string triple_name_;
   std::string processor_name_;
+  std::string features_;
 
   std::unique_ptr<llvm::Triple> triple_;
 

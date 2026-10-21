@@ -45,6 +45,7 @@ ArchInfo::~ArchInfo() = default;
 Err ArchInfo::Init(debug::Arch arch, uint64_t page_size) {
   arch_ = arch;
   page_size_ = page_size;
+  features_.clear();
 
   switch (arch) {
     case debug::Arch::kUnknown:
@@ -66,6 +67,7 @@ Err ArchInfo::Init(debug::Arch arch, uint64_t page_size) {
       instr_align_ = 4;
       triple_name_ = "aarch64";
       processor_name_ = "generic";
+      features_ = "+all";
       break;
     case debug::Arch::kRiscv64:
       abi_ = std::make_shared<AbiRiscv64>();
@@ -87,7 +89,7 @@ Err ArchInfo::Init(debug::Arch arch, uint64_t page_size) {
 
   instr_info_.reset(target_->createMCInstrInfo());
   register_info_.reset(target_->createMCRegInfo(*triple_));
-  subtarget_info_.reset(target_->createMCSubtargetInfo(*triple_, processor_name_, ""));
+  subtarget_info_.reset(target_->createMCSubtargetInfo(*triple_, processor_name_, features_));
   target_options_ = std::make_unique<llvm::MCTargetOptions>();
   asm_info_.reset(target_->createMCAsmInfo(*register_info_, *triple_, *target_options_));
 

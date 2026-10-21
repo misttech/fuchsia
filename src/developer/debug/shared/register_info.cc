@@ -99,6 +99,26 @@ const RegisterInfo kRegisterInfo[] = {
     {.id = RegisterID::kARMv8_v30, .name = "v30", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v30, .bits = 128, .dwarf_id = 94, .format = RegisterFormat::kVector},
     {.id = RegisterID::kARMv8_v31, .name = "v31", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v31, .bits = 128, .dwarf_id = 95, .format = RegisterFormat::kVector},
 
+    // SVE Vector Granule, predicate registers, and First Fault Register (for 128-bit SVE, VG = 2).
+    {.id = RegisterID::kARMv8_vg,  .name = "vg",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_vg,  .bits = 64, .dwarf_id = 46, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_ffr, .name = "ffr", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_ffr, .bits = 16, .dwarf_id = 47, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p0,  .name = "p0",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p0,  .bits = 16, .dwarf_id = 48, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p1,  .name = "p1",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p1,  .bits = 16, .dwarf_id = 49, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p2,  .name = "p2",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p2,  .bits = 16, .dwarf_id = 50, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p3,  .name = "p3",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p3,  .bits = 16, .dwarf_id = 51, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p4,  .name = "p4",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p4,  .bits = 16, .dwarf_id = 52, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p5,  .name = "p5",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p5,  .bits = 16, .dwarf_id = 53, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p6,  .name = "p6",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p6,  .bits = 16, .dwarf_id = 54, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p7,  .name = "p7",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p7,  .bits = 16, .dwarf_id = 55, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p8,  .name = "p8",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p8,  .bits = 16, .dwarf_id = 56, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p9,  .name = "p9",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p9,  .bits = 16, .dwarf_id = 57, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p10, .name = "p10", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p10, .bits = 16, .dwarf_id = 58, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p11, .name = "p11", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p11, .bits = 16, .dwarf_id = 59, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p12, .name = "p12", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p12, .bits = 16, .dwarf_id = 60, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p13, .name = "p13", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p13, .bits = 16, .dwarf_id = 61, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p14, .name = "p14", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p14, .bits = 16, .dwarf_id = 62, .format = RegisterFormat::kSpecial},
+    {.id = RegisterID::kARMv8_p15, .name = "p15", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_p15, .bits = 16, .dwarf_id = 63, .format = RegisterFormat::kSpecial},
+
     // Debug.
 
     {.id = RegisterID::kARMv8_id_aa64dfr0_el1, .name = "id_aa64dfr0", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_id_aa64dfr0_el1, .bits = 64, .format = RegisterFormat::kSpecial},
@@ -213,6 +233,40 @@ const RegisterInfo kRegisterInfo[] = {
     {.id = RegisterID::kARMv8_w28, .name = "w28", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_x28, .bits = 32},
     {.id = RegisterID::kARMv8_w29, .name = "w29", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_x29, .bits = 32},
     {.id = RegisterID::kARMv8_w30, .name = "w30", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_x30, .bits = 32},
+
+    // SVE vector register aliases (for 128-bit SVE, Z0-Z31 alias V0-V31).
+    {.id = RegisterID::kARMv8_z0,  .name = "z0",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v0,  .bits = 128, .dwarf_id = 96,  .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z1,  .name = "z1",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v1,  .bits = 128, .dwarf_id = 97,  .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z2,  .name = "z2",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v2,  .bits = 128, .dwarf_id = 98,  .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z3,  .name = "z3",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v3,  .bits = 128, .dwarf_id = 99,  .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z4,  .name = "z4",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v4,  .bits = 128, .dwarf_id = 100, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z5,  .name = "z5",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v5,  .bits = 128, .dwarf_id = 101, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z6,  .name = "z6",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v6,  .bits = 128, .dwarf_id = 102, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z7,  .name = "z7",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v7,  .bits = 128, .dwarf_id = 103, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z8,  .name = "z8",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v8,  .bits = 128, .dwarf_id = 104, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z9,  .name = "z9",  .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v9,  .bits = 128, .dwarf_id = 105, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z10, .name = "z10", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v10, .bits = 128, .dwarf_id = 106, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z11, .name = "z11", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v11, .bits = 128, .dwarf_id = 107, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z12, .name = "z12", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v12, .bits = 128, .dwarf_id = 108, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z13, .name = "z13", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v13, .bits = 128, .dwarf_id = 109, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z14, .name = "z14", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v14, .bits = 128, .dwarf_id = 110, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z15, .name = "z15", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v15, .bits = 128, .dwarf_id = 111, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z16, .name = "z16", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v16, .bits = 128, .dwarf_id = 112, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z17, .name = "z17", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v17, .bits = 128, .dwarf_id = 113, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z18, .name = "z18", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v18, .bits = 128, .dwarf_id = 114, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z19, .name = "z19", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v19, .bits = 128, .dwarf_id = 115, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z20, .name = "z20", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v20, .bits = 128, .dwarf_id = 116, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z21, .name = "z21", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v21, .bits = 128, .dwarf_id = 117, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z22, .name = "z22", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v22, .bits = 128, .dwarf_id = 118, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z23, .name = "z23", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v23, .bits = 128, .dwarf_id = 119, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z24, .name = "z24", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v24, .bits = 128, .dwarf_id = 120, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z25, .name = "z25", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v25, .bits = 128, .dwarf_id = 121, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z26, .name = "z26", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v26, .bits = 128, .dwarf_id = 122, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z27, .name = "z27", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v27, .bits = 128, .dwarf_id = 123, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z28, .name = "z28", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v28, .bits = 128, .dwarf_id = 124, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z29, .name = "z29", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v29, .bits = 128, .dwarf_id = 125, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z30, .name = "z30", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v30, .bits = 128, .dwarf_id = 126, .format = RegisterFormat::kVector},
+    {.id = RegisterID::kARMv8_z31, .name = "z31", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v31, .bits = 128, .dwarf_id = 127, .format = RegisterFormat::kVector},
 
     // Double-precision floating point (low 64 bits of the vector registers).
     {.id = RegisterID::kARMv8_d0, .name = "d0", .arch = Arch::kArm64, .canonical_id = RegisterID::kARMv8_v0, .bits = 64, .format = RegisterFormat::kFloat},
@@ -590,10 +644,6 @@ const RegisterInfo kRegisterInfo[] = {
 // Nor the following ARM DWARF registers:
 //
 //   33 -> ELR_mode
-//   46 -> VG 64-bit SVE Vector granule pseudo register
-//   47 -> FFR VG´8-bit SVE first fault register
-//   48-63 -> P0-P15 VG´8-bit SVE predicate registers
-//   96-127 -> Z0-Z31 VG´64-bit SVE vector registers
 //
 // On RISC-V, we use 64 (Alternate Frame Return Column) to represent PC so that it's consistent with
 // the unwinder.

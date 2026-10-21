@@ -16,6 +16,14 @@ TEST(RegisterDesc, DWARFToRegisterInfo_Arm) {
   EXPECT_EQ(RegisterID::kARMv8_lr, DWARFToRegisterInfo(Arch::kArm64, 30)->id);
   EXPECT_EQ(RegisterID::kARMv8_sp, DWARFToRegisterInfo(Arch::kArm64, 31)->id);
   EXPECT_EQ(RegisterID::kARMv8_pc, DWARFToRegisterInfo(Arch::kArm64, 32)->id);
+
+  // SVE registers.
+  EXPECT_EQ(RegisterID::kARMv8_vg, DWARFToRegisterInfo(Arch::kArm64, 46)->id);
+  EXPECT_EQ(RegisterID::kARMv8_ffr, DWARFToRegisterInfo(Arch::kArm64, 47)->id);
+  EXPECT_EQ(RegisterID::kARMv8_p0, DWARFToRegisterInfo(Arch::kArm64, 48)->id);
+  EXPECT_EQ(RegisterID::kARMv8_p15, DWARFToRegisterInfo(Arch::kArm64, 63)->id);
+  EXPECT_EQ(RegisterID::kARMv8_z0, DWARFToRegisterInfo(Arch::kArm64, 96)->id);
+  EXPECT_EQ(RegisterID::kARMv8_z31, DWARFToRegisterInfo(Arch::kArm64, 127)->id);
 }
 
 TEST(RegisterDesc, DWARFToRegisterInfo_x64) {
@@ -92,6 +100,12 @@ TEST(RegisterIDToCategory, ARMv8) {
   // Vector.
   EXPECT_EQ(IDToCat(RegisterID::kARMv8_fpcr), RegisterCategory::kVector);
   EXPECT_EQ(IDToCat(RegisterID::kARMv8_fpsr), RegisterCategory::kVector);
+  EXPECT_EQ(IDToCat(RegisterID::kARMv8_vg), RegisterCategory::kVector);
+  EXPECT_EQ(IDToCat(RegisterID::kARMv8_ffr), RegisterCategory::kVector);
+  EXPECT_EQ(IDToCat(RegisterID::kARMv8_p0), RegisterCategory::kVector);
+  EXPECT_EQ(IDToCat(RegisterID::kARMv8_p15), RegisterCategory::kVector);
+  EXPECT_EQ(IDToCat(RegisterID::kARMv8_z0), RegisterCategory::kVector);
+  EXPECT_EQ(IDToCat(RegisterID::kARMv8_z31), RegisterCategory::kVector);
   EXPECT_EQ(IDToCat(RegisterID::kARMv8_v0), RegisterCategory::kVector);
   EXPECT_EQ(IDToCat(RegisterID::kARMv8_v1), RegisterCategory::kVector);
   EXPECT_EQ(IDToCat(RegisterID::kARMv8_v2), RegisterCategory::kVector);
@@ -272,6 +286,12 @@ TEST(RegisterIDToString, Registers) {
   EXPECT_STREQ("cpsr", RegisterIDToString(RegisterID::kARMv8_cpsr));
   EXPECT_STREQ("fpcr", RegisterIDToString(RegisterID::kARMv8_fpcr));
   EXPECT_STREQ("fpsr", RegisterIDToString(RegisterID::kARMv8_fpsr));
+  EXPECT_STREQ("vg", RegisterIDToString(RegisterID::kARMv8_vg));
+  EXPECT_STREQ("ffr", RegisterIDToString(RegisterID::kARMv8_ffr));
+  EXPECT_STREQ("p0", RegisterIDToString(RegisterID::kARMv8_p0));
+  EXPECT_STREQ("p15", RegisterIDToString(RegisterID::kARMv8_p15));
+  EXPECT_STREQ("z0", RegisterIDToString(RegisterID::kARMv8_z0));
+  EXPECT_STREQ("z31", RegisterIDToString(RegisterID::kARMv8_z31));
   EXPECT_STREQ("v0", RegisterIDToString(RegisterID::kARMv8_v0));
   EXPECT_STREQ("v1", RegisterIDToString(RegisterID::kARMv8_v1));
   EXPECT_STREQ("v2", RegisterIDToString(RegisterID::kARMv8_v2));
@@ -500,6 +520,15 @@ TEST(RegisterDesc, GetRegisterData) {
   found = GetRegisterData(register_list, RegisterID::kX64_ah);
   ASSERT_EQ(1u, found.size());
   EXPECT_EQ(2, found[0]);
+
+  // SVE z0 aliases v0 (128-bit vector register).
+  register_list.emplace_back(
+      RegisterID::kARMv8_v0,
+      std::vector<uint8_t>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
+  found = GetRegisterData(register_list, RegisterID::kARMv8_z0);
+  ASSERT_EQ(16u, found.size());
+  EXPECT_EQ(1, found[0]);
+  EXPECT_EQ(16, found[15]);
 }
 
 }  // namespace debug

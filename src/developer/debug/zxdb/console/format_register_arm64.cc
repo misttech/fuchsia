@@ -243,6 +243,32 @@ void FormatDebugRegisters(const FormatRegisterOptions& options,
   }
 }
 
+void FormatVectorRegistersARM64(const FormatRegisterOptions& options,
+                                const std::vector<debug::RegisterValue>& registers,
+                                OutputBuffer* out) {
+  std::vector<debug::RegisterValue> non_vect;
+  std::vector<debug::RegisterValue> vect;
+  vect.reserve(registers.size());
+
+  for (const auto& r : registers) {
+    const debug::RegisterInfo* info = debug::InfoForRegister(r.id);
+    if (info && info->format == debug::RegisterFormat::kVector) {
+      vect.push_back(r);
+    } else {
+      non_vect.push_back(r);
+    }
+  }
+
+  if (!non_vect.empty()) {
+    zxdb::FormatGeneralRegisters(non_vect, out);
+    if (!vect.empty())
+      out->Append("\n");
+  }
+
+  if (!vect.empty())
+    FormatGeneralVectorRegisters(options, vect, out);
+}
+
 }  // namespace
 
 bool FormatCategoryARM64(const FormatRegisterOptions& options, RegisterCategory category,
@@ -252,7 +278,7 @@ bool FormatCategoryARM64(const FormatRegisterOptions& options, RegisterCategory 
       FormatGeneralRegisters(options, registers, out);
       return true;
     case RegisterCategory::kVector:
-      FormatGeneralVectorRegisters(options, registers, out);
+      FormatVectorRegistersARM64(options, registers, out);
       return true;
     case RegisterCategory::kDebug:
       FormatDebugRegisters(options, registers, out);

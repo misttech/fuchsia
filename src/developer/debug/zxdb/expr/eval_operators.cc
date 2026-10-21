@@ -77,11 +77,16 @@ void AssignRegisterWithExistingValue(const fxl::RefPtr<EvalContext>& context,
     // Do these computations in signed numbers because weird symbol data could give
     // data.size() - offset => negative number.
     int byte_shift = static_cast<int>((dest.bit_shift() + info.shift) / 8);
-    int byte_length = std::min(static_cast<int>(dest.bit_size()), info.bits) / 8;
+    int byte_length =
+        (dest.is_bitfield() ? std::min(static_cast<int>(dest.bit_size()), info.bits) : info.bits) /
+        8;
 
     // Clamp the range to within the buffer in case anything is corrupted.
-    byte_length = std::min(byte_length, std::max(0, static_cast<int>(existing_data.size()) -
-                                                        byte_shift - byte_length));
+    byte_length = std::min({
+        byte_length,
+        static_cast<int>(source.data().size()),
+        std::max(0, static_cast<int>(existing_data.size()) - byte_shift),
+    });
 
     if (byte_length > 0) {
       memcpy(&existing_data[byte_shift], &source.data().bytes()[0], byte_length);
@@ -103,7 +108,9 @@ void AssignRegisterWithExistingValue(const fxl::RefPtr<EvalContext>& context,
     // This ExprValueSource takes into account any non-canonical register shifts on top of what
     // may already be there.
     ExprValueSource new_dest(info.canonical_id,
-                             std::max(dest.bit_size(), static_cast<uint32_t>(info.bits)),
+                             dest.is_bitfield()
+                                 ? std::min(dest.bit_size(), static_cast<uint32_t>(info.bits))
+                                 : static_cast<uint32_t>(info.bits),
                              dest.bit_shift() + info.shift);
 
     uint128_t new_value = new_dest.SetBits(existing_value, write_value);
@@ -841,15 +848,15 @@ void EvalBinaryOperator(const fxl::RefPtr<EvalContext>& context, const ExprValue
   if (Err err = FillOpValue(context.get(), value, &op_value); err.has_error())
     return cb(err);
 
-    // Implements a unary operator that applies C rules for the 4 different sized types. The types
-    // are passed in so that this can work with both signed and unsigned input.
-    //
-    // C has a bunch of rules (see "integer promotion" at the top of this file).
-    //
-    // This logic implicitly takes advantage of the C rules but the type names produced will be the
-    // sized C++ stdint.h types rather than what C would use (int/unsigned, etc.) or whatever the
-    // current language would produce (e.g. u32 on Rust). Since these are temporaries, the type
-    // names usually aren't very important so the simplicity of this approach is preferrable.
+  // Implements a unary operator that applies C rules for the 4 different sized types. The types
+  // are passed in so that this can work with both signed and unsigned input.
+  //
+  // C has a bunch of rules (see "integer promotion" at the top of this file).
+  //
+  // This logic implicitly takes advantage of the C rules but the type names produced will be the
+  // sized C++ stdint.h types rather than what C would use (int/unsigned, etc.) or whatever the
+  // current language would produce (e.g. u32 on Rust). Since these are temporaries, the type
+  // names usually aren't very important so the simplicity of this approach is preferable.
 #define IMPLEMENT_UNARY_INTEGER_OP(c_op, type8, type16, type32, type64)                    \
   switch (value.data().size()) {                                                           \
     case sizeof(type8):                                                                    \
