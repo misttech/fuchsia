@@ -174,7 +174,7 @@ pub mod tests {
         fn drop(&mut self) {
             OwnedRef::take(&mut self.thread).release(&self.kernel);
             if let Some(device) = self.device.upgrade() {
-                device.procs.write().remove(&self.proc.identifier).release(&self.kernel);
+                device.procs.write().remove(&self.proc.identifier()).release(&self.kernel);
             }
             OwnedRef::take(&mut self.proc).release(&self.kernel);
             if let Some(task) = self.task.as_ref() {
@@ -2776,7 +2776,7 @@ pub mod tests {
             let binder_fd = open_binder_fd(&current_task, &binder_driver);
             let binder_connection =
                 binder_fd.downcast_file::<BinderConnection>().expect("must be a BinderConnection");
-            let identifier = binder_connection.identifier;
+            let identifier = binder_connection.identifier();
 
             // Ensure that the binder driver has created process state.
             binder_driver
@@ -2804,8 +2804,7 @@ pub mod tests {
             let binder_connection =
                 binder_fd.downcast_file::<BinderConnection>().expect("must be a BinderConnection");
             let binder_proc = binder_connection.proc().unwrap();
-            let binder_thread =
-                binder_proc.lock().find_or_register_thread(&current_task.task).unwrap();
+            let binder_thread = binder_proc.find_or_register_thread(&current_task.task).unwrap();
 
             let thread = std::thread::spawn({
                 let task = current_task.weak_task();
@@ -3938,7 +3937,7 @@ pub mod tests {
                 let task = current_task.weak_task();
                 let sender_proc = WeakRef::<BinderProcess>::from(&sender.proc);
                 let sender_thread = WeakRef::<BinderThread>::from(&sender.thread);
-                let receiver_identifier = receiver.proc.identifier;
+                let receiver_identifier = receiver.proc.identifier();
 
                 move || {
                     let task = task.upgrade().expect("task");
@@ -3947,9 +3946,9 @@ pub mod tests {
                     }
                     {
                         let sender_proc = sender_proc.upgrade().expect("sender_proc");
-                        let mut sender_proc = sender_proc.lock();
-                        sender_proc.thread_requested = false;
-                        sender_proc.thread_pool.inc_auxilliary_threads();
+                        let mut sender_proc_state = sender_proc.lock();
+                        sender_proc_state.thread_requested = false;
+                        sender_proc_state.auxiliary_threads_count += 1;
                     }
                     let sender_thread = sender_thread.upgrade().expect("sender_thread");
                     generate_dead_replies_for_transactions(
@@ -4446,7 +4445,6 @@ pub mod tests {
             );
             let looper_thread = proc_a
                 .proc
-                .lock()
                 .find_or_register_thread(&looper_task.task)
                 .expect("register looper thread");
 
@@ -4454,7 +4452,7 @@ pub mod tests {
             let looper_waiter = Waiter::new();
             {
                 let mut looper_state = looper_thread.lock();
-                looper_state.registration = RegistrationState::Auxilliary;
+                looper_state.registration = RegistrationState::Auxiliary;
                 looper_state.command_queue.waiters.wait_async(&looper_waiter);
             }
 
@@ -6074,7 +6072,6 @@ pub mod tests {
             let worker_task = client.task().clone_task_for_test(clone_flags, None);
             let worker_thread = client
                 .proc
-                .lock()
                 .find_or_register_thread(&worker_task.task)
                 .expect("register worker thread");
 
@@ -6222,10 +6219,9 @@ pub mod tests {
             let aux_task = client.task().clone_task_for_test(clone_flags, None);
             let aux_thread = client
                 .proc
-                .lock()
                 .find_or_register_thread(&aux_task.task)
                 .expect("register auxiliary thread");
-            aux_thread.lock().registration = RegistrationState::Auxilliary;
+            aux_thread.lock().registration = RegistrationState::Auxiliary;
 
             // Send a synchronous transaction from the auxiliary thread to the server.
             let aux_context = OperationContext {
@@ -6260,7 +6256,7 @@ pub mod tests {
 
             // Exit the client thread group leader while the auxiliary thread remains alive and
             // waiting for the reply.
-            client.proc.lock().unregister_thread(client.task(), &client.thread.tid);
+            client.proc.unregister_thread(client.task().kernel(), &client.thread.tid);
             let leader_task = client.task.take().expect("client leader task");
             leader_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
             drop(leader_task);
@@ -6532,7 +6528,7 @@ pub mod tests {
             {
                 let mut thread_a = proc_a.thread.lock();
                 thread_a.transactions.push(TransactionRole::Sender(TransactionSender {
-                    target_proc: proc_b.proc.identifier,
+                    target_proc: proc_b.proc.identifier(),
                     target_thread: Some(proc_b.thread.tid.clone()),
                     is_alive: true,
                     target_thread_handle: Some(proc_b.thread.thread.clone()),
@@ -6617,7 +6613,7 @@ pub mod tests {
                     trace_id,
                 ));
                 thread_a.transactions.push(TransactionRole::Sender(TransactionSender {
-                    target_proc: proc_b.proc.identifier,
+                    target_proc: proc_b.proc.identifier(),
                     target_thread: Some(proc_b.thread.tid.clone()),
                     is_alive: true,
                     target_thread_handle: Some(proc_b.thread.thread.clone()),
@@ -7067,7 +7063,7 @@ pub mod tests {
                     trace_id,
                 ));
                 thread_a.transactions.push(TransactionRole::Sender(TransactionSender {
-                    target_proc: proc_b.proc.identifier,
+                    target_proc: proc_b.proc.identifier(),
                     target_thread: Some(proc_b.thread.tid.clone()),
                     is_alive: true,
                     target_thread_handle: Some(proc_b.thread.thread.clone()),
@@ -7381,7 +7377,7 @@ pub mod tests {
 
             let push_sender = |thread_state: &mut BinderThreadState| {
                 thread_state.transactions.push(TransactionRole::Sender(TransactionSender {
-                    target_proc: proc_b.proc.identifier,
+                    target_proc: proc_b.proc.identifier(),
                     target_thread: Some(proc_b.thread.tid.clone()),
                     is_alive: true,
                     target_thread_handle: Some(proc_b.thread.thread.clone()),
@@ -7396,7 +7392,7 @@ pub mod tests {
                 assert!(thread_a.extended_error.is_none());
                 push_sender(&mut thread_a);
                 thread_a.deliver_failed_reply(
-                    proc_b.proc.identifier,
+                    proc_b.proc.identifier(),
                     &TransactionError::Failure(errno!(ENOMEM)),
                     trace_id,
                 );
@@ -7411,7 +7407,7 @@ pub mod tests {
                 let mut thread_a = proc_a.thread.lock();
                 push_sender(&mut thread_a);
                 thread_a.deliver_failed_reply(
-                    proc_b.proc.identifier,
+                    proc_b.proc.identifier(),
                     &TransactionError::Dead,
                     trace_id,
                 );
@@ -7427,13 +7423,169 @@ pub mod tests {
                 assert!(thread_a.extended_error.is_none());
                 push_sender(&mut thread_a);
                 thread_a.deliver_failed_reply(
-                    proc_b.proc.identifier,
+                    proc_b.proc.identifier(),
                     &TransactionError::Dead,
                     trace_id,
                 );
                 let ee = thread_a.extended_error.expect("extended error recorded");
                 assert_eq!(ee.command, uapi::binder_driver_return_protocol_BR_DEAD_REPLY);
                 assert_eq!(ee.param, 0);
+            }
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn binder_connection_close_invalidates_cached_proc() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let binder_fd = open_binder_fd(&current_task, &device);
+            let binder_connection =
+                binder_fd.downcast_file::<BinderConnection>().expect("must be a BinderConnection");
+
+            // Keep an extra OwnedRef<BinderProcess> alive across `close()` so `WeakRef::re_own()`
+            // would still succeed if `closed` were not checked.
+            let kept_proc = binder_connection.proc().expect("proc before close");
+            binder_connection.close(current_task.kernel());
+
+            assert_eq!(binder_connection.proc().unwrap_err(), errno!(ENOENT));
+            assert!(kept_proc.lock().closed);
+
+            kept_proc.release(current_task.kernel());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn thread_exit_decrements_auxiliary_threads_and_allows_reregistration() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc_fixture = BinderProcessFixture::new_current(current_task, &device);
+            {
+                let mut proc_state = proc_fixture.proc.lock();
+                proc_state.max_thread_count = 1;
+                proc_fixture
+                    .thread
+                    .lock()
+                    .handle_looper_registration(&mut proc_state, RegistrationState::Main)
+                    .expect("register main looper");
+                assert!(proc_state.should_request_thread(&proc_fixture.thread));
+                proc_state.did_request_thread();
+            }
+
+            let clone_flags = (starnix_uapi::CLONE_VM
+                | starnix_uapi::CLONE_THREAD
+                | starnix_uapi::CLONE_SIGHAND
+                | starnix_uapi::CLONE_FILES) as u64;
+            let aux_task = current_task.clone_task_for_test(clone_flags, None);
+            let aux_thread = proc_fixture
+                .proc
+                .find_or_register_thread(&aux_task.task)
+                .expect("register aux thread");
+            {
+                let mut proc_state = proc_fixture.proc.lock();
+                let mut thread_state = aux_thread.lock();
+                thread_state
+                    .handle_looper_registration(&mut proc_state, RegistrationState::Auxiliary)
+                    .expect("register auxiliary looper");
+            }
+            {
+                let proc_state = proc_fixture.proc.lock();
+                assert_eq!(proc_state.auxiliary_threads_count, 1);
+                assert!(!proc_state.should_request_thread(&proc_fixture.thread));
+            }
+            let first_weak = WeakRef::<BinderThread>::from(&aux_thread);
+            aux_thread.release(current_task.kernel());
+
+            // Exiting the auxiliary thread must decrement `auxiliary_threads_count` so a new
+            // auxiliary thread can be requested, and re-registering the same task must allocate a
+            // fresh `BinderThread` in `Unregistered` state.
+            proc_fixture.proc.unregister_thread(current_task.kernel(), &aux_task.tid);
+            assert!(first_weak.upgrade().is_none());
+            {
+                let proc_state = proc_fixture.proc.lock();
+                assert_eq!(proc_state.auxiliary_threads_count, 0);
+                assert!(proc_state.should_request_thread(&proc_fixture.thread));
+            }
+
+            let reregistered = proc_fixture
+                .proc
+                .find_or_register_thread(&aux_task.task)
+                .expect("re-register aux thread");
+            assert_eq!(reregistered.lock().registration, RegistrationState::Unregistered);
+            assert!(first_weak.upgrade().is_none());
+
+            reregistered.release(current_task.kernel());
+            proc_fixture.proc.unregister_thread(current_task.kernel(), &aux_task.tid);
+            aux_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn concurrent_thread_registration_looper_exit_and_kick_all_threads() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc_fixture = BinderProcessFixture::new_current(current_task, &device);
+            proc_fixture.proc.lock().max_thread_count = 16;
+
+            let clone_flags = (starnix_uapi::CLONE_VM
+                | starnix_uapi::CLONE_THREAD
+                | starnix_uapi::CLONE_SIGHAND
+                | starnix_uapi::CLONE_FILES) as u64;
+            let mut worker_tasks = Vec::new();
+            for _ in 0..4 {
+                worker_tasks.push(current_task.clone_task_for_test(clone_flags, None));
+            }
+
+            let barrier = Arc::new(std::sync::Barrier::new(worker_tasks.len() + 1));
+            let mut handles = Vec::new();
+
+            for worker_task in &worker_tasks {
+                let proc = WeakRef::<BinderProcess>::from(&proc_fixture.proc);
+                let task = worker_task.weak_task();
+                let kernel = current_task.kernel().clone();
+                let barrier = barrier.clone();
+                handles.push(std::thread::spawn(move || {
+                    let proc = proc.upgrade().expect("proc");
+                    let task = task.upgrade().expect("task");
+                    barrier.wait();
+                    for _ in 0..50 {
+                        let thread =
+                            proc.find_or_register_thread(&task).expect("find_or_register_thread");
+                        {
+                            let mut proc_state = proc.lock();
+                            let mut thread_state = thread.lock();
+                            thread_state
+                                .handle_looper_registration(
+                                    &mut proc_state,
+                                    RegistrationState::Auxiliary,
+                                )
+                                .expect("register auxiliary looper");
+                        }
+                        thread.release(&kernel);
+                        proc.unregister_thread(&kernel, &task.tid);
+                    }
+                }));
+            }
+
+            let kicker_proc = WeakRef::<BinderProcess>::from(&proc_fixture.proc);
+            let kicker_barrier = barrier.clone();
+            handles.push(std::thread::spawn(move || {
+                let proc = kicker_proc.upgrade().expect("proc");
+                kicker_barrier.wait();
+                for _ in 0..100 {
+                    proc.kick_all_threads();
+                }
+            }));
+
+            for handle in handles {
+                handle.join().expect("worker thread panicked");
+            }
+
+            assert_eq!(proc_fixture.proc.lock().auxiliary_threads_count, 0);
+            for worker_task in worker_tasks {
+                worker_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
             }
         })
         .await;

@@ -227,14 +227,10 @@ pub struct BinderThread {
 }
 
 impl BinderThread {
-    pub fn new(
-        binder_proc: &BinderProcessGuard<'_>,
-        tid: Pid,
-        thread: Arc<zx::Thread>,
-    ) -> OwnedRef<Self> {
-        let inner_state = BinderThreadState::new(tid.clone(), binder_proc.base.identifier);
+    pub fn new(binder_proc: &BinderProcess, tid: Pid, thread: Arc<zx::Thread>) -> OwnedRef<Self> {
+        let inner_state = BinderThreadState::new(tid.clone(), binder_proc.identifier());
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
-        let available_threads = binder_proc.base.available_threads.clone();
+        let available_threads = binder_proc.available_threads.clone();
         let state = inner_state.into();
 
         OwnedRef::new_cyclic(|weak_self| Self {
@@ -411,9 +407,9 @@ impl BinderThreadState {
             // This thread is already registered.
             error!(EINVAL)
         } else {
-            if registration == RegistrationState::Auxilliary {
+            if registration == RegistrationState::Auxiliary {
                 binder_process.thread_requested = false;
-                binder_process.thread_pool.inc_auxilliary_threads();
+                binder_process.auxiliary_threads_count += 1;
             }
             self.registration = registration;
             Ok(())
@@ -520,7 +516,7 @@ pub enum RegistrationState {
     /// The thread is the main binder thread.
     Main,
     /// The thread is an auxiliary binder thread.
-    Auxilliary,
+    Auxiliary,
 }
 
 impl RegistrationState {
@@ -528,7 +524,7 @@ impl RegistrationState {
         match self {
             Self::Unregistered => 0,
             Self::Main => 1,
-            Self::Auxilliary => 2,
+            Self::Auxiliary => 2,
         }
     }
 }

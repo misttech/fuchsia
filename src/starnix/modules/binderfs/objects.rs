@@ -508,7 +508,7 @@ impl BinderObject {
         log_trace!(
             "New binder object {:?} in process {:?} with flags {:?}",
             local,
-            owner.identifier,
+            owner.identifier(),
             flags
         );
         let object = Arc::new(Self {
