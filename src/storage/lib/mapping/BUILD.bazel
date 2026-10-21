@@ -1,0 +1,65 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "mapping",
+    srcs = [
+        "src/extents.rs",
+        "src/file.rs",
+        "src/lib.rs",
+        "src/page_request.rs",
+        "src/protocol.rs",
+        "src/reader.rs",
+        "src/testing.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/devices/block/drivers/cqhci:__pkg__",
+        "//src/storage:__subpackages__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/fxfs/crypto",
+        "//src/storage/lib/blob_metadata",
+        "//src/storage/lib/delivery_blob",
+        "//src/storage/lib/profile",
+        "//src/storage/lib/ptr_slice",
+        "//src/storage/lib/storage_device",
+        "//src/storage/lib/vmo-fifo",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bincode",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "mapping_test",
+    crate = ":mapping",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "mapping-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":mapping_test"],
+)
