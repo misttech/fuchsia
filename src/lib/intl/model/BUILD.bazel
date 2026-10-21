@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "intl_model",
+    edition = "2024",
+    visibility = [
+        "//src/lib/intl/lookup/rust:__pkg__",
+        "//src/lib/intl/strings:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+# @bazel2gn:skip
+host_rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+)
