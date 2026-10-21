@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Stage //sdk:version_history in the package directory so //go:embed can embed
+# version_history.json alongside version_history.go.
+# @bazel2gn:skip
+genrule(
+    name = "copy_version_history",
+    srcs = ["//sdk:version_history"],
+    outs = ["version_history.json"],
+    cmd = "cp $< $@",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+go_library(
+    name = "version-history",
+    srcs = ["version_history.go"],
+    embedsrcs = ["version_history.json"],  # @bazel2gn:raw_overwrite:[ "version_history.json" ] name = "go.fuchsia.dev/fuchsia/src/lib/versioning/version-history/go" source_dir = target_gen_dir non_go_deps = [ ":copy-files" ]
+    importpath = "go.fuchsia.dev/fuchsia/src/lib/versioning/version-history/go",
+    target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip
+    visibility = [
+        "//src/lib/versioning/version-history:__pkg__",
+        "//src/testing/host-target-testing/build:__pkg__",
+        "//src/testing/host-target-testing/packages:__pkg__",
+    ],
+)
+
+# @bazel2gn:skip
+host_test_data_files(
+    name = "version-history-test-data",
+    testonly = True,
+    srcs = ["//sdk:version_history"],
+    dest_dir = select({
+        "@platforms//cpu:aarch64": "host_arm64/test_data/version-history/go",
+        "@platforms//cpu:x86_64": "host_x64/test_data/version-history/go",
+    }),
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "version-history-test",
+    srcs = ["version_history_test.go"],
+    embed = [":version-history"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_data = [":version-history-test-data"],
+)
