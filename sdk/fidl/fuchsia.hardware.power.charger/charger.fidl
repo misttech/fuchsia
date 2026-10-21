@@ -422,46 +422,34 @@ open protocol Charger {
 /// [`Controller.ClearControl`] with a mask of fields to withdraw, or close the `Controller`
 /// channel to withdraw all constraints and restore driver defaults.
 ///
-/// Values between discrete hardware register steps are rounded in the direction that honors the
-/// constraint. Ceilings (current and voltage limits) round down, so a value below the lowest
-/// programmable step is rejected with `Error::INVALID_ARGS`; the `input_voltage_limit_uv` floor
-/// rounds up, so a value below the lowest programmable step is clamped to it.
+/// When a value falls between discrete hardware steps, or when votes from several clients conflict,
+/// less charging is preferred. Lower values charge less, except for `charge_term_current_ua` and
+/// `input_voltage_limit_uv`, where higher values do.
 type ControlOptions = table {
     /// Desired operational mode of the power converter.
     1: operating_mode OperatingMode;
 
-    /// Active Input Current Limit (ICL) programmed into the input power path, in microamps.
-    /// Values between discrete hardware register steps are rounded down to the nearest
-    /// programmable step so the requested ceiling is never exceeded.
+    /// Input current limit (ICL), in microamps.
     2: input_current_limit_ua uint32;
 
-    /// Active Fast Charge Current (FCC) regulation limit for the battery, in microamps.
-    /// Values between discrete hardware register steps are rounded down to the nearest
-    /// programmable step so the requested ceiling is never exceeded.
+    /// Fast charge current (FCC) limit for the battery, in microamps.
     3: charge_current_limit_ua uint32;
 
-    /// Active float (constant voltage / CV) regulation target across the battery, in microvolts
-    /// (bounded by `Spec.max_charge_voltage_uv`).
-    /// Values between discrete hardware register steps are rounded down to the nearest
-    /// programmable step. Note that writing a float voltage target may cause the hardware charge
-    /// state machine to exit `ChargePhase::TOP_OFF` and re-evaluate CV regulation.
+    /// Float (CV) regulation voltage for the battery, in microvolts (bounded by
+    /// `Spec.max_charge_voltage_uv`). Note that writing a float voltage target may cause the
+    /// hardware charge state machine to exit `ChargePhase::TOP_OFF` and re-evaluate CV regulation.
     4: float_voltage_uv uint32;
 
-    /// Active charge termination (top-off / taper cutoff) current threshold, in microamps.
-    /// Values between discrete hardware register steps are rounded down to the nearest
-    /// programmable step.
+    /// Charge termination (top-off / taper cutoff) current threshold, in microamps: when the charge
+    /// current falls to it, the charger ends constant-voltage charging.
     5: charge_term_current_ua uint32;
 
-    /// Minimum input voltage regulation floor (VINDPM), in microvolts, below which the converter
-    /// throttles input current draw to prevent source collapse.
-    /// Values between discrete hardware register steps are rounded up to the nearest programmable
-    /// step so the input voltage never drops below the requested floor.
+    /// Input voltage regulation floor (VINDPM), in microvolts, below which the converter throttles
+    /// input current draw to prevent source collapse.
     6: input_voltage_limit_uv uint32;
 
     /// How long the charger stays in `ChargePhase::TOP_OFF`, after the charge current falls below
-    /// the termination threshold, before it enters `ChargePhase::DONE`. A shorter duration charges
-    /// less. Values between discrete hardware register steps are rounded down to the nearest
-    /// programmable step.
+    /// the termination threshold, before it enters `ChargePhase::DONE`.
     7: top_off_duration zx.Duration;
 };
 
@@ -472,8 +460,8 @@ type ControlOptions = table {
 /// active client: while one client is connected, a second connection attempt is closed immediately
 /// with a `ZX_ERR_ALREADY_BOUND` epitaph before any request is served. When served by a userspace
 /// policy arbitrator (such as `battery-manager`), multiple policy clients may connect concurrently;
-/// each connection owns an independent vote that is aggregated using minimum selection on limit
-/// fields and `Discharging > Passthrough > Charging` precedence on `operating_mode`.
+/// each connection owns an independent vote, and for every field the most conservative vote (the
+/// one that charges least) wins.
 ///
 /// # Connection-Scoped Lifetime (Revert on Close)
 /// The `Controller` channel encodes the lifetime of the constraints applied through it. When the
@@ -500,9 +488,10 @@ open protocol Controller {
     /// Errors:
     /// - `NOT_SUPPORTED`: One or more requested constraints are not adjustable on this
     ///   hardware/arbiter, or the requested `operating_mode` is absent from `Spec.supported_modes`.
-    /// - `INVALID_ARGS`: A requested value is outside the range the hardware can program, or the
-    ///   requested `operating_mode` conflicts with the active power path state (for example,
-    ///   requesting `OperatingMode::OTG` while external input power is online on the same port).
+    /// - `INVALID_ARGS`: A requested value cannot be applied (for example, a limit below the
+    ///   hardware's lowest programmable step), or the requested `operating_mode` conflicts with the
+    ///   active power path state (for example, requesting `OperatingMode::OTG` while external input
+    ///   power is online on the same port).
     /// - `IO`: Communication failure with the charger hardware (e.g. SPMI transfer failure).
     /// - `INTERNAL`: Internal driver error.
     flexible SetControl(struct {
