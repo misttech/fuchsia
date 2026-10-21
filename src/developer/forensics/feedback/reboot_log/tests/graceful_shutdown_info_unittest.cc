@@ -112,6 +112,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
       GracefulShutdownReason::kBatteryDrained,
       GracefulShutdownReason::kSuspensionFailure,
       GracefulShutdownReason::kCriticalDriverFailure,
+      GracefulShutdownReason::kPowerLevelTransitionStuck,
   };
 
   for (const GracefulShutdownReason reason : reasons) {
@@ -144,6 +145,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
       GracefulShutdownReason::kBatteryDrained,
       GracefulShutdownReason::kSuspensionFailure,
       GracefulShutdownReason::kCriticalDriverFailure,
+      GracefulShutdownReason::kPowerLevelTransitionStuck,
   };
 
   // Verify all reasons at once.
@@ -425,6 +427,11 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
                                  "SuspensionFailure",
                                  GracefulShutdownReason::kSuspensionFailure,
                                  "SUSPENSION FAILURE",
+                             },
+                             {
+                                 "PowerLevelTransitionStuck",
+                                 GracefulShutdownReason::kPowerLevelTransitionStuck,
+                                 "POWER LEVEL TRANSITION STUCK",
                              },
                          })),
                          [](const testing::TestParamInfo<ReasonTestParam>& info) {

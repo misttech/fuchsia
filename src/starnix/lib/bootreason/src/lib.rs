@@ -145,6 +145,7 @@ pub async fn update_android_bootreason(
         Some(RebootReason::FactoryDataReset) => "reboot,factory_reset",
         Some(RebootReason::CriticalComponentFailure) => "kernel_panic",
         Some(RebootReason::CriticalDriverFailure) => "kernel_panic",
+        Some(RebootReason::PowerLevelTransitionStuck) => "kernel_panic",
         Some(RebootReason::ZbiSwap) => "reboot,normal",
         Some(RebootReason::SystemUpdate) => "reboot,ota",
         Some(RebootReason::NetstackMigration) => "reboot,normal",

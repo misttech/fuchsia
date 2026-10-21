@@ -61,6 +61,7 @@ enum class FinalShutdownReason : std::uint8_t {
   kSuspensionFailure,
   kBatteryDrained,
   kCriticalDriverFailure,
+  kPowerLevelTransitionStuck,
 };
 
 // Encapsulates the final information about why a device shutdown regardless of its source, e.g.

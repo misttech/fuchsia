@@ -167,6 +167,10 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     @available(added=HEAD)
     CRITICAL_DRIVER_FAILURE = 30;
 
+    /// The system failed to transition between power levels within the expected time.
+    @available(added=HEAD)
+    POWER_LEVEL_TRANSITION_STUCK = 31;
+
     // ///////////////////////////////////////////////////////////////////////////////////////////
     // Planned reboot reasons
     // |planned| has a value of true in LastReboot above.

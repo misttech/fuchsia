@@ -401,6 +401,14 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulTest,
                                   fuchsia::feedback::RebootReason::SUSPENSION_FAILURE,
                                   "fuchsia-shutdown-suspension-failure",
                                   /*expected_crash_program_name=*/"system",
+                              },
+                              {
+                                  "PowerLevelTransitionStuck",
+                                  {GracefulShutdownReason::kPowerLevelTransitionStuck},
+                                  cobalt::LastRebootReason::kPowerLevelTransitionStuck,
+                                  fuchsia::feedback::RebootReason::POWER_LEVEL_TRANSITION_STUCK,
+                                  "fuchsia-shutdown-power-level-transition-stuck",
+                                  /*expected_crash_program_name=*/"system",
                               }})),
                          [](const testing::TestParamInfo<GracefulTestParams>& info) {
                            return info.param.test_name;
@@ -606,6 +614,7 @@ TEST(FinalShutdownInfoTest, AllReasonsParseable) {
       case FinalShutdownReason::kSuspensionFailure:
       case FinalShutdownReason::kBatteryDrained:
       case FinalShutdownReason::kCriticalDriverFailure:
+      case FinalShutdownReason::kPowerLevelTransitionStuck:
         const FinalShutdownInfo info(reason);
         const std::string json = info.ToJson();
         EXPECT_EQ(info.ToRebootReasonString(),

@@ -137,6 +137,9 @@ FinalShutdownReason FromRebootReasonString(const std::string& reason) {
   if (reason == "CRITICAL DRIVER FAILURE") {
     return FinalShutdownReason::kCriticalDriverFailure;
   }
+  if (reason == "POWER LEVEL TRANSITION STUCK") {
+    return FinalShutdownReason::kPowerLevelTransitionStuck;
+  }
 
   return FinalShutdownReason::kNotParseable;
 }
@@ -215,6 +218,7 @@ bool FinalShutdownInfo::IsCrash() const {
     case FinalShutdownReason::kAndroidCriticalProcessFailure:
     case FinalShutdownReason::kUserRequestDeviceStuck:
     case FinalShutdownReason::kSuspensionFailure:
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
       return true;
     case FinalShutdownReason::kCold:
     case FinalShutdownReason::kUserRequest:
@@ -264,6 +268,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
     case FinalShutdownReason::kUserRequestDeviceStuck:
     case FinalShutdownReason::kSuspensionFailure:
     case FinalShutdownReason::kBatteryDrained:
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
       return true;
   }
 }
@@ -298,6 +303,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
     case FinalShutdownReason::kUserRequestDeviceStuck:
     case FinalShutdownReason::kSuspensionFailure:
     case FinalShutdownReason::kBatteryDrained:
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
       return false;
     case FinalShutdownReason::kNotParseable:
       return std::nullopt;
@@ -375,6 +381,8 @@ std::string FinalShutdownInfo::ToRebootReasonString() const {
       return "BATTERY DRAINED";
     case FinalShutdownReason::kCriticalDriverFailure:
       return "CRITICAL DRIVER FAILURE";
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
+      return "POWER LEVEL TRANSITION STUCK";
   }
 }
 
@@ -440,6 +448,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootRe
       return fuchsia::feedback::RebootReason::USER_REQUEST_DEVICE_STUCK;
     case FinalShutdownReason::kBatteryDrained:
       return fuchsia::feedback::RebootReason::BATTERY_DRAINED;
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
+      return fuchsia::feedback::RebootReason::POWER_LEVEL_TRANSITION_STUCK;
   }
 }
 
@@ -507,6 +517,8 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
       return cobalt::LastRebootReason::kSuspensionFailure;
     case FinalShutdownReason::kBatteryDrained:
       return cobalt::LastRebootReason::kBatteryDrained;
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
+      return cobalt::LastRebootReason::kPowerLevelTransitionStuck;
   }
 }
 
@@ -534,6 +546,7 @@ std::string FinalShutdownInfo::ToCrashProgramName() const {
     case FinalShutdownReason::kCriticalDriverFailure:
     case FinalShutdownReason::kUserRequestDeviceStuck:
     case FinalShutdownReason::kSuspensionFailure:
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
       return "system";
     case FinalShutdownReason::kAndroidUnexpectedReason:
     case FinalShutdownReason::kAndroidNoReason:
@@ -599,6 +612,8 @@ std::string FinalShutdownInfo::ToCrashSignature(
       return "fuchsia-shutdown-user-request-device-stuck";
     case FinalShutdownReason::kSuspensionFailure:
       return "fuchsia-shutdown-suspension-failure";
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
+      return "fuchsia-shutdown-power-level-transition-stuck";
     case FinalShutdownReason::kGenericGraceful:
       return "fuchsia-shutdown-undetermined-userspace-reason";
     case FinalShutdownReason::kUnexpectedReasonGraceful:
@@ -671,6 +686,8 @@ FinalShutdownReason ConsolidateGracefulShutdownReasons(
         return FinalShutdownReason::kBatteryDrained;
       case GracefulShutdownReason::kCriticalDriverFailure:
         return FinalShutdownReason::kCriticalDriverFailure;
+      case GracefulShutdownReason::kPowerLevelTransitionStuck:
+        return FinalShutdownReason::kPowerLevelTransitionStuck;
       case GracefulShutdownReason::kNotSet:
         FX_LOGS(FATAL) << "Graceful shutdown reason must be set";
         return FinalShutdownReason::kUnexpectedReasonGraceful;
@@ -786,6 +803,8 @@ std::string FinalShutdownInfo::ToSnapshotAnnotationReason(
       return "user request device stuck";
     case FinalShutdownReason::kSuspensionFailure:
       return "suspension failure";
+    case FinalShutdownReason::kPowerLevelTransitionStuck:
+      return "power level transition stuck";
     case FinalShutdownReason::kUserHardReset:
       return "user request hard reset";
     case FinalShutdownReason::kSystemUpdate:

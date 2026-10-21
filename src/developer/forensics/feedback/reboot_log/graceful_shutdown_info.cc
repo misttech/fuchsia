@@ -52,6 +52,7 @@ constexpr char kReasonUserRequestDeviceStuck[] = "USER REQUEST DEVICE STUCK";
 constexpr char kReasonSuspensionFailure[] = "SUSPENSION FAILURE";
 constexpr char kReasonBatteryDrained[] = "BATTERY DRAINED";
 constexpr char kReasonCriticalDriverFailure[] = "CRITICAL DRIVER FAILURE";
+constexpr char kReasonPowerLevelTransitionStuck[] = "POWER LEVEL TRANSITION STUCK";
 
 // Used to separate multiple `GracefulShutdownReasons` when written to file.
 constexpr char kDeliminator[] = ",";
@@ -153,6 +154,8 @@ GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view r
     return GracefulShutdownReason::kBatteryDrained;
   } else if (reason == kReasonCriticalDriverFailure) {
     return GracefulShutdownReason::kCriticalDriverFailure;
+  } else if (reason == kReasonPowerLevelTransitionStuck) {
+    return GracefulShutdownReason::kPowerLevelTransitionStuck;
   } else if (reason == kNotSupported) {
     return GracefulShutdownReason::kNotSupported;
   } else if (reason == kOutOfMemory) {
@@ -181,6 +184,8 @@ GracefulShutdownReason FromReason(
       return GracefulShutdownReason::kCriticalComponentFailure;
     case ShutdownReason::CRITICAL_DRIVER_FAILURE:
       return GracefulShutdownReason::kCriticalDriverFailure;
+    case ShutdownReason::POWER_LEVEL_TRANSITION_STUCK:
+      return GracefulShutdownReason::kPowerLevelTransitionStuck;
     case ShutdownReason::FACTORY_DATA_RESET:
       return GracefulShutdownReason::kFdr;
     case ShutdownReason::ZBI_SWAP:
@@ -295,6 +300,8 @@ std::string ToString(const GracefulShutdownReason reason) {
       return kReasonBatteryDrained;
     case GracefulShutdownReason::kCriticalDriverFailure:
       return kReasonCriticalDriverFailure;
+    case GracefulShutdownReason::kPowerLevelTransitionStuck:
+      return kReasonPowerLevelTransitionStuck;
     case GracefulShutdownReason::kNotSupported:
       return kNotSupported;
     case GracefulShutdownReason::kNotParseable:
@@ -333,6 +340,7 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
       case GracefulShutdownReason::kSysmgrFailure:
       case GracefulShutdownReason::kCriticalComponentFailure:
       case GracefulShutdownReason::kCriticalDriverFailure:
+      case GracefulShutdownReason::kPowerLevelTransitionStuck:
       case GracefulShutdownReason::kFdr:
       case GracefulShutdownReason::kZbiSwap:
       case GracefulShutdownReason::kOutOfMemory:
