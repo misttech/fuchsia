@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/async_resolver.rs",
+        "src/config.rs",
+        "src/lib.rs",
+        "src/tcp.rs",
+        "src/test_util.rs",
+        "src/udp.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "dns",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/network/fidl_fuchsia_net_ext",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:trust-dns-proto",
+        "//third_party/rust_crates/vendor:trust-dns-resolver",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "dns_lib_test"
+rustc_test(
+    name = "lib_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":lib",
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/fuchsia",
+    ],
+)
