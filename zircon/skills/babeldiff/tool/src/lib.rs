@@ -44,6 +44,7 @@ pub mod model;
 pub mod normalize;
 pub mod patch;
 pub mod placement;
+mod printf;
 pub mod render;
 pub mod rust;
 mod ts;

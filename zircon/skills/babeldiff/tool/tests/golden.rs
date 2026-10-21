@@ -1402,6 +1402,62 @@ pub fn init_and_shutdown(deadline: zx_instant_mono_t) {
     }
 }
 
+// `fprintf` ported to `write!`/`writeln!` with the same format is the same
+// call; a reworded format is still reported.
+#[test]
+fn fprintf_matches_write_with_the_same_format() {
+    let cpp = "size_t lamp_dump(Lamp& lamp, FILE& outfile) {\n  lamp.Prepare();\n  \
+               fprintf(&outfile, \"UPTIME (ms)\\n%\" PRIi64 \"\\n\\n\", lamp.uptime());\n  \
+               fprintf(&outfile, \"flags %#x count %zu\\n\", lamp.flags(), lamp.count());\n  \
+               return lamp.size();\n}\n";
+    let rust = "pub fn lamp_dump(lamp: &mut Lamp, outfile: &mut File) -> usize {\n    \
+                lamp.prepare();\n    \
+                let _ = write!(outfile, \"UPTIME (ms)\\n{}\\n\\n\", lamp.uptime());\n    \
+                let _ = writeln!(outfile, \"flags {:#x} count {}\", lamp.flags(), \
+                lamp.count());\n    \
+                lamp.size()\n}\n";
+    let found = all_findings(cpp, rust);
+    assert!(found.is_empty(), "{found:?}");
+
+    let reworded = rust.replace("count {}", "n={}");
+    let issues = only_issues(cpp, &reworded);
+    assert_eq!(
+        issues,
+        ["format string differs: C++ prints \"flags {:#x} count {}\\n\", \
+          Rust prints \"flags {:#x} n={}\\n\""],
+        "{issues:?}"
+    );
+
+    // Printing to the console instead of the stream is a different call.
+    let console = rust.replace("writeln!(outfile, ", "println!(");
+    let found = all_findings(cpp, &console);
+    assert_eq!(found, ["only C++ calls fprintf; only Rust calls print"], "{found:?}");
+
+    // Each side printing the other's format in the other's place is a
+    // reordering.
+    let cpp = "void lamp_log(int x) {\n  printf(\"on %d\\n\", x);\n  \
+               printf(\"off %d\\n\", x);\n}\n";
+    let rust = "pub fn lamp_log(x: i32) {\n    println!(\"off {}\", x);\n    \
+                println!(\"on {}\", x);\n}\n";
+    let issues = only_issues(cpp, rust);
+    assert_eq!(issues.len(), 2, "{issues:?}");
+    assert!(issues.iter().all(|m| m.ends_with("so they were reordered")), "{issues:?}");
+
+    // Prints in a closure run where it is called, so the closure being
+    // written above the print before its call is not a reordering.
+    let cpp = "int lamp_cmd(int argc) {\n  if (argc < 2) {\n    \
+               printf(\"not enough arguments\\n\");\n  usage:\n    \
+               printf(\"usage:\\n\");\n    printf(\"lamp on\\n\");\n    \
+               return -1;\n  }\n  return 0;\n}\n";
+    let rust = "pub fn lamp_cmd(args: &[&str]) -> i32 {\n    let usage = || {\n        \
+                kprintln!(\"usage:\");\n        kprintln!(\"lamp on\");\n        \
+                -1\n    };\n    if args.len() < 2 {\n        \
+                kprintln!(\"not enough arguments\");\n        return usage();\n    \
+                }\n    0\n}\n";
+    let issues = only_issues(cpp, rust);
+    assert!(issues.iter().all(|m| !m.contains("reordered")), "{issues:?}");
+}
+
 #[test]
 fn idiomatic_zircon_rust_patterns_and_cpp_helpers_produce_no_false_notes() {
     let cpp_old = r#"

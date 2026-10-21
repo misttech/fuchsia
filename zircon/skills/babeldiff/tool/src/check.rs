@@ -209,7 +209,8 @@ pub fn check_with(
         let mut notes: Vec<Note> = Vec::new();
         let marker = match (p.cpp, p.rust) {
             (Some(i), Some(j)) => {
-                compare(&cpp.units[i], &rust.units[j], ctx.elsewhere, &mut notes);
+                let output = output_diff(i, j, cpp, rust);
+                compare(&cpp.units[i], &rust.units[j], output, ctx.elsewhere, &mut notes);
                 unadapted_comment_idents(&cpp.units[i], &rust.units[j], cpp, rust, &mut notes);
                 condition_diff(i, j, cpp, rust, &mut notes);
                 ordering_diff(
@@ -685,11 +686,12 @@ fn conditional_compilation(rows: &mut [Row], cpp: &Function, rust: &Function) {
 }
 
 /// Lines up a statement only in C++ with a statement only in Rust in the
-/// same gap between aligned rows when both make the same call: the
-/// alignment scored them apart (a declaration split from its check, a
-/// macro spelled as a method), but they are one statement, and comparing
-/// them says more than two one-sided findings. Statements with an aligned
-/// row between them stay apart, so a reordering is still reported.
+/// same gap between aligned rows when both make the same call, or print
+/// the same format (`fprintf` as `write!`): the alignment scored them apart
+/// (a declaration split from its check, a macro spelled as a method), but
+/// they are one statement, and comparing them says more than two one-sided
+/// findings. Statements with an aligned row between them stay apart, so a
+/// reordering is still reported.
 fn rescue(pairs: &[Pair], cpp: &Function, rust: &Function) -> Vec<Pair> {
     let mut out: Vec<Pair> = pairs.to_vec();
     let generic = |c: &str| matches!(c, "assert" | "trace" | "print" | "len" | "min" | "max");
@@ -697,10 +699,12 @@ fn rescue(pairs: &[Pair], cpp: &Function, rust: &Function) -> Vec<Pair> {
     let shares = |a: &Unit, b: &Unit| {
         stmt(a)
             && stmt(b)
-            && a.features
+            && (a
+                .features
                 .calls
                 .iter()
                 .any(|x| !generic(x) && b.features.calls.iter().any(|y| call_like(x, y)))
+                || crate::printf::same_output(&unit_text(cpp, a), &unit_text(rust, b)))
     };
     let aligned = |p: &Pair| {
         p.cpp.is_some_and(|i| cpp.units[i].kind != UnitKind::Comment) && p.rust.is_some()
@@ -1722,7 +1726,9 @@ fn only_in(u: &Unit, here: &str, there: &str, moved: Option<usize>) -> Note {
     Note::new(sev, category, msg)
 }
 
-fn compare(a: &Unit, b: &Unit, elsewhere: &[&Function], notes: &mut Vec<Note>) {
+/// Compares aligned units, with how their formats compare (see
+/// [`output_diff`]).
+fn compare(a: &Unit, b: &Unit, output: OutputCmp, elsewhere: &[&Function], notes: &mut Vec<Note>) {
     let fa = &a.features;
     let fb = &b.features;
     if crate::align::is_handled_vs_propagated(a, b) {
@@ -1949,6 +1955,15 @@ fn compare(a: &Unit, b: &Unit, elsewhere: &[&Function], notes: &mut Vec<Note>) {
             only_b.remove(j);
         }
     }
+    // A printf-family call and a Rust formatting macro printing to the same
+    // place are the same call; what they print is compared instead.
+    if let OutputCmp::Same(dest) | OutputCmp::Differs(dest, _) = output {
+        only_a.retain(|c| !dest.cpp_calls().contains(&c.as_str()));
+        only_b.retain(|c| !dest.rust_calls().contains(&c.as_str()));
+    }
+    if let OutputCmp::Differs(_, note) = output {
+        notes.push(note);
+    }
     if !only_a.is_empty() || !only_b.is_empty() {
         let mut parts = Vec::new();
         if !only_a.is_empty() {
@@ -1959,6 +1974,75 @@ fn compare(a: &Unit, b: &Unit, elsewhere: &[&Function], notes: &mut Vec<Note>) {
         }
         notes.push(Note::new(Severity::Note, Category::Call, parts.join("; ")));
     }
+}
+
+/// How the formats of aligned units compare.
+enum OutputCmp {
+    /// Not both a printf-family call and a Rust formatting macro printing
+    /// to the same [`Dest`](crate::printf::Dest).
+    NotOutput,
+    /// Both print the same text, or were reordered across a closure.
+    Same(crate::printf::Dest),
+    /// Both print, differently.
+    Differs(crate::printf::Dest, Note),
+}
+
+/// How the formats of aligned units `i` and `j` compare. When each side
+/// prints the other's format elsewhere, the statements were reordered.
+fn output_diff(i: usize, j: usize, cpp: &Function, rust: &Function) -> OutputCmp {
+    use crate::printf::{Output, same_output};
+    let (a, b) = (unit_text(cpp, &cpp.units[i]), unit_text(rust, &rust.units[j]));
+    let (dest, msg) = match crate::printf::compare(&a, &b) {
+        None => return OutputCmp::NotOutput,
+        Some((dest, Output::Same)) => return OutputCmp::Same(dest),
+        Some((dest, Output::Differs(msg))) => (dest, msg),
+    };
+    let moved = rust.units.iter().any(|u| same_output(&a, &unit_text(rust, u)))
+        && cpp.units.iter().any(|u| same_output(&unit_text(cpp, u), &b));
+    // A print in a Rust closure runs where the closure is called, not where
+    // it is written, so its place says nothing about the order.
+    let closure_moved = moved
+        && (in_closure(rust, j)
+            || (0..rust.units.len())
+                .any(|k| in_closure(rust, k) && same_output(&a, &unit_text(rust, &rust.units[k]))));
+    if closure_moved {
+        return OutputCmp::Same(dest);
+    }
+    OutputCmp::Differs(
+        dest,
+        if moved {
+            Note::new(
+                Severity::Issue,
+                Category::Order,
+                format!(
+                    "{msg}; each side prints the other's format elsewhere, so they were reordered"
+                ),
+            )
+        } else {
+            Note::new(Severity::Issue, Category::Call, msg)
+        },
+    )
+}
+
+/// Whether unit `k` of a Rust function is in a closure's body or defines a
+/// closure. A multi-line closure's statements follow the statement that
+/// defines it, one level deeper.
+fn in_closure(f: &Function, k: usize) -> bool {
+    static CLOSURE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"[=(,]\s*(?:move\s+)?\|[^|]*\|").unwrap());
+    if CLOSURE.is_match(&code_only(&unit_text(f, &f.units[k]))) {
+        return true;
+    }
+    let mut depth = f.units[k].depth;
+    for u in f.units[..k].iter().rev() {
+        if u.depth < depth {
+            if u.kind == UnitKind::Stmt {
+                return true;
+            }
+            depth = u.depth;
+        }
+    }
+    false
 }
 
 /// Kinds that are the same step spelled differently: a C++ `if` that
