@@ -4,14 +4,18 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("packet-test") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/lib/network/packet:packet-test" ]
   host_tests = [ "//src/lib/network/packet:packet_host_test" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":packet-test" ]
+  deps = [
+    ":bazel_tests",
+    ":packet-test",
+    ":packet_lib_test($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -66,4 +70,34 @@ rustc_library("packet") {
     "//third_party/rust_crates:arrayvec",
     "//third_party/rust_crates:zerocopy",
   ]
+}
+rustc_test("packet_lib_test") {
+  sources = [
+    "src/fragmented.rs",
+    "src/lib.rs",
+    "src/records.rs",
+    "src/serialize.rs",
+    "src/util.rs",
+  ]
+  edition = "2024"
+  deps = [
+           "//src/lib/replace-with",
+           "//third_party/rust_crates:arrayvec",
+           "//third_party/rust_crates:zerocopy",
+         ] +
+         [
+           "//src/lib/test_util",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:rand",
+           "//third_party/rust_crates:test-case",
+         ]
+  configs += [
+    "//build/config/rust/lints:deny_unused_results",
+    "//src/connectivity/network:performance_critical_rust_crate",
+  ]
+}
+fuchsia_unittest_package("packet-test") {
+  package_name = "packet-test-gn"
+  component_name = "packet-test"
+  deps = [ ":packet_lib_test" ]
 }

@@ -14,7 +14,6 @@ rustc_library(
         "src/stream.rs",
     ],
     edition = "2024",
-    # @bazel2gn:skip
     test_deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//src/lib/fuchsia",
@@ -32,7 +31,6 @@ rustc_library(
         "//src/sys/pkg/bin/null-update-checker:__pkg__",
         "//src/sys/pkg/bin/system-update-committer:__pkg__",
     ],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//sdk/rust/zx",
@@ -44,7 +42,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "detect-stall-unittests",
     unit_tests = [":detect-stall_test"],

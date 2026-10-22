@@ -13,14 +13,15 @@ group("mapped-clock") {
   ]
 }
 
-bazel_test_suite("mapped-clock-tests") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/lib/mapped-clock:mapped-clock-tests" ]
 }
 
 # Canonical tests target.
 group("tests") {
   testonly = true
-  public_deps = [ ":mapped-clock-tests" ]
+  public_deps = [ ":bazel_tests" ]
+  deps = [ ":mapped-clock-tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -62,4 +63,21 @@ rustc_library("lib") {
     "//sdk/rust/zx-status",
     "//third_party/rust_crates:log",
   ]
+}
+rustc_test("lib_test") {
+  sources = [ "src/lib.rs" ]
+  edition = "2024"
+  deps = [
+           "//sdk/rust/zx",
+           "//sdk/rust/zx-status",
+           "//third_party/rust_crates:log",
+         ] + [ "//src/lib/fuchsia-runtime" ]
+  visibility = [ ":*" ]
+  output_name = "mapped_clock_lib_test"
+}
+fuchsia_unittest_package("mapped-clock-tests") {
+  package_name = "mapped-clock-tests-gn"
+  component_name = "mapped-clock-tests"
+  deps = [ ":lib_test" ]
+  visibility = [ "*" ]
 }

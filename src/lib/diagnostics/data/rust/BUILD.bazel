@@ -28,7 +28,6 @@ rustc_library(
     crate_name = "diagnostics_data",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    # @bazel2gn:skip
     test_deps = [
         "//src/lib/fuchsia",
         "//third_party/rust_crates/vendor:pretty_assertions",
@@ -41,7 +40,6 @@ rustc_library(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_common",
@@ -71,7 +69,6 @@ rustc_library(
     }),
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "diagnostics-data-tests",
     package_name = "diagnostics-data-tests",

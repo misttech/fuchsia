@@ -19,7 +19,6 @@ rustc_library(
     srcs = ["src/lib.rs"],
     edition = "2024",
     visibility = ["//src/lib/fuchsia-rcu:__pkg__"],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//sdk/rust/zx",
@@ -29,7 +28,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_packaged_binary(
     name = "fuchsia-rseq_test_packaged_bin",
     testonly = True,
@@ -37,7 +35,6 @@ fx_packaged_binary(
     binary_name = "fuchsia_rseq_lib_test",
 )
 
-# @bazel2gn:skip
 fx_component_manifest(
     name = "fuchsia-rseq-tests-manifest",
     testonly = True,
@@ -50,7 +47,6 @@ fx_component_manifest(
     manifest = "meta/fuchsia_rseq_tests.cml",
 )
 
-# @bazel2gn:skip
 fx_test_component(
     name = "fuchsia-rseq-tests-component",
     compiled_manifest = ":fuchsia-rseq-tests-manifest",
@@ -58,14 +54,12 @@ fx_test_component(
     deps = [":fuchsia-rseq_test_packaged_bin"],
 )
 
-# @bazel2gn:skip
 fx_package(
     name = "fuchsia-rseq-tests-package",
     package_name = "fuchsia-rseq-tests",
     test_components = [":fuchsia-rseq-tests-component"],
 )
 
-# @bazel2gn:skip
 fx_test(
     name = "fuchsia-rseq-tests",
     max_log_severity = "ERROR",

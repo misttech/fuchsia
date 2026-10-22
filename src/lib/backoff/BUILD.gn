@@ -49,3 +49,21 @@ source_set("backoff") {
     "//zircon/system/ulib/zx",
   ]
 }
+executable("backoff_unittests") {
+  testonly = true
+  sources = [ "exponential_backoff_unittest.cc" ]
+  deps = [
+    ":backoff",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+  ]
+}
+fuchsia_unittest_package("backoff_tests") {
+  package_name = "backoff_tests-gn"
+  component_name = "backoff_tests"
+  deps = [ ":backoff_unittests" ]
+  visibility = [
+    ":*",
+    "//src/lib:*",
+  ]
+}

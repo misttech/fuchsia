@@ -37,7 +37,6 @@ rustc_library(
 # `bazel_test_suite("sorted-vec-map-tests")` in BUILD.gn, so bazel2gn skips
 # them (it does not support `crate` on `rustc_test` or
 # `wrap_host_rust_test`).
-# @bazel2gn:skip
 rustc_test(
     name = "sorted_vec_map_lib_test",
     crate = ":sorted-vec-map",
@@ -54,14 +53,11 @@ rustc_test(
     }),
 )
 
-# @bazel2gn:skip
 wrap_host_rust_test(
     name = "sorted-vec-map_test",
     binary_name = "sorted_vec_map_lib_test",
 )
 
-# TODO(https://fxbug.dev/574121341): Run this test in GN too.
-# @bazel2gn:skip
 fx_unittest_package(
     name = "sorted-vec-map-tests",
     unit_tests = [":sorted_vec_map_lib_test"],

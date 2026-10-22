@@ -31,7 +31,6 @@ rustc_library(
     ],
     edition = "2024",
     rustc_flags = ["-Dunused_results"],
-    # @bazel2gn:skip
     test_deps = [
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:assert_matches",
@@ -41,7 +40,6 @@ rustc_library(
         "//third_party/rust_crates/vendor:test-case",
     ],
     visibility = ["//visibility:public"],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//src/lib/fidl/rust/fidl",
@@ -56,7 +54,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "async-utils-tests",
     unit_tests = [":async-utils_test"],

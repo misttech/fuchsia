@@ -19,14 +19,12 @@ rustc_library(
     srcs = ["src/lib.rs"],
     crate_name = "fuchsia_component_runtime",
     edition = "2024",
-    # @bazel2gn:skip
     test_deps = [
         "//src/lib/fuchsia",
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:assert_matches",
     ],
     visibility = ["//src/lib/fuchsia-component:__subpackages__"],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
@@ -38,7 +36,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_packaged_binary(
     name = "runtime_test_packaged_bin",
     testonly = True,
@@ -46,7 +43,6 @@ fx_packaged_binary(
     binary_name = "fuchsia_component_runtime_lib_test",
 )
 
-# @bazel2gn:skip
 fx_component_manifest(
     name = "fuchsia-component-runtime-unittests-manifest",
     testonly = True,
@@ -58,7 +54,6 @@ fx_component_manifest(
     manifest = "meta/fuchsia-component-runtime-unittests.cml",
 )
 
-# @bazel2gn:skip
 fx_test_component(
     name = "fuchsia-component-runtime-unittests-component",
     compiled_manifest = ":fuchsia-component-runtime-unittests-manifest",
@@ -66,14 +61,12 @@ fx_test_component(
     deps = [":runtime_test_packaged_bin"],
 )
 
-# @bazel2gn:skip
 fx_package(
     name = "fuchsia-component-runtime-unittests-package",
     package_name = "fuchsia-component-runtime-unittests",
     test_components = [":fuchsia-component-runtime-unittests-component"],
 )
 
-# @bazel2gn:skip
 fx_test(
     name = "fuchsia-component-runtime-unittests",
     package = ":fuchsia-component-runtime-unittests-package",

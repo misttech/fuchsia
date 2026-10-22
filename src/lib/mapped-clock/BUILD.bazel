@@ -25,7 +25,7 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
+# @bazel2gn:raw_attribute:output_name = "mapped_clock_lib_test"
 rustc_test(
     name = "lib_test",
     crate = ":lib",
@@ -34,7 +34,6 @@ rustc_test(
     deps = ["//src/lib/fuchsia-runtime"],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "mapped-clock-tests",
     unit_tests = [":lib_test"],

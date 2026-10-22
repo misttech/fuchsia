@@ -62,9 +62,9 @@ cc_library(
     alwayslink = True,
 )
 
-# @bazel2gn:skip
+# @bazel2gn:raw_attribute:deps += [ "//third_party/googletest:gmock" ]
 fx_cc_binary(
-    name = "files_unittests_bin",
+    name = "files_unittests",
     testonly = True,
     srcs = [
         "directory_unittest.cc",
@@ -85,15 +85,13 @@ fx_cc_binary(
     ],
 )
 
-# @bazel2gn:skip
 fx_packaged_binary(
     name = "files_unittests_packaged_bin",
     testonly = True,
-    binary = ":files_unittests_bin",
+    binary = ":files_unittests",
     binary_name = "files_unittests",
 )
 
-# @bazel2gn:skip
 fx_component_manifest(
     name = "files-tests-manifest",
     testonly = True,
@@ -106,7 +104,6 @@ fx_component_manifest(
     manifest = "meta/files_unittests.cml",
 )
 
-# @bazel2gn:skip
 fx_test_component(
     name = "files-tests-component",
     compiled_manifest = ":files-tests-manifest",
@@ -116,7 +113,6 @@ fx_test_component(
     ],
 )
 
-# @bazel2gn:skip
 fx_package(
     name = "files-tests-package",
     package_name = "files-tests",
@@ -125,7 +121,6 @@ fx_package(
     ],
 )
 
-# @bazel2gn:skip
 fx_test(
     name = "files-tests",
     package = ":files-tests-package",

@@ -11,7 +11,11 @@ bazel_test_suite("replace-with_test") {
 
 group("tests") {
   testonly = true
-  deps = [ ":replace-with_test" ]
+  deps = [
+    ":replace-with-test",
+    ":replace-with_lib_test($host_toolchain)",
+    ":replace-with_test",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -51,4 +55,13 @@ rustc_library("replace-with") {
     "//src/starnix/kernel/core:*",
     "//vendor/google/*",
   ]
+}
+rustc_test("replace-with_lib_test") {
+  sources = [ "src/lib.rs" ]
+  edition = "2024"
+}
+fuchsia_unittest_package("replace-with-test") {
+  package_name = "replace-with-test-gn"
+  component_name = "replace-with-test"
+  deps = [ ":replace-with_lib_test" ]
 }

@@ -4,14 +4,26 @@
 
 if (is_fuchsia) {
   import("//build/bazel/bazel_test_suite.gni")
+  import("//build/components.gni")
 
-  bazel_test_suite("files-tests") {
+  bazel_test_suite("bazel_tests") {
     target_tests = [ "//src/lib/files:files-tests" ]
+  }
+
+  # GN copy of the Bazel test "files-tests", while the library is used in both
+  # build systems. bazel2gn can't translate explicit fx_package() tests yet.
+  fuchsia_unittest_package("files-tests") {
+    package_name = "files-tests-gn"
+    manifest = "meta/files_unittests.cml"
+    deps = [ ":files_unittests" ]
   }
 
   group("tests") {
     testonly = true
-    deps = [ ":files-tests" ]
+    deps = [
+      ":bazel_tests",
+      ":files-tests",
+    ]
   }
 }
 
@@ -76,4 +88,24 @@ source_set("files") {
     "//src/lib/fxl:strings",
     "//zircon/system/ulib/fbl",
   ]
+}
+executable("files_unittests") {
+  testonly = true
+  sources = [
+    "directory_unittest.cc",
+    "file_descriptor_unittest.cc",
+    "file_unittest.cc",
+    "glob_unittest.cc",
+    "path_unittest.cc",
+    "scoped_temp_dir_unittest.cc",
+  ]
+  deps = [
+    ":files",
+    "//sdk/lib/syslog/cpp",
+    "//src/lib/fxl:common",
+    "//src/lib/fxl:strings",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+  ]
+  deps += [ "//third_party/googletest:gmock" ]
 }

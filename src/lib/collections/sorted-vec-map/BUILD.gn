@@ -4,7 +4,7 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("sorted-vec-map-tests") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/lib/collections/sorted-vec-map:sorted-vec-map-tests" ]
   host_tests = [ "//src/lib/collections/sorted-vec-map:sorted-vec-map_test" ]
 }
@@ -12,7 +12,11 @@ bazel_test_suite("sorted-vec-map-tests") {
 group("tests") {
   testonly = true
 
-  deps = [ ":sorted-vec-map-tests" ]
+  deps = [
+    ":bazel_tests",
+    ":sorted-vec-map-tests",
+    ":sorted_vec_map_lib_test($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -57,4 +61,27 @@ rustc_library("sorted-vec-map") {
     "//src/ui/lib/input_pipeline:*",
   ]
   deps = [ "//third_party/rust_crates:serde" ]
+}
+rustc_test("sorted_vec_map_lib_test") {
+  sources = [
+    "src/lib.rs",
+    "src/sorted_vec_map.rs",
+    "src/sorted_vec_set.rs",
+  ]
+  edition = "2024"
+  deps = []
+  deps += [ "//third_party/rust_crates:serde" ]
+  deps += [
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:test-case",
+  ]
+  if (is_fuchsia) {
+    deps += [ "//sdk/lib/fdio" ]
+  }
+}
+fuchsia_unittest_package("sorted-vec-map-tests") {
+  package_name = "sorted-vec-map-tests-gn"
+  component_name = "sorted-vec-map-tests"
+  deps = [ ":sorted_vec_map_lib_test" ]
 }

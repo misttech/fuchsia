@@ -4,13 +4,16 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("diagnostics-data-tests") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/lib/diagnostics/data/rust:diagnostics-data-tests" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":diagnostics-data-tests" ]
+  deps = [
+    ":bazel_tests",
+    ":diagnostics-data-tests",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -56,7 +59,20 @@ rustc_library("lib") {
   crate_name = "diagnostics_data"
   edition = "2024"
   lint_config = "//build/config/rust/lints:clippy_warn_all"
+  test_deps = []
+  test_deps += [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:pretty_assertions",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:test-case",
+  ]
+  if (is_fuchsia) {
+    test_deps += [
+      "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+    ]
+  }
   visibility = [ "*" ]
+  with_unit_tests = true
   deps = []
   deps += [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_common",
@@ -82,4 +98,10 @@ rustc_library("lib") {
   if (is_host) {
     deps += [ "//third_party/rust_crates:schemars" ]
   }
+}
+fuchsia_unittest_package("diagnostics-data-tests") {
+  package_name = "diagnostics-data-tests-gn"
+  component_name = "diagnostics-data-tests"
+  deps = [ ":lib_test" ]
+  visibility = [ "*" ]
 }
