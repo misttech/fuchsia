@@ -12,6 +12,8 @@
 
 #include <fstream>
 #include <memory>
+#include <optional>
+#include <utility>
 
 #include "src/cobalt/bin/app/aggregate_and_upload_impl.h"
 #include "src/cobalt/bin/app/current_channel_provider.h"
@@ -21,6 +23,7 @@
 #include "src/cobalt/bin/utils/fuchsia_http_client.h"
 #include "src/public/lib/statusor/statusor.h"
 #include "third_party/cobalt/src/lib/util/posix_file_system.h"
+#include "third_party/cobalt/src/pb/key.pb.h"
 #include "third_party/cobalt/src/public/cobalt_config.h"
 #include "third_party/cobalt/src/public/cobalt_service.h"
 
@@ -49,6 +52,32 @@ constexpr char kSystemDataCachePath[] = "/data/system_data_history";
 const size_t kClearcutMaxRetries = 5;
 
 namespace {
+
+// Initializes a DynamicEncryptedMessageMaker with the static key bundled in the
+// package (if present) as a non-expiring fallback until dynamic keys are
+// loaded from disk or fetched over the network.
+// TODO(https://fxbug.dev/539564173): Remove bundled key fallback after dynamic
+// key rotation is rolled out.
+std::unique_ptr<util::DynamicEncryptedMessageMaker> CreateInitialDynamicMaker(
+    const std::optional<std::string>& key_bytes,
+    lib::statusor::StatusOr<util::NotNullUniquePtr<util::EncryptedMessageMaker>> (*make_fn)(
+        const std::string&),
+    util::SystemClockInterface* clock) {
+  if (key_bytes.has_value()) {
+    CobaltEncryptionKey proto_key;
+    if (proto_key.ParseFromString(*key_bytes) && proto_key.key_index() > 0) {
+      auto initial = make_fn(*key_bytes);
+      if (initial.ok()) {
+        return std::make_unique<util::DynamicEncryptedMessageMaker>(
+            util::ParsedKey(std::move(*initial), proto_key.key_index(), kBundledKeyExpirationSecs),
+            clock);
+      }
+    }
+    FX_LOGS(ERROR) << "Failed to parse or initialize bundled encryption key; starting with "
+                      "uninitialized DynamicEncryptedMessageMaker.";
+  }
+  return std::make_unique<util::DynamicEncryptedMessageMaker>(clock);
+}
 
 std::unique_ptr<CurrentChannelProvider> CreateCurrentChannelProvider(
     async_dispatcher_t* dispatcher, inspect::Node system_data_node,
@@ -101,6 +130,8 @@ CobaltConfig CobaltApp::CreateCobaltConfig(
   if (backend_environment == system_data::Environment::LOCAL) {
     target_pipeline = std::make_unique<LocalPipeline>();
   } else {
+    // TODO(https://fxbug.dev/539564173): Remove bundled public key paths after dynamic key
+    // rotation is rolled out.
     target_pipeline = std::make_unique<TargetPipeline>(
         backend_environment, ReadPublicKeyPem(configuration_data.ShufflerPublicKeyPath()),
         ReadPublicKeyPem(configuration_data.AnalyzerPublicKeyPath()),
@@ -152,6 +183,41 @@ CobaltConfig CobaltApp::CreateCobaltConfig(
   return cfg;
 }
 
+std::unique_ptr<KeyFetcher> CobaltApp::ConfigureKeyRotation(
+    async_dispatcher_t* dispatcher, TargetPipelineInterface* target_pipeline,
+    std::unique_ptr<lib::HTTPClient> http_client, util::SystemClockInterface* encryption_clock,
+    std::string key_cache_dir, std::string public_keys_url) {
+  if (target_pipeline == nullptr) {
+    return nullptr;
+  }
+  const system_data::Environment backend_env = target_pipeline->environment();
+  if (backend_env != system_data::Environment::PROD &&
+      backend_env != system_data::Environment::DEVEL) {
+    return nullptr;
+  }
+
+  // TODO(https://fxbug.dev/539564173): Remove static_cast<TargetPipeline*> after
+  // https://fxrev.dev/1887274 rolls into //third_party/cobalt.
+  auto* pipeline = static_cast<TargetPipeline*>(target_pipeline);
+  std::unique_ptr<util::DynamicEncryptedMessageMaker> shuffler_maker =
+      CreateInitialDynamicMaker(pipeline->shuffler_encryption_key(),
+                                &util::EncryptedMessageMaker::MakeForEnvelopes, encryption_clock);
+  std::unique_ptr<util::DynamicEncryptedMessageMaker> analyzer_maker = CreateInitialDynamicMaker(
+      pipeline->analyzer_encryption_key(), &util::EncryptedMessageMaker::MakeForObservations,
+      encryption_clock);
+
+  auto* shuffler_maker_ptr = shuffler_maker.get();
+  auto* analyzer_maker_ptr = analyzer_maker.get();
+  pipeline->SetShufflerEncryptedMessageMaker(std::move(shuffler_maker));
+  pipeline->SetAnalyzerEncryptedMessageMaker(std::move(analyzer_maker));
+
+  auto key_fetcher = std::make_unique<KeyFetcher>(
+      dispatcher, std::move(http_client), shuffler_maker_ptr, analyzer_maker_ptr, encryption_clock,
+      backend_env, std::move(key_cache_dir), std::move(public_keys_url));
+  key_fetcher->LoadKeysFromDiskCache();
+  return key_fetcher;
+}
+
 lib::statusor::StatusOr<std::unique_ptr<CobaltApp>> CobaltApp::CreateCobaltApp(
     std::unique_ptr<sys::ComponentContext> context, async_dispatcher_t* dispatcher,
     fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> lifecycle_handle,
@@ -170,24 +236,29 @@ lib::statusor::StatusOr<std::unique_ptr<CobaltApp>> CobaltApp::CreateCobaltApp(
   FuchsiaConfigurationData configuration_data;
   configuration_data.PopulateInspect(inspect_config_node);
 
-  sys::ComponentContext* context_ptr = context.get();
-
   auto validated_clock =
       std::make_unique<FuchsiaSystemClock>(dispatcher, inspect_node.CreateChild("system_clock"));
+  auto encryption_clock = std::make_unique<util::SystemClock>();
 
-  CB_ASSIGN_OR_RETURN(
-      auto cobalt_service,
-      CobaltService::Create(CreateCobaltConfig(
-          dispatcher, kMetricsRegistryPath, configuration_data, validated_clock.get(),
-          [context_ptr]() {
-            fuchsia::net::http::LoaderSyncPtr loader_sync;
-            context_ptr->svc()->Connect(loader_sync.NewRequest());
-            return loader_sync;
-          },
-          upload_schedule_cfg, event_aggregator_backfill_days, test_dont_backfill_empty_reports,
-          use_memory_observation_store, max_bytes_per_observation_store, storage_quotas,
-          product_name, board_name, version,
-          std::make_unique<DiagnosticsImpl>(inspect_node.CreateChild("core")))));
+  std::shared_ptr<sys::ServiceDirectory> svc = context->svc();
+  auto loader_factory = [svc] {
+    fuchsia::net::http::LoaderSyncPtr loader_sync;
+    svc->Connect(loader_sync.NewRequest());
+    return loader_sync;
+  };
+
+  CobaltConfig cobalt_config = CreateCobaltConfig(
+      dispatcher, kMetricsRegistryPath, configuration_data, validated_clock.get(), loader_factory,
+      upload_schedule_cfg, event_aggregator_backfill_days, test_dont_backfill_empty_reports,
+      use_memory_observation_store, max_bytes_per_observation_store, storage_quotas, product_name,
+      board_name, version, std::make_unique<DiagnosticsImpl>(inspect_node.CreateChild("core")));
+
+  std::unique_ptr<KeyFetcher> key_fetcher =
+      ConfigureKeyRotation(dispatcher, cobalt_config.target_pipeline.get(),
+                           std::make_unique<utils::FuchsiaHTTPClient>(loader_factory),
+                           encryption_clock.get(), kDefaultKeyCacheDir, kDefaultPublicKeysUrl);
+
+  CB_ASSIGN_OR_RETURN(auto cobalt_service, CobaltService::Create(std::move(cobalt_config)));
 
   cobalt_service->SetDataCollectionPolicy(configuration_data.GetDataCollectionPolicy());
 
@@ -195,7 +266,8 @@ lib::statusor::StatusOr<std::unique_ptr<CobaltApp>> CobaltApp::CreateCobaltApp(
       std::move(context), dispatcher, std::move(lifecycle_handle), std::move(shutdown),
       std::move(inspect_node), std::move(inspect_config_node), std::move(cobalt_service),
       std::move(validated_clock), start_event_aggregator_worker, test_dont_backfill_empty_reports,
-      configuration_data.GetWatchForUserConsent()));
+      configuration_data.GetWatchForUserConsent(), std::move(encryption_clock),
+      std::move(key_fetcher)));
 }
 
 CobaltApp::CobaltApp(
@@ -205,20 +277,26 @@ CobaltApp::CobaltApp(
     std::unique_ptr<CobaltServiceInterface> cobalt_service,
     std::unique_ptr<FuchsiaSystemClockInterface> validated_clock,
     bool start_event_aggregator_worker, bool test_dont_backfill_empty_reports,
-    bool watch_for_user_consent)
+    bool watch_for_user_consent, std::unique_ptr<util::SystemClockInterface> encryption_clock,
+    std::unique_ptr<KeyFetcher> key_fetcher)
     : context_(std::move(context)),
       inspect_node_(std::move(inspect_node)),
       inspect_config_node_(std::move(inspect_config_node)),
+      encryption_clock_(std::move(encryption_clock)),
       validated_clock_(std::move(validated_clock)),
       cobalt_service_(std::move(cobalt_service)),
+      key_fetcher_(std::move(key_fetcher)),
       current_channel_provider_(
           CreateCurrentChannelProvider(dispatcher, inspect_node_.CreateChild("system_data"),
                                        cobalt_service_->system_data()->channel())) {
   validated_clock_->AwaitExternalSource([this, start_event_aggregator_worker]() {
-    // Now that the clock is accurate, notify CobaltService.
+    // Now that the clock is accurate, notify CobaltService and trigger initial key fetch.
     cobalt_service_->SystemClockIsAccurate(std::make_unique<util::SystemClock>(),
                                            start_event_aggregator_worker);
     controller_impl_->OnSystemClockBecomesAccurate();
+    if (key_fetcher_ != nullptr) {
+      key_fetcher_->OnSystemClockBecomesAccurate();
+    }
   });
 
   // Create MetricEventLoggerFactory protocol implementation and start serving it.

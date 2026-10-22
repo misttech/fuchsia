@@ -24,6 +24,7 @@
 #include "src/cobalt/bin/app/configuration_data.h"
 #include "src/cobalt/bin/app/current_channel_provider.h"
 #include "src/cobalt/bin/app/diagnostics_impl.h"
+#include "src/cobalt/bin/app/key_fetcher.h"
 #include "src/cobalt/bin/app/process_lifecycle_impl.h"
 #include "src/cobalt/bin/app/user_consent_watcher.h"
 #include "src/cobalt/bin/utils/clock.h"
@@ -33,6 +34,9 @@
 #include "third_party/cobalt/src/public/cobalt_service_interface.h"
 
 namespace cobalt {
+
+inline constexpr char kDefaultKeyCacheDir[] = "/data/keys";
+inline constexpr char kDefaultPublicKeysUrl[] = "https://www.gstatic.com/cobalt/public_keys.pb";
 
 // Main app, which manages all of Cobalt's functionality.
 //
@@ -108,6 +112,13 @@ class CobaltApp {
       const std::string& product_name, const std::string& board_name, const std::string& version,
       std::unique_ptr<DiagnosticsImpl> diagnostics);
 
+  // The DynamicEncryptedMessageMakers installed on |target_pipeline| (whose ownership
+  // is transferred to CobaltService) must outlive the returned KeyFetcher.
+  static std::unique_ptr<KeyFetcher> ConfigureKeyRotation(
+      async_dispatcher_t* dispatcher, TargetPipelineInterface* target_pipeline,
+      std::unique_ptr<lib::HTTPClient> http_client, util::SystemClockInterface* encryption_clock,
+      std::string key_cache_dir, std::string public_keys_url);
+
   CobaltApp(std::unique_ptr<sys::ComponentContext> context, async_dispatcher_t* dispatcher,
             fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> lifecycle_handle,
             fit::callback<void()> shutdown, inspect::Node inspect_node,
@@ -115,7 +126,9 @@ class CobaltApp {
             std::unique_ptr<CobaltServiceInterface> cobalt_service,
             std::unique_ptr<FuchsiaSystemClockInterface> validated_clock,
             bool start_event_aggregator_worker, bool test_dont_backfill_empty_reports,
-            bool watch_for_user_consent);
+            bool watch_for_user_consent,
+            std::unique_ptr<util::SystemClockInterface> encryption_clock,
+            std::unique_ptr<KeyFetcher> key_fetcher);
 
   static encoder::ClientSecret getClientSecret();
 
@@ -124,12 +137,17 @@ class CobaltApp {
   inspect::Node inspect_node_;
   inspect::Node inspect_config_node_;
 
+  std::unique_ptr<util::SystemClockInterface> encryption_clock_;
   std::unique_ptr<FuchsiaSystemClockInterface> validated_clock_;
 
-  // cobalt_service_ must be declared after validated_clock_ because cobalt_service_ depends on
-  // validated_clock_. C++ destroys member variables in the reverse order of their declaration,
-  // so validated_clock_ must be declared first to ensure it outlives cobalt_service_.
+  // C++ destroys member variables in reverse declaration order:
+  // - validated_clock_ and encryption_clock_ must be declared before cobalt_service_
+  //   so they outlive cobalt_service_ and its DynamicEncryptedMessageMaker instances.
+  // - cobalt_service_ owns the DynamicEncryptedMessageMakers referenced by key_fetcher_.
+  // - key_fetcher_ must be declared after cobalt_service_ so key_fetcher_ is destroyed
+  //   first, canceling scheduled key updates before cobalt_service_ is torn down.
   std::unique_ptr<CobaltServiceInterface> cobalt_service_;
+  std::unique_ptr<KeyFetcher> key_fetcher_;
 
   std::unique_ptr<CobaltControllerImpl> controller_impl_;
   fidl::BindingSet<fuchsia::cobalt::Controller> controller_bindings_;

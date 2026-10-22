@@ -9,12 +9,29 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <chrono>
+#include <cstdint>
 #include <optional>
 
 #include "src/cobalt/bin/utils/clock.h"
 #include "third_party/cobalt/src/public/lib/clock_interfaces.h"
 
 namespace cobalt {
+
+// An implementation of SystemClockInterface that returns a configurable Unix
+// timestamp in seconds. For use in tests.
+class FakeSystemClock : public cobalt::util::SystemClockInterface {
+ public:
+  explicit FakeSystemClock(int64_t now_secs) : now_secs_(now_secs) {}
+
+  std::chrono::system_clock::time_point now() override {
+    return std::chrono::system_clock::time_point(std::chrono::seconds(now_secs_));
+  }
+
+  void SetNowSecs(int64_t now_secs) { now_secs_ = now_secs; }
+
+ private:
+  int64_t now_secs_;
+};
 
 // An implementation of SteadyClockInterface that returns a time that does not
 // increase with real time but only when Increment() is invoked. For use in

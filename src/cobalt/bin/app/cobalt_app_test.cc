@@ -30,10 +30,10 @@ namespace cobalt {
 namespace {
 
 const char kTestDir[] = "/tmp/cobalt_app_test";
+constexpr char kTestPublicKeysUrl[] = "https://example.com/cobalt/public_keys.pb";
 
 bool WriteFile(const std::string& file, const std::string& to_write) {
-  return files::WriteFile(std::string(kTestDir) + std::string("/") + file, to_write.c_str(),
-                          to_write.length());
+  return files::WriteFile(files::JoinPath(kTestDir, file), to_write.c_str(), to_write.length());
 }
 
 }  // namespace
@@ -69,6 +69,13 @@ class CreateCobaltConfigTest : public gtest::TestLoopFixture {
         use_memory_observation_store, max_bytes_per_observation_store,
         cobalt::kDefaultStorageQuotas, product_name, board_name, version,
         std::make_unique<DiagnosticsImpl>(inspect::Node()));
+  }
+
+  std::unique_ptr<KeyFetcher> ConfigureKeyRotation(TargetPipelineInterface* target_pipeline,
+                                                   util::SystemClockInterface* encryption_clock) {
+    return CobaltApp::ConfigureKeyRotation(dispatcher(), target_pipeline,
+                                           std::make_unique<lib::EmptyHTTPClient>(),
+                                           encryption_clock, kTestDir, kTestPublicKeysUrl);
   }
 
   sys::testing::ServiceDirectoryProvider service_directory_provider_;
@@ -159,6 +166,75 @@ TEST_F(CreateCobaltConfigTest, InvalidBuildType) {
   EXPECT_EQ(config.build_type, SystemProfile::OTHER_TYPE);
 }
 
+TEST_F(CreateCobaltConfigTest, ConfigureKeyRotationNullTargetPipelineReturnsNull) {
+  util::SystemClock encryption_clock;
+  EXPECT_EQ(ConfigureKeyRotation(/*target_pipeline=*/nullptr, &encryption_clock), nullptr);
+}
+
+TEST_F(CreateCobaltConfigTest, ConfigureKeyRotationLocalReturnsNull) {
+  ASSERT_TRUE(WriteFile("cobalt_environment", "LOCAL"));
+  ASSERT_TRUE(WriteFile("config.json", "{\"release_stage\": \"DEBUG\"}"));
+  FuchsiaConfigurationData configuration_data(kTestDir, kTestDir);
+  CobaltConfig config =
+      CreateCobaltConfig("/pkg/data/testapp_metrics_registry.pb", configuration_data,
+                         std::chrono::seconds(1), std::chrono::seconds(2), std::chrono::seconds(3),
+                         0, 4, true, 1048000, "core", "x64", "0.1.2");
+  util::SystemClock encryption_clock;
+  std::unique_ptr<KeyFetcher> key_fetcher =
+      ConfigureKeyRotation(config.target_pipeline.get(), &encryption_clock);
+  EXPECT_EQ(key_fetcher, nullptr);
+  EXPECT_EQ(config.target_pipeline->TakeShufflerEncryptedMessageMaker(), nullptr);
+  EXPECT_EQ(config.target_pipeline->TakeAnalyzerEncryptedMessageMaker(), nullptr);
+}
+
+TEST_F(CreateCobaltConfigTest, ConfigureKeyRotationDevelAttachesDynamicMakers) {
+  ASSERT_TRUE(WriteFile("cobalt_environment", "DEVEL"));
+  ASSERT_TRUE(WriteFile("config.json", "{\"release_stage\": \"DEBUG\"}"));
+  FuchsiaConfigurationData configuration_data(kTestDir, kTestDir);
+  util::SystemClock encryption_clock;
+  CobaltConfig config =
+      CreateCobaltConfig("/pkg/data/testapp_metrics_registry.pb", configuration_data,
+                         std::chrono::seconds(1), std::chrono::seconds(2), std::chrono::seconds(3),
+                         0, 4, true, 1048000, "core", "x64", "0.1.2");
+  std::unique_ptr<util::EncryptedMessageMaker> shuffler_maker;
+  std::unique_ptr<util::EncryptedMessageMaker> analyzer_maker;
+  std::unique_ptr<KeyFetcher> key_fetcher =
+      ConfigureKeyRotation(config.target_pipeline.get(), &encryption_clock);
+  ASSERT_NE(key_fetcher, nullptr);
+  shuffler_maker = config.target_pipeline->TakeShufflerEncryptedMessageMaker();
+  analyzer_maker = config.target_pipeline->TakeAnalyzerEncryptedMessageMaker();
+  ASSERT_NE(shuffler_maker, nullptr);
+  ASSERT_NE(analyzer_maker, nullptr);
+
+  Observation obs;
+  obs.set_random_id("devel-bundled-check");
+  EncryptedMessage encrypted;
+  EXPECT_TRUE(analyzer_maker->Encrypt(obs, &encrypted));
+  EXPECT_GT(encrypted.key_index(), 0u);
+}
+
+TEST_F(CreateCobaltConfigTest, ConfigureKeyRotationInvalidBundledKeyLeavesMakersUninitialized) {
+  util::SystemClock encryption_clock;
+  TargetPipeline target_pipeline(system_data::Environment::PROD, "not-a-valid-key-proto",
+                                 /*analyzer_encryption_key_bytes=*/"",
+                                 std::make_unique<lib::EmptyHTTPClient>(),
+                                 /*clearcut_max_retries=*/1);
+  std::unique_ptr<util::EncryptedMessageMaker> shuffler_maker;
+  std::unique_ptr<util::EncryptedMessageMaker> analyzer_maker;
+  std::unique_ptr<KeyFetcher> key_fetcher =
+      ConfigureKeyRotation(&target_pipeline, &encryption_clock);
+  ASSERT_NE(key_fetcher, nullptr);
+  shuffler_maker = target_pipeline.TakeShufflerEncryptedMessageMaker();
+  analyzer_maker = target_pipeline.TakeAnalyzerEncryptedMessageMaker();
+  ASSERT_NE(shuffler_maker, nullptr);
+  ASSERT_NE(analyzer_maker, nullptr);
+
+  Observation obs;
+  obs.set_random_id("uninitialized-fallback-check");
+  EncryptedMessage encrypted;
+  EXPECT_FALSE(analyzer_maker->Encrypt(obs, &encrypted));
+}
+
 using inspect::testing::ChildrenMatch;
 using inspect::testing::NameMatches;
 using inspect::testing::NodeMatches;
@@ -170,15 +246,30 @@ class CobaltAppTest : public gtest::TestLoopFixture {
       : ::gtest::TestLoopFixture(),
         clock_(new FakeFuchsiaSystemClock(dispatcher())),
         fake_service_(new testing::FakeCobaltService()),
+        shuffler_maker_(&test_encryption_clock_),
+        analyzer_maker_(&test_encryption_clock_),
+        key_fetcher_(new KeyFetcher(dispatcher(), std::make_unique<lib::EmptyHTTPClient>(),
+                                    &shuffler_maker_, &analyzer_maker_, &test_encryption_clock_,
+                                    system_data::Environment::DEVEL, kTestDir, kTestPublicKeysUrl,
+                                    KeyFetcher::ScheduleOptions{
+                                        .max_initial_jitter = zx::sec(0),
+                                        .steady_state_interval = zx::hour(24),
+                                        .steady_state_jitter = zx::hour(2),
+                                        .poll_interval = zx::hour(1),
+                                        .boot_clock = zx::clock::get_boot,
+                                    })),
         cobalt_app_(
             context_provider_.TakeContext(), dispatcher(), lifecycle_.NewRequest(dispatcher()),
             []() { /* Stub shutdown callback */ }, inspector_.GetRoot().CreateChild("cobalt_app"),
             inspect::Node(), std::unique_ptr<testing::FakeCobaltService>(fake_service_),
             std::unique_ptr<FakeFuchsiaSystemClock>(clock_), true,
-            /*test_dont_backfill_empty_reports=*/false, false) {}
+            /*test_dont_backfill_empty_reports=*/false, false,
+            std::make_unique<util::SystemClock>(), std::unique_ptr<KeyFetcher>(key_fetcher_)) {}
 
  protected:
   void SetUp() override {
+    ASSERT_TRUE(files::DeletePath(kTestDir, /*recursive=*/true));
+    ASSERT_TRUE(files::CreateDirectory(kTestDir));
     context_provider_.ConnectToPublicService(metric_event_logger_factory_.NewRequest());
     ASSERT_NE(metric_event_logger_factory_.get(), nullptr);
   }
@@ -215,6 +306,10 @@ class CobaltAppTest : public gtest::TestLoopFixture {
   sys::testing::ComponentContextProvider context_provider_;
   FakeFuchsiaSystemClock* clock_;
   testing::FakeCobaltService* fake_service_;
+  util::SystemClock test_encryption_clock_;
+  util::DynamicEncryptedMessageMaker shuffler_maker_;
+  util::DynamicEncryptedMessageMaker analyzer_maker_;
+  KeyFetcher* key_fetcher_;
   inspect::Inspector inspector_;
   CobaltApp cobalt_app_;
   fuchsia::metrics::MetricEventLoggerFactoryPtr metric_event_logger_factory_;
@@ -224,11 +319,13 @@ TEST_F(CobaltAppTest, SystemClockIsAccurate) {
   bool callback_invoked = false;
   GetCobaltController()->ListenForInitialized([&callback_invoked]() { callback_invoked = true; });
   EXPECT_FALSE(callback_invoked);
+  EXPECT_EQ(key_fetcher_->last_fetch_status(), KeyFetchStatus::kUninitialized);
 
   // Give the clock time to become accurate.
   RunLoopUntilIdle();
   EXPECT_EQ(fake_service_->system_clock_is_accurate(), true);
   EXPECT_TRUE(callback_invoked);
+  EXPECT_EQ(key_fetcher_->last_fetch_status(), KeyFetchStatus::kNetworkError);
 }
 
 TEST_F(CobaltAppTest, InspectData) {
