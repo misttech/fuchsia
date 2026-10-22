@@ -34,6 +34,22 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 
+# TODO(https://fxbug.dev/42148577) remove this allowance
+build_flags(
+    name = "allow_legacy_derive_helpers",
+    rustflags = ["-Alegacy-derive-helpers"],
+    visibility = ["//visibility:public"],
+)
+
+# Turns on the rust compilation analysis generator. This will produce a
+# directory $OUT/save-analysis-temp, which will dump all the source analysis
+# that the compiler collected while analyzing the source.
+build_flags(
+    name = "analysis",
+    rustflags = ["-Zsave-analysis"],
+    visibility = ["//visibility:public"],
+)
+
 build_flags(
     name = "cap_lints",
 
@@ -55,6 +71,33 @@ build_flags(
 )
 
 build_flags(
+    name = "cap_lints_allow",
+    rustflags = ["--cap-lints=allow"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "codegen_units_16",
+    # Enable default codegen parallelism (rustc default).
+    # This will increase code size over `:one_codegen_unit` above.
+    #
+    # Used without any lto option, this will also enable thin-local lto.
+    # https://doc.rust-lang.org/rustc/codegen-options/index.html#lto
+    #
+    # NOTE: Assumes rust_incremental == "" in Bazel (see :incremental).
+    # TODO: The GN config also adds //build/config/rbe:big_rbe_machine, which
+    # is not supported in Bazel yet.
+    rustflags = ["-Ccodegen-units=16"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "coverage",
+    rustflags = ["-Cinstrument-coverage"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
     name = "debug_assertions",
     rustflags = ["-Cdebug-assertions=yes"],
     visibility = ["//visibility:public"],
@@ -69,6 +112,30 @@ build_flags(
 build_flags(
     name = "default_debug_assertions",
     subflags = [":debug_assertions"] if rust_debug_assertions else [":no_debug_assertions"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "edition_2024",
+    rustflags = ["--edition=2024"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "edition_2021",
+    rustflags = ["--edition=2021"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "edition_2018",
+    rustflags = ["--edition=2018"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "edition_2015",
+    rustflags = ["--edition=2015"],
     visibility = ["//visibility:public"],
 )
 
@@ -104,6 +171,17 @@ build_flags(
 )
 
 build_flags(
+    name = "one_codegen_unit",
+    # Disable codegen parallelism.
+    # Trades incremental rebuild speed for smaller code size.
+    # See: https://fxbug.dev/42154118, https://fxbug.dev/42160867
+    #
+    # NOTE: Assumes rust_incremental == "" in Bazel (see :incremental).
+    rustflags = ["-Ccodegen-units=1"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
     name = "panic_abort",
     rustflags = [
         "-Cpanic=abort",
@@ -119,6 +197,40 @@ build_flags(
         "-Z",
         "threads={}".format(rust_parallel_frontend_threads),
     ] if rust_parallel_frontend_threads else [],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "proc_macro_test",
+    rustflags = [
+        "--extern",
+        "proc_macro",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "self-profile",
+    rustflags = [
+        "-Zself-profile",
+        "-Zself-profile-events=default,args",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "target",
+    # @rules_rust always sets --target=<triple> implicitly from the Rust
+    # toolchain's target_flag_value, and trying to add it here will result
+    # in a compilation error: Option 'target' given more than once.
+    # Thus it is never set here.
+    # rustflags = ["--target", rust_target],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "time-passes",
+    rustflags = ["-Ztime-passes"],
     visibility = ["//visibility:public"],
 )
 

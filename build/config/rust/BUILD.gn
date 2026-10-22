@@ -26,6 +26,28 @@ if (is_fuchsia) {
   }
 }
 
+# LINT.IfChange(bootfs)
+# Best practices for Rust binaries that go into size-constrained bootfs.
+config("bootfs") {
+  # Optimize for size.
+  # TODO(https://fxbug.dev/42165168): use "z" when resolved.
+  rustflags = [ "-Copt-level=s" ]
+
+  if (target_cpu == "arm64" && is_debug) {
+    # Debug builds produce large Rust binaries.
+    # So large they might not fit in the ZBI.
+    # Force ThinLTO to squeeze Rust binaries further.
+    # See: https://fxbug.dev/42160867
+    # See: https://fxbug.dev/42172876
+    # TODO(https://fxbug.dev/568722249): Port this to //build/config/rust/BUILD.bazel.
+    configs = [ "//build/config/lto:thinlto" ]
+  }
+}
+
+# LINT.ThenChange(//build/config/rust/BUILD.bazel:bootfs)
+
+# LINT.IfChange(rust_build_flags)
+
 # Turns on the rust compilation analysis generator. This will produce a
 # directory $OUT/save-analysis-temp, which will dump all the source analysis
 # that the compiler collected while analyzing the source.  This config is
@@ -90,8 +112,6 @@ config("incremental") {
   }
 }
 
-# LINT.ThenChange(BUILD.bazel)
-
 config("one_codegen_unit") {
   # Disable codegen parallelism.
   # Trades incremental rebuild speed for smaller code size.
@@ -115,7 +135,6 @@ config("codegen_units_16") {
   }
 }
 
-# LINT.IfChange
 config("parallel_frontend_threads") {
   if (rust_parallel_frontend_threads != false) {
     # Use the parallel front-end with up to N threads, set by the
@@ -143,28 +162,6 @@ config("default_debug_assertions") {
   }
 }
 
-# LINT.ThenChange(BUILD.bazel:rust_build_flags)
-
-# LINT.IfChange(bootfs)
-# Best practices for Rust binaries that go into size-constrained bootfs.
-config("bootfs") {
-  # Optimize for size.
-  # TODO(https://fxbug.dev/42165168): use "z" when resolved.
-  rustflags = [ "-Copt-level=s" ]
-
-  if (target_cpu == "arm64" && is_debug) {
-    # Debug builds produce large Rust binaries.
-    # So large they might not fit in the ZBI.
-    # Force ThinLTO to squeeze Rust binaries further.
-    # See: https://fxbug.dev/42160867
-    # See: https://fxbug.dev/42172876
-    # TODO(https://fxbug.dev/568722249): Port this to //build/config/rust/BUILD.bazel.
-    configs = [ "//build/config/lto:thinlto" ]
-  }
-}
-
-# LINT.ThenChange(//build/config/rust/BUILD.bazel:bootfs)
-
 config("proc_macro_test") {
   rustflags = [
     "--extern",
@@ -172,12 +169,9 @@ config("proc_macro_test") {
   ]
 }
 
-# LINT.IfChange
 config("2018_idioms") {
   rustflags = [ "-Wrust-2018-idioms" ]
 }
-
-# LINT.ThenChange(BUILD.bazel)
 
 config("target") {
   rustflags = [
@@ -186,7 +180,6 @@ config("target") {
   ]
 }
 
-# LINT.IfChange
 config("cap_lints") {
   if (rust_rbe_enable && rust_rbe_exec_strategy == "local" &&
       rust_cap_lints != rust_cap_lints_default) {
@@ -204,8 +197,6 @@ config("cap_lints") {
   }
 }
 
-# LINT.ThenChange(BUILD.bazel)
-
 config("cap_lints_allow") {
   # This does not change for RBE as this config is used by targets to specify
   # that they need specific lint handling, and should override the setting from
@@ -213,7 +204,6 @@ config("cap_lints_allow") {
   rustflags = [ "--cap-lints=allow" ]
 }
 
-# LINT.IfChange
 config("panic_abort") {
   rustflags = [
     "-Cpanic=abort",
@@ -228,8 +218,6 @@ config("v0_symbol_mangling") {
   }
 }
 
-# LINT.ThenChange(BUILD.bazel)
-
 # TODO(https://fxbug.dev/42148577) remove this allowance
 config("allow_legacy_derive_helpers") {
   rustflags = [ "-Alegacy-derive-helpers" ]
@@ -238,6 +226,8 @@ config("allow_legacy_derive_helpers") {
 config("coverage") {
   rustflags = [ "-Cinstrument-coverage" ]
 }
+
+# LINT.ThenChange(BUILD.bazel:rust_build_flags)
 
 # TODO(https://fxbug.dev/42176241): Eliminate or identify all sources of output dir leaks.
 # This option makes it explicit that a particular build action is sensitive
