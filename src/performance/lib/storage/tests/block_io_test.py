@@ -366,6 +366,155 @@ class BlockIoTest(unittest.TestCase):
             expected,
         )
 
+    def test_extract_when_name_is_none(self) -> None:
+        entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:nand.fvm",
+            name=None,
+            timestamp_ns=50_000_000_000,
+            root={
+                "ftl": {
+                    "block.read.bytes": 2_000_000,
+                    "block.read.count": 400,
+                    "block.write.bytes": 1_000_000,
+                    "block.write.count": 200,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 50,
+                    "block.trim.bytes": 500_000,
+                    "block.trim.count": 25,
+                }
+            },
+        )
+        self.assertEqual(
+            storage.extract_storage_io_metrics([entry], label_prefix="FtlTest"),
+            _expected_metrics(
+                prefix="FtlTest",
+                read_bytes=40_000.0,
+                read_ops=8.0,
+                write_bytes=20_000.0,
+                write_ops=4.0,
+                flush_bytes=0.0,
+                flush_ops=1.0,
+                trim_bytes=10_000.0,
+                trim_ops=0.5,
+            ),
+        )
+
+    def test_extract_storage_io_metrics_with_baseline_entries(self) -> None:
+        start_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name=None,
+            timestamp_ns=100_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 500_000_000,
+                    "block.read.count": 20_000,
+                    "block.write.bytes": 200_000_000,
+                    "block.write.count": 10_000,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 500,
+                    "block.trim.bytes": 10_000_000,
+                    "block.trim.count": 100,
+                }
+            },
+        )
+        end_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name=None,
+            timestamp_ns=110_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 500_040_960,
+                    "block.read.count": 20_010,
+                    "block.write.bytes": 200_081_920,
+                    "block.write.count": 10_020,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 505,
+                    "block.trim.bytes": 10_010_000,
+                    "block.trim.count": 102,
+                }
+            },
+        )
+        self.assertEqual(
+            storage.extract_storage_io_metrics(
+                [end_entry],
+                label_prefix="Storage/System",
+                baseline_entries=[start_entry],
+            ),
+            _expected_metrics(
+                prefix="Storage/System",
+                read_bytes=4096.0,
+                read_ops=1.0,
+                write_bytes=8192.0,
+                write_ops=2.0,
+                flush_bytes=0.0,
+                flush_ops=0.5,
+                trim_bytes=1000.0,
+                trim_ops=0.2,
+            ),
+        )
+
+    def test_diff_inspect_entries_handles_zero_delta_with_idle_secondary_driver(
+        self,
+    ) -> None:
+        idle_wifi_sdmmc = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:wifi-sdio",
+            name="sdmmc",
+            timestamp_ns=100_000_000_000,
+            root={
+                "sdmmc_core": {
+                    "block.read.bytes": 0,
+                    "block.read.count": 0,
+                    "block.write.bytes": 0,
+                    "block.write.count": 0,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 0,
+                    "block.trim.bytes": 0,
+                    "block.trim.count": 0,
+                }
+            },
+        )
+        active_start = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:emmc",
+            name="sdmmc",
+            timestamp_ns=100_000_000_000,
+            root={
+                "sdmmc_core": {
+                    "block.read.bytes": 500_000_000,
+                    "block.read.count": 20_000,
+                    "block.write.bytes": 200_000_000,
+                    "block.write.count": 10_000,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 500,
+                    "block.trim.bytes": 0,
+                    "block.trim.count": 0,
+                }
+            },
+        )
+        active_end = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:emmc",
+            name="sdmmc",
+            timestamp_ns=130_000_000_000,
+            root=active_start.root,
+        )
+        self.assertEqual(
+            storage.extract_storage_io_metrics(
+                [idle_wifi_sdmmc, active_end],
+                label_prefix="Storage/System",
+                baseline_entries=[idle_wifi_sdmmc, active_start],
+            ),
+            _expected_metrics(
+                prefix="Storage/System",
+                read_bytes=0.0,
+                read_ops=0.0,
+                write_bytes=0.0,
+                write_ops=0.0,
+                flush_bytes=0.0,
+                flush_ops=0.0,
+                trim_bytes=0.0,
+                trim_ops=0.0,
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
