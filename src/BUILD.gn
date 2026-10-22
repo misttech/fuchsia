@@ -33,6 +33,7 @@ group("tests_no_e2e") {
     "intl:tests",
     "lib:tests",
     "media:tests",
+    "memory:tests",
     "microfuchsia:tests",
     "paravirtualization:tests",
     "performance:tests",

@@ -1,2 +1,2 @@
-include /src/performance/memory/OWNERS
+include /src/memory/OWNERS
 include /src/developer/ffx/OWNERS
