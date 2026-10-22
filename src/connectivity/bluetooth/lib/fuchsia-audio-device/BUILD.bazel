@@ -1,0 +1,70 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuchsia-audio-device",
+    srcs = [
+        "src/audio_frame_sink.rs",
+        "src/audio_frame_stream.rs",
+        "src/codec.rs",
+        "src/frame_vmo.rs",
+        "src/lib.rs",
+        "src/stream_config.rs",
+        "src/types.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__subpackages__",
+        "//src/connectivity/bluetooth/profiles/bt-a2dp:__pkg__",
+        "//src/connectivity/bluetooth/tests/audio-device-output-harness:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust",
+        "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_rust",
+        "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/async-helpers",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
+rustc_test(
+    name = "fuchsia-audio-device_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":fuchsia-audio-device",
+    edition = "2024",
+    proc_macro_deps = ["//src/lib/testing/fixture"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:futures-test",
+    ],
+)
+
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fuchsia-audio-device-tests",
+    unit_tests = [":fuchsia-audio-device_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)

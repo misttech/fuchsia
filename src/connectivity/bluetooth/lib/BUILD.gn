@@ -36,6 +36,5 @@ group("tests") {
     "bt-hfp:tests",
     "fuchsia-audio-codec:tests",
     "fuchsia-audio-dai:tests",
-    "fuchsia-audio-device:tests",
   ]
 }
