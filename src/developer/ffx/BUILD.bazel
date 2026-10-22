@@ -51,6 +51,7 @@ test_suite(
         "//src/developer/ffx/plugins/config:ffx_config_plugin_args_test",
         "//src/developer/ffx/plugins/config:ffx_config_plugin_test",
         "//src/developer/ffx/plugins/emulator/common:ffx_emulator_common_test",
+        "//src/developer/ffx/plugins/package/blob/hash:ffx_package_blob_hash_test",
         "//src/developer/ffx/plugins/sdk:ffx_sdk_test",
         "//src/developer/ffx/plugins/version:ffx_version_test",
         "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common_host_test",

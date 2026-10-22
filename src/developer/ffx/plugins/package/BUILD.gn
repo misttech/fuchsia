@@ -30,6 +30,7 @@ group("tests") {
   deps = [
     ":ffx_package_tests($host_toolchain)",
     "archive:tests",
+    "blob/hash:tests",
   ]
 }
 
