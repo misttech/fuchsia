@@ -26,6 +26,9 @@ platforms:
   //build/bazel/platforms:linux_x64
     --cpu=k8
 
+  //build/bazel/platforms:linux_x64_large_cpp_link
+    --cpu=k8
+
   //build/bazel/platforms:linux_arm64
     --cpu=aarch64
 

@@ -264,8 +264,10 @@ build_flags(
         ":fat-lto-objects",
         ":lto-workarounds",
 
-        # As thin lto is multi-threaded, use the larger RBE workers
-        # Intentionally commented out.
+        # Large RBE worker pool routing: In Bazel, CppLink actions are
+        # routed to the large worker pool via `--extra_execution_platforms` in
+        # //build/bazel/config/bazel_args.gni. See //build/config/lto/README.md.
+        # Intentionally commented out:
         # "//build/config/rbe:big_rbe_machine",
     ],
     visibility = ["//visibility:public"],
@@ -286,16 +288,12 @@ compiler_build_flags(
         ":lto-rust-linker-plugin",
         ":lto-workarounds",
 
-        # As thin lto is multi-threaded, use the larger RBE workers
-        #
-        # Bazel doesn't support modifying the exec properties of specific
-        # LTO linking actions through target definitions / providers.
-        #
-        # The alternative is adding a line like:
-        # build --modify_execution_info=LTOIndexing=+Pool=large_worker,Rustclink=+Pool=large_worker
-        # to the global .bazelrc file when LTO is enabled by default.
-        #
-        # Intentionally disabled (see note above).
+        # Large RBE worker pool routing: In Bazel, linked Rust targets
+        # (rustc_binary, rustc_test, rustc_dylib) set target exec_properties
+        # via with_fuchsia_rust_link_exec_properties() in
+        # //build/bazel/rules/rust/common.bzl when :rust_lto_enabled matches.
+        # See //build/config/lto/README.md.
+        # Intentionally commented out:
         # "//build/config/rbe:big_rbe_machine",
     ],
     visibility = ["//visibility:public"],
@@ -325,3 +323,46 @@ build_flags(
 )
 
 # LINT.ThenChange(BUILD.gn:thinlto)
+
+# LINT.IfChange(valid_optimize_values)
+# Matches when an `optimize` mode that enables LTO or ThinLTO for Rust is selected.
+# Note: `size_thinlto_clang` is intentionally excluded as it only enables ThinLTO
+# for Clang and not Rust.
+selects.config_setting_group(
+    name = "optimize_has_rust_lto",
+    match_any = [
+        "//build/bazel/config/select/optimize:moderate_lto",
+        "//build/bazel/config/select/optimize:moderate_thinlto",
+        "//build/bazel/config/select/optimize:size_lto",
+        "//build/bazel/config/select/optimize:size_thinlto",
+        "//build/bazel/config/select/optimize:speed_lto",
+        "//build/bazel/config/select/optimize:speed_thinlto",
+    ],
+)
+# LINT.ThenChange(
+#   //build/bazel/config/bazel_args.gni:valid_optimize_values,
+#   //build/bazel/config/select/optimize/BUILD.bazel:valid_optimize_values,
+#   //build/bazel/config/variables/BUILD.bazel:valid_optimize_values,
+#   //build/config/compilation_modes.gni:valid_optimize_values,
+# )
+
+selects.config_setting_group(
+    name = "uninstrumented_optimize_has_rust_lto",
+    match_all = [
+        "//build/bazel/config/toolchain_tags/instrumented:false",
+        ":optimize_has_rust_lto",
+    ],
+)
+
+# Matches when Rust LTO or ThinLTO is active in the current build configuration,
+# either via the `lto`/`thinlto` toolchain variant or via an `optimize` mode on
+# a non-instrumented toolchain. Used by //build/bazel/rules/rust:common.bzl to
+# route linked Rust targets to the large RBE worker pool.
+selects.config_setting_group(
+    name = "rust_lto_enabled",
+    match_any = [
+        "//build/bazel/config/toolchain_tags/lto:true",
+        ":uninstrumented_optimize_has_rust_lto",
+    ],
+    visibility = ["//visibility:public"],
+)

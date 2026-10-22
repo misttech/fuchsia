@@ -175,6 +175,23 @@ platform(
     flags = _flags_for_linux_x64,
 )
 
+# Execution platform variant of `:linux_x64` that routes CppLink actions (which
+# @rules_cc assigns to the "cpp_link" exec_group) to the large RBE worker pool
+# when LTO or ThinLTO is enabled for the active target toolchain, while keeping
+# CppCompile and other default-group actions on the default RBE worker pool.
+# Selected per-toolchain via `--extra_execution_platforms` in
+# //build/bazel/config/bazel_args.gni. See //build/config/lto/README.md for
+# details (https://fxbug.dev/575721833).
+platform(
+    name = "linux_x64_large_cpp_link",
+    exec_properties = build_config.rbe_remote_exec_properties | {
+        "cpp_link." + k: v
+        for k, v in build_config.rbe_large_exec_properties.items()
+    },
+    flags = _flags_for_linux_x64,
+    parents = [":linux_x64"],
+)
+
 platform(
     name = "linux_arm64",
     constraint_values = [

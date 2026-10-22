@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@fuchsia_build_info//:args.bzl", "rust_cap_lints")
+load("//build/bazel/rbe:rbe.bzl", "RBE_USE_LARGE_WORKER")
 
 def with_fuchsia_rustc_flags(rustc_flags):
     """Add a list of Fuchsia-specific rustc flags to input rustc_flags."""
@@ -24,6 +25,23 @@ def with_fuchsia_rust_stdlib_link_deps(link_deps):
         "@platforms//os:fuchsia": ["//build/bazel/rules/rust:fdio_for_rust_stdlib"],
         "//conditions:default": [],
     })
+
+def with_fuchsia_rust_link_exec_properties(exec_properties):
+    """Add RBE large worker exec_properties for linked Rust targets when LTO is enabled.
+
+    Must only be used for targets that are linked, i.e. executables, tests and
+    dylibs. Unlike @rules_cc, which assigns CppLink actions to a separate
+    "cpp_link" exec_group, @rules_rust runs compilation and LTO linking in a
+    single Rustc action in the default execution group. See
+    //build/config/lto/README.md for details.
+    """
+    lto_exec_properties = select({
+        "//build/config/lto:rust_lto_enabled": RBE_USE_LARGE_WORKER,
+        "//conditions:default": {},
+    })
+    if exec_properties:
+        return lto_exec_properties | exec_properties
+    return lto_exec_properties
 
 def with_fuchsia_rust_test_aspect_hints(aspect_hints):
     """Add the Fuchsia Rust test runner shard to aspect_hints."""
