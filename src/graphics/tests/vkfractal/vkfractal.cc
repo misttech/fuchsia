@@ -12,8 +12,11 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <complex>
 #include <cstdint>
+#include <format>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <print>
 #include <string>
@@ -25,8 +28,8 @@
 #include <vulkan/vulkan.hpp>
 
 // Generated at build time from shaders/ by glslangValidator.
+#include "shaders/fractal_frag_spv.h"
 #include "shaders/fullscreen_vert_spv.h"
-#include "shaders/mandelbrot_frag_spv.h"
 #include "shaders/scale_frag_spv.h"
 #include "shaders/scale_vert_spv.h"
 
@@ -34,17 +37,6 @@ namespace {
 
 constexpr char kSwapchainLayerName[] = "VK_LAYER_FUCHSIA_imagepipe_swapchain_fb";
 constexpr char kValidationLayerName[] = "VK_LAYER_KHRONOS_validation";
-
-// Misiurewicz point M(24,1) in seahorse valley: the orbit of 0 lands on a repelling fixed point
-// after 24 iterations, so the set around it shows structure at every zoom level. The default
-// --center.
-constexpr double kTargetRe = -0.7756837680090538;
-constexpr double kTargetIm = 0.1364673682946901;
-
-// The default --extents before clipping to the display's aspect ratio: the size of the classic
-// view of the whole set, [-2.5, 1] x [-1, 1].
-constexpr double kDefaultExtentWidth = 3.5;
-constexpr double kDefaultExtentHeight = 2.0;
 
 // A width and height in the complex plane.
 struct ComplexSize {
@@ -54,74 +46,77 @@ struct ComplexSize {
 
 // LINT.IfChange(push_constants)
 struct PushConstants {
-  float center[2];
   float half_extent[2];
   float step[2];
+  float c[2];
   uint32_t max_iterations;
+  std::array<uint32_t, 21> palette;
 };
-static_assert(sizeof(PushConstants) == 28);
-// LINT.ThenChange(//src/graphics/tests/vkfractal/shaders/mandelbrot.frag:push_constants)
+static_assert(sizeof(PushConstants) == 112);
+// LINT.ThenChange(//src/graphics/tests/vkfractal/shaders/fractal.frag:push_constants)
+// Vulkan guarantees at least 128 bytes of push constants.
+static_assert(sizeof(PushConstants) <= 128);
 
 // How rendered frames reach the display.
 enum class DisplayMode {
   // --offscreen: nothing is presented.
   kNone,
-  // The Mandelbrot shader writes the swapchain images.
+  // The fractal shader writes the swapchain images.
   kDirect,
-  // The Mandelbrot shader writes an image whose size differs from the display's, or the display
+  // The fractal shader writes an image whose size differs from the display's, or the display
   // is taller than it is wide, and a bilinear sampling pass stretches the image (rotated 90
   // degrees clockwise on portrait displays) over the swapchain image.
   kScale,
 };
 
 struct Options {
-  uint32_t frames = 600;
+  // Frames per loop. Every loop renders the same frames.
+  uint32_t frames = 1200;
+  // Timed loops, or std::nullopt to loop until killed.
+  std::optional<uint32_t> loops = 1;
   // Untimed frames rendered before the timed ones.
   uint32_t warmup_frames = 10;
-  double total_zoom = 4000.0;
-  uint32_t max_iterations = 1024;
+  uint32_t max_iterations = 256;
+  // Iterate every pixel max_iterations times instead of stopping when it escapes.
+  bool fixed_iterations = false;
   uint32_t frames_in_flight = 3;
   bool validation = true;
+  // Also time each loop on the GPU with timestamp queries. Off by default because timestamp
+  // queries crash some drivers.
+  bool gpu_timing = false;
   // Render without a display or swapchain; every frame goes to an offscreen image.
   bool offscreen = false;
   // The fractal's resolution. Defaults to the display's size (swapped on portrait displays, which
   // show the image rotated), or to kDefaultOffscreenWidth x kDefaultOffscreenHeight with
   // --offscreen.
   std::optional<vk::Extent2D> resolution;
-  // Frame 0's size in the complex plane. Defaults to kDefaultExtentWidth x kDefaultExtentHeight,
-  // shrunk along one axis to the display's aspect ratio (the image's with --offscreen).
-  std::optional<ComplexSize> extents;
-  // The point every frame is centered on.
-  double center_re = kTargetRe;
-  double center_im = kTargetIm;
 };
 
 constexpr uint32_t kDefaultOffscreenWidth = 1024;
 constexpr uint32_t kDefaultOffscreenHeight = 1024;
+constexpr uint32_t kMaxFrames = 1'000'000;
 // Each frame in flight owns an offscreen image, so keep the count modest.
 constexpr uint32_t kMaxFramesInFlight = 16;
 
 constexpr char kUsage[] =
     "Usage: vkfractal [options]\n"
     "  --help                Print this message.\n"
-    "  --frames=N            Frames to render and time (default 600).\n"
+    "  --frames=N            Frames per loop (default 1200, at most 1000000).\n"
+    "  --loops=N             Loops to render and time, or -1 to loop until killed (default 1).\n"
     "  --warmup-frames=N     Untimed frames rendered first (default 10).\n"
-    "  --total-zoom=Z        Magnification of the last frame relative to the first (default "
-    "4000).\n"
-    "  --max-iterations=N    Mandelbrot iteration cap per pixel (default 1024).\n"
+    "  --max-iterations=N    Iteration cap per pixel (default 256).\n"
+    "  --fixed-iterations=BOOL\n"
+    "                        Run --max-iterations iterations on every pixel, even after it\n"
+    "                        escapes (default false).\n"
     "  --frames-in-flight=N  Frames kept queued on the GPU (default 3, at most 16).\n"
     "  --validation=BOOL     Enable Vulkan validation layers (default true).\n"
+    "  --gpu-timing=BOOL     Also time loops on the GPU with timestamp queries (default false).\n"
     "  --offscreen=BOOL      Render into offscreen images only; no display or swapchain\n"
     "                        (default false).\n"
     "  --resolution=WxH      Fractal resolution: how many points of the complex region are\n"
     "                        iterated. Defaults to the display's size, or 1024x1024 with\n"
     "                        --offscreen. Frames are stretched to fill the display, and rotated\n"
-    "                        90 degrees clockwise if it is taller than it is wide.\n"
-    "  --extents=WxH         Frame 0's width and height in the complex plane. Defaults to 3.5x2\n"
-    "                        clipped to the display's aspect ratio (the resolution's with\n"
-    "                        --offscreen).\n"
-    "  --center=RE,IM        The point the zoom is centered on (default seahorse valley,\n"
-    "                        -0.7756837680090538,0.1364673682946901).\n";
+    "                        90 degrees clockwise if it is taller than it is wide.\n";
 
 bool Fail(const char* what, vk::Result result) {
   std::println(stderr, "vkfractal: {} failed: {}", what, vk::to_string(result));
@@ -147,19 +142,6 @@ std::optional<uint32_t> ParseUint32(const std::string& text, uint32_t min = 0,
     return std::nullopt;
   }
   return static_cast<uint32_t>(value);
-}
-
-std::optional<double> ParseDouble(const std::string& text) {
-  if (text.empty()) {
-    return std::nullopt;
-  }
-  char* end = nullptr;
-  errno = 0;
-  const double value = strtod(text.c_str(), &end);
-  if (*end != '\0' || errno != 0 || !std::isfinite(value)) {
-    return std::nullopt;
-  }
-  return value;
 }
 
 std::optional<bool> ParseBool(const std::string& text) {
@@ -196,40 +178,170 @@ std::optional<vk::Extent2D> ParseResolution(const std::string& text) {
   return vk::Extent2D(*width, *height);
 }
 
-// Parses "WxH" with positive numbers, e.g. "3.5x2".
-std::optional<ComplexSize> ParseExtents(const std::string& text) {
-  const std::optional<std::pair<std::string, std::string>> parts = SplitPair(text, 'x');
-  if (!parts) {
-    return std::nullopt;
-  }
-  const std::optional<double> width = ParseDouble(parts->first);
-  const std::optional<double> height = ParseDouble(parts->second);
-  if (!width || !height || *width <= 0.0 || *height <= 0.0) {
-    return std::nullopt;
-  }
-  return ComplexSize{.width = *width, .height = *height};
+// Returns the size of the complex plane in view for an image of |aspect| (width / height).
+ComplexSize Extents(double aspect) {
+  // Stretches the loop's Julia sets to stay kMargin of the image's shorter side from each edge.
+  // They reach |Re z| = (1 + sqrt(6)) / 2, where the set for c = -1.25 touches its escape radius,
+  // and |Im z| = 1.152, measured near c = 0.364 + 0.304i.
+  constexpr double kReachX = 1.7247;
+  constexpr double kReachY = 1.152;
+  constexpr double kMargin = 0.05;
+  const double margin = 2.0 * kMargin * std::min(aspect, 1.0);
+  return {
+      .width = 2.0 * kReachX * aspect / (aspect - margin),
+      .height = 2.0 * kReachY / (1.0 - margin),
+  };
 }
 
-// Parses "RE,IM", e.g. "-0.75,0.1", into (re, im).
-std::optional<std::pair<double, double>> ParseComplex(const std::string& text) {
-  const std::optional<std::pair<std::string, std::string>> parts = SplitPair(text, ',');
-  if (!parts) {
-    return std::nullopt;
-  }
-  const std::optional<double> re = ParseDouble(parts->first);
-  const std::optional<double> im = ParseDouble(parts->second);
-  if (!re || !im) {
-    return std::nullopt;
-  }
-  return std::make_pair(*re, *im);
-}
+// Returns the Julia set parameter for each frame of a loop of |frames|.
+std::vector<std::complex<double>> JuliaPath(uint32_t frames) {
+  // Loops clockwise around the edge of the Mandelbrot set's main cardioid (c = lambda / 2 -
+  // lambda^2 / 4, |lambda| = 1), dipping inside near the cusp at lambda = 1 to pass through
+  // 1 - kDip, and detours counterclockwise around the edges of the 2/3, 1/2, and 1/3 bulbs
+  // (|mu| = 1 in each bulb's multiplier).
+  constexpr double kTau = 2.0 * std::numbers::pi;
+  constexpr double kDip = 0.06;
+  constexpr double kDipWidth = 0.3;
+  constexpr double kAlpha = 0.75;
+  constexpr size_t kSamples = 4096;
 
-// kDefaultExtentWidth x kDefaultExtentHeight, shrunk along one axis to |aspect| (width / height).
-ComplexSize DefaultExtents(double aspect) {
-  if (aspect > kDefaultExtentWidth / kDefaultExtentHeight) {
-    return {.width = kDefaultExtentWidth, .height = kDefaultExtentWidth / aspect};
+  const auto lambda_to_c = [](std::complex<double> lambda) {
+    return lambda / 2.0 - lambda * lambda / 4.0;
+  };
+  const auto gauss = [](double x) { return std::exp(-x * x / (2.0 * kDipWidth * kDipWidth)); };
+  const auto cardioid_radius = [&](double theta) {
+    return 1.0 - (kDip * (gauss(theta) + gauss(theta - kTau)));
+  };
+
+  std::vector<std::complex<double>> mu(kSamples + 1);
+  for (size_t j = 0; j <= kSamples; ++j) {
+    mu[j] = std::polar(1.0, kTau * static_cast<double>(j) / kSamples);
   }
-  return {.width = kDefaultExtentHeight * aspect, .height = kDefaultExtentHeight};
+
+  // The 1/3 bulb (rabbit): solve f_c^3(z) = z and (f_c^3)'(z) = mu by Newton's method on (z, c),
+  // continuing from the bulb's nucleus. At the root mu = 1 the 3-cycle collides with the fixed
+  // point and the Jacobian is singular, so set the root from the cardioid instead.
+  std::vector<std::complex<double>> c13(kSamples + 1);
+  c13[0] = c13[kSamples] = lambda_to_c(std::polar(1.0, kTau / 3.0));
+  std::complex<double> z = 0.0;
+  std::complex<double> c(-0.122561, 0.744862);
+  for (int i = 0; i < 100; ++i) {
+    std::complex<double> zk = 0.0;
+    std::complex<double> dz = 0.0;
+    for (int k = 0; k < 3; ++k) {
+      dz = 2.0 * zk * dz + 1.0;
+      zk = zk * zk + c;
+    }
+    const std::complex<double> step = zk / dz;
+    c -= step;
+    if (std::abs(step) < 1e-15) {
+      break;
+    }
+  }
+  const auto solve_period3 = [&](std::complex<double> target_mu) {
+    for (int i = 0; i < 50; ++i) {
+      std::complex<double> zk = z;
+      std::complex<double> a = 1.0;  // dzk/dz
+      std::complex<double> b = 0.0;  // dzk/dc
+      std::complex<double> d = 0.0;  // da/dz
+      std::complex<double> e = 0.0;  // da/dc
+      for (int k = 0; k < 3; ++k) {
+        const std::complex<double> next_d = 2.0 * (a * a + zk * d);
+        const std::complex<double> next_e = 2.0 * (b * a + zk * e);
+        a = 2.0 * zk * a;
+        b = 2.0 * zk * b + 1.0;
+        d = next_d;
+        e = next_e;
+        zk = zk * zk + c;
+      }
+      const std::complex<double> f1 = zk - z;
+      const std::complex<double> f2 = a - target_mu;
+      const std::complex<double> det = (a - 1.0) * e - b * d;
+      const std::complex<double> dz = (e * f1 - b * f2) / det;
+      const std::complex<double> dc = ((a - 1.0) * f2 - d * f1) / det;
+      z -= dz;
+      c -= dc;
+      if (std::abs(dz) + std::abs(dc) < 1e-14) {
+        break;
+      }
+    }
+  };
+  for (int s = 1; s <= 80; ++s) {
+    const double u = 1.0 - (static_cast<double>(s) / 80.0);
+    solve_period3(mu[1] * (1.0 - (u * u)));
+  }
+  for (size_t j = 1; j < kSamples; ++j) {
+    solve_period3(mu[j]);
+    c13[j] = c;
+  }
+
+  std::vector<std::complex<double>> c12(kSamples + 1);
+  std::vector<std::complex<double>> c23(kSamples + 1);
+  for (size_t j = 0; j <= kSamples; ++j) {
+    c12[j] = -1.0 + mu[j] / 4.0;
+    c23[j] = std::conj(c13[kSamples - j]);
+  }
+
+  // Build a dense polyline of the loop, dropping each piece's last sample since it equals the next
+  // piece's first, and measure arc length s in each piece's multiplier coordinate.
+  std::vector<double> arc;
+  std::vector<std::complex<double>> samples;
+  double s = 0.0;
+  const auto add_piece = [&](const std::vector<std::complex<double>>& mult,
+                             const std::vector<std::complex<double>>& cs) {
+    for (size_t j = 0; j + 1 < mult.size(); ++j) {
+      arc.push_back(s);
+      samples.push_back(cs[j]);
+      s += std::abs(mult[j + 1] - mult[j]);
+    }
+  };
+  const auto add_cardioid = [&](size_t n, double theta0, double theta1) {
+    std::vector<std::complex<double>> lambda(n + 1);
+    std::vector<std::complex<double>> cs(n + 1);
+    for (size_t j = 0; j <= n; ++j) {
+      const double theta =
+          theta0 + ((theta1 - theta0) * static_cast<double>(j) / static_cast<double>(n));
+      lambda[j] = std::polar(cardioid_radius(theta), -theta);
+      cs[j] = lambda_to_c(lambda[j]);
+    }
+    add_piece(lambda, cs);
+  };
+  add_cardioid(kSamples / 3, 0.0, kTau / 3.0);
+  add_piece(mu, c23);
+  add_cardioid(kSamples / 6, kTau / 3.0, std::numbers::pi);
+  add_piece(mu, c12);
+  add_cardioid(kSamples / 6, std::numbers::pi, 2.0 * kTau / 3.0);
+  add_piece(mu, c13);
+  add_cardioid(kSamples / 3, 2.0 * kTau / 3.0, kTau);
+  arc.push_back(s);
+  samples.push_back(lambda_to_c(cardioid_radius(kTau)));
+
+  // Time runs as |dc|^kAlpha * |ds|^(1 - kAlpha) so that entering the smaller bulbs does not
+  // sharply slow the visual motion.
+  std::vector<double> time(samples.size(), 0.0);
+  for (size_t j = 1; j < samples.size(); ++j) {
+    const double dc = std::abs(samples[j] - samples[j - 1]);
+    const double ds = arc[j] - arc[j - 1];
+    time[j] = time[j - 1] + (std::pow(dc, kAlpha) * std::pow(ds, 1.0 - kAlpha));
+  }
+
+  std::vector<std::complex<double>> path(frames);
+  for (uint32_t k = 0; k < frames; ++k) {
+    const double target = static_cast<double>(k) * time.back() / frames;
+    size_t lo = 0;
+    size_t hi = time.size() - 1;
+    while (hi - lo > 1) {
+      const size_t mid = (lo + hi) / 2;
+      if (time[mid] <= target) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    const double t = (target - time[lo]) / (time[hi] - time[lo]);
+    path[k] = samples[lo] + (samples[hi] - samples[lo]) * t;
+  }
+  return path;
 }
 
 // Stores |value| in |out| if it is set, and returns whether it was.
@@ -252,32 +364,31 @@ std::optional<Options> ParseOptions(const fxl::CommandLine& command_line) {
   for (const fxl::CommandLine::Option& option : command_line.options()) {
     bool ok = true;
     if (option.name == "frames") {
-      ok = StoreIfSet(ParseUint32(option.value, 1), &options.frames);
+      ok = StoreIfSet(ParseUint32(option.value, 1, kMaxFrames), &options.frames);
+    } else if (option.name == "loops") {
+      if (option.value == "-1") {
+        options.loops = std::nullopt;
+      } else {
+        options.loops = ParseUint32(option.value, 1);
+        ok = options.loops.has_value();
+      }
     } else if (option.name == "warmup-frames") {
       ok = StoreIfSet(ParseUint32(option.value), &options.warmup_frames);
-    } else if (option.name == "total-zoom") {
-      ok = StoreIfSet(ParseDouble(option.value), &options.total_zoom) && options.total_zoom >= 1.0;
     } else if (option.name == "max-iterations") {
       ok = StoreIfSet(ParseUint32(option.value, 1), &options.max_iterations);
+    } else if (option.name == "fixed-iterations") {
+      ok = StoreIfSet(ParseBool(option.value), &options.fixed_iterations);
     } else if (option.name == "frames-in-flight") {
       ok = StoreIfSet(ParseUint32(option.value, 1, kMaxFramesInFlight), &options.frames_in_flight);
     } else if (option.name == "validation") {
       ok = StoreIfSet(ParseBool(option.value), &options.validation);
+    } else if (option.name == "gpu-timing") {
+      ok = StoreIfSet(ParseBool(option.value), &options.gpu_timing);
     } else if (option.name == "offscreen") {
       ok = StoreIfSet(ParseBool(option.value), &options.offscreen);
     } else if (option.name == "resolution") {
       options.resolution = ParseResolution(option.value);
       ok = options.resolution.has_value();
-    } else if (option.name == "extents") {
-      options.extents = ParseExtents(option.value);
-      ok = options.extents.has_value();
-    } else if (option.name == "center") {
-      const std::optional<std::pair<double, double>> center = ParseComplex(option.value);
-      ok = center.has_value();
-      if (ok) {
-        options.center_re = center->first;
-        options.center_im = center->second;
-      }
     } else {
       ok = false;
     }
@@ -369,8 +480,8 @@ class Fractal {
 
   bool Init() {
     return CreateInstance() && ChoosePhysicalDevice() && ChooseExtent() && ChooseFormat() &&
-           CreateDevice() && CreateSwapchain() && CreatePipeline() && CreateScalePipeline() &&
-           CreateTargets();
+           CreateDevice() && CreateQueryPool() && CreateSwapchain() && CreatePipeline() &&
+           CreateScalePipeline() && CreateTargets();
   }
 
   bool Run();
@@ -412,6 +523,7 @@ class Fractal {
   bool CheckResolution() const;
   bool ChooseFormat();
   bool CreateDevice();
+  bool CreateQueryPool();
   bool CreateSwapchain();
   bool CreatePipeline();
   bool CreateScalePipeline();
@@ -422,7 +534,8 @@ class Fractal {
   bool CreateFullscreenPipeline(vk::ShaderModule vertex, vk::ShaderModule fragment,
                                 vk::RenderPass render_pass, vk::PipelineLayout layout,
                                 vk::Rect2D viewport_rect, vk::UniquePipeline* out,
-                                const vk::SpecializationInfo* vertex_specialization = nullptr);
+                                const vk::SpecializationInfo* vertex_specialization = nullptr,
+                                const vk::SpecializationInfo* fragment_specialization = nullptr);
   bool CreateTargets();
   bool CreateFrameSlots();
   bool CreateTarget(vk::Image image, Target* target);
@@ -430,12 +543,18 @@ class Fractal {
   bool CreateOffscreenImage(FrameSlot* slot);
   std::optional<uint32_t> FindMemoryType(uint32_t type_bits,
                                          vk::MemoryPropertyFlags properties) const;
+  // Renders a frame with slot |slot_index| and presents it if a swapchain image is free, setting
+  // |presented| to whether it was. |loop_start| and |loop_end| mark a timed loop's first and last
+  // frames.
+  bool RenderFrame(size_t slot_index, const PushConstants& push_constants, bool loop_start,
+                   bool loop_end, bool* presented);
   // Renders into |target|. If |present| is set, |target| is a swapchain image, which is left
-  // ready to present.
+  // ready to present. |loop_start| and |loop_end| mark a timed loop's first and last batches.
   bool RecordFrame(vk::CommandBuffer command_buffer, const Target& target, bool present,
-                   const PushConstants& push_constants);
+                   const PushConstants& push_constants, bool loop_start, bool loop_end);
   // Stretches |source|, which the previous batch rendered, over swapchain image |image_index|.
-  bool RecordScale(vk::CommandBuffer command_buffer, const Target& source, uint32_t image_index);
+  bool RecordScale(vk::CommandBuffer command_buffer, const Target& source, uint32_t image_index,
+                   bool loop_end);
 
   const Options options_;
   std::atomic<uint32_t>* const validation_errors_;
@@ -447,18 +566,24 @@ class Fractal {
   vk::PhysicalDevice physical_device_;
   std::string device_name_;
   uint32_t queue_family_ = 0;
+  // Valid bits in the queue's timestamps, or 0 if it has none.
+  uint32_t timestamp_valid_bits_ = 0;
+  // Nanoseconds per timestamp tick.
+  float timestamp_period_ = 0.0f;
   // The fractal's resolution.
   vk::Extent2D extent_;
   // The swapchain images' size: the display's. Unused offscreen.
   vk::Extent2D display_extent_;
   // The display is taller than it is wide, so the image is rotated 90 degrees clockwise onto it.
   bool rotate_ = false;
-  // Frame 0's size in the complex plane: --extents, or its default for this display.
+  // The size of the complex plane in view.
   ComplexSize extents_;
   vk::SurfaceFormatKHR surface_format_;
   DisplayMode display_mode_ = DisplayMode::kNone;
   vk::UniqueDevice device_;
   vk::Queue queue_;
+  // With --gpu-timing, measures each timed loop on the GPU.
+  vk::UniqueQueryPool query_pool_;
   vk::UniqueSwapchainKHR swapchain_;
   vk::UniqueRenderPass render_pass_;
   vk::UniquePipelineLayout pipeline_layout_;
@@ -570,6 +695,8 @@ bool Fractal::ChoosePhysicalDevice() {
       if (supported) {
         physical_device_ = physical_device;
         queue_family_ = i;
+        timestamp_valid_bits_ = families[i].timestampValidBits;
+        timestamp_period_ = properties.limits.timestampPeriod;
         device_name_ = properties.deviceName.data();
         return true;
       }
@@ -584,9 +711,7 @@ bool Fractal::ChooseExtent() {
   if (options_.offscreen) {
     extent_ =
         options_.resolution.value_or(vk::Extent2D(kDefaultOffscreenWidth, kDefaultOffscreenHeight));
-    // There is no display, so the image itself sets the default extents' aspect ratio.
-    extents_ = options_.extents.value_or(
-        DefaultExtents(static_cast<double>(extent_.width) / extent_.height));
+    extents_ = Extents(static_cast<double>(extent_.width) / extent_.height);
     return CheckResolution();
   }
   auto [caps_result, caps] = physical_device_.getSurfaceCapabilitiesKHR(*surface_);
@@ -601,12 +726,7 @@ bool Fractal::ChooseExtent() {
   rotate_ = display_extent_.height > display_extent_.width;
   extent_ = options_.resolution.value_or(
       rotate_ ? vk::Extent2D(display_extent_.height, display_extent_.width) : display_extent_);
-  // The image is stretched onto the display, so extents with the display's aspect ratio (in the
-  // image's orientation) show the set undistorted whatever the resolution.
-  const double display_aspect =
-      rotate_ ? static_cast<double>(display_extent_.height) / display_extent_.width
-              : static_cast<double>(display_extent_.width) / display_extent_.height;
-  extents_ = options_.extents.value_or(DefaultExtents(display_aspect));
+  extents_ = Extents(static_cast<double>(extent_.width) / extent_.height);
   return CheckResolution();
 }
 
@@ -661,6 +781,24 @@ bool Fractal::CreateDevice() {
   return true;
 }
 
+bool Fractal::CreateQueryPool() {
+  if (!options_.gpu_timing) {
+    return true;
+  }
+  if (timestamp_valid_bits_ == 0) {
+    return Fail("--gpu-timing needs a queue with timestamps");
+  }
+  // A timed loop's first and last timestamps.
+  vk::QueryPoolCreateInfo pool_info;
+  pool_info.setQueryType(vk::QueryType::eTimestamp).setQueryCount(2);
+  auto [pool_result, pool] = device_->createQueryPoolUnique(pool_info);
+  if (pool_result != vk::Result::eSuccess) {
+    return Fail("vkCreateQueryPool", pool_result);
+  }
+  query_pool_ = std::move(pool);
+  return true;
+}
+
 bool Fractal::CreateSwapchain() {
   if (options_.offscreen) {
     return true;
@@ -698,8 +836,8 @@ bool Fractal::CreateSwapchain() {
   }
 
   // FIFO is the only mode the swapchain layer offers on the display path, but as described above
-  // the coordinator behaves like mailbox. Rendering is never paced by vsync because Run() acquires
-  // with a zero timeout.
+  // the coordinator behaves like mailbox. Rendering is never paced by vsync because RenderFrame()
+  // acquires with a zero timeout.
   vk::SwapchainCreateInfoKHR create_info;
   create_info.setSurface(*surface_)
       .setMinImageCount(image_count)
@@ -762,14 +900,19 @@ bool Fractal::CreateShaderModule(const uint32_t* code, size_t size, vk::UniqueSh
 bool Fractal::CreateFullscreenPipeline(vk::ShaderModule vertex, vk::ShaderModule fragment,
                                        vk::RenderPass render_pass, vk::PipelineLayout layout,
                                        vk::Rect2D viewport_rect, vk::UniquePipeline* out,
-                                       const vk::SpecializationInfo* vertex_specialization) {
+                                       const vk::SpecializationInfo* vertex_specialization,
+                                       const vk::SpecializationInfo* fragment_specialization) {
   std::array<vk::PipelineShaderStageCreateInfo, 2> stages;
   stages[0]
       .setStage(vk::ShaderStageFlagBits::eVertex)
       .setModule(vertex)
       .setPName("main")
       .setPSpecializationInfo(vertex_specialization);
-  stages[1].setStage(vk::ShaderStageFlagBits::eFragment).setModule(fragment).setPName("main");
+  stages[1]
+      .setStage(vk::ShaderStageFlagBits::eFragment)
+      .setModule(fragment)
+      .setPName("main")
+      .setPSpecializationInfo(fragment_specialization);
 
   // The vertex shader generates a full-screen triangle from gl_VertexIndex.
   vk::PipelineVertexInputStateCreateInfo vertex_input;
@@ -840,13 +983,22 @@ bool Fractal::CreatePipeline() {
   vk::UniqueShaderModule vertex_module;
   vk::UniqueShaderModule fragment_module;
   if (!CreateShaderModule(fullscreen_vert_spv, sizeof(fullscreen_vert_spv), &vertex_module) ||
-      !CreateShaderModule(mandelbrot_frag_spv, sizeof(mandelbrot_frag_spv), &fragment_module)) {
+      !CreateShaderModule(fractal_frag_spv, sizeof(fractal_frag_spv), &fragment_module)) {
     return false;
   }
+  // fractal.frag's kFixedIterations (constant_id 0) is a bool, which is 32 bits in SPIR-V.
+  const VkBool32 fixed_iterations = options_.fixed_iterations ? VK_TRUE : VK_FALSE;
+  vk::SpecializationMapEntry map_entry;
+  map_entry.setConstantID(0).setOffset(0).setSize(sizeof(fixed_iterations));
+  vk::SpecializationInfo specialization;
+  specialization.setMapEntries(map_entry)
+      .setDataSize(sizeof(fixed_iterations))
+      .setPData(&fixed_iterations);
   vk::Rect2D viewport_rect;
   viewport_rect.setExtent(extent_);
   return CreateFullscreenPipeline(*vertex_module, *fragment_module, *render_pass_,
-                                  *pipeline_layout_, viewport_rect, &pipeline_);
+                                  *pipeline_layout_, viewport_rect, &pipeline_,
+                                  /*vertex_specialization=*/nullptr, &specialization);
 }
 
 bool Fractal::CreateScalePipeline() {
@@ -1163,11 +1315,17 @@ bool Fractal::CreateScaleTargets() {
 }
 
 bool Fractal::RecordFrame(vk::CommandBuffer command_buffer, const Target& target, bool present,
-                          const PushConstants& push_constants) {
+                          const PushConstants& push_constants, bool loop_start, bool loop_end) {
   vk::CommandBufferBeginInfo begin_info;
   begin_info.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
   if (vk::Result result = command_buffer.begin(begin_info); result != vk::Result::eSuccess) {
     return Fail("vkBeginCommandBuffer", result);
+  }
+
+  // A timed loop's GPU time runs from the start of its first frame to the end of its last.
+  if (query_pool_ && loop_start) {
+    command_buffer.resetQueryPool(*query_pool_, 0, 2);
+    command_buffer.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, *query_pool_, 0);
   }
 
   vk::ImageSubresourceRange range;
@@ -1217,6 +1375,10 @@ bool Fractal::RecordFrame(vk::CommandBuffer command_buffer, const Target& target
                                    to_present);
   }
 
+  if (query_pool_ && loop_end) {
+    command_buffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, *query_pool_, 1);
+  }
+
   if (vk::Result result = command_buffer.end(); result != vk::Result::eSuccess) {
     return Fail("vkEndCommandBuffer", result);
   }
@@ -1224,7 +1386,7 @@ bool Fractal::RecordFrame(vk::CommandBuffer command_buffer, const Target& target
 }
 
 bool Fractal::RecordScale(vk::CommandBuffer command_buffer, const Target& source,
-                          uint32_t image_index) {
+                          uint32_t image_index, bool loop_end) {
   vk::CommandBufferBeginInfo begin_info;
   begin_info.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
   if (vk::Result result = command_buffer.begin(begin_info); result != vk::Result::eSuccess) {
@@ -1285,35 +1447,100 @@ bool Fractal::RecordScale(vk::CommandBuffer command_buffer, const Target& source
                                  vk::PipelineStageFlagBits::eBottomOfPipe, {}, nullptr, nullptr,
                                  to_present);
 
+  if (query_pool_ && loop_end) {
+    command_buffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, *query_pool_, 1);
+  }
+
   if (vk::Result result = command_buffer.end(); result != vk::Result::eSuccess) {
     return Fail("vkEndCommandBuffer", result);
   }
   return true;
 }
 
-bool Fractal::Run() {
-  // Complex units per pixel on frame 0. They differ between the axes when the image's aspect
-  // ratio differs from the extents'; the image is then stretched back onto the display.
-  const double initial_step_x = extents_.width / extent_.width;
-  const double initial_step_y = extents_.height / extent_.height;
-  const double final_step = std::min(initial_step_x, initial_step_y) / options_.total_zoom;
-
-  // Pixels stop being distinct once the step drops below one float32 ulp of the coordinates.
-  const float target_magnitude =
-      static_cast<float>(std::max(std::abs(options_.center_re), std::abs(options_.center_im)));
-  const double ulp =
-      std::nextafter(target_magnitude, std::numeric_limits<float>::infinity()) - target_magnitude;
-  if (final_step < ulp) {
-    std::println(stderr,
-                 "vkfractal: warning: --total-zoom={:g} makes the last frame's pixel step ({:g}) "
-                 "smaller than one float32 ulp at the target ({:g}); the last frames will look "
-                 "blocky",
-                 options_.total_zoom, final_step, ulp);
-  }
-
+bool Fractal::RenderFrame(size_t slot_index, const PushConstants& push_constants, bool loop_start,
+                          bool loop_end, bool* presented) {
   // The first write to the swapchain image, in direct and scale modes.
   const vk::PipelineStageFlags acquire_wait_stage =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;
+  FrameSlot& slot = slots_[slot_index];
+
+  // The only CPU wait: for this slot's previous frame on the GPU. The other slots stay
+  // queued, so the GPU always has work.
+  if (vk::Result result = device_->waitForFences(*slot.fence, VK_TRUE, UINT64_MAX);
+      result != vk::Result::eSuccess) {
+    return Fail("vkWaitForFences", result);
+  }
+  if (vk::Result result = device_->resetFences(*slot.fence); result != vk::Result::eSuccess) {
+    return Fail("vkResetFences", result);
+  }
+
+  // Never block on the display: take a swapchain image only if one is already free.
+  // Note: the spec leaves the semaphore untouched on VK_NOT_READY, but the swapchain layer may
+  // already have imported a signaled payload into it. The layer's next successful acquire
+  // replaces that payload, so reusing the semaphore is harmless with this layer.
+  bool to_display = false;
+  uint32_t image_index = 0;
+  if (swapchain_) {
+    auto [acquire_result, acquired_index] =
+        device_->acquireNextImageKHR(*swapchain_, 0, *slot.acquire_semaphore, nullptr);
+    if (acquire_result == vk::Result::eSuccess || acquire_result == vk::Result::eSuboptimalKHR) {
+      to_display = true;
+      image_index = acquired_index;
+    } else if (acquire_result != vk::Result::eNotReady && acquire_result != vk::Result::eTimeout) {
+      return Fail("vkAcquireNextImageKHR", acquire_result);
+    }
+  }
+
+  const bool scale = display_mode_ == DisplayMode::kScale;
+  const bool direct = to_display && !scale;
+  const Target& target = direct ? swapchain_targets_[image_index] : offscreen_targets_[slot_index];
+  if (!RecordFrame(*slot.command_buffer, target, direct, push_constants, loop_start,
+                   loop_end && !(to_display && scale))) {
+    return false;
+  }
+  if (to_display && scale &&
+      !RecordScale(*slot.scale_command_buffer, target, static_cast<uint32_t>(image_index),
+                   loop_end)) {
+    return false;
+  }
+
+  // In scale mode the fractal and the scale pass are separate batches, and only the second one
+  // waits for the swapchain image. The fence covers both.
+  std::array<vk::SubmitInfo, 2> submit_infos;
+  uint32_t submit_count = 1;
+  submit_infos[0].setCommandBuffers(*slot.command_buffer);
+  if (to_display) {
+    vk::SubmitInfo& present_submit = scale ? submit_infos[submit_count++] : submit_infos[0];
+    if (scale) {
+      present_submit.setCommandBuffers(*slot.scale_command_buffer);
+    }
+    present_submit.setWaitSemaphores(*slot.acquire_semaphore)
+        .setWaitDstStageMask(acquire_wait_stage)
+        .setSignalSemaphores(*present_semaphores_[image_index]);
+  }
+  if (vk::Result result = queue_.submit(
+          vk::ArrayProxy<const vk::SubmitInfo>(submit_count, submit_infos.data()), *slot.fence);
+      result != vk::Result::eSuccess) {
+    return Fail("vkQueueSubmit", result);
+  }
+
+  if (to_display) {
+    // Does not wait for vsync: the swapchain layer sends a one-way CommitConfig to the
+    // display coordinator, which shows the image once its rendering completes.
+    vk::PresentInfoKHR present_info;
+    present_info.setWaitSemaphores(*present_semaphores_[image_index])
+        .setSwapchains(*swapchain_)
+        .setImageIndices(image_index);
+    vk::Result present_result = queue_.presentKHR(present_info);
+    if (present_result != vk::Result::eSuccess && present_result != vk::Result::eSuboptimalKHR) {
+      return Fail("vkQueuePresentKHR", present_result);
+    }
+  }
+  *presented = to_display;
+  return true;
+}
+
+bool Fractal::Run() {
   std::string display;
   switch (display_mode_) {
     case DisplayMode::kNone:
@@ -1328,132 +1555,126 @@ bool Fractal::Run() {
                 std::to_string(display_extent_.height) + " display";
       break;
   }
+  const std::string loops = options_.loops
+                                ? std::format("{} loop{} of {} frames", *options_.loops,
+                                              *options_.loops == 1 ? "" : "s", options_.frames)
+                                : std::format("loops of {} frames forever", options_.frames);
   std::println(
-      "vkfractal: {}, {}x{} {} ({}), {} frames after {} warm-up frames, total zoom "
-      "{:g}x, max iterations {}, {} frames in flight, validation {}",
+      "vkfractal: {}, {}x{} {} ({}), {} warm-up frames, then {}, max iterations {}, {}, {} frames "
+      "in flight, validation {}, timing: {}",
       device_name_, extent_.width, extent_.height, vk::to_string(surface_format_.format), display,
-      options_.frames, options_.warmup_frames, options_.total_zoom, options_.max_iterations,
-      options_.frames_in_flight, options_.validation ? "on" : "off");
-  std::println("vkfractal: --extents={:.17g}x{:.17g}{} --center={:.17g},{:.17g}", extents_.width,
-               extents_.height, options_.extents ? "" : " (default)", options_.center_re,
-               options_.center_im);
+      options_.warmup_frames, loops, options_.max_iterations,
+      options_.fixed_iterations ? "fixed iterations" : "early exit", options_.frames_in_flight,
+      options_.validation ? "on" : "off", query_pool_ ? "CPU and GPU" : "CPU only");
+  std::println("vkfractal: extents {:.3f}x{:.3f}", extents_.width, extents_.height);
 
-  PushConstants push_constants = {
-      .center = {static_cast<float>(options_.center_re), static_cast<float>(options_.center_im)},
-      .half_extent = {extent_.width / 2.0f, extent_.height / 2.0f},
-      .step = {0.0f, 0.0f},
-      .max_iterations = options_.max_iterations,
+  // The magma colormap at 0, 0.1, ..., 1, then back down to 0, as 0xRRGGBB.
+  constexpr std::array<uint32_t, 21> kPalette = {
+      0x000004, 0x140e36, 0x3b0f70, 0x641a80, 0x8c2981, 0xb73779, 0xde4968,
+      0xf7705c, 0xfe9f6d, 0xfecf92, 0xfcfdbf, 0xfecf92, 0xfe9f6d, 0xf7705c,
+      0xde4968, 0xb73779, 0x8c2981, 0x641a80, 0x3b0f70, 0x140e36, 0x000004,
   };
-  uint32_t presented = 0;
+  // Complex units per pixel. They differ between the axes when the image's aspect ratio differs
+  // from the extents'; the image is then stretched back onto the display.
+  const float step_x = static_cast<float>(extents_.width / extent_.width);
+  const float step_y = static_cast<float>(extents_.height / extent_.height);
+  PushConstants push_constants = {
+      .half_extent = {extent_.width / 2.0f, extent_.height / 2.0f},
+      .step = {step_x, step_y},
+      .c = {0.0f, 0.0f},
+      .max_iterations = options_.max_iterations,
+      .palette = kPalette,
+  };
+  // unpackUnorm4x8 takes red from the lowest byte.
+  for (uint32_t& color : push_constants.palette) {
+    color = (color >> 16u) | (color & 0xff00u) | ((color & 0xffu) << 16u);
+  }
+  const std::vector<std::complex<double>> path = JuliaPath(options_.frames);
+  const auto set_frame = [&](uint32_t frame) {
+    push_constants.c[0] = static_cast<float>(path[frame].real());
+    push_constants.c[1] = static_cast<float>(path[frame].imag());
+  };
+  // Prints "<frames> frames (<presented> presented) in ..." after |prefix|.
+  const auto print_times = [](const std::string& prefix, uint64_t frames, uint64_t presented,
+                              double seconds, std::optional<double> gpu_seconds) {
+    const double count = static_cast<double>(frames);
+    std::string gpu;
+    if (gpu_seconds) {
+      gpu = std::format("; GPU {:.3f} s: {:.3f} ms/frame", *gpu_seconds,
+                        1000.0 * *gpu_seconds / count);
+    }
+    std::println("vkfractal: {}{} frames ({} presented) in {:.3f} s: {:.3f} ms/frame, {:.1f} fps{}",
+                 prefix, frames, presented, seconds, 1000.0 * seconds / count, count / seconds,
+                 gpu);
+    fflush(stdout);
+  };
+
+  // Frames take the slots in turn.
+  uint64_t submitted = 0;
+  bool frame_presented = false;
 
   // The warm-up frames render frame 0 and are not timed, so that one-time driver work on the first
   // submissions is not measured.
-  const uint64_t total_frames = uint64_t{options_.warmup_frames} + options_.frames;
-  auto start = std::chrono::steady_clock::now();
-  for (uint64_t i = 0; i < total_frames; ++i) {
-    if (i == options_.warmup_frames) {
-      // Start timing with an idle GPU, like a run without warm-up frames.
-      if (vk::Result result = device_->waitIdle(); result != vk::Result::eSuccess) {
-        return Fail("vkDeviceWaitIdle", result);
-      }
-      start = std::chrono::steady_clock::now();
-      presented = 0;
-    }
-    const uint32_t frame =
-        i < options_.warmup_frames ? 0 : static_cast<uint32_t>(i - options_.warmup_frames);
-    const size_t slot_index = i % slots_.size();
-    FrameSlot& slot = slots_[slot_index];
-
-    // The only CPU wait: for this slot's previous frame on the GPU. The other slots stay
-    // queued, so the GPU always has work.
-    if (vk::Result result = device_->waitForFences(*slot.fence, VK_TRUE, UINT64_MAX);
-        result != vk::Result::eSuccess) {
-      return Fail("vkWaitForFences", result);
-    }
-    if (vk::Result result = device_->resetFences(*slot.fence); result != vk::Result::eSuccess) {
-      return Fail("vkResetFences", result);
-    }
-
-    // Zoom geometrically so that every frame magnifies by the same ratio and the last frame is
-    // exactly --total-zoom times the first.
-    const double t = options_.frames > 1 ? static_cast<double>(frame) / (options_.frames - 1) : 0.0;
-    const double zoom = std::pow(options_.total_zoom, -t);
-    push_constants.step[0] = static_cast<float>(initial_step_x * zoom);
-    push_constants.step[1] = static_cast<float>(initial_step_y * zoom);
-
-    // Never block on the display: take a swapchain image only if one is already free.
-    // Note: the spec leaves the semaphore untouched on VK_NOT_READY, but the swapchain layer may
-    // already have imported a signaled payload into it. The layer's next successful acquire
-    // replaces that payload, so reusing the semaphore is harmless with this layer.
-    bool to_display = false;
-    uint32_t image_index = 0;
-    if (swapchain_) {
-      auto [acquire_result, acquired_index] =
-          device_->acquireNextImageKHR(*swapchain_, 0, *slot.acquire_semaphore, nullptr);
-      if (acquire_result == vk::Result::eSuccess || acquire_result == vk::Result::eSuboptimalKHR) {
-        to_display = true;
-        image_index = acquired_index;
-      } else if (acquire_result != vk::Result::eNotReady &&
-                 acquire_result != vk::Result::eTimeout) {
-        return Fail("vkAcquireNextImageKHR", acquire_result);
-      }
-    }
-
-    const bool scale = display_mode_ == DisplayMode::kScale;
-    const bool direct = to_display && !scale;
-    const Target& target =
-        direct ? swapchain_targets_[image_index] : offscreen_targets_[slot_index];
-    if (!RecordFrame(*slot.command_buffer, target, direct, push_constants)) {
+  set_frame(0);
+  for (uint32_t i = 0; i < options_.warmup_frames; ++i) {
+    if (!RenderFrame(submitted++ % slots_.size(), push_constants, false, false, &frame_presented)) {
       return false;
     }
-    if (to_display && scale &&
-        !RecordScale(*slot.scale_command_buffer, target, static_cast<uint32_t>(image_index))) {
-      return false;
-    }
+  }
 
-    // In scale mode the fractal and the scale pass are separate batches, and only the second one
-    // waits for the swapchain image. The fence covers both.
-    std::array<vk::SubmitInfo, 2> submit_infos;
-    uint32_t submit_count = 1;
-    submit_infos[0].setCommandBuffers(*slot.command_buffer);
-    if (to_display) {
-      vk::SubmitInfo& present_submit = scale ? submit_infos[submit_count++] : submit_infos[0];
-      if (scale) {
-        present_submit.setCommandBuffers(*slot.scale_command_buffer);
+  uint64_t total_frames = 0;
+  uint64_t total_presented = 0;
+  double total_seconds = 0.0;
+  double total_gpu_seconds = 0.0;
+  for (uint64_t loop = 1; !options_.loops || loop <= *options_.loops; ++loop) {
+    // Time each loop from an idle GPU until the GPU is idle again, so that the CPU and GPU clocks
+    // time the same frames.
+    if (vk::Result result = device_->waitIdle(); result != vk::Result::eSuccess) {
+      return Fail("vkDeviceWaitIdle", result);
+    }
+    const auto start = std::chrono::steady_clock::now();
+    uint64_t presented = 0;
+    for (uint32_t frame = 0; frame < options_.frames; ++frame) {
+      set_frame(frame);
+      if (!RenderFrame(submitted++ % slots_.size(), push_constants, frame == 0,
+                       frame == options_.frames - 1, &frame_presented)) {
+        return false;
       }
-      present_submit.setWaitSemaphores(*slot.acquire_semaphore)
-          .setWaitDstStageMask(acquire_wait_stage)
-          .setSignalSemaphores(*present_semaphores_[image_index]);
+      if (frame_presented) {
+        ++presented;
+      }
     }
-    if (vk::Result result = queue_.submit(
-            vk::ArrayProxy<const vk::SubmitInfo>(submit_count, submit_infos.data()), *slot.fence);
-        result != vk::Result::eSuccess) {
-      return Fail("vkQueueSubmit", result);
+    if (vk::Result result = device_->waitIdle(); result != vk::Result::eSuccess) {
+      return Fail("vkDeviceWaitIdle", result);
     }
+    const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - start;
 
-    if (to_display) {
-      // Does not wait for vsync: the swapchain layer sends a one-way CommitConfig to the
-      // display coordinator, which shows the image once its rendering completes.
-      vk::PresentInfoKHR present_info;
-      present_info.setWaitSemaphores(*present_semaphores_[image_index])
-          .setSwapchains(*swapchain_)
-          .setImageIndices(image_index);
-      vk::Result present_result = queue_.presentKHR(present_info);
-      if (present_result != vk::Result::eSuccess && present_result != vk::Result::eSuboptimalKHR) {
-        return Fail("vkQueuePresentKHR", present_result);
+    std::optional<double> gpu_seconds;
+    if (query_pool_) {
+      auto [query_result, timestamps] = device_->getQueryPoolResults<uint64_t>(
+          *query_pool_, 0, 2, 2 * sizeof(uint64_t), sizeof(uint64_t),
+          vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait);
+      if (query_result != vk::Result::eSuccess) {
+        return Fail("vkGetQueryPoolResults", query_result);
       }
-      ++presented;
+      // Only the low timestamp_valid_bits_ bits count, so the difference wraps around there.
+      const uint64_t mask = timestamp_valid_bits_ >= 64
+                                ? std::numeric_limits<uint64_t>::max()
+                                : (uint64_t{1} << timestamp_valid_bits_) - 1;
+      const uint64_t ticks = (timestamps[1] - timestamps[0]) & mask;
+      gpu_seconds = static_cast<double>(ticks) * timestamp_period_ / 1e9;
+      total_gpu_seconds += *gpu_seconds;
+    }
+    total_frames += options_.frames;
+    total_presented += presented;
+    total_seconds += elapsed.count();
+    if (options_.loops != 1u) {
+      print_times(std::format("loop {}: ", loop), options_.frames, presented, elapsed.count(),
+                  gpu_seconds);
     }
   }
-  if (vk::Result result = device_->waitIdle(); result != vk::Result::eSuccess) {
-    return Fail("vkDeviceWaitIdle", result);
-  }
-  const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - start;
-
-  std::println("vkfractal: {} frames ({} presented) in {:.3f} s: {:.3f} ms/frame, {:.1f} fps",
-               options_.frames, presented, elapsed.count(),
-               1000.0 * elapsed.count() / options_.frames, options_.frames / elapsed.count());
-  fflush(stdout);
+  print_times("", total_frames, total_presented, total_seconds,
+              query_pool_ ? std::optional(total_gpu_seconds) : std::nullopt);
   return true;
 }
 

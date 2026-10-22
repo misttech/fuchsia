@@ -15,8 +15,8 @@ _shader_variants = [
     source = "shaders/fullscreen.vert"
   },
   {
-    name = "mandelbrot_frag"
-    source = "shaders/mandelbrot.frag"
+    name = "fractal_frag"
+    source = "shaders/fractal.frag"
   },
   {
     name = "scale_vert"
