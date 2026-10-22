@@ -259,3 +259,14 @@ configs: {
     path_regex: "zircon/.*\\.(rs|cc|h)"
   }
 }
+
+configs: {
+  id: "starnix-guidelines"
+  display_name: "Starnix Review Guidelines"
+  description: "Starnix kernel coding guidelines, UAPI/ABI conformance, MemoryAccessor safety, and LockDep ordering."
+  tags: "code-review-agent"
+  skills: "starnix-guidelines"
+  include_filters: {
+    path_regex: "(.*/)?starnix/.*"
+  }
+}
