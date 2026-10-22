@@ -133,7 +133,7 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
         let slot = guard.ptr.as_ptr() as *mut T;
         // SAFETY: `slot` is valid and will not be moved.
         unsafe { init.__pinned_init(slot)? };
-        // SAFETY: The object is now initialized, so we can access its ref_count.
+        // SAFETY: The object is now initialized, and no `RefPtr` to it exists.
         unsafe { (*slot).ref_count().adopt() };
         let initialized_ptr = guard.ptr.cast::<T>();
         core::mem::forget(guard);
@@ -152,7 +152,7 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
         let slot = guard.ptr.as_ptr() as *mut T;
         // SAFETY: `slot` is valid.
         unsafe { init.__init(slot)? };
-        // SAFETY: The object is now initialized, so we can access its ref_count.
+        // SAFETY: The object is now initialized, and no `RefPtr` to it exists.
         unsafe { (*slot).ref_count().adopt() };
         let initialized_ptr = guard.ptr.cast::<T>();
         core::mem::forget(guard);

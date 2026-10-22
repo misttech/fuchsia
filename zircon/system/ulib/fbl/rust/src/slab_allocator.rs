@@ -641,12 +641,13 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
         T: HasRefCount + Recyclable + InstancedSlabAllocated<L, SLAB_SIZE, TRACK_OBJECT_COUNT>,
     {
         let ptr = self.alloc_raw()?;
-        // SAFETY: `ptr` is valid and uninitialized.
+        // SAFETY: `ptr` is valid and uninitialized. Once `value` is written and its slab origin is
+        // set, `ptr` points to a freshly initialized `T` that has not been adopted and that
+        // `T::recycle` deallocates.
         unsafe {
             write(ptr.as_ptr(), value);
             (&mut *ptr.as_ptr()).set_slab_origin(NonNull::from(self));
-            (*ptr.as_ptr()).ref_count().adopt();
-            Ok(RefPtr::from_raw(ptr.as_ptr()))
+            Ok(RefPtr::adopt_raw(ptr.as_ptr()))
         }
     }
 

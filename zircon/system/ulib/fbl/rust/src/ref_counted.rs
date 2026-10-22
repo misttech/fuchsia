@@ -37,7 +37,12 @@ impl RefCounted {
     }
 
     /// Transition the object from unadopted to adopted state.
-    pub(crate) fn adopt(&self) {
+    ///
+    /// # Safety
+    ///
+    /// The object has not been adopted: its reference count is still in the state
+    /// `RefCounted::new` left it in. Nothing else accesses the reference count during the call.
+    pub unsafe fn adopt(&self) {
         #[cfg(debug_assertions)]
         {
             let expected = PRE_ADOPT_SENTINEL;
@@ -146,7 +151,8 @@ mod tests {
     #[test]
     fn test_add_ref() {
         let rc = RefCounted::new();
-        rc.adopt();
+        // SAFETY: No `RefPtr` to `rc` exists.
+        unsafe { rc.adopt() };
         rc.add_ref();
         assert_eq!(rc.ref_count_debug(), 2);
     }
@@ -154,7 +160,8 @@ mod tests {
     #[test]
     fn test_release() {
         let rc = RefCounted::new();
-        rc.adopt();
+        // SAFETY: No `RefPtr` to `rc` exists.
+        unsafe { rc.adopt() };
         assert!(rc.release()); // returns true, count becomes 0
         assert_eq!(rc.ref_count_debug(), 0);
     }
@@ -163,7 +170,8 @@ mod tests {
     #[should_panic(expected = "AddRef on un-adopted or destroyed object")]
     fn test_add_ref_panic() {
         let rc = RefCounted::new();
-        rc.adopt();
+        // SAFETY: No `RefPtr` to `rc` exists.
+        unsafe { rc.adopt() };
         assert!(rc.release()); // count becomes 0
         rc.add_ref(); // Should panic!
     }
@@ -172,7 +180,8 @@ mod tests {
     #[should_panic(expected = "Release on un-adopted or destroyed object")]
     fn test_release_panic() {
         let rc = RefCounted::new();
-        rc.adopt();
+        // SAFETY: No `RefPtr` to `rc` exists.
+        unsafe { rc.adopt() };
         assert!(rc.release()); // count becomes 0
         let _ = rc.release(); // Should panic!
     }
