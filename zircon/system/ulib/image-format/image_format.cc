@@ -1906,8 +1906,10 @@ fpromise::result<ImageFormat> ImageConstraintsToFormat(const ImageFormatConstrai
   }
   ZX_ASSERT(minimum_row_bytes.ValueOrDie() != 0);
   result.bytes_per_row() = minimum_row_bytes.ValueOrDie();
-  result.pixel_format() = constraints.pixel_format().value();
-  result.pixel_format_modifier() = constraints.pixel_format_modifier().value();
+  // An unset pixel_format_modifier means LINEAR, as in ImageFormatMinimumRowBytesChecked() above.
+  auto pixel_format_and_modifier = PixelFormatAndModifierFromConstraints(constraints);
+  result.pixel_format() = pixel_format_and_modifier.pixel_format;
+  result.pixel_format_modifier() = pixel_format_and_modifier.pixel_format_modifier;
   result.size() = {width, height};
   // We intentionally default to x, y == 0, 0 here, since that's by far the most common.  The caller
   // can fix this up.

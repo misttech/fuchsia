@@ -2445,3 +2445,16 @@ TEST(ImageFormat, PvricFormats_V1_wire) {
   EXPECT_EQ(2u, ImageFormatPlaneRowBytesChecked(image_format, 3).ValueOrDie());
 }
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(33)
+
+TEST(ImageFormat, ImageConstraintsToFormatDefaultsModifierToLinear) {
+  sysmem_v2::ImageFormatConstraints constraints;
+  constraints.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
+  ASSERT_FALSE(constraints.pixel_format_modifier().has_value());
+
+  auto result = ImageConstraintsToFormat(constraints, 64u, 32u);
+  ASSERT_TRUE(result.is_ok());
+  auto image_format = result.take_value();
+  EXPECT_EQ(fuchsia_images2::PixelFormat::kB8G8R8A8, image_format.pixel_format());
+  EXPECT_EQ(fuchsia_images2::PixelFormatModifier::kLinear, image_format.pixel_format_modifier());
+  EXPECT_EQ(64u * 4, image_format.bytes_per_row());
+}
