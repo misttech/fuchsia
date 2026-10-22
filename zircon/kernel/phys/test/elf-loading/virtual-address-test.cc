@@ -5,15 +5,21 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/zbitl/error-stdio.h>
+#include <lib/zbitl/view.h>
+#include <stdio.h>
 
 #include <cstdint>
 
+#include <ktl/array.h>
+#include <ktl/byte.h>
+#include <ktl/span.h>
+#include <ktl/string_view.h>
 #include <phys/address-space.h>
 #include <phys/elf-image.h>
 #include <phys/kernel-package.h>
 #include <phys/symbolize.h>
 
-#include "../physload-test-main.h"
+#include "../test-main.h"
 #include "get-int.h"
 
 #ifdef __aarch64__
@@ -24,10 +30,13 @@
 
 namespace {
 
-constexpr const char* kTestName = "virtual-address-loading-loading-test";
+constexpr const char* kTestName = "virtual-address-loading-test";
 
 // The name of ELF module to be loaded.
 constexpr ktl::string_view kGetInt = "get-int.virtual-address-loading-test";
+
+// The BOOTFS namespace under which kGetInt lives.
+constexpr ktl::string_view kNamespace = "virtual-address-loading-test-data";
 
 // TODO(https://fxbug.dev/42172722): Pick a load address through a sort of allocator
 // (i.e., as we would in production).
@@ -35,24 +44,38 @@ constexpr uint64_t kLoadAddress = 0xffff'ffff'0000'0000;
 
 }  // namespace
 
-int PhysLoadTestMain(KernelStorage& kernelfs) {
-  gSymbolize->set_name(kTestName);
+int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
+  MainSymbolize symbolize(kTestName);
 
 #ifdef __aarch64__
-  // TODO(https://fxbug.dev/42085337): There is no upper address space in EL2+ by
-  // default (unless FEAT_VHE / HCR_EL2.E2H is enabled).
-  if (auto el = arch::ArmCurrentEl::Read().el();
-      el > 1 && !(el == 2 && arch::ArmHcrEl2::Read().e2h())) {
-    printf(
-        "TODO(https://fxbug.dev/42085337): %s test is only supported for EL1 or EL2 with VHE (current EL is %lu); skipping it\n",
-        kTestName, el);
-    return 0;
-  }
+  // There is no upper address space in EL2+ by default, so drop down to EL1
+  // before setting up the address space, as physboot does.
+  arch::ArmDropToEl1();
 #endif
+
+  // Initialize memory for allocation/free.
+  AddressSpace aspace;
+  InitMemory(zbi_ptr, ktl::move(early_zbi), &aspace);
+
+  zbitl::View zbi(
+      zbitl::StorageFromRawHeader<ktl::span<ktl::byte>>(static_cast<zbi_header_t*>(zbi_ptr)));
+  KernelStorage kernelfs;
+  kernelfs.Init(zbi);
+
+  KernelStorage::Bootfs bootfs;
+  if (auto result = kernelfs.root().subdir(kNamespace); result.is_error()) {
+    zbitl::PrintBootfsError(result.error_value());
+    return 1;
+  } else {
+    bootfs = ktl::move(result).value();
+  }
+
+  ktl::array<const ElfImage*, 2> modules;
+  symbolize.EnableModuleLoading(Symbolize::ModuleList(ktl::span(modules)));
 
   printf("Loading %.*s...\n", static_cast<int>(kGetInt.size()), kGetInt.data());
   ElfImage elf;
-  if (auto result = elf.Init(kernelfs.root(), kGetInt, true); result.is_error()) {
+  if (auto result = elf.Init(bootfs, kGetInt, true); result.is_error()) {
     zbitl::PrintBootfsError(result.error_value());
     return 1;
   }
@@ -61,14 +84,14 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
 
   // The GN target for get-int uses kernel_elf_interp() on this test binary.
   printf("Verifying PT_INTERP matches test build ID...\n");
-  elf.AssertInterpMatchesBuildId(kGetInt, gSymbolize->build_id());
+  elf.AssertInterpMatchesBuildId(kGetInt, symbolize.build_id());
 
   Allocation loaded = elf.Load(memalloc::Type::kPhysElf, kLoadAddress);
   elf.Relocate();
 
   // TODO(https://fxbug.dev/42172722): Set up C++ ABI support and map and jump into a
   // loaded C++ program.
-  if (auto result = elf.MapInto(*gAddressSpace); result.is_error()) {
+  if (auto result = elf.MapInto(aspace); result.is_error()) {
     printf("Failed to map loaded image\n");
     return 1;
   }

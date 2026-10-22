@@ -11,4 +11,8 @@ class PhysBootTimes;
 
 extern PhysBootTimes gBootTimes;
 
+// Arch-specific preparation in physboot for heap and address space set-up
+// (i.e., before calling InitMemory()).
+void ArchPhysbootBeforeInitMemory();
+
 #endif  // ZIRCON_KERNEL_PHYS_PHYSBOOT_H_

@@ -11,24 +11,31 @@
 #include <lib/code-patching/code-patches.h>
 #include <lib/fit/function.h>
 #include <lib/zbitl/error-stdio.h>
+#include <lib/zbitl/view.h>
 #include <stdlib.h>
 #include <zircon/assert.h>
 
 #include <arch/code-patches/case-id.h>
 #include <arch/kernel_aspace.h>
+#include <ktl/array.h>
+#include <ktl/byte.h>
 #include <ktl/initializer_list.h>
+#include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
+#include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/boot-zbi.h>
 #include <phys/elf-image.h>
 #include <phys/handoff/handoff.h>
 #include <phys/kernel-package.h>
+#include <phys/main.h>
 #include <phys/stdio.h>
 #include <phys/symbolize.h>
+#include <phys/uart-console.h>
 
 #include "handoff-prep.h"
-#include "physload.h"
+#include "log.h"
 
 #include <ktl/enforce.h>
 
@@ -36,7 +43,15 @@ PhysBootTimes gBootTimes;
 
 namespace {
 
+// physboot, EL2, kernel
+constexpr size_t kMaxModules = 3;
+
 constexpr ktl::string_view kElfPhysKernel = "vmzircon";
+
+void LogSerial(FILE* out = stdout) {
+  fprintf(out, "%s: Console configured as ", ProgramName());
+  BootOptions::Get()->Show("kernel.serial"sv, false, out);
+}
 
 void PatchElfKernel(ElfImage& kernel, const ArchPatchInfo& patch_info) {
   auto apply_patch = [&patch_info](
@@ -124,12 +139,57 @@ void RelocateElfKernel(ElfImage& kernel) {
 
 }  // namespace
 
-[[noreturn]] void PhysLoadModuleMain(UartDriver& uart, PhysBootTimes boot_times,
-                                     KernelStorage kernel_storage) {
-  gBootTimes = boot_times;
+[[noreturn]] void ZbiMain(void* zbi_ptr, EarlyBootZbi zbi, arch::EarlyTicks ticks) {
+  gBootTimes.Set(PhysBootTimes::kZbiEntry, ticks);
 
-  gSymbolize->set_name("physboot");
+  // Symbolize uses its output for the panic path.  So that should not be
+  // redirected to the log code path.  Instead keep it pointed at a copy of the
+  // current stdout, which is just the console.
+  FILE console = *stdout;
+  MainSymbolize symbolize("physboot", &console);
+  if (BootOptions::Get()->phys_verbose) {
+    symbolize.Context();
+    LogSerial();
+  }
 
-  // Now we're ready for the main physboot logic.
-  BootZircon(uart, ktl::move(kernel_storage));
+  ArchPhysbootBeforeInitMemory();
+
+  AddressSpace aspace;
+  InitMemory(zbi_ptr, ktl::move(zbi), &aspace);
+
+  // This marks the interval between handoff from the boot loader (kZbiEntry)
+  // and phys environment setup with identity-mapped memory management et al.
+  gBootTimes.SampleNow(PhysBootTimes::kPhysSetup);
+
+  // Start collecting the log in memory as well as logging to the console.
+  Log log;
+
+  {
+    // Prime the log with what would already have been written to the console
+    // under kernel.phys.verbose=true (even if it wasn't), but don't send that
+    // to the console.
+    FILE log_file{&log};
+    symbolize.ContextAlways(&log_file);
+    LogSerial(&log_file);
+    Allocation::GetPool().PrintMemoryRanges(symbolize.name(), &log_file);
+  }
+
+  // Now mirror all stdout to the log, and write debugf there even if verbose
+  // logging to stdout is disabled.
+  gLog = &log;
+  log.SetStdout();
+
+  auto zbi_storage =
+      zbitl::StorageFromRawHeader<ktl::span<ktl::byte>>(reinterpret_cast<zbi_header_t*>(zbi_ptr));
+
+  // Unpack the compressed KERNEL_STORAGE payload.
+  KernelStorage kernel_storage;
+  kernel_storage.Init(zbitl::View{zbi_storage});
+  kernel_storage.GetTimes(gBootTimes);
+
+  // Provide space for loading modules.
+  ktl::array<const ElfImage*, kMaxModules> modules_storage;
+  symbolize.EnableModuleLoading(Symbolize::ModuleList(modules_storage));
+
+  BootZircon(GetUartDriver(), ktl::move(kernel_storage));
 }

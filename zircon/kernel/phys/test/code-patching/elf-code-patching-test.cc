@@ -6,6 +6,7 @@
 
 #include <inttypes.h>
 #include <lib/zbitl/error-stdio.h>
+#include <lib/zbitl/view.h>
 #include <stdio.h>
 
 #include <fbl/no_destructor.h>
@@ -13,34 +14,56 @@
 #include <ktl/byte.h>
 #include <ktl/span.h>
 #include <ktl/string_view.h>
+#include <phys/address-space.h>
 #include <phys/elf-image.h>
 #include <phys/kernel-package.h>
 #include <phys/symbolize.h>
 
-#include "../physload-test-main.h"
+#include "../test-main.h"
 #include "test.h"
 
 #include <ktl/enforce.h>
 
 namespace {
 
+constexpr const char* kTestName = "elf-code-patching-test";
+
 constexpr ktl::string_view kAddOne = "add-one";
 constexpr ktl::string_view kMultiply = "multiply_by_factor";
 
-// We need space for 6 modules: physload, this module, and the patched and
-// unpatched versions of kAddOne and kMultiply. Keep it as a global so
-// references to this storage can persist outside this PhysLoadTestMain.
-ktl::array<const ElfImage*, 6> modules;
+// The BOOTFS namespace under which kAddOne and kMultiply live.
+constexpr ktl::string_view kNamespace = "elf-code-patching-test-data";
+
+// We need space for 5 modules: this test, and the patched and unpatched
+// versions of kAddOne and kMultiply. Keep it as a global so references to
+// this storage can persist outside TestMain.
+ktl::array<const ElfImage*, 5> modules;
 
 }  // namespace
 
-int PhysLoadTestMain(KernelStorage& kernelfs) {
-  constexpr const char* kTestName = "elf-code-patching-test";
-  gSymbolize->set_name(kTestName);
+int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
+  MainSymbolize symbolize(kTestName);
 
-  gSymbolize->Context();
+  // Initialize memory for allocation/free.
+  AddressSpace aspace;
+  InitMemory(zbi_ptr, ktl::move(early_zbi), &aspace);
 
-  gSymbolize->ReplaceModulesStorage(Symbolize::ModuleList(ktl::span(modules)));
+  zbitl::View zbi(
+      zbitl::StorageFromRawHeader<ktl::span<ktl::byte>>(static_cast<zbi_header_t*>(zbi_ptr)));
+  KernelStorage kernelfs;
+  kernelfs.Init(zbi);
+
+  KernelStorage::Bootfs bootfs;
+  if (auto result = kernelfs.root().subdir(kNamespace); result.is_error()) {
+    zbitl::PrintBootfsError(result.error_value());
+    return 1;
+  } else {
+    bootfs = ktl::move(result).value();
+  }
+
+  symbolize.Context();
+
+  symbolize.EnableModuleLoading(Symbolize::ModuleList(ktl::span(modules)));
 
   constexpr uint64_t kValue = 42;
 
@@ -49,19 +72,19 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
   // pages won't be reused for the second test, since that could
   // require cache flushing operations.
   Allocation unpatched;
-  printf("%s: Testing unpatched add-one...\n", gSymbolize->name());
+  printf("%s: Testing unpatched add-one...\n", symbolize.name());
   {
     static fbl::NoDestructor<ElfImage> add_one;
-    if (auto result = add_one->Init(kernelfs.root(), kAddOne, true); result.is_error()) {
+    if (auto result = add_one->Init(bootfs, kAddOne, true); result.is_error()) {
       zbitl::PrintBootfsError(result.error_value());
       return 1;
     }
 
-    add_one->AssertInterpMatchesBuildId(kAddOne, gSymbolize->build_id());
+    add_one->AssertInterpMatchesBuildId(kAddOne, symbolize.build_id());
     unpatched = add_one->Load(memalloc::Type::kPhysElf, {}, false);
     add_one->Relocate();
 
-    printf("%s: Calling %p...", gSymbolize->name(), add_one->ImageEntry<TestFn>());
+    printf("%s: Calling %p...", symbolize.name(), add_one->ImageEntry<TestFn>());
     uint64_t value = add_one->Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue + 1, "unpatched add-one: got %" PRIu64 " != expected %" PRIu64,
                   value, kValue + 1);
@@ -70,15 +93,15 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
 
   // Now test it with nop patching: AddOne becomes the identity function.
   Allocation patched;
-  printf("%s: Testing patched add-one...\n", gSymbolize->name());
+  printf("%s: Testing patched add-one...\n", symbolize.name());
   {
     static fbl::NoDestructor<ElfImage> add_one;
-    if (auto result = add_one->Init(kernelfs.root(), kAddOne, true); result.is_error()) {
+    if (auto result = add_one->Init(bootfs, kAddOne, true); result.is_error()) {
       zbitl::PrintBootfsError(result.error_value());
       return 1;
     }
 
-    add_one->AssertInterpMatchesBuildId(kAddOne, gSymbolize->build_id());
+    add_one->AssertInterpMatchesBuildId(kAddOne, symbolize.build_id());
     patched = add_one->Load(memalloc::Type::kPhysElf, {}, false);
     add_one->Relocate();
 
@@ -98,7 +121,7 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     auto result = add_one->ForEachPatch<ExpectedCase>(patch);
     ZX_ASSERT(result.is_ok());
 
-    printf("%s: Calling %p...", gSymbolize->name(), add_one->ImageEntry<TestFn>());
+    printf("%s: Calling %p...", symbolize.name(), add_one->ImageEntry<TestFn>());
     uint64_t value = add_one->Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue, "nop-patched add-one: got %" PRIu64 " != expected %" PRIu64,
                   value, kValue);
@@ -107,15 +130,15 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
 
   // Now test the hermetic blob stub case.
   Allocation patched_stub2;
-  printf("%s: Testing hermetic blob (alternative 1)...\n", gSymbolize->name());
+  printf("%s: Testing hermetic blob (alternative 1)...\n", symbolize.name());
   {
     static fbl::NoDestructor<ElfImage> multiply;
-    if (auto result = multiply->Init(kernelfs.root(), kMultiply, true); result.is_error()) {
+    if (auto result = multiply->Init(bootfs, kMultiply, true); result.is_error()) {
       zbitl::PrintBootfsError(result.error_value());
       return 1;
     }
 
-    multiply->AssertInterpMatchesBuildId(kMultiply, gSymbolize->build_id());
+    multiply->AssertInterpMatchesBuildId(kMultiply, symbolize.build_id());
     patched_stub2 = multiply->Load(memalloc::Type::kPhysElf, {}, false);
     multiply->Relocate();
 
@@ -136,7 +159,7 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     ZX_ASSERT_MSG(result.is_ok(), "%.*s", static_cast<int>(result.error_value().reason.size()),
                   result.error_value().reason.data());
 
-    printf("%s: Calling %p...", gSymbolize->name(), multiply->ImageEntry<TestFn>());
+    printf("%s: Calling %p...", symbolize.name(), multiply->ImageEntry<TestFn>());
     uint64_t value = multiply->Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue * 2, "multiply_by_two got %" PRIu64 " != expected %" PRIu64,
                   value, kValue * 2);
@@ -145,15 +168,15 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
 
   // Now test the hermetic blob stub case.
   Allocation patched_stub10;
-  printf("%s: Testing hermetic blob (alternative 2)...\n", gSymbolize->name());
+  printf("%s: Testing hermetic blob (alternative 2)...\n", symbolize.name());
   {
     static fbl::NoDestructor<ElfImage> multiply;
-    if (auto result = multiply->Init(kernelfs.root(), kMultiply, true); result.is_error()) {
+    if (auto result = multiply->Init(bootfs, kMultiply, true); result.is_error()) {
       zbitl::PrintBootfsError(result.error_value());
       return 1;
     }
 
-    multiply->AssertInterpMatchesBuildId(kMultiply, gSymbolize->build_id());
+    multiply->AssertInterpMatchesBuildId(kMultiply, symbolize.build_id());
     patched_stub10 = multiply->Load(memalloc::Type::kPhysElf, {}, false);
     multiply->Relocate();
 
@@ -174,7 +197,7 @@ int PhysLoadTestMain(KernelStorage& kernelfs) {
     ZX_ASSERT_MSG(result.is_ok(), "%.*s", static_cast<int>(result.error_value().reason.size()),
                   result.error_value().reason.data());
 
-    printf("%s: Calling %p...", gSymbolize->name(), multiply->ImageEntry<TestFn>());
+    printf("%s: Calling %p...", symbolize.name(), multiply->ImageEntry<TestFn>());
     uint64_t value = multiply->Call<TestFn>(kValue);
     ZX_ASSERT_MSG(value == kValue * 10, "multiply_by_ten got %" PRIu64 " != expected %" PRIu64,
                   value, kValue * 10);

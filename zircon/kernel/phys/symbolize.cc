@@ -139,20 +139,6 @@ const ElfImage* Symbolize::module_for_vaddr_range(uintptr_t vaddr, size_t len) c
   return *it;
 }
 
-void Symbolize::OnHandoff(ElfImage& next) {
-  // The module will usually be the among the latest added, so search in
-  // reverse.
-  auto it = ktl::find(modules().rbegin(), modules().rend(), &next);
-  ZX_ASSERT_MSG(it != modules().rend(), "Module %.*s has not been loaded",
-                static_cast<int>(next.name().size()), next.name().data());
-  next.OnHandoff();
-  main_module_ = &next;
-}
-
-void Symbolize::LogHandoff(ktl::string_view name, uintptr_t entry_pc) {
-  writer_.Prefix(name_).Literal({"Hand off to ", name, " at "}).Code(entry_pc).Newline();
-}
-
 void Symbolize::BackTraceFrame(unsigned int n, uintptr_t pc, bool interrupt) {
   // Just print the line in markup format.  Context() was called earlier.
   writer_.Prefix(name_);

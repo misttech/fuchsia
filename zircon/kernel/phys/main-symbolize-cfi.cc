@@ -14,8 +14,8 @@
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 extern "C" Symbolize::CfiCheckFunction __cfi_check;
 
-// This is what gets all of this linked in.  It's linked into physload (only)
-// even if physload itself is not instrumented.  If the modules it loads are
+// This is what gets all of this linked in.  It's linked into physboot (only)
+// even if physboot itself is not instrumented.  If the modules it loads are
 // instrumented, they may require the indirection back to each other.
 void MainSymbolize::HandleCfiSlowpath() {
   Symbolize::CfiCheckFunction* self_check = nullptr;

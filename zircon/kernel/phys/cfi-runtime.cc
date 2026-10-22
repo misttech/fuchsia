@@ -19,7 +19,7 @@ extern "C" Symbolize::CfiCheckFunction __cfi_slowpath_diag;
 extern "C" void __cfi_slowpath(uint64_t key, void* entry);
 
 // These functions all get copies linked into each phys module compiled with
-// -fsanitize=cfi.  They just proxy to the single CfiSlowpath in physload.
+// -fsanitize=cfi.  They just proxy to the single CfiSlowpath in physboot.
 
 [[clang::cfi_unchecked_callee]]
 void __cfi_slowpath_diag(uint64_t key, void* entry, const void* diag_data) {

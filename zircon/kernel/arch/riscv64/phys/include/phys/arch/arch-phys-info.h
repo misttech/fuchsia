@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 // This is data that physboot et al might need from phys early start-up.
-// It's initialized in physload and then referred to by reference elsewhere.
+// It's initialized in physboot and then referred to by reference elsewhere.
 struct ArchPhysInfo {
   uint64_t boot_hart_id = -1;
 

@@ -41,7 +41,6 @@ group("tests") {
 }
 
 qemu_shim_phys_tests = [
-  "physload-handoff-test",
   "zbi-phys-unittests",
   "zbi-memory-test",
 ]

@@ -342,10 +342,6 @@ This option controls whether potentially user-visible PMM allocation failures du
 memory trigger an OOM response.
 )""")
 
-DEFINE_OPTION("kernel.phys.next", SmallString, phys_next, {"physboot"}, R"""(
-The name of the file within the kernel storage filesystem physload will load.
-)""")
-
 DEFINE_OPTION("kernel.phys.verbose", bool, phys_verbose, {true}, R"""(
 This controls the degree of logging to the serial console in the kernel's early
 boot phase; if false, only error-related logging will take place.

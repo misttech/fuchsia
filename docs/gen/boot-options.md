@@ -383,12 +383,6 @@ Setting this value to 0 will disable the imminent-out-of-memory event.
 This option controls whether potentially user-visible PMM allocation failures due to running out of
 memory trigger an OOM response.
 
-### kernel.phys.next=\<string>
-
-**Default:** `physboot`
-
-The name of the file within the kernel storage filesystem physload will load.
-
 ### kernel.phys.verbose=\<bool>
 
 **Default:** `true`

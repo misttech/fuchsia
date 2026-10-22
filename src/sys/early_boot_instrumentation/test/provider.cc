@@ -278,8 +278,8 @@ int main(int argc, char** argv) {
   }
 
   // Fake Log VMO.
-  auto entries = cpp20::to_array<std::string_view>(
-      {"symbolizer.log", "physboot.log", "physload.log", "foo-bar.log"});
+  auto entries =
+      cpp20::to_array<std::string_view>({"symbolizer.log", "physboot.log", "foo-bar.log"});
   for (auto entry : entries) {
     zx::vmo logs_vmo;
     if (auto res = zx::vmo::create(4096, 0, &logs_vmo); res != ZX_OK) {

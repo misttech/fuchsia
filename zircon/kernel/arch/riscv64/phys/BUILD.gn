@@ -74,16 +74,10 @@ if (toolchain_environment == "kernel.phys" ||
     include_dirs = [ "//zircon/kernel/phys" ]
   }
 
-  source_set("arch-on-physload-handoff") {
-    sources = [ "arch-on-physload-handoff.cc" ]
+  source_set("arch-physboot") {
+    sources = [ "arch-physboot.cc" ]
     include_dirs = [ "//zircon/kernel/phys" ]
-    deps = [ "//zircon/kernel/phys:physload.header" ]
-  }
-
-  source_set("arch-physload") {
-    sources = [ "arch-physload.cc" ]
-    include_dirs = [ "//zircon/kernel/phys" ]
-    deps = [ "//zircon/kernel/phys:physload.header" ]
+    deps = [ "//zircon/kernel/phys:physboot.h" ]
   }
 
   source_set("arch-boot-zbi") {

@@ -14,7 +14,7 @@
 #include <array>
 
 // This is data that physboot et al might need from phys early start-up.
-// It's initialized in physload and then referred to by reference elsewhere.
+// It's initialized in physboot and then referred to by reference elsewhere.
 struct ArchPhysInfo {
   std::array<uint64_t, arch::kArmPsciRegisters> psci_reset_registers = {};
   bool smccc_use_hvc = false;

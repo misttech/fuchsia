@@ -28,8 +28,8 @@ bool CheckContents(std::string_view contents, fbl::unique_fd file) {
 }  // namespace
 
 TEST(EarlyBootInstrumentationTest, HasLogsUnderLogs) {
-  auto entries = cpp20::to_array<std::string_view>(
-      {"symbolizer.log", "physboot.log", "physload.log", "foo-bar.log"});
+  auto entries =
+      cpp20::to_array<std::string_view>({"symbolizer.log", "physboot.log", "foo-bar.log"});
   for (auto entry : entries) {
     std::string path = "/logs/" + std::string(entry);
     fbl::unique_fd file(open(path.c_str(), O_RDONLY));

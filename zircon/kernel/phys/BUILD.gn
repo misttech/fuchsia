@@ -16,7 +16,6 @@ import("//zircon/kernel/kernel_package.gni")
 import("//zircon/kernel/params.gni")
 import("kernel_elf_binary.gni")
 import("kernel_elf_interp.gni")
-import("physload_module.gni")
 import("zbi_executable.gni")
 
 declare_args() {
@@ -810,17 +809,6 @@ group("boot_tests") {
   }
 }
 
-group("physboot") {
-  public_deps = [ ":physboot.package" ]
-}
-
-kernel_package("physboot.package") {
-  visibility = [ "./*" ]
-
-  prefix = ""
-  deps = [ ":physboot.module(:kernel.phys_$current_cpu)" ]
-}
-
 source_set("phys-elf-loading") {
   sources = [ "main-symbolize-cfi.cc" ]
   deps = [
@@ -832,145 +820,58 @@ source_set("phys-elf-loading") {
   ]
 }
 
-zbi_executable("physload") {
-  sources = [ "physload.cc" ]
+zbi_executable("physboot") {
+  sources = [ "physboot.cc" ]
+  include_dirs = [ "//zircon/kernel/arch/$zircon_cpu/include" ]
   deps = [
     ":address-space",
+    ":address-space-map",
     ":allocation",
+    ":boot-zbi",
     ":elf-image",
+    ":handoff-prep",
     ":kernel-package",
     ":log",
     ":main",
     ":phys-elf-loading",
-    ":physload.header",
+    ":physboot.h",
     ":stdio",
     ":symbolize",
+    ":uart",
     ":uart-console",
-    "$arch_phys:arch-physload",
+    "$arch_phys:arch-physboot",
     "handoff",
     "//sdk/lib/fit",
     "//src/lib/elfldltl",
     "//src/lib/zbitl",
+    "//zircon/kernel/arch/$zircon_cpu/code-patches",
+    "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/lib/code-patching",
+    "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/libc",
     "//zircon/system/ulib/zircon-internal",
   ]
-}
 
-kernel_elf_interp("physload.interp") {
-  visibility = [ ":*" ]
-  deps = [ ":physload" ]
+  # Defines the maximum support kernel image size.
+  configs += [ "//zircon/kernel/switch:kernel_image_max_size" ]
 }
 
 compiler_config("phys-elf-module.config") {
   # When `-fsanitize=cfi` is enabled, this ensures that the ELF modules loaded
-  # by physload (i.e. physboot) or physboot (i.e. the kernel proper) export the
-  # cross-DSO checking entrypoint.  When that instrumentation is not enabled,
-  # this will have no effect, so it doesn't need to be conditionalized.
+  # by physboot (i.e. the kernel proper) export the cross-DSO checking
+  # entrypoint.  When that instrumentation is not enabled, this will have no
+  # effect, so it doesn't need to be conditionalized.
   linker_flags = [ "--export-dynamic-symbol=__cfi_check" ]
 }
 
 if (is_kernel) {
-  source_set("physload.header") {
+  source_set("physboot.h") {
     visibility = [
       ":*",
-      "$arch_phys:arch-on-physload-handoff",
-      "$arch_phys:arch-physload",
+      "$arch_phys:arch-physboot",
     ]
-    public = [ "physload.h" ]
-    public_deps = [
-      ":kernel-package",
-      ":uart",
-      "handoff",
-    ]
-  }
-
-  # A physload-compatible module depends on this.
-  source_set("physload.module") {
-    visibility = [ "./*" ]
-    public_deps = [ ":physload.header" ]
-    public_configs = [ ":physload.module.config" ]
-    sources = [ "physload-module.cc" ]
-    deps = [
-      ":address-space.header",
-      ":allocation",
-      ":boot-options",
-      ":elf-image",
-      ":log",
-      ":main",
-      ":physload.interp",
-      ":stdio",
-      ":symbolize",
-      "$arch_phys:arch-on-physload-handoff",
-      "//zircon/kernel/lib/boot-options",
-    ]
-    data_deps = [ ":physload" ]
-  }
-
-  compiler_config("physload.module.config") {
-    visibility = [ ":*" ]
-    linker_flags = [ "--entry=PhysLoadHandoff" ]
-    configs = [ ":phys-elf-module.config" ]
-  }
-
-  source_set("physboot.h") {
-    visibility = [ ":*" ]
     public = [ "physboot.h" ]
-  }
-
-  source_set("physboot-main") {
-    public_deps = [ ":physboot.h" ]
-    sources = [ "physboot.cc" ]
-    deps = [
-      ":address-space-map",
-      ":allocation",
-      ":boot-zbi",
-      ":fixed-address-boot-zbi",
-      ":handoff-prep",
-      ":kernel-package",
-      ":log",
-      ":main",
-      ":stdio",
-      ":symbolize",
-      ":uart",
-      "handoff",
-      "//src/lib/zbitl",
-      "//zircon/kernel/arch/$zircon_cpu/code-patches",
-      "//zircon/kernel/lib/arch",
-      "//zircon/kernel/lib/boot-options",
-      "//zircon/kernel/lib/code-patching",
-      "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/lib/libc",
-    ]
-
-    # Defines the maximum support kernel image size.
-    configs += [ "//zircon/kernel/switch:kernel_image_max_size" ]
-  }
-
-  physload_module("physboot.module") {
-    install_name = "physboot"
-    sources = [ "physboot.cc" ]
-    include_dirs = [ "//zircon/kernel/arch/$zircon_cpu/include" ]
-    deps = [
-      ":allocation",
-      ":boot-zbi",
-      ":elf-image",
-      ":handoff-prep",
-      ":kernel-package",
-      ":log",
-      ":physboot.h",
-      ":physload.module",
-      ":stdio",
-      ":symbolize",
-      "handoff",
-      "//sdk/lib/fit",
-      "//zircon/kernel/arch/$zircon_cpu/code-patches",
-      "//zircon/kernel/lib/boot-options",
-      "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/lib/libc",
-    ]
-
-    # Defines the maximum support kernel image size.
-    configs += [ "//zircon/kernel/switch:kernel_image_max_size" ]
   }
 
   # A physboot-compatible ELF kernel depends on this.

@@ -9,8 +9,7 @@
 
 // This method is in a separate file and separate GN phys:address-space-map
 // static_library() so that its users don't need to link in the bootstrapping
-// dependencies if they only need to Map into an existing AddressSpace as in a
-// physload module.
+// dependencies if they only need to Map into an existing AddressSpace.
 
 fit::result<AddressSpace::MapError> AddressSpace::Map(uint64_t vaddr, uint64_t size, uint64_t paddr,
                                                       AddressSpace::MapSettings settings) {

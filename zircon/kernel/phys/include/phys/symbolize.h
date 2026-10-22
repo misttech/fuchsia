@@ -69,14 +69,11 @@ class Symbolize {
 
   const char* name() const { return name_; }
 
-  void set_name(const char* new_name) { name_ = new_name; }
-
   auto modules() const { return modules_.as_span(); }
 
   const ElfImage* module_for_vaddr_range(uintptr_t vaddr, size_t len) const;
 
-  // Return the ELF build ID note for the currently executing module (i.e., the
-  // first module to call OnLoad or the last module to call OnHandoff).
+  // Return the ELF build ID note for the currently executing module.
   elfldltl::ElfNote build_id() const;
 
   // This reads the existing modules to the new storage and then
@@ -111,12 +108,6 @@ class Symbolize {
   // Adds the new module to the list.  If Context() has run, then emit context
   // for the new module.
   void OnLoad(const ElfImage& loaded);
-
-  // Registers the next, just-handed-of-to module as the currently executing
-  // one.
-  void OnHandoff(ElfImage& next);
-
-  void LogHandoff(ktl::string_view name, uintptr_t entry_pc);
 
   // Print the presentation markup element for one frame of a backtrace.
   void BackTraceFrame(unsigned int n, uintptr_t pc, bool interrupt = false);
@@ -195,8 +186,7 @@ class Symbolize {
   ktl::span<const Stack<BootStack>> stacks_;
   ktl::span<const Stack<BootShadowCallStack>> shadow_call_stacks_;
   FileMarkupWriter writer_;
-  // The currently executing module, set on the first call to LoadModule() or
-  // the last to call OnHandoff().
+  // The currently executing module.
   const ElfImage* main_module_ = nullptr;
   bool context_done_ = false;
   CallCfiSlowpathFunction* cfi_slowpath_ = nullptr;

@@ -256,16 +256,8 @@ class ElfImage {
     return ImageEntry<F>()(ktl::forward<Args>(args)...);
   }
 
-  // Call the image's entry point as a [[noreturn]] function type F.
-  template <typename F, typename... Args>
-  [[noreturn]] void Handoff(Args&&... args) const {
-    static_assert(ktl::is_function_v<F>);
-    Call<F>(ktl::forward<Args>(args)...);
-    ZX_PANIC("ELF image entry point returned!");
-  }
-
-  // A function called by Handoff calls this on its own module to provide code
-  // that must be instantiated separately in each module to publish per-module
+  // The module calls this on its own ElfImage to provide code that must be
+  // instantiated separately in each module to publish per-module
   // instrumentation data.
   void OnHandoff() { publish_self_ = PublishSelf; }
 
