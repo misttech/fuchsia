@@ -40,7 +40,6 @@ impl std::ops::Add for &CacheStats {
 
 #[derive(Default, Debug)]
 pub(super) struct AtomicCacheStats {
-    pub lookups: AtomicU64,
     pub hits: AtomicU64,
     pub misses: AtomicU64,
     pub allocs: AtomicU64,
@@ -50,10 +49,12 @@ pub(super) struct AtomicCacheStats {
 
 impl AtomicCacheStats {
     fn snapshot(&self) -> CacheStats {
+        let hits = self.hits.load(Ordering::Relaxed);
+        let misses = self.misses.load(Ordering::Relaxed);
         CacheStats {
-            lookups: self.lookups.load(Ordering::Relaxed),
-            hits: self.hits.load(Ordering::Relaxed),
-            misses: self.misses.load(Ordering::Relaxed),
+            lookups: hits + misses,
+            hits,
+            misses,
             allocs: self.allocs.load(Ordering::Relaxed),
             reclaims: self.reclaims.load(Ordering::Relaxed),
             frees: self.frees.load(Ordering::Relaxed),
@@ -61,7 +62,6 @@ impl AtomicCacheStats {
     }
 
     fn reset(&self) {
-        self.lookups.store(0, Ordering::Relaxed);
         self.hits.store(0, Ordering::Relaxed);
         self.misses.store(0, Ordering::Relaxed);
         self.allocs.store(0, Ordering::Relaxed);

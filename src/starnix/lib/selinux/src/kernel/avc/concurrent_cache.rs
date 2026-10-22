@@ -491,7 +491,6 @@ impl<
                 // Record the hit - hopefully we will still hold the cache line since our Acquire load.
                 bucket.clock.record_access(way);
                 stats.hits.fetch_add(1, Ordering::Relaxed);
-                stats.lookups.fetch_add(1, Ordering::Relaxed);
                 return Ok(value);
             } else {
                 // We're unlikely to need to loop - we have 99% cache hits, and concurrent misses
@@ -517,7 +516,6 @@ impl<
         callback: impl FnOnce() -> Result<S::Value, E>,
     ) -> Result<S::Value, E> {
         fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "selinux.access_cache.miss");
-        stats.lookups.fetch_add(1, Ordering::Relaxed);
         stats.misses.fetch_add(1, Ordering::Relaxed);
 
         // When writing we need to acquire the reset lock for reading - otherwise we may write our
