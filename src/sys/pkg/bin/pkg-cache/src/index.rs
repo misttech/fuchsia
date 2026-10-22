@@ -8,5 +8,7 @@ mod package;
 mod retained;
 mod writing;
 
-pub use package::{AddBlobsError, PackageIndex, set_retained_blobs, set_retained_index};
+pub use package::{
+    AddBlobsError, PackageIndex, retain_package, set_retained_blobs, set_retained_index,
+};
 pub use writing::StopError;

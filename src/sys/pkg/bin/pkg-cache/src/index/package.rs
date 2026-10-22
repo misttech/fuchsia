@@ -4,11 +4,12 @@
 
 use super::retained::{RetainedBlobs, RetainedIndex};
 use super::writing::{CleanupGuard, WritingIndex};
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_hash::Hash;
+use fuchsia_inspect as finspect;
 use futures::future::{BoxFuture, FutureExt as _};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use {fidl_fuchsia_pkg as fpkg, fuchsia_inspect as finspect};
 
 /// The index of packages known to pkg-cache.
 #[derive(Clone, Debug)]
@@ -100,6 +101,13 @@ impl PackageIndex {
         self.retained.replace(index);
     }
 
+    fn add_retained_package(&mut self, hash: Hash) {
+        self.retained.add_package(hash);
+        if let Some(blobs) = self.writing.get_required_blobs(&hash) {
+            assert!(self.retained.add_blobs(&hash, blobs));
+        }
+    }
+
     fn set_retained_blobs(&mut self, blobs: RetainedBlobs) {
         self.retained_blobs = blobs;
     }
@@ -143,16 +151,13 @@ impl PackageIndex {
 }
 
 /// Replaces the retained blobs with one that tracks the given blob hashes.
-pub async fn set_retained_blobs(
-    index: &Arc<async_lock::RwLock<PackageIndex>>,
-    blobs: HashSet<Hash>,
-) {
+pub async fn set_retained_blobs(index: &async_lock::RwLock<PackageIndex>, blobs: HashSet<Hash>) {
     index.write().await.set_retained_blobs(RetainedBlobs::new(blobs));
 }
 
 /// Replaces the retained index with one that tracks the given meta far hashes.
 pub async fn set_retained_index(
-    index: &Arc<async_lock::RwLock<PackageIndex>>,
+    index: &async_lock::RwLock<PackageIndex>,
     blobfs: &blobfs::Client,
     meta_hashes: HashSet<Hash>,
 ) {
@@ -163,6 +168,25 @@ pub async fn set_retained_index(
     // Then atomically merge in available data from the retained indices and swap in the new
     // retained index.
     index.write().await.set_retained_index(new_retained);
+}
+
+/// Adds the package with the given meta.far hash to the retained index.
+pub async fn retain_package(
+    index: &async_lock::RwLock<PackageIndex>,
+    blobfs: &blobfs::Client,
+    meta_hash: Hash,
+) {
+    index.write().await.add_retained_package(meta_hash);
+    if let Ok(blobs) = crate::required_blobs::find_required_blobs_recursive(
+        blobfs,
+        &meta_hash,
+        &async_lock::RwLock::new(HashMap::new()),
+        crate::required_blobs::ErrorStrategy::BestEffort,
+    )
+    .await
+    {
+        let _: bool = index.write().await.retained.add_blobs(&meta_hash, &blobs);
+    }
 }
 
 #[cfg(test)]
@@ -386,5 +410,63 @@ mod tests {
         let guard = index.start_writing(hash(0), fpkg::GcProtection::OpenPackageTracking);
         let () = index.stop_writing(guard).unwrap();
         assert_eq!(index.writing.packages(), hashmap! {})
+    }
+
+    #[test]
+    fn add_retained_package_preserves_other_retained_packages_and_merges_writing_blobs() {
+        let mut index = PackageIndex::new();
+        index.set_retained_index(RetainedIndex::from_packages(hashmap! {
+            hash(0) => Some(HashSet::from_iter([hash(10)])),
+        }));
+        let guard = index.start_writing(hash(1), fpkg::GcProtection::OpenPackageTracking);
+        index
+            .add_blobs(
+                hash(1),
+                HashSet::from([hash(11), hash(12)]),
+                fpkg::GcProtection::OpenPackageTracking,
+            )
+            .unwrap();
+
+        index.add_retained_package(hash(1));
+        index.add_retained_package(hash(2));
+
+        assert_eq!(
+            index.retained.packages(),
+            hashmap! {
+                hash(0) => Some(HashSet::from_iter([hash(10)])),
+                hash(1) => Some(HashSet::from_iter([hash(11), hash(12)])),
+                hash(2) => None,
+            }
+        );
+
+        let () = index.stop_writing(guard).unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn retain_package_populates_blobs_from_blobfs_and_keeps_existing() {
+        let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
+        crate::test_utils::add_meta_far_to_blobfs(
+            &blobfs_fake,
+            hash(1),
+            "pkg-1",
+            [hash(11)],
+            [hash(2)],
+        );
+        crate::test_utils::add_meta_far_to_blobfs(&blobfs_fake, hash(2), "pkg-2", [hash(21)], []);
+
+        let index = Arc::new(async_lock::RwLock::new(PackageIndex::new()));
+        set_retained_index(&index, &blobfs, HashSet::from([hash(0)])).await;
+
+        retain_package(&index, &blobfs, hash(1)).await;
+        retain_package(&index, &blobfs, hash(3)).await;
+
+        assert_eq!(
+            index.read().await.retained.packages(),
+            hashmap! {
+                hash(0) => None,
+                hash(1) => Some(HashSet::from_iter([hash(11), hash(2), hash(21)])),
+                hash(3) => None,
+            }
+        );
     }
 }

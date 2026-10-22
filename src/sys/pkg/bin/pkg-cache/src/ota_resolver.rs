@@ -21,8 +21,9 @@ use std::sync::Arc;
 const FLAGS: fio::Flags = fio::PERM_READABLE;
 const INSPECT_RECENT_RESOLVE_COUNT: usize = 50;
 
-/// Used only by the system-updater to resolve packages during OTA, and so:
-/// * assumes the retained index has been initialized with the to-be-resolved package
+/// Used only by the system-updater and system-update-checker to resolve packages during OTA, and
+/// so:
+/// * adds the to-be-resolved package to the retained index before fetching its blobs
 /// * to attempt to recover from a partially broken system:
 ///   * always uses the TUF package authority to resolve the package (e.g. does not short-circuit
 ///     the package resolve if the pinned URL is found in the base index)
@@ -33,6 +34,8 @@ pub(crate) struct Resolver {
     package_fetcher: crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: crate::root_dir::RootDirFactory,
+    package_index: Arc<async_lock::RwLock<crate::index::PackageIndex>>,
+    blobfs: blobfs::Client,
     scope: package_directory::ExecutionScope,
 
     // Only used for inspect.
@@ -48,6 +51,8 @@ impl Resolver {
         package_fetcher: crate::package_fetcher::PackageFetcher,
         authenticator: context_authenticator::ContextAuthenticator,
         root_dir_factory: crate::root_dir::RootDirFactory,
+        package_index: Arc<async_lock::RwLock<crate::index::PackageIndex>>,
+        blobfs: blobfs::Client,
         scope: package_directory::ExecutionScope,
         inspect: finspect::Node,
     ) -> Arc<Self> {
@@ -56,6 +61,8 @@ impl Resolver {
             package_fetcher,
             authenticator,
             root_dir_factory,
+            package_index,
+            blobfs,
             scope,
             inspect_active: inspect.create_child("active"),
             inspect_recent: Mutex::new(fuchsia_inspect_contrib::nodes::BoundedListNode::new(
@@ -243,6 +250,10 @@ impl Resolver {
         };
         // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
         let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
+        {
+            let _guard = ftrace::async_enter!(trace_id, c"app", c"retain package");
+            let () = crate::index::retain_package(&self.package_index, &self.blobfs, pkg_id).await;
+        };
         inspect.record_string("hash", pkg_id.to_string());
         inspect.record_string("blob_source", &http_blob_dir);
         ftrace::async_instant!(trace_id, c"app", c"enqueue fetch");

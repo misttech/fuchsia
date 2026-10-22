@@ -516,6 +516,8 @@ async fn main_inner() -> Result<(), Error> {
             package_fetcher.clone(),
             authenticator.clone(),
             root_dir_factory.clone(),
+            package_index.clone(),
+            blobfs.clone(),
             scope.clone(),
             inspector.root().create_child("fuchsia.pkg.PackageResolver-ota"),
         );

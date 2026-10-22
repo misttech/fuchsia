@@ -62,6 +62,12 @@ impl RetainedIndex {
         }
     }
 
+    /// Adds the given package hash to the retained index if it is not already tracked, protecting
+    /// its meta.far blob from garbage collection.
+    pub fn add_package(&mut self, meta_hash: Hash) {
+        let _: &mut Option<HashSet<Hash>> = self.packages.entry(meta_hash).or_insert(None);
+    }
+
     /// Replaces this retained index instance with other, populating other's blob sets
     /// using data from `self` when possible.
     pub fn replace(&mut self, mut other: Self) {
@@ -226,6 +232,39 @@ mod tests {
             index,
             RetainedIndex::from_packages(hashmap! {
                 hash(0) => Some(HashSet::from_iter([hash(1), hash(2)])),
+            })
+        );
+    }
+
+    #[test]
+    fn add_package_inserts_unknown_package_with_none() {
+        let mut index = RetainedIndex::from_packages(hashmap! {
+            hash(0) => Some(HashSet::from_iter([hash(1)])),
+        });
+
+        index.add_package(hash(2));
+
+        assert_eq!(
+            index,
+            RetainedIndex::from_packages(hashmap! {
+                hash(0) => Some(HashSet::from_iter([hash(1)])),
+                hash(2) => None,
+            })
+        );
+    }
+
+    #[test]
+    fn add_package_preserves_existing_blobs() {
+        let mut index = RetainedIndex::from_packages(hashmap! {
+            hash(0) => Some(HashSet::from_iter([hash(1)])),
+        });
+
+        index.add_package(hash(0));
+
+        assert_eq!(
+            index,
+            RetainedIndex::from_packages(hashmap! {
+                hash(0) => Some(HashSet::from_iter([hash(1)])),
             })
         );
     }

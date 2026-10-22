@@ -117,26 +117,40 @@ async fn does_not_use_open_package_tracking() {
     // The package blobs are all in blobfs.
     assert!(env.blobfs.list_blobs().unwrap().is_superset(&pkg.list_blobs()));
 
-    // After GC, the package blobs are all removed from blobfs, even though the handle to the
-    // package directory, `pkg_dir`, is still alive.
+    // The package was added to the retained index, so GC preserves its blobs.
+    let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
+    assert!(env.blobfs.list_blobs().unwrap().is_superset(&pkg.list_blobs()));
+
+    // After clearing the retained index and running GC, the package blobs are all removed from
+    // blobfs, even though the handle to the package directory, `pkg_dir`, is still alive.
+    let () = env.proxies.retained_packages.clear().await.unwrap();
     let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
     assert_eq!(env.blobfs.list_blobs().unwrap().intersection(&pkg.list_blobs()).count(), 0);
 }
 
-// Verifies that all fetched blobs are protected from GC by the retained index during and after the
-// resolve. Procedure:
+// Verifies that the resolved package is automatically added to the retained index (preserving any
+// previously retained packages) and that all fetched blobs are protected from GC by the retained
+// index during and after the resolve. Procedure:
 //   1. Set the blob fetch concurrency limit to 1.
-//   2. After each blob is requested from the blob server (which occurs after a
+//   2. Add a prior package to the retained index to verify resolving does not remove existing
+//      retained packages.
+//   3. Begin resolving `superpackage` without manually adding it to `RetainedPackages` beforehand.
+//   4. After each blob is requested from the blob server (which occurs after a
 //      fuchsia.fxfs/BlobWriter connection has been created for the blob), delay sending the
 //      response Body (the Header is still sent, which contains the content length, which allows
 //      pkg-cache to call BlobWriter.GetVmo).
-//   3. While the Body download is paused, trigger a GC and verify that no blobs are deleted.
-//   4. After the resolve is completed, trigger a final GC (now that blobs will not be protected by
+//   5. While the Body download is paused, trigger a GC and verify that no blobs are deleted.
+//   6. After the resolve is completed, trigger a final GC (now that blobs will not be protected by
 //      blobfs' open blob protection) that should still not delete any blobs.
-//   5. Clear the retained index and verify that the blobs can be deleted (to make sure they weren't
+//   7. Clear the retained index and verify that the blobs can be deleted (to make sure they weren't
 //      being protected by something else).
 #[fuchsia::test]
 async fn gc_protection() {
+    let prior_retained_package = fuchsia_pkg_testing::PackageBuilder::new("prior-retained")
+        .add_resource_at("prior-blob", "prior-blob-contents".as_bytes())
+        .build()
+        .await
+        .unwrap();
     let subsubpackage = fuchsia_pkg_testing::PackageBuilder::new("subsubpackage")
         .add_resource_at("subsubpackage-blob", "subsubpackage-blob-contents".as_bytes())
         .build()
@@ -176,11 +190,13 @@ async fn gc_protection() {
         .build()
         .await;
 
+    let () = prior_retained_package.write_to_blobfs(&env.blobfs).await;
     crate::replace_retained_packages(
         &env.proxies.retained_packages,
-        &[(*superpackage.hash()).into()],
+        &[(*prior_retained_package.hash()).into()],
     )
     .await;
+
     let (super_dir, server_end) = fidl::endpoints::create_proxy();
     let super_fut = env
         .proxies
@@ -220,7 +236,12 @@ async fn gc_protection() {
     let () = env.proxies.space_manager.gc().await.unwrap().unwrap();
     let removed =
         before_gc.difference(&env.blobfs.list_blobs().unwrap()).copied().collect::<BTreeSet<_>>();
-    assert_eq!(removed, superpackage.list_blobs());
+    let expected_removed = superpackage
+        .list_blobs()
+        .union(&prior_retained_package.list_blobs())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    assert_eq!(removed, expected_removed);
 }
 
 #[fuchsia::test]
