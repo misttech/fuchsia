@@ -44,6 +44,11 @@ namespace fcomponent = fuchsia_component;
 
 namespace driver_manager {
 
+void DriverHostConnection::OnHealthAlert(
+    fidl::WireEvent<fuchsia_driver_host::Driver::OnHealthAlert>* event) {
+  node_->OnHealthAlert(fidl::ToNatural(event->alert));
+}
+
 void DriverHostConnection::on_fidl_error(fidl::UnbindInfo info) {
   node_->OnDriverHostFidlError(info);
 }
@@ -3322,6 +3327,13 @@ fuchsia_driver_framework::HealthCondition Node::HealthCheckRecord::SyntheticCond
   }};
 }
 
+std::string_view Node::HealthCheckRecord::first_reason_code() const {
+  if (conditions.empty() || !conditions.front().reason_code().has_value()) {
+    return "-";
+  }
+  return conditions.front().reason_code().value();
+}
+
 bool Node::HealthCheckRecord::is_informative() const {
   // A status is set for every response (or self_fault alert) and for a closed driver host. A record
   // with no status but with a condition is one driver_manager synthesized for TIMEOUT or a
@@ -3422,6 +3434,40 @@ void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
 void Node::ResetHealthCheckState() {
   last_health_check_.reset();
   last_non_ping_health_check_.reset();
+}
+
+void Node::OnHealthAlert(fuchsia_driver_framework::HealthAlert alert) {
+  switch (alert.Which()) {
+    case fuchsia_driver_framework::HealthAlert::Tag::kSelfFault:
+      HandleSelfFault(std::move(alert.self_fault().value()));
+      break;
+    case fuchsia_driver_framework::HealthAlert::Tag::kUpstreamNeighborFault:
+    case fuchsia_driver_framework::HealthAlert::Tag::kDownstreamNeighborFault:
+      break;
+    default:
+      fdf_log::warn("Node {} ({}) reported a health alert with an unknown variant; ignoring",
+                    MakeComponentMoniker(), driver_url());
+      break;
+  }
+}
+
+void Node::HandleSelfFault(fuchsia_driver_framework::HealthCheckResponse details) {
+  zx::time now = async::Now(dispatcher_);
+  HealthCheckRecord record = HealthCheckRecord::FromResponse(details, std::nullopt, now);
+  // FromResponse always derives a status.
+  const auto status = *record.status;
+  // Only a change in status is worth a warning; a driver re-raising the same fault logs at debug
+  // so that a repeating alert cannot flood the log.
+  const bool status_changed =
+      !last_health_check_.has_value() || last_health_check_->status != record.status;
+  if (status_changed) {
+    fdf_log::warn("Node {} ({}) reported SELF_FAULT health alert: status={}, reason={}",
+                  MakeComponentMoniker(), driver_url(), status, record.first_reason_code());
+  } else {
+    fdf_log::debug("Node {} ({}) repeated SELF_FAULT health alert: status={}, reason={}",
+                   MakeComponentMoniker(), driver_url(), status, record.first_reason_code());
+  }
+  MaybeStoreHealthCheckRecord(std::move(record));
 }
 
 }  // namespace driver_manager

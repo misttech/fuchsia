@@ -49,6 +49,8 @@ class DriverHostConnection : public fidl::WireAsyncEventHandler<fuchsia_driver_h
  public:
   explicit DriverHostConnection(Node* node) : node_(node) {}
 
+  void OnHealthAlert(fidl::WireEvent<fuchsia_driver_host::Driver::OnHealthAlert>* event) override;
+
   void on_fidl_error(fidl::UnbindInfo info) override;
 
  private:
@@ -615,6 +617,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     static fuchsia_driver_framework::HealthCondition SyntheticCondition(std::string reason_code,
                                                                         std::string message);
 
+    // Returns the reason code of the first condition, or "-" if there is none. Used for logs.
+    std::string_view first_reason_code() const;
+
     // True if the record says something about the driver's health: it has a status, or a
     // synthetic condition for a failure driver_manager detected. False for the bare errors listed
     // under replacement policy (a).
@@ -652,6 +657,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
                                      fuchsia_driver_framework::HealthCheckResponse>)>
           cb);
 
+  // Handles a health alert reported by this node's driver. self_fault records the details in
+  // last_health_check_. Alerts with an unknown variant are logged and ignored.
+  void OnHealthAlert(fuchsia_driver_framework::HealthAlert alert);
+
   const std::optional<HealthCheckRecord>& last_health_check() const { return last_health_check_; }
 
  private:
@@ -661,6 +670,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Clears the cached records and alert probe timestamps. Called when a new driver is started.
   void ResetHealthCheckState();
+
+  void HandleSelfFault(fuchsia_driver_framework::HealthCheckResponse details);
 
   struct DriverComponent {
     DriverComponent(

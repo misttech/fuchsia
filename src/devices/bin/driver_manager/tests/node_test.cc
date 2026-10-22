@@ -400,6 +400,12 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
   // replying, as the driver host would on a crash.
   void SetCloseOnHealthCheck(zx_status_t epitaph) { close_on_health_check_ = epitaph; }
 
+  zx::result<> SendHealthAlert(const fuchsia_driver_framework::HealthAlert& alert) {
+    fidl::Arena arena;
+    return zx::make_result(
+        fidl::WireSendEvent(binding_)->OnHealthAlert(fidl::ToWire(arena, alert)).status());
+  }
+
  private:
   fidl::ServerBinding<fuchsia_driver_host::Driver> binding_;
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
@@ -1967,4 +1973,39 @@ TEST_F(Dfv2NodeTest, RunHealthCheckPingFailureDoesNotLaunderHardwareFault) {
   run(fuchsia_driver_framework::HealthCheckRequest::kPing);
   EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, node->last_health_check()->status);
   EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
+}
+
+TEST_F(Dfv2NodeTest, OnHealthAlertSelfFaultRecordsDetails) {
+  auto child = CreateNode("child-sf-details");
+  StartTestDriver(child);
+  auto [child_server, child_node_client] =
+      node_manager->driver_host().TakeDriver("child-sf-details");
+  FakeDriver child_driver(dispatcher(), std::move(child_server), std::move(child_node_client));
+
+  ASSERT_EQ(ZX_OK, child_driver
+                       .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+                           fuchsia_driver_framework::HealthCheckResponse{{
+                               .conditions = {{{{
+                                   .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+                                   .reason_code = "FW_CRASH",
+                                   .message = "Firmware crashed",
+                               }}}},
+                           }}))
+                       .status_value());
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(child->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, child->last_health_check()->status);
+  ASSERT_EQ(1u, child->last_health_check()->conditions.size());
+  EXPECT_EQ("FW_CRASH", child->last_health_check()->first_reason_code());
+  EXPECT_EQ("Firmware crashed", child->last_health_check()->conditions[0].message());
+
+  // A self_fault alert with no conditions derives status kOk (recovery).
+  ASSERT_EQ(ZX_OK, child_driver
+                       .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+                           fuchsia_driver_framework::HealthCheckResponse{}))
+                       .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, child->last_health_check()->status);
+  EXPECT_TRUE(child->last_health_check()->conditions.empty());
 }
