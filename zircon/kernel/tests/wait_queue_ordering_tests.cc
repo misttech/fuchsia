@@ -10,7 +10,6 @@
 
 #include <kernel/scheduler_state.h>
 #include <kernel/thread.h>
-#include <kernel/wait_queue_internal.h>
 #include <ktl/algorithm.h>
 #include <ktl/array.h>
 #include <ktl/unique_ptr.h>

@@ -11,9 +11,7 @@ use crate::kconcurrent::{
     assert_transaction_active, clt_tag,
 };
 use crate::kernel::deadline::Deadline;
-use crate::kernel::owned_wait_queue::{
-    OWNED_MAGIC, OwnedWaitQueue, REMOVE_SINGLE_EDGE_OP, ThreadUnblockList,
-};
+use crate::kernel::owned_wait_queue::{OWNED_MAGIC, OwnedWaitQueue, ThreadUnblockList};
 use crate::kernel::scheduler::{self, SchedDuration, WaitQueueInheritedSchedulerState};
 use crate::kernel::scheduler_state::ThreadStateKind;
 use crate::kernel::thread::{PreemptDisabledToken, Thread, ThreadLockClass, ThreadPtr};
@@ -757,8 +755,8 @@ impl ChainLockProof<'_, WaitQueueBase> {
     ///   [`OwnedWaitQueue`](crate::kernel::owned_wait_queue::OwnedWaitQueue) with provenance over
     ///   the full `OwnedWaitQueue`, and if this method returns `Ok(())`, the caller updates its
     ///   `inherited_scheduler_state_storage` (e.g. via
-    ///   `ChainLockProof::update_sched_state_storage_thread_added`) before releasing
-    ///   `self.owner()`'s lock or observing `inherited_scheduler_state_storage`.
+    ///   `OwnedWaitQueue::UpdateSchedStateStorageThreadAdded`) before releasing `self.owner()`'s
+    ///   lock or observing `inherited_scheduler_state_storage`.
     /// - If this method returns `Ok(())`, the caller must complete the block operation by calling
     ///   [`WaitQueueBase::block_etc_postamble`] before dropping the wait queue or unlocking
     ///   `current_thread`.
@@ -1065,7 +1063,7 @@ impl WaitQueueBase {
             // SAFETY: The caller guarantees that if `wq_proof.owner().magic() == OWNED_MAGIC`,
             // `wq_proof.owner()` is the base subobject of a live `OwnedWaitQueue` with provenance
             // over the full `OwnedWaitQueue`.
-            if let Some(owq) = unsafe { OwnedWaitQueue::downcast_to_owq(Some(wq_proof.owner())) } {
+            if let Some(owq) = unsafe { OwnedWaitQueue::downcast_to_owq(wq_proof.owner()) } {
                 let mut owq_proof = wq_proof.retag(owq);
                 // Get the effective profile of the owned wait queue before propagation,
                 // which will recompute the effective profile of the queue. This is
@@ -1073,21 +1071,18 @@ impl WaitQueueBase {
                 // effective profile changed.
                 let old_target_ep = owq_proof.get_effective_profile();
                 // SAFETY: `t_proof.owner()` was just dequeued from `owq`, and the caller
-                // guarantees all downstream locks in the PI graph are held by the finalized
-                // transaction.
+                // guarantees all downstream locks in the PI graph are held.
                 unsafe {
-                    OwnedWaitQueue::begin_propagate_thread_owq(
+                    OwnedWaitQueue::begin_propagate_remove_single_edge(
                         &mut t_proof,
                         &mut owq_proof,
-                        REMOVE_SINGLE_EDGE_OP,
                         ForceInheritance::No,
                         Some(&old_target_ep),
                         clt_token,
                         preempt_disabled_token,
                     );
+                    owq_proof.update_sched_state_storage_thread_removed(&mut t_proof);
                 }
-                // SAFETY: `t_proof.owner()` was just removed from `owq`'s collection.
-                unsafe { owq_proof.update_sched_state_storage_thread_removed(&mut t_proof) };
             }
         }
 
@@ -1096,11 +1091,9 @@ impl WaitQueueBase {
         // Now that any required propagation is complete, we can release all of the PI
         // chain locks starting from this wait queue.
         // SAFETY: `wait_queue`'s lock and all downstream PI chain locks are held by the active
-        // transaction and will not be unlocked again by the caller, and the caller guarantees that
-        // `wait_queue` carries provenance over the enclosing `OwnedWaitQueue` if its magic is
-        // `OWNED_MAGIC`.
+        // transaction and will not be unlocked again by the caller.
         unsafe {
-            OwnedWaitQueue::unlock_pi_chain_common(wait_queue, core::ptr::null(), clt_token);
+            OwnedWaitQueue::unlock_pi_chain_common_from_wait_queue(wait_queue, clt_token);
         }
 
         // The PI consequences of the unblock (if any) have been applied, and all of
@@ -1339,9 +1332,8 @@ impl Deref for WaitQueue {
     #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: `WaitQueue` is `#[repr(C)]` with `base: WaitQueueBase` at offset 0.
-        // Note: under Stacked Borrows, the returned reference only has provenance over the
-        // `WaitQueueBase` bytes, however it is derived. (`WaitQueue` is never downcast from
-        // `WaitQueueBase`, so this does not matter here; see `OwnedWaitQueue::downcast_ptr`.)
+        // Casting from `self` rather than projecting `&self.base` preserves pointer provenance
+        // over the entire `WaitQueue` allocation.
         unsafe { &*core::ptr::from_ref(self).cast::<WaitQueueBase>() }
     }
 }

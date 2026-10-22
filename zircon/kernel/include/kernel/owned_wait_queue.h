@@ -7,12 +7,12 @@
 #ifndef ZIRCON_KERNEL_INCLUDE_KERNEL_OWNED_WAIT_QUEUE_H_
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_OWNED_WAIT_QUEUE_H_
 
+#include <lib/fit/result.h>
 #include <lib/kconcurrent/chainlock.h>
 
 #include <fbl/canary.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/macros.h>
-#include <kernel/ffi.h>
 #include <kernel/scheduler_state.h>
 #include <kernel/thread.h>
 #include <kernel/wait.h>
@@ -22,19 +22,14 @@
 struct OwnedWaitQueueTopologyTests;
 class OwnedWaitQueue;
 
-// The `ChainLock::Result` values returned by the Rust implementation cross the FFI boundary as
-// `int32_t`s, so make sure that the enumerator values match those of the Rust `ChainLockResult`.
-static_assert(static_cast<int32_t>(ChainLock::Result::Ok) == 0);
-static_assert(static_cast<int32_t>(ChainLock::Result::Retry) == 1);
-static_assert(static_cast<int32_t>(ChainLock::Result::Backoff) == 2);
-static_assert(static_cast<int32_t>(ChainLock::Result::Cycle) == 3);
-
 extern "C" {
-int32_t rust_owned_wait_queue_lock_pi_chain_thread(Thread* start);
-int32_t rust_owned_wait_queue_lock_pi_chain_wait_queue(WaitQueueBase* start);
-void rust_owned_wait_queue_assert_not_owned(const OwnedWaitQueue* wait_queue);
-void rust_owned_wait_queue_assert_safe_for_pooling(const OwnedWaitQueue* wait_queue);
-OwnedWaitQueue* rust_owned_wait_queue_downcast_to_owq(WaitQueueBase* wq);
+void cpp_owned_wait_queue_begin_propagate_remove_single_edge(
+    Thread* upstream_node, OwnedWaitQueue* downstream_node, ForceInheritance force_inheritance,
+    const SchedulerState::EffectiveProfile* old_target_ep);
+void cpp_owned_wait_queue_update_sched_state_storage_thread_removed(OwnedWaitQueue* wait_queue,
+                                                                    Thread* t);
+void cpp_owned_wait_queue_unlock_pi_chain_common_wait_queue(WaitQueueBase* start,
+                                                            const void* stop_point);
 }  // extern "C"
 
 // Owned wait queues are an extension of wait queues which adds the concept of
@@ -112,6 +107,28 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
     const void* stop_point{nullptr};
   };
 
+  using ReplaceOwnerLockingDetails = struct BAAOLockingDetails;
+
+  struct WakeRequeueThreadDetails {
+    Thread::UnblockList wake_threads{};
+    Thread::UnblockList requeue_threads{};
+  };
+
+  struct RequeueLockingDetails {
+    // No copy, yes move (because of the unblock lists)
+    RequeueLockingDetails() = default;
+    RequeueLockingDetails(const RequeueLockingDetails&) = delete;
+    RequeueLockingDetails& operator=(const RequeueLockingDetails&) = delete;
+    RequeueLockingDetails(RequeueLockingDetails&&) = default;
+    RequeueLockingDetails& operator=(RequeueLockingDetails&&) = default;
+
+    Thread* new_requeue_target_owner{nullptr};
+    const void* new_requeue_target_owner_stop_point{nullptr};
+    const void* old_wake_queue_owner_stop_point{nullptr};
+    const void* old_requeue_target_owner_stop_point{nullptr};
+    WakeRequeueThreadDetails threads{};
+  };
+
   // A structure which holds the state of the queue as observed just before the
   // queue lock was dropped.  Used by futex and kernel mutex implementations to
   // update their bookkeeping before unwinding after a wake operation.
@@ -121,8 +138,34 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
     Thread* owner{nullptr};
   };
 
+  // A enum which determines the specific behavior of the Propagate method.
+  enum class PropagateOp {
+    // Add a single edge from the upstream node to the downstream node, and
+    // propagate the effects. This happens either when a thread blocks in an
+    // OWQ, or when an owner is assigned to an OWQ.
+    AddSingleEdge,
+
+    // Remove a single edge from the upstream node to the downstream node. This
+    // happens either when a thread unblocks from an OWQ, or when an OWQ becomes
+    // unowned.
+    RemoveSingleEdge,
+
+    // The base profile of an upstream node has changed, causing a change to the
+    // profile pressure without an explicit join or split operation.
+    BaseProfileChanged,
+  };
+
+  template <PropagateOp Op>
+  struct PropagateOpTag {
+    constexpr operator PropagateOp() const { return Op; }
+  };
+
   // Behavior control for wake/requeue operations
   enum class WakeOption { None, AssignOwner };
+
+  static constexpr PropagateOpTag<PropagateOp::AddSingleEdge> AddSingleEdgeOp{};
+  static constexpr PropagateOpTag<PropagateOp::RemoveSingleEdge> RemoveSingleEdgeOp{};
+  static constexpr PropagateOpTag<PropagateOp::BaseProfileChanged> BaseProfileChangedOp{};
 
   static constexpr uint32_t kOwnedMagic = fbl::magic("ownq");
   constexpr OwnedWaitQueue() : WaitQueueBase(kOwnedMagic) {}
@@ -154,13 +197,27 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
   // Attempt to lock the rest of a PI chain, starting from the (already locked)
   // node given by |start|.
   static ChainLock::Result LockPiChain(Thread& start)
-      TA_REQ(chainlock_transaction_token, start.get_lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return static_cast<ChainLock::Result>(rust_owned_wait_queue_lock_pi_chain_thread(&start));
+      TA_REQ(chainlock_transaction_token, start.get_lock()) {
+    WaitQueueBase* wq = start.wait_queue_state().blocking_wait_queue_;
+
+    if (wq == nullptr) {
+      return ChainLock::Result::Ok;
+    }
+
+    // Note: If we refuse cycles, the only possible variant return type for
+    // LockPiChainCommon is ChainLock::Result.
+    return LockPiChainCommonRefuseCycle(*wq);
   }
 
   static ChainLock::Result LockPiChain(WaitQueueBase& start)
-      TA_REQ(chainlock_transaction_token, start.get_lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return static_cast<ChainLock::Result>(rust_owned_wait_queue_lock_pi_chain_wait_queue(&start));
+      TA_REQ(chainlock_transaction_token, start.get_lock()) {
+    Thread* t = GetQueueOwner(&start);
+
+    if (t == nullptr) {
+      return ChainLock::Result::Ok;
+    }
+
+    return LockPiChainCommonRefuseCycle(*t);
   }
 
   // const accessor for the owner member.
@@ -168,9 +225,7 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
 
   // Debug Assert wrapper which skips the thread analysis checks just to
   // assert that a specific queue is unowned.  Used by FutexContext
-  void AssertNotOwned() const TA_NO_THREAD_SAFETY_ANALYSIS {
-    rust_owned_wait_queue_assert_not_owned(this);
-  }
+  void AssertNotOwned() const TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(owner_ == nullptr); }
 
   // Assign ownership of this wait queue to |new_owner|, or explicitly release
   // ownership if |new_owner| is nullptr.  No change is made to ownership if it
@@ -193,13 +248,15 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
 
   // Check invariants before returning to the pool.
   void AssertSafeForPooling() const TA_NO_THREAD_SAFETY_ANALYSIS {
-    rust_owned_wait_queue_assert_safe_for_pooling(this);
+    DEBUG_ASSERT_MSG(owner_ == nullptr, "Cannot recycle an OwnedWaitQueue that has an owner.");
+    DEBUG_ASSERT_MSG(IsEmpty(), "Cannot recycle an OwnedWaitQueue that has waiters.");
+    DEBUG_ASSERT_MSG(!InContainer(), "Cannot recycle an OwnedWaitQueue that is owned by a thread.");
   }
 
   // Block the current thread on this wait queue, and re-assign ownership to
-  // the specified thread (or remove ownership if new_owner is null).  If
-  // assigning new_owner would produce a cycle, the proposed owner is rejected
-  // (and any existing owner is removed), but the current thread still blocks.
+  // the specified thread (or remove ownership if new_owner is null);  If a
+  // cycle would have been produced by this operation, no changes are made and
+  // ZX_ERR_BAD_STATE will be returned.
   //
   // Note, if the new owner exists, but is dead or dying, it will not be
   // permitted to become the new owner of the wait_queue.  Any existing owner
@@ -215,6 +272,17 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
                                         ForceInheritance force_inheritance = ForceInheritance::No)
       TA_REQ(chainlock_transaction_token, current_thread->get_lock(), preempt_disabled_token)
           TA_REL(get_lock());
+
+  // Cancel a block and assign owner operation that we have already locked for.
+  // Basically, just drop all of the locks and get out.
+  void CancelBAAOOperationLocked(Thread* current_thread, const BAAOLockingDetails& details)
+      TA_REQ(chainlock_transaction_token) TA_REL(get_lock(), current_thread->get_lock());
+
+  // Obtain all of the locks needed for a BlockAndAssignOwner operation,
+  // handling the special case of new+old owner which share a PI graph target.
+  bool LockForBAAOOperationOrBackoff(Thread* current_thread, Thread* new_owner,
+                                     BAAOLockingDetails& details_out)
+      TA_REQ(chainlock_transaction_token) TA_TRY_ACQ(true, get_lock(), current_thread->get_lock());
 
   // Attempt to obtain all of the locks needed for a BAAO operation while
   // already holding this queue's lock.  On success, the current thread's lock
@@ -276,15 +344,265 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
 
  private:
   friend struct OwnedWaitQueueTopologyTests;
+  friend void cpp_owned_wait_queue_begin_propagate_remove_single_edge(
+      Thread* upstream_node, OwnedWaitQueue* downstream_node, ForceInheritance force_inheritance,
+      const SchedulerState::EffectiveProfile* old_target_ep);
+  friend void cpp_owned_wait_queue_update_sched_state_storage_thread_removed(
+      OwnedWaitQueue* wait_queue, Thread* t);
+  friend void cpp_owned_wait_queue_unlock_pi_chain_common_wait_queue(WaitQueueBase* start,
+                                                                     const void* stop_point);
 
   struct DefaultWakeHooks : public IWakeRequeueHook {};
   static inline DefaultWakeHooks default_wake_hooks_;
+
+  // Behavior control for locking pi paths.
+  enum class LockingBehavior { RefuseCycle, StopAtCycle };
+
+  // Assert that a thread (which we have locked exclusively) owns a specific
+  // wait queue, meaning that we should be able to examine parts of that queue's
+  // state (like, whether or not it has any blocked threads, and what the IPVs
+  // of the queue currently are).  See comments in ApplyIpvDeltaToThread for
+  // details.
+  static inline void AssertOwnsWaitQueue(const Thread& t, const OwnedWaitQueue& owq)
+      TA_REQ(t.get_lock()) TA_ASSERT_SHARED(owq.get_lock()) {
+    [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(owq.owner_ == &t); }();
+  }
+
+  // Common logic for AssignOwner and AssignOwnerLocked.
+  ChainLockTransaction::Result<zx_status_t> AssignOwnerCommon(Thread* new_owner,
+                                                              bool new_owner_is_locked = false)
+      TA_REQ(chainlock_transaction_token, preempt_disabled_token, get_lock());
+
+  // Note that the locks for the entire PI chain starting from this OWQ, as well
+  // as from the one starting from the new owner, need to be held at this point.
+  void AssignOwnerInternal(Thread* new_owner)
+      TA_REQ(chainlock_transaction_token, get_lock(), preempt_disabled_token);
+
+  // A specialization of WakeThreads which will...
+  //
+  // 1) Wake the number of threads indicated by |wake_count|
+  // 2) Move the number of threads indicated by |requeue_count| to the |requeue_target|.
+  // 3) Update ownership bookkeeping as indicated by |owner_action| and |requeue_owner|.
+  //
+  // This method is used by futexes in order to implement futex_requeue.  It
+  // is wrapped up into a specialized form instead of broken into individual
+  // parts in order to minimize any thrash in re-computing effective
+  // profiles for PI purposes.  We don't want to re-evaluate ownership or PI
+  // pressure until after all of the changes to wait queue have taken place.
+  //
+  // Note, if the |requeue_owner| exists, but is dead or dying, it will not be
+  // permitted to become the new owner of the |requeue_target|.  Any existing
+  // owner will be replaced with no owner in this situation.
+  WakeThreadsResult WakeAndRequeueInternal(RequeueLockingDetails& details,
+                                           OwnedWaitQueue& requeue_target,
+                                           IWakeRequeueHook& wake_hooks,
+                                           IWakeRequeueHook& requeue_hooks,
+                                           WakeOption wake_option = WakeOption::None)
+      TA_REL(get_lock(), requeue_target.get_lock())
+          TA_REQ(chainlock_transaction_token, preempt_disabled_token);
+
+  void ValidateSchedStateStorageUnconditional() TA_REQ(get_lock());
+  void ValidateSchedStateStorage() TA_REQ(get_lock()) {
+    if constexpr (kSchedulerExtraInvariantValidation) {
+      ValidateSchedStateStorageUnconditional();
+    }
+  }
+
+  void UpdateSchedStateStorageThreadRemoved(Thread& t) TA_REQ(get_lock(), t.get_lock()) {
+    DEBUG_ASSERT(inherited_scheduler_state_storage_ != nullptr);
+
+    SchedulerState::WaitQueueInheritedSchedulerState& old_iss =
+        t.wait_queue_state().inherited_scheduler_state_storage_;
+    if (&old_iss == inherited_scheduler_state_storage_) {
+      inherited_scheduler_state_storage_ = collection_.FindInheritedSchedulerStateStorage();
+      if (inherited_scheduler_state_storage_) {
+        DEBUG_ASSERT(&old_iss != inherited_scheduler_state_storage_);
+        *inherited_scheduler_state_storage_ = old_iss;
+      }
+      old_iss.Reset();
+    }
+
+    if (inherited_scheduler_state_storage_) {
+      inherited_scheduler_state_storage_->ipvs.min_deadline =
+          collection_.MinInheritableRelativeDeadline();
+    }
+  }
+
+  void UpdateSchedStateStorageThreadAdded(Thread& t) TA_REQ(get_lock(), t.get_lock()) {
+    if (inherited_scheduler_state_storage_ == nullptr) {
+      DEBUG_ASSERT_MSG(this->Count() == 1, "Expected count == 1, instead of %u", this->Count());
+      inherited_scheduler_state_storage_ = &t.wait_queue_state().inherited_scheduler_state_storage_;
+      inherited_scheduler_state_storage_->AssertIsReset();
+    } else {
+      DEBUG_ASSERT_MSG(this->Count() > 1, "Expected count > 1, instead of %u", this->Count());
+    }
+  }
+
+  // Helper function for propagating inherited profile value add and remove
+  // operations.  Snapshots and returns the combination of a thread's currently
+  // inherited profile values along with its base profile, which should be the
+  // profile pressure it is transmitting to the next node in the graph.
+  static SchedulerState::InheritedProfileValues SnapshotThreadIpv(
+      Thread& thread, ForceInheritance force_inheritance = ForceInheritance::No)
+      TA_REQ(thread.get_lock());
+
+  // Apply a change in IPV to a thread.  When non-null, |old_ipv| points to the
+  // IPV values which need to be removed from the thread's IPVs, while |new_ipv|
+  // points to the IPV vales which need to be added to the  thread's IPVs.
+  //
+  // 1) When a graph edge is added, |old_ipv| will be nullptr as no IPV pressure
+  //    was removed.
+  // 2) When a graph edge is removed, |new_ipv| will be nullptr as no IPV
+  //    pressure was added.
+  // 3) When a thread's base profile changes, neither |old_ipv| nor |new_ipv|
+  //    will be nullptr, since the change of a thread's base profile is
+  //    equivalent to the removal of one set of IPV, and the addition of
+  //    another.
+  // 4) It is never correct for both |old_ipv| and |new_ipv| to be nullptr.
+  //
+  static void ApplyIpvDeltaToThread(const SchedulerState::InheritedProfileValues* old_ipv,
+                                    const SchedulerState::InheritedProfileValues* new_ipv,
+                                    Thread& thread) TA_REQ(thread.get_lock());
+
+  // Apply a change in IPV to an owned wait queue.  See ApplyIpvDeltaToThread
+  // for an explanation of the parameters.
+  static void ApplyIpvDeltaToOwq(const SchedulerState::InheritedProfileValues* old_ipv,
+                                 const SchedulerState::InheritedProfileValues* new_ipv,
+                                 OwnedWaitQueue& owq) TA_REQ(owq.get_lock());
+
+  // Begin a propagation operation starting from an upstream thread, and going
+  // through a downstream owned wait queue.  Only for use during edge add/remove
+  // operations. Base profile changes call FinishPropagate directly when
+  // required.  Note: Links between the upstream thread and downstream queue
+  // should have already been added/removed by the time that this method is
+  // called.
+  //
+  // The entire PI chain starting from the wait queue needs to be locked before
+  // calling this, and the contents of the chain after the starting thread will
+  // be released during the operation (the thread will remain locked).
+  template <PropagateOp Op>
+  static void BeginPropagate(Thread& upstream_node, OwnedWaitQueue& downstream_node,
+                             PropagateOpTag<Op>,
+                             ForceInheritance force_inheritance = ForceInheritance::No,
+                             const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
+      TA_REQ(chainlock_transaction_token, preempt_disabled_token, upstream_node.get_lock(),
+             downstream_node.get_lock());
+
+  // Begin a propagation operation starting from an upstream owned wait queue,
+  // and going through a downstream thread.  Only for use during edge add/remove
+  // operations. Base profile changes call FinishPropagate directly when
+  // required.  Note: Links between the upstream queue and downstream thread
+  // should *not* have already been added/removed by the time that this method
+  // is called.  The method will handle updating the links.
+  //
+  // The entire PI chain starting from the wait queue needs to be locked before
+  // calling this, and the entire chain will be released during the operation.
+  //
+  // Additionally, the upstream node must be an instance of an OwnedWaitQueue.
+  // It is passed as a simple WaitQueue instead of an OwnedWaitQueue just to
+  // work around some static analyzer issues.
+  template <PropagateOp Op>
+  static void BeginPropagate(OwnedWaitQueue& upstream_node, Thread& downstream_node,
+                             PropagateOpTag<Op>)
+      TA_REQ(chainlock_transaction_token, preempt_disabled_token, upstream_node.get_lock(),
+             downstream_node.get_lock());
+
+  // Finishing handling a propagation operations started from either version of
+  // BeginPropagate, or from SetThreadBasePriority.  Traverses the PI chain
+  // propagating IPV deltas, and calls into the scheduler to finish the
+  // operation once the end of the chain is reached.
+  template <PropagateOp Op, typename UpstreamNodeType, typename DownstreamNodeType>
+  static void FinishPropagate(UpstreamNodeType& upstream_node, DownstreamNodeType& downstream_node,
+                              const SchedulerState::InheritedProfileValues* added_ipv,
+                              const SchedulerState::InheritedProfileValues* lost_ipv,
+                              PropagateOpTag<Op>,
+                              ForceInheritance force_inheritance = ForceInheritance::No,
+                              const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
+      TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream_node),
+             ChainLockable::GetLock(downstream_node), preempt_disabled_token);
 
   // Upcast from a WaitQueue to an OwnedWaitQueue if possible, using the magic
   // number to detect the underlying nature of the object.  Returns nullptr if
   // the pointer passed is nullptr, or if the object is not an OwnedWaitQueue.
   static OwnedWaitQueue* DowncastToOwq(WaitQueueBase* wq) {
-    return rust_owned_wait_queue_downcast_to_owq(wq);
+    return (wq != nullptr) && (wq->magic() == kOwnedMagic) ? static_cast<OwnedWaitQueue*>(wq)
+                                                           : nullptr;
+  }
+
+  static Thread* GetQueueOwner(WaitQueueBase* wq)
+      TA_REQ(chainlock_transaction_token, wq->get_lock()) {
+    const OwnedWaitQueue* owq = DowncastToOwq(wq);
+
+    if (owq != nullptr) {
+      // The static analyzer is not clever enough to know that wq->get_lock() is
+      // the same lock as owq->get_lock(), so we make it happy using a no-op
+      // assert.
+      owq->get_lock().MarkHeld();
+      return owq->owner_;
+    }
+
+    return nullptr;
+  }
+
+  bool LockForRequeueOperationOrBackoff(OwnedWaitQueue& requeue_target,
+                                        Thread* new_requeue_target_owner, uint32_t max_wake,
+                                        uint32_t max_requeue, IWakeRequeueHook& wake_hooks,
+                                        IWakeRequeueHook& requeue_hooks,
+                                        RequeueLockingDetails& requeue_locking_details_out)
+      TA_REQ(chainlock_transaction_token) TA_TRY_ACQ(true, get_lock(), requeue_target.get_lock());
+
+  fit::result<ChainLock::Result, ReplaceOwnerLockingDetails> LockForOwnerReplacement(
+      Thread* new_owner, const Thread* blocking_thread = nullptr,
+      bool propagate_new_owner_cycle_error = false, bool new_owner_is_locked = false)
+      TA_REQ(chainlock_transaction_token, get_lock());
+
+  ktl::optional<Thread::UnblockList> LockAndMakeWaiterListLocked(zx_instant_mono_t now,
+                                                                 uint32_t max_count,
+                                                                 IWakeRequeueHook& hooks)
+      TA_REQ(chainlock_transaction_token, get_lock());
+
+  ktl::optional<WakeRequeueThreadDetails> LockAndMakeWakeRequeueThreadListsLocked(
+      zx_instant_mono_t now, uint32_t max_wake_count, IWakeRequeueHook& wake_hooks,
+      uint32_t max_requeue_count, IWakeRequeueHook& requeue_hooks)
+      TA_REQ(chainlock_transaction_token, get_lock());
+
+  ktl::optional<Thread::UnblockList> TryLockAndMakeWaiterListLocked(zx_instant_mono_t now,
+                                                                    uint32_t max_count,
+                                                                    IWakeRequeueHook& hooks)
+      TA_REQ(chainlock_transaction_token, get_lock());
+
+  void UnlockAndClearWaiterListLocked(Thread::UnblockList list)
+      TA_REQ(chainlock_transaction_token, get_lock());
+
+  // Common handler for PI chain locking/unlocking
+  template <LockingBehavior Behavior, typename StartNodeType>
+  static fit::result<ChainLock::Result, const void*> LockPiChainCommon(StartNodeType& start)
+      TA_REQ(chainlock_transaction_token);
+
+  template <typename StartNodeType>
+  static ChainLock::Result LockPiChainCommonRefuseCycle(StartNodeType& start)
+      TA_REQ(chainlock_transaction_token) {
+    return LockPiChainCommon<LockingBehavior::RefuseCycle>(start).error_value();
+  }
+
+  template <typename StartNodeType>
+  static void UnlockPiChainCommon(StartNodeType& start, const void* stop_point = nullptr)
+      TA_REQ(chainlock_transaction_token) TA_REL(start);
+
+  void SetOwner(Thread& owner) TA_REQ(get_lock(), owner.get_lock()) {
+    // If we are adding an owner to this OWQ, we should be able to assert that
+    // it does not currently have one.
+    DEBUG_ASSERT(owner_ == nullptr);
+    owner.owned_wait_queues_.push_back(this);
+    owner_ = &owner;
+  }
+
+  // Reset the owner of this queue from |owner| to nullptr.  We need to be
+  // holding both the queue's lock and the owner's lock to do this.
+  void ResetOwner(Thread& owner) TA_REQ(get_lock(), owner.get_lock()) {
+    DEBUG_ASSERT(owner_ == &owner);
+    owner.owned_wait_queues_.erase(*this);
+    owner_ = nullptr;
   }
 
   TA_GUARDED(get_lock()) Thread* owner_ = nullptr;
@@ -319,65 +637,65 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
   SchedulerState::WaitQueueInheritedSchedulerState* inherited_scheduler_state_storage_{nullptr};
 };
 
+#include <kernel/ffi.h>
+
 extern "C" {
 void cpp_thread_unblock_list_init(ffi::Uninitialized<Thread::UnblockList>* list);
 void cpp_thread_unblock_list_destroy(Thread::UnblockList* list);
-bool cpp_thread_unblock_list_is_empty(const Thread::UnblockList* list);
-void cpp_thread_unblock_list_push_back(Thread::UnblockList* list, Thread* thread);
-Thread* cpp_thread_unblock_list_pop_front(Thread::UnblockList* list);
-Thread* cpp_thread_unblock_list_begin(const Thread::UnblockList* list);
-Thread* cpp_thread_unblock_list_next(const Thread::UnblockList* list, const Thread* thread);
 
-bool cpp_owned_wait_queue_wake_requeue_hook_allow(OwnedWaitQueue::IWakeRequeueHook* hook,
-                                                  const Thread* t);
-void cpp_owned_wait_queue_wake_requeue_hook_on_wake_or_requeue(
-    OwnedWaitQueue::IWakeRequeueHook* hook, Thread* t);
-
-void rust_owned_wait_queue_destroy(OwnedWaitQueue* wait_queue);
-void rust_owned_wait_queue_disown_all_queues(Thread* t);
-void rust_owned_wait_queue_get_effective_profile(const OwnedWaitQueue* wait_queue,
-                                                 SchedulerState::EffectiveProfile* out_profile);
-void rust_owned_wait_queue_set_thread_base_profile_and_propagate(
+void cpp_owned_wait_queue_init(ffi::Uninitialized<OwnedWaitQueue>* wait_queue);
+bool rust_owned_wait_queue_wake_requeue_hook_allow(void* context, const Thread* t);
+void rust_owned_wait_queue_wake_requeue_hook_on_wake_or_requeue(void* context, Thread* t);
+void cpp_owned_wait_queue_disown_all_queues(Thread* t);
+void cpp_owned_wait_queue_get_effective_profile(
+    const OwnedWaitQueue* wait_queue,
+    ffi::Uninitialized<SchedulerState::EffectiveProfile>* out_profile);
+void cpp_owned_wait_queue_set_thread_base_profile_and_propagate(
     Thread* thread, const SchedulerState::BaseProfile* profile);
-zx_status_t rust_owned_wait_queue_assign_owner(OwnedWaitQueue* wait_queue, Thread* new_owner);
-zx_status_t rust_owned_wait_queue_assign_owner_locked(OwnedWaitQueue* wait_queue,
-                                                      Thread* new_owner);
-void rust_owned_wait_queue_reset_owner_if_no_waiters(OwnedWaitQueue* wait_queue);
-zx_status_t rust_owned_wait_queue_block_and_assign_owner(OwnedWaitQueue* wait_queue,
-                                                         const Deadline* deadline,
-                                                         Thread* new_owner,
-                                                         ResourceOwnership resource_ownership,
-                                                         Interruptible interruptible);
-zx_status_t rust_owned_wait_queue_block_and_assign_owner_locked(
+ChainLock::Result cpp_owned_wait_queue_lock_pi_chain_thread(Thread* start);
+ChainLock::Result cpp_owned_wait_queue_lock_pi_chain_queue(WaitQueueBase* start);
+void cpp_owned_wait_queue_assert_not_owned(const OwnedWaitQueue* wait_queue);
+zx_status_t cpp_owned_wait_queue_assign_owner(OwnedWaitQueue* wait_queue, Thread* new_owner);
+zx_status_t cpp_owned_wait_queue_assign_owner_locked(OwnedWaitQueue* wait_queue, Thread* new_owner);
+void cpp_owned_wait_queue_reset_owner_if_no_waiters(OwnedWaitQueue* wait_queue);
+void cpp_owned_wait_queue_assert_safe_for_pooling(const OwnedWaitQueue* wait_queue);
+zx_status_t cpp_owned_wait_queue_block_and_assign_owner(OwnedWaitQueue* wait_queue,
+                                                        const Deadline* deadline, Thread* new_owner,
+                                                        ResourceOwnership resource_ownership,
+                                                        Interruptible interruptible);
+zx_status_t cpp_owned_wait_queue_block_and_assign_owner_locked(
     OwnedWaitQueue* wait_queue, Thread* current_thread, const Deadline* deadline,
     const OwnedWaitQueue::BAAOLockingDetails* details, ResourceOwnership resource_ownership,
     Interruptible interruptible, ForceInheritance force_inheritance);
-bool rust_owned_wait_queue_try_lock_for_baao_operation_locked(
+void cpp_owned_wait_queue_cancel_baao_operation_locked(
+    OwnedWaitQueue* wait_queue, Thread* current_thread,
+    const OwnedWaitQueue::BAAOLockingDetails* details);
+bool cpp_owned_wait_queue_lock_for_baao_operation_or_backoff(
     OwnedWaitQueue* wait_queue, Thread* current_thread, Thread* new_owner,
     OwnedWaitQueue::BAAOLockingDetails* details_out);
-void rust_owned_wait_queue_wake_threads(OwnedWaitQueue* wait_queue, uint32_t wake_count,
-                                        OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
-                                        OwnedWaitQueue::WakeThreadsResult* out_result);
-void rust_owned_wait_queue_wake_thread_and_assign_owner(
-    OwnedWaitQueue* wait_queue, OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
-    OwnedWaitQueue::WakeThreadsResult* out_result);
-void rust_owned_wait_queue_wake_threads_locked(OwnedWaitQueue* wait_queue,
-                                               Thread::UnblockList* threads,
-                                               OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
-                                               OwnedWaitQueue::WakeOption option,
-                                               ForceInheritance force_inheritance,
-                                               OwnedWaitQueue::WakeThreadsResult* out_result);
-bool rust_owned_wait_queue_lock_for_wake_operation_or_backoff(
-    OwnedWaitQueue* wait_queue, uint32_t max_wake, OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
-    Thread::UnblockList* unblock_list_out);
-bool rust_owned_wait_queue_lock_for_wake_operation_locked(
-    OwnedWaitQueue* wait_queue, uint32_t max_wake, OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
-    Thread::UnblockList* unblock_list_out);
-void rust_owned_wait_queue_wake_and_requeue(
+bool cpp_owned_wait_queue_try_lock_for_baao_operation_locked(
+    OwnedWaitQueue* wait_queue, Thread* current_thread, Thread* new_owner,
+    OwnedWaitQueue::BAAOLockingDetails* details_out);
+void cpp_owned_wait_queue_wake_threads(OwnedWaitQueue* wait_queue, uint32_t wake_count,
+                                       void* wake_hooks,
+                                       OwnedWaitQueue::WakeThreadsResult* out_result);
+void cpp_owned_wait_queue_wake_thread_and_assign_owner(
+    OwnedWaitQueue* wait_queue, void* wake_hooks, OwnedWaitQueue::WakeThreadsResult* out_result);
+void cpp_owned_wait_queue_wake_threads_locked(OwnedWaitQueue* wait_queue,
+                                              Thread::UnblockList* threads, void* wake_hooks,
+                                              OwnedWaitQueue::WakeOption option,
+                                              ForceInheritance force_inheritance,
+                                              OwnedWaitQueue::WakeThreadsResult* out_result);
+bool cpp_owned_wait_queue_lock_for_wake_operation_or_backoff(OwnedWaitQueue* wait_queue,
+                                                             uint32_t max_wake, void* wake_hooks,
+                                                             Thread::UnblockList* unblock_list_out);
+bool cpp_owned_wait_queue_lock_for_wake_operation_locked(OwnedWaitQueue* wait_queue,
+                                                         uint32_t max_wake, void* wake_hooks,
+                                                         Thread::UnblockList* unblock_list_out);
+void cpp_owned_wait_queue_wake_and_requeue(
     OwnedWaitQueue* wait_queue, OwnedWaitQueue* requeue_target, Thread* new_requeue_owner,
-    uint32_t wake_count, uint32_t requeue_count, OwnedWaitQueue::IWakeRequeueHook* wake_hooks,
-    OwnedWaitQueue::IWakeRequeueHook* requeue_hooks, OwnedWaitQueue::WakeOption wake_option,
-    OwnedWaitQueue::WakeThreadsResult* out_result);
+    uint32_t wake_count, uint32_t requeue_count, void* wake_hooks, void* requeue_hooks,
+    OwnedWaitQueue::WakeOption wake_option, OwnedWaitQueue::WakeThreadsResult* out_result);
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_OWNED_WAIT_QUEUE_H_
