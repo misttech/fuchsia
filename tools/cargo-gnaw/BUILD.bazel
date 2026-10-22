@@ -3,13 +3,13 @@
 # found in the LICENSE file.
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/bazel/rules/rust:defs.bzl", "rustc_binary", "rustc_library", "rustc_test")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
+# cargo-gnaw binary is Bazel-only (wrapped by bazel_tool_action in BUILD.gn).
 # @bazel2gn:skip
 rustc_binary(
     name = "cargo-gnaw-bin",
@@ -17,6 +17,7 @@ rustc_binary(
     crate_name = "gnaw",
     edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
     deps = [
         ":cargo-gnaw-lib",
         "//third_party/rust_crates/vendor:anyhow",
@@ -50,8 +51,11 @@ rustc_library(
         "//third_party/rust_crates/vendor:serde_derive",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = [
+        "//tools/auto_owners:__pkg__",
+        "//tools/cargo-gnaw/tests:__pkg__",
+    ],
     deps = [
-        "//third_party/rust_crates/ask2patch/walkdir",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:argh",
         "//third_party/rust_crates/vendor:camino",
@@ -60,44 +64,14 @@ rustc_library(
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",
         "//third_party/rust_crates/vendor:toml",
+        "//third_party/rust_crates/vendor:walkdir",
     ],
 )
 
-rustc_test(
+host_rustc_test(
     name = "cargo-gnaw-tests",
-    srcs = [
-        "src/build.rs",
-        "src/cfg.rs",
-        "src/gn.rs",
-        "src/graph.rs",
-        "src/lib.rs",
-        "src/target.rs",
-        "src/types.rs",
-    ],
-    compile_data = [
-        "templates/gn_group.template",
-        "templates/gn_header.template",
-        "templates/gn_import.template",
-        "templates/gn_license.template",
-        "templates/gn_rule.template",
-        "templates/gn_sdk_metadata_header.template",
-        "templates/top_level_binary_gn_rule.template",
-        "templates/top_level_gn_rule.template",
-    ],
+    crate = ":cargo-gnaw-lib",
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor:serde_derive",
-    ],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = [
-        "//third_party/rust_crates/ask2patch/walkdir",
-        "//third_party/rust_crates/vendor:anyhow",
-        "//third_party/rust_crates/vendor:argh",
-        "//third_party/rust_crates/vendor:camino",
-        "//third_party/rust_crates/vendor:cargo_metadata",
-        "//third_party/rust_crates/vendor:semver",
-        "//third_party/rust_crates/vendor:serde",
-        "//third_party/rust_crates/vendor:serde_json",
-        "//third_party/rust_crates/vendor:toml",
-    ],
+    visibility = ["//tools:__pkg__"],
 )

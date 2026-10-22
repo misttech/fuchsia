@@ -52,6 +52,14 @@ exports_files([
     "lib/debug/.build-id",
 ])
 
+exports_files(
+    [
+        "bin/cargo",
+        "bin/rustc",
+    ],
+    visibility = ["@//tools/cargo-gnaw/tests:__pkg__"],
+)
+
 # LINT.IfChange
 _HOST_DEBUG_INFO = {
     "dbg": "2",
@@ -196,6 +204,7 @@ filegroup(
         ["lib/*.so"],
         allow_empty = True,  # This is empty on Mac builders.
     ),
+    visibility = ["@//tools/cargo-gnaw/tests:__pkg__"],
 )
 
 # Define the linux_x64 Rust toolchain.

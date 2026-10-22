@@ -92,22 +92,14 @@ if (is_host) {
       "symbolizer.go",
       "triggers.go",
     ]
-    visibility = [ "//*" ]
+    visibility = [
+      ":*",
+      "//tools/debug/covargs:*",
+    ]
     deps = [
       "//third_party/golibs:cloud.google.com/go/storage",
       "//tools/debug/elflib",
       "//tools/lib/cache",
-      "//tools/lib/logger",
-    ]
-  }
-}
-if (is_host) {
-  go_library("main") {
-    sources = [ "cmd/main.go" ]
-    deps = [
-      ":symbolize_lib",
-      "//tools/lib/cache",
-      "//tools/lib/color",
       "//tools/lib/logger",
     ]
   }

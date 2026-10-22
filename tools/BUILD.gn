@@ -112,7 +112,6 @@ group("tests_no_e2e") {
     "//tools/lib:tests($host_toolchain)",
     "//tools/make-fuchsia-vol:tests",
     "//tools/mdlint:tests",
-    "//tools/net/device-finder:tests($host_toolchain)",
     "//tools/net/mdns:tests($host_toolchain)",
     "//tools/net/netboot:tests($host_toolchain)",
     "//tools/net/sshutil:tests($host_toolchain)",

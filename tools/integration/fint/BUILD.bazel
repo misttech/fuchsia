@@ -4,6 +4,8 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -17,7 +19,10 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/integration/fint/proto",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
+    visibility = [
+        "//tools/build/fx-set:__pkg__",
+        "//tools/integration/testsharder:__pkg__",
+    ],
     deps = [
         "//third_party/golibs:google.golang.org/protobuf/proto",
         "//third_party/golibs:google.golang.org/protobuf/reflect/protoreflect",
@@ -39,7 +44,10 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/integration/fint",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
+    visibility = [
+        "//tools/build/fx-set:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
     deps = [
         ":proto_lib",
         "//third_party/golibs:github.com/google/go-cmp/cmp",
@@ -64,6 +72,8 @@ go_library(
     ],
 )
 
+# fint binary and its main package are Bazel-only.
+# @bazel2gn:skip
 go_library(
     name = "main",
     srcs = [
@@ -75,7 +85,6 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/integration/fint/main",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
     deps = [
         ":fint_lib",
         ":proto_lib",
@@ -89,4 +98,48 @@ go_library(
         "//tools/lib/logger",
         "//tools/lib/osmisc",
     ],
+)
+
+# @bazel2gn:skip
+go_binary_host_tool(
+    name = "fint",
+    embed = [
+        ":main",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_go_test(
+    name = "fint_lib_tests",
+    srcs = [
+        "affected_test.go",
+        "build_test.go",
+        "common_test.go",
+        "ninja_test.go",
+        "parse_test.go",
+        "set_test.go",
+        "should_build_test.go",
+    ],
+    embed = [
+        ":fint_lib",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
+        "//third_party/golibs:google.golang.org/protobuf/testing/protocmp",
+    ],
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "main_tests",
+    srcs = [
+        "cmd/fint/cmd_set_test.go",
+    ],
+    embed = [
+        ":main",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
 )

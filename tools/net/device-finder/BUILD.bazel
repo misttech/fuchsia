@@ -6,7 +6,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_go_binary_host_tool")
-load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -36,6 +35,7 @@ idk_go_binary_host_tool(
     embed = [":lib"],
     idk_name = "device-finder",
     target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//sdk:__pkg__"],
 )
 
 host_go_test(
@@ -51,11 +51,4 @@ host_go_test(
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
     ],
-)
-
-install_host_tools(
-    name = "host",
-    implementation_deps = [":device-finder"],
-    target_compatible_with = HOST_OS_CONSTRAINTS,
-    tool_output_names = ["device-finder"],
 )

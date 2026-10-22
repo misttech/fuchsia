@@ -2,9 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_binary.gni")
-import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/go/golden_go_proto.gni")
 import("//build/python/golden_python_proto.gni")
 import("//build/python/python_library.gni")
@@ -62,30 +60,9 @@ if (is_host) {
     deps = [ ":fint_build_lib" ]
   }
 
-  go_test("fint_lib_tests") {
-    embed = [ ":fint_lib" ]
-
-    sources = [
-      "affected_test.go",
-      "build_test.go",
-      "common_test.go",
-      "ninja_test.go",
-      "parse_test.go",
-      "set_test.go",
-      "should_build_test.go",
-    ]
-
-    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts" ]
-  }
-
-  go_test("main_tests") {
-    embed = [ ":main" ]
-
-    sources = [ "cmd/fint/cmd_set_test.go" ]
-  }
-
-  go_binary("fint") {
-    embed = [ ":main" ]
+  bazel_host_tool("fint") {
+    bazel_target = ":fint"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/fint_/fint"
   }
 }
 
@@ -94,7 +71,6 @@ group("tests") {
   deps = [
     ":fint_build_test($host_toolchain)",
     ":fint_lib_tests($host_toolchain)",
-    ":main_tests($host_toolchain)",
   ]
 }
 
@@ -145,7 +121,11 @@ if (is_host) {
       "proto/set_artifacts.pb.go",
       "proto/static.pb.go",
     ]
-    visibility = [ "//*" ]
+    visibility = [
+      ":*",
+      "//tools/build/fx-set:*",
+      "//tools/integration/testsharder:*",
+    ]
     deps = [ "//third_party/golibs:google.golang.org/protobuf" ]
   }
 }
@@ -160,7 +140,11 @@ if (is_host) {
       "set.go",
       "should_build.go",
     ]
-    visibility = [ "//*" ]
+    visibility = [
+      ":*",
+      "//tools/build/fx-set:*",
+      "//vendor/google/*",
+    ]
     deps = [
       ":proto_lib",
       "//third_party/golibs:github.com/google/go-cmp/cmp",
@@ -182,24 +166,24 @@ if (is_host) {
   }
 }
 if (is_host) {
-  go_library("main") {
+  go_test("fint_lib_tests") {
     sources = [
-      "cmd/fint/cmd_affected.go",
-      "cmd/fint/cmd_build.go",
-      "cmd/fint/cmd_set.go",
-      "cmd/fint/common.go",
-      "cmd/fint/main.go",
+      "affected_test.go",
+      "build_test.go",
+      "common_test.go",
+      "ninja_test.go",
+      "parse_test.go",
+      "set_test.go",
+      "should_build_test.go",
     ]
-    visibility = [ "//*" ]
+    embed = [ ":fint_lib" ]
+    visibility = [
+      ":*",
+      "//tools:*",
+    ]
     deps = [
-      ":fint_lib",
-      ":proto_lib",
-      "//third_party/golibs:github.com/google/subcommands",
+      "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
       "//third_party/golibs:google.golang.org/protobuf",
-      "//tools/lib/color",
-      "//tools/lib/jsonutil",
-      "//tools/lib/logger",
-      "//tools/lib/osmisc",
     ]
   }
 }

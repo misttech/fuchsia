@@ -29,7 +29,7 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/symbolize",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
+    visibility = ["//tools/debug/covargs:__pkg__"],
     deps = [
         "//third_party/golibs:cloud.google.com/go/storage",
         "//tools/debug/elflib",
@@ -38,6 +38,8 @@ go_library(
     ],
 )
 
+# symbolize binary and its main package are Bazel-only.
+# @bazel2gn:skip
 go_library(
     name = "main",
     srcs = [
@@ -60,5 +62,4 @@ go_binary_host_tool(
         ":main",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
 )
