@@ -16,6 +16,7 @@ use crate::vfs::file_server::serve_file;
 use crate::vfs::fsverity::{
     FsVerityState, {self},
 };
+pub use crate::vfs::pipe::{SpliceInputBuffer, SpliceOutputBuffer};
 use crate::vfs::{
     ActiveNamespaceNode, DirentSink, EpollFileObject, EpollKey, FallocMode, FdTableId, FileMapping,
     FileSystemHandle, FileWriteGuardMode, FsNodeHandle, FsString, FscryptPolicyFlags,
@@ -170,6 +171,36 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno>;
+
+    /// Read from the file at an offset into a pipe during a `splice()` operation. If the file does
+    /// not have persistent offsets (either directly, or because it is not seekable), offset will
+    /// be 0 and can be ignored.
+    /// Returns the number of bytes read.
+    fn splice_read(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut SpliceOutputBuffer<'_>,
+        _non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        self.read(file, current_task, offset, data)
+    }
+
+    /// Write to the file with an offset from a pipe during a `splice()` operation. If the file
+    /// does not have persistent offsets (either directly, or because it is not seekable), offset
+    /// will be 0 and can be ignored.
+    /// Returns the number of bytes written.
+    fn splice_write(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut SpliceInputBuffer<'_>,
+        _non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        self.write(file, current_task, offset, data)
+    }
 
     /// Adjust the `current_offset` if the file is seekable.
     fn seek(
@@ -433,6 +464,28 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
         self.deref().write(file, current_task, offset, data)
     }
 
+    fn splice_read(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut SpliceOutputBuffer<'_>,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        self.deref().splice_read(file, current_task, offset, data, non_blocking)
+    }
+
+    fn splice_write(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut SpliceInputBuffer<'_>,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        self.deref().splice_write(file, current_task, offset, data, non_blocking)
+    }
+
     fn seek(
         &self,
         file: &FileObject,
@@ -655,6 +708,28 @@ macro_rules! fileops_impl_delegate_read_write_and_seek {
             data: &mut dyn $crate::vfs::buffers::InputBuffer,
         ) -> Result<usize, starnix_uapi::errors::Errno> {
             $delegate.write(file, current_task, offset, data)
+        }
+
+        fn splice_read(
+            &$self,
+            file: &FileObject,
+            current_task: &$crate::task::CurrentTask,
+            offset: usize,
+            data: &mut $crate::vfs::SpliceOutputBuffer<'_>,
+            non_blocking: bool,
+        ) -> Result<usize, starnix_uapi::errors::Errno> {
+            $delegate.splice_read(file, current_task, offset, data, non_blocking)
+        }
+
+        fn splice_write(
+            &$self,
+            file: &FileObject,
+            current_task: &$crate::task::CurrentTask,
+            offset: usize,
+            data: &mut $crate::vfs::SpliceInputBuffer<'_>,
+            non_blocking: bool,
+        ) -> Result<usize, starnix_uapi::errors::Errno> {
+            $delegate.splice_write(file, current_task, offset, data, non_blocking)
         }
 
         fn seek(
@@ -1340,6 +1415,26 @@ impl FileOps for ProxyFileOps {
     ) -> Result<usize, Errno> {
         self.0.ops().write(&self.0, current_task, offset, data)
     }
+    fn splice_read(
+        &self,
+        _file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut SpliceOutputBuffer<'_>,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        self.0.ops().splice_read(&self.0, current_task, offset, data, non_blocking)
+    }
+    fn splice_write(
+        &self,
+        _file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut SpliceInputBuffer<'_>,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        self.0.ops().splice_write(&self.0, current_task, offset, data, non_blocking)
+    }
     fn ioctl(
         &self,
         _file: &FileObject,
@@ -1774,26 +1869,49 @@ impl FileObject {
         Ok(bytes_read)
     }
 
+    fn read_op<R>(
+        &self,
+        current_task: &CurrentTask,
+        offset: Option<usize>,
+        available: usize,
+        read: R,
+    ) -> Result<usize, Errno>
+    where
+        R: FnOnce(usize) -> Result<usize, Errno>,
+    {
+        if let Some(offset) = offset {
+            if !self.ops().is_seekable() {
+                return error!(ESPIPE);
+            }
+            checked_add_offset_and_length(offset, available)?;
+            self.read_internal(current_task, || read(offset))
+        } else {
+            self.read_internal(current_task, || {
+                if !self.ops().has_persistent_offsets() {
+                    if available > MAX_LFS_FILESIZE {
+                        return error!(EINVAL);
+                    }
+                    return read(0);
+                }
+
+                let mut offset_guard = self.offset.copy();
+                let offset = *offset_guard as usize;
+                checked_add_offset_and_length(offset, available)?;
+                let bytes_read = read(offset)?;
+                *offset_guard += bytes_read as off_t;
+                offset_guard.update();
+                Ok(bytes_read)
+            })
+        }
+    }
+
     pub fn read(
         &self,
         current_task: &CurrentTask,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        self.read_internal(current_task, || {
-            if !self.ops().has_persistent_offsets() {
-                if data.available() > MAX_LFS_FILESIZE {
-                    return error!(EINVAL);
-                }
-                return self.ops.read(self, current_task, 0, data);
-            }
-
-            let mut offset_guard = self.offset.copy();
-            let offset = *offset_guard as usize;
-            checked_add_offset_and_length(offset, data.available())?;
-            let read = self.ops.read(self, current_task, offset, data)?;
-            *offset_guard += read as off_t;
-            offset_guard.update();
-            Ok(read)
+        self.read_op(current_task, None, data.available(), |offset| {
+            self.ops.read(self, current_task, offset, data)
         })
     }
 
@@ -1803,31 +1921,24 @@ impl FileObject {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        if !self.ops().is_seekable() {
-            return error!(ESPIPE);
-        }
-        checked_add_offset_and_length(offset, data.available())?;
-        self.read_internal(current_task, || self.ops.read(self, current_task, offset, data))
+        self.read_op(current_task, Some(offset), data.available(), |offset| {
+            self.ops.read(self, current_task, offset, data)
+        })
     }
 
-    /// Common checks before calling ops().write.
-    fn write_common(
+    pub fn splice_read(
         &self,
         current_task: &CurrentTask,
-        offset: usize,
-        data: &mut dyn InputBuffer,
+        offset: Option<usize>,
+        data: &mut SpliceOutputBuffer<'_>,
+        non_blocking: bool,
     ) -> Result<usize, Errno> {
-        // We need to cap the size of `data` to prevent us from growing the file too large,
-        // according to <https://man7.org/linux/man-pages/man2/write.2.html>:
-        //
-        //   The number of bytes written may be less than count if, for example, there is
-        //   insufficient space on the underlying physical medium, or the RLIMIT_FSIZE resource
-        //   limit is encountered (see setrlimit(2)),
-        checked_add_offset_and_length(offset, data.available())?;
-        self.ops().write(self, current_task, offset, data)
+        self.read_op(current_task, offset, data.available(), |offset| {
+            self.ops.splice_read(self, current_task, offset, data, non_blocking)
+        })
     }
 
-    /// Common wrapper work for `write` and `write_at`.
+    /// Common wrapper work for `write`, `write_at`, and `splice_write`.
     fn write_fn<W>(&self, current_task: &CurrentTask, write: W) -> Result<usize, Errno>
     where
         W: FnOnce() -> Result<usize, Errno>,
@@ -1847,58 +1958,101 @@ impl FileObject {
         Ok(bytes_written)
     }
 
+    fn write_op<W>(
+        &self,
+        current_task: &CurrentTask,
+        offset: Option<usize>,
+        available: usize,
+        write: W,
+    ) -> Result<usize, Errno>
+    where
+        W: FnOnce(usize) -> Result<usize, Errno>,
+    {
+        // Cap the size of `data` to prevent growing the file too large, according to
+        // <https://man7.org/linux/man-pages/man2/write.2.html>:
+        //
+        //   The number of bytes written may be less than count if, for example, there is
+        //   insufficient space on the underlying physical medium, or the RLIMIT_FSIZE resource
+        //   limit is encountered (see setrlimit(2)),
+        let write_common = |offset: usize| -> Result<usize, Errno> {
+            checked_add_offset_and_length(offset, available)?;
+            write(offset)
+        };
+        if let Some(mut offset) = offset {
+            if !self.ops().is_seekable() {
+                return error!(ESPIPE);
+            }
+            self.write_fn(current_task, || {
+                if self.flags().contains(OpenFlags::APPEND) {
+                    let _guard = self.node().append_lock.write(current_task)?;
+                    // According to LTP test pwrite04:
+                    //
+                    //   POSIX requires that opening a file with the O_APPEND flag should have no effect on the
+                    //   location at which pwrite() writes data. However, on Linux, if a file is opened with
+                    //   O_APPEND, pwrite() appends data to the end of the file, regardless of the value of offset.
+                    if self.ops().is_seekable() {
+                        checked_add_offset_and_length(offset, available)?;
+                        offset = default_eof_offset(self, current_task)? as usize;
+                    }
+                    write_common(offset)
+                } else {
+                    let _guard = self.node().append_lock.read(current_task)?;
+                    write_common(offset)
+                }
+            })
+        } else {
+            self.write_fn(current_task, || {
+                if !self.ops().has_persistent_offsets() {
+                    return write_common(0);
+                }
+                let mut offset = self.offset.copy();
+                let bytes_written = if self.flags().contains(OpenFlags::APPEND) {
+                    let _guard = self.node().ops().append_lock_write(self.node(), current_task)?;
+                    *offset = self.ops().seek(self, current_task, *offset, SeekTarget::End(0))?;
+                    write_common(*offset as usize)
+                } else {
+                    let _guard = self.node().ops().append_lock_read(self.node(), current_task)?;
+                    write_common(*offset as usize)
+                }?;
+                if self.ops().writes_update_seek_offset() {
+                    *offset += bytes_written as off_t;
+                }
+                offset.update();
+                Ok(bytes_written)
+            })
+        }
+    }
+
     pub fn write(
         &self,
         current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        self.write_fn(current_task, || {
-            if !self.ops().has_persistent_offsets() {
-                return self.write_common(current_task, 0, data);
-            }
-            let mut offset = self.offset.copy();
-            let bytes_written = if self.flags().contains(OpenFlags::APPEND) {
-                let _guard = self.node().ops().append_lock_write(self.node(), current_task)?;
-                *offset = self.ops().seek(self, current_task, *offset, SeekTarget::End(0))?;
-                self.write_common(current_task, *offset as usize, data)
-            } else {
-                let _guard = self.node().ops().append_lock_read(self.node(), current_task)?;
-                self.write_common(current_task, *offset as usize, data)
-            }?;
-            if self.ops().writes_update_seek_offset() {
-                *offset += bytes_written as off_t;
-            }
-            offset.update();
-            Ok(bytes_written)
+        self.write_op(current_task, None, data.available(), |offset| {
+            self.ops().write(self, current_task, offset, data)
         })
     }
 
     pub fn write_at(
         &self,
         current_task: &CurrentTask,
-        mut offset: usize,
+        offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        if !self.ops().is_seekable() {
-            return error!(ESPIPE);
-        }
-        self.write_fn(current_task, || {
-            if self.flags().contains(OpenFlags::APPEND) {
-                let _guard = self.node().append_lock.write(current_task)?;
-                // According to LTP test pwrite04:
-                //
-                //   POSIX requires that opening a file with the O_APPEND flag should have no effect on the
-                //   location at which pwrite() writes data. However, on Linux, if a file is opened with
-                //   O_APPEND, pwrite() appends data to the end of the file, regardless of the value of offset.
-                if self.ops().is_seekable() {
-                    checked_add_offset_and_length(offset, data.available())?;
-                    offset = default_eof_offset(self, current_task)? as usize;
-                }
-                self.write_common(current_task, offset, data)
-            } else {
-                let _guard = self.node().append_lock.read(current_task)?;
-                self.write_common(current_task, offset, data)
-            }
+        self.write_op(current_task, Some(offset), data.available(), |offset| {
+            self.ops().write(self, current_task, offset, data)
+        })
+    }
+
+    pub fn splice_write(
+        &self,
+        current_task: &CurrentTask,
+        offset: Option<usize>,
+        data: &mut SpliceInputBuffer<'_>,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        self.write_op(current_task, offset, data.available(), |offset| {
+            self.ops().splice_write(self, current_task, offset, data, non_blocking)
         })
     }
 

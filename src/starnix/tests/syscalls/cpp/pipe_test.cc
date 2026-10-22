@@ -771,4 +771,27 @@ TEST(PipeTest, ZeroLengthIoAndSplicePrecedence) {
   EXPECT_THAT(write(b_wr.get(), "", 0), SyscallSucceedsWithValue(0));
 }
 
+TEST(PipeTest, SpliceNonblockSocketEndpoint) {
+  int sock_fds[2];
+  SAFE_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds));
+  fbl::unique_fd sock_rd(sock_fds[0]);
+  fbl::unique_fd sock_wr(sock_fds[1]);
+
+  test_helper::ScopedPipe pipe;
+
+  // SPLICE_F_NONBLOCK must make splice from an empty blocking socket return EAGAIN immediately
+  // without mutating the socket's O_NONBLOCK flag.
+  EXPECT_THAT(splice(sock_rd.get(), nullptr, pipe.WriteSide().get(), nullptr, 4, SPLICE_F_NONBLOCK),
+              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_EQ(fcntl(sock_rd.get(), F_GETFL) & O_NONBLOCK, 0);
+
+  // O_NONBLOCK on the pipe write end must also make splice from an empty blocking socket return
+  // EAGAIN immediately even when SPLICE_F_NONBLOCK is not passed, without mutating the socket's
+  // O_NONBLOCK flag.
+  test_helper::ScopedPipe nb_pipe(O_NONBLOCK);
+  EXPECT_THAT(splice(sock_rd.get(), nullptr, nb_pipe.WriteSide().get(), nullptr, 4, 0),
+              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_EQ(fcntl(sock_rd.get(), F_GETFL) & O_NONBLOCK, 0);
+}
+
 }  // namespace

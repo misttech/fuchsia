@@ -12,7 +12,7 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{
     Anon, DowncastedFile, FileHandle, FileObject, FileObjectState, FileOps, FsNodeFlags,
-    FsNodeInfo, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    FsNodeInfo, SpliceOutputBuffer, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_uapi::auth::Credentials;
@@ -99,6 +99,30 @@ impl FileOps for SocketFile {
             return Ok(0);
         }
         let info = self.recvmsg(current_task, file, data, SocketMessageFlags::empty(), None)?;
+        Ok(info.bytes_read)
+    }
+
+    fn splice_read(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut SpliceOutputBuffer<'_>,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        debug_assert!(offset == 0);
+        if data.available() == 0 {
+            return Ok(0);
+        }
+        let flags = if non_blocking
+            && self.socket.domain == SocketDomain::Unix
+            && self.socket.socket_type == SocketType::Stream
+        {
+            SocketMessageFlags::DONTWAIT
+        } else {
+            SocketMessageFlags::empty()
+        };
+        let info = self.recvmsg(current_task, file, data, flags, None)?;
         Ok(info.bytes_read)
     }
 

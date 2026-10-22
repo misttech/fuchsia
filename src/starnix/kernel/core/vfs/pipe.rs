@@ -625,7 +625,7 @@ impl FileOps for PipeFileObject {
 
 /// An OutputBuffer that will write the data to `pipe`.
 #[derive(Debug)]
-struct SpliceOutputBuffer<'a> {
+pub struct SpliceOutputBuffer<'a> {
     pipe: &'a mut Pipe,
     len: usize,
     available: usize,
@@ -691,7 +691,7 @@ impl<'a> OutputBuffer for SpliceOutputBuffer<'a> {
 
 /// An InputBuffer that will read the data from `pipe`.
 #[derive(Debug)]
-struct SpliceInputBuffer<'a> {
+pub struct SpliceInputBuffer<'a> {
     pipe: &'a mut Pipe,
     len: usize,
     available: usize,
@@ -931,14 +931,11 @@ impl PipeFileObject {
         // If both ends are pipes, use `lock_pipes` and `Pipe::splice`.
         assert!(from.downcast_file::<PipeFileObject>().is_none());
 
+        let non_blocking = non_blocking || self_file.is_non_blocking();
         let mut pipe = self.lock_pipe_for_writing(current_task, self_file, non_blocking, len)?;
         let len = std::cmp::min(len, pipe.messages.available_capacity());
         let mut buffer = SpliceOutputBuffer { pipe: &mut pipe, len, available: len };
-        let result = if let Some(offset) = maybe_offset {
-            from.read_at(current_task, offset, &mut buffer)
-        } else {
-            from.read(current_task, &mut buffer)
-        };
+        let result = from.splice_read(current_task, maybe_offset, &mut buffer, non_blocking);
         std::mem::drop(pipe);
         if let Err(err) = &result
             && *err == EPIPE
@@ -991,11 +988,8 @@ impl PipeFileObject {
             }
         }
         let mut buffer = SpliceInputBuffer { pipe: &mut pipe, len, available: len };
-        let bytes_written = if let Some(offset) = maybe_offset {
-            to.write_at(current_task, offset, &mut buffer)
-        } else {
-            to.write(current_task, &mut buffer)
-        }?;
+        let bytes_written =
+            to.splice_write(current_task, maybe_offset, &mut buffer, non_blocking)?;
         std::mem::drop(pipe);
         if bytes_written > 0 && clamped_by_fsize {
             send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
@@ -1585,6 +1579,120 @@ mod tests {
             let mut rem2 = VecOutputBuffer::new(8);
             assert_eq!(pipe_out.read(&current_task, &mut rem2).unwrap(), 4);
             assert_eq!(rem2.data(), b"AAAA");
+        })
+        .await;
+    }
+
+    struct WouldBlockEndpointFile;
+
+    impl FileOps for WouldBlockEndpointFile {
+        fileops_impl_nonseekable!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            file: &FileObject,
+            current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            file.blocking_op(current_task, FdEvents::POLLIN, None, || error!(EAGAIN))
+        }
+
+        fn write(
+            &self,
+            file: &FileObject,
+            current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            file.blocking_op(current_task, FdEvents::POLLOUT, None, || error!(EAGAIN))
+        }
+
+        fn wait_async(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _waiter: &Waiter,
+            _events: FdEvents,
+            _handler: EventHandler,
+        ) -> Option<WaitCanceler> {
+            Some(WaitCanceler::new_noop())
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_splice_non_blocking_unix_stream_and_pipe_flags() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let (unix_sock, unix_peer) = crate::vfs::socket::UnixSocket::new_pair(
+                &current_task,
+                crate::vfs::socket::SocketDomain::Unix,
+                crate::vfs::socket::SocketType::Stream,
+                OpenFlags::RDWR,
+            )
+            .unwrap();
+            let blocking_sink =
+                anon_test_file(&current_task, Box::new(WouldBlockEndpointFile), OpenFlags::WRONLY);
+
+            // SPLICE_F_NONBLOCK (`non_blocking = true`) makes `splice_from` on an empty blocking
+            // AF_UNIX stream socket return EAGAIN without marking the socket itself non-blocking.
+            assert_eq!(
+                pipe_in
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, true)
+                    .unwrap_err(),
+                errno!(EAGAIN)
+            );
+            assert!(!unix_sock.is_non_blocking());
+
+            // Setting O_NONBLOCK on the pipe write end also makes `splice_from` on an empty
+            // blocking AF_UNIX stream socket return EAGAIN even when `non_blocking = false`.
+            pipe_in.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
+            assert_eq!(
+                pipe_in
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, false)
+                    .unwrap_err(),
+                errno!(EAGAIN)
+            );
+            assert!(!unix_sock.is_non_blocking());
+
+            // Data written to the peer splices into the pipe and subsequent empty splice_from
+            // still returns EAGAIN without mutating the socket's O_NONBLOCK flag.
+            assert_eq!(
+                unix_peer.write(&current_task, &mut VecInputBuffer::new(b"ABCD")).unwrap(),
+                4
+            );
+            assert_eq!(
+                pipe_in
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, false)
+                    .unwrap(),
+                4
+            );
+            let mut read_buf = VecOutputBuffer::new(4);
+            assert_eq!(pipe_out.read(&current_task, &mut read_buf).unwrap(), 4);
+            assert_eq!(read_buf.data(), b"ABCD");
+            assert!(!unix_sock.is_non_blocking());
+
+            // Setting O_NONBLOCK on the pipe read end makes `splice_to` on an empty pipe return
+            // EAGAIN even when `non_blocking = false`.
+            pipe_out.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
+            assert_eq!(
+                pipe_out
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_to(&current_task, &pipe_out, &blocking_sink, None, 4, false)
+                    .unwrap_err(),
+                errno!(EAGAIN)
+            );
         })
         .await;
     }
