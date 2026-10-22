@@ -211,10 +211,6 @@
                 // TODO(https://fxbug.dev/391599171): Requires event-based userfaultfd
                 "mremap07",
 
-                // TODO(https://fxbug.dev/322874684): Requires /proc/sys/vm/max_map_count
-                // and the enforcement of maximum number of mappings during munmap() call
-                "munmap04",
-
                 // Needs /proc/sys/fs/pipe-user-pages-soft
                 "pipe15",
                 "prctl02",
@@ -420,6 +416,11 @@
 
                 // Times out, see b/457525944
                 "epoll01",
+
+                // TODO(https://fxbug.dev/322874684): Requires
+                // /proc/sys/vm/max_map_count enforcement; without it, munmap04 maps >500k
+                // VMAs, overflows its heap buffer, and times out starnix_ltp_tests_m.
+                "munmap04",
             ],
         },
     ],
