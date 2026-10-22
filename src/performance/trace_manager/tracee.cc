@@ -242,8 +242,8 @@ void Tracee::OnFifoReadable(async_dispatcher_t* dispatcher, async::WaitBase* wai
       if (buffer_->BufferingMode() != fuchsia_tracing::BufferingMode::kStreaming) {
         FX_LOGS(WARNING) << *bundle_ << ": Received TRACE_PROVIDER_SAVE_BUFFER in mode "
                          << ModeName(buffer_->BufferingMode());
-      } else if (state_ == State::kStarted || state_ == State::kStopping ||
-                 state_ == State::kTerminating) {
+      } else if (state_ == State::kStarting || state_ == State::kStarted ||
+                 state_ == State::kStopping || state_ == State::kTerminating) {
         uint32_t wrapped_count = packet.data32;
         uint64_t durable_data_end = packet.data64;
         // Schedule the write with the main async loop.

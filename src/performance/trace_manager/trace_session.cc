@@ -165,32 +165,28 @@ void TraceSession::AddProvider(ProviderConnection* provider) {
   if (!tracee->Initialize(std::move(categories_clone), buffer_size, buffering_mode_)) {
     tracees_.pop_back();
   } else {
-    // Register the tracee to receive
+    // Register the tracee to receive buffer save requests.
     provider->RegisterForBufferSave([weak_session = weak_ptr_factory_.GetWeakPtr(),
                                      weak_tracee = tracee->GetWeakPtr(),
                                      provider](uint32_t wrapped_count, uint64_t durable_data_end) {
       if (weak_tracee) {
-        if (weak_tracee->state() == Tracee::State::kStarted ||
+        if (weak_tracee->state() == Tracee::State::kStarting ||
+            weak_tracee->state() == Tracee::State::kStarted ||
             weak_tracee->state() == Tracee::State::kStopping ||
             weak_tracee->state() == Tracee::State::kTerminating) {
           FX_LOGS(DEBUG) << std::format(
               "Buffer save request from {}, wrapped_count={}, durable_data_end={:x}",
               *weak_tracee->connection(), wrapped_count, durable_data_end);
           if (weak_tracee->TransferBuffer(wrapped_count, durable_data_end).is_error()) {
-            if (weak_session) {
-              weak_session->OnV2ProviderTerminated(provider);
-            }
+            weak_tracee->Terminate([weak_session, provider]() {
+              if (weak_session) {
+                weak_session->OnV2ProviderTerminated(provider);
+              }
+            });
           }
         } else {
           FX_LOGS(WARNING) << std::format("{}: Received buffer save request in state ", *provider)
                            << weak_tracee->state();
-          if (weak_session) {
-            weak_session->OnV2ProviderTerminated(provider);
-          }
-        }
-      } else {
-        if (weak_session) {
-          weak_session->OnV2ProviderTerminated(provider);
         }
       }
     });

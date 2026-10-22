@@ -123,5 +123,122 @@ TEST_F(TraceManagerTest, V2ProviderLifecycle) {
   EXPECT_EQ(provider1->terminate_count(), 1);
 }
 
+// Test that OnSaveBuffer received while a V2 provider is in kStarting state is serviced
+// and does not strand the provider for subsequent sessions.
+TEST_F(TraceManagerTest, V2ProviderSaveBufferWhileStarting) {
+  ConnectToProvisionerService();
+
+  FakeProviderV2* provider1;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider1Pid, kProvider1Name, &provider1));
+
+  RunLoopUntilIdle();
+
+  auto config = GetDefaultTraceConfig();
+  config.buffering_mode(fuchsia_tracing::BufferingMode::kStreaming);
+  ASSERT_TRUE(InitializeSession(std::move(config)));
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kInitialized);
+  EXPECT_EQ(provider1->initialize_count(), 1);
+
+  BeginStartSession();
+  RunLoopUntilIdle();
+  ASSERT_EQ(GetSessionState(), SessionState::kStarting);
+  ASSERT_EQ(provider1->state(), FakeProviderV2::State::kStarting);
+
+  // Send OnSaveBuffer before the provider replies to Start().
+  provider1->SendOnSaveBuffer(/*wrapped_count=*/0, /*durable_data_end=*/16);
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(provider1->notify_buffer_saved_count(), 1);
+  EXPECT_EQ(provider1->terminate_count(), 0);
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kStarting);
+
+  ASSERT_TRUE(FinishStartSession());
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kStarted);
+  EXPECT_EQ(provider1->start_count(), 1);
+
+  ASSERT_TRUE(StopSession());
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kStopped);
+  EXPECT_EQ(provider1->stop_count(), 1);
+
+  ASSERT_TRUE(TerminateSession());
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kTerminated);
+  EXPECT_EQ(provider1->terminate_count(), 1);
+
+  // Verify a subsequent session can re-initialize the provider without error.
+  provider1->ResetCounts();
+  ASSERT_TRUE(InitializeSession());
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kInitialized);
+  EXPECT_EQ(provider1->initialize_count(), 1);
+  ASSERT_TRUE(TerminateSession());
+}
+
+// Test that a TransferBuffer error during OnSaveBuffer terminates the provider rather than
+// erasing it from tracees_ without calling Terminate().
+TEST_F(TraceManagerTest, V2ProviderSaveBufferErrorTerminatesProvider) {
+  ConnectToProvisionerService();
+
+  FakeProviderV2* provider1;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider1Pid, kProvider1Name, &provider1));
+
+  RunLoopUntilIdle();
+
+  auto config = GetDefaultTraceConfig();
+  config.buffering_mode(fuchsia_tracing::BufferingMode::kStreaming);
+  ASSERT_TRUE(InitializeSession(std::move(config)));
+  ASSERT_TRUE(StartSession());
+
+  // Send an invalid wrapped_count so TransferBuffer fails.
+  provider1->SendOnSaveBuffer(/*wrapped_count=*/99, /*durable_data_end=*/16);
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(provider1->notify_buffer_saved_count(), 0);
+  EXPECT_EQ(provider1->terminate_count(), 1);
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kTerminating);
+
+  provider1->MarkTerminated();
+  RunLoopUntilIdle();
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kTerminated);
+
+  DisconnectFromControllerService();
+  RunLoopUntilIdle();
+  EXPECT_EQ(GetSessionState(), SessionState::kNonexistent);
+
+  // Because provider1 was properly terminated, a subsequent session can re-initialize it.
+  provider1->ResetCounts();
+  ASSERT_TRUE(InitializeSession());
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kInitialized);
+  EXPECT_EQ(provider1->initialize_count(), 1);
+  ASSERT_TRUE(TerminateSession());
+}
+
+// Test that OnSaveBuffer received in an unexpected state (e.g. kInitialized) logs a warning
+// without stranding the provider.
+TEST_F(TraceManagerTest, V2ProviderSaveBufferInUnexpectedStateDoesNotStrandProvider) {
+  ConnectToProvisionerService();
+
+  FakeProviderV2* provider1;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider1Pid, kProvider1Name, &provider1));
+
+  RunLoopUntilIdle();
+
+  auto config = GetDefaultTraceConfig();
+  config.buffering_mode(fuchsia_tracing::BufferingMode::kStreaming);
+  ASSERT_TRUE(InitializeSession(std::move(config)));
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kInitialized);
+
+  // Send OnSaveBuffer before StartSession() is called.
+  provider1->SendOnSaveBuffer(/*wrapped_count=*/0, /*durable_data_end=*/16);
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(provider1->notify_buffer_saved_count(), 0);
+  EXPECT_EQ(provider1->terminate_count(), 0);
+
+  ASSERT_TRUE(StartSession());
+  ASSERT_TRUE(StopSession());
+  ASSERT_TRUE(TerminateSession());
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kTerminated);
+  EXPECT_EQ(provider1->terminate_count(), 1);
+}
+
 }  // namespace test
 }  // namespace tracing

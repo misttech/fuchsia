@@ -47,6 +47,11 @@ class FakeProviderV2 : public fidl::Server<fuchsia_tracing_provider::ProviderV2>
   void MarkUnresponsive();
   void MarkResponsive();
 
+  void SendOnSaveBuffer(uint32_t wrapped_count, uint64_t durable_data_end);
+  void SetBinding(fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding) {
+    binding_ = std::move(binding);
+  }
+
   zx_koid_t pid() const { return pid_; }
   const std::string& name() const { return name_; }
   State state() const { return state_; }
@@ -55,6 +60,15 @@ class FakeProviderV2 : public fidl::Server<fuchsia_tracing_provider::ProviderV2>
   int start_count() const { return start_count_; }
   int stop_count() const { return stop_count_; }
   int terminate_count() const { return terminate_count_; }
+  int notify_buffer_saved_count() const { return notify_buffer_saved_count_; }
+
+  void ResetCounts() {
+    initialize_count_ = 0;
+    start_count_ = 0;
+    stop_count_ = 0;
+    terminate_count_ = 0;
+    notify_buffer_saved_count_ = 0;
+  }
 
   void SetKnownCategories(std::vector<fuchsia_tracing::KnownCategory> known_categories) {
     known_categories_ = std::move(known_categories);
@@ -89,7 +103,9 @@ class FakeProviderV2 : public fidl::Server<fuchsia_tracing_provider::ProviderV2>
   int start_count_ = 0;
   int stop_count_ = 0;
   int terminate_count_ = 0;
+  int notify_buffer_saved_count_ = 0;
 
+  std::optional<fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2>> binding_;
   std::optional<StartCompleter::Async> start_completer_;
   std::optional<StopCompleter::Async> stop_completer_;
   std::optional<TerminateCompleter::Async> terminate_completer_;

@@ -21,6 +21,12 @@ void FakeProviderV2::Initialize(InitializeRequest& request, InitializeCompleter:
   FX_LOGS(DEBUG) << PrettyName() << ": Received Initialize message";
   ++initialize_count_;
 
+  if (state_ != State::kReady && state_ != State::kTerminated) {
+    FX_LOGS(DEBUG) << "Can't initialize, state is " << state_;
+    completer.Close(ZX_ERR_BAD_STATE);
+    return;
+  }
+
   auto& config = request.config();
   ASSERT_TRUE(config.buffering_mode().has_value());
   ASSERT_TRUE(config.buffer().has_value());
@@ -70,7 +76,7 @@ void FakeProviderV2::Terminate(TerminateCompleter::Sync& completer) {
 
 void FakeProviderV2::NotifyBufferSaved(NotifyBufferSavedRequest& request,
                                        NotifyBufferSavedCompleter::Sync& completer) {
-  // Our fake provider doesn't do much with this yet.
+  ++notify_buffer_saved_count_;
 }
 
 void FakeProviderV2::GetKnownCategories(GetKnownCategoriesCompleter::Sync& completer) {
@@ -129,6 +135,14 @@ void FakeProviderV2::MarkResponsive() {
     completer.Reply({{.categories = known_categories_}});
   }
   pending_cat_completers_.clear();
+}
+
+void FakeProviderV2::SendOnSaveBuffer(uint32_t wrapped_count, uint64_t durable_data_end) {
+  UpdateBufferHeaderAfterStopped();
+  ASSERT_TRUE(binding_.has_value());
+  auto result = fidl::SendEvent(*binding_)->OnSaveBuffer(
+      {{.wrapped_count = wrapped_count, .durable_data_end = durable_data_end}});
+  ASSERT_TRUE(result.is_ok());
 }
 
 void FakeProviderV2::InitializeBuffer() {
@@ -248,6 +262,7 @@ fidl::ClientEnd<fuchsia_tracing_provider::ProviderV2> FakeProviderV2Binding::New
     async_dispatcher_t* dispatcher) {
   auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_provider::ProviderV2>::Create();
   binding = fidl::BindServer(dispatcher, std::move(server_end), provider.get());
+  provider->SetBinding(*binding);
   return std::move(client_end);
 }
 
