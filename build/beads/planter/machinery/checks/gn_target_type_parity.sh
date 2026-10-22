@@ -91,6 +91,11 @@ GN_TEST_TEMPLATES = {
 GN_HOST_TOOL_TEMPLATES = {
     "rustc_binary",
     "go_binary",
+    "python_binary",
+    "sdk_executable_host_tool",
+    "sdk_go_binary_host_tool",
+    "sdk_rustc_binary_host_tool",
+    "sdk_host_tool",
     "executable",
     "install_host_tools",
 }

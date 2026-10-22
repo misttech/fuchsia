@@ -1219,6 +1219,38 @@ for pkg_dir in sorted(candidate_dirs):
                 })
 
         rust_unit_test_names = {t["name"] + "_test" for t in bazel_targets if t.get("unit_tests")}
+
+        # Check whether a Bazel test target is legitimately skipped from bazel2gn conversion
+        # (e.g. uses test_data/data/test_label or an unsupported test rule) while testing a
+        # dual-built target, so its GN copy stays hand-written above the sentinel.
+        def is_untranslatable_skipped_bazel_test(bname):
+            bt = targets_by_name.get(bname)
+            if bt is not None:
+                if bt["skip_line"] is None:
+                    return False
+                brule = bt["rule"]
+                if brule in ("host_go_test", "go_test", "host_rustc_test") and bt.get(
+                    "has_test_data"
+                ):
+                    return True
+                if brule in UNSUPPORTED_TEST_BINARY_RULES:
+                    return True
+                if brule == "rustc_test" and (
+                    bt.get("cross_pkg_srcs_or_crate")
+                    or (
+                        bt.get("has_rustc_env")
+                        and bt.get("crate_ref") in targets_by_name
+                        and targets_by_name[bt["crate_ref"]].get("has_rustc_env")
+                    )
+                ):
+                    return True
+                return False
+            if bname.endswith("_test"):
+                owner = targets_by_name.get(bname[: -len("_test")])
+                if owner and owner.get("skipped_test_attrs"):
+                    return bool(owner.get("has_test_data"))
+            return False
+
         for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
             # Reject hand-written check-cfg GN config() targets above the sentinel when
             # bazel2gn natively converts rustc_check_cfg_build_flags() below the sentinel.
@@ -1255,7 +1287,8 @@ for pkg_dir in sorted(candidate_dirs):
                 bazel_dups = sorted(
                     n
                     for n in {gname, out_m.group(1) if out_m else gname}
-                    if n in bazel_names or n in rust_unit_test_names
+                    if (n in bazel_names or n in rust_unit_test_names)
+                    and not is_untranslatable_skipped_bazel_test(n)
                 )
                 if bazel_dups:
                     findings.append({

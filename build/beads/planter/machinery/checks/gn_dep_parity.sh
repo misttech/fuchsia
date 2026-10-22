@@ -414,7 +414,11 @@ for pkg in sorted(candidate_dirs):
     package_now = set().union(*[set().union(*t["deps"].values()) for t in new_targets.values() if t["deps"]])
 
     for name, old_t in sorted(old_targets.items()):
-        if name not in new_targets:
+        # Skip targets replaced by a Bazel host binary or test suite bridge in GN.
+        if name not in new_targets or new_targets[name]["tmpl"] in (
+            "bazel_host_tool",
+            "bazel_test_suite",
+        ):
             continue
         tmpl = old_t["tmpl"]
         old_deps = gn_deps(old_t, pkg)

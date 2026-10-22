@@ -408,6 +408,15 @@ BAZEL_NON_GN_SYNCED_RULES = {
     "host_go_test",
     "host_py_test",
     "host_test",
+    "host_test_data_files",
+    "host_test_data_map",
+    "cc_binary_host_tool",
+    "go_binary_host_tool",
+    "py_binary_host_tool",
+    "rustc_binary_host_tool",
+    "idk_cc_binary_host_tool",
+    "idk_go_binary_host_tool",
+    "idk_rustc_binary_host_tool",
     "wrap_host_rust_test",
     "go_test",
 }
@@ -528,17 +537,6 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             combined = per_target_rdeps[alias_name] | per_target_rdeps[actual_name]
             per_target_rdeps[alias_name] = set(combined)
             per_target_rdeps[actual_name] = set(combined)
-
-    for t in bazel_targets:
-        if t in non_gn_synced_targets:
-            continue
-        for sub_t in bazel_targets:
-            if sub_t in non_gn_synced_targets:
-                continue
-            if sub_t != t and sub_t.startswith(t + "_"):
-                combined = per_target_rdeps[t] | per_target_rdeps[sub_t]
-                per_target_rdeps[t] = set(combined)
-                per_target_rdeps[sub_t] = set(combined)
 
     visibility_only_packages -= true_rdep_packages
     gn_only_ref_packages -= true_rdep_packages
