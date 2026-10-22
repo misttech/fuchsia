@@ -13,16 +13,31 @@ const MAX_RAIL_NAME_SIZE uint32 = 256;
 /// Maximum number of actively-monitored power rails.
 const MAX_RAILS uint32 = 32;
 
+/// Maximum number of available power rails supported by the hardware.
+const MAX_AVAILABLE_RAILS uint32 = 128;
+
 /// An arbitrary, human-readable string that uniquely identifies a power rail.
 alias RailName = string:MAX_RAIL_NAME_SIZE;
 
 type RailMetadata = table {
     /// Canonical identifier for the rail (e.g. "cpu_big", "gpu").
     1: name RailName;
-    /// Hardware channel index.
+    /// Hardware channel index. Present if the rail is currently actively monitored;
+    /// omitted if the rail is not currently assigned to a channel.
     2: channel_id uint32;
     /// Schematic name of the rail (e.g. "S2M_VDD_CPU2").
     3: schematic_name RailName;
+    /// PMIC regulator or shunt identifier (e.g. "buck_2m", "ldo_26m", "VSEN_C1").
+    4: regulator_name RailName;
+    /// Boot timestamp when the current (or most recent) measurement window started.
+    /// Present if the rail is currently monitored or was previously monitored.
+    5: measurement_start zx.InstantBoot;
+    /// Boot timestamp when measurement of this rail stopped.
+    /// Present only if the rail was previously monitored and then swapped out.
+    6: measurement_stop zx.InstantBoot;
+    /// Accumulated energy in microjoules over `[measurement_start, measurement_stop]`.
+    /// Present only if the rail was previously monitored and then swapped out.
+    7: energy_uj int64;
 };
 
 type MeasurementType = flexible enum {
@@ -85,12 +100,52 @@ type PollingConfig = table {
 };
 
 /// Provides power and power-related measurements for all actively-monitored rails,
-/// as well as configuration for the ODPM driver's hardware polling loop.
+/// dynamic rail multiplexing, and configuration for the ODPM driver's hardware polling loop.
 open protocol OdpmDevice {
     /// Returns metadata for all actively-monitored rails.
     flexible GetRailMetadata() -> (struct {
         rails vector<RailMetadata>:MAX_RAILS;
     }) error zx.Status;
+
+    /// Returns metadata for all available power rails supported by the hardware
+    /// (both actively-monitored and unmonitored).
+    ///
+    /// * `measurement_start` is reported for rails that are actively monitored or
+    ///   were previously monitored.
+    /// * `measurement_stop` and `energy_uj` are reported only for rails that have
+    ///   been swapped out, retaining only the most recent completed measurement
+    ///   window (rather than an entry per session or an aggregate across sessions).
+    ///   If a stopped rail is swapped back onto an active channel, its previous
+    ///   stopped reading (`measurement_stop` and `energy_uj`) is cleared and a new
+    ///   measurement window begins.
+    ///
+    /// Returns `ZX_ERR_INTERNAL` if internal rail state cannot be retrieved.
+    flexible GetAvailableRails() -> (struct {
+        rails vector<RailMetadata>:MAX_AVAILABLE_RAILS;
+    }) error zx.Status;
+
+    /// Reconfigures an internal telemetry channel (`channel_id`) to monitor `rail_name`
+    /// (matched case-insensitively against `name`, `regulator_name`, or `schematic_name`).
+    ///
+    /// The new assignment is visible to all clients: readings for `channel_id` from
+    /// `GetPowerWatts`, `GetCurrentAmperes`, and `GetEnergyJoules` then refer to `rail_name`
+    /// and restart from a new measurement window. Clients that cache `GetRailMetadata` can
+    /// detect the change by re-querying it and comparing `name` or `measurement_start`.
+    ///
+    /// Returns:
+    /// * `ZX_OK` (as a no-op) if `channel_id` is already actively monitoring `rail_name`.
+    /// * `ZX_ERR_NOT_FOUND` if `rail_name` does not match any available rail.
+    /// * `ZX_ERR_INVALID_ARGS` if `channel_id` is invalid, is an external shunt channel,
+    ///   or if the requested rail is an external shunt rail or belongs to a different PMIC
+    ///   than `channel_id`.
+    /// * `ZX_ERR_ALREADY_BOUND` if the requested rail is already monitored on a different
+    ///   active channel.
+    /// * `ZX_ERR_UNAVAILABLE` if the hardware operation fails.
+    /// * `ZX_ERR_INTERNAL` if an internal driver error occurs.
+    flexible SetChannelRail(struct {
+        channel_id uint32;
+        rail_name RailName;
+    }) -> () error zx.Status;
 
     /// Returns the power consumption for all actively-monitored rails.
     /// Returns `ZX_ERR_NOT_SUPPORTED` if the requested measurement type is not supported.

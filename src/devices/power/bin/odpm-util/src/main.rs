@@ -26,6 +26,10 @@ use fuchsia_component::client as fclient;
 /// $ odpm_util read -c
 /// # Read energy (Joules) instead of power (Watts).
 /// $ odpm_util read -e
+/// # Query or multiplex ODPM power rails.
+/// $ odpm_util rails available
+/// $ odpm_util rails enabled
+/// $ odpm_util rails set 11 buck_13m
 /// # Configure ODPM driver polling settings.
 /// $ odpm_util config get
 /// # Set the polling interval to 100ms, and record a series entry every 1s.
@@ -43,6 +47,7 @@ struct Args {
 enum SubCommands {
     Read(ReadArgs),
     Config(ConfigArgs),
+    Rails(RailsArgs),
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
@@ -104,6 +109,45 @@ struct ConfigGetArgs {}
 #[argh(subcommand, name = "reset")]
 /// Reset ODPM driver polling configuration to driver defaults.
 struct ConfigResetArgs {}
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "rails")]
+/// Query or multiplex ODPM power rails.
+struct RailsArgs {
+    #[argh(subcommand)]
+    subcommand: RailsSubCommands,
+}
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand)]
+enum RailsSubCommands {
+    Available(RailsAvailableArgs),
+    Enabled(RailsEnabledArgs),
+    Set(RailsSetArgs),
+}
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "available")]
+/// List all available rails on the platform, their active channel status, and swapped-out energy/timestamps.
+struct RailsAvailableArgs {}
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "enabled")]
+/// List currently enabled/monitored rails, their channel IDs, and measurement start timestamps.
+struct RailsEnabledArgs {}
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "set")]
+/// Dynamically swap a hardware channel to monitor a new internal PMIC rail.
+struct RailsSetArgs {
+    /// hardware channel ID (e.g. 0..11 for main PMIC, 41..52 for sub PMIC)
+    #[argh(positional)]
+    channel_id: u32,
+
+    /// target rail name, schematic name, or regulator name (e.g. ldo_1m, L1M_ALIVE, buck_12m)
+    #[argh(positional)]
+    rail: String,
+}
 
 /// Directories to look for the service in: the provider's outgoing directory when run from within
 /// its namespace, then the incoming one.
@@ -178,10 +222,12 @@ async fn run_read_with_proxy<W: Write>(
     for metadata in metadata_list {
         let rail_name = metadata.name.unwrap_or_default();
         let schematic_name = metadata.schematic_name.unwrap_or_default();
+        let regulator_name = metadata.regulator_name.unwrap_or_default();
 
         if let Some(ref target) = args.rail {
             if !rail_name.eq_ignore_ascii_case(target)
                 && !schematic_name.eq_ignore_ascii_case(target)
+                && !regulator_name.eq_ignore_ascii_case(target)
             {
                 continue;
             }
@@ -376,6 +422,140 @@ async fn run_config<W: Write>(args: ConfigArgs, writer: &mut W) -> Result<()> {
     }
 }
 
+async fn run_rails_available_with_proxy<W: Write>(
+    proxy: &fgoogle_odpm::OdpmDeviceProxy,
+    writer: &mut W,
+) -> Result<()> {
+    let rails = proxy
+        .get_available_rails()
+        .await
+        .map_err(|e| anyhow!("FIDL error getting available rails: {:?}", e))?
+        .map_err(|s| anyhow!("Failed to get available rails: {:?}", zx::Status::err_from_raw(s)))?;
+
+    writeln!(
+        writer,
+        "{:<17} {:<23} {:<12} {:<10} {:>12} {:<20} {:<20}",
+        "NAME", "SCHEMATIC_NAME", "REGULATOR", "CHANNEL", "ENERGY_J", "START_NS", "STOP_NS"
+    )?;
+    for rail in rails {
+        let name = rail.name.unwrap_or_default();
+        let schematic = rail.schematic_name.unwrap_or_default();
+        let regulator = rail.regulator_name.unwrap_or_default();
+        let channel_str =
+            rail.channel_id.map(|id| format!("Ch{id}")).unwrap_or_else(|| "inactive".to_string());
+        let energy_str = rail
+            .energy_uj
+            .map(|e| format!("{:.6}", e as f64 / 1e6))
+            .unwrap_or_else(|| "-".to_string());
+        let start_str = rail
+            .measurement_start
+            .map(|t| t.into_nanos().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let stop_str = rail
+            .measurement_stop
+            .map(|t| t.into_nanos().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        writeln!(
+            writer,
+            "{:<17} {:<23} {:<12} {:<10} {:>12} {:<20} {:<20}",
+            name, schematic, regulator, channel_str, energy_str, start_str, stop_str
+        )?;
+    }
+    Ok(())
+}
+
+async fn run_rails_enabled_with_proxy<W: Write>(
+    proxy: &fgoogle_odpm::OdpmDeviceProxy,
+    writer: &mut W,
+) -> Result<()> {
+    let rails = proxy
+        .get_rail_metadata()
+        .await
+        .map_err(|e| anyhow!("FIDL error getting enabled rails: {:?}", e))?
+        .map_err(|s| anyhow!("Failed to get enabled rails: {:?}", zx::Status::err_from_raw(s)))?;
+
+    writeln!(
+        writer,
+        "{:<8} {:<17} {:<23} {:<12} {:<20}",
+        "CHANNEL", "NAME", "SCHEMATIC_NAME", "REGULATOR", "START_NS"
+    )?;
+    for rail in rails {
+        let channel_str =
+            rail.channel_id.map(|id| format!("Ch{id}")).unwrap_or_else(|| "N/A".to_string());
+        let name = rail.name.unwrap_or_default();
+        let schematic = rail.schematic_name.unwrap_or_default();
+        let regulator = rail.regulator_name.unwrap_or_default();
+        let start_str = rail
+            .measurement_start
+            .map(|t| t.into_nanos().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        writeln!(
+            writer,
+            "{:<8} {:<17} {:<23} {:<12} {:<20}",
+            channel_str, name, schematic, regulator, start_str
+        )?;
+    }
+    Ok(())
+}
+
+async fn run_rails_set_with_proxy<W: Write>(
+    args: RailsSetArgs,
+    proxy: &fgoogle_odpm::OdpmDeviceProxy,
+    writer: &mut W,
+) -> Result<()> {
+    match proxy.set_channel_rail(args.channel_id, &args.rail).await {
+        Ok(Ok(())) => {
+            writeln!(
+                writer,
+                "Successfully set channel {} to monitor rail '{}'.",
+                args.channel_id, args.rail
+            )?;
+        }
+        Ok(Err(status)) => {
+            return Err(anyhow!(
+                "Failed to set channel {} to rail '{}': {:?}",
+                args.channel_id,
+                args.rail,
+                zx::Status::err_from_raw(status)
+            ));
+        }
+        Err(e) => {
+            return Err(anyhow!("FIDL error setting channel rail: {:?}", e));
+        }
+    }
+
+    let rails = proxy
+        .get_rail_metadata()
+        .await
+        .map_err(|e| anyhow!("FIDL error getting rail metadata: {:?}", e))?
+        .map_err(|s| anyhow!("Failed to get rail metadata: {:?}", zx::Status::err_from_raw(s)))?;
+
+    if let Some(updated) = rails.iter().find(|r| r.channel_id == Some(args.channel_id)) {
+        let name = updated.name.as_deref().unwrap_or("");
+        let schematic = updated.schematic_name.as_deref().unwrap_or("");
+        let regulator = updated.regulator_name.as_deref().unwrap_or("");
+        let start_str = updated
+            .measurement_start
+            .map(|t| t.into_nanos().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        writeln!(
+            writer,
+            "Channel {:>2}: {:<17} [{:<23}, {}] (measurement_start: {} nanos)",
+            args.channel_id, name, schematic, regulator, start_str
+        )?;
+    }
+    Ok(())
+}
+
+async fn run_rails<W: Write>(args: RailsArgs, writer: &mut W) -> Result<()> {
+    let proxy = connect_to_odpm_device().await?;
+    match args.subcommand {
+        RailsSubCommands::Available(_) => run_rails_available_with_proxy(&proxy, writer).await,
+        RailsSubCommands::Enabled(_) => run_rails_enabled_with_proxy(&proxy, writer).await,
+        RailsSubCommands::Set(set_args) => run_rails_set_with_proxy(set_args, &proxy, writer).await,
+    }
+}
+
 async fn run(args: Args) -> Result<()> {
     run_with_writer(args, &mut std::io::stdout()).await
 }
@@ -385,6 +565,7 @@ async fn run_with_writer<W: Write>(args: Args, writer: &mut W) -> Result<()> {
         match cmd {
             SubCommands::Read(read_args) => run_read(read_args, writer).await,
             SubCommands::Config(config_args) => run_config(config_args, writer).await,
+            SubCommands::Rails(rails_args) => run_rails(rails_args, writer).await,
         }
     } else {
         writeln!(
@@ -971,6 +1152,174 @@ mod tests {
         let res = run_read_with_proxy(args, &proxy, &mut buf).await;
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Rail 'nonexistent' not found"));
+        drop(proxy);
+        task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_args_parsing_rails() {
+        let args = Args::from_args(&["odpm_util"], &["rails", "available"]).unwrap();
+        assert_eq!(
+            args,
+            Args {
+                command: Some(SubCommands::Rails(RailsArgs {
+                    subcommand: RailsSubCommands::Available(RailsAvailableArgs {}),
+                })),
+            }
+        );
+
+        let args = Args::from_args(&["odpm_util"], &["rails", "enabled"]).unwrap();
+        assert_eq!(
+            args,
+            Args {
+                command: Some(SubCommands::Rails(RailsArgs {
+                    subcommand: RailsSubCommands::Enabled(RailsEnabledArgs {}),
+                })),
+            }
+        );
+
+        let args = Args::from_args(&["odpm_util"], &["rails", "set", "12", "cam_1v8"]).unwrap();
+        assert_eq!(
+            args,
+            Args {
+                command: Some(SubCommands::Rails(RailsArgs {
+                    subcommand: RailsSubCommands::Set(RailsSetArgs {
+                        channel_id: 12,
+                        rail: "cam_1v8".to_string(),
+                    }),
+                })),
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_run_rails_available() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
+        let task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fgoogle_odpm::OdpmDeviceRequest::GetAvailableRails { responder } => {
+                        let _ = responder.send(Ok(&[
+                            fgoogle_odpm::RailMetadata {
+                                name: Some("cpu_big".to_string()),
+                                channel_id: Some(12),
+                                schematic_name: Some("S2M_VDD_CPUCL2".to_string()),
+                                regulator_name: Some("buck_2m".to_string()),
+                                measurement_start: Some(zx::BootInstant::from_nanos(1_000_000_000)),
+                                measurement_stop: None,
+                                energy_uj: None,
+                                ..Default::default()
+                            },
+                            fgoogle_odpm::RailMetadata {
+                                name: Some("cam_1v8".to_string()),
+                                channel_id: None,
+                                schematic_name: Some("L4M_VDD_CAM_1V8".to_string()),
+                                regulator_name: Some("ldo_4m".to_string()),
+                                measurement_start: Some(zx::BootInstant::from_nanos(1_000_000_000)),
+                                measurement_stop: Some(zx::BootInstant::from_nanos(2_000_000_000)),
+                                energy_uj: Some(3_456_789),
+                                ..Default::default()
+                            },
+                        ]));
+                    }
+                    _ => panic!("Unexpected request"),
+                }
+            }
+        });
+
+        let mut buf = Vec::new();
+        let res = run_rails_available_with_proxy(&proxy, &mut buf).await;
+        assert!(res.is_ok());
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("NAME"));
+        assert!(output.contains("cpu_big"));
+        assert!(output.contains("buck_2m"));
+        assert!(output.contains("Ch12"));
+        assert!(output.contains("1000000000"));
+        assert!(output.contains("cam_1v8"));
+        assert!(output.contains("ldo_4m"));
+        assert!(output.contains("inactive"));
+        assert!(output.contains("3.456789"));
+        assert!(output.contains("2000000000"));
+        drop(proxy);
+        task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_run_rails_enabled() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
+        let task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fgoogle_odpm::OdpmDeviceRequest::GetRailMetadata { responder } => {
+                        let _ = responder.send(Ok(&[fgoogle_odpm::RailMetadata {
+                            name: Some("cpu_big".to_string()),
+                            channel_id: Some(12),
+                            schematic_name: Some("S2M_VDD_CPUCL2".to_string()),
+                            regulator_name: Some("buck_2m".to_string()),
+                            measurement_start: Some(zx::BootInstant::from_nanos(1_500_000_000)),
+                            ..Default::default()
+                        }]));
+                    }
+                    _ => panic!("Unexpected request"),
+                }
+            }
+        });
+
+        let mut buf = Vec::new();
+        let res = run_rails_enabled_with_proxy(&proxy, &mut buf).await;
+        assert!(res.is_ok());
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Ch12"));
+        assert!(output.contains("cpu_big"));
+        assert!(output.contains("S2M_VDD_CPUCL2"));
+        assert!(output.contains("buck_2m"));
+        assert!(output.contains("1500000000"));
+        drop(proxy);
+        task.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_run_rails_set() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fgoogle_odpm::OdpmDeviceMarker>();
+        let task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fgoogle_odpm::OdpmDeviceRequest::SetChannelRail {
+                        channel_id,
+                        rail_name,
+                        responder,
+                    } => {
+                        assert_eq!(channel_id, 12);
+                        assert_eq!(rail_name, "cam_1v8");
+                        let _ = responder.send(Ok(()));
+                    }
+                    fgoogle_odpm::OdpmDeviceRequest::GetRailMetadata { responder } => {
+                        let _ = responder.send(Ok(&[fgoogle_odpm::RailMetadata {
+                            name: Some("cam_1v8".to_string()),
+                            channel_id: Some(12),
+                            schematic_name: Some("L4M_VDD_CAM_1V8".to_string()),
+                            regulator_name: Some("ldo_4m".to_string()),
+                            measurement_start: Some(zx::BootInstant::from_nanos(2_000_000_000)),
+                            ..Default::default()
+                        }]));
+                    }
+                    _ => panic!("Unexpected request"),
+                }
+            }
+        });
+
+        let args = RailsSetArgs { channel_id: 12, rail: "cam_1v8".to_string() };
+        let mut buf = Vec::new();
+        let res = run_rails_set_with_proxy(args, &proxy, &mut buf).await;
+        assert!(res.is_ok());
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Successfully set channel 12 to monitor rail 'cam_1v8'."));
+        assert!(output.contains("Channel 12: cam_1v8"));
+        assert!(output.contains("measurement_start: 2000000000 nanos"));
         drop(proxy);
         task.await;
     }

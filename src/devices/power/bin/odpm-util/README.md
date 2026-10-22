@@ -48,3 +48,18 @@ $ odpm_util config set --poll-interval-ms 100 --polls-per-series-entry 10
 # Reset polling configuration to driver defaults
 $ odpm_util config reset
 ```
+
+#### 3. Query or Multiplex Power Rails (`rails`)
+Lists available or currently enabled rails, and dynamically swaps an internal PMIC channel to monitor a different rail:
+
+```bash
+# List all available rails on the platform, their active channel status, and swapped-out energy/timestamps
+$ odpm_util rails available
+
+# List currently enabled/monitored rails, their channel IDs, and measurement start timestamps
+$ odpm_util rails enabled
+
+# Dynamically swap an internal PMIC channel (e.g. Ch 0..11 or Ch 41..52) to a new rail
+$ odpm_util rails set 11 buck_13m
+$ odpm_util rails set 52 buck_13s
+```
