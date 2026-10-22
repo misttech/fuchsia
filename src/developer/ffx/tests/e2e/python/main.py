@@ -19,7 +19,6 @@ class FfxTest(ffxtestcase.FfxTestCase):
 
     async def setup_class(self) -> None:
         await super().setup_class()
-        self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
 
     def test_component_list(self) -> None:
         """Test `ffx component list` output returns as expected."""

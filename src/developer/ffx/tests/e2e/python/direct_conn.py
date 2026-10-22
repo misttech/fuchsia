@@ -30,7 +30,6 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         # This just gets some things out of the way in case the daemon gets
         # turned on and off again.
         await super().setup_class()
-        self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
         assert self.dut_ssh_address is not None
 
@@ -39,8 +38,6 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         self, cmd: List[str], target: Optional[str] = None
     ) -> Any:
         all_args = [
-            "--isolate-dir",
-            self.isolate_dir,
             "--direct",
             "--machine",
             "json",
@@ -122,8 +119,6 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         # valid JSON; instead each line is a JSON object.
         out = self.run_ffx(
             [
-                "--isolate-dir",
-                self.isolate_dir,
                 "--direct",
                 "--machine",
                 "json",
@@ -152,8 +147,6 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         # not support JSON output.
         out = self.run_ffx(
             [
-                "--isolate-dir",
-                self.isolate_dir,
                 "--direct",
                 "doctor",
             ],

@@ -47,7 +47,7 @@ class FfxClientTest(unittest.TestCase):
     ) -> None:
         """Test case for target_list() returning expected results"""
         mock_check_output.return_value = target_list_output
-        res = self.client.target_list(isolate_dir=None)
+        res = self.client.target_list()
         self.assertEqual(res.all_nodes, want_all_nodes)
         self.assertEqual(res.default_nodes, want_default_nodes)
 
@@ -70,20 +70,7 @@ class FfxClientTest(unittest.TestCase):
         """Test case for exception being raised from subprocess failure"""
         mock_check_output.side_effect = mock_exception
         with self.assertRaises(api_ffx.CommandException):
-            self.client.target_list(isolate_dir=None)
-
-    @patch(
-        "subprocess.check_output",
-        autospec=True,
-        return_value=b'[{"nodename": "dut", "is_default": false}]',
-    )
-    def test_target_list_with_isolated_dir(
-        self, mock_check_output: Any
-    ) -> None:
-        """Test case for isolated dir being included in ffx command"""
-        self.client.target_list(isolate_dir="some_isolate_dir_path")
-        check_output_args = mock_check_output.call_args.args[0]
-        self.assertIn("some_isolate_dir_path", check_output_args)
+            self.client.target_list()
 
     @patch(
         "subprocess.check_output",
@@ -95,7 +82,7 @@ class FfxClientTest(unittest.TestCase):
     ) -> None:
         """Test case for ssh_auth_sock being included in ffx command"""
         client = api_ffx.FfxClient("some_ffx_path", ssh_auth_sock="/tmp/sock")
-        client.target_list(isolate_dir="some_isolate_dir_path")
+        client.target_list()
         check_output_args = mock_check_output.call_args.args[0]
         self.assertIn("-c", check_output_args)
         self.assertIn("ssh.auth-sock=/tmp/sock", check_output_args)
@@ -110,7 +97,7 @@ class FfxClientTest(unittest.TestCase):
     ) -> None:
         """Test case for identities_only being included in ffx command"""
         client = api_ffx.FfxClient("some_ffx_path", identities_only=True)
-        client.target_list(isolate_dir="some_isolate_dir_path")
+        client.target_list()
         check_output_args = mock_check_output.call_args.args[0]
         self.assertIn("-c", check_output_args)
         self.assertIn("ssh.identities-only=true", check_output_args)
@@ -131,7 +118,7 @@ class FfxClientTest(unittest.TestCase):
         """Test case for exception being raised from invalid discovery output"""
         mock_check_output.return_value = target_list_output
         with self.assertRaises(api_ffx.OutputFormatException):
-            self.client.target_list(isolate_dir=None)
+            self.client.target_list()
 
     @patch("subprocess.check_output", autospec=True)
     def test_get_target_serial(self, mock_check_output: Any) -> None:
@@ -141,7 +128,6 @@ class FfxClientTest(unittest.TestCase):
         self.assertEqual(
             self.client.get_target_serial(
                 target_name="fuchsia-emulator",
-                isolate_dir="some_isolate_dir_path",
             ),
             "0123456789ABCDEF",
         )
@@ -153,8 +139,6 @@ class FfxClientTest(unittest.TestCase):
         mock_check_output.assert_called_once_with(
             [
                 "some_ffx_path",
-                "--isolate-dir",
-                "some_isolate_dir_path",
                 "target",
                 "list",
                 "--format",
@@ -174,7 +158,6 @@ class FfxClientTest(unittest.TestCase):
         self.assertIsNone(
             self.client.get_target_serial(
                 target_name="fuchsia-emulator",
-                isolate_dir=None,
             )
         )
         mock_check_output.assert_called()
@@ -202,7 +185,6 @@ class FfxClientTest(unittest.TestCase):
         with self.assertRaises(api_ffx.CommandException):
             self.client.get_target_serial(
                 target_name="fuchsia-emulator",
-                isolate_dir=None,
             )
         mock_check_output.assert_called()
 
@@ -223,7 +205,6 @@ class FfxClientTest(unittest.TestCase):
         self.assertEqual(
             self.client.get_target_ssh_address(
                 target_name="fuchsia-emulator",
-                isolate_dir="some_isolate_dir_path",
             ),
             expected_target_ssh_address,
         )
@@ -252,7 +233,6 @@ class FfxClientTest(unittest.TestCase):
         with self.assertRaises(api_ffx.CommandException):
             self.client.get_target_ssh_address(
                 target_name="fuchsia-emulator",
-                isolate_dir=None,
             )
         mock_check_output.assert_called()
 
@@ -269,7 +249,6 @@ class FfxClientTest(unittest.TestCase):
         with self.assertRaises(api_ffx.OutputFormatException):
             self.client.get_target_ssh_address(
                 target_name="fuchsia-emulator",
-                isolate_dir=None,
             )
         mock_check_output.assert_called()
 

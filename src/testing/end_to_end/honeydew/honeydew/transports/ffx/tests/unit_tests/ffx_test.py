@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-import fuchsia_controller_py as fuchsia_controller
 from honeydew import affordances_capable, errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
@@ -41,7 +40,6 @@ _TARGET_SSH_ADDRESS = custom_types.TargetSshAddress(
     ip=_SSH_ADDRESS, port=_SSH_PORT
 )
 
-_ISOLATE_DIR: str = "/tmp/isolate"
 _LOGS_DIR: str = "/tmp/logs"
 _SHARED_DATA: str = "/tmp/shared_data"
 _BINARY_PATH: str = "ffx"
@@ -143,7 +141,6 @@ _INPUT_ARGS: dict[str, Any] = {
     "target_query": _TARGET_NAME,
     "target_addr": _TARGET_SSH_ADDRESS,
     "ffx_config_data": ffx_config.FfxConfigData(
-        isolate_dir=fuchsia_controller.IsolateDir(_ISOLATE_DIR),
         logs_dir=_LOGS_DIR,
         binary_path=_BINARY_PATH,
         logs_level=_LOGS_LEVEL,
@@ -747,7 +744,6 @@ class FfxTests(unittest.TestCase):
     ) -> None:
         """Test case for ffx.run() with ssh_auth_sock and identities_only."""
         config_data = ffx_config.FfxConfigData(
-            isolate_dir=fuchsia_controller.IsolateDir(_ISOLATE_DIR),
             logs_dir=_LOGS_DIR,
             binary_path=_BINARY_PATH,
             logs_level=_LOGS_LEVEL,

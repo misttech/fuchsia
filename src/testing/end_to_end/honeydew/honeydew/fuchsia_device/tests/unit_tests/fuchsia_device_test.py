@@ -18,7 +18,6 @@ import fidl_fuchsia_feedback as f_feedback
 import fidl_fuchsia_hardware_power_statecontrol as fhp_statecontrol
 import fidl_fuchsia_hwinfo as f_hwinfo
 import fidl_fuchsia_io as f_io
-import fuchsia_controller_py as fuchsia_controller
 import fuchsia_inspect
 import honeydew.affordances.connectivity.wlan.core as wlan_core
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
@@ -143,7 +142,6 @@ _INPUT_ARGS: dict[str, Any] = {
     "device_ip": _TARGET_SSH_ADDRESS,
     "device_serial_socket": "/tmp/socket",
     "ffx_config_data": ffx_config.FfxConfigData(
-        isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
         logs_dir="/tmp/logs",
         binary_path="/bin/ffx",
         logs_level="debug",

@@ -115,10 +115,7 @@ class LocalDriver(base.BaseDriver):
         res = None
         for i in range(10):
             try:
-                res = self._ffx_client.target_list(
-                    # Run without isolate dir to access relevant "default" device.
-                    isolate_dir=None
-                )
+                res = self._ffx_client.target_list()
                 if len(res.all_nodes) > 0:
                     break
             except (
@@ -194,7 +191,7 @@ class LocalDriver(base.BaseDriver):
                 target_serial: str | None = None
                 try:
                     target_serial = self._ffx_client.get_target_serial(
-                        target_name=target, isolate_dir=None
+                        target_name=target
                     )
                 except Exception as e:
                     failure = e
@@ -215,7 +212,7 @@ class LocalDriver(base.BaseDriver):
                 try:
                     target_ssh_address: api_ffx.TargetSshAddress = (
                         self._ffx_client.get_target_ssh_address(
-                            target_name=target, isolate_dir=None
+                            target_name=target
                         )
                     )
                     fx_device["device_ip_port"] = str(target_ssh_address)

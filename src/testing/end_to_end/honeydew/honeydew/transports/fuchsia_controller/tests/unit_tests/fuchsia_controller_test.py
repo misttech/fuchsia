@@ -40,7 +40,6 @@ _SHARED_DATA: str = "/tmp/shared_data"
 
 _MOCK_ARGS: dict[str, Any] = {
     "ffx_config_data": ffx_config.FfxConfigData(
-        isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
         logs_dir="/tmp/logs",
         binary_path="/bin/ffx",
         logs_level="debug",
@@ -116,7 +115,6 @@ class FuchsiaControllerTests(unittest.TestCase):
         """Test case for fuchsia_controller_transport.create_context() with ssh_auth_sock."""
         ssh_auth_sock = "/tmp/ssh_auth_sock"
         ffx_config_data = ffx_config.FfxConfigData(
-            isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
             logs_dir="/tmp/logs",
             binary_path="/bin/ffx",
             logs_level="debug",
@@ -146,7 +144,6 @@ class FuchsiaControllerTests(unittest.TestCase):
                 "connectivity.usb_driver_autostart": "false",
                 "ssh.auth-sock": ssh_auth_sock,
             },
-            isolate_dir=ffx_config_data.isolate_dir,
             target=_INPUT_ARGS["target_name"],
         )
 
@@ -167,7 +164,6 @@ class FuchsiaControllerTests(unittest.TestCase):
     ) -> None:
         """Verify create_context() with identities_only passed in ffx_config_data."""
         ffx_config_data = ffx_config.FfxConfigData(
-            isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
             logs_dir="/tmp/logs",
             binary_path="/bin/ffx",
             logs_level="debug",
@@ -197,7 +193,6 @@ class FuchsiaControllerTests(unittest.TestCase):
                 "connectivity.usb_driver_autostart": "false",
                 "ssh.identities-only": "true",
             },
-            isolate_dir=ffx_config_data.isolate_dir,
             target=_INPUT_ARGS["target_name"],
         )
 

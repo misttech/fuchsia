@@ -6,7 +6,6 @@
 import unittest
 from unittest import mock
 
-import fuchsia_controller_py as fuchsia_controller
 from honeydew.device_classes import smart_display
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import config as ffx_config
@@ -53,7 +52,6 @@ class SmartDisplayTests(unittest.TestCase):
                     serial_socket=None,
                 ),
                 ffx_config_data=ffx_config.FfxConfigData(
-                    isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
                     logs_dir="/tmp/logs",
                     binary_path="/bin/ffx",
                     logs_level="debug",

@@ -88,7 +88,6 @@ async def create(
     # This support will be added when needed in future.
     _FFX_CONFIG_OBJ.setup(
         binary_path=ffx_config_dict["path"],
-        isolate_dir=None,
         logs_dir=f"{test_logs_dir}/ffx/",
         logs_level=ffx_config_dict["logs_level"],
         enable_mdns=ffx_config_dict.get("enable_mdns", True),
@@ -138,8 +137,6 @@ async def destroy(
     for fuchsia_device in fuchsia_devices:
         await fuchsia_device.close()
 
-    # TODO: b/552006166 - Remove this method and other isolate dir cleanup,
-    # as it is no longer necessary with `ffx --strict`.
     # Call `FfxConfig.close` manually even though it's already registered for
     # clean up in `FfxConfig.setup` in order to minimize chance of FFX resource
     # leak in the event that SIGKILL/SIGTERM is received between `destroy` and

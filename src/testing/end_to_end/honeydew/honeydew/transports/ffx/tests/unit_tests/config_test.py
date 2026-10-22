@@ -10,14 +10,12 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-import fuchsia_controller_py as fuchsia_controller
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.utils import host_shell
 
 # pylint: disable=protected-access
 _TARGET_NAME: str = "fuchsia-emulator"
 
-_ISOLATE_DIR: str = "/tmp/isolate"
 _LOGS_DIR: str = "/tmp/logs"
 _BINARY_PATH: str = "ffx"
 _LOGS_LEVEL: str = "debug"
@@ -29,16 +27,9 @@ _SUBTOOLS_SEARCH_PATH: str = "/subtools"
 _PROXY_TIMEOUT_SECS: int = 30
 _SSH_KEEPALIVE_TIMEOUT: int = 60
 
-_FFX_CMD_OPTIONS: list[str] = [
-    "ffx",
-    "--isolate-dir",
-    _ISOLATE_DIR,
-]
-
 _INPUT_ARGS: dict[str, Any] = {
     "target_name": _TARGET_NAME,
     "ffx_config_data": ffx_config.FfxConfigData(
-        isolate_dir=fuchsia_controller.IsolateDir(_ISOLATE_DIR),
         logs_dir=_LOGS_DIR,
         binary_path=_BINARY_PATH,
         logs_level=_LOGS_LEVEL,
@@ -79,7 +70,6 @@ class FfxConfigTests(unittest.TestCase):
 
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -97,7 +87,6 @@ class FfxConfigTests(unittest.TestCase):
         with self.assertRaises(ffx_config.FfxConfigError):
             ffx_config_obj.setup(
                 binary_path=_BINARY_PATH,
-                isolate_dir=_ISOLATE_DIR,
                 logs_dir=_LOGS_DIR,
                 logs_level=_LOGS_LEVEL,
                 enable_mdns=_MDNS_ENABLED,
@@ -117,7 +106,6 @@ class FfxConfigTests(unittest.TestCase):
         # Call setup first before calling close
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -155,7 +143,6 @@ class FfxConfigTests(unittest.TestCase):
         # Call setup first before calling close
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -190,7 +177,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -209,7 +195,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -228,7 +213,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -247,7 +231,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -261,7 +244,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -277,7 +259,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -289,7 +270,6 @@ class FfxConfigTests(unittest.TestCase):
     def test_get_config_args(self) -> None:
         """Test case for FfxConfigData.get_config_args()"""
         ffx_config_data = ffx_config.FfxConfigData(
-            isolate_dir=fuchsia_controller.IsolateDir(_ISOLATE_DIR),
             logs_dir=_LOGS_DIR,
             binary_path=_BINARY_PATH,
             logs_level=_LOGS_LEVEL,
@@ -337,7 +317,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -357,7 +336,6 @@ class FfxConfigTests(unittest.TestCase):
         with self.assertRaises(OSError):
             ffx_config_obj.setup(
                 binary_path=_BINARY_PATH,
-                isolate_dir=_ISOLATE_DIR,
                 logs_dir=_LOGS_DIR,
                 logs_level=_LOGS_LEVEL,
                 enable_mdns=_MDNS_ENABLED,
@@ -382,7 +360,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -405,7 +382,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -431,7 +407,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -450,7 +425,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -476,7 +450,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -495,7 +468,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -521,7 +493,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,
@@ -546,7 +517,6 @@ class FfxConfigTests(unittest.TestCase):
         ffx_config_obj = ffx_config.FfxConfig()
         ffx_config_obj.setup(
             binary_path=_BINARY_PATH,
-            isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
             enable_mdns=_MDNS_ENABLED,

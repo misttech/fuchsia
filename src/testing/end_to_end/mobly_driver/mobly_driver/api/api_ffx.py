@@ -70,11 +70,8 @@ class FfxClient:
         self._ssh_auth_sock = ssh_auth_sock
         self._identities_only = identities_only
 
-    def target_list(self, isolate_dir: str | None) -> TargetListResult:
+    def target_list(self) -> TargetListResult:
         """Returns detected Fuchsia targets.
-
-        Args:
-          isolate_dir: If provided, FFX isolate dir to run command in.
 
         Returns:
           A TargetListResult object.
@@ -85,9 +82,6 @@ class FfxClient:
             does not contain expected keys.
         """
         cmd = [self._ffx_path]
-
-        if isolate_dir is not None:
-            cmd += ["--isolate-dir", isolate_dir]
 
         if self._ssh_auth_sock is not None:
             cmd += ["-c", f"ssh.auth-sock={self._ssh_auth_sock}"]
@@ -128,14 +122,11 @@ class FfxClient:
 
         return TargetListResult(all_nodes, default_nodes)
 
-    def get_target_serial(
-        self, target_name: str, isolate_dir: str | None
-    ) -> str | None:
+    def get_target_serial(self, target_name: str) -> str | None:
         """Returns the target's serial number.
 
         Args:
           target_name: Name of the fuchsia target
-          isolate_dir: If provided, FFX isolate dir to run command in.
 
         Returns:
           An optional string. None if the target reports no serial number.
@@ -146,9 +137,6 @@ class FfxClient:
           target raises rather than returning None.
         """
         cmd = [self._ffx_path]
-
-        if isolate_dir is not None:
-            cmd += ["--isolate-dir", isolate_dir]
 
         if self._ssh_auth_sock is not None:
             cmd += ["-c", f"ssh.auth-sock={self._ssh_auth_sock}"]
@@ -185,14 +173,11 @@ class FfxClient:
         else:
             return None
 
-    def get_target_ssh_address(
-        self, target_name: str, isolate_dir: str | None
-    ) -> TargetSshAddress:
+    def get_target_ssh_address(self, target_name: str) -> TargetSshAddress:
         """Returns the target's ssh ip address and port information.
 
         Args:
           target_name: Name of the fuchsia target
-          isolate_dir: If provided, FFX isolate dir to run command in.
 
         Returns:
           A TargetSshAddress object.
@@ -202,9 +187,6 @@ class FfxClient:
           OutputFormatException if unable to parse command output.
         """
         cmd = [self._ffx_path]
-
-        if isolate_dir is not None:
-            cmd += ["--isolate-dir", isolate_dir]
 
         if self._ssh_auth_sock is not None:
             cmd += ["-c", f"ssh.auth-sock={self._ssh_auth_sock}"]

@@ -6,7 +6,6 @@
 import unittest
 from unittest import mock
 
-import fuchsia_controller_py as fuchsia_controller
 from honeydew import errors
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller_using_usb_cli,
@@ -57,7 +56,6 @@ class WorkbenchTests(unittest.TestCase):
                     serial_socket=None,
                 ),
                 ffx_config_data=ffx_config.FfxConfigData(
-                    isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
                     logs_dir="/tmp/logs",
                     binary_path="/bin/ffx",
                     logs_level="debug",

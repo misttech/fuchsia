@@ -249,7 +249,6 @@ class FuchsiaDevice:
         ffx_config = FfxConfig()
         ffx_config.setup(
             binary_path=self.ffx_binary_path,
-            isolate_dir=None,
             logs_dir=f"{getattr(logging, 'log_path')}/ffx/",
             logs_level="Off",
             enable_mdns=False,

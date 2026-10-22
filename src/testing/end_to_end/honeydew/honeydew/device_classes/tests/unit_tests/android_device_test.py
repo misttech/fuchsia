@@ -8,7 +8,6 @@ import unittest
 from typing import Any
 from unittest import mock
 
-import fuchsia_controller_py as fuchsia_controller
 from honeydew import errors
 from honeydew.affordances.android_session import (
     android_session as android_session_affordance,
@@ -40,7 +39,6 @@ _INPUT_ARGS: dict[str, Any] = {
     "device_ip": _TARGET_SSH_ADDRESS,
     "device_serial_socket": "/tmp/socket",
     "ffx_config_data": ffx_config.FfxConfigData(
-        isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
         logs_dir="/tmp/logs",
         binary_path="/bin/ffx",
         logs_level="debug",

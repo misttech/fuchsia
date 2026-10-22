@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import fuchsia_controller_py as fuchsia_controller
 from honeydew import errors
 
 _FFX_BINARY: str = "ffx"
@@ -29,8 +28,6 @@ class FfxConfigData:
 
     Args:
         binary_path: absolute path to the FFX binary.
-        isolate_dir: Directory that will be passed to `--isolate-dir`
-            arg of FFX
         logs_dir: Directory that will be passed to `--config log.dir`
             arg of FFX
         logs_level: logs level that will be passed to `--config log.level`
@@ -56,7 +53,6 @@ class FfxConfigData:
     """
 
     binary_path: str
-    isolate_dir: fuchsia_controller.IsolateDir
     logs_dir: str
     logs_level: str | None
     subtools_search_path: str | None
@@ -71,11 +67,12 @@ class FfxConfigData:
     ssh_auth_sock: str | None = None
     identities_only: bool | None = None
     shared_data: str | None = None
+    # TODO: Remove isolate_dir once //vendor/google code is updated.
+    isolate_dir: Any = None
 
     def __str__(self) -> str:
         return (
             f"binary_path={self.binary_path}, "
-            f"isolate_dir={self.isolate_dir.directory()}, "
             f"logs_dir={self.logs_dir}, "
             f"logs_level={self.logs_level}, "
             f"subtools_search_path={self.subtools_search_path}, "
@@ -148,7 +145,6 @@ class FfxConfig:
     def setup(
         self,
         binary_path: str | None,
-        isolate_dir: str | None,
         logs_dir: str,
         logs_level: str | None,
         enable_mdns: bool,  # pylint: disable=unused-argument
@@ -164,13 +160,13 @@ class FfxConfig:
         ssh_auth_sock: str | None = None,
         identities_only: bool | None = None,
         shared_data: str | None = None,
+        # TODO: Remove isolate_dir once //vendor/google code is updated.
+        isolate_dir: str | None = None,  # pylint: disable=unused-argument
     ) -> None:
         """Sets up configuration need to be used while running FFX command.
 
         Args:
             binary_path: absolute path to the FFX binary.
-            isolate_dir: Directory that will be passed to `--isolate-dir`
-                arg of FFX. If set to None, a random directory will be created.
             logs_dir: Directory that will be passed to `--config log.dir`
                 arg of FFX
             logs_level: logs level that will be passed to `--config log.level`
@@ -216,9 +212,6 @@ class FfxConfig:
         atexit.register(self._atexit_callback)
 
         self._ffx_binary: str = binary_path if binary_path else _FFX_BINARY
-        self._isolate_dir: fuchsia_controller.IsolateDir | None = (
-            fuchsia_controller.IsolateDir(isolate_dir)
-        )
         self._logs_dir: str = logs_dir
         self._logs_level: str | None = logs_level
         self._subtools_search_path: str | None = subtools_search_path
@@ -369,9 +362,6 @@ class FfxConfig:
         if self._setup_done is False:
             raise FfxConfigError("close called before calling setup.")
 
-        # Setting to None will delete the `self._isolate_dir.directory()`
-        self._isolate_dir = None
-
         self._setup_done = False
 
     def get_config(self) -> FfxConfigData:
@@ -385,12 +375,9 @@ class FfxConfig:
         """
         if self._setup_done is False:
             raise FfxConfigError("get_config called before calling setup.")
-        if self._isolate_dir is None:
-            raise FfxConfigError("get_config called after calling close.")
 
         return FfxConfigData(
             binary_path=self._ffx_binary,
-            isolate_dir=self._isolate_dir,
             logs_dir=self._logs_dir,
             logs_level=self._logs_level,
             subtools_search_path=self._subtools_search_path,

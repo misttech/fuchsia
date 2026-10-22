@@ -11,7 +11,6 @@ from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
-import fuchsia_controller_py as fuchsia_controller
 import honeydew
 from honeydew import device_classes, errors
 from honeydew.device_classes import (
@@ -40,7 +39,6 @@ _SHARED_DATA: str = "/tmp/shared_data"
 
 _INPUT_ARGS: dict[str, Any] = {
     "ffx_config_data": ffx_config.FfxConfigData(
-        isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
         logs_dir="/tmp/logs",
         binary_path="/bin/ffx",
         logs_level="debug",
@@ -132,7 +130,6 @@ class InitTests(unittest.TestCase):
                 "connectivity.enable_usb": "false",
                 "connectivity.usb_driver_autostart": "false",
             },
-            isolate_dir=_INPUT_ARGS["ffx_config_data"].isolate_dir,
             target=_INPUT_ARGS["target_name"],
         )
         mock_fc_check_connection.assert_called()
@@ -182,7 +179,6 @@ class InitTests(unittest.TestCase):
                 "connectivity.enable_usb": "false",
                 "connectivity.usb_driver_autostart": "false",
             },
-            isolate_dir=_INPUT_ARGS["ffx_config_data"].isolate_dir,
             target=str(_INPUT_ARGS["target_ip_port"]),
         )
         mock_fc_check_connection.assert_called()
