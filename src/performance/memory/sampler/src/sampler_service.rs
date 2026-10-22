@@ -287,7 +287,7 @@ async fn run_sampler_service(
     mut tx: mpsc::Sender<ProfileReport>,
 ) -> Result<(), Error> {
     let profile = process_sampler_requests(stream, &mut tx).await?;
-    let process_name = profile.get_process_name().to_string();
+    let process_name = profile.process_name().to_string();
     log::debug!("Profiling for {} done, queuing final report", process_name);
     {
         let res = tx.try_send(profile);
@@ -419,7 +419,7 @@ mod test {
         })?;
         drop(client);
 
-        if let ProfileReport::Final { process_name, size, profile } = profile_future.await? {
+        if let ProfileReport::Final { process_name, size, profile, .. } = profile_future.await? {
             assert_eq!("test process", process_name);
             let profile = deserialize_profile(profile, size);
             assert_eq!(3, profile.mapping.len());
@@ -464,7 +464,7 @@ mod test {
         let (_, report) = join!(profile_future, rx.next());
         let report = report.unwrap();
         match report {
-            ProfileReport::Partial { process_name, iteration, profile, size } => {
+            ProfileReport::Partial { process_name, iteration, profile, size, .. } => {
                 assert_eq!(process_name, TEST_NAME.to_string());
                 assert_eq!(iteration, TEST_INDEX);
                 // This test assumes that every single allocation ends
@@ -499,7 +499,7 @@ mod test {
         let (_, report) = join!(profile_future, rx.next());
         let report = report.unwrap();
         match report {
-            ProfileReport::Partial { process_name, iteration, profile, size } => {
+            ProfileReport::Partial { process_name, iteration, profile, size, .. } => {
                 assert_eq!(process_name, TEST_NAME.to_string());
                 assert_eq!(iteration, TEST_INDEX);
                 // This test assumes that every single allocation ends
@@ -556,7 +556,7 @@ mod test {
         })?;
         drop(client);
 
-        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+        if let ProfileReport::Final { process_name, profile, size, .. } = profile_future.await? {
             assert_eq!("test process", process_name);
             let profile = deserialize_profile(profile, size);
             assert_eq!(3, profile.mapping.len());
@@ -616,7 +616,7 @@ mod test {
         })?;
         drop(client);
 
-        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+        if let ProfileReport::Final { process_name, profile, size, .. } = profile_future.await? {
             assert_eq!("other test process", process_name);
             let profile = deserialize_profile(profile, size);
             assert_eq!(6, profile.mapping.len());
@@ -645,7 +645,7 @@ mod test {
         })?;
         drop(client);
 
-        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+        if let ProfileReport::Final { process_name, profile, size, .. } = profile_future.await? {
             assert_eq!(String::default(), process_name);
             let profile = deserialize_profile(profile, size);
             let locations = profile.location.into_iter().map(|Location { address, .. }| address);
@@ -671,7 +671,7 @@ mod test {
         })?;
         drop(client);
 
-        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+        if let ProfileReport::Final { process_name, profile, size, .. } = profile_future.await? {
             assert_eq!(String::default(), process_name);
             let profile = deserialize_profile(profile, size);
             assert_eq!(Vec::<Mapping>::new(), profile.mapping);
@@ -730,7 +730,7 @@ mod test {
         drop(client_sock);
         drop(client);
 
-        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+        if let ProfileReport::Final { process_name, profile, size, .. } = profile_future.await? {
             assert_eq!("socket test process", process_name);
             let profile = deserialize_profile(profile, size);
             let locations = profile.location.into_iter().map(|Location { address, .. }| address);
@@ -775,7 +775,7 @@ mod test {
         drop(client_sock);
         drop(client);
 
-        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+        if let ProfileReport::Final { process_name, profile, size, .. } = profile_future.await? {
             assert_eq!("socket lossy process [TAINTED: BUFFER OVERFLOW]", process_name);
             let profile = deserialize_profile(profile, size);
             assert_eq!(1, profile.comment.len());
@@ -822,7 +822,7 @@ mod test {
         // Closing the socket peer (even while the FIDL channel remains open) terminates the stream.
         drop(client_sock);
 
-        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+        if let ProfileReport::Final { process_name, profile, size, .. } = profile_future.await? {
             assert_eq!("empty datagram test", process_name);
             let profile = deserialize_profile(profile, size);
             let locations = profile.location.into_iter().map(|Location { address, .. }| address);

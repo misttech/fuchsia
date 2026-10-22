@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Error};
 use fidl_fuchsia_memory_sampler::ModuleMap;
 use flate2::Compression;
+use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use prost::Message;
 use zx::Vmo;
@@ -52,9 +54,12 @@ pub struct DeallocationCounter {
     pub count: f64,
 }
 
+static NEXT_PROVIDER_ID: AtomicU64 = AtomicU64::new(1);
+
 /// Accumulator for profiling information.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct ProfileBuilder {
+    provider_id: u64,
     process_name: String,
     module_map: Vec<ModuleMap>,
     /// Mapping from addresses to allocations; we assume there can
@@ -77,6 +82,21 @@ pub struct ProfileBuilder {
     /// could be fairly large.
     stack_traces: HashSet<Rc<StackTrace>>,
     is_lossy: bool,
+}
+
+impl Default for ProfileBuilder {
+    fn default() -> Self {
+        Self {
+            provider_id: NEXT_PROVIDER_ID.fetch_add(1, Ordering::Relaxed),
+            process_name: String::new(),
+            module_map: Vec::new(),
+            live_allocations: HashMap::new(),
+            dead_allocations: HashMap::new(),
+            deallocations: HashMap::new(),
+            stack_traces: HashSet::new(),
+            is_lossy: false,
+        }
+    }
 }
 
 /// Computes the unsampling scale factor for an allocation of a given `size` using
@@ -204,7 +224,6 @@ impl ProfileBuilder {
     /// in the banner, tab title and profile picker, making the taint hard to
     /// overlook.
     fn annotated_process_name(&self) -> String {
-        const TAINT_SUFFIX: &str = "[TAINTED: BUFFER OVERFLOW]";
         if !self.is_lossy {
             return self.process_name.clone();
         }
@@ -228,7 +247,7 @@ impl ProfileBuilder {
         );
 
         let (vmo, size) = profile_to_vmo(profile)?;
-        Ok(ProfileReport::Final { process_name, profile: vmo, size })
+        Ok(ProfileReport::Final { provider_id: self.provider_id, process_name, profile: vmo, size })
     }
     /// Produce a partial profile from a process that is still
     /// live. Drop `dead_allocations` from `self`, and prune the
@@ -252,7 +271,77 @@ impl ProfileBuilder {
         self.prune_unreferenced_stack_traces();
 
         let (vmo, size) = profile_to_vmo(profile)?;
-        Ok(ProfileReport::Partial { process_name, profile: vmo, size, iteration })
+        Ok(ProfileReport::Partial {
+            provider_id: self.provider_id,
+            process_name,
+            profile: vmo,
+            size,
+            iteration,
+        })
+    }
+}
+
+const TAINT_SUFFIX: &str = "[TAINTED: BUFFER OVERFLOW]";
+
+impl ProfileReport {
+    /// Merge this `Partial` report with a newer (`Partial` or `Final`) report
+    /// from the same provider. If the newer report is `Final`, the result
+    /// collapses into a `Final` report.
+    ///
+    /// On error, returns an intact fallback report (`self` if `newer` failed
+    /// to decode, or `newer` otherwise) along with the error so the caller can
+    /// recover without losing valid data.
+    pub fn merge(self, newer: Self) -> Result<Self, (Self, Error)> {
+        let (old_vmo, old_size) = match &self {
+            ProfileReport::Partial { profile, size, .. } => (profile, *size),
+            ProfileReport::Final { .. } => {
+                return Err((
+                    newer,
+                    anyhow::format_err!("Cannot merge a new profile into an already final report"),
+                ));
+            }
+        };
+        let older_proto = match vmo_to_profile(old_vmo, old_size) {
+            Ok(proto) => proto,
+            Err(e) => return Err((newer, e)),
+        };
+
+        let (provider_id, new_name, new_vmo, new_size, new_iteration) = match &newer {
+            ProfileReport::Partial { provider_id, process_name, profile, size, iteration } => {
+                (*provider_id, process_name, profile, *size, Some(*iteration))
+            }
+            ProfileReport::Final { provider_id, process_name, profile, size } => {
+                (*provider_id, process_name, profile, *size, None)
+            }
+        };
+        let newer_proto = match vmo_to_profile(new_vmo, new_size) {
+            Ok(proto) => proto,
+            Err(e) => return Err((self, e)),
+        };
+        let ProfileReport::Partial { process_name: old_name, profile: old_vmo, .. } = self else {
+            unreachable!();
+        };
+        drop(old_vmo);
+
+        let merged_proto = pprof::merge_same_process_profiles(older_proto, newer_proto);
+        let (profile, size) = match profile_to_vmo(merged_proto) {
+            Ok(res) => res,
+            Err(e) => return Err((newer, e)),
+        };
+
+        let process_name = if old_name.ends_with(TAINT_SUFFIX) && !new_name.ends_with(TAINT_SUFFIX)
+        {
+            old_name
+        } else {
+            new_name.clone()
+        };
+
+        match new_iteration {
+            Some(iteration) => {
+                Ok(ProfileReport::Partial { provider_id, process_name, profile, size, iteration })
+            }
+            None => Ok(ProfileReport::Final { provider_id, process_name, profile, size }),
+        }
     }
 }
 
@@ -288,6 +377,19 @@ fn profile_to_vmo(profile: pprof::pproto::Profile) -> Result<(Vmo, u64), Error> 
     let vmo = Vmo::create(size)?;
     vmo.write(&compressed_profile[..], 0)?;
     Ok((vmo, size))
+}
+
+/// Deserialize a gzip-compressed profile from a VMO.
+pub(crate) fn vmo_to_profile(vmo: &Vmo, size: u64) -> Result<pprof::pproto::Profile, Error> {
+    let decompressed_profile = {
+        let compressed_profile = vmo.read_to_vec(0, size)?;
+        let mut decoder = GzDecoder::new(&compressed_profile[..]);
+        let mut decompressed = Vec::with_capacity((size as usize).saturating_mul(5));
+        decoder.read_to_end(&mut decompressed).context("Failed to decompress profile from VMO")?;
+        decompressed
+    };
+    pprof::pproto::Profile::decode(&decompressed_profile[..])
+        .context("Failed to decode pprof protobuf from VMO")
 }
 
 #[cfg(test)]
@@ -419,7 +521,7 @@ mod test {
         builder.set_process_info(Some("my_proc".to_string()), [].into_iter());
         builder.set_lossy(true);
         let report = builder.build().unwrap();
-        assert_eq!(report.get_process_name(), "my_proc [TAINTED: BUFFER OVERFLOW]");
+        assert_eq!(report.process_name(), "my_proc [TAINTED: BUFFER OVERFLOW]");
     }
 
     #[fuchsia::test]

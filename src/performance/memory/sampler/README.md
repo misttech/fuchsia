@@ -145,11 +145,11 @@ final profile at the end of the process. Both kind of profiles have the same sha
     not over the entire lifetime of the process. This limitation is the result
     of a memory optimization.
 
-Note: If one needs a picture of the overall allocations of a process over its
-lifetime, one should look into every single profile captured during the lifetime
-of the process; it's possible to get an accurate summary by merging every single
-partial profile (discarding live allocations) with a final profile, but we don't
-provide (yet) a script to perform this task.
+Note: Multiple partial profiles (and a final profile) produced by the same
+process within a single reporting interval are automatically coalesced into one
+profile before being filed. If one needs a picture of the overall allocations of
+a process that spans multiple crash reports, one can similarly merge its partial
+profiles (discarding their residual allocations) with its final profile.
 
 ## Performance tuning
 
@@ -178,6 +178,11 @@ performance knobs follow:
     compression level applied to profiles. Reducing it lowers the CPU spent
     compressing, at the expense of the memory held by profiles awaiting filing;
     note that the returns diminish quickly above it.
+  * `memory_sampler::crash_reporter::MAX_PENDING_REPORT_BYTES`: the maximum
+    total VMO footprint of profiles held in memory for the next crash report.
+    Increasing this value allows more profiles to be accumulated and coalesced
+    within a reporting window before applying backpressure to the queue, at the
+    expense of `memory_sampler`'s memory footprint and crash report size.
 
 Note also that `memory_sampler` comes with built-in throttling of filed
 profiles, to limit the rate of filing crash reports; in an `eng` build,

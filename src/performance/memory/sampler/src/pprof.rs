@@ -104,24 +104,8 @@ impl Mapping {
     }
 }
 
-/// Build a `pprof`-compatible profile from a program address mapping
-/// and its allocation/deallocation information.
-pub fn build_profile<'a>(
-    modules: impl Iterator<Item = &'a ModuleMap>,
-    live_allocations: impl Iterator<Item = &'a LiveAllocation>,
-    dead_allocations: HashMap<Rc<StackTrace>, DeadAllocationCounter>,
-    deallocations: HashMap<Rc<StackTrace>, DeallocationCounter>,
-    stack_traces: &'a HashSet<Rc<StackTrace>>,
-    is_lossy: bool,
-) -> pproto::Profile {
-    let mut st = StringTable::new();
-    let mut comments = Vec::new();
-    if is_lossy {
-        comments.push(st.intern(
-            "WARNING: Socket buffer saturated. Dropped allocation and deallocation datagrams. Residual memory may exhibit phantom leaks, and cumulative allocation volumes are under-reported and skewed.",
-        ));
-    }
-    let mut pprof = pproto::Profile {
+fn init_profile(st: &mut StringTable, comments: Vec<i64>) -> pproto::Profile {
+    pproto::Profile {
         // This table describes the types of values contained in each sample.
         sample_type: vec![
             pproto::ValueType {
@@ -148,7 +132,27 @@ pub fn build_profile<'a>(
         period: 1,
         comment: comments,
         ..pproto::Profile::default()
-    };
+    }
+}
+
+/// Build a `pprof`-compatible profile from a program address mapping
+/// and its allocation/deallocation information.
+pub fn build_profile<'a>(
+    modules: impl Iterator<Item = &'a ModuleMap>,
+    live_allocations: impl Iterator<Item = &'a LiveAllocation>,
+    dead_allocations: HashMap<Rc<StackTrace>, DeadAllocationCounter>,
+    deallocations: HashMap<Rc<StackTrace>, DeallocationCounter>,
+    stack_traces: &'a HashSet<Rc<StackTrace>>,
+    is_lossy: bool,
+) -> pproto::Profile {
+    let mut st = StringTable::new();
+    let mut comments = Vec::new();
+    if is_lossy {
+        comments.push(st.intern(
+            "WARNING: Socket buffer saturated. Dropped allocation and deallocation datagrams. Residual memory may exhibit phantom leaks, and cumulative allocation volumes are under-reported and skewed.",
+        ));
+    }
+    let mut pprof = init_profile(&mut st, comments);
 
     {
         let (mp, mappings) = Mapping::build(modules, &mut st);
@@ -207,12 +211,175 @@ pub fn build_profile<'a>(
     pprof
 }
 
+/// Merge an older partial `Profile` with a newer (partial or final) `Profile`
+/// from the same process.
+///
+/// Because `ProfileBuilder::build_partial_profile` retains `live_allocations`
+/// across partial profiles, every live allocation in `older` (`value[0] > 0`)
+/// is guaranteed to appear again in `newer` (either still in `live_allocations`
+/// if un-freed, or moved to `dead_allocations` if freed in the interim).
+/// Therefore, `older`'s live-allocation samples are discarded, while `older`'s
+/// dead-allocation and deallocation samples (`value[0] == 0 && value[1] == 0`)
+/// are summed with `newer`'s samples by stack trace.
+pub fn merge_same_process_profiles(
+    older: pproto::Profile,
+    newer: pproto::Profile,
+) -> pproto::Profile {
+    let mut st = StringTable::new();
+    let comments = older
+        .comment
+        .iter()
+        .filter_map(|&idx| older.string_table.get(idx as usize))
+        .chain(newer.comment.iter().filter_map(|&idx| newer.string_table.get(idx as usize)))
+        .filter(|s| !s.is_empty())
+        .unique()
+        .map(|s| st.intern(s))
+        .collect();
+    let mut pprof = init_profile(&mut st, comments);
+
+    // Deduplicate mappings across `older` and `newer` and record old_id -> new_id.
+    let mut mapping_dedup: HashMap<(u64, u64, u64, String, String), u64> = HashMap::new();
+    let mut older_map_ids: HashMap<u64, u64> = HashMap::new();
+    let mut newer_map_ids: HashMap<u64, u64> = HashMap::new();
+
+    for (mappings, src_st, id_map) in [
+        (&older.mapping, &older.string_table, &mut older_map_ids),
+        (&newer.mapping, &newer.string_table, &mut newer_map_ids),
+    ] {
+        for m in mappings {
+            let build_id_str = src_st.get(m.build_id as usize).cloned().unwrap_or_default();
+            let filename_str = src_st.get(m.filename as usize).cloned().unwrap_or_default();
+            let key = (
+                m.memory_start,
+                m.memory_limit,
+                m.file_offset,
+                build_id_str.clone(),
+                filename_str.clone(),
+            );
+            let new_id = *mapping_dedup.entry(key).or_insert_with(|| {
+                let id = pprof.mapping.len() as u64 + 1;
+                let build_id = if build_id_str.is_empty() { 0 } else { st.intern(&build_id_str) };
+                let filename = if filename_str.is_empty() { 0 } else { st.intern(&filename_str) };
+                pprof.mapping.push(pproto::Mapping {
+                    id,
+                    memory_start: m.memory_start,
+                    memory_limit: m.memory_limit,
+                    file_offset: m.file_offset,
+                    filename,
+                    build_id,
+                    ..Default::default()
+                });
+                id
+            });
+            id_map.insert(m.id, new_id);
+        }
+    }
+
+    let mut older_loc_to_addr: HashMap<u64, u64> = HashMap::with_capacity(older.location.len());
+    let mut newer_loc_to_addr: HashMap<u64, u64> = HashMap::with_capacity(newer.location.len());
+    let mut addr_to_mapping_id: HashMap<u64, u64> = HashMap::new();
+
+    for loc in &older.location {
+        older_loc_to_addr.insert(loc.id, loc.address);
+        let mapped_id = older_map_ids.get(&loc.mapping_id).copied().unwrap_or(0);
+        let entry = addr_to_mapping_id.entry(loc.address).or_insert(0);
+        if *entry == 0 && mapped_id != 0 {
+            *entry = mapped_id;
+        }
+    }
+    for loc in &newer.location {
+        newer_loc_to_addr.insert(loc.id, loc.address);
+        let mapped_id = newer_map_ids.get(&loc.mapping_id).copied().unwrap_or(0);
+        let entry = addr_to_mapping_id.entry(loc.address).or_insert(0);
+        if mapped_id != 0 {
+            *entry = mapped_id;
+        }
+    }
+
+    let mut live_samples: Vec<pproto::Sample> = Vec::new();
+    let mut dead_allocations: HashMap<Vec<u64>, (i64, i64)> = HashMap::new();
+    let mut deallocations: HashMap<Vec<u64>, (i64, i64)> = HashMap::new();
+
+    let mut ingest_sample =
+        |sample: pproto::Sample, loc_to_addr: &HashMap<u64, u64>, keep_live: bool| {
+            if sample.value.len() < 6 {
+                return;
+            }
+            let is_live = sample.value[0] > 0 || sample.value[1] > 0;
+            if is_live && !keep_live {
+                return;
+            }
+            let stack: Vec<u64> = sample
+                .location_id
+                .into_iter()
+                .map(|id| loc_to_addr.get(&id).copied().unwrap_or(id))
+                .collect();
+            if is_live {
+                live_samples.push(pproto::Sample {
+                    value: sample.value,
+                    location_id: stack,
+                    ..Default::default()
+                });
+            } else {
+                if sample.value[2] > 0 || sample.value[3] > 0 {
+                    let (count, total_size) = dead_allocations.entry(stack.clone()).or_default();
+                    *count += sample.value[2];
+                    *total_size += sample.value[3];
+                }
+                if sample.value[4] > 0 || sample.value[5] > 0 {
+                    let (count, total_size) = deallocations.entry(stack).or_default();
+                    *count += sample.value[4];
+                    *total_size += sample.value[5];
+                }
+            }
+        };
+
+    for sample in older.sample {
+        ingest_sample(sample, &older_loc_to_addr, false);
+    }
+    for sample in newer.sample {
+        ingest_sample(sample, &newer_loc_to_addr, true);
+    }
+
+    pprof.sample.extend(live_samples);
+    pprof.sample.extend(dead_allocations.into_iter().map(|(stack, (count, total_size))| {
+        pproto::Sample {
+            value: vec![0, 0, count, total_size, 0, 0],
+            location_id: stack,
+            ..Default::default()
+        }
+    }));
+    pprof.sample.extend(deallocations.into_iter().map(|(stack, (count, total_size))| {
+        pproto::Sample {
+            value: vec![0, 0, 0, 0, count, total_size],
+            location_id: stack,
+            ..Default::default()
+        }
+    }));
+
+    pprof.location = pprof
+        .sample
+        .iter()
+        .flat_map(|s| s.location_id.iter())
+        .unique()
+        .map(|&address| pproto::Location {
+            id: address,
+            mapping_id: addr_to_mapping_id.get(&address).copied().unwrap_or(0),
+            address,
+            ..Default::default()
+        })
+        .collect();
+    pprof.string_table = st.finalize();
+    pprof
+}
+
 #[cfg(test)]
 mod test {
-    use super::build_profile;
+    use super::{build_profile, merge_same_process_profiles};
     use crate::profile_builder::{DeadAllocationCounter, DeallocationCounter, LiveAllocation};
     use fidl_fuchsia_memory_sampler::{ExecutableSegment, ModuleMap};
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
+    use std::rc::Rc;
 
     mod string_table {
         use crate::pprof::StringTable;
@@ -491,5 +658,89 @@ mod test {
         assert_eq!(profile.comment.len(), 1);
         let comment_str = &profile.string_table[profile.comment[0] as usize];
         assert!(comment_str.contains("WARNING: Socket buffer saturated"));
+    }
+
+    #[fuchsia::test]
+    fn test_merge_same_process_profiles() {
+        let module_a = ModuleMap {
+            executable_segments: Some(vec![ExecutableSegment {
+                start_address: Some(1000),
+                size: Some(500),
+                relative_address: Some(0),
+                ..Default::default()
+            }]),
+            build_id: Some(vec![1, 2, 3, 4]),
+            ..Default::default()
+        };
+        let module_b = ModuleMap {
+            executable_segments: Some(vec![ExecutableSegment {
+                start_address: Some(2000),
+                size: Some(500),
+                relative_address: Some(0),
+                ..Default::default()
+            }]),
+            build_id: Some(vec![5, 6, 7, 8]),
+            ..Default::default()
+        };
+
+        let st_dead = Rc::new(vec![1100, 1200]);
+        let st_dealloc = Rc::new(vec![1300]);
+        let st_live_new = Rc::new(vec![2100]);
+
+        let mut older_dead = HashMap::new();
+        older_dead.insert(st_dead.clone(), DeadAllocationCounter { count: 2.0, total_size: 200.0 });
+        let mut older_dealloc = HashMap::new();
+        older_dealloc
+            .insert(st_dealloc.clone(), DeallocationCounter { count: 2.0, total_size: 200.0 });
+        let older_live =
+            vec![LiveAllocation { size: 100, scale_factor: 1.0, stack_trace: st_dead.clone() }];
+        let older_traces = HashSet::from([st_dead.clone(), st_dealloc.clone()]);
+        let older = build_profile(
+            std::slice::from_ref(&module_a).iter(),
+            older_live.iter(),
+            older_dead,
+            older_dealloc,
+            &older_traces,
+            true,
+        );
+
+        let mut newer_dead = HashMap::new();
+        newer_dead.insert(st_dead.clone(), DeadAllocationCounter { count: 3.0, total_size: 300.0 });
+        let mut newer_dealloc = HashMap::new();
+        newer_dealloc
+            .insert(st_dealloc.clone(), DeallocationCounter { count: 1.0, total_size: 100.0 });
+        let newer_live =
+            vec![LiveAllocation { size: 500, scale_factor: 1.0, stack_trace: st_live_new.clone() }];
+        let newer_traces =
+            HashSet::from([st_dead.clone(), st_dealloc.clone(), st_live_new.clone()]);
+        let newer = build_profile(
+            [module_a, module_b].iter(),
+            newer_live.iter(),
+            newer_dead,
+            newer_dealloc,
+            &newer_traces,
+            true,
+        );
+
+        let merged = merge_same_process_profiles(older, newer);
+
+        // Duplicate mappings from `module_a` are deduplicated; `module_b` is added.
+        assert_eq!(2, merged.mapping.len());
+        // Lossy comments from both profiles are deduplicated.
+        assert_eq!(1, merged.comment.len());
+        // All 4 unique frame addresses are present and mapped to their segments.
+        assert_eq!(4, merged.location.len());
+        for loc in &merged.location {
+            assert_ne!(0, loc.mapping_id, "Location {} should resolve to a mapping", loc.address);
+        }
+
+        // `older`'s live sample is dropped; `newer`'s live sample is kept, and
+        // dead/deallocated counters are summed across both profiles.
+        assert_eq!(3, merged.sample.len());
+        let samples_by_trace: HashMap<Vec<u64>, Vec<i64>> =
+            merged.sample.into_iter().map(|s| (s.location_id, s.value)).collect();
+        assert_eq!(samples_by_trace.get(&vec![2100]), Some(&vec![1, 500, 1, 500, 0, 0]));
+        assert_eq!(samples_by_trace.get(&vec![1100, 1200]), Some(&vec![0, 0, 5, 500, 0, 0]));
+        assert_eq!(samples_by_trace.get(&vec![1300]), Some(&vec![0, 0, 0, 0, 3, 300]));
     }
 }
