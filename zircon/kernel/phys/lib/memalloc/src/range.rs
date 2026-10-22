@@ -351,25 +351,25 @@ pub unsafe trait NormalizedRangeIterator: Iterator<Item = Range> {
 /// An iterator over a normalized collection of range which uses `f` to filter map the ranges.
 ///
 /// The normalized invariant of the underylying collection is preserved.
-pub struct FilterMapRanges<I, F> {
-    ranges: I,
+pub struct FilterMapRanges<Ranges, F> {
+    ranges: Ranges,
     f: F,
     pending: Option<Range>,
 }
 
-impl<I, F> FilterMapRanges<I, F>
+impl<Ranges, F> FilterMapRanges<Ranges, F>
 where
-    I: NormalizedRangeIterator,
+    Ranges: NormalizedRangeIterator,
     F: Fn(Type) -> Option<Type>,
 {
-    fn new(ranges: I, f: F) -> Self {
-        Self { ranges, f, pending: None }
+    fn new(ranges: impl IntoIterator<IntoIter = Ranges>, f: F) -> Self {
+        Self { ranges: ranges.into_iter(), f, pending: None }
     }
 }
 
-impl<I, F> Iterator for FilterMapRanges<I, F>
+impl<Ranges, F> Iterator for FilterMapRanges<Ranges, F>
 where
-    I: NormalizedRangeIterator,
+    Ranges: NormalizedRangeIterator,
     F: Fn(Type) -> Option<Type>,
 {
     type Item = Range;
