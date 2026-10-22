@@ -28,7 +28,6 @@ rustc_library("fidl_driver") {
   # bindings if you need to use driver transport in a rust driver.
   visibility = [
     ":*",
-    "//sdk/fidl/fuchsia.driver.framework:*",
     "//tools/fidl/fidlc/testdata/*",
   ]
 }

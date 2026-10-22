@@ -21,7 +21,6 @@ fidl_library(
     category = "partner",
     contains_drivers = True,
     enable_hlcpp = True,
-    enable_rust_drivers = True,
     enable_rust_next = True,
     stable = False,
     visibility = ["//visibility:public"],

@@ -1542,6 +1542,53 @@ mod tests {
         shutdown_test_driver(driver, scope).await;
     }
 
+    /// The transport of the lifecycle server of the fake driver below.
+    type FailingStartTransport = fdf_fidl::DriverChannel<fdf::AsyncDispatcher>;
+
+    /// A `fuchsia.driver.framework/Driver` server that fails `Start`. Nothing else is ever
+    /// called on it because the driver host doesn't talk to a driver that failed to start.
+    struct FailingStartHandler;
+
+    impl fidl_next_fdf::DriverServerHandler<FailingStartTransport> for FailingStartHandler {
+        async fn start(
+            &mut self,
+            _request: fidl_next::Request<fidl_next_fdf::driver::Start, FailingStartTransport>,
+            responder: fidl_next::Responder<fidl_next_fdf::driver::Start, FailingStartTransport>,
+        ) {
+            let _ = responder.respond_err(Status::INTERNAL).await;
+        }
+
+        async fn stop(&mut self) {
+            unreachable!("stop is not sent to a driver that failed to start");
+        }
+
+        async fn suspend(
+            &mut self,
+            _responder: fidl_next::Responder<fidl_next_fdf::driver::Suspend, FailingStartTransport>,
+        ) {
+            unreachable!("suspend is not sent to a driver that failed to start");
+        }
+
+        async fn resume(
+            &mut self,
+            _request: fidl_next::Request<fidl_next_fdf::driver::Resume, FailingStartTransport>,
+            _responder: fidl_next::Responder<fidl_next_fdf::driver::Resume, FailingStartTransport>,
+        ) {
+            unreachable!("resume is not sent to a driver that failed to start");
+        }
+
+        async fn health_check(
+            &mut self,
+            _request: fidl_next::Request<fidl_next_fdf::driver::HealthCheck, FailingStartTransport>,
+            _responder: fidl_next::Responder<
+                fidl_next_fdf::driver::HealthCheck,
+                FailingStartTransport,
+            >,
+        ) {
+            unreachable!("health check is not sent to a driver that failed to start");
+        }
+    }
+
     unsafe extern "C" fn failing_start_initialize(
         server_handle: fdf_sys::fdf_handle_t,
     ) -> *mut std::ffi::c_void {
@@ -1551,36 +1598,29 @@ mod tests {
                     .expect("Non-null current dispatcher"),
             )
         };
-        let mut server_channel = unsafe {
-            fdf::Channel::<[u8]>::from_driver_handle(fdf::DriverHandle::new_unchecked(
-                std::num::NonZero::new(server_handle).expect("valid driver handle"),
-            ))
+        let server_channel = unsafe {
+            fdf::Channel::<[fidl_next::Chunk]>::from_driver_handle(
+                fdf::DriverHandle::new_unchecked(
+                    std::num::NonZero::new(server_handle).expect("valid driver handle"),
+                ),
+            )
         };
-        let held_channel: Arc<Mutex<Option<fdf::Channel<[u8]>>>> = Arc::new(Mutex::new(None));
-        let held_channel_clone = held_channel.clone();
         let always_on = root_dispatcher.always_on_dispatcher();
-        let read_dispatcher = always_on.clone();
+        let server_end: fidl_next::ServerEnd<fidl_next_fdf::Driver, FailingStartTransport> =
+            fidl_next::ServerEnd::from_untyped(fdf_fidl::DriverChannel::new_with_dispatcher(
+                fdf::AsyncDispatcher::new(&always_on),
+                server_channel,
+            ));
+        // The server task owns the channel and keeps it open after the failed `Start` reply until
+        // the driver host closes its end or shuts the driver down, matching C++ `DriverServer2`
+        // where the server binding outlives a failed `Start` reply.
         always_on.spawn(async move {
-            if let Ok(Some(msg)) = server_channel.read_bytes(read_dispatcher).await
-                && let Ok((_, fidl_fdf::DriverRequest::Start { responder, .. })) =
-                    fidl_fdf::DriverRequest::read_from_message(msg)
-            {
-                let _ = responder.send_response(&server_channel, Err(Status::INTERNAL.into_raw()));
-            }
-            // Keep the server channel open until `failing_start_destroy` runs, matching C++
-            // `DriverServer2` where the server binding outlives a failed `Start` reply.
-            *held_channel_clone.lock() = Some(server_channel);
+            let _ = fidl_next::ServerDispatcher::new(server_end).run(FailingStartHandler).await;
         });
-        Arc::into_raw(held_channel).cast_mut().cast()
+        std::ptr::null_mut()
     }
 
-    unsafe extern "C" fn failing_start_destroy(token: *mut std::ffi::c_void) {
-        if !token.is_null() {
-            let held_channel: Arc<Mutex<Option<fdf::Channel<[u8]>>>> =
-                unsafe { Arc::from_raw(token.cast()) };
-            drop(held_channel);
-        }
-    }
+    unsafe extern "C" fn failing_start_destroy(_token: *mut std::ffi::c_void) {}
 
     static FAILING_START_REGISTRATION: fdf_sys::DriverRegistration = fdf_sys::DriverRegistration {
         version: fdf_sys::DRIVER_REGISTRATION_VERSION_MAX,

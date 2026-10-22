@@ -41,7 +41,6 @@ fidl("fuchsia.driver.framework") {
   sdk_category = "partner"
   contains_drivers = true
   enable_hlcpp = true
-  enable_rust_drivers = true
   enable_rust_next = true
   stable = false
   visibility = [ "*" ]
