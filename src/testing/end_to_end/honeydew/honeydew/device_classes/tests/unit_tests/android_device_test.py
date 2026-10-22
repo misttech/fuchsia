@@ -9,6 +9,9 @@ from typing import Any
 from unittest import mock
 
 from honeydew import errors
+from honeydew.affordances.android_diagnostics import (
+    android_diagnostics as android_diagnostics_affordance,
+)
 from honeydew.affordances.android_session import (
     android_session as android_session_affordance,
 )
@@ -749,7 +752,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AndroidDeviceBaseCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for base AndroidDevice profile and geometry."""
+    """Unit tests for base AndroidDevice profile, geometry, and diagnostics."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -892,6 +895,16 @@ class AndroidDeviceBaseCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(self.device.android_session, session)
         self.assertIs(session._adb, self.mock_adb)
+
+    def test_diagnostics_affordance(self) -> None:
+        """Verifies diagnostics returns a cached AndroidDiagnostics."""
+        diagnostics: Any = self.device.diagnostics
+        self.assertIsInstance(
+            diagnostics,
+            android_diagnostics_affordance.AndroidDiagnostics,
+        )
+        self.assertIs(self.device.diagnostics, diagnostics)
+        self.assertIs(diagnostics._adb, self.mock_adb)
 
 
 if __name__ == "__main__":

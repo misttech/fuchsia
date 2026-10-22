@@ -16,6 +16,9 @@ import types
 from typing import Any
 
 from honeydew import errors
+from honeydew.affordances.android_diagnostics import (
+    android_diagnostics as android_diagnostics_affordance,
+)
 from honeydew.affordances.android_session import (
     android_session as android_session_affordance,
 )
@@ -326,5 +329,16 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             android_session.AndroidSession object
         """
         return android_session_affordance.AndroidSession(
+            device_name=self.device_name, adb=self.adb
+        )
+
+    @properties.Affordance
+    def diagnostics(self) -> android_diagnostics_affordance.AndroidDiagnostics:
+        """Returns an Android diagnostics affordance object.
+
+        Returns:
+            android_diagnostics.AndroidDiagnostics object
+        """
+        return android_diagnostics_affordance.AndroidDiagnostics(
             device_name=self.device_name, adb=self.adb
         )
