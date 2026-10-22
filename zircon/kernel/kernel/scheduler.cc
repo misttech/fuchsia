@@ -61,10 +61,6 @@ using ffl::Round;
 // while transitioning from READY to RUNNING.
 KCOUNTER(counter_update_in_transition, "scheduler.update_in_transition")
 
-// Counts the number of times we had to run FindTargetCpu again because our
-// selected Target became in-active after we chose it.
-KCOUNTER(counter_find_target_cpu_retries, "scheduler.find_target_cpu.retries")
-
 void Scheduler::CountUpdateInTransition() { counter_update_in_transition.Add(1); }
 
 void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
@@ -590,12 +586,6 @@ SchedTime Scheduler::GetNextEligibleTime() const {
   return rust_scheduler_get_next_eligible_time(this);
 }
 
-cpu_num_t Scheduler::FindTargetCpu(Thread* thread, UnblockType unblock_type) {
-  return rust_scheduler_find_target_cpu(thread, unblock_type == UnblockType::Synchronous ? 1 : 0);
-}
-
-void Scheduler::IncFindTargetCpuRetriesKcounter() { counter_find_target_cpu_retries.Add(1u); }
-
 void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
                                                  SchedMonoTimeAndBootTicks now,
                                                  SchedDuration actual_runtime_ns) {
@@ -709,180 +699,8 @@ void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
 
 cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
                                      AffinityType affinity_type) {
-  DEBUG_ASSERT_MSG(
-      const cpu_mask_t active_mask = PeekActiveMask();
-      affinity_type == AffinityType::Soft || (affinity & active_mask) != 0,
-      "Attempted to set affinity mask to %#x, which has no overlap of active CPUs %#x.", affinity,
-      active_mask);
-
-  // Utility to set the correct affinity mask based on the affinity type. Uses a
-  // function pointer conversion (i.e. +) to avoid a bug with static annotations
-  // on some lambdas, where the compiler complains about not holding the lambda
-  // as a capability.
-  const auto set_affinity = +[](Thread& thread, cpu_mask_t affinity, AffinityType affinity_type)
-                                 TA_REQ(thread.get_lock()) -> cpu_mask_t {
-    switch (affinity_type) {
-      case AffinityType::Hard:
-        ktl::swap(thread.scheduler_state().hard_affinity_, affinity);
-        break;
-
-      case AffinityType::Soft:
-        ktl::swap(thread.scheduler_state().soft_affinity_, affinity);
-        break;
-    }
-    return affinity;
-  };
-
-  const auto do_transaction =
-      [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<cpu_mask_t> {
-    thread.get_lock().AcquireFirstInChain();
-
-    // Mutating the affinity mask in the scheduler state requires holding both
-    // the thread lock and the container lock, if any.
-    //
-    // TODO(johngro): It is really easy to mess this requirement up. Is there a
-    // better way to statically assert these requirements?
-    //
-    // TODO(eieio): Why does the wait queue lock need to be held when updating
-    // the affinity mask of a blocked thread? Only scheduling needs to read the
-    // affinity mask and make decisions based on it, and even then only tracing
-    // needs to read the affinity mask while holding only the queue lock. How
-    // are wait queues different than the no container case wrt affinity?
-
-    // The thread container is a scheduler.
-    if ((thread.state() == THREAD_RUNNING) || (thread.state() == THREAD_READY)) {
-      ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_migrate");
-
-      ChainLockTransaction::Finalize();
-      SchedulerState& state = thread.scheduler_state();
-
-      DEBUG_ASSERT(state.curr_cpu() != INVALID_CPU);
-      const cpu_mask_t thread_cpu_mask = cpu_num_to_mask(state.curr_cpu());
-
-      cpu_mask_t cpus_to_reschedule_mask = 0;
-      bool find_new_target_cpu = false;
-      cpu_mask_t previous_affinity = 0;
-
-      // Use a lambda to prevent the AssertInScheduler from leaking out of the
-      // scope of the queue lock guard. Static lock assertions can leak out of
-      // nested scopes, including conditionals and loops.
-      [&]() TA_REQ(thread.get_lock()) {
-        Scheduler& scheduler = *Scheduler::Get(state.curr_cpu());
-        Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&scheduler.queue_lock(), SOURCE_TAG};
-
-        scheduler.AssertInScheduler(thread);
-        SchedulerQueueState& queue_state = thread.scheduler_queue_state();
-        const Disposition disposition = queue_state.disposition();
-
-        // Set the affinity before determining if the thread needs to move.
-        previous_affinity = set_affinity(thread, affinity, affinity_type);
-
-        const cpu_mask_t effective_cpu_mask = state.GetEffectiveCpuMask(PeekActiveMask());
-        const bool stale_curr_cpu = (thread_cpu_mask & effective_cpu_mask) == 0;
-
-        if (thread.state() == THREAD_RUNNING) {
-          DEBUG_ASSERT(disposition == Disposition::Associated);
-          if (stale_curr_cpu) {
-            cpus_to_reschedule_mask |= thread_cpu_mask;
-          }
-        } else {
-          DEBUG_ASSERT(thread.state() == THREAD_READY);
-          DEBUG_ASSERT(disposition != Disposition::Unassociated);
-
-          if (disposition == Disposition::Associated) {
-            // The thread is transitioning to RUNNING: curr_cpu is correct.
-            CountUpdateInTransition();
-            if (stale_curr_cpu) {
-              cpus_to_reschedule_mask |= thread_cpu_mask;
-            }
-          } else if (disposition == Disposition::Stolen) {
-            // The thread is being stolen: curr_cpu is incorrect, use stolen_by.
-            CountUpdateInTransition();
-            DEBUG_ASSERT(queue_state.stolen_by() != INVALID_CPU);
-            const cpu_mask_t stealing_cpu_mask = cpu_num_to_mask(queue_state.stolen_by());
-            const bool stale_stealing_cpu = (stealing_cpu_mask & effective_cpu_mask) == 0;
-            if (stale_stealing_cpu) {
-              cpus_to_reschedule_mask |= stealing_cpu_mask;
-            }
-          } else {
-            // The READY thread is waiting in the run queue: curr_cpu is correct.
-            DEBUG_ASSERT(disposition == Disposition::Enqueued);
-            if (stale_curr_cpu) {
-              scheduler.EraseFromQueue(&thread);
-              scheduler.RemoveThreadLocked(CurrentTime(), &thread);
-
-              // Execute the migrate function inline if the thread is on the local
-              // CPU. Otherwise, add it to the save state list of the last CPU it
-              // ran on and reschedule that CPU to process the list.
-              if (thread.has_migrate_fn() && !thread.migrate_pending() &&
-                  state.last_cpu() != INVALID_CPU && state.last_cpu() != arch_curr_cpu_num()) {
-                scheduler.save_state_list_.push_front(&thread);
-                cpus_to_reschedule_mask |= thread_cpu_mask;
-              } else {
-                find_new_target_cpu = true;
-              }
-            }
-          }
-        }
-      }();
-
-      // Find a new target CPU for the thread.
-      if (find_new_target_cpu) {
-        DEBUG_ASSERT(thread.state() == THREAD_READY);
-        // Call the migration function if the thread is migrating away from this
-        // CPU. This is a no-op if there is no migration function or the Save
-        // state has already been invoked.
-        if (state.last_cpu() == arch_curr_cpu_num()) {
-          thread.CallMigrateFnLocked(Thread::MigrateStage::Save);
-        }
-
-        // Find a new CPU for the thread and add it to the queue.
-        const cpu_num_t target_cpu =
-            FindActiveSchedulerForThread(&thread, [](Thread* thread, Scheduler* target) {
-              MarkInFindActiveSchedulerForThreadCbk(*thread, *target);
-              target->Insert(CurrentTime(), thread, Placement::Migration);
-            });
-
-        // Reschedule both CPUs to handle the run queue changes.
-        cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu) | thread_cpu_mask;
-      }
-
-      trace.End();
-      thread.get_lock().Release();
-      RescheduleMask(cpus_to_reschedule_mask);
-      return previous_affinity;
-    }
-
-    // The thread container is a wait queue.
-    // TODO(eieio): Why do we need to synchronize the affinity mask with the
-    // wait queue?
-    if (thread.state() == THREAD_BLOCKED) {
-      WaitQueueBase* wait_queue = thread.wait_queue_state().blocking_wait_queue_;
-      DEBUG_ASSERT(wait_queue != nullptr);
-
-      if (!wait_queue->get_lock().AcquireOrBackoff()) {
-        thread.get_lock().Release();
-        return ChainLockTransaction::Action::Backoff;
-      }
-
-      ChainLockTransaction::Finalize();
-      const cpu_mask_t previous_affinity = set_affinity(thread, affinity, affinity_type);
-
-      wait_queue->get_lock().Release();
-      thread.get_lock().Release();
-      return previous_affinity;
-    }
-
-    // The thread has no container (e.g. SLEEPING, SUSPENDED).
-    ChainLockTransaction::Finalize();
-    const cpu_mask_t previous_affinity = set_affinity(thread, affinity, affinity_type);
-
-    thread.get_lock().Release();
-    return previous_affinity;
-  };
-
-  return ChainLockTransaction::UntilDone(IrqSaveOption, CLT_TAG("Scheduler::SetCpuAffinity"),
-                                         do_transaction);
+  return rust_kernel_scheduler_set_cpu_affinity(&thread, affinity,
+                                                static_cast<int32_t>(affinity_type));
 }
 
 bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {

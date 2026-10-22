@@ -10425,6 +10425,288 @@ impl Scheduler {
             unsafe { Self::reschedule_mask(cpus_to_reschedule_mask) };
         }
     }
+
+    /// Sets the mask of valid CPUs that `thread` may run on. If a new mask
+    /// is set, the thread will be migrated to satisfy the new constraint.
+    ///
+    /// # Safety
+    /// The caller must ensure `thread` points to a valid, initialized `Thread`, that
+    /// no `ChainLockTransaction` is active, and that `thread`'s lock is not held
+    /// (`TA_EXCL(chainlock_transaction_token, thread.get_lock())`).
+    pub unsafe fn set_cpu_affinity(
+        thread: *mut Thread,
+        affinity: CpuMask,
+        affinity_type: AffinityType,
+    ) -> CpuMask {
+        if cfg!(debug_assertions) {
+            let active_mask = peek_active_mask();
+            debug_assert!(
+                affinity_type == AffinityType::Soft || (affinity & active_mask) != 0,
+                "Attempted to set affinity mask to {:#x}, which has no overlap of active CPUs {:#x}.",
+                affinity,
+                active_mask
+            );
+        }
+
+        // SAFETY: `thread` is a valid initialized `Thread` per caller contract.
+        let thread_lock = unsafe { thread_get_lock(thread) };
+        // SAFETY: `thread` is a valid initialized `Thread` per caller contract.
+        let state_ptr = unsafe { cpp_thread_get_scheduler_state(thread) };
+
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("Scheduler::SetCpuAffinity"),
+            |token| -> TransactionResult<CpuMask> {
+                // SAFETY: `thread_lock` is valid and this is the first lock acquired in `token`.
+                unsafe { (*thread_lock).acquire_first_in_chain(token) };
+
+                // Mutating the affinity mask in the scheduler state requires holding both
+                // the thread lock and the container lock, if any.
+                //
+                // TODO(johngro): It is really easy to mess this requirement up. Is there a
+                // better way to statically assert these requirements?
+                //
+                // TODO(eieio): Why does the wait queue lock need to be held when updating
+                // the affinity mask of a blocked thread? Only scheduling needs to read the
+                // affinity mask and make decisions based on it, and even then only tracing
+                // needs to read the affinity mask while holding only the queue lock. How
+                // are wait queues different than the no container case wrt affinity?
+                // SAFETY: `thread_lock` is held exclusively.
+                let thread_state = unsafe { (*state_ptr).state };
+
+                // The thread container is a scheduler.
+                if (thread_state == ThreadState::Running) || (thread_state == ThreadState::Ready) {
+                    let trace = local_ktrace_begin_scope!(COMMON, "sched_migrate");
+                    ChainLockTransaction::finalize(token);
+
+                    // SAFETY: `thread_lock` is held exclusively.
+                    let curr_cpu = unsafe { (*state_ptr).curr_cpu };
+                    debug_assert_ne!(curr_cpu, INVALID_CPU);
+                    let thread_cpu_mask = cpu_num_to_mask(curr_cpu);
+                    let mut cpus_to_reschedule_mask = 0;
+                    let mut find_new_target_cpu = false;
+                    let previous_affinity;
+
+                    {
+                        // SAFETY: `curr_cpu` is a valid CPU number, interrupts are disabled by
+                        // `IRQ_SAVE_OPTION`, and `queue_lock_` is not already held.
+                        let (scheduler_ptr, _queue_guard, scheduler, disposition, stolen_by) = unsafe {
+                            let scheduler_ptr = cpp_scheduler_get(curr_cpu);
+                            let queue_guard = QueueLockGuard::acquire(scheduler_ptr);
+                            let scheduler = &*scheduler_ptr;
+                            scheduler.assert_in_scheduler(thread);
+                            let queue_state = &*cpp_thread_get_queue_state(thread);
+                            (
+                                scheduler_ptr,
+                                queue_guard,
+                                scheduler,
+                                queue_state.disposition(),
+                                queue_state.stolen_by,
+                            )
+                        };
+
+                        // Set the affinity before determining if the thread needs to move.
+                        // SAFETY: Both `thread_lock` and `scheduler`'s `queue_lock_` are held.
+                        let (prev_aff, effective_cpu_mask) = unsafe {
+                            let prev = set_affinity(&mut *state_ptr, affinity, affinity_type);
+                            let eff = (*state_ptr).get_effective_cpu_mask(peek_active_mask());
+                            (prev, eff)
+                        };
+                        previous_affinity = prev_aff;
+                        let stale_curr_cpu = (thread_cpu_mask & effective_cpu_mask) == 0;
+
+                        if thread_state == ThreadState::Running {
+                            debug_assert_eq!(disposition, QueueDisposition::Associated);
+                            if stale_curr_cpu {
+                                cpus_to_reschedule_mask |= thread_cpu_mask;
+                            }
+                        } else {
+                            debug_assert_eq!(thread_state, ThreadState::Ready);
+                            debug_assert_ne!(disposition, QueueDisposition::Unassociated);
+
+                            if disposition == QueueDisposition::Associated {
+                                // The thread is transitioning to RUNNING: `curr_cpu` is correct.
+                                COUNTER_UPDATE_IN_TRANSITION.add(1);
+                                if stale_curr_cpu {
+                                    cpus_to_reschedule_mask |= thread_cpu_mask;
+                                }
+                            } else if disposition == QueueDisposition::Stolen {
+                                // The thread is being stolen: `curr_cpu` is incorrect, use
+                                // `stolen_by`.
+                                COUNTER_UPDATE_IN_TRANSITION.add(1);
+                                debug_assert_ne!(stolen_by, INVALID_CPU);
+                                let stealing_cpu_mask = cpu_num_to_mask(stolen_by);
+                                let stale_stealing_cpu =
+                                    (stealing_cpu_mask & effective_cpu_mask) == 0;
+                                if stale_stealing_cpu {
+                                    cpus_to_reschedule_mask |= stealing_cpu_mask;
+                                }
+                            } else {
+                                // The READY thread is waiting in the run queue: `curr_cpu` is
+                                // correct.
+                                debug_assert_eq!(disposition, QueueDisposition::Enqueued);
+                                if stale_curr_cpu {
+                                    let now = SchedTime::from_raw(
+                                        crate::platform_rs::timer::current_mono_time().0,
+                                    );
+                                    // SAFETY: Both `thread_lock` and `scheduler`'s `queue_lock_`
+                                    // are held while `thread` is enqueued on `scheduler`.
+                                    unsafe {
+                                        scheduler.erase_from_queue(thread);
+                                        scheduler.remove_thread_locked(now, thread);
+                                    }
+
+                                    // Execute the migrate function inline if the thread is on the
+                                    // local CPU. Otherwise, add it to the save state list of the
+                                    // last CPU it ran on and reschedule that CPU to process the
+                                    // list.
+                                    let current_cpu = crate::arch_rs::curr_cpu_num();
+                                    // SAFETY: `thread_lock` and `scheduler`'s `queue_lock_` are
+                                    // held.
+                                    unsafe {
+                                        let last_cpu = (*state_ptr).last_cpu;
+                                        if cpp_thread_has_migrate_fn(thread)
+                                            && !cpp_thread_migrate_pending(thread)
+                                            && last_cpu != INVALID_CPU
+                                            && last_cpu != current_cpu
+                                        {
+                                            cpp_scheduler_save_state_list_push_front(
+                                                scheduler_ptr,
+                                                thread,
+                                            );
+                                            cpus_to_reschedule_mask |= thread_cpu_mask;
+                                        } else {
+                                            find_new_target_cpu = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Find a new target CPU for the thread.
+                    if find_new_target_cpu {
+                        // SAFETY: `thread_lock` is held exclusively.
+                        debug_assert_eq!(unsafe { (*state_ptr).state }, ThreadState::Ready);
+                        // Call the migration function if the thread is migrating away from this
+                        // CPU. This is a no-op if there is no migration function or the Save
+                        // state has already been invoked.
+                        let current_cpu = crate::arch_rs::curr_cpu_num();
+                        // SAFETY: `thread_lock` is held exclusively.
+                        if unsafe { (*state_ptr).last_cpu } == current_cpu {
+                            // SAFETY: `thread` is valid and `thread_lock` is held.
+                            unsafe {
+                                cpp_thread_call_migrate_fn_locked(thread, MIGRATE_STAGE_SAVE);
+                            }
+                        }
+
+                        // Find a new CPU for the thread and add it to the queue.
+                        // SAFETY: `thread` is valid with `thread_lock` held and interrupts
+                        // disabled. Inside the callback, `target`'s `queue_lock_` is held.
+                        let target_cpu = unsafe {
+                            Self::find_active_scheduler_for_thread(thread, |thread, target| {
+                                let now = SchedTime::from_raw(
+                                    crate::platform_rs::timer::current_mono_time().0,
+                                );
+                                target.insert(now, thread, Placement::Migration);
+                            })
+                        };
+                        // Reschedule both CPUs to handle the run queue changes.
+                        cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu) | thread_cpu_mask;
+                    }
+
+                    ktrace_rs::end_scope!(trace);
+                    // SAFETY: `thread_lock` was acquired above in `token`.
+                    unsafe { (*thread_lock).release(token) };
+                    // SAFETY: Interrupts are disabled and `token` now holds 0 locks.
+                    unsafe { Self::reschedule_mask(cpus_to_reschedule_mask) };
+                    return TransactionResult::Value(previous_affinity);
+                }
+
+                // The thread container is a wait queue.
+                // TODO(eieio): Why do we need to synchronize the affinity mask with the
+                // wait queue?
+                if thread_state == ThreadState::Blocked {
+                    // SAFETY: `thread` is in `ThreadState::Blocked` and `thread_lock` is held.
+                    let wq_lock = unsafe {
+                        let wq = cpp_thread_get_blocking_wait_queue(thread);
+                        debug_assert!(!wq.is_null());
+                        cpp_wait_queue_get_lock(wq)
+                    };
+
+                    // SAFETY: `wq_lock` is valid and `token` is active and unfinalized.
+                    if !unsafe { (*wq_lock).acquire_or_backoff(token) } {
+                        // SAFETY: `thread_lock` was acquired above in `token`.
+                        unsafe { (*thread_lock).release(token) };
+                        return Action::Backoff.into();
+                    }
+
+                    ChainLockTransaction::finalize(token);
+                    // SAFETY: Both `thread_lock` and `wq_lock` are held exclusively.
+                    let previous_affinity =
+                        unsafe { set_affinity(&mut *state_ptr, affinity, affinity_type) };
+
+                    // SAFETY: `wq_lock` and `thread_lock` were acquired above in `token`.
+                    unsafe {
+                        (*wq_lock).release(token);
+                        (*thread_lock).release(token);
+                    }
+                    return TransactionResult::Value(previous_affinity);
+                }
+
+                // The thread has no container (e.g. SLEEPING, SUSPENDED).
+                ChainLockTransaction::finalize(token);
+                // SAFETY: `thread_lock` is held exclusively and `thread` has no container.
+                let previous_affinity =
+                    unsafe { set_affinity(&mut *state_ptr, affinity, affinity_type) };
+                // SAFETY: `thread_lock` was acquired above in `token`.
+                unsafe { (*thread_lock).release(token) };
+                TransactionResult::Value(previous_affinity)
+            },
+        )
+    }
+}
+
+/// Utility to set the correct affinity mask based on the affinity type.
+/// Callers must hold the thread's lock and its container lock (if any) when
+/// forming `state: &mut SchedulerState`.
+fn set_affinity(
+    state: &mut SchedulerState,
+    mut affinity: CpuMask,
+    affinity_type: AffinityType,
+) -> CpuMask {
+    match affinity_type {
+        AffinityType::Hard => {
+            core::mem::swap(&mut state.hard_affinity, &mut affinity);
+        }
+        AffinityType::Soft => {
+            core::mem::swap(&mut state.soft_affinity, &mut affinity);
+        }
+    }
+    affinity
+}
+
+/// Sets the mask of valid CPUs that `thread` may run on. If a new mask
+/// is set, the thread will be migrated to satisfy the new constraint.
+///
+/// # Safety
+/// The caller must ensure `thread` points to a valid, initialized `Thread`, that
+/// no `ChainLockTransaction` is active, that `thread`'s lock is not held
+/// (`TA_EXCL(chainlock_transaction_token, thread.get_lock())`), and that no
+/// scheduler `queue_lock_` is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_set_cpu_affinity(
+    thread: *mut Thread,
+    affinity: CpuMask,
+    affinity_type: i32,
+) -> CpuMask {
+    let affinity_type = match affinity_type {
+        0 => AffinityType::Hard,
+        1 => AffinityType::Soft,
+        _ => panic!("invalid affinity type"),
+    };
+    // SAFETY: Forwarded from the caller.
+    unsafe { Scheduler::set_cpu_affinity(thread, affinity, affinity_type) }
 }
 
 /// Indicates the type of preemption for diagnostic/tracing purposes.

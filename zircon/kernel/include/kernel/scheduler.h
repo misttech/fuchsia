@@ -1044,30 +1044,6 @@ class Scheduler {
   static Scheduler* Get(cpu_num_t cpu);
 
  private:
-  // Find an appropriate CPU for a thread to run on, then lock that scheduler,
-  // confirm that it is still active, and invoke the user-supplied callback with
-  // the scheduler's queue_lock held.
-  //
-  // This method may need to search for a target CPU for the thread more than
-  // once if the initially chosen scheduler becomes deactivated after it was
-  // selected, but before it was locked.
-  template <typename Callable>
-  static cpu_num_t FindActiveSchedulerForThread(Thread* thread, Callable action)
-      TA_REQ_SHARED(thread->get_lock()) {
-    while (true) {
-      const cpu_num_t target_cpu = FindTargetCpu(thread, UnblockType::Normal);
-      Scheduler* const target = Get(target_cpu);
-      Guard<MonitoredSpinLock, NoIrqSave> target_queue_guard{&target->queue_lock_, SOURCE_TAG};
-
-      if (target->IsSchedulerActiveLocked()) {
-        action(thread, target);
-        return target_cpu;
-      }
-
-      IncFindTargetCpuRetriesKcounter();
-    }
-  }
-
   // Indicates how to select the target CPU for the woken task. This flag is a
   // hint to enable more optimal CPU placement for "synchronous wake"
   // operations, but is not required for correctness. See UnblockSynchronous for
@@ -1084,24 +1060,6 @@ class Scheduler {
     // a CPU as it blocks in the same reschedule operation.
     Synchronous,
   };
-
-  // A helper function used by FindActiveSchedulerForThread.  Returns a CPU to
-  // run the given thread on, but does not lock that scheduler, meaning that the
-  // selected scheduler can become de-activated before the caller can lock it.
-  //
-  // Typically, users will want to use FindActiveSchedulerForThread instead,
-  // which will supply a locked scheduler which is guaranteed to be active.
-  //
-  static cpu_num_t FindTargetCpu(Thread* thread, UnblockType unblock_type)
-      TA_REQ_SHARED(thread->get_lock()) TA_EXCL(queue_lock_);
-
-  // Increment the kcounter which tracks the number of times that an extra
-  // attempt to find an active scheduler was needed during
-  // FindActiveSchedulerForThread.  Sadly, the method cannot increment the
-  // counter directly because of the way that kcounters need to be declared, in
-  // a translation unit in an anonymous namespace, with no ability to fwd
-  // declare the counter.
-  static void IncFindTargetCpuRetriesKcounter();
 
   // Check to see if |this| scheduler is currently active while holding its
   // queue_lock, ensuring that it will stay in its current state until after we
@@ -1717,18 +1675,11 @@ class Scheduler {
   // the scheduler that the thread is currently a member of (see
   // AssertInScheduler, above).
   //
-  // MarkInFindActiveSchedulerForThreadCbk tells the static analyzer that we are
-  // in the callback for an FindActiveSchedulerForThread operation, meaning that
-  // we must hold both the thread's lock and the queue_lock for the thread and
-  // scheduler involved in the operation.
-  //
   // See StealWork for a practical example of where these methods are useful.
   //
   static void MarkHasSchedulerAccess(const Scheduler& s) TA_ASSERT(s.queue_lock_) {}
   static void MarkHasOwnedThreadAccess(const Thread& t) TA_ASSERT(t.get_scheduler_variable_lock())
       TA_ASSERT_SHARED(t.get_lock()) {}
-  static void MarkInFindActiveSchedulerForThreadCbk(const Thread& t, const Scheduler& s)
-      TA_ASSERT(t.get_scheduler_variable_lock()) TA_ASSERT(t.get_lock()) TA_ASSERT(s.queue_lock_) {}
 
   // Flow id counter for sched_latency flow events.
   inline static RelaxedAtomic<uint64_t> next_flow_id_{1};
