@@ -31,14 +31,13 @@ fuchsia_test_component("root_fxblob") {
 
 fake_dependencies_deps = [
   "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-  "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+  "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
   "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
   "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia",
   "//src/lib/fuchsia-component",
   "//src/lib/fuchsia-runtime",
-  "//src/lib/sandbox",
   "//src/storage/lib/vfs/rust:vfs",
   "//src/sys/pkg/lib/fuchsia-pkg-testing",
   "//src/sys/pkg/lib/system-image",

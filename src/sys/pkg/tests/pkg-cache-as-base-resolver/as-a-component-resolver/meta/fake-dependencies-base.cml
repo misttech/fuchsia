@@ -37,16 +37,13 @@
         },
         {
             dictionary: "boot_args",
-            path: "/svc/fuchsia.component.sandbox.DictionaryRouter",
+            path: "/svc/fuchsia.component.runtime.DictionaryRouter",
         },
     ],
     use: [
         { protocol: "fuchsia.process.Launcher" },
         {
-            protocol: [
-                "fuchsia.component.sandbox.CapabilityStore",
-                "fuchsia.component.sandbox.Factory",
-            ],
+            protocol: [ "fuchsia.component.runtime.Capabilities" ],
             from: "framework",
         },
         {
