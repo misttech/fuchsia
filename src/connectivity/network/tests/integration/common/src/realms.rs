@@ -162,6 +162,7 @@ impl ManagementAgent {
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
+                fnp_properties::PrivilegedNetworkLookupMarker::PROTOCOL_NAME,
                 fnet_reachability::MonitorMarker::PROTOCOL_NAME,
             ],
             Self::NetCfg(NetCfgVersion::Advanced) => &[
@@ -172,6 +173,7 @@ impl ManagementAgent {
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
+                fnp_properties::PrivilegedNetworkLookupMarker::PROTOCOL_NAME,
                 fnet_reachability::MonitorMarker::PROTOCOL_NAME,
             ],
         }

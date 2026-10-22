@@ -59,8 +59,8 @@ fn network(network_id: u32, mark: Option<u32>) -> fnp_properties::Network {
     fnp_properties::Network {
         network_id: Some(network_id),
         info: Some(fnp_properties::NetworkInfo::Starnix(fnp_properties::StarnixNetworkInfo {
-            mark: mark,
-            handle: None,
+            mark,
+            handle: Some(network_id.into()),
             ..Default::default()
         })),
         ..Default::default()
@@ -331,19 +331,12 @@ async fn test_track_dns_changes<M: Manager>(name: &str) -> Result<(), anyhow::Er
                 ) {
                     socket_proxy
                         .update(&fnp_properties::Network {
-                            network_id: Some(TEST_NETWORK_ID),
                             dns_servers: Some(fnp_properties::NetworkDnsServers {
                                 v6: Some(addresses.to_vec()),
                                 v4: Some(vec![]),
                                 ..Default::default()
                             }),
-                            info: Some(fnp_properties::NetworkInfo::Starnix(
-                                fnp_properties::StarnixNetworkInfo {
-                                    mark: Some(123),
-                                    ..Default::default()
-                                },
-                            )),
-                            ..Default::default()
+                            ..network(TEST_NETWORK_ID, Some(123))
                         })
                         .await
                         .expect("fidl error")
@@ -655,19 +648,12 @@ async fn test_network_registry_dns_propagation<M: Manager>(
                 // Add the first delegated network.
                 delegated_networks
                     .add(&fnp_properties::Network {
-                        network_id: Some(TEST_NETWORK_ID),
-                        info: Some(fnp_properties::NetworkInfo::Starnix(
-                            fnp_properties::StarnixNetworkInfo {
-                                mark: Some(TEST_MARK),
-                                ..Default::default()
-                            },
-                        )),
                         dns_servers: Some(fnp_properties::NetworkDnsServers {
                             v6: Some(vec![NDP_DNS_SERVER]),
                             v4: Some(vec![]),
                             ..Default::default()
                         }),
-                        ..Default::default()
+                        ..network(TEST_NETWORK_ID, Some(TEST_MARK))
                     })
                     .await
                     .expect("fidl error")
@@ -683,19 +669,12 @@ async fn test_network_registry_dns_propagation<M: Manager>(
                 // Add second delegated network.
                 delegated_networks
                     .add(&fnp_properties::Network {
-                        network_id: Some(TEST_NETWORK_ID_2),
-                        info: Some(fnp_properties::NetworkInfo::Starnix(
-                            fnp_properties::StarnixNetworkInfo {
-                                mark: Some(TEST_MARK_2),
-                                ..Default::default()
-                            },
-                        )),
                         dns_servers: Some(fnp_properties::NetworkDnsServers {
                             v6: Some(vec![NDP_DNS_SERVER_2]),
                             v4: Some(vec![]),
                             ..Default::default()
                         }),
-                        ..Default::default()
+                        ..network(TEST_NETWORK_ID_2, Some(TEST_MARK_2))
                     })
                     .await
                     .expect("fidl error")
@@ -904,6 +883,19 @@ async fn test_network_registry_socket_marks_propagation<M: Manager>(name: &str) 
                     Ok(Err(fnp_properties::WatchError::InvalidNetworkToken))
                 );
 
+                // Even though TEST_NETWORK_ID is no longer the default network,
+                // PrivilegedNetworkLookup.Lookup can still obtain a valid NetworkToken for
+                // it by its Starnix handle, which WatchProperties accepts.
+                let privileged_lookup = realm
+                    .connect_to_protocol::<fnp_properties::PrivilegedNetworkLookupMarker>()
+                    .expect("failed to connect to PrivilegedNetworkLookup");
+                let looked_up_token = privileged_lookup
+                    .lookup(&fnp_properties::LookupRequest::StarnixHandle(TEST_NETWORK_ID.into()))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to lookup non-default network");
+                assert_matches!(watch_properties(&networks, &looked_up_token).await, Ok(Ok(_)));
+
                 // Remove all the networks.
                 delegated_networks
                     .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
@@ -916,6 +908,17 @@ async fn test_network_registry_socket_marks_propagation<M: Manager>(name: &str) 
                     .await
                     .expect("fidl error")
                     .expect("failed to remove network 1");
+
+                // Once TEST_NETWORK_ID is removed, Lookup returns NotFound.
+                assert_matches!(
+                    privileged_lookup
+                        .lookup(&fnp_properties::LookupRequest::StarnixHandle(
+                            TEST_NETWORK_ID.into(),
+                        ))
+                        .await
+                        .expect("fidl error"),
+                    Err(fnp_properties::LookupError::NotFound)
+                );
 
                 delegated_networks
                     .remove(TEST_NETWORK_ID_2)
@@ -1242,19 +1245,12 @@ async fn test_track_dns_changes_default_switch<M: Manager>(name: &str) {
                     // emit DNS_1.
                     delegated_networks
                         .add(&fnp_properties::Network {
-                            network_id: Some(1),
-                            info: Some(fnp_properties::NetworkInfo::Starnix(
-                                fnp_properties::StarnixNetworkInfo {
-                                    mark: Some(123),
-                                    ..Default::default()
-                                },
-                            )),
                             dns_servers: Some(fnp_properties::NetworkDnsServers {
                                 v6: Some(vec![DNS_1]),
                                 v4: Some(vec![]),
                                 ..Default::default()
                             }),
-                            ..Default::default()
+                            ..network(1, Some(123))
                         })
                         .await
                         .expect("fidl error")
@@ -1270,19 +1266,12 @@ async fn test_track_dns_changes_default_switch<M: Manager>(name: &str) {
                     // emit DNS_2.
                     delegated_networks
                         .add(&fnp_properties::Network {
-                            network_id: Some(2),
-                            info: Some(fnp_properties::NetworkInfo::Starnix(
-                                fnp_properties::StarnixNetworkInfo {
-                                    mark: Some(456),
-                                    ..Default::default()
-                                },
-                            )),
                             dns_servers: Some(fnp_properties::NetworkDnsServers {
                                 v6: Some(vec![DNS_2]),
                                 v4: Some(vec![]),
                                 ..Default::default()
                             }),
-                            ..Default::default()
+                            ..network(2, Some(456))
                         })
                         .await
                         .expect("fidl error")

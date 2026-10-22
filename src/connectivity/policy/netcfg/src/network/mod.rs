@@ -14,7 +14,7 @@ use futures::StreamExt as _;
 use log::{debug, error, info, warn};
 use policy_properties::NetworkTokenExt as _;
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::collections::hash_map::{Entry, OccupiedEntry};
 
 mod reachability;
 mod token_registry;
@@ -247,7 +247,7 @@ impl NetworksClient {
 
 #[derive(Debug, PartialEq, Default, Clone)]
 struct NetworkProperties {
-    socket_marks: Option<fnet::Marks>,
+    delegated: Option<DelegatedNetworkProperties>,
     dns_servers: Vec<fnet_name::DnsServer_>,
     // TODO(https://fxbug.dev/567965129): Remove the following optional fields for shared
     // Fuchsia/Starnix networks once all networks received from Starnix are required to
@@ -259,13 +259,13 @@ struct NetworkProperties {
 
 impl NetworkProperties {
     fn get_marks(&self) -> Option<&fnet::Marks> {
-        self.socket_marks.as_ref()
+        self.delegated.as_ref().map(|d| &d.marks)
     }
 }
 
 impl std::fmt::Display for NetworkProperties {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let NetworkProperties { name, network_type, connectivity_state, socket_marks, dns_servers } =
+        let NetworkProperties { name, network_type, connectivity_state, delegated, dns_servers } =
             self;
 
         if let Some(name) = name {
@@ -277,10 +277,10 @@ impl std::fmt::Display for NetworkProperties {
         if let Some(connectivity_state) = connectivity_state {
             write!(f, ", state={}", connectivity_state.as_str())?;
         }
-        if let Some(marks) = socket_marks {
+        if let Some(DelegatedNetworkProperties { marks, starnix_handle: _ }) = delegated {
             write!(f, ", mark={:?}", marks.mark_1)?;
         }
-        if socket_marks.is_some() || !dns_servers.is_empty() {
+        if delegated.is_some() || !dns_servers.is_empty() {
             write!(f, ", dns=[")?;
             let mut servers = dns_servers.iter().filter_map(|s| {
                 s.address.map(|a| fidl_fuchsia_net_ext::SocketAddress::from(a).0.ip().to_string())
@@ -450,86 +450,71 @@ impl RegisteredNetworks {
     ) -> UpdateApplied {
         let NetworkPropertiesChange {
             added,
-            marks: socket_marks,
+            delegated,
             dns_servers: changed_dns_servers,
             connectivity_state,
             name,
             network_type,
         } = event;
         let entry = self.networks.entry(network_id);
-        let result = match (added, &entry, network_id, socket_marks) {
+        let result = match (added, &entry, network_id, &delegated) {
             (true, Entry::Occupied(_), _, _) => Err("add already added network"),
             (false, Entry::Vacant(_), _, _) => Err("update a non-added network"),
-            (_, _, NetworkId::Fuchsia(_), Some(_)) => Err("have a fuchsia network with marks"),
-            (_, _, NetworkId::Delegated(_), None) => Err("have a delegated network without marks"),
-            (_, entry, NetworkId::Fuchsia(_), None) => {
-                let new_dns = changed_dns_servers.unwrap_or_default();
-                let changed_dns = match entry {
-                    Entry::Occupied(e) => e.get().dns_servers != new_dns,
-                    // When adding a new network, set `changed_dns` to true so responders receive
-                    // an explicit initial state.
-                    Entry::Vacant(_) => true,
-                };
-                Ok((
-                    NetworkProperties { dns_servers: new_dns, ..Default::default() },
-                    added,
-                    changed_dns,
-                ))
+            (_, _, NetworkId::Fuchsia(_), Some(_)) => {
+                Err("have a fuchsia network with delegated properties")
             }
-            (_, entry, NetworkId::Delegated(_), Some(socket_marks)) => {
-                let new_dns = changed_dns_servers.unwrap_or_default();
-                let (changed_marks, changed_dns) = match entry {
-                    Entry::Occupied(e) => {
-                        (e.get().get_marks() != Some(&socket_marks), e.get().dns_servers != new_dns)
-                    }
-                    // When adding a new network, set both `changed_marks` and `changed_dns` to
-                    // true so responders receive an explicit initial state.
-                    Entry::Vacant(_) => (true, true),
-                };
-                Ok((
-                    NetworkProperties {
-                        socket_marks: Some(socket_marks),
-                        dns_servers: new_dns,
-                        ..Default::default()
-                    },
-                    changed_marks,
-                    changed_dns,
-                ))
+            (_, _, NetworkId::Delegated(_), None) => {
+                Err("have a delegated network without delegated properties")
+            }
+            (_, _, NetworkId::Fuchsia(_), None) | (_, _, NetworkId::Delegated(_), Some(_)) => {
+                Ok(())
             }
         };
+        if let Err(e) = result {
+            error!("Cannot {e}. Update ignored.");
+            return UpdateApplied::None;
+        }
 
-        match result {
-            Ok((mut properties, changed_marks, changed_dns)) => {
-                properties.connectivity_state = connectivity_state;
-                properties.network_type = network_type;
-                properties.name = name.clone();
-                match &entry {
-                    Entry::Occupied(e) => {
-                        // Only log network updates when they have changed.
-                        if *e.get() != properties {
-                            info!(
-                                tag = NETWORK_REGISTRY_LOG_TAG; "Update {network_id} ({properties})"
-                            );
-                        }
-                    }
-                    Entry::Vacant(_) => {
-                        info!(tag = NETWORK_REGISTRY_LOG_TAG; "Add {network_id} ({properties})");
-                    }
-                }
-                let _ = entry.insert_entry(properties);
-                UpdateApplied::NetworkChanged {
-                    network_id,
-                    added,
-                    changed_marks,
-                    changed_dns,
-                    name,
-                    network_type,
+        let dns_servers = changed_dns_servers.unwrap_or_default();
+        let (changed_marks, changed_dns) = match &entry {
+            Entry::Occupied(e) => (
+                e.get().get_marks() != delegated.as_ref().map(|d| &d.marks),
+                e.get().dns_servers != dns_servers,
+            ),
+            // When adding a new network, set both `changed_marks` and `changed_dns` to
+            // true so responders receive an explicit initial state.
+            Entry::Vacant(_) => (true, true),
+        };
+        let properties = NetworkProperties {
+            delegated,
+            dns_servers,
+            connectivity_state,
+            name: name.clone(),
+            network_type,
+        };
+        match &entry {
+            Entry::Occupied(e) => {
+                // Only log network updates when they have changed.
+                if *e.get() != properties {
+                    info!(
+                        tag = NETWORK_REGISTRY_LOG_TAG; "Update {network_id} ({properties})"
+                    );
                 }
             }
-            Err(e) => {
-                error!("Cannot {e}. Update ignored.");
-                UpdateApplied::None
+            Entry::Vacant(_) => {
+                info!(tag = NETWORK_REGISTRY_LOG_TAG; "Add {network_id} ({properties})");
             }
+        }
+        // Validation above ensures adds (`added`) only insert into a `Vacant` entry and updates
+        // (`!added`) replace an `Occupied` entry.
+        let _: OccupiedEntry<'_, _, _> = entry.insert_entry(properties);
+        UpdateApplied::NetworkChanged {
+            network_id,
+            added,
+            changed_marks,
+            changed_dns,
+            name,
+            network_type,
         }
     }
 
@@ -821,14 +806,31 @@ impl PropertyUpdates for fnp_properties::PropertyUpdate {
     }
 }
 
+/// Delegated network specific properties.
+///
+/// Neither `marks` nor `starnix_handle` is expected to change for an existing
+/// network, but since they are not managed by Fuchsia we update them on
+/// `NetworkRegistry.Update` to guard against any assumptions about their
+/// immutability. Updating `starnix_handle` only affects which handle future
+/// `PrivilegedNetworkLookup.Lookup` calls match; any `NetworkToken` already
+/// minted for the network is keyed by `NetworkId` and remains active until the
+/// network itself is removed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DelegatedNetworkProperties {
+    /// The socket marks for the delegated network.
+    pub marks: fnet::Marks,
+    /// The Starnix network handle.
+    pub starnix_handle: u64,
+}
+
 /// An event representing the properties that changed for a network.
 #[derive(Clone, Debug, Default)]
 pub struct NetworkPropertiesChange {
     /// When true, this is a new network being added. Otherwise, this is an
     /// update to an existing network.
     pub added: bool,
-    /// The new marks for the network.
-    pub marks: Option<fnet::Marks>,
+    /// Properties specific to delegated networks (`None` for Fuchsia networks).
+    pub delegated: Option<DelegatedNetworkProperties>,
     /// If present, contains the new DNS servers for this network.
     pub dns_servers: Option<Vec<fnet_name::DnsServer_>>,
     /// The new connectivity state of the network.
@@ -909,7 +911,7 @@ impl NetworkRegistryUpdate {
 /// delegated networks registered by runtimes like Starnix.
 struct ValidatedNetwork {
     network_id: NetworkId,
-    marks: fnet::Marks,
+    delegated: DelegatedNetworkProperties,
     dns_servers: Vec<fnet_name::DnsServer_>,
     connectivity: Option<fnp_properties::ConnectivityState>,
     name: Option<String>,
@@ -951,6 +953,7 @@ impl TryFrom<fnp_properties::Network> for ValidatedNetwork {
         let Some(fnp_properties::NetworkInfo::Starnix(info)) = network.info else {
             return Err(NetworkValidationError::MissingNetworkInfo);
         };
+        let starnix_handle = info.handle.ok_or(NetworkValidationError::MissingNetworkInfo)?;
 
         let mut marks = fnet::Marks::default();
         marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
@@ -960,7 +963,7 @@ impl TryFrom<fnp_properties::Network> for ValidatedNetwork {
 
         Ok(Self {
             network_id,
-            marks,
+            delegated: DelegatedNetworkProperties { marks, starnix_handle },
             dns_servers,
             connectivity: network.connectivity,
             name: network.name,
@@ -987,6 +990,7 @@ pub struct DelegatedNetworkUpdateResult {
 pub enum NetworkRequestStream {
     Networks(fnp_properties::NetworksRequestStream),
     NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
+    PrivilegedNetworkLookup(fnp_properties::PrivilegedNetworkLookupRequestStream),
     PropertyWatcher {
         connection_id: PropertyWatcherConnectionId,
         stream: fnp_properties::PropertyWatcherRequestStream,
@@ -1003,6 +1007,12 @@ impl From<fnp_properties::NetworksRequestStream> for NetworkRequestStream {
 impl From<fnp_properties::NetworkTokenResolverRequestStream> for NetworkRequestStream {
     fn from(s: fnp_properties::NetworkTokenResolverRequestStream) -> Self {
         Self::NetworkTokenResolver(s)
+    }
+}
+
+impl From<fnp_properties::PrivilegedNetworkLookupRequestStream> for NetworkRequestStream {
+    fn from(s: fnp_properties::PrivilegedNetworkLookupRequestStream) -> Self {
+        Self::PrivilegedNetworkLookup(s)
     }
 }
 
@@ -1053,6 +1063,7 @@ type DelegatedNetworksStream = StreamWithEpitaph<fnp_properties::NetworkRegistry
 enum NetworkRequestStreamInner {
     Networks(ConnectionStream<NetworksConnectionId, fnp_properties::NetworksRequestStream>),
     NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
+    PrivilegedNetworkLookup(fnp_properties::PrivilegedNetworkLookupRequestStream),
     PropertyWatcher(
         ConnectionStream<PropertyWatcherConnectionId, fnp_properties::PropertyWatcherRequestStream>,
     ),
@@ -1079,6 +1090,12 @@ impl futures::Stream for NetworkRequestStreamInner {
                 stream.poll_next_unpin(cx).map(|o| {
                     o.map(|request| NetworkTokenResolverRequest { request })
                         .map(NetworkRequest::NetworkTokenResolver)
+                })
+            }
+            NetworkRequestStreamInner::PrivilegedNetworkLookup(ref mut stream) => {
+                stream.poll_next_unpin(cx).map(|o| {
+                    o.map(|request| PrivilegedNetworkLookupRequest { request })
+                        .map(NetworkRequest::PrivilegedNetworkLookup)
                 })
             }
             NetworkRequestStreamInner::PropertyWatcher(ref mut stream) => {
@@ -1123,6 +1140,11 @@ pub struct NetworkTokenResolverRequest {
     pub request: Result<fnp_properties::NetworkTokenResolverRequest, fidl::Error>,
 }
 
+/// A wrapper for [`fnp_properties::PrivilegedNetworkLookupRequest`].
+pub struct PrivilegedNetworkLookupRequest {
+    pub request: Result<fnp_properties::PrivilegedNetworkLookupRequest, fidl::Error>,
+}
+
 /// A wrapper for [`fnp_properties::PropertyWatcherRequest`] that includes the
 /// [`PropertyWatcherConnectionId`] of the connection that sent the request, or `None` if the
 /// client connection closed.
@@ -1151,6 +1173,7 @@ pub struct ReachabilityRequest {
 pub enum NetworkRequest {
     NetworkAttributes(NetworkAttributesRequest),
     NetworkTokenResolver(NetworkTokenResolverRequest),
+    PrivilegedNetworkLookup(PrivilegedNetworkLookupRequest),
     PropertyWatcher(PropertyWatcherRequest),
     DelegatedNetworks(DelegatedNetworksRequest),
     Reachability(ReachabilityRequest),
@@ -1359,6 +1382,9 @@ impl NetpolNetworksService {
             NetworkRequestStream::NetworkTokenResolver(stream) => {
                 self.streams.push(NetworkRequestStreamInner::NetworkTokenResolver(stream));
             }
+            NetworkRequestStream::PrivilegedNetworkLookup(stream) => {
+                self.streams.push(NetworkRequestStreamInner::PrivilegedNetworkLookup(stream));
+            }
             NetworkRequestStream::DelegatedNetworks(stream) => {
                 if self.delegated_networks_client.is_some() {
                     warn!(
@@ -1397,6 +1423,10 @@ impl NetpolNetworksService {
             }
             NetworkRequest::NetworkTokenResolver(NetworkTokenResolverRequest { request }) => {
                 self.handle_network_token_resolver_request(request).await?;
+                Ok(DelegatedNetworkUpdateResult { dns_servers: None })
+            }
+            NetworkRequest::PrivilegedNetworkLookup(PrivilegedNetworkLookupRequest { request }) => {
+                self.handle_privileged_network_lookup_request(request)?;
                 Ok(DelegatedNetworkUpdateResult { dns_servers: None })
             }
             NetworkRequest::DelegatedNetworks(DelegatedNetworksRequest { request }) => {
@@ -1539,6 +1569,64 @@ impl NetpolNetworksService {
             }
         }
 
+        Ok(())
+    }
+
+    /// Handles a single item produced by a [`PrivilegedNetworkLookupRequestStream`].
+    fn handle_privileged_network_lookup_request(
+        &mut self,
+        req: Result<fnp_properties::PrivilegedNetworkLookupRequest, fidl::Error>,
+    ) -> Result<(), anyhow::Error> {
+        let req = req.context("while handling PrivilegedNetworkLookup request")?;
+        match req {
+            fnp_properties::PrivilegedNetworkLookupRequest::Lookup { payload, responder } => {
+                let result = match payload {
+                    fnp_properties::LookupRequest::StarnixHandle(starnix_handle) => {
+                        // Each delegated network registered by Starnix has a unique handle, so at
+                        // most one entry in `networks` will match `starnix_handle`. The returned
+                        // token is keyed by `network_id` rather than `starnix_handle`, so it
+                        // remains active even if `starnix_handle` is updated later, until the
+                        // network itself is removed.
+                        match self.network_registry.networks.iter().find_map(
+                            |(&network_id, props)| {
+                                props
+                                    .delegated
+                                    .as_ref()
+                                    .is_some_and(|d| d.starnix_handle == starnix_handle)
+                                    .then_some(network_id)
+                            },
+                        ) {
+                            Some(network_id) => Ok(self
+                                .tokens
+                                .ensure_token(NetworkTokenContents {
+                                    network_id,
+                                    is_default: false,
+                                })
+                                .get()
+                                .duplicate()
+                                .context("could not duplicate token")?),
+                            None => Err(fnp_properties::LookupError::NotFound),
+                        }
+                    }
+                    fnp_properties::LookupRequest::__SourceBreaking { unknown_ordinal } => {
+                        warn!(
+                            "Received unknown LookupRequest union variant in \
+                            PrivilegedNetworkLookup.Lookup: {unknown_ordinal}"
+                        );
+                        Err(fnp_properties::LookupError::NotFound)
+                    }
+                };
+                if let Err(e) = responder.send(result) {
+                    warn!("Could not send PrivilegedNetworkLookup.Lookup response: {e}");
+                }
+            }
+            fnp_properties::PrivilegedNetworkLookupRequest::_UnknownMethod { ordinal, .. } => {
+                warn!(
+                    "Received unexpected fuchsia.net.policy.properties/PrivilegedNetworkLookup \
+                    request {ordinal}"
+                );
+            }
+        }
         Ok(())
     }
 
@@ -1747,7 +1835,7 @@ impl NetpolNetworksService {
                                 valid.network_id,
                                 NetworkUpdate::Properties(NetworkPropertiesChange {
                                     added: true,
-                                    marks: Some(valid.marks),
+                                    delegated: Some(valid.delegated),
                                     dns_servers: Some(valid.dns_servers),
                                     connectivity_state: valid.connectivity,
                                     name: valid.name,
@@ -1779,7 +1867,7 @@ impl NetpolNetworksService {
                                 valid.network_id,
                                 NetworkUpdate::Properties(NetworkPropertiesChange {
                                     added: false,
-                                    marks: Some(valid.marks),
+                                    delegated: Some(valid.delegated),
                                     dns_servers: Some(valid.dns_servers),
                                     connectivity_state: valid.connectivity,
                                     name: valid.name,
@@ -2286,7 +2374,8 @@ mod tests {
         ) -> NetworkPropertiesChange {
             NetworkPropertiesChange {
                 added,
-                marks,
+                delegated: marks
+                    .map(|marks| DelegatedNetworkProperties { marks, ..Default::default() }),
                 dns_servers,
                 connectivity_state,
                 name: Some(self.name.to_string()),
@@ -2346,7 +2435,13 @@ mod tests {
     }
 
     fn delegated_properties() -> NetworkProperties {
-        NetworkProperties { socket_marks: Some(test_marks()), ..Default::default() }
+        NetworkProperties {
+            delegated: Some(DelegatedNetworkProperties {
+                marks: test_marks(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
     }
 
     fn fuchsia_properties() -> NetworkProperties {
@@ -2356,7 +2451,7 @@ mod tests {
     fn added_properties(name: &str) -> NetworkPropertiesChange {
         NetworkPropertiesChange {
             added: true,
-            marks: None,
+            delegated: None,
             dns_servers: None,
             connectivity_state: None,
             name: Some(name.to_string()),
@@ -2412,7 +2507,9 @@ mod tests {
         assert_eq!(
             networks.networks.get(&net.id).expect("network should be present"),
             &NetworkProperties {
-                socket_marks: initial_marks.clone(),
+                delegated: initial_marks
+                    .clone()
+                    .map(|marks| DelegatedNetworkProperties { marks, ..Default::default() }),
                 dns_servers: dns1,
                 connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
                 name: Some(net.name.to_string()),
@@ -2435,7 +2532,9 @@ mod tests {
         assert_eq!(
             networks.networks.get(&net.id).expect("network should be present"),
             &NetworkProperties {
-                socket_marks: initial_marks.clone(),
+                delegated: initial_marks
+                    .clone()
+                    .map(|marks| DelegatedNetworkProperties { marks, ..Default::default() }),
                 dns_servers: dns2.clone(),
                 connectivity_state: Some(fnp_properties::ConnectivityState::NoConnectivity),
                 name: Some(net.name.to_string()),
@@ -2462,7 +2561,8 @@ mod tests {
         assert_eq!(
             networks.networks.get(&net.id).expect("network should be present"),
             &NetworkProperties {
-                socket_marks: updated_marks,
+                delegated: updated_marks
+                    .map(|marks| DelegatedNetworkProperties { marks, ..Default::default() }),
                 dns_servers: dns2,
                 connectivity_state: Some(fnp_properties::ConnectivityState::NoConnectivity),
                 name: Some(net.name.to_string()),
@@ -2474,15 +2574,16 @@ mod tests {
     #[test]
     fn test_handle_changed_network_validation() {
         let mut networks = RegisteredNetworks::default();
-        let marks = test_marks();
+        let delegated =
+            Some(DelegatedNetworkProperties { marks: test_marks(), ..Default::default() });
         let net = DELEGATED_NET_1;
 
         // Update a non-added network
-        let event = NetworkPropertiesChange { marks: Some(marks.clone()), ..net.added(false) };
+        let event = NetworkPropertiesChange { delegated: delegated.clone(), ..net.added(false) };
         assert_eq!(networks.handle_changed_network(net.id, event), UpdateApplied::None);
 
         // Add the network
-        let event = NetworkPropertiesChange { marks: Some(marks.clone()), ..net.added(true) };
+        let event = NetworkPropertiesChange { delegated: delegated.clone(), ..net.added(true) };
 
         assert_eq!(
             networks.handle_changed_network(net.id, event),
@@ -2490,16 +2591,15 @@ mod tests {
         );
 
         // Add already added network
-        let event = NetworkPropertiesChange { marks: Some(marks.clone()), ..net.added(true) };
+        let event = NetworkPropertiesChange { delegated: delegated.clone(), ..net.added(true) };
         assert_eq!(networks.handle_changed_network(net.id, event), UpdateApplied::None);
 
-        // Fuchsia network with marks
+        // Fuchsia network with delegated properties
         let fuchsia_net = FUCHSIA_NET_1;
-        let event =
-            NetworkPropertiesChange { marks: Some(marks.clone()), ..fuchsia_net.added(true) };
+        let event = NetworkPropertiesChange { delegated, ..fuchsia_net.added(true) };
         assert_eq!(networks.handle_changed_network(fuchsia_net.id, event), UpdateApplied::None);
 
-        // Delegated network without marks
+        // Delegated network without delegated properties
         let event = net.added(true);
         assert_eq!(networks.handle_changed_network(net.id, event), UpdateApplied::None);
     }
@@ -2628,7 +2728,7 @@ mod tests {
             DELEGATED_ID_1,
             NetworkUpdate::Properties(NetworkPropertiesChange {
                 added: true,
-                marks: Some(marks),
+                delegated: Some(DelegatedNetworkProperties { marks, ..Default::default() }),
                 ..Default::default()
             }),
         ));
@@ -3155,6 +3255,7 @@ mod tests {
         Some(fnp_properties::NetworkInfo::Starnix(
             fnp_properties::StarnixNetworkInfo {
                 mark: Some(123),
+                handle: Some(1),
                 ..Default::default()
             }
         )),
@@ -3166,6 +3267,7 @@ mod tests {
         Some(fnp_properties::NetworkInfo::Starnix(
             fnp_properties::StarnixNetworkInfo {
                 mark: Some(123),
+                handle: Some(1),
                 ..Default::default()
             }
         )),
@@ -3189,6 +3291,19 @@ mod tests {
         Some(fnp_properties::NetworkInfo::Starnix(
             fnp_properties::StarnixNetworkInfo {
                 mark: Some(123),
+                handle: None,
+                ..Default::default()
+            }
+        )),
+        Err(NetworkValidationError::MissingNetworkInfo);
+        "missing starnix handle"
+    )]
+    #[test_case(
+        Some(1),
+        Some(fnp_properties::NetworkInfo::Starnix(
+            fnp_properties::StarnixNetworkInfo {
+                mark: Some(123),
+                handle: Some(1),
                 ..Default::default()
             }
         )),
@@ -3210,6 +3325,7 @@ mod tests {
             network_id: Some(id),
             info: Some(NetworkInfo::Starnix(StarnixNetworkInfo {
                 mark: Some(mark),
+                handle: Some(id.into()),
                 ..Default::default()
             })),
             ..Default::default()
@@ -3327,15 +3443,10 @@ mod tests {
         service.add_stream(stream);
 
         let make_network = |id: u32, mark: u32| fnp_properties::Network {
-            network_id: Some(id),
-            info: Some(NetworkInfo::Starnix(StarnixNetworkInfo {
-                mark: Some(mark),
-                ..Default::default()
-            })),
             name: Some("wlan0".to_string()),
             network_type: Some(fnp_properties::NetworkType::Wifi),
             connectivity: Some(fnp_properties::ConnectivityState::FullConnectivity),
-            ..Default::default()
+            ..starnix_network_payload(id, mark)
         };
 
         // Initial check - all values should be default.
@@ -3592,7 +3703,10 @@ mod tests {
                 DELEGATED_ID_100,
                 NetworkUpdate::Properties(NetworkPropertiesChange {
                     added: true,
-                    marks: Some(marks.clone()),
+                    delegated: Some(DelegatedNetworkProperties {
+                        marks: marks.clone(),
+                        ..Default::default()
+                    }),
                     name: Some("eth0".to_string()),
                     network_type: Some(fnp_properties::NetworkType::Ethernet),
                     connectivity_state: Some(fnp_properties::ConnectivityState::LocalConnectivity),
@@ -3639,7 +3753,7 @@ mod tests {
                 DELEGATED_ID_100,
                 NetworkUpdate::Properties(NetworkPropertiesChange {
                     added: false,
-                    marks: Some(marks),
+                    delegated: Some(DelegatedNetworkProperties { marks, ..Default::default() }),
                     name: Some("eth0_updated".to_string()),
                     network_type: Some(fnp_properties::NetworkType::Ethernet),
                     connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
@@ -3887,7 +4001,6 @@ mod tests {
         assert!(service.property_watchers.is_empty());
         assert!(service.generations_by_connection.properties.is_empty());
     }
-
     #[fuchsia::test]
     async fn test_delegated_networks_single_connection() {
         let mut service = NetpolNetworksService::default();
@@ -4150,7 +4263,7 @@ mod tests {
                 DELEGATED_ID_100,
                 NetworkUpdate::Properties(NetworkPropertiesChange {
                     added: true,
-                    marks: Some(marks),
+                    delegated: Some(DelegatedNetworkProperties { marks, ..Default::default() }),
                     dns_servers: Some(vec![socketproxy_dns]),
                     name: Some("wlan0".to_string()),
                     network_type: Some(fnp_properties::NetworkType::Wifi),
@@ -4227,6 +4340,87 @@ mod tests {
                     }
                 }
             }
+        );
+    }
+
+    async fn drive_request<T>(
+        service: &mut NetpolNetworksService,
+        request_future: impl Future<Output = Result<T, fidl::Error>>,
+    ) -> T {
+        let event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(event).await.expect("failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        request_future.await.expect("FIDL call failed")
+    }
+
+    #[fuchsia::test]
+    async fn test_lookup_network() {
+        let mut service = NetpolNetworksService::default();
+        let (lookup_proxy, lookup_stream) = fidl::endpoints::create_proxy_and_stream::<
+            fnp_properties::PrivilegedNetworkLookupMarker,
+        >();
+        service.add_stream(lookup_stream);
+
+        const STARNIX_HANDLE: u64 = 0x1111;
+        const STARNIX_HANDLE_UPDATED: u64 = 0x2222;
+
+        let set_handle = |added: bool, starnix_handle: u64| {
+            NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added,
+                    delegated: Some(DelegatedNetworkProperties {
+                        marks: test_marks(),
+                        starnix_handle,
+                    }),
+                    ..Default::default()
+                }),
+            )
+        };
+        let lookup = |handle: u64| {
+            lookup_proxy.lookup(&fnp_properties::LookupRequest::StarnixHandle(handle))
+        };
+
+        // Lookup before any networks are added returns NotFound.
+        assert_eq!(
+            drive_request(&mut service, lookup(STARNIX_HANDLE)).await,
+            Err(fnp_properties::LookupError::NotFound)
+        );
+
+        // Add DELEGATED_ID_1 as a non-default network and look up its token by STARNIX_HANDLE.
+        service.update(set_handle(true, STARNIX_HANDLE)).await;
+        let token_1 = drive_request(&mut service, lookup(STARNIX_HANDLE)).await.unwrap();
+        assert_eq!(
+            service.tokens.get_contents(&token_1),
+            Ok(&NetworkTokenContents { network_id: DELEGATED_ID_1, is_default: false })
+        );
+
+        // Updating DELEGATED_ID_1's handle causes future lookups by STARNIX_HANDLE to return
+        // NotFound and lookups by STARNIX_HANDLE_UPDATED to return a token with the same KOID,
+        // while the previously obtained `token_1` remains active.
+        service.update(set_handle(false, STARNIX_HANDLE_UPDATED)).await;
+        assert_eq!(
+            drive_request(&mut service, lookup(STARNIX_HANDLE)).await,
+            Err(fnp_properties::LookupError::NotFound)
+        );
+        assert_eq!(
+            service.tokens.get_contents(&token_1),
+            Ok(&NetworkTokenContents { network_id: DELEGATED_ID_1, is_default: false })
+        );
+        let token_1_updated =
+            drive_request(&mut service, lookup(STARNIX_HANDLE_UPDATED)).await.unwrap();
+        assert_eq!(token_1.koid().unwrap(), token_1_updated.koid().unwrap());
+
+        // Removing DELEGATED_ID_1 invalidates `token_1` and causes Lookup to return NotFound.
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(DELEGATED_ID_1, NetworkUpdate::Remove))
+            .await;
+        assert_eq!(service.tokens.get_contents(&token_1), Err(zx::Status::NOT_FOUND));
+        assert_eq!(
+            drive_request(&mut service, lookup(STARNIX_HANDLE_UPDATED)).await,
+            Err(fnp_properties::LookupError::NotFound)
         );
     }
 }

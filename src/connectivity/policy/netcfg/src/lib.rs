@@ -636,7 +636,7 @@ impl InterfaceState {
                         network::NetworkId::fuchsia(properties.id),
                         network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
                             added: true,
-                            marks: None,
+                            delegated: None,
                             dns_servers: None,
                             connectivity_state: None,
                             name: Some(properties.name.clone()),
@@ -917,6 +917,7 @@ enum RequestStream {
     NetworkAttributes(fnp_properties::NetworksRequestStream),
     DelegatedNetworks(fnp_properties::NetworkRegistryRequestStream),
     NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
+    PrivilegedNetworkLookup(fnp_properties::PrivilegedNetworkLookupRequestStream),
     Reachability(freachability::MonitorRequestStream),
 }
 
@@ -930,6 +931,7 @@ impl std::fmt::Debug for RequestStream {
             RequestStream::NetworkAttributes(_) => write!(f, "NetworkAttributes"),
             RequestStream::DelegatedNetworks(_) => write!(f, "DelegatedNetworks"),
             RequestStream::NetworkTokenResolver(_) => write!(f, "NetworkTokenResolver"),
+            RequestStream::PrivilegedNetworkLookup(_) => write!(f, "PrivilegedNetworkLookup"),
             RequestStream::Reachability(_) => write!(f, "Reachability"),
         }
     }
@@ -1272,6 +1274,7 @@ impl<'a> NetCfg<'a> {
             .add_fidl_service(RequestStream::NetworkAttributes)
             .add_fidl_service(RequestStream::DelegatedNetworks)
             .add_fidl_service(RequestStream::NetworkTokenResolver)
+            .add_fidl_service(RequestStream::PrivilegedNetworkLookup)
             .add_fidl_service(RequestStream::Reachability);
 
         let _inspect_server_task =
@@ -1660,6 +1663,9 @@ impl<'a> NetCfg<'a> {
                         self.netpol_networks_service.add_stream(req_stream);
                     }
                     RequestStream::NetworkTokenResolver(req_stream) => {
+                        self.netpol_networks_service.add_stream(req_stream);
+                    }
+                    RequestStream::PrivilegedNetworkLookup(req_stream) => {
                         self.netpol_networks_service.add_stream(req_stream);
                     }
                     RequestStream::Reachability(req_stream) => {
@@ -2233,7 +2239,7 @@ impl<'a> NetCfg<'a> {
                                             network::NetworkUpdate::Properties(
                                                 network::NetworkPropertiesChange {
                                                     added: true,
-                                                    marks: None,
+                                                    delegated: None,
                                                     dns_servers: None,
                                                     connectivity_state: None,
                                                     name: Some(name.clone()),

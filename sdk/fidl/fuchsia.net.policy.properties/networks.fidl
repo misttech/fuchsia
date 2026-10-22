@@ -88,7 +88,8 @@ open protocol Networks {
     /// The watcher receives updates for the requested properties on the
     /// network represented by `network`.
     flexible WatchProperties(resource table {
-        /// A network token acquired from [`WatchDefault`].
+        /// A network token acquired from [`WatchDefault`] or
+        /// [`PrivilegedNetworkLookup.Lookup`].
         /// NOTE: REQUIRED
         1: network NetworkToken;
 
@@ -103,11 +104,40 @@ open protocol Networks {
         /// The provided `properties` had no bits set.
         NO_PROPERTIES = 1;
         /// The provided NetworkToken was either not acquired from
-        /// [`WatchDefault`] or is no longer valid.
+        /// [`WatchDefault`] or [`PrivilegedNetworkLookup.Lookup`], or
+        /// is no longer valid.
         INVALID_NETWORK_TOKEN = 2;
 
         /// An argument marked above as REQUIRED was not provided.
         MISSING_REQUIRED_ARGUMENT = 99;
+    };
+};
+
+/// Privileged API for looking up networks by handles from other subsystems.
+///
+/// Unlike [`Networks`], this protocol is intended only for privileged system
+/// components (such as Software Delivery) that receive out-of-band network
+/// handles and need to resolve them to a [`NetworkToken`].
+@discoverable
+open protocol PrivilegedNetworkLookup {
+    /// Look up a network by an attribute of that network.
+    ///
+    /// This permits clients that have a network handle to get a [`NetworkToken`]
+    /// for the matching network at the time of the call, regardless of whether
+    /// that network is the default or not. Once obtained, the returned
+    /// [`NetworkToken`] remains valid and bound to that network even if the
+    /// network's attributes (such as its [`starnix_handle`]) later change, and
+    /// is only invalidated when the network itself is removed.
+    ///
+    /// Responds immediately with either a [`NetworkToken`] or a [`NOT_FOUND`] error.
+    flexible Lookup(@generated_name("LookupRequest") flexible union {
+        /// If the provided [`starnix_handle`] matches one provided to
+        /// [`NetworkRegistry`], return a token representing that network.
+        1: starnix_handle uint64;
+    }) -> (resource struct {
+        network NetworkToken;
+    }) error @generated_name("LookupError") flexible enum : uint32 {
+        NOT_FOUND = 1;
     };
 };
 
