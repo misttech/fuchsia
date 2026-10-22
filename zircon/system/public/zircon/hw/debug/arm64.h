@@ -146,7 +146,8 @@
 // - PAC = 0b10
 // - LSC = 0b10: Write watchpoint. TODO(donosoc): Expose to users so they can define it.
 // - HMC = 0
-// - SSC = 0b01
+// - SSC = 0: match in any Security state. 0b01 (Non-secure only) never
+//   matches on CPUs without EL3, such as Apple M-series under HVF.
 // - LBN = 0
 // - WT  = 0
 

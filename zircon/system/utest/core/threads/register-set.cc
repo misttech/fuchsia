@@ -251,10 +251,8 @@ void debug_regs_fill_test_values(zx_thread_state_debug_regs_t* to_write,
 
   ARM64_DBGWCR_PAC_SET(&expected->hw_wps[0].dbgwcr, 0b10);
   ARM64_DBGWCR_LSC_SET(&expected->hw_wps[0].dbgwcr, 0b11);
-  ARM64_DBGWCR_SSC_SET(&expected->hw_wps[0].dbgwcr, 1);
   ARM64_DBGWCR_PAC_SET(&expected->hw_wps[1].dbgwcr, 0b10);
   ARM64_DBGWCR_LSC_SET(&expected->hw_wps[1].dbgwcr, 0);
-  ARM64_DBGWCR_SSC_SET(&expected->hw_wps[1].dbgwcr, 1);
 
 #elif defined(__riscv)
 

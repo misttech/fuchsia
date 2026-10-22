@@ -153,9 +153,9 @@ fn arm64_validate_hw_watchpoints(state: &mut Arm64DebugState) -> Option<u32> {
             *dbgwcr &= ARM64_DBGWCR_ACTIVE_MASK;
 
             // See zircon/hw/debug/arm64.h for details on the fields set for PAC, HMC and SSC.
+            // The mask leaves HMC and SSC at 0.
             let mut wcr = WatchpointControlRegister::from(u64::from(*dbgwcr));
             wcr.set_pac(0b10);
-            wcr.set_ssc(0b01);
             *dbgwcr = wcr.bits() as u32;
 
             watchpoint_count += 1;
