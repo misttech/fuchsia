@@ -393,6 +393,30 @@ ENABLE_WNM_IPV6_NEIGHBOR_ADVERTISEMENT_MULTICAST_TO_UNICAST = {
     "na_mcast_to_ucast": 1
 }
 
+VENDOR_IE = {
+    "correct_length_beacon": {"vendor_elements": "dd0411223301"},
+    "too_short_length_beacon": {"vendor_elements": "dd0311223301"},
+    "too_long_length_beacon": {"vendor_elements": "dd0511223301"},
+    "zero_length_beacon_with_data": {"vendor_elements": "dd0011223301"},
+    "zero_length_beacon_without_data": {"vendor_elements": "dd00"},
+    "simliar_to_wpa": {"vendor_elements": "dd040050f203"},
+    "correct_length_association_response": {
+        "assocresp_elements": "dd0411223301"
+    },
+    "too_short_length_association_response": {
+        "assocresp_elements": "dd0311223301"
+    },
+    "too_long_length_association_response": {
+        "assocresp_elements": "dd0511223301"
+    },
+    "zero_length_association_response_with_data": {
+        "assocresp_elements": "dd0011223301"
+    },
+    "zero_length_association_response_without_data": {
+        "assocresp_elements": "dd00"
+    },
+}
+
 
 @unique
 class WnmFeature(Enum):

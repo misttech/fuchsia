@@ -335,4 +335,5 @@ antlion_host_test("security_type_test") {
     "//src/testing/end_to_end/mobly_controller/legacy_access_point",
     "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
   ]
+  timeout_secs = 660
 }
