@@ -29,6 +29,7 @@ import fuchsia
 import output_leak_scanner
 import remote_action
 import remotetool
+import textpb
 from build.rbe import rbe_profile
 
 _temp_dir = None
@@ -595,13 +596,12 @@ class FakeReproxyLogEntry(remote_action.ReproxyLogEntry):
     """Mimic a ReproxyLogEntry by setting properties without parsing."""
 
     def __init__(self, **kwargs: Any):
+        super().__init__("")
         self._execution_id: str
         self._action_digest: str
         self._output_file_digests: dict[Path, str]
         self._output_directory_digests: dict[Path, str]
         self._completion_status: str
-        # intentionally does not call super().__init__(), but instead
-        # sets property attributes.
         for k, v in kwargs.items():
             setattr(self, "_" + k, v)
         # init the dict members to empty dicts if not set.
@@ -4218,7 +4218,7 @@ class RbeDiagnosticsTests(unittest.TestCase):
         action_digest = "2afd98ae7274456b2bfc208e10f4cbe75fca88c2c41e352e57cb6b9ad840bf64/144"
         output_path = Path("obj/sub/lib/foo.o")
         output_digest = "345324aefg983bc0/531"
-        log_lines = f"""
+        log_record = f"""
 command:  {{
         identifiers:  {{
                 command_id:  "8ea55c85-0ae36078"
@@ -4235,13 +4235,76 @@ remote_metadata:  {{
                 value: "{output_digest}"
         }}
 }}
-        """.splitlines()
-        log_entry = remote_action.ReproxyLogEntry._parse_lines(log_lines)
+        """
+        log_entry = remote_action.ReproxyLogEntry(log_record)
         self.assertEqual(log_entry.execution_id, exec_id)
         self.assertEqual(log_entry.action_digest, action_digest)
         self.assertEqual(
             log_entry.output_file_digests[output_path], output_digest
         )
+
+    def test_reproxy_log_entry_lazy_command_parsing(self) -> None:
+        exec_id = "lazy-exec-id"
+        action_digest = "deadbeef/123"
+        output_path = Path("obj/foo.o")
+        output_digest = "cafef00d/456"
+        # Starts with "command:" at index 0 (no leading newline), matching real
+        # rewrapper .rrpl files, with nested blocks inside `command: { ... }`.
+        log_record = f"""command: {{
+  identifiers: {{
+    execution_id: "{exec_id}"
+  }}
+  output: {{
+    output_files: "{output_path}"
+  }}
+}}
+remote_metadata: {{
+  action_digest: "{action_digest}"
+  output_file_digests: {{
+    key: "{output_path}"
+    value: "{output_digest}"
+  }}
+}}
+completion_status: STATUS_REMOTE_EXECUTION
+"""
+        with mock.patch.object(
+            textpb, "parse_lazy", wraps=textpb.parse_lazy
+        ) as mock_parse_lazy:
+            log_entry = remote_action.ReproxyLogEntry(log_record)
+            self.assertEqual(mock_parse_lazy.call_count, 1)
+            self.assertIsInstance(log_entry._raw, textpb.LazyMapping)
+            self.assertNotIn("command", log_entry._raw._cache)
+
+            # Accessing non-command properties does not materialize `command: { ... }`.
+            self.assertEqual(log_entry.action_digest, action_digest)
+            self.assertEqual(
+                log_entry.output_file_digests, {output_path: output_digest}
+            )
+            self.assertEqual(log_entry.output_directory_digests, {})
+            self.assertEqual(
+                log_entry.completion_status, "STATUS_REMOTE_EXECUTION"
+            )
+            self.assertNotIn("command", log_entry._raw._cache)
+
+            # Accessing execution_id triggers lazy parsing of `command` once.
+            self.assertEqual(log_entry.execution_id, exec_id)
+            self.assertIn("command", log_entry._raw._cache)
+
+            # Subsequent accesses use the cached submessage.
+            self.assertEqual(log_entry.execution_id, exec_id)
+            self.assertIn("output", log_entry.command)
+            self.assertEqual(mock_parse_lazy.call_count, 1)
+
+    def test_reproxy_log_entry_missing_command(self) -> None:
+        log_record = """remote_metadata: {
+  action_digest: "12345678/90"
+}
+completion_status: STATUS_CACHE_HIT
+"""
+        log_entry = remote_action.ReproxyLogEntry(log_record)
+        self.assertEqual(log_entry.action_digest, "12345678/90")
+        self.assertEqual(log_entry.completion_status, "STATUS_CACHE_HIT")
+        self.assertEqual(log_entry.command, {})
 
     def test_diagnose_uninteresting_log_line(self) -> None:
         line = "This diagnostic does not appear interesting."

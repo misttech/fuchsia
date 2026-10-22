@@ -24,7 +24,7 @@ import re
 import stat
 import subprocess
 import sys
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import (
     AbstractSet,
@@ -402,15 +402,17 @@ def _remove_suffix(text: str, suffix: str) -> str:
 
 
 class ReproxyLogEntry(object):
-    def __init__(self, parsed_form: dict[str, Any]):
-        self._raw = parsed_form
+    """Structured representation of a single LogRecord from an action_log (.rrpl)."""
+
+    def __init__(self, log_record: str):
+        self._raw = textpb.parse_lazy(log_record)
 
     @property
-    def command(self) -> dict[str, Any]:
-        return self._raw["command"][0]
+    def command(self) -> Mapping[str, Any]:
+        return self._raw.get("command", [dict()])[0]
 
     @property
-    def identifiers(self) -> dict[str, Any]:
+    def identifiers(self) -> Mapping[str, Any]:
         return self.command["identifiers"][0]
 
     @property
@@ -418,7 +420,7 @@ class ReproxyLogEntry(object):
         return self.identifiers["execution_id"][0].text.strip('"')
 
     @property
-    def remote_metadata(self) -> dict[str, Any]:
+    def remote_metadata(self) -> Mapping[str, Any]:
         # remote_metadata does not always exist in the action log
         return self._raw.get("remote_metadata", [dict()])[0]
 
@@ -426,12 +428,12 @@ class ReproxyLogEntry(object):
     def action_digest(self) -> str:
         return self.remote_metadata["action_digest"][0].text.strip('"')
 
-    @property
+    @functools.cached_property
     def output_file_digests(self) -> dict[Path, str]:  # path, hash/size
         d = self.remote_metadata.get("output_file_digests", dict())
         return {Path(k): v.text.strip('"') for k, v in d.items()}
 
-    @property
+    @functools.cached_property
     def output_directory_digests(self) -> dict[Path, str]:  # path, hash/size
         d = self.remote_metadata.get("output_directory_digests", dict())
         return {Path(k): v.text.strip('"') for k, v in d.items()}
@@ -499,20 +501,7 @@ class ReproxyLogEntry(object):
 
     @staticmethod
     def parse_action_log(log: Path) -> "ReproxyLogEntry":
-        with open(log) as f:
-            return ReproxyLogEntry._parse_lines(f.readlines())
-
-    @staticmethod
-    def _parse_lines(lines: Iterable[str]) -> "ReproxyLogEntry":
-        """Parse data from a .rrpl (reproxy log) file.
-
-        Args:
-          lines: text from a rewrapper --action_log file
-
-        Returns:
-          ReproxyLogEntry object.
-        """
-        return ReproxyLogEntry(textpb.parse(lines))
+        return ReproxyLogEntry(log.read_text())
 
 
 def _diagnose_fail_to_dial(line: str) -> None:
