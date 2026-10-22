@@ -7,7 +7,6 @@ group("fidl") {
     ":fidl-lint",
     ":fidlfmt",
     "compat_audit($host_toolchain)",
-    "fidl_ir",
     "fidlc:host",
     "fidlgen_cpp($host_toolchain)",
     "fidlgen_hlcpp($host_toolchain)",
@@ -46,7 +45,6 @@ group("tests") {
   deps = [
     "abi-compat:tests",
     "example-tester:tests",
-    "fidl_ir:tests",
     "fidlc:tests",
     "fidldoc:tests",
     "fidlgen_cpp:tests",

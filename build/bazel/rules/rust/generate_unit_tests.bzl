@@ -251,7 +251,6 @@ _ALLOWED_PACKAGES = {
     "third_party/lz4/rust": True,
     "tools/cmc": True,
     "tools/create": True,
-    "tools/fidl/fidl_ir": True,
     "tools/pretty_serial": True,
 }
 

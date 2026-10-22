@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidlgen_rs",
+    srcs = [
+        "src/decl.rs",
+        "src/denylist.rs",
+        "src/format.rs",
+        "src/ident.rs",
+        "src/lib.rs",
+        "src/library.rs",
+        "src/rust/ident.rs",
+        "src/rust/mod.rs",
+        "src/template.rs",
+        "src/type_shape.rs",
+    ],
+    crate_name = "fidlgen",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools/fidl:__subpackages__"],
+    deps = ["//tools/fidl/fidl_ir"],
+)
+
+host_rustc_test(
+    name = "fidlgen_rs_test",
+    crate = ":fidlgen_rs",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+)

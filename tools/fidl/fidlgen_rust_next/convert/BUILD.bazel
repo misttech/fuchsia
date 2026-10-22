@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "rustc_binary_host_tool")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary_host_tool(
+    name = "fidlgen_rust_next_convert",
+    srcs = [
+        "src/context.rs",
+        "src/ident.rs",
+        "src/main.rs",
+        "src/templates/bits.rs",
+        "src/templates/enum.rs",
+        "src/templates/mod.rs",
+    ],
+    compile_data = [
+        "askama.toml",
+        "templates/bits.askama",
+        "templates/enum.askama",
+        "templates/library.askama",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:askama",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//tools/fidl/fidl_ir",
+        "//tools/fidl/lib/fidlgen_rs",
+    ],
+)

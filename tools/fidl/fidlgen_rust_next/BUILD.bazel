@@ -1,0 +1,68 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "rustc_binary_host_tool")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary_host_tool(
+    name = "fidlgen_rust_next",
+    srcs = [
+        "src/config.rs",
+        "src/main.rs",
+        "src/templates/alias.rs",
+        "src/templates/bits.rs",
+        "src/templates/compound_identifier.rs",
+        "src/templates/const.rs",
+        "src/templates/constant.rs",
+        "src/templates/context.rs",
+        "src/templates/doc_string.rs",
+        "src/templates/enum.rs",
+        "src/templates/library.rs",
+        "src/templates/mod.rs",
+        "src/templates/natural_type.rs",
+        "src/templates/prim.rs",
+        "src/templates/protocol.rs",
+        "src/templates/service.rs",
+        "src/templates/struct.rs",
+        "src/templates/table.rs",
+        "src/templates/union.rs",
+        "src/templates/validation.rs",
+        "src/templates/wire_type.rs",
+    ],
+    compile_data = [
+        "askama.toml",
+        "templates/const.askama",
+        "templates/generic/struct.askama",
+        "templates/library.askama",
+        "templates/natural/alias.askama",
+        "templates/natural/bits.askama",
+        "templates/natural/enum.askama",
+        "templates/natural/struct.askama",
+        "templates/natural/table.askama",
+        "templates/natural/union.askama",
+        "templates/protocol.askama",
+        "templates/service.askama",
+        "templates/wire/alias.askama",
+        "templates/wire/bits.askama",
+        "templates/wire/enum.askama",
+        "templates/wire/struct.askama",
+        "templates/wire/table.askama",
+        "templates/wire/union.askama",
+        "templates/wire_optional/union.askama",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:askama",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//tools/fidl/fidl_ir",
+        "//tools/fidl/lib/fidlgen_rs",
+    ],
+)
