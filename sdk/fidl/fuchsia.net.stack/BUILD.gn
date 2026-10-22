@@ -39,15 +39,11 @@ fidl("fuchsia.net.stack") {
     "//src/connectivity/network/netstack3/*",
     "//src/connectivity/network/testing/netemul/*",
     "//src/connectivity/network/tests/*",
-    "//src/connectivity/policy/netcfg/*",
     "//src/connectivity/weave/adaptation/*",
     "//src/lib/network/fidl_fuchsia_net_routes_ext/*",
     "//src/virtualization/lib/guest_interaction/*",
     "//third_party/openweave-core/src/inet/*",
     "//third_party/tcpdump/tests/*",
   ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.net",
-    "//sdk/fidl/fuchsia.net.interfaces.admin",
-  ]
+  public_deps = [ "//sdk/fidl/fuchsia.net" ]
 }

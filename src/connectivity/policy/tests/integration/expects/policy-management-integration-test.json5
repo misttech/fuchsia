@@ -28,8 +28,6 @@
                 // Hangs indefinitely.
                 "test_wlan_ap_dhcp_server_netcfg_advanced",
                 "test_wlan_ap_dhcp_server_netcfg_basic",
-                "virtualization::dhcpv4_client_started",
-                "virtualization::virtualization*",
             ],
         },
     ],

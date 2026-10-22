@@ -22,7 +22,6 @@ fidl_library(
         "//src/connectivity/network/netstack3:__subpackages__",
         "//src/connectivity/network/testing/netemul:__subpackages__",
         "//src/connectivity/network/tests:__subpackages__",
-        "//src/connectivity/policy/netcfg:__subpackages__",
         "//src/connectivity/weave/adaptation:__subpackages__",
         "//src/lib/network/fidl_fuchsia_net_routes_ext:__subpackages__",
         "//src/virtualization/lib/guest_interaction:__subpackages__",
@@ -31,6 +30,5 @@ fidl_library(
     ],
     deps = [
         "//sdk/fidl/fuchsia.net",
-        "//sdk/fidl/fuchsia.net.interfaces.admin",
     ],
 )

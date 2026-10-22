@@ -5,7 +5,6 @@
 #![cfg(test)]
 
 pub mod network_properties;
-pub mod virtualization;
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;

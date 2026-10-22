@@ -27,8 +27,6 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.net.reachability:fuchsia.net.reachability_rust",
     "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust",
     "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin_rust",
-    "//sdk/fidl/fuchsia.net.stack:fuchsia.net.stack_rust",
-    "//sdk/fidl/fuchsia.net.virtualization:fuchsia.net.virtualization_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/rust/zx",
@@ -99,7 +97,6 @@ rustc_library("lib") {
     "src/telemetry/mod.rs",
     "src/telemetry/processors/mod.rs",
     "src/telemetry/processors/network_properties.rs",
-    "src/virtualization.rs",
   ]
 
   configs += [ "//build/config/rust/lints:deny_unused_results" ]

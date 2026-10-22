@@ -135,7 +135,6 @@ pub struct If {
 #[argh(subcommand)]
 pub enum IfEnum {
     Addr(IfAddr),
-    Bridge(IfBridge),
     Config(IfConfig),
     Disable(IfDisable),
     Enable(IfEnable),
@@ -267,14 +266,6 @@ pub struct IfAddrWait {
     /// wait for an IPv6 address
     #[argh(switch)]
     pub ipv6: bool,
-}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "bridge")]
-/// creates a bridge between network interfaces
-pub struct IfBridge {
-    #[argh(positional, arg_name = "nicid or name:ifname")]
-    pub interfaces: Vec<InterfaceIdentifier>,
 }
 
 #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]

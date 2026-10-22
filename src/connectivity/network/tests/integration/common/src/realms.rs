@@ -474,11 +474,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                     constants::netstack::COMPONENT_NAME,
                                 )),
                                 fnetemul::Capability::ChildDep(protocol_dep::<
-                                    fnet_stack::StackMarker,
-                                >(
-                                    constants::netstack::COMPONENT_NAME,
-                                )),
-                                fnetemul::Capability::ChildDep(protocol_dep::<
                                     fnet_routes_admin::RouteTableV4Marker,
                                 >(
                                     constants::netstack::COMPONENT_NAME,

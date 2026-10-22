@@ -206,7 +206,6 @@ ffx/net/if/addr.golden
 ffx/net/if/addr/add.golden
 ffx/net/if/addr/del.golden
 ffx/net/if/addr/wait.golden
-ffx/net/if/bridge.golden
 ffx/net/if/config.golden
 ffx/net/if/config/get.golden
 ffx/net/if/config/set.golden
