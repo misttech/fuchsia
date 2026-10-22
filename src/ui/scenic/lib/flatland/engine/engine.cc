@@ -8,7 +8,6 @@
 #include <lib/async/cpp/time.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include <array>
 #include <cstddef>
 #include <sstream>
 #include <string>
@@ -21,6 +20,7 @@
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/logging.h"
+#include "src/ui/scenic/lib/utils/pmr_stack_arena.h"
 
 // Hardcoded double buffering.
 // TODO(https://fxbug.dev/42156567): make this configurable.  Even fancier: is it worth considering
@@ -175,14 +175,9 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   // pre-reserve `kFrameLayerArenaCapacity` so the arena sees one allocation instead of wasting
   // stack buffer space on geometric growth.  Sized for more layers than a typical frame needs;
   // past that the arena falls back to the heap rather than failing.
-  // TODO(https://fxbug.dev/570155917): Avoid `-ftrivial-auto-var-init=pattern` overhead on PMR
-  // stack buffers.
   constexpr size_t kFrameLayerArenaCapacity = 128;
-  alignas(std::max_align_t) std::array<std::byte, kFrameLayerArenaCapacity * sizeof(ResolvedLayer)>
-      frame_layer_arena_buffer;
-  std::pmr::monotonic_buffer_resource frame_layer_arena(frame_layer_arena_buffer.data(),
-                                                        frame_layer_arena_buffer.size());
-  std::pmr::vector<ResolvedLayer> resolved_layers(&frame_layer_arena);
+  utils::PmrStackArena<kFrameLayerArenaCapacity * sizeof(ResolvedLayer)> frame_layer_arena;
+  std::pmr::vector<ResolvedLayer> resolved_layers(frame_layer_arena.resource());
   resolved_layers.reserve(kFrameLayerArenaCapacity);
   ComputeGlobalResolvedLayers(resolved_layers, scene_state_.resolved_layer_stacks,
                               scene_state_.snapshot.map);

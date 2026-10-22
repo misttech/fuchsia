@@ -19,6 +19,7 @@
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/utils/pmr_stack_arena.h"
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/matrix_transform_2d.hpp>
@@ -2031,7 +2032,7 @@ class CountingMemoryResource : public std::pmr::memory_resource {
 };
 
 // `ComputeGlobalResolvedLayers()` emitting into a pre-reserved `std::pmr::vector<ResolvedLayer>`
-// over a `std::pmr::monotonic_buffer_resource` whose buffer holds `kNumLayers` layers must
+// over a `utils::PmrStackArena` whose buffer holds `kNumLayers` layers must
 // preserve the reserved capacity across `output.clear()` and never reach the upstream resource.
 // The result must also match `std::vector<ResolvedLayer>` both before and after
 // `CullLayersInPlace()` erases occluded layers.
@@ -2079,9 +2080,8 @@ TEST(LayerStageTest, PmrMonotonicArenaZeroHeapAllocation) {
   // without exceptions, so a `bad_alloc` would abort the whole test binary instead of failing this
   // test.
   CountingMemoryResource upstream;
-  alignas(std::max_align_t) std::array<std::byte, kNumLayers * sizeof(ResolvedLayer)> arena_buf;
-  std::pmr::monotonic_buffer_resource arena(arena_buf.data(), arena_buf.size(), &upstream);
-  std::pmr::vector<ResolvedLayer> pmr_layers(&arena);
+  utils::PmrStackArena<kNumLayers * sizeof(ResolvedLayer)> arena(&upstream);
+  std::pmr::vector<ResolvedLayer> pmr_layers(arena.resource());
   pmr_layers.reserve(kNumLayers);
   ComputeGlobalResolvedLayers(pmr_layers, stacks, snapshot);
   EXPECT_EQ(upstream.allocation_count(), 0u);

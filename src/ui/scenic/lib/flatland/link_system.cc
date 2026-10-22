@@ -7,12 +7,9 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
-#include <array>
-#include <cstddef>
-#include <memory_resource>
-
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/lib/utils/pmr_stack_arena.h"
 #include "src/ui/scenic/lib/utils/task_utils.h"
 
 #include <glm/gtc/matrix_access.hpp>
@@ -215,14 +212,13 @@ void LinkSystem::UpdateLinkWatchers(const GlobalTopologyData::TopologyVector& gl
   TRACE_DURATION("gfx", "LinkSystem::UpdateLinkWatchers");
   std::scoped_lock lock(mutex_);
 
-  // Use a stack-allocated buffer to back the polymorphic memory resource.
+  // Use a stack-allocated arena to back the polymorphic memory resource.
   // 16KB is extremely safe for a tree of 200+ nodes.
-  alignas(std::max_align_t) std::array<std::byte, 16384> stack_buffer;
-  std::pmr::monotonic_buffer_resource mem_resource(stack_buffer.data(), stack_buffer.size());
+  utils::PmrStackArena<16384> arena;
 
   std::pmr::unordered_set<TransformHandle> live_handles(
       global_topology.begin(), global_topology.end(),
-      /*bucket_count=*/global_topology.size(), &mem_resource);
+      /*bucket_count=*/global_topology.size(), arena.resource());
 
   // Since the global topology may not contain every Flatland instance, manually update the
   // ParentViewportStatus of every ParentViewportWatcher.

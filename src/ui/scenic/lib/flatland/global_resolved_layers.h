@@ -99,7 +99,7 @@ inline std::vector<ResolvedLayerStack> ComputeGlobalResolvedLayerStacks(
 // emits one `ResolvedLayer` per visible stack layer via closed-form composition.
 //
 // The `std::pmr::vector` overload is used by the per-frame render hot path over a stack arena (the
-// caller pre-reserves `output` to avoid geometric-growth waste in a `monotonic_buffer_resource`);
+// caller pre-reserves `output` to avoid geometric-growth waste in a `PmrStackArena`);
 // the `std::vector` overload is retained for non-hot-path callers (e.g. `Engine::GetRenderables()`,
 // Inspect scene dumps, and unit tests).
 void ComputeGlobalResolvedLayers(std::pmr::vector<ResolvedLayer>& output,

@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "src/ui/scenic/lib/utils/logging.h"
+#include "src/ui/scenic/lib/utils/pmr_stack_arena.h"
 
 namespace flatland {
 
@@ -112,9 +113,8 @@ bool TransformGraph::ReplaceChildren(TransformHandle parent,
 
   // Use unordered_set to verify uniqueness of child TransformHandles.
   // Stack-backed std::pmr::unordered_set avoids heap allocations.
-  alignas(std::max_align_t) char buffer[1024];
-  std::pmr::monotonic_buffer_resource stack_resource(buffer, sizeof(buffer));
-  std::pmr::unordered_set<TransformHandle> unique_children(&stack_resource);
+  utils::PmrStackArena<1024> stack_arena;
+  std::pmr::unordered_set<TransformHandle> unique_children(stack_arena.resource());
   unique_children.reserve(new_children.size());
   for (auto child : new_children) {
     auto res = unique_children.insert(child);
@@ -177,11 +177,10 @@ TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(
   // Swap all the live nodes into the dead set, so we can pull them out as we visit them.
   std::swap(live_set_, data.dead_transforms);
 
-  // Track visited nodes across traversals using a PMR set backed by a stack buffer and resource
+  // Track visited nodes across traversals using a PMR set backed by a stack arena and heap
   // fallback.
-  alignas(std::max_align_t) char buffer[4096];
-  std::pmr::monotonic_buffer_resource stack_resource(buffer, sizeof(buffer));
-  std::pmr::unordered_set<TransformHandle> visited(&stack_resource);
+  utils::PmrStackArena<4096> stack_arena;
+  std::pmr::unordered_set<TransformHandle> visited(stack_arena.resource());
 
   // Compute the topological set starting from the start transform.
   Traverse(start, children_, nullptr, &data.cyclical_edges, max_iterations - data.iterations,
@@ -194,7 +193,7 @@ TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(
   }
 
   // Compute the topological set starting from every working set transform, for cleanup purposes.
-  TopologyVector working_transforms(&stack_resource);
+  TopologyVector working_transforms(stack_arena.resource());
   for (auto transform : working_set_) {
     if (visited.contains(transform)) {
       continue;
@@ -263,13 +262,12 @@ void TransformGraph::Traverse(TransformHandle start, const PriorityChildMap& chi
   // Reserve capacity for the return vector to prevent reallocations during traversal.
   out_topology_vector.reserve(std::min(working_set_.size(), max_length));
 
-  // Create a 4KB stack buffer for local vector allocations, with resource as upstream fallback.
-  alignas(std::max_align_t) char buffer[4096];
-  std::pmr::monotonic_buffer_resource stack_resource(buffer, sizeof(buffer));
+  // Create a 4KB stack arena for local vector allocations, with heap fallback.
+  utils::PmrStackArena<4096> stack_arena;
 
-  std::pmr::vector<ChildIterator> iterator_stack(&stack_resource);
-  std::pmr::vector<TransformHandle> ancestors(&stack_resource);
-  std::pmr::vector<uint64_t> parent_indices(&stack_resource);
+  std::pmr::vector<ChildIterator> iterator_stack(stack_arena.resource());
+  std::pmr::vector<TransformHandle> ancestors(stack_arena.resource());
+  std::pmr::vector<uint64_t> parent_indices(stack_arena.resource());
 
   // Add the starting handle to the output, and initialize our state.
   ChildIterator start_iter = ChildIterator::ForParent(children, start);

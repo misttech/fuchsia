@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "src/ui/scenic/lib/utils/pmr_stack_arena.h"
+
 namespace utils {
 namespace test {
 
@@ -60,21 +62,20 @@ TEST(PmrStatsResourceTest, VectorUsage) {
   EXPECT_EQ(resource.total_deallocated_bytes(), resource.total_allocated_bytes());
 }
 
-TEST(PmrStatsResourceTest, MonotonicBufferResourceUpstream) {
+TEST(PmrStatsResourceTest, PmrStackArenaUpstream) {
   PmrStatsResource stats_resource;
   {
-    char buffer[1024];
-    std::pmr::monotonic_buffer_resource pool(buffer, sizeof(buffer), &stats_resource);
+    PmrStackArena<1024> pool(&stats_resource);
 
-    // Monotonic buffer resource might not allocate from upstream immediately if it has enough
-    // buffer. Let's allocate something larger than the buffer to force upstream allocation.
-    void* p = pool.allocate(2048, 8);
+    // `PmrStackArena` will not allocate from upstream if it has enough buffer. Let's allocate
+    // something larger than the buffer to force upstream allocation.
+    void* p = pool.resource()->allocate(2048, 8);
 
     EXPECT_GT(stats_resource.total_allocation_count(), 0u);
     EXPECT_GE(stats_resource.total_allocated_bytes(), 2048u);
 
     // Deallocate on pool is a no-op for upstream
-    pool.deallocate(p, 2048, 8);
+    pool.resource()->deallocate(p, 2048, 8);
     EXPECT_EQ(stats_resource.total_deallocation_count(), 0u);
   }
   // Pool destroyed, should deallocate chunks from upstream

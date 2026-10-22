@@ -13,6 +13,10 @@ config("logging_config") {
   }
 }
 
+config("pmr_stack_arena_config") {
+  cflags_cc = [ "-fdeclspec" ]
+}
+
 source_set("utils") {
   sources = [
     "check_is_on_thread.cc",
@@ -34,6 +38,7 @@ source_set("utils") {
     "object_linker.h",
     "pixel.cc",
     "pixel.h",
+    "pmr_stack_arena.h",
     "pmr_stats_resource.h",
     "range_inclusive.h",
     "shader_warmup.cc",
@@ -80,5 +85,8 @@ source_set("utils") {
     "//zircon/system/ulib/zx",
   ]
 
-  public_configs = [ ":logging_config" ]
+  public_configs = [
+    ":logging_config",
+    ":pmr_stack_arena_config",
+  ]
 }
