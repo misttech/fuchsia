@@ -15,6 +15,7 @@ group("tests") {
   deps = [
     "attenuator:tests",
     "iperf:tests",
+    "legacy_access_point:tests",
   ]
 }
 

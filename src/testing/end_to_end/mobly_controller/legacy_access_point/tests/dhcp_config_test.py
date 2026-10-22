@@ -4,10 +4,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# mypy: disable-error-code="no-untyped-def"
+
 import ipaddress
 import unittest
 
-from antlion.controllers.ap_lib.dhcp_config import DhcpConfig, Subnet
+from legacy_access_point.ap_lib.dhcp_config import DhcpConfig, Subnet
 
 
 class DhcpConfigTest(unittest.TestCase):
@@ -43,15 +45,15 @@ class DhcpConfigTest(unittest.TestCase):
         max_lease_time = 3000
         subnets = [
             # addresses from 10.10.1.0 - 10.10.1.255
-            Subnet(ipaddress.ip_network("10.10.1.0/24")),
+            Subnet(ipaddress.IPv4Network("10.10.1.0/24")),
             # 4 addresses from 10.10.3.0 - 10.10.3.3
-            Subnet(ipaddress.ip_network("10.10.3.0/30")),
+            Subnet(ipaddress.IPv4Network("10.10.3.0/30")),
             # 6 addresses from 10.10.5.20 - 10.10.5.25
             Subnet(
-                ipaddress.ip_network("10.10.5.0/24"),
-                start=ipaddress.ip_address("10.10.5.20"),
-                end=ipaddress.ip_address("10.10.5.25"),
-                router=ipaddress.ip_address("10.10.5.255"),
+                ipaddress.IPv4Network("10.10.5.0/24"),
+                start=ipaddress.IPv4Address("10.10.5.20"),
+                end=ipaddress.IPv4Address("10.10.5.25"),
+                router=ipaddress.IPv4Address("10.10.5.255"),
                 lease_time=60,
             ),
         ]
@@ -102,7 +104,7 @@ class DhcpConfigTest(unittest.TestCase):
         max_lease_time = 3000
         subnets = [
             Subnet(
-                ipaddress.ip_network("10.10.1.0/24"),
+                ipaddress.IPv4Network("10.10.1.0/24"),
                 additional_parameters={
                     "allow": "unknown-clients",
                     "foo": "bar",

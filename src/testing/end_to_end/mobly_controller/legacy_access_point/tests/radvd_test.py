@@ -4,13 +4,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
-import unittest
-from unittest.mock import patch
+# mypy: disable-error-code="no-untyped-def,func-returns-value"
 
-from antlion.controllers.ap_lib import radvd_constants
-from antlion.controllers.ap_lib.radvd import Radvd, RadvdStartError
-from antlion.controllers.ap_lib.radvd_config import RadvdConfig
+import unittest
+from unittest.mock import Mock, patch
+
+from legacy_access_point.ap_lib import radvd_constants
+from legacy_access_point.ap_lib.radvd import Radvd, RadvdStartError
+from legacy_access_point.ap_lib.radvd_config import RadvdConfig
 
 SEARCH_FILE = "libs.commands.shell.ShellCommand.search_file"
 DELETE_FILE = "libs.commands.shell.ShellCommand.delete_file"
@@ -76,93 +77,78 @@ CORRECT_SIMPLE_RADVD_CONFIG = """interface wlan0 {
 )
 
 
-def delete_file_mock(file_to_delete):
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)
-
-
-def write_configs_mock(config_file_with_path, output_config):
-    with open(config_file_with_path, "w+") as config_fileId:
-        config_fileId.write(output_config)
-
-
 class RadvdTest(unittest.TestCase):
     @patch("libs.commands.shell.ShellCommand.kill")
     def test_radvd_ikill(self, kill):
         kill.return_value = True
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         self.assertIsNone(radvd_mock.stop())
 
     @patch("libs.commands.shell.ShellCommand.is_alive")
     def test_radvd_is_alive_True(self, is_alive_mock):
         is_alive_mock.return_value = True
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         self.assertTrue(radvd_mock.is_alive())
 
     @patch("libs.commands.shell.ShellCommand.is_alive")
     def test_radvd_is_alive_False(self, is_alive_mock):
         is_alive_mock.return_value = False
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         self.assertFalse(radvd_mock.is_alive())
 
-    @patch("antlion.controllers.ap_lib.radvd.Radvd._scan_for_errors")
-    @patch("antlion.controllers.ap_lib.radvd.Radvd.is_alive")
+    @patch("legacy_access_point.ap_lib.radvd.Radvd._scan_for_errors")
+    @patch("legacy_access_point.ap_lib.radvd.Radvd.is_alive")
     def test_wait_for_process_process_alive(
         self, is_alive_mock, _scan_for_errors_mock
     ):
         is_alive_mock.return_value = True
         _scan_for_errors_mock.return_value = True
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         self.assertIsNone(radvd_mock._wait_for_process(timeout=2))
 
-    @patch("antlion.controllers.ap_lib.radvd.Radvd.is_alive")
+    @patch("legacy_access_point.ap_lib.radvd.Radvd.is_alive")
     @patch(SEARCH_FILE)
     def test_scan_for_errors_is_dead(self, search_file_mock, is_alive_mock):
         is_alive_mock.return_value = False
         search_file_mock.return_value = False
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         with self.assertRaises(RadvdStartError) as context:
             radvd_mock._scan_for_errors(True)
         self.assertTrue("Radvd failed to start" in str(context.exception))
 
-    @patch("antlion.controllers.ap_lib.radvd.Radvd.is_alive")
+    @patch("legacy_access_point.ap_lib.radvd.Radvd.is_alive")
     @patch(SEARCH_FILE)
     def test_scan_for_errors_exited_prematurely(
         self, search_file_mock, is_alive_mock
     ):
         is_alive_mock.return_value = True
         search_file_mock.return_value = True
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         with self.assertRaises(RadvdStartError) as context:
             radvd_mock._scan_for_errors(True)
         self.assertTrue("Radvd exited prematurely." in str(context.exception))
 
-    @patch("antlion.controllers.ap_lib.radvd.Radvd.is_alive")
+    @patch("legacy_access_point.ap_lib.radvd.Radvd.is_alive")
     @patch(SEARCH_FILE)
     def test_scan_for_errors_success(self, search_file_mock, is_alive_mock):
         is_alive_mock.return_value = True
         search_file_mock.return_value = False
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         self.assertIsNone(radvd_mock._scan_for_errors(True))
 
     @patch(DELETE_FILE)
     @patch("libs.commands.shell.ShellCommand.write_file")
     def test_write_configs_simple(self, write_file, delete_file):
-        delete_file.side_effect = delete_file_mock
-        write_file.side_effect = write_configs_mock
         basic_radvd_config = RadvdConfig()
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         radvd_mock._write_configs(basic_radvd_config)
-        radvd_config = radvd_mock._config_file
-        with open(radvd_config, "r") as radvd_config_fileId:
-            config_data = radvd_config_fileId.read()
-            self.assertTrue(CORRECT_SIMPLE_RADVD_CONFIG == config_data)
+        write_file.assert_called_once_with(
+            radvd_mock._config_file, CORRECT_SIMPLE_RADVD_CONFIG
+        )
 
     @patch(DELETE_FILE)
     @patch("libs.commands.shell.ShellCommand.write_file")
     def test_write_configs_complex(self, write_file, delete_file):
-        delete_file.side_effect = delete_file_mock
-        write_file.side_effect = write_configs_mock
         complex_radvd_config = RadvdConfig(
             clients=["fe80::c66d:3c75:2cec:1d72", "fe80::c66d:3c75:2cec:1d73"],
             route=radvd_constants.DEFAULT_PREFIX,
@@ -203,12 +189,11 @@ class RadvdTest(unittest.TestCase):
             adv_rdnss_open=radvd_constants.ADV_RDNSS_OPEN_ON,
             adv_rdnss_lifetime=1025,
         )
-        radvd_mock = Radvd("mock_runner", "wlan0")
+        radvd_mock = Radvd(Mock(), "wlan0")
         radvd_mock._write_configs(complex_radvd_config)
-        radvd_config = radvd_mock._config_file
-        with open(radvd_config, "r") as radvd_config_fileId:
-            config_data = radvd_config_fileId.read()
-            self.assertTrue(CORRECT_COMPLEX_RADVD_CONFIG == config_data)
+        write_file.assert_called_once_with(
+            radvd_mock._config_file, CORRECT_COMPLEX_RADVD_CONFIG
+        )
 
 
 if __name__ == "__main__":

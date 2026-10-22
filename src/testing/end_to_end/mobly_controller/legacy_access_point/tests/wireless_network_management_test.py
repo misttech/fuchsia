@@ -4,18 +4,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# mypy: disable-error-code="no-untyped-def"
+
 import unittest
 
-from antlion.controllers.ap_lib.radio_measurement import (
+from honeydew.typing.custom_types import MacAddress
+from legacy_access_point.ap_lib.radio_measurement import (
     BssidInformation,
     NeighborReportElement,
     PhyType,
 )
-from antlion.controllers.ap_lib.wireless_network_management import (
+from legacy_access_point.ap_lib.wireless_network_management import (
     BssTransitionCandidateList,
     BssTransitionManagementRequest,
 )
-from honeydew.typing.custom_types import MacAddress
 
 EXPECTED_NEIGHBOR_1 = NeighborReportElement(
     bssid=MacAddress("01:23:45:ab:cd:ef"),
@@ -40,10 +42,11 @@ class WirelessNetworkManagementTest(unittest.TestCase):
         request = BssTransitionManagementRequest(
             disassociation_imminent=True,
             abridged=True,
-            candidate_list=EXPECTED_NEIGHBORS,
+            candidate_list=EXPECTED_CANDIDATE_LIST,
         )
         self.assertTrue(request.disassociation_imminent)
         self.assertTrue(request.abridged)
+        assert request.candidate_list is not None
         self.assertIn(EXPECTED_NEIGHBOR_1, request.candidate_list)
         self.assertIn(EXPECTED_NEIGHBOR_2, request.candidate_list)
 
