@@ -12,6 +12,7 @@
 #include <zircon/types.h>
 
 #include <barrier>
+#include <optional>
 #include <span>
 #include <thread>
 #include <unordered_set>
@@ -37,6 +38,7 @@ class TestSampler : public profiler::Sampler {
   using Sampler::AddThread;
   using Sampler::AddThreadsStartedSinceConfigure;
   using Sampler::CacheModules;
+  using Sampler::RunUntilModuleCachesDoneForTesting;
   using Sampler::Sampler;
   using Sampler::ScheduleCacheModules;
   profiler::TargetTree& targets() { return targets_; }
@@ -164,7 +166,7 @@ TEST(SamplerTest, StartPicksUpTasksStartedSinceConfigure) {
   sync_point.arrive_and_wait();
 
   ASSERT_TRUE(sampler->Start(0).is_ok());
-  loop.RunUntilIdle();
+  sampler->RunUntilModuleCachesDoneForTesting(loop);
   ASSERT_TRUE(sampler->Stop().is_ok());
 
   const zx_koid_t pid = GetKoid(*zx::process::self());
@@ -229,7 +231,7 @@ TEST(SamplerTest, CacheModulesReusesPreloadedAndRetriesWhenEmpty) {
   // ScheduleCacheModules on the unreadable handle returns an empty map and must not insert into
   // `contexts_`.
   sampler->ScheduleCacheModules(job_path, self_pid);
-  loop.RunUntilIdle();
+  sampler->RunUntilModuleCachesDoneForTesting(loop);
   EXPECT_FALSE(sampler->contexts().contains(self_pid));
 
   // Once the process's memory is readable, a subsequent thread start schedules module caching again
@@ -241,9 +243,43 @@ TEST(SamplerTest, CacheModulesReusesPreloadedAndRetriesWhenEmpty) {
   zx::thread self_thread;
   ASSERT_EQ(ZX_OK, zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &self_thread));
   sampler->AddThread(job_path, self_pid, GetKoid(self_thread), std::move(self_thread));
-  loop.RunUntilIdle();
+  sampler->RunUntilModuleCachesDoneForTesting(loop);
   ASSERT_TRUE(sampler->contexts().contains(self_pid));
   EXPECT_FALSE(sampler->contexts().at(self_pid).empty());
+}
+
+// GetContexts must not read process memory on the dispatcher: it delivers the modules of the target
+// processes from a dispatcher task once the background scan completes.
+TEST(SamplerTest, GetContextsDeliversModulesAsynchronously) {
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  zx::process self;
+  ASSERT_EQ(ZX_OK, zx::process::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &self));
+  const zx_koid_t self_pid = GetKoid(self);
+  profiler::TargetTree tree;
+  ASSERT_TRUE(
+      tree.AddProcess(profiler::ProcessTarget{std::move(self), self_pid, "self", {}}).is_ok());
+  auto sampler = fxl::MakeRefCounted<TestSampler>(
+      loop.dispatcher(), std::move(tree), std::vector<fuchsia_cpu_profiler::SamplingConfig>{});
+
+  std::optional<zx::result<profiler::SymbolizationContext>> result;
+  sampler->GetContexts([&result](zx::result<profiler::SymbolizationContext> contexts) {
+    result = std::move(contexts);
+  });
+  EXPECT_FALSE(result.has_value());
+
+  // Only one call may be outstanding at a time.
+  std::optional<zx::result<profiler::SymbolizationContext>> second_result;
+  sampler->GetContexts([&second_result](zx::result<profiler::SymbolizationContext> contexts) {
+    second_result = std::move(contexts);
+  });
+  ASSERT_TRUE(second_result.has_value());
+  EXPECT_EQ(second_result->status_value(), ZX_ERR_BAD_STATE);
+
+  sampler->RunUntilModuleCachesDoneForTesting(loop);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(result->is_ok());
+  ASSERT_TRUE((*result)->process_contexts.contains(self_pid));
+  EXPECT_FALSE((*result)->process_contexts.at(self_pid).empty());
 }
 
 // GetChildrenTids must grow its buffer when a process has more than 64 threads.

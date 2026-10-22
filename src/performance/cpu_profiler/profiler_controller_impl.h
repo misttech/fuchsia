@@ -13,7 +13,9 @@
 #include <lib/zx/thread.h>
 #include <zircon/compiler.h>
 
+#include <optional>
 #include <set>
+#include <vector>
 
 #include "component.h"
 #include "fxt_writer.h"
@@ -36,6 +38,9 @@ class ProfilerControllerImpl : public fidl::Server<fuchsia_cpu_profiler::Session
 
  private:
   void Reset();
+  // Completes a Stop call once the sampler has gathered the symbolization contexts.
+  void FinishStop(std::vector<zx::ticks> inspecting_durations,
+                  zx::result<profiler::SymbolizationContext> modules);
   std::unique_ptr<FxtWriter> writer_;
 
   enum ProfilingState {
@@ -49,6 +54,8 @@ class ProfilerControllerImpl : public fidl::Server<fuchsia_cpu_profiler::Session
   ComponentWatcher& component_watcher_;
   fxl::RefPtr<Sampler> sampler_;
   ProfilingState state_ = ProfilingState::Unconfigured;
+  // Set while a Stop call waits for the sampler to gather the symbolization contexts.
+  std::optional<StopCompleter::Async> pending_stop_completer_;
 
   TargetTree targets_;
   elf_search::Searcher searcher_;

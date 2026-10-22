@@ -14,6 +14,7 @@
 #include <lib/zx/thread.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 #include <zircon/types.h>
 
 #include <cstddef>
@@ -287,26 +288,82 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
   sample_task_.PostDelayed(dispatcher_, period);
 }
 
-zx::result<profiler::SymbolizationContext> profiler::Sampler::GetContexts() {
+profiler::Sampler::~Sampler() {
+  process_watchers_.clear();
+  module_cache_loop_.Shutdown();
+}
+
+void profiler::Sampler::GetContexts(
+    fit::callback<void(zx::result<profiler::SymbolizationContext>)> callback) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  if (get_contexts_callback_) {
+    callback(zx::error(ZX_ERR_BAD_STATE));
+    return;
+  }
+  std::vector<std::pair<zx_koid_t, zx::process>> processes;
   zx::result<> res = targets_.ForEachProcess(
-      [this](std::span<const zx_koid_t>, const ProcessTarget& target) mutable -> zx::result<> {
-        zx::result<std::map<std::vector<std::byte>, profiler::Module>> modules =
-            profiler::GetProcessModules(target.handle, searcher_);
-        if (modules.is_ok()) {
-          for (auto& [build_id, mod] : *modules) {
-            contexts_[target.pid].try_emplace(build_id, mod);
-          }
-        }
+      [&processes](std::span<const zx_koid_t>, const ProcessTarget& target) -> zx::result<> {
+        zx::process process;
         // It's possible that the process we were profiling no longer exists -- it exited before the
         // profile ended. If this happens, we don't want ForEachProcess to short circuit and stop,
         // so we return success even if we "failed".
+        if (target.handle.duplicate(ZX_RIGHT_SAME_RIGHTS, &process) == ZX_OK) {
+          processes.emplace_back(target.pid, std::move(process));
+        }
         return zx::ok();
       });
   if (res.is_error()) {
-    return res.take_error();
+    callback(res.take_error());
+    return;
   }
-  return zx::ok(profiler::SymbolizationContext{contexts_});
+  get_contexts_callback_ = std::move(callback);
+
+  if (!module_cache_thread_started_) {
+    ModuleScanResults modules;
+    modules.reserve(processes.size());
+    for (auto& [pid, process] : processes) {
+      modules.emplace_back(pid, profiler::GetProcessModules(process, searcher_));
+    }
+    FinishGetContexts(std::move(modules));
+    return;
+  }
+
+  // `module_cache_loop_` runs its tasks in order, so the scans posted by earlier
+  // ScheduleCacheModules calls complete, and post their results back to `dispatcher_`, before this
+  // one does.
+  zx_status_t status = async::PostTask(
+      module_cache_loop_.dispatcher(),
+      [this, weak = GetWeakPtr(), processes = std::move(processes)]() mutable {
+        TRACE_DURATION("cpu_profiler", "Sampler::GetContexts/GetProcessModules");
+        ModuleScanResults modules;
+        modules.reserve(processes.size());
+        for (auto& [pid, process] : processes) {
+          modules.emplace_back(pid, profiler::GetProcessModules(process, module_cache_searcher_));
+        }
+        async::PostTask(dispatcher_,
+                        [weak = std::move(weak), modules = std::move(modules)]() mutable {
+                          if (weak) {
+                            weak->FinishGetContexts(std::move(modules));
+                          }
+                        });
+      });
+  if (status != ZX_OK) {
+    std::exchange(get_contexts_callback_, nullptr)(zx::error(status));
+  }
+}
+
+void profiler::Sampler::FinishGetContexts(ModuleScanResults modules) {
+  for (auto& [pid, process_modules] : modules) {
+    if (process_modules.is_ok()) {
+      for (auto& [build_id, mod] : *process_modules) {
+        contexts_[pid].try_emplace(build_id, std::move(mod));
+      }
+    }
+  }
+  if (get_contexts_callback_) {
+    std::exchange(get_contexts_callback_,
+                  nullptr)(zx::ok(profiler::SymbolizationContext{contexts_}));
+  }
 }
 
 void profiler::Sampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid,
@@ -356,26 +413,79 @@ void profiler::Sampler::CacheModules(const ProcessTarget& p) {
   }
 }
 
-void profiler::Sampler::ScheduleCacheModules(std::vector<zx_koid_t> job_path, zx_koid_t pid) {
-  if (!pending_module_caches_.insert(pid).second) {
+void profiler::Sampler::OnModulesCached(zx_koid_t pid, zx::result<ModuleMap> modules) {
+  pending_module_caches_.erase(pid);
+  if (!contexts_.contains(pid) && modules.is_ok() && !modules->empty()) {
+    contexts_[pid] = std::move(*modules);
+  }
+}
+
+void profiler::Sampler::RunUntilModuleCachesDoneForTesting(async::Loop& loop) {
+  FX_CHECK(loop.dispatcher() == dispatcher_);
+  if (!module_cache_thread_started_) {
+    loop.RunUntilIdle();
     return;
   }
-  async::PostTask(dispatcher_, [weak = GetWeakPtr(), job_path = std::move(job_path), pid]() {
-    if (!weak) {
-      return;
-    }
-    weak->pending_module_caches_.erase(pid);
-    if (weak->contexts_.contains(pid)) {
-      return;
-    }
-    zx::result<ProcessTarget*> target = weak->targets_.GetProcess(job_path, pid);
-    if (target.is_error()) {
-      // The process may have exited before we got to it.
-      FX_PLOGS(DEBUG, target.status_value()) << "Failed to search up process: " << pid;
-      return;
-    }
-    weak->CacheModules(**target);
-  });
+  bool done = false;
+  // `module_cache_loop_` runs its tasks in order, so this one runs after every task posted to it
+  // so far, and posts to `dispatcher_` after their results were posted.
+  zx_status_t status =
+      async::PostTask(module_cache_loop_.dispatcher(), [dispatcher = dispatcher_, &done]() {
+        async::PostTask(dispatcher, [&done]() { done = true; });
+      });
+  FX_CHECK(status == ZX_OK) << zx_status_get_string(status);
+  while (!done) {
+    status = loop.Run(zx::time::infinite(), /*once=*/true);
+    FX_CHECK(status == ZX_OK) << zx_status_get_string(status);
+  }
+}
+
+void profiler::Sampler::ScheduleCacheModules(std::vector<zx_koid_t> job_path, zx_koid_t pid) {
+  if (contexts_.contains(pid) || !pending_module_caches_.insert(pid).second) {
+    return;
+  }
+  zx::result<ProcessTarget*> target = targets_.GetProcess(job_path, pid);
+  if (target.is_error()) {
+    // The process may have exited before we got to it.
+    FX_PLOGS(DEBUG, target.status_value()) << "Failed to search up process: " << pid;
+    pending_module_caches_.erase(pid);
+    return;
+  }
+  if (!(*target)->modules.empty()) {
+    contexts_.try_emplace(pid, (*target)->modules);
+    pending_module_caches_.erase(pid);
+    return;
+  }
+  zx::process process_dup;
+  if (zx_status_t status = (*target)->handle.duplicate(ZX_RIGHT_SAME_RIGHTS, &process_dup);
+      status != ZX_OK) {
+    FX_PLOGS(DEBUG, status) << "Failed to duplicate process handle: " << pid;
+    pending_module_caches_.erase(pid);
+    return;
+  }
+  if (!module_cache_thread_started_) {
+    pending_module_caches_.erase(pid);
+    CacheModules(**target);
+    return;
+  }
+  zx_status_t status = async::PostTask(
+      module_cache_loop_.dispatcher(),
+      [this, weak = GetWeakPtr(), pid, process = std::move(process_dup)]() mutable {
+        TRACE_DURATION("cpu_profiler", "Sampler::ScheduleCacheModules/GetProcessModules");
+        zx::result modules = profiler::GetProcessModules(process, module_cache_searcher_);
+        if (modules.is_error()) {
+          FX_PLOGS(ERROR, modules.status_value()) << "Failed to get modules for process: " << pid;
+        }
+        async::PostTask(dispatcher_,
+                        [weak = std::move(weak), pid, modules = std::move(modules)]() mutable {
+                          if (weak) {
+                            weak->OnModulesCached(pid, std::move(modules));
+                          }
+                        });
+      });
+  if (status != ZX_OK) {
+    pending_module_caches_.erase(pid);
+  }
 }
 
 void profiler::Sampler::AddProcessesStartedSinceConfigure() {

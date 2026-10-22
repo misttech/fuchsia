@@ -481,6 +481,12 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   FX_LOGS(DEBUG) << "Stopping profiler.";
 
+  if (pending_stop_completer_) {
+    FX_LOGS(ERROR) << "Stop is already in progress.";
+    completer.Close(ZX_ERR_BAD_STATE);
+    return;
+  }
+
   component_watcher_.Clear();
   if (zx::result stop_res = sampler_->Stop(); stop_res.is_error()) {
     FX_PLOGS(ERROR, stop_res.status_value()) << "Sampler failed to stop";
@@ -501,7 +507,26 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
 
   std::vector<zx::ticks> inspecting_durations = sampler_->SamplingDurations();
 
-  zx::result<profiler::SymbolizationContext> modules = sampler_->GetContexts();
+  // Gathering the modules reads the memory of every profiled process, which can take a while and
+  // must not block `dispatcher_`, so finish stopping once the sampler is done.
+  pending_stop_completer_.emplace(completer.ToAsync());
+  // LIFETIME: The callback is owned by `sampler_`, which does not outlive `this`.
+  sampler_->GetContexts([this, inspecting_durations = std::move(inspecting_durations)](
+                            zx::result<profiler::SymbolizationContext> modules) mutable {
+    FinishStop(std::move(inspecting_durations), std::move(modules));
+  });
+}
+
+void profiler::ProfilerControllerImpl::FinishStop(
+    std::vector<zx::ticks> inspecting_durations,
+    zx::result<profiler::SymbolizationContext> modules) {
+  TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  if (!pending_stop_completer_) {
+    return;
+  }
+  StopCompleter::Async completer = std::move(*pending_stop_completer_);
+  pending_stop_completer_.reset();
+
   if (modules.is_error()) {
     FX_PLOGS(ERROR, modules.status_value()) << "Failed to get modules";
     Reset();
@@ -586,6 +611,11 @@ void profiler::ProfilerControllerImpl::Reset(ResetCompleter::Sync& completer) {
 
 void profiler::ProfilerControllerImpl::Reset() {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  if (pending_stop_completer_) {
+    // The session is being reset before Stop could finish.
+    pending_stop_completer_->Close(ZX_ERR_CANCELED);
+    pending_stop_completer_.reset();
+  }
   sampler_.reset();
   // Let any samples still buffered in the writer drain to the client before the socket is closed.
   FxtWriter::FlushAndClose(std::move(writer_));

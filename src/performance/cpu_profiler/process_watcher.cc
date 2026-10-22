@@ -49,14 +49,15 @@ void profiler::ProcessWatcher::HandleException(async_dispatcher_t* dispatcher,
       FX_PLOGS(ERROR, status) << "Failed to read channel!";
       return;
     }
-    zx::thread t;
-    status = exception.get_thread(&t);
-    if (status != ZX_OK) {
-      FX_PLOGS(ERROR, status) << "Failed to get thread!";
-      return;
-    }
     if (info.type == ZX_EXCP_THREAD_STARTING) {
-      start_handler_(info.pid, info.tid, std::move(t));
+      zx::thread t;
+      if (zx_status_t status = exception.get_thread(&t); status != ZX_OK) {
+        // Don't return early: we still need to resume the thread and keep waiting for future
+        // exceptions on this process below.
+        FX_PLOGS(ERROR, status) << "Failed to get thread!";
+      } else {
+        start_handler_(info.pid, info.tid, std::move(t));
+      }
       uint32_t state = ZX_EXCEPTION_STATE_HANDLED;
       exception.set_property(ZX_PROP_EXCEPTION_STATE, &state, sizeof(state));
     } else if (info.type == ZX_EXCP_THREAD_EXITING) {
