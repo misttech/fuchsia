@@ -36,10 +36,10 @@ pub struct TestHarness<D> {
     driver_incoming_dir: ClientEnd<fio::DirectoryMarker>,
     config_vmo: Option<zx::Vmo>,
     url: Option<String>,
+    node_name: Option<String>,
     offers: Option<Vec<NextOffer>>,
     scope: fasync::Scope,
-    power_element_args: Option<fidl_fuchsia_driver_framework::PowerElementArgs>,
-    power_element_token: Option<zx::Event>,
+    power_element_args: Option<df_next::PowerElementArgs>,
     node_token: Option<zx::Event>,
     node_properties: Vec<df_next::NodePropertyEntry2>,
     _d: PhantomData<D>,
@@ -90,10 +90,10 @@ impl<D: Driver> TestHarness<D> {
             driver_incoming_dir,
             config_vmo: None,
             url: None,
+            node_name: None,
             offers: None,
             scope,
             power_element_args: None,
-            power_element_token: None,
             node_token: None,
             node_properties: Vec::new(),
             _d: PhantomData,
@@ -130,18 +130,24 @@ impl<D: Driver> TestHarness<D> {
         self
     }
 
+    /// Sets the node name for the driver. Consumes and returns self to allow chaining.
+    pub fn set_node_name(mut self, name: impl Into<String>) -> Self {
+        self.node_name = Some(name.into());
+        self
+    }
+
     /// Adds an offer to the driver's start args. Consumes and returns self to allow chaining.
     pub fn add_offer(mut self, offer: Offer) -> Self {
         self.offers.get_or_insert_default().push(convert::convert_df_offer(offer));
         self
     }
 
-    /// Sets the power element args for the driver. Consumes and returns self to allow chaining.
-    pub fn set_power_element_args(
-        mut self,
-        args: fidl_fuchsia_driver_framework::PowerElementArgs,
-    ) -> Self {
-        self.power_element_args = Some(args);
+    /// Sets the power element args for the driver. Accepts both
+    /// `fidl_next_fuchsia_driver_framework::PowerElementArgs` and, for drivers that haven't
+    /// migrated yet, the legacy `fidl_fuchsia_driver_framework::PowerElementArgs`. Consumes and
+    /// returns self to allow chaining.
+    pub fn set_power_element_args(mut self, args: impl IntoPowerElementArgs) -> Self {
+        self.power_element_args = Some(args.into_power_element_args());
         self
     }
 
@@ -156,7 +162,7 @@ impl<D: Driver> TestHarness<D> {
     /// power element args; use [`Self::set_power_element_args`] to also provide the power broker
     /// endpoints. Consumes and returns self to allow chaining.
     pub fn set_power_element_token(mut self, token: zx::Event) -> Self {
-        self.power_element_token = Some(token);
+        self.power_element_args.get_or_insert_default().token = Some(token);
         self
     }
 
@@ -204,25 +210,6 @@ impl<D: Driver> TestHarness<D> {
         let driver_incoming_svc =
             open_directory_async(&self.driver_incoming_dir, ".", fio::R_STAR_DIR).unwrap();
 
-        let power_element_token = self.power_element_token.take();
-        let mut power_element_args = self.power_element_args.take().map(|args| {
-            fidl_next_fuchsia_driver_framework::natural::PowerElementArgs {
-                control_client: args
-                    .control_client
-                    .map(|c| NextClientEnd::from_untyped(c.into_channel())),
-                runner_server: args
-                    .runner_server
-                    .map(|s| NextServerEnd::from_untyped(s.into_channel())),
-                lessor_client: args
-                    .lessor_client
-                    .map(|c| NextClientEnd::from_untyped(c.into_channel())),
-                token: args.token,
-            }
-        });
-        if power_element_token.is_some() {
-            power_element_args.get_or_insert_default().token = power_element_token;
-        }
-
         let start_args = DriverStartArgs {
             node: Some(NextClientEnd::from_untyped(node_client)),
             incoming: Some(vec![ComponentNamespaceEntry {
@@ -239,8 +226,9 @@ impl<D: Driver> TestHarness<D> {
                 .as_ref()
                 .and_then(|v| v.duplicate_handle(fidl::Rights::SAME_RIGHTS).ok()),
             url: self.url.clone(),
+            node_name: self.node_name.clone(),
             node_offers: self.offers.clone(),
-            power_element_args,
+            power_element_args: self.power_element_args.take(),
             node_token: self
                 .node_token
                 .as_ref()
@@ -273,6 +261,39 @@ impl<D> Drop for TestHarness<D> {
 
         self.fdf_env_environment.destroy_all_dispatchers();
         self.fdf_env_environment.reset();
+    }
+}
+
+/// Power element args accepted by [`TestHarness::set_power_element_args`].
+///
+/// Implemented for `fidl_next_fuchsia_driver_framework::PowerElementArgs`, which the harness
+/// stores, and for the legacy `fidl_fuchsia_driver_framework::PowerElementArgs` so that drivers
+/// still on the legacy bindings keep compiling while they migrate.
+pub trait IntoPowerElementArgs {
+    /// Converts the args into their `fidl_next` representation.
+    fn into_power_element_args(self) -> df_next::PowerElementArgs;
+}
+
+impl IntoPowerElementArgs for df_next::PowerElementArgs {
+    fn into_power_element_args(self) -> df_next::PowerElementArgs {
+        self
+    }
+}
+
+impl IntoPowerElementArgs for fidl_fuchsia_driver_framework::PowerElementArgs {
+    fn into_power_element_args(self) -> df_next::PowerElementArgs {
+        df_next::PowerElementArgs {
+            control_client: self
+                .control_client
+                .map(|c| NextClientEnd::from_untyped(c.into_channel())),
+            runner_server: self
+                .runner_server
+                .map(|s| NextServerEnd::from_untyped(s.into_channel())),
+            lessor_client: self
+                .lessor_client
+                .map(|c| NextClientEnd::from_untyped(c.into_channel())),
+            token: self.token,
+        }
     }
 }
 
@@ -615,6 +636,7 @@ mod tests {
 
     /// Records what the `DriverContext` start-argument accessors returned.
     struct StartArgsDriver {
+        node_name: Option<String>,
         node_token: Option<zx::Event>,
         power_element_token: Option<zx::Event>,
         properties: Vec<(String, String, crate::PropertyValue)>,
@@ -629,6 +651,7 @@ mod tests {
                 .map(|p| (p.parent.to_string(), p.key.to_string(), p.value))
                 .collect();
             let driver = Self {
+                node_name: context.node_name().map(str::to_string),
                 node_token: context.take_node_token(),
                 power_element_token: context.take_power_element_token(),
                 properties,
@@ -651,6 +674,7 @@ mod tests {
         let node_token = zx::Event::create();
         let power_token = zx::Event::create();
         let mut harness = TestHarness::<StartArgsDriver>::new()
+            .set_node_name("my-node")
             .set_node_token(node_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
             .set_power_element_token(power_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
             .add_node_property("default", "fuchsia.BIND_PROTOCOL", 7u32)
@@ -667,6 +691,7 @@ mod tests {
         let started_driver = harness.start_driver().await.expect("driver starts");
         let driver = started_driver.get_driver().expect("driver");
 
+        assert_eq!(driver.node_name.as_deref(), Some("my-node"));
         assert_eq!(driver.node_token.as_ref().map(koid), Some(koid(&node_token)));
         assert_eq!(driver.power_element_token.as_ref().map(koid), Some(koid(&power_token)));
 
@@ -694,9 +719,26 @@ mod tests {
         let mut harness = TestHarness::<StartArgsDriver>::new();
         let started_driver = harness.start_driver().await.expect("driver starts");
         let driver = started_driver.get_driver().expect("driver");
+        assert!(driver.node_name.is_none());
         assert!(driver.node_token.is_none());
         assert!(driver.power_element_token.is_none());
         assert!(driver.properties.is_empty());
+        started_driver.stop_driver().await;
+    }
+
+    // Drivers that are still on the legacy bindings pass legacy power element args.
+    #[fuchsia::test]
+    async fn test_legacy_power_element_args() {
+        let power_token = zx::Event::create();
+        let mut harness = TestHarness::<StartArgsDriver>::new().set_power_element_args(
+            fidl_fuchsia_driver_framework::PowerElementArgs {
+                token: Some(power_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                ..Default::default()
+            },
+        );
+        let started_driver = harness.start_driver().await.expect("driver starts");
+        let driver = started_driver.get_driver().expect("driver");
+        assert_eq!(driver.power_element_token.as_ref().map(koid), Some(koid(&power_token)));
         started_driver.stop_driver().await;
     }
 }

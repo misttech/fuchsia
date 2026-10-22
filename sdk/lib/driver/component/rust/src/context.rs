@@ -73,7 +73,7 @@ impl DriverContext {
             error!("Tried to serve on outgoing directory but it wasn't available");
             return Err(Status::INVALID_ARGS);
         };
-        let outgoing_dir = fidl::endpoints::ServerEnd::new(outgoing_dir.into_untyped());
+        let outgoing_dir = into_legacy_server_end(outgoing_dir);
         outgoing_fs.serve_connection(outgoing_dir).map_err(|err| {
             error!("Failed to serve outgoing directory: {err}");
             Status::INTERNAL
@@ -115,6 +115,12 @@ impl DriverContext {
             error!("Error creating inspect content publisher: {err}");
             Status::INTERNAL
         })
+    }
+
+    /// Returns the name of the node that the driver is bound to, if present in the start
+    /// arguments.
+    pub fn node_name(&self) -> Option<&str> {
+        self.start_args.node_name.as_deref()
     }
 
     /// Takes the node token from the start arguments, if the driver host provided one. The token
@@ -172,7 +178,7 @@ impl DriverContext {
                 .ok_or(Status::INVALID_ARGS)?
                 .parse()
                 .map_err(|_| Status::INVALID_ARGS)?;
-            let directory = entry.directory.ok_or(Status::INVALID_ARGS)?.into_untyped().into();
+            let directory = into_legacy_client_end(entry.directory.ok_or(Status::INVALID_ARGS)?);
             incoming_namespace.add(&path, directory).map_err(|_| Status::INVALID_ARGS)?;
         }
         let incoming = Incoming::from(incoming_namespace);
@@ -199,4 +205,21 @@ impl DriverContext {
         }
         Ok(())
     }
+}
+
+/// Converts a `fidl_next::ClientEnd` into a legacy `fidl::endpoints::ClientEnd` over a Zircon
+/// channel for APIs like `namespace::Namespace` that still accept `fidl_fuchsia_io` endpoints.
+fn into_legacy_client_end<P, M: fidl::endpoints::ProtocolMarker>(
+    client_end: fidl_next::ClientEnd<P, zx::Channel>,
+) -> fidl::endpoints::ClientEnd<M> {
+    fidl::endpoints::ClientEnd::new(client_end.into_untyped())
+}
+
+/// Converts a `fidl_next::ServerEnd` into a legacy `fidl::endpoints::ServerEnd` over a Zircon
+/// channel for APIs like `fuchsia_component::server::ServiceFs` that still accept
+/// `fidl_fuchsia_io` endpoints.
+fn into_legacy_server_end<P, M: fidl::endpoints::ProtocolMarker>(
+    server_end: fidl_next::ServerEnd<P, zx::Channel>,
+) -> fidl::endpoints::ServerEnd<M> {
+    fidl::endpoints::ServerEnd::new(server_end.into_untyped())
 }

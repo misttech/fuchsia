@@ -35,11 +35,7 @@ impl Driver for LabProxy {
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
-        let node_identity = context
-            .start_args
-            .node_name
-            .clone()
-            .unwrap_or_else(|| "driver-lab.unnamed".to_string());
+        let node_identity = context.node_name().unwrap_or("driver-lab.unnamed").to_string();
 
         // Acquire whatever the bound node offers. A node without a
         // platform device yields zero resources; a node whose MMIOs

@@ -73,11 +73,7 @@ impl DriverLabBuilder {
     /// Creates a new builder extracting the node identity from `DriverContext`.
     #[cfg(feature = "fdf_driver")]
     pub fn from_context(context: &fdf_component::DriverContext) -> Self {
-        let identity = context
-            .start_args
-            .node_name
-            .clone()
-            .unwrap_or_else(|| "driver-lab.embedded".to_string());
+        let identity = context.node_name().unwrap_or("driver-lab.embedded");
         Self::new(identity)
     }
 

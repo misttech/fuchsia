@@ -208,7 +208,7 @@ impl PowerExt for DriverContext {
 mod tests {
     use super::*;
     use fdf_component::testing::harness::TestHarness;
-    use fidl_fuchsia_driver_framework as fdf;
+    use fidl_next_fuchsia_driver_framework as fdf;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     struct TestDriver {
@@ -255,7 +255,12 @@ mod tests {
             fidl::endpoints::create_endpoints::<fpower_broker::ElementRunnerMarker>();
 
         let mut harness = TestHarness::<Suspendable<TestDriver>>::new().set_power_element_args(
-            fdf::PowerElementArgs { runner_server: Some(runner_server), ..Default::default() },
+            fdf::PowerElementArgs {
+                runner_server: Some(fidl_next::ServerEnd::from_untyped(
+                    runner_server.into_channel(),
+                )),
+                ..Default::default()
+            },
         );
 
         let driver_under_test = harness.start_driver().await.expect("Failed to start driver");

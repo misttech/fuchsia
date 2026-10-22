@@ -30,7 +30,7 @@ rustc_library("rust") {
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
     "//src/lib/fuchsia",
   ]
 
