@@ -82,9 +82,14 @@ void Dwc3::HandleEpEvent(uint32_t event) {
       fdf::debug("ep[{}] DEPEVT_XFER_NOT_READY reason {:s}", ep_num,
                  (event & DEPEVT_XFER_NOT_READY_REASON) ? "XferActive" : "XferNotActive");
       if (ep_num == 0 && (event & DEPEVT_XFER_NOT_READY_REASON)) {
-        // The host has abandoned the transfer, stall and reset.
-        Ep0EndAndStall(ep0_.out);
-        Ep0QueueSetup();
+        // The host has abandoned the transfer. Always stall EP0 OUT, and if not already in
+        // State::Setup, end any active Data/Status transfer and reset back to State::Setup.
+        if (ep0_.state == Ep0::State::Setup) {
+          EpSetStall(ep0_.out, true);
+        } else {
+          Ep0EndAndStall(ep0_.out);
+          Ep0QueueSetup();
+        }
         break;
       }
       HandleEpTransferNotReadyEvent(ep_num, DEPEVT_XFER_NOT_READY_STAGE(event));

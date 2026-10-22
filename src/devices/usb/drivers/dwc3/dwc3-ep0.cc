@@ -86,6 +86,7 @@ void Dwc3::Ep0QueueSetup() {
   if (auto status = ep0_.buffer->CacheFlushInvalidate(0, sizeof(fdescriptor::wire::UsbSetup));
       status.is_error()) {
     fdf::error("CacheFlushInvalidate failed: {}", status);
+    ep0_.state = Ep0::State::None;
     return;
   }
   EpStartSingleTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_SETUP, ep0_.buffer->phys(),
@@ -316,12 +317,20 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
   ZX_ASSERT(is_ep0_num(ep_num));
 
   switch (ep0_.state) {
+    case Ep0::State::None:
+      if ((stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) ||
+          (stage == DEPEVT_XFER_NOT_READY_STAGE_STATUS)) {
+        Ep0EndAndStall(ep0_.out);
+        Ep0QueueSetup();
+      }
+      break;
     case Ep0::State::Setup:
       if ((stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) ||
           (stage == DEPEVT_XFER_NOT_READY_STAGE_STATUS)) {
-        // Stall if we receive XferNotReady(Data/Status) while waiting for setup to complete
-        Ep0EndAndStall(ep0_.out);
-        Ep0QueueSetup();
+        // Stall if we receive XferNotReady(Data/Status) while waiting for setup to complete. Do not
+        // call Ep0EndAndStall() or Ep0QueueSetup() here because a Setup TRB is already active on
+        // ep0_.out in State::Setup.
+        EpSetStall(ep0_.out, true);
       }
       break;
     case Ep0::State::TwoStage:

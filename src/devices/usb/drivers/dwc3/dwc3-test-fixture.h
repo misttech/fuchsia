@@ -308,6 +308,11 @@ class Dwc3TestHelper {
     return drv.ep0_.buffer->cache_options();
   }
   static zx::unowned_vmo GetEp0BufferVmo(Dwc3& drv) { return drv.ep0_.buffer->vmo(); }
+  static std::unique_ptr<dma_buffer::ContiguousBuffer> SwapEp0Buffer(
+      Dwc3& drv, std::unique_ptr<dma_buffer::ContiguousBuffer> buffer) {
+    std::swap(drv.ep0_.buffer, buffer);
+    return buffer;
+  }
   static void WriteEp0Buffer(Dwc3& drv, const void* src, size_t offset, size_t size) {
     ZX_ASSERT_MSG(drv.ep0_.buffer != nullptr, "WriteEp0Buffer called with null ep0_.buffer!");
     zx::result<> status = drv.ep0_.buffer->Write(src, offset, size);

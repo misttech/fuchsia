@@ -2457,9 +2457,11 @@ TEST_F(UnmanagedTestFixture, Ep0CancelTransfersAdvancesRingWithoutClear) {
     EXPECT_NE(second_trb->control & TRB_HWO, 0u);
     EXPECT_EQ(Dwc3TestHelper::GetEpQueuedTrbs(drv, 0), 1u);
 
-    // 4. Cancel via Ep0EndAndStall() (triggered by XferNotReady(Data) during Setup stage), which
-    // cancels second_trb and immediately queues a third Setup TRB at first_trb + 2.
-    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 0, DEPEVT_XFER_NOT_READY_STAGE_DATA);
+    // 4. Cancel via Ep0EndAndStall() (triggered by opposite-direction XferNotReady(Data) during
+    // DataOut stage), which cancels second_trb and immediately queues a third Setup TRB at
+    // first_trb + 2.
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataOut);
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 1, DEPEVT_XFER_NOT_READY_STAGE_DATA);
     EXPECT_EQ(second_trb->control & TRB_HWO, 0u);
     EXPECT_EQ(Dwc3TestHelper::GetEpQueuedTrbs(drv, 0), 1u);
     EXPECT_EQ(Dwc3TestHelper::GetEpQueuedTrbs(drv, 1), 0u);
@@ -2469,6 +2471,239 @@ TEST_F(UnmanagedTestFixture, Ep0CancelTransfersAdvancesRingWithoutClear) {
   ASSERT_EQ(start_trb_addrs.size(), 3u);
   EXPECT_EQ(start_trb_addrs[1], start_trb_addrs[0] + sizeof(dwc3_trb_t));
   EXPECT_EQ(start_trb_addrs[2], start_trb_addrs[0] + (2 * sizeof(dwc3_trb_t)));
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that receiving XferNotReady(Data/Status) while already in Ep0::State::Setup (for
+// example, after an unsupported control request stalls and re-queues the next Setup TRB) does not
+// emit a duplicate DEPSTRTXFER or subsequent DEPENDXFER on DEPCMD(0) that aborts the active Setup
+// transfer in hardware.
+TEST_F(UnmanagedTestFixture, XferNotReadyInSetupStatePreservesActiveSetupTrb) {
+  SetUpAndPowerOnDriver();
+
+  FakeUsbDciInterface fake_dci;
+  fake_dci.SetControlStatus(ZX_ERR_NOT_SUPPORTED);
+  auto binding = BindDciInterface(&fake_dci);
+
+  // Track transfer commands (DEPSTRTXFER / DEPENDXFER) written to DEPCMD(0) (EP0_OUT) and model
+  // whether the DWC3 hardware currently has an active Setup transfer armed on EP0_OUT.
+  auto depcmd0_transfer_cmds = std::make_shared<std::vector<uint32_t>>();
+  auto hw_ep0_out_transfer_active = std::make_shared<std::atomic<bool>>(false);
+  auto duplicate_start_xfer_count = std::make_shared<std::atomic<uint32_t>>(0);
+
+  auto cleanup_depcmd = DeferClearDepcmdCallbacks(0);
+  dut_.RunInEnvironmentTypeContext([depcmd0_transfer_cmds, hw_ep0_out_transfer_active,
+                                    duplicate_start_xfer_count](Environment& env) {
+    env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback(
+        [depcmd0_transfer_cmds, hw_ep0_out_transfer_active,
+         duplicate_start_xfer_count](uint64_t val_raw) {
+          const uint32_t val = static_cast<uint32_t>(val_raw);
+          const uint32_t cmd_type = DEPCMD::Get(0).FromValue(val).CMDTYP();
+          if (cmd_type == DEPCMD::DEPSTRTXFER) {
+            depcmd0_transfer_cmds->push_back(cmd_type);
+            if (hw_ep0_out_transfer_active->exchange(true)) {
+              // Real DWC3 silicon rejects a duplicate DEPSTRTXFER with NO_RESOURCE if a transfer is
+              // already active on the endpoint.
+              duplicate_start_xfer_count->fetch_add(1);
+            }
+          } else if (cmd_type == DEPCMD::DEPENDXFER) {
+            depcmd0_transfer_cmds->push_back(cmd_type);
+            hw_ep0_out_transfer_active->store(false);
+          }
+        });
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 1);
+
+    // 1. Host sends an unsupported vendor Control-IN request, consuming the initial Setup TRB.
+    ASSERT_TRUE(hw_ep0_out_transfer_active->exchange(false));
+    depcmd0_transfer_cmds->clear();
+
+    auto setup = MakeSetupPacket(kVendorDeviceIn, 0x99, 0, 0, 8);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+  });
+
+  // Wait for DoControlCall() error callback to run fail() -> Ep0QueueSetup(), which issues
+  // DEPSTRTXFER #1 on DEPCMD(0) to listen for the next Setup packet.
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool done = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) {
+          done = (Dwc3TestHelper::GetEp0State(drv) == Dwc3TestHelper::State::Setup);
+        });
+        return done;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    // 2. Hardware delivers XferNotReady(Data) for the stalled control request while DEPSTRTXFER #1
+    // is in flight, followed by the command-complete event (HandleEpTransferStartedEvent) for
+    // DEPSTRTXFER #1.
+    // On broken code, XferNotReady emits a duplicate DEPSTRTXFER #2 while #1 is in flight, and
+    // HandleEpTransferStartedEvent then emits DEPENDXFER to abort #1, leaving 0 active transfers.
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 1, DEPEVT_XFER_NOT_READY_STAGE_DATA);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 1);
+
+    EXPECT_EQ(depcmd0_transfer_cmds->size(), 1u);
+    if (!depcmd0_transfer_cmds->empty()) {
+      EXPECT_EQ((*depcmd0_transfer_cmds)[0], static_cast<uint32_t>(DEPCMD::DEPSTRTXFER));
+    }
+    EXPECT_EQ(duplicate_start_xfer_count->load(), 0u);
+    EXPECT_TRUE(hw_ep0_out_transfer_active->load());
+
+    // 3. Because the hardware still has an active, un-canceled DEPSTRTXFER on DEPCMD(0), it can
+    // receive the next Setup packet (SET_ADDRESS).
+    ASSERT_TRUE(hw_ep0_out_transfer_active->exchange(false));
+    depcmd0_transfer_cmds->clear();
+
+    auto next_setup = MakeSetupPacket(
+        kStandardDeviceOut, fidl::ToUnderlying(fdescriptor::StandardRequest::kSetAddress), 5, 0, 0);
+    Dwc3TestHelper::SimulateSetupReceived(drv, next_setup);
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitHost);
+    Dwc3TestHelper::SimulateStatusPhase(drv, /*is_in=*/true);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+
+    // 4. Verify the same DEPCMD(0) invariant when DEPEVT_XFER_NOT_READY with XferActive reason
+    // arrives on EP0_OUT while the newly queued Setup TRB is in flight.
+    ASSERT_EQ(depcmd0_transfer_cmds->size(), 1u);
+    EXPECT_EQ((*depcmd0_transfer_cmds)[0], static_cast<uint32_t>(DEPCMD::DEPSTRTXFER));
+    ASSERT_TRUE(hw_ep0_out_transfer_active->load());
+
+    const uint32_t xfer_active_nrdy =
+        DEPEVT_XFER_NOT_READY_REASON |
+        (DEPEVT_XFER_NOT_READY_STAGE_DATA << DEPEVT_XFER_NOT_READY_STAGE_START) |
+        (DEPEVT_XFER_NOT_READY << DEPEVT_TYPE_START);
+    Dwc3TestHelper::HandleEvent(drv, xfer_active_nrdy);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 1);
+
+    EXPECT_EQ(depcmd0_transfer_cmds->size(), 1u);
+    EXPECT_EQ(duplicate_start_xfer_count->load(), 0u);
+    EXPECT_TRUE(hw_ep0_out_transfer_active->load());
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that if Ep0QueueSetup() fails to arm a Setup TRB (e.g. due to CacheFlushInvalidate
+// failing on the ReadStruct error path while in Ep0::State::Setup), ep0_.state moves off
+// Ep0::State::Setup to Ep0::State::None so a subsequent XferNotReady event re-arms Ep0QueueSetup().
+TEST_F(UnmanagedTestFixture, Ep0QueueSetupFailureLeavesSetupStateAndRecoversOnXferNotReady) {
+  class FailingContiguousBuffer final : public dma_buffer::ContiguousBuffer {
+   public:
+    const dma_buffer::Buffer& buffer() const override { return buffer_; }
+    zx_paddr_t phys() const override { return 0; }
+    zx::unowned_vmo vmo() const override { return zx::unowned_vmo{}; }
+
+   private:
+    // A zero-length cached buffer causes ReadStruct() and CacheFlushInvalidate() to fail with
+    // ZX_ERR_OUT_OF_RANGE.
+    dma_buffer::Buffer buffer_{nullptr, 0, dma_buffer::CacheOptions::kEnabled};
+  };
+
+  SetUpAndPowerOnDriver();
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 1);
+    ASSERT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+
+    // Swap in a buffer whose ReadStruct() and CacheFlushInvalidate() fail, then trigger Setup
+    // completion so HandleEp0TransferCompleteEvent hits the ReadStruct failure path ->
+    // Ep0EndAndStall() -> Ep0QueueSetup() failure.
+    auto real_buffer =
+        Dwc3TestHelper::SwapEp0Buffer(drv, std::make_unique<FailingContiguousBuffer>());
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
+
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::None);
+
+    // Restore the real EP0 buffer and verify that XferNotReady(Data) in Ep0::State::None recovers
+    // and re-arms Ep0QueueSetup().
+    Dwc3TestHelper::SwapEp0Buffer(drv, std::move(real_buffer));
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 0, DEPEVT_XFER_NOT_READY_STAGE_DATA);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+  });
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that receiving DEPEVT_XFER_NOT_READY with XferActive reason outside Ep0::State::Setup
+// ends any active Data/Status transfer on EP0 OUT or EP0 IN before re-queuing Setup.
+TEST_F(UnmanagedTestFixture, XferActiveNotReadyOutsideSetupEndsActiveTransfer) {
+  SetUpAndPowerOnDriver();
+
+  auto depcmd0_end_count = std::make_shared<std::atomic<uint32_t>>(0);
+  auto depcmd1_end_count = std::make_shared<std::atomic<uint32_t>>(0);
+
+  auto cleanup_depcmd0 = DeferClearDepcmdCallbacks(0);
+  auto cleanup_depcmd1 = DeferClearDepcmdCallbacks(1);
+  dut_.RunInEnvironmentTypeContext([depcmd0_end_count, depcmd1_end_count](Environment& env) {
+    env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback([depcmd0_end_count](uint64_t val_raw) {
+      if (DEPCMD::Get(0).FromValue(static_cast<uint32_t>(val_raw)).CMDTYP() == DEPCMD::DEPENDXFER) {
+        depcmd0_end_count->fetch_add(1);
+      }
+    });
+    env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback([depcmd1_end_count](uint64_t val_raw) {
+      if (DEPCMD::Get(1).FromValue(static_cast<uint32_t>(val_raw)).CMDTYP() == DEPCMD::DEPENDXFER) {
+        depcmd1_end_count->fetch_add(1);
+      }
+    });
+  });
+
+  constexpr uint32_t kXferActiveNrdy =
+      DEPEVT_XFER_NOT_READY_REASON |
+      (DEPEVT_XFER_NOT_READY_STAGE_DATA << DEPEVT_XFER_NOT_READY_STAGE_START) |
+      (DEPEVT_XFER_NOT_READY << DEPEVT_TYPE_START);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    // 1. Active DataOut transfer on EP0 OUT (ep_num = 0).
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataOut);
+    Dwc3TestHelper::PushTrbToSharedFifo(drv, dwc3_trb_t{.control = TRB_HWO});
+    Dwc3TestHelper::SetEpTransferState(drv, 0, Dwc3TestHelper::TransferState::kActiveSingle);
+    Dwc3TestHelper::SetEpRsrcId(drv, 0, 1);
+
+    Dwc3TestHelper::HandleEvent(drv, kXferActiveNrdy);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 1);
+    EXPECT_EQ(depcmd0_end_count->load(), 1u);
+    EXPECT_EQ(depcmd1_end_count->load(), 0u);
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+
+    // 2. Active DataIn transfer on EP0 IN (ep_num = 1).
+    Dwc3TestHelper::SetEpTransferState(drv, 0, Dwc3TestHelper::TransferState::kIdle);
+    Dwc3TestHelper::SetEpRsrcId(drv, 0, Endpoint::kInvalidResourceId);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::PushTrbToSharedFifo(drv, dwc3_trb_t{.control = TRB_HWO});
+    Dwc3TestHelper::SetEpTransferState(drv, 1, Dwc3TestHelper::TransferState::kActiveSingle);
+    Dwc3TestHelper::SetEpRsrcId(drv, 1, 2);
+
+    Dwc3TestHelper::HandleEvent(drv, kXferActiveNrdy);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 1);
+    EXPECT_EQ(depcmd0_end_count->load(), 1u);
+    EXPECT_EQ(depcmd1_end_count->load(), 1u);
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0InStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+  });
 
   TearDownAndPowerOffDriver();
 }
