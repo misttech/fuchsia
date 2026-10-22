@@ -39,11 +39,17 @@ rustc_test("block-client_test") {
   ]
 }
 
+# Uses GN-only storage_driver_test_realm_component template and wraps
+# :block-client_test, which depends on //src/storage/lib/block_server and
+# //src/storage/lib/ramdevice_client (not in Bazel yet).
 storage_driver_test_realm_component("block-client-tests-component") {
   component_name = "block-client-tests"
   deps = [ ":block-client_test" ]
 }
 
+# Stays in GN with :block-client-tests-component and :block-client_test because
+# //src/storage/lib/block_server and //src/storage/lib/ramdevice_client have no
+# Bazel build yet.
 fuchsia_test_package("block-client-tests") {
   test_specs = {
     log_settings = {

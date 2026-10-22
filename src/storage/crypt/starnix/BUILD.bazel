@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:lib_test`) stay in BUILD.gn because they depend on
+# //src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server, which
+# has no Bazel build yet.
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "starnix_crypt",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = [
+        "//src/starnix/kernel/core:__pkg__",
+        "//src/storage/f2fs_reader/migrate:__pkg__",
+        "//src/storage/fxfs/platform:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-sync",
+        "//src/starnix/lib/linux_uapi",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/storage/fxfs/crypto",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/lib/fscrypt",
+        "//third_party/rust_crates/vendor:aes-gcm-siv",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hkdf",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:sha2",
+    ],
+)
