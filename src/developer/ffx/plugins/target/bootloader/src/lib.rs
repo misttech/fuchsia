@@ -495,7 +495,7 @@ mod test {
         let vbmeta_file_name = vbmeta_file.path().to_string_lossy().to_string();
         let (state, proxy) = setup();
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
-        bootloader_impl(
+        Box::pin(bootloader_impl(
             &test_env.context,
             proxy,
             BootloaderCommand {
@@ -510,7 +510,7 @@ mod test {
                 }),
             },
             &mut w,
-        )
+        ))
         .await?;
         let state = state.lock().unwrap();
         assert_eq!(1, state.staged_files.len());
@@ -525,7 +525,7 @@ mod test {
         let zbi_file_name = zbi_file.path().to_string_lossy().to_string();
         let (state, proxy) = setup();
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
-        bootloader_impl(
+        Box::pin(bootloader_impl(
             &test_env.context,
             proxy,
             BootloaderCommand {
@@ -540,7 +540,7 @@ mod test {
                 }),
             },
             &mut w,
-        )
+        ))
         .await?;
         let state = state.lock().unwrap();
         assert_eq!(1, state.staged_files.len());
@@ -556,7 +556,7 @@ mod test {
         let (_, proxy) = setup();
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
         assert!(
-            bootloader_impl(
+            Box::pin(bootloader_impl(
                 &test_env.context,
                 proxy,
                 BootloaderCommand {
@@ -571,7 +571,7 @@ mod test {
                     }),
                 },
                 &mut w,
-            )
+            ))
             .await
             .is_err()
         );
@@ -588,7 +588,7 @@ mod test {
             state.set_var("vx-unlockable".to_string(), "no".to_string());
         }
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
-        bootloader_impl(
+        Box::pin(bootloader_impl(
             &test_env.context,
             proxy,
             BootloaderCommand {
@@ -599,7 +599,7 @@ mod test {
                 subcommand: Lock(LockCommand {}),
             },
             &mut w,
-        )
+        ))
         .await?;
         let state = state.lock().unwrap();
         assert_eq!(1, state.oem_commands.len());
