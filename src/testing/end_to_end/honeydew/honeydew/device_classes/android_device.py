@@ -20,6 +20,9 @@ from honeydew import errors
 from honeydew.affordances.android_diagnostics import (
     android_diagnostics as android_diagnostics_affordance,
 )
+from honeydew.affordances.android_package import (
+    android_package as android_package_affordance,
+)
 from honeydew.affordances.android_session import (
     android_session as android_session_affordance,
 )
@@ -351,5 +354,16 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             android_diagnostics.AndroidDiagnostics object
         """
         return android_diagnostics_affordance.AndroidDiagnostics(
+            device_name=self.device_name, adb=self.adb
+        )
+
+    @properties.Affordance
+    def android_package(self) -> android_package_affordance.AndroidPackage:
+        """Returns an Android package affordance object.
+
+        Returns:
+            android_package.AndroidPackage object
+        """
+        return android_package_affordance.AndroidPackage(
             device_name=self.device_name, adb=self.adb
         )

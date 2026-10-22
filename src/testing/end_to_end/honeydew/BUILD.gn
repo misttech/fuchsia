@@ -68,6 +68,9 @@ python_library("honeydew_no_testonly") {
     "affordances/android_diagnostics/__init__.py",
     "affordances/android_diagnostics/android_diagnostics.py",
     "affordances/android_diagnostics/errors.py",
+    "affordances/android_package/__init__.py",
+    "affordances/android_package/android_package.py",
+    "affordances/android_package/errors.py",
     "affordances/android_session/__init__.py",
     "affordances/android_session/android_session.py",
     "affordances/android_session/errors.py",
@@ -311,6 +314,7 @@ group("unit_tests") {
   if (host_os != "mac") {
     public_deps += [
       "honeydew/affordances/android_diagnostics/tests/unit_tests:tests",
+      "honeydew/affordances/android_package/tests/unit_tests:tests",
       "honeydew/affordances/android_session/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/bluetooth_common/tests/unit_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/gap/tests/unit_tests:tests",
@@ -355,6 +359,7 @@ group("functional_tests") {
   if (host_os != "mac") {
     public_deps += [
       "honeydew/affordances/android_diagnostics/tests/functional_tests:tests",
+      "honeydew/affordances/android_package/tests/functional_tests:tests",
       "honeydew/affordances/android_session/tests/functional_tests:tests",
       "honeydew/affordances/connectivity/bluetooth/gap/tests/functional_tests:tests",
       "honeydew/affordances/connectivity/netstack/tests:functional_tests($host_toolchain)",

@@ -14,6 +14,9 @@ from honeydew import errors
 from honeydew.affordances.android_diagnostics import (
     android_diagnostics as android_diagnostics_affordance,
 )
+from honeydew.affordances.android_package import (
+    android_package as android_package_affordance,
+)
 from honeydew.affordances.android_session import (
     android_session as android_session_affordance,
 )
@@ -1028,6 +1031,15 @@ class AndroidDeviceBaseCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(self.device.diagnostics, diagnostics)
         self.assertIs(diagnostics._adb, self.mock_adb)
+
+    def test_android_package_affordance(self) -> None:
+        """Verifies android_package returns a cached AndroidPackage."""
+        package: Any = self.device.android_package
+        self.assertIsInstance(
+            package, android_package_affordance.AndroidPackage
+        )
+        self.assertIs(self.device.android_package, package)
+        self.assertIs(package._adb, self.mock_adb)
 
 
 if __name__ == "__main__":
