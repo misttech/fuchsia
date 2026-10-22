@@ -6,6 +6,7 @@ group("tests") {
   testonly = true
 
   deps = [
+    ":starnix-selinux-unit-tests",
     "scripts:tests",
     "testdata:test_policies",
   ]
@@ -163,4 +164,140 @@ rustc_library("selinux") {
   } else {
     deps += [ "//src/starnix/lib/starnix_sync" ]
   }
+}
+rustc_test("selinux_lib_test") {
+  sources = [
+    "src/exceptions_config.rs",
+    "src/kernel/avc/cache_stats.rs",
+    "src/kernel/avc/concurrent_access_cache.rs",
+    "src/kernel/avc/concurrent_cache.rs",
+    "src/kernel/avc/local_cache.rs",
+    "src/kernel/avc/mod.rs",
+    "src/kernel/index.rs",
+    "src/kernel/mod.rs",
+    "src/kernel/permissions.rs",
+    "src/lib.rs",
+    "src/permission_check.rs",
+    "src/policy/access_vector.rs",
+    "src/policy/bitmap.rs",
+    "src/policy/booleans.rs",
+    "src/policy/classes.rs",
+    "src/policy/common_symbols.rs",
+    "src/policy/compute.rs",
+    "src/policy/constraints.rs",
+    "src/policy/error.rs",
+    "src/policy/filename_transitions.rs",
+    "src/policy/id_type.rs",
+    "src/policy/indexed.rs",
+    "src/policy/initial_sids.rs",
+    "src/policy/metadata.rs",
+    "src/policy/mls.rs",
+    "src/policy/mod.rs",
+    "src/policy/object_contexts.rs",
+    "src/policy/parser.rs",
+    "src/policy/permissions.rs",
+    "src/policy/policy_cap.rs",
+    "src/policy/roles.rs",
+    "src/policy/rules.rs",
+    "src/policy/security_context.rs",
+    "src/policy/tests.rs",
+    "src/policy/traits.rs",
+    "src/policy/types.rs",
+    "src/policy/u24_index.rs",
+    "src/policy/users.rs",
+    "src/security_server.rs",
+    "src/sid_table.rs",
+    "src/sync.rs",
+  ]
+  inputs = [
+    "testdata/composite_policies/compiled/allow_fork_policy",
+    "testdata/composite_policies/compiled/class_defaults_policy",
+    "testdata/composite_policies/compiled/conditional_policy",
+    "testdata/composite_policies/compiled/exceptions_config_policy",
+    "testdata/composite_policies/compiled/genfscon_policy",
+    "testdata/composite_policies/compiled/handle_unknown_policy-allow",
+    "testdata/composite_policies/compiled/handle_unknown_policy-deny",
+    "testdata/composite_policies/compiled/handle_unknown_policy-reject",
+    "testdata/composite_policies/compiled/minimal_policy",
+    "testdata/composite_policies/compiled/range_transition_policy",
+    "testdata/composite_policies/compiled/role_transition_not_allowed_policy",
+    "testdata/composite_policies/compiled/role_transition_policy",
+    "testdata/composite_policies/compiled/type_transition_policy",
+    "testdata/composite_policies/compiled/with_additional_domain_policy",
+    "testdata/composite_policies/compiled/with_unlabeled_access_domain_policy",
+    "testdata/expectations/emulator",
+    "testdata/expectations/selinux_testsuite",
+    "testdata/micro_policies/allow_a_attr_b_attr_class0_perm0_policy",
+    "testdata/micro_policies/allow_a_t_a1_attr_class0_perm0_a2_attr_class0_perm1_policy",
+    "testdata/micro_policies/allow_a_t_b_attr_class0_perm0_policy",
+    "testdata/micro_policies/allow_a_t_b_t_class0_perm0_policy",
+    "testdata/micro_policies/allow_with_constraints_policy",
+    "testdata/micro_policies/allowxperm_policy",
+    "testdata/micro_policies/constraints_policy",
+    "testdata/micro_policies/file_no_defaults_policy",
+    "testdata/micro_policies/file_range_source_high_policy",
+    "testdata/micro_policies/file_range_source_low_high_policy",
+    "testdata/micro_policies/file_range_source_low_policy",
+    "testdata/micro_policies/file_range_target_high_policy",
+    "testdata/micro_policies/file_range_target_low_high_policy",
+    "testdata/micro_policies/file_range_target_low_policy",
+    "testdata/micro_policies/file_source_defaults_policy",
+    "testdata/micro_policies/file_target_defaults_policy",
+    "testdata/micro_policies/multiple_levels_and_categories_policy",
+    "testdata/micro_policies/no_allow_a_attr_b_attr_class0_perm0_policy",
+    "testdata/micro_policies/no_allow_a_t_b_attr_class0_perm0_policy",
+    "testdata/micro_policies/no_allow_a_t_b_t_class0_perm0_policy",
+    "testdata/micro_policies/security_context_tests_policy",
+    "testdata/micro_policies/security_server_tests_policy",
+    "testdata/policies/aosp_sepolicy",
+    "testdata/policies/emulator",
+    "testdata/policies/selinux_testsuite",
+  ]
+  edition = "2024"
+  proc_macro_deps = [
+    "//src/starnix/lib/selinux/src/policy/derive_macros",
+    "//third_party/rust_crates:paste",
+    "//third_party/rust_crates:strum_macros",
+  ]
+  deps = []
+  deps += [
+    "//src/lib/fuchsia-rcu",
+    "//src/lib/fuchsia-rcu-collections",
+    "//src/lib/trace/rust:trace",
+    "//src/starnix/lib/starnix_logging",
+    "//src/starnix/lib/starnix_uapi",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:bstr",
+    "//third_party/rust_crates:crossbeam-utils",
+    "//third_party/rust_crates:hashbrown",
+    "//third_party/rust_crates:rapidhash",
+    "//third_party/rust_crates:strum",
+    "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
+  ]
+  if (is_host) {
+    deps += [ "//third_party/rust_crates:parking_lot" ]
+  } else {
+    deps += [ "//src/starnix/lib/starnix_sync" ]
+  }
+  deps += [
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json5",
+  ]
+  if (is_host) {
+    features = []
+  } else {
+    features = [ "selinux_starnix" ]
+  }
+  lint_config = "//src/starnix/config:starnix_clippy_lints_test"
+}
+fuchsia_unittest_package("starnix-selinux-unit-tests") {
+  package_name = "starnix-selinux-unit-tests-gn"
+  component_name = "starnix-selinux-unit-tests"
+  deps = [ ":selinux_lib_test" ]
+  visibility = [
+    ":*",
+    "//src/starnix/lib:*",
+  ]
 }

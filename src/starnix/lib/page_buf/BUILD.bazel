@@ -29,7 +29,6 @@ rustc_library(
 # The unit tests are declared separately instead of with `with_unit_tests`
 # because Bazel would apply the library's `lint_config`, which includes the
 # production-only lints, to the test code as well.
-# @bazel2gn:skip
 rustc_test(
     name = "page_buf_lib_test",
     srcs = ["src/lib.rs"],
@@ -42,7 +41,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_packaged_binary(
     name = "page_buf_lib_test_packaged_bin",
     testonly = True,
@@ -50,7 +48,6 @@ fx_packaged_binary(
     binary_name = "page_buf_lib_test",
 )
 
-# @bazel2gn:skip
 fx_component_manifest(
     name = "page_buf_tests-manifest",
     testonly = True,
@@ -62,7 +59,6 @@ fx_component_manifest(
     manifest = "meta/page_buf_tests.cml",
 )
 
-# @bazel2gn:skip
 fx_test_component(
     name = "page_buf_tests-component",
     compiled_manifest = ":page_buf_tests-manifest",
@@ -73,14 +69,12 @@ fx_test_component(
     deps = [":page_buf_lib_test_packaged_bin"],
 )
 
-# @bazel2gn:skip
 fx_package(
     name = "page_buf_tests-package",
     package_name = "page_buf_tests",
     test_components = [":page_buf_tests-component"],
 )
 
-# @bazel2gn:skip
 fx_test(
     name = "page_buf_tests",
     package = ":page_buf_tests-package",

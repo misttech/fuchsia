@@ -16,7 +16,6 @@ rustc_library(
         "//src/starnix/kernel/core:__pkg__",
         "//src/starnix/modules/selinuxfs:__pkg__",
     ],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//sdk/rust/zx",
@@ -26,7 +25,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "seq_lock_tests",
     unit_tests = [":seq_lock_test"],

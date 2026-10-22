@@ -29,6 +29,7 @@ group("tests") {
     ":bazel_tests",
     "atomic_bitflags:tests",
     "bootreason:tests",
+    "crash_throttling:tests",
     "devicetree:tests",
     "ebpf:tests",
     "ebpf_api:tests",
@@ -40,7 +41,10 @@ group("tests") {
     "line_discipline:tests",
     "linux_uapi:tests",
     "memory_pinning:tests",
+    "page_buf:tests",
     "range_map:tests",
+    "seq_lock:tests",
+    "starnix_registers:tests",
 
     # Still groups non-Bazel GN targets (scripts:tests and
     # testdata:test_policies), while starnix-selinux-unit-tests is in

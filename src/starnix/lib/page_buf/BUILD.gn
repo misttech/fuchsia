@@ -2,6 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/components.gni")
+
+# GN copy of the Bazel test "page_buf_tests", while the library is used in both
+# build systems. bazel2gn can't translate explicit fx_package() tests yet.
+fuchsia_unittest_package("page_buf_tests") {
+  package_name = "page_buf_tests-gn"
+  component_name = "page_buf_tests"
+  manifest = "meta/page_buf_tests.cml"
+  deps = [ ":page_buf_lib_test" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":page_buf_tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -37,6 +53,16 @@ rustc_library("page_buf") {
   ]
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-runtime",
+  ]
+}
+rustc_test("page_buf_lib_test") {
+  sources = [ "src/lib.rs" ]
+  edition = "2024"
+  lint_config = "//src/starnix/config:starnix_clippy_lints_test"
+  deps = [
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-runtime",
   ]
 }

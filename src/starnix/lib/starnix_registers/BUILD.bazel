@@ -19,7 +19,6 @@ rustc_library(
         "//src/starnix/kernel/core:__pkg__",
         "//src/starnix/kernel/syscall_loop:__pkg__",
     ],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//sdk/rust/zx",
@@ -31,7 +30,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "starnix_registers_tests",
     unit_tests = [":starnix_registers_test"],

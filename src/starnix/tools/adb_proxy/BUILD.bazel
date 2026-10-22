@@ -11,8 +11,6 @@ rustc_library(
     srcs = ["src/server.rs"],
     crate_root = "src/server.rs",
     edition = "2024",
-    # @bazel2gn:skip
-    with_unit_tests = True,
     deps = [
         "//sdk/fidl/fuchsia.starnix.container:fuchsia.starnix.container_rust",
         "//sdk/fidl/fuchsia.vsock:fuchsia.vsock_rust",

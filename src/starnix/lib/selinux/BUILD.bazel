@@ -148,7 +148,6 @@ rustc_library(
     }),
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "selinux_lib_test",
     crate = ":selinux",
@@ -164,7 +163,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "starnix-selinux-unit-tests",
     unit_tests = [":selinux_lib_test"],
