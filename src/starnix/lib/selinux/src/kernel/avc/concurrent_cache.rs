@@ -296,7 +296,7 @@ impl<
     /// Creates an access cache of capacity at least `capacity`.
     pub fn new_with_storage(storage: S, capacity: usize) -> Self {
         assert!(WAYS4 <= 4, "ways must be less than or equal to 16");
-        assert!(WAYS4 > 0, "ways must be non-zero");
+        assert!(WAYS4.is_power_of_two(), "ways must be a power of two");
 
         let required_buckets = capacity.div_ceil(WAYS4 * 4);
         let num_buckets = required_buckets.next_power_of_two();
@@ -441,13 +441,19 @@ impl<
                         continue 'ways;
                     }
 
+                    // Mask the index with `len() - 1` (capacity is a power of 2) so the compiler
+                    // can elide the bounds check without `unsafe`.
+                    let out_of_line_idx =
+                        (bucket_idx * WAYS4 * 4 + way) & (self.out_of_line_data.len() - 1);
+                    let out_of_line = &self.out_of_line_data[out_of_line_idx];
+
                     if !self.storage.check_key(
                         key,
                         &bucket.inline_u64s[way4][sub_way],
                         &bucket.inline_u32s[way4][sub_way],
                         &bucket.inline_u16s[way4][sub_way],
                         &bucket.inline_u8s[way4][sub_way],
-                        &self.out_of_line_data[bucket_idx * WAYS4 * 4 + way],
+                        out_of_line,
                     ) {
                         cold_path();
                         continue 'ways;
@@ -458,7 +464,7 @@ impl<
                             &bucket.inline_u32s[way4][sub_way],
                             &bucket.inline_u16s[way4][sub_way],
                             &bucket.inline_u8s[way4][sub_way],
-                            &self.out_of_line_data[bucket_idx * WAYS4 * 4 + way],
+                            out_of_line,
                         ),
                         way,
                     ));
@@ -497,6 +503,19 @@ impl<
         // We expect >99% cache hits.
         cold_path();
 
+        self.insert_miss(bucket, bucket_idx, expected_tag, stats, key, callback)
+    }
+
+    #[inline(never)]
+    fn insert_miss<E>(
+        &self,
+        bucket: &Bucket<WAYS4, INLINE_U64S, INLINE_U32S, INLINE_U16S, INLINE_U8S>,
+        bucket_idx: usize,
+        expected_tag: u8,
+        stats: &AtomicCacheStats,
+        key: &S::Key,
+        callback: impl FnOnce() -> Result<S::Value, E>,
+    ) -> Result<S::Value, E> {
         fuchsia_trace::duration!(CATEGORY_STARNIX_SECURITY, "selinux.access_cache.miss");
         stats.lookups.fetch_add(1, Ordering::Relaxed);
         stats.misses.fetch_add(1, Ordering::Relaxed);
