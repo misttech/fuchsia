@@ -10,12 +10,6 @@
 
 #include "vm/compressor_ffi.h"
 
-VmCompressor::VmCompressor(VmCompression& compressor, uint32_t temp_ref) {
-  rust_vm_compressor_init(this, &compressor, temp_ref);
-}
-
-VmCompressor::~VmCompressor() { rust_vm_compressor_destroy(this); }
-
 zx_status_t VmCompressor::Arm() { return rust_vm_compressor_arm(this); }
 
 VmCompressor::CompressedRef VmCompressor::Start(VmCompressor::PageAndMetadata src_page) {
@@ -48,30 +42,10 @@ void VmCompressor::ReturnTempReference(CompressedRef ref) {
   rust_vm_compressor_return_temp_reference(this, ref.value());
 }
 
-bool VmCompressor::IsIdle() const { return rust_vm_compressor_is_idle(this); }
-
 bool VmCompressor::IsTempReference(CompressedRef ref) const {
   return rust_vm_compressor_is_temp_reference(this, ref.value());
 }
 
 bool VmCompressor::IsTempReferenceInUse() const {
   return rust_vm_compressor_is_temp_reference_in_use(this);
-}
-
-VmCompression& VmCompressor::compressor() const { return *rust_vm_compressor_get_compressor(this); }
-
-vm_page_t* VmCompressor::page() const { return rust_vm_compressor_get_page(this); }
-
-vm_page_t* VmCompressor::spare_page() const { return rust_vm_compressor_get_spare_page(this); }
-
-void VmCompressor::set_spare_page(vm_page_t* page) {
-  rust_vm_compressor_set_spare_page(this, page);
-}
-
-uint32_t VmCompressor::temp_reference_metadata() const {
-  return rust_vm_compressor_get_temp_reference_metadata(this);
-}
-
-void VmCompressor::set_temp_reference_metadata(uint32_t metadata) {
-  rust_vm_compressor_set_temp_reference_metadata(this, metadata);
 }

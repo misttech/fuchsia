@@ -137,6 +137,7 @@ unsafe extern "C" {
     fn cpp_thread_id_to_thread_slow(tid: zx_types::zx_koid_t) -> *mut Thread;
     fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
     fn cpp_thread_dump(thread: *const Thread, full: bool);
+    fn cpp_thread_runtime(thread: *const Thread) -> DurationMono;
     fn cpp_thread_canary_assert(thread: *const Thread);
     fn cpp_thread_signals(thread: *const Thread) -> u32;
     fn cpp_thread_check_kill_or_suspend_signal(thread: *const Thread) -> zx_status_t;
@@ -1355,6 +1356,20 @@ pub fn soft_fault(va: usize, flags: u32) -> Result<(), Status> {
 /// Returns the raw pointer to the current thread.
 pub fn current_get() -> *mut Thread {
     unsafe { cpp_thread_current_get() }
+}
+
+/// Returns the total runtime of the current thread.
+///
+/// # Safety
+///
+/// The caller must not hold the current thread's lock or have an active chain lock transaction on
+/// the current CPU. `Thread::Runtime` starts its own chain lock transaction, and nesting it inside
+/// an active transaction is only checked by debug assertions.
+#[inline]
+pub unsafe fn current_runtime() -> DurationMono {
+    // SAFETY: `cpp_thread_current_get` returns a valid pointer to the running thread, and the
+    // caller upholds the locking preconditions of `cpp_thread_runtime`.
+    unsafe { cpp_thread_runtime(cpp_thread_current_get()) }
 }
 
 /// Preempts the current thread from an interrupt.

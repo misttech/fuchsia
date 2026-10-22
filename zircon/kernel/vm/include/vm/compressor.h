@@ -7,11 +7,8 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSOR_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSOR_H_
 
-#include <kernel/ffi.h>
 #include <ktl/variant.h>
 #include <vm/vm_page_list.h>
-
-class VmCompression;
 
 // The VmCompressor represents a single instance of a compression operation that can be performed
 // with a minimal locking protocol between a VMO page owner, and the compressor. There are two
@@ -80,7 +77,10 @@ class VmCompression;
 // the VmCompressor.
 class VmCompressor {
  public:
-  ~VmCompressor();
+  VmCompressor() = delete;
+  ~VmCompressor() = delete;
+  VmCompressor(const VmCompressor&) = delete;
+  VmCompressor& operator=(const VmCompressor&) = delete;
 
   // Convenience struct to contain both a page and its associated metadata.
   struct PageAndMetadata {
@@ -146,9 +146,6 @@ class VmCompressor {
   // Return the temporary reference, indicating it is no longer in use.
   void ReturnTempReference(CompressedRef ref);
 
-  // Returns whether there is an active compression attempt in progress or not.
-  bool IsIdle() const;
-
   // Tests whether the supplied reference is the temporary reference from this compressor.
   bool IsTempReference(CompressedRef ref) const;
 
@@ -159,40 +156,6 @@ class VmCompressor {
   // Calling this has the same locking requirements as the |spare_page_| member, whether either the
   // compressor needs to be idle, or the VMO lock must be held.
   bool IsTempReferenceInUse() const;
-
- private:
-  // Let the compression system be a friend to call the constructor and internal accessors.
-  friend VmCompression;
-  VmCompressor(VmCompression& compressor, uint32_t temp_ref);
-
-  VmCompression& compressor() const;
-  vm_page_t* page() const;
-  vm_page_t* spare_page() const;
-  void set_spare_page(vm_page_t* page);
-  uint32_t temp_reference_metadata() const;
-  void set_temp_reference_metadata(uint32_t metadata);
-
-  enum class State : uint8_t {
-    Ready = 0,
-    Started = 1,
-    Compressed = 2,
-    Finalized = 3,
-  };
-
-  // Layout description matching Rust `VmCompressor` state for compile-time size/align/offset
-  // assertions.
-  struct StateLayout {
-    VmCompression* compressor;
-    uint32_t temp_reference;
-    State state;
-    bool using_temp_reference;
-    vm_page_t* page;
-    vm_page_t* spare_page;
-    OpaqueStorage<24, 8> compression_result;
-    uint32_t temp_reference_metadata;
-  };
-
-  [[maybe_unused]] OpaqueStorage<sizeof(StateLayout), alignof(StateLayout)> storage_{};
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSOR_H_

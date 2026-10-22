@@ -346,8 +346,8 @@ pub fn get_compression_stats() -> zx_info_kmem_stats_compression_t {
     kstats.compressed_storage_bytes = stats.memory_usage.compressed_storage_bytes;
     kstats.compressed_fragmentation_bytes = stats.memory_usage.compressed_storage_bytes
         - stats.memory_usage.compressed_storage_used_bytes;
-    kstats.compression_time = stats.compression_time;
-    kstats.decompression_time = stats.decompression_time;
+    kstats.compression_time = stats.compression_time.into_nanos();
+    kstats.decompression_time = stats.decompression_time.into_nanos();
     kstats.total_page_compression_attempts = stats.total_page_compression_attempts;
     kstats.failed_page_compression_attempts = stats.failed_page_compression_attempts;
     kstats.total_page_decompressions = stats.total_page_decompressions;

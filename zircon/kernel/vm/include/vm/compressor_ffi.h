@@ -14,8 +14,6 @@
 
 __BEGIN_CDECLS
 
-void rust_vm_compressor_init(VmCompressor* compressor, VmCompression* owner, uint32_t temp_ref);
-void rust_vm_compressor_destroy(VmCompressor* compressor);
 zx_status_t rust_vm_compressor_arm(const VmCompressor* compressor);
 uint32_t rust_vm_compressor_start(const VmCompressor* compressor,
                                   VmCompressor::PageAndMetadata src_page);
@@ -26,16 +24,8 @@ uint8_t rust_vm_compressor_take_compression_result(
 void rust_vm_compressor_finalize(const VmCompressor* compressor);
 void rust_vm_compressor_free(const VmCompressor* compressor, uint32_t ref);
 void rust_vm_compressor_return_temp_reference(const VmCompressor* compressor, uint32_t ref);
-bool rust_vm_compressor_is_idle(const VmCompressor* compressor);
 bool rust_vm_compressor_is_temp_reference(const VmCompressor* compressor, uint32_t ref);
 bool rust_vm_compressor_is_temp_reference_in_use(const VmCompressor* compressor);
-VmCompression* rust_vm_compressor_get_compressor(const VmCompressor* compressor);
-vm_page_t* rust_vm_compressor_get_page(const VmCompressor* compressor);
-vm_page_t* rust_vm_compressor_get_spare_page(const VmCompressor* compressor);
-void rust_vm_compressor_set_spare_page(const VmCompressor* compressor, vm_page_t* page);
-uint32_t rust_vm_compressor_get_temp_reference_metadata(const VmCompressor* compressor);
-void rust_vm_compressor_set_temp_reference_metadata(const VmCompressor* compressor,
-                                                    uint32_t metadata);
 
 __END_CDECLS
 

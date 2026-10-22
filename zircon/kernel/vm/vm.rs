@@ -47,6 +47,26 @@ macro_rules! vm_ktrace_duration {
 }
 pub use vm_ktrace_duration;
 
+#[macro_export]
+macro_rules! vm_ktrace_duration_begin {
+    ($level:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
+        if $crate::vm::vm::vm_ktrace_level_enabled!($level) {
+            $crate::ktrace_rs::duration_begin!("kernel:vm", $label $(, $key => $val)*);
+        }
+    };
+}
+pub use vm_ktrace_duration_begin;
+
+#[macro_export]
+macro_rules! vm_ktrace_duration_end {
+    ($level:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
+        if $crate::vm::vm::vm_ktrace_level_enabled!($level) {
+            $crate::ktrace_rs::duration_end!("kernel:vm", $label $(, $key => $val)*);
+        }
+    };
+}
+pub use vm_ktrace_duration_end;
+
 // In builds with verbose VM tracing enabled (VM_TRACING_LEVEL >= 1), we emit these events under the
 // "kernel:vm" category at the specified VM tracing level. In standard/production builds
 // (VM_TRACING_LEVEL = 0), we fallback to emitting under the lightweight "kernel:oom" category

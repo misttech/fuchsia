@@ -179,9 +179,9 @@ bool compression_smoke_test() {
   ASSERT_TRUE(lz4);
   fbl::RefPtr<VmSlotPageStorage> storage = fbl::MakeRefCountedChecked<VmSlotPageStorage>(&ac);
   ASSERT_TRUE(ac.check());
-  fbl::RefPtr<VmCompression> compression = fbl::MakeRefCountedChecked<VmCompression>(
-      &ac, ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
-  ASSERT_TRUE(ac.check());
+  fbl::RefPtr<VmCompression> compression =
+      VmCompression::Create(ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
+  ASSERT_TRUE(compression);
 
   constexpr uint32_t kMetadataStart = 0xdeadbeef;
   constexpr uint32_t kMetadataUpdate = 0xc0ffee;
@@ -249,9 +249,9 @@ bool compression_zero_test() {
   ASSERT_TRUE(lz4);
   fbl::RefPtr<VmSlotPageStorage> storage = fbl::MakeRefCountedChecked<VmSlotPageStorage>(&ac);
   ASSERT_TRUE(ac.check());
-  fbl::RefPtr<VmCompression> compression = fbl::MakeRefCountedChecked<VmCompression>(
-      &ac, ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
-  ASSERT_TRUE(ac.check());
+  fbl::RefPtr<VmCompression> compression =
+      VmCompression::Create(ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
+  ASSERT_TRUE(compression);
 
   // Compress a page full of zeros and ensure the compression system detects this.
   {
@@ -289,9 +289,9 @@ bool compression_fail_test() {
   ASSERT_TRUE(lz4);
   fbl::RefPtr<VmSlotPageStorage> storage = fbl::MakeRefCountedChecked<VmSlotPageStorage>(&ac);
   ASSERT_TRUE(ac.check());
-  fbl::RefPtr<VmCompression> compression = fbl::MakeRefCountedChecked<VmCompression>(
-      &ac, ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
-  ASSERT_TRUE(ac.check());
+  fbl::RefPtr<VmCompression> compression =
+      VmCompression::Create(ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
+  ASSERT_TRUE(compression);
 
   constexpr uint32_t kMetadataStart = 0xdeadbeef;
   constexpr uint32_t kMetadataUpdate = 0xc0ffee;
@@ -343,9 +343,9 @@ bool compression_move_reference_test() {
   ASSERT_TRUE(lz4);
   fbl::RefPtr<VmSlotPageStorage> storage = fbl::MakeRefCountedChecked<VmSlotPageStorage>(&ac);
   ASSERT_TRUE(ac.check());
-  fbl::RefPtr<VmCompression> compression = fbl::MakeRefCountedChecked<VmCompression>(
-      &ac, ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
-  ASSERT_TRUE(ac.check());
+  fbl::RefPtr<VmCompression> compression =
+      VmCompression::Create(ktl::move(storage), ktl::move(lz4), kCompressionThreshhold);
+  ASSERT_TRUE(compression);
 
   constexpr uint32_t kMetadataStart = 0xdeadbeef;
   constexpr uint32_t kMetadataUpdate = 0xc0ffee;

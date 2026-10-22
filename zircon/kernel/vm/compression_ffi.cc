@@ -4,78 +4,131 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include "vm/compression_ffi.h"
+#include <zircon/assert.h>
 
-#include <kernel/ffi.h>
-#include <ktl/memory.h>
+#include <fbl/alloc_checker.h>
+#include <fbl/ref_ptr.h>
+#include <vm/compression_ffi.h>
+#include <vm/lz4_compressor.h>
+#include <vm/slot_page_storage.h>
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_destroy(VmCompression* compression) {
-  ktl::destroy_at(compression);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_free_instance(VmCompressedStorage* storage) {
+  delete storage;
 }
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_free(VmCompression* compression) { delete compression; }
-
-FFI_ALWAYS_INLINE fbl::RefCounted<VmCompression>* cpp_vmcompression_get_ref_counted(
-    VmCompression* compression) {
-  return const_cast<fbl::RefCounted<VmCompression>*>(
-      static_cast<const fbl::RefCounted<VmCompression>*>(compression));
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_vm_compressed_storage_get_ref_counted(
+    const VmCompressedStorage* storage) {
+  return const_cast<fbl::RefCounted<VmCompressedStorage>*>(
+      static_cast<const fbl::RefCounted<VmCompressedStorage>*>(storage));
 }
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_acquire_compressor(
-    ffi::Uninitialized<VmCompression::CompressorGuard>* guard, VmCompression* compression) {
-  // `Initialize` move-constructs into `guard` and destroys the temporary returned by
-  // `AcquireCompressor()`. This is safe because the move constructor transfers the lock, so the
-  // temporary's destructor does not release it.
-  guard->Initialize(compression->AcquireCompressor());
+VmCompressedStorage* cpp_vm_slot_page_storage_create() {
+  fbl::AllocChecker ac;
+  fbl::RefPtr<VmCompressedStorage> storage =
+      fbl::AdoptRef<VmSlotPageStorage>(new (&ac) VmSlotPageStorage());
+  if (!ac.check()) {
+    return nullptr;
+  }
+  return fbl::ExportToRawPtr(&storage);
 }
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_compressor_guard_destroy(
-    VmCompression::CompressorGuard* guard) {
-  ktl::destroy_at(guard);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_vm_compressed_storage_store(VmCompressedStorage* storage,
+                                                       vm_page_t* page, size_t len,
+                                                       uint32_t* out_ref, vm_page_t** out_page) {
+  auto [maybe_ref, return_page] = storage->Store(page, len);
+  *out_page = return_page;
+  if (maybe_ref.has_value()) {
+    *out_ref = maybe_ref->value();
+    return true;
+  }
+  return false;
 }
 
-FFI_ALWAYS_INLINE VmCompressor* cpp_vmcompression_compressor_guard_get(
-    VmCompression::CompressorGuard* guard) {
-  return &guard->get();
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_free(VmCompressedStorage* storage, uint32_t ref) {
+  storage->Free(VmCompressedStorage::CompressedRef{ref});
 }
 
-FFI_ALWAYS_INLINE FfiCompressResult cpp_vmcompression_compress(VmCompression* compression,
-                                                               const void* page_src) {
-  VmCompression::CompressResult res = compression->Compress(page_src);
-  const auto* ref = ktl::get_if<VmCompression::CompressedRef>(&res);
-  const auto* fail = ktl::get_if<VmCompression::FailTag>(&res);
-  return FfiCompressResult{
-      .tag = static_cast<uint8_t>(res.index()),
-      .ref = ref ? ref->value() : 0,
-      .fail_page = fail ? fail->src_page.page : nullptr,
-      .fail_metadata = fail ? fail->src_page.metadata : 0,
-  };
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const void* cpp_vm_compressed_storage_compressed_data(
+    const VmCompressedStorage* storage, uint32_t ref, uint32_t* out_metadata, size_t* out_len) {
+  auto [data, metadata, len] = storage->CompressedData(VmCompressedStorage::CompressedRef{ref});
+  *out_metadata = metadata;
+  *out_len = len;
+  return data;
 }
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_set_metadata(VmCompression* compression, uint32_t ref,
-                                                      uint32_t metadata) {
-  compression->SetMetadata(VmCompression::CompressedRef(ref), metadata);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_vm_compressed_storage_get_metadata(VmCompressedStorage* storage,
+                                                                  uint32_t ref) {
+  return storage->GetMetadata(VmCompressedStorage::CompressedRef{ref});
 }
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_free_reference(VmCompression* compression, uint32_t ref) {
-  compression->Free(VmCompression::CompressedRef(ref));
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_set_metadata(VmCompressedStorage* storage,
+                                                              uint32_t ref, uint32_t metadata) {
+  storage->SetMetadata(VmCompressedStorage::CompressedRef{ref}, metadata);
 }
 
-FFI_ALWAYS_INLINE VmCompression::Stats cpp_vmcompression_get_stats(
-    const VmCompression* compression) {
-  return compression->GetStats();
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_dump(const VmCompressedStorage* storage) {
+  storage->Dump();
 }
 
-FFI_ALWAYS_INLINE VmCompression* cpp_vmcompression_create_default() {
-  fbl::RefPtr<VmCompression> compression = VmCompression::CreateDefault();
-  return fbl::ExportToRawPtr(&compression);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmCompressedStorage::MemoryUsage cpp_vm_compressed_storage_get_memory_usage(
+    const VmCompressedStorage* storage) {
+  return storage->GetMemoryUsage();
 }
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_dump(const VmCompression* compression) {
-  compression->Dump();
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compression_strategy_free_instance(VmCompressionStrategy* strategy) {
+  delete strategy;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_vm_compression_strategy_get_ref_counted(
+    const VmCompressionStrategy* strategy) {
+  return const_cast<fbl::RefCounted<VmCompressionStrategy>*>(
+      static_cast<const fbl::RefCounted<VmCompressionStrategy>*>(strategy));
+}
+
+VmCompressionStrategy* cpp_vm_lz4_compressor_create() {
+  fbl::RefPtr<VmCompressionStrategy> strategy = VmLz4Compressor::Create();
+  return fbl::ExportToRawPtr(&strategy);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint8_t cpp_vm_compression_strategy_compress(VmCompressionStrategy* strategy,
+                                                               const void* src, void* dst,
+                                                               size_t dst_limit, size_t* out_size) {
+  VmCompressionStrategy::CompressResult result = strategy->Compress(src, dst, dst_limit);
+  if (const size_t* size = ktl::get_if<size_t>(&result)) {
+    *out_size = *size;
+    return 0;
+  }
+  if (ktl::holds_alternative<VmCompressionStrategy::ZeroTag>(result)) {
+    return 1;
+  }
+  ZX_DEBUG_ASSERT(ktl::holds_alternative<VmCompressionStrategy::FailTag>(result));
+  return 2;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compression_strategy_decompress(VmCompressionStrategy* strategy,
+                                                              const void* src, size_t src_len,
+                                                              void* dst) {
+  strategy->Decompress(src, src_len, dst);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compression_strategy_dump(const VmCompressionStrategy* strategy) {
+  strategy->Dump();
 }
 
 }  // extern "C"

@@ -1286,46 +1286,55 @@ kernel_bindgen_crate("compression-bindings") {
   notice_year = 2026
 
   function_allowlist = [
-    "cpp_vmcompression_create_default",
-    "cpp_vmcompression_destroy",
-    "cpp_vmcompression_dump",
-    "cpp_vmcompression_free",
-    "cpp_vmcompression_get_ref_counted",
-    "cpp_vmcompression_acquire_compressor",
-    "cpp_vmcompression_compressor_guard_destroy",
-    "cpp_vmcompression_compressor_guard_get",
-    "cpp_vmcompression_compress",
-    "cpp_vmcompression_set_metadata",
-    "cpp_vmcompression_free_reference",
-    "cpp_vmcompression_get_stats",
+    "cpp_vm_compressed_storage_free_instance",
+    "cpp_vm_compressed_storage_get_ref_counted",
+    "cpp_vm_slot_page_storage_create",
+    "cpp_vm_compressed_storage_store",
+    "cpp_vm_compressed_storage_free",
+    "cpp_vm_compressed_storage_compressed_data",
+    "cpp_vm_compressed_storage_get_metadata",
+    "cpp_vm_compressed_storage_set_metadata",
+    "cpp_vm_compressed_storage_dump",
+    "cpp_vm_compressed_storage_get_memory_usage",
+    "cpp_vm_compression_strategy_free_instance",
+    "cpp_vm_compression_strategy_get_ref_counted",
+    "cpp_vm_lz4_compressor_create",
+    "cpp_vm_compression_strategy_compress",
+    "cpp_vm_compression_strategy_decompress",
+    "cpp_vm_compression_strategy_dump",
   ]
-  var_allowlist = [ "VmCompression_kNumLogBuckets" ]
   type_allowlist = [
-    "FfiCompressResult",
+    "VmCompressedStorage",
     "VmCompressedStorage_MemoryUsage",
+    "VmCompressionStrategy",
     "VmCompression",
     "VmCompression_CompressorGuard",
-    "VmCompression_Stats",
   ]
   opaque_types = [
+    "VmCompressedStorage",
+    "VmCompressionStrategy",
     "VmCompression",
     "VmCompression_CompressorGuard",
   ]
-  function_blocklist = [ "VmCompression_.*" ]
+  function_blocklist = [
+    "VmCompressedStorage_.*",
+    "VmCompressionStrategy_.*",
+    "VmCompression_.*",
+  ]
 
   # These are listed individually rather than as "VmCompression_.*" because a
   # wildcard would also block VmCompression_CompressorGuard, which is
   # allowlisted above.
   type_blocklist = [
+    "VmCompressedStorage_CompressedRef",
+    "VmCompressionStrategy_CompressResult",
+    "VmCompressionStrategy_FailTag",
+    "VmCompressionStrategy_ZeroTag",
     "VmCompression_CompressedRef",
-    "VmCompression_CompressResult",
-    "VmCompression_FailTag",
     "VmCompression_PageAndMetadata",
-    "VmCompression_ZeroTag",
     "VmCompressor",
     "VmCompressor_PageAndMetadata",
     "vm_page_t",
-    "zx_duration_mono_t",
     "zx_status_t",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
@@ -1333,16 +1342,13 @@ kernel_bindgen_crate("compression-bindings") {
   deps = [
     ":compressor-bindings",
     ":page-bindings",
-    "//sdk/rust/zx-types",
   ]
 
   raw_lines = [
     "#![no_std]",
     "use page_bindings::vm_page_t;",
     "pub use compressor_bindings::VmCompressor;",
-    "pub use zx_types::zx_duration_mono_t;",
   ]
-  expect_lints = [ "non_upper_case_globals" ]
 }
 
 kernel_bindgen_crate("compressor-bindings") {
@@ -1357,20 +1363,17 @@ kernel_bindgen_crate("compressor-bindings") {
 
   type_allowlist = [
     "VmCompressor",
-    "VmCompressor_State",
-    "VmCompressor_StateLayout",
     "VmCompressor_PageAndMetadata",
     "VmCompressor_FailTag",
   ]
+  opaque_types = [ "VmCompressor" ]
   type_blocklist = [
     "VmCompressor_CompressedRef",
     "VmCompressor_CompressResult",
     "VmCompressor_ZeroTag",
-    "VmCompression",
     "vm_page_t",
     "zx_status_t",
   ]
-  rustified_enum = [ "VmCompressor_State" ]
   function_blocklist = [ "VmCompressor_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
@@ -1379,9 +1382,7 @@ kernel_bindgen_crate("compressor-bindings") {
   raw_lines = [
     "#![no_std]",
     "use page_bindings::vm_page_t;",
-    "pub type VmCompression = core::ffi::c_void;",
   ]
-  expect_lints = [ "non_camel_case_types" ]
 }
 
 kernel_bindgen_crate("vm-cow-pages-bindings") {
@@ -1672,6 +1673,7 @@ kernel_rust_mod("vm-rs-unittests") {
   source_root = "unittests/mod.rs"
   sources = [
     "unittests/aspace_unittest.rs",
+    "unittests/compression_unittest.rs",
     "unittests/continuous_attribution_unittest.rs",
     "unittests/slab_unittest.rs",
     "unittests/test_helper.rs",

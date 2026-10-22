@@ -288,6 +288,7 @@ unsafe extern "C" {
     fn cpp_timer_current_boot_ticks() -> InstantBootTicks;
     fn cpp_current_mono_time() -> InstantMono;
     fn cpp_current_boot_time() -> InstantBoot;
+    fn cpp_ticks_per_second() -> i64;
     fn cpp_timer_get_ticks_to_time_ratio() -> Ratio;
     fn cpp_timer_get_mono_ticks_offset() -> i64;
     fn cpp_timer_get_boot_ticks_offset() -> i64;
@@ -317,6 +318,14 @@ pub fn timer_current_mono_ticks() -> InstantMonoTicks {
     // SAFETY: Calling this FFI function has no preconditions and safely returns the platform timer
     // ticks.
     unsafe { cpp_timer_current_mono_ticks() }
+}
+
+/// High-precision timer ticks per second.
+#[inline]
+pub fn ticks_per_second() -> i64 {
+    // SAFETY: Calling this FFI function has no preconditions and returns the configured platform
+    // ticks per second.
+    unsafe { cpp_ticks_per_second() }
 }
 
 /// Returns the current boot time in ticks.

@@ -10,10 +10,7 @@ use crate::vm::vm_page_list::ReferenceValue;
 use crate::vm::{physmap, pmm};
 use compressor_bindings as bindings;
 use core::cell::UnsafeCell;
-use core::ffi::c_void;
-use core::mem::MaybeUninit;
 use core::ptr::NonNull;
-use page_bindings::vm_page_t;
 use zx_status::Status;
 use zx_types::zx_status_t;
 
@@ -76,6 +73,24 @@ pub enum CompressResult {
     Fail(FailTag),
 }
 
+impl CompressResult {
+    /// Converts this result into its C FFI tag and populates `out_ref` or `out_fail_src_page`.
+    #[inline]
+    pub(crate) fn into_ffi(self, out_ref: &mut u32, out_fail_src_page: &mut PageAndMetadata) -> u8 {
+        match self {
+            Self::CompressedRef(r) => {
+                *out_ref = r.value();
+                0
+            }
+            Self::Zero => 1,
+            Self::Fail(fail) => {
+                *out_fail_src_page = fail.src_page;
+                2
+            }
+        }
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum State {
@@ -93,15 +108,6 @@ enum State {
     /// Compression has completed, no fields are valid, and needs to be re-armed.
     Finalized = 3,
 }
-
-// Compile-time layout assertions against C++ State.
-zr::static_assert!(
-    core::mem::size_of::<State>() == core::mem::size_of::<bindings::VmCompressor_State>()
-);
-zr::static_assert!(State::Ready as u8 == bindings::VmCompressor_State::Ready as u8);
-zr::static_assert!(State::Started as u8 == bindings::VmCompressor_State::Started as u8);
-zr::static_assert!(State::Compressed as u8 == bindings::VmCompressor_State::Compressed as u8);
-zr::static_assert!(State::Finalized as u8 == bindings::VmCompressor_State::Finalized as u8);
 
 /// The `VmCompressor` represents a single instance of a compression operation that can be
 /// performed with a minimal locking protocol between a VMO page owner, and the compressor. There
@@ -189,8 +195,9 @@ pub struct VmCompressor {
     state: UnsafeCell<State>,
     /// Has no load bearing functionality and is only used for assertion checking. Ownership
     /// permissions are the same as for `spare_page`.
-    // Safety invariant: Accessed only by the `VmCompressor` owner when idle (`Ready`/`Finalized`),
-    // or by the holder of the VMO lock for the VMO that owns the temporary reference when in the
+    // Safety invariant: Accessed only by the `VmCompressor` owner when idle (`Ready`/`Finalized`)
+    // or after the return of the temporary reference has been synchronized via the VMO lock, or by
+    // the holder of the VMO lock for the VMO that owns the temporary reference when in the
     // `Started` or `Compressed` state.
     using_temp_reference: UnsafeCell<bool>,
     /// The page we are compressing, owned by us.
@@ -225,54 +232,6 @@ pub struct VmCompressor {
     temp_reference_metadata: UnsafeCell<u32>,
 }
 
-// Compile-time layout assertions against the C++ VmCompressor type and StateLayout via bindgen.
-zr::static_assert!(
-    core::mem::size_of::<VmCompressor>() == core::mem::size_of::<bindings::VmCompressor>()
-);
-zr::static_assert!(
-    core::mem::align_of::<VmCompressor>() == core::mem::align_of::<bindings::VmCompressor>()
-);
-zr::static_assert!(
-    core::mem::size_of::<VmCompressor>()
-        == core::mem::size_of::<bindings::VmCompressor_StateLayout>()
-);
-zr::static_assert!(
-    core::mem::align_of::<VmCompressor>()
-        == core::mem::align_of::<bindings::VmCompressor_StateLayout>()
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, compressor)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, compressor)
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, temp_reference)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, temp_reference)
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, state)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, state)
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, using_temp_reference)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, using_temp_reference)
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, page)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, page)
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, spare_page)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, spare_page)
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, compression_result)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, compression_result)
-);
-zr::static_assert!(
-    core::mem::offset_of!(VmCompressor, temp_reference_metadata)
-        == core::mem::offset_of!(bindings::VmCompressor_StateLayout, temp_reference_metadata)
-);
-
 impl Drop for VmCompressor {
     fn drop(&mut self) {
         // Should not have an in progress compression.
@@ -284,7 +243,15 @@ impl Drop for VmCompressor {
 }
 
 impl VmCompressor {
-    fn new(compressor: NonNull<VmCompression>, temp_ref: u32) -> Self {
+    /// Creates a new `VmCompressor` owned by `compressor` that hands out `temp_ref` as its
+    /// temporary reference.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `compressor` points to the pinned `VmCompression` that will own
+    /// the returned `VmCompressor`, that it is fully initialized before any method that accesses
+    /// the owner is called, and that it outlives the returned `VmCompressor`.
+    pub(crate) unsafe fn new(compressor: NonNull<VmCompression>, temp_ref: u32) -> Self {
         Self {
             compressor,
             temp_reference: temp_ref,
@@ -357,9 +324,10 @@ impl VmCompressor {
     /// # Safety
     ///
     /// The caller must ensure that it owns this `VmCompressor` (in the `Started` state after
-    /// calling [`start`][Self::start]) and that the `VmPage` passed to [`start`][Self::start] and
+    /// calling [`start`][Self::start]), that the `VmPage` passed to [`start`][Self::start] and
     /// its `page::SIZE` bytes in the physmap remain live, valid for reads, and unmodified for the
-    /// duration of this call.
+    /// duration of this call, and that no chain lock transaction is active and the current
+    /// thread's lock is not held.
     pub unsafe fn compress(&self) {
         // SAFETY: By the `state` and `page` safety invariants, `state` is exclusively accessed by
         // the compressor owner and `page` is read-only in the `Started` state.
@@ -373,11 +341,14 @@ impl VmCompressor {
 
         // SAFETY: `addr` is a non-null physmap address for `page`, which by this function's
         // `# Safety` precondition is valid for reads of `page::SIZE` unmodified bytes for the
-        // duration of `self.compressor().compress(...)`. By the field safety invariants,
-        // `compression_result` and `state` are exclusively accessed by the compressor owner.
+        // duration of `self.compressor().compress(...)`, and is owned by this compressor so does
+        // not overlap the compression buffer or storage. The caller also guarantees that no chain
+        // lock transaction is active and the current thread's lock is not held. By the field
+        // safety invariants, `compression_result` and `state` are exclusively accessed by the
+        // compressor owner.
         unsafe {
             let result =
-                self.compressor().compress(core::ptr::with_exposed_provenance::<c_void>(addr.0));
+                self.compressor().compress(core::ptr::with_exposed_provenance::<u8>(addr.0));
             *self.compression_result.get() = Some(result);
             *self.state.get() = State::Compressed;
         }
@@ -529,11 +500,12 @@ impl VmCompressor {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that either the compressor is idle, or the caller holds the lock for
-    /// the VMO that owns the temporary reference.
+    /// The caller must ensure that either the compressor is idle, the caller holds the lock for
+    /// the VMO that owns the temporary reference, or the caller owns the `VmCompressor` after the
+    /// return of the temporary reference has been synchronized via the VMO lock.
     pub unsafe fn is_temp_reference_in_use(&self) -> bool {
-        // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the
-        // VMO lock is held, which satisfies the `using_temp_reference` safety invariant.
+        // SAFETY: By this function's `# Safety` precondition, the caller satisfies the
+        // `using_temp_reference` safety invariant.
         unsafe { *self.using_temp_reference.get() }
     }
 
@@ -549,7 +521,7 @@ impl VmCompressor {
     ///
     /// The caller must ensure that either the compressor is idle, or the caller holds the VMO lock
     /// (or the compressor is in the `Started`/`Compressed` states where `page` is read-only).
-    unsafe fn page(&self) -> Option<VmPagePtr> {
+    pub(crate) unsafe fn page(&self) -> Option<VmPagePtr> {
         // SAFETY: By this function's `# Safety` precondition, `page` is not concurrently mutated
         // during this read, satisfying the `page` safety invariant.
         unsafe { *self.page.get() }
@@ -561,7 +533,7 @@ impl VmCompressor {
     ///
     /// The caller must ensure that either the compressor is idle, or the caller holds the lock for
     /// the VMO that owns the temporary reference.
-    unsafe fn spare_page(&self) -> Option<VmPagePtr> {
+    pub(crate) unsafe fn spare_page(&self) -> Option<VmPagePtr> {
         // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the
         // VMO lock is held, satisfying the `spare_page` safety invariant.
         unsafe { *self.spare_page.get() }
@@ -573,7 +545,7 @@ impl VmCompressor {
     ///
     /// The caller must ensure that either the compressor is idle, or the caller holds the lock for
     /// the VMO that owns the temporary reference.
-    unsafe fn set_spare_page(&self, page: Option<VmPagePtr>) {
+    pub(crate) unsafe fn set_spare_page(&self, page: Option<VmPagePtr>) {
         // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the
         // VMO lock is held, granting exclusive access to `spare_page`.
         unsafe {
@@ -587,7 +559,7 @@ impl VmCompressor {
     ///
     /// The caller must ensure that either the compressor is idle, or the caller holds the lock for
     /// the VMO that owns the temporary reference.
-    unsafe fn temp_reference_metadata(&self) -> u32 {
+    pub(crate) unsafe fn temp_reference_metadata(&self) -> u32 {
         // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the
         // VMO lock is held, satisfying the `temp_reference_metadata` safety invariant.
         unsafe { *self.temp_reference_metadata.get() }
@@ -599,51 +571,12 @@ impl VmCompressor {
     ///
     /// The caller must ensure that either the compressor is idle, or the caller holds the lock for
     /// the VMO that owns the temporary reference.
-    unsafe fn set_temp_reference_metadata(&self, metadata: u32) {
+    pub(crate) unsafe fn set_temp_reference_metadata(&self, metadata: u32) {
         // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the
         // VMO lock is held, granting exclusive access to `temp_reference_metadata`.
         unsafe {
             *self.temp_reference_metadata.get() = metadata;
         }
-    }
-}
-
-/// Initializes a `VmCompressor` in-place within `compressor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is non-null, properly aligned, and points to valid
-/// uninitialized storage for a `VmCompressor`, and that `owner` is a valid, non-null pointer to
-/// the owning `VmCompression` that outlives `compressor`.
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_init(
-    compressor: *mut MaybeUninit<VmCompressor>,
-    owner: *mut VmCompression,
-    temp_ref: u32,
-) {
-    let owner = NonNull::new(owner).expect("owner VmCompression must not be null");
-    // SAFETY: By this function's `# Safety` precondition, `compressor` is non-null, aligned, and
-    // points to valid uninitialized storage for a `VmCompressor`.
-    unsafe {
-        (*compressor).write(VmCompressor::new(owner, temp_ref));
-    }
-}
-
-/// Destroys a `VmCompressor` in-place.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is non-null, properly aligned, and points to a valid,
-/// initialized `VmCompressor` that is idle, has no temporary reference in use, and will not be
-/// used again after this call.
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_destroy(compressor: *mut VmCompressor) {
-    // SAFETY: By this function's `# Safety` precondition, `compressor` is non-null, aligned, and
-    // points to a live, initialized `VmCompressor` that will not be accessed again.
-    unsafe {
-        core::ptr::drop_in_place(compressor);
     }
 }
 
@@ -683,14 +616,12 @@ pub unsafe extern "C" fn rust_vm_compressor_start(
 /// # Safety
 ///
 /// The caller must ensure that `compressor` is a valid reference to a started `VmCompressor` owned
-/// by the caller, and that the source page remains valid for reads and unmodified for the duration
-/// of the call as required by [`VmCompressor::compress`].
+/// by the caller, and that the rest of the `# Safety` contract of [`VmCompressor::compress`] is
+/// upheld.
 // SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_compressor_compress(compressor: &VmCompressor) {
-    // SAFETY: By this function's `# Safety` precondition, the caller owns `compressor` in the
-    // `Started` state and the source page remains valid and unmodified, discharging
-    // `VmCompressor::compress`.
+    // SAFETY: Discharged by caller's `# Safety` precondition.
     unsafe {
         compressor.compress();
     }
@@ -717,17 +648,7 @@ pub unsafe extern "C" fn rust_vm_compressor_take_compression_result(
     // SAFETY: By this function's `# Safety` precondition, the caller owns `compressor` in the
     // `Compressed` state and holds the VMO lock, discharging
     // `VmCompressor::take_compression_result`.
-    match unsafe { compressor.take_compression_result() } {
-        CompressResult::CompressedRef(r) => {
-            *out_ref = r.value();
-            0
-        }
-        CompressResult::Zero => 1,
-        CompressResult::Fail(fail) => {
-            *out_fail_src_page = fail.src_page;
-            2
-        }
-    }
+    unsafe { compressor.take_compression_result() }.into_ffi(out_ref, out_fail_src_page)
 }
 
 /// Finalizes `compressor` after the temporary reference is no longer in use.
@@ -785,18 +706,6 @@ pub unsafe extern "C" fn rust_vm_compressor_return_temp_reference(
     }
 }
 
-/// Returns whether `compressor` is idle.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is a valid reference to an initialized `VmCompressor`
-/// owned by the caller.
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_is_idle(compressor: &VmCompressor) -> bool {
-    compressor.is_idle()
-}
-
 /// Returns whether `raw_ref` is the temporary reference from `compressor`.
 ///
 /// # Safety
@@ -826,111 +735,4 @@ pub unsafe extern "C" fn rust_vm_compressor_is_temp_reference_in_use(
     // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the VMO
     // lock is held, discharging `VmCompressor::is_temp_reference_in_use`.
     unsafe { compressor.is_temp_reference_in_use() }
-}
-
-/// Returns a pointer to the `VmCompression` that owns `compressor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is a valid reference to an initialized `VmCompressor`.
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_get_compressor(
-    compressor: &VmCompressor,
-) -> *mut VmCompression {
-    compressor.compressor.as_ptr()
-}
-
-/// Returns the page currently being compressed by `compressor`, or null if none.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is a valid reference to an initialized `VmCompressor`,
-/// and that the caller upholds the locking requirements of [`VmCompressor::page`].
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_get_page(compressor: &VmCompressor) -> *mut vm_page_t {
-    // SAFETY: By this function's `# Safety` precondition, `page` is not concurrently mutated
-    // during this read, discharging `VmCompressor::page`.
-    match unsafe { compressor.page() } {
-        Some(page) => page.as_ffi(),
-        None => core::ptr::null_mut(),
-    }
-}
-
-/// Returns the spare page held by `compressor`, or null if none.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is a valid reference to an initialized `VmCompressor`,
-/// and that the caller upholds the locking requirements of [`VmCompressor::spare_page`].
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_get_spare_page(
-    compressor: &VmCompressor,
-) -> *mut vm_page_t {
-    // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the VMO
-    // lock is held, discharging `VmCompressor::spare_page`.
-    match unsafe { compressor.spare_page() } {
-        Some(page) => page.as_ffi(),
-        None => core::ptr::null_mut(),
-    }
-}
-
-/// Sets the spare page held by `compressor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is a valid reference to an initialized `VmCompressor`,
-/// that `page` is null or a valid `vm_page_t` pointer, and that the caller upholds the locking
-/// requirements of [`VmCompressor::set_spare_page`].
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_set_spare_page(
-    compressor: &VmCompressor,
-    page: *mut vm_page_t,
-) {
-    // SAFETY: By this function's `# Safety` precondition, `page` is null or a valid `vm_page_t`
-    // pointer (`VmPagePtr::from_ffi`) and either the compressor is idle or the VMO lock is held
-    // (`VmCompressor::set_spare_page`).
-    unsafe {
-        compressor.set_spare_page(VmPagePtr::from_ffi(page));
-    }
-}
-
-/// Returns the temporary reference metadata held by `compressor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is a valid reference to an initialized `VmCompressor`,
-/// and that the caller upholds the locking requirements of
-/// [`VmCompressor::temp_reference_metadata`].
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_get_temp_reference_metadata(
-    compressor: &VmCompressor,
-) -> u32 {
-    // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the VMO
-    // lock is held, discharging `VmCompressor::temp_reference_metadata`.
-    unsafe { compressor.temp_reference_metadata() }
-}
-
-/// Sets the temporary reference metadata held by `compressor`.
-///
-/// # Safety
-///
-/// The caller must ensure that `compressor` is a valid reference to an initialized `VmCompressor`,
-/// and that the caller upholds the locking requirements of
-/// [`VmCompressor::set_temp_reference_metadata`].
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compressor_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compressor_set_temp_reference_metadata(
-    compressor: &VmCompressor,
-    metadata: u32,
-) {
-    // SAFETY: By this function's `# Safety` precondition, either the compressor is idle or the VMO
-    // lock is held, discharging `VmCompressor::set_temp_reference_metadata`.
-    unsafe {
-        compressor.set_temp_reference_metadata(metadata);
-    }
 }

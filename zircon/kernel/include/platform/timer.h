@@ -376,6 +376,7 @@ zx_ticks_t cpp_timer_get_mono_ticks_offset();
 zx_ticks_t cpp_timer_get_boot_ticks_offset();
 zx_instant_mono_t cpp_current_mono_time();
 zx_instant_boot_t cpp_current_boot_time();
+zx_ticks_t cpp_ticks_per_second();
 CppRatio cpp_timer_get_ticks_to_time_ratio();
 CurrentTicksObservation cpp_timer_current_mono_and_boot_ticks();
 void cpp_timer_set_ticks_to_time_ratio(CppRatio ticks_to_time);

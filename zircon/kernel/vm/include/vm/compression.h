@@ -10,8 +10,10 @@
 #include <debug.h>
 #include <zircon/types.h>
 
+#include <fbl/macros.h>
 #include <fbl/ref_counted.h>
-#include <kernel/mutex.h>
+#include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <ktl/optional.h>
 #include <ktl/tuple.h>
 #include <ktl/variant.h>
@@ -132,55 +134,28 @@ class VmCompressionStrategy : public fbl::RefCounted<VmCompressionStrategy> {
 // This also manages the `VmCompressor` instances that provide the state machine for a VMO to do
 // compression. Currently only a single instance is supported limiting to one simultaneous
 // compression.
-class VmCompression final : public fbl::RefCounted<VmCompression> {
+class VmCompression final : public fbl::RefCounted<VmCompression>,
+                            public fbl::Recyclable<VmCompression> {
  public:
+  void fbl_recycle();
+
+  using CompressedRef = VmPageOrMarker::ReferenceValue;
+
   // Constructs a compression manager using the given storage and compression strategies. The
   // |compression_threshold| is the number of bytes above which a compression is considered to have
   // failed and should not be considered worth storing.
   // TODO(https://fxbug.dev/42138396): Limit total amount of pages stored.
-  VmCompression(fbl::RefPtr<VmCompressedStorage> storage,
-                fbl::RefPtr<VmCompressionStrategy> strategy, size_t compression_threshold);
-  ~VmCompression();
-
-  // Construct a VmCompression instance using default options for the storage and compression
-  // strategies.
-  static fbl::RefPtr<VmCompression> CreateDefault();
-
-  // Attempts to compress the page of data at |page_src|, which is assumed to be kPageSize. This
-  // return one of:
-  //  CompressedRef - Compression was successful and the provided reference can be passed to
-  //                  |Decompress| or |Free|.
-  //  ZeroTag - Input was the zero page. The compressor is not required to detect zero pages, and
-  //            the absence of this value should not be used to assume the input was not zero.
-  //  FailTag - Input could not be compressed or stored.
-  // The |now| parameter is the timestamp to be stored with the compressed data, and is used with
-  // the corresponding parameter to |Decompress| to determine how long a page was stored for.
-  // TODO(https://fxbug.dev/42138396): Should different failures be exposed here?
-  using CompressedRef = VmPageOrMarker::ReferenceValue;
-  using FailTag = VmCompressor::FailTag;
-  using ZeroTag = VmCompressor::ZeroTag;
-  using CompressResult = VmCompressor::CompressResult;
-  CompressResult Compress(const void* page_src, zx_instant_mono_ticks_t now);
-
-  // Wrapper that passes current_mono_ticks() as |now|
-  CompressResult Compress(const void* page_src) { return Compress(page_src, current_mono_ticks()); }
+  static fbl::RefPtr<VmCompression> Create(fbl::RefPtr<VmCompressedStorage> storage,
+                                           fbl::RefPtr<VmCompressionStrategy> strategy,
+                                           size_t compression_threshold);
 
   // Decompresses and frees the provided reference into |page_dest| and |metadata_dest|. This cannot
   // fail and always produces kPageSize worth of data. After calling this the reference is no longer
   // valid.
   //
-  // The |now| parameter is compared with the value given in |Compress| to determine how long this
-  // page was store for.
-  //
   // Note that the temporary reference may be passed into here, however the same locking
   // requirements as |MoveReference| must be observed.
-  void Decompress(CompressedRef ref, void* page_dest, uint32_t* metadata_dest,
-                  zx_instant_mono_ticks_t now);
-
-  // Wrapper that passes current_mono_ticks() as |now|
-  void Decompress(CompressedRef ref, void* page_dest, uint32_t* metadata_dest) {
-    Decompress(ref, page_dest, metadata_dest, current_mono_ticks());
-  }
+  void Decompress(CompressedRef ref, void* page_dest, uint32_t* metadata_dest);
 
   // Free the compressed reference without decompressing it.
   //
@@ -211,7 +186,9 @@ class VmCompression final : public fbl::RefCounted<VmCompression> {
   // Returns whether or not the provided reference is a temporary reference.
   //
   // See |VmCompressor| for a full explanation of temporary references.
-  bool IsTempReference(const CompressedRef& ref) { return ref.value() == kTempReferenceValue; }
+  bool IsTempReference(const CompressedRef& ref) const {
+    return ref.value() == kTempReferenceValue;
+  }
 
   // Retrieve the metadata for the original page referred to by ref.
   //
@@ -227,94 +204,40 @@ class VmCompression final : public fbl::RefCounted<VmCompression> {
   class CompressorGuard {
    public:
     ~CompressorGuard();
-    CompressorGuard(CompressorGuard&& instance) noexcept
-        : instance_guard_(AdoptLock, &instance.instance_.compressor().instance_lock_,
-                          instance.instance_guard_.take()),
-          instance_(instance.instance_) {}
+    CompressorGuard(const CompressorGuard&) = delete;
+    CompressorGuard(CompressorGuard&&) = delete;
+    CompressorGuard& operator=(const CompressorGuard&) = delete;
+    CompressorGuard& operator=(CompressorGuard&&) = delete;
 
     // Return a reference to the VmCompressor. Reference must not outlive this object.
-    VmCompressor& get() { return instance_; }
+    VmCompressor& get();
 
    private:
-    CompressorGuard(VmCompressor& instance, Guard<Mutex>* guard)
-        : instance_guard_(AdoptLock, &instance.compressor().instance_lock_, guard->take()),
-          instance_(instance) {}
+    explicit CompressorGuard(const VmCompression* compression);
     friend VmCompression;
-    // Guard that keeps the instance owned by us, must never be released for the lifetime of this
-    // object and the reference to instance_.
-    Guard<Mutex> instance_guard_;
-    VmCompressor& instance_;
+
+    [[maybe_unused]] OpaqueStorage<56, 8> storage_{};
   };
 
   // Retrieve a reference to a VmCompressor, wrapped in the RAII CompressorGuard. Once the
-  // compressor is finished with it can be destroyed, which will release it for re-use.
+  // compressor is finished with it can be destroyed, which will release it for reuse.
   // This method may block until a compressor becomes available and callers should be prepared for
   // extended wait times.
   // The returned CompressorGuard must not outlive this object.
   CompressorGuard AcquireCompressor();
 
-  // Perform an information dump of the internal state to the debuglog.
-  void Dump() const;
-
-  static constexpr size_t kNumLogBuckets = 8;
-  struct Stats {
-    VmCompressedStorage::MemoryUsage memory_usage;
-    zx_duration_mono_t compression_time = 0;
-    zx_duration_mono_t decompression_time = 0;
-    uint64_t total_page_compression_attempts = 0;
-    uint64_t failed_page_compression_attempts = 0;
-    uint64_t total_page_decompressions = 0;
-    uint64_t compressed_page_evictions = 0;
-    uint64_t pages_decompressed_within_log_seconds[kNumLogBuckets] = {};
-  };
-  Stats GetStats() const;
-
  private:
-  // References to the backing storage and compression strategies.
-  const fbl::RefPtr<VmCompressedStorage> storage_;
-  const fbl::RefPtr<VmCompressionStrategy> strategy_;
-  // Pages must compress to less than or equal to this threshold for compression to be considered a
-  // success. The largest amount we might need to store is larger than this, as this threshold does
-  // not include the 8 bytes we add on as a timestamp for when a page was compressed.
-  const size_t compression_threshold_;
+  VmCompression() = default;
+  ~VmCompression() = default;
+  DISALLOW_COPY_ASSIGN_AND_MOVE(VmCompression);
 
   // Currently only a single VmCompressor instance is supported, so only a single temporary
   // reference is needed.
   // It is the responsibility of each underlying storage to not return this.
   static constexpr uint64_t kTempReferenceValue = UINT32_MAX & ~BIT_MASK(CompressedRef::kAlignBits);
 
-  DECLARE_MUTEX(VmCompression) instance_lock_;
-  // The compressor instance has a more complicated locking structure than can be expressed with
-  // annotations here. The instance_lock_ is used to control vending this out in |GetCompressor| to
-  // ensure it is only owned by one thread at a time, however certain mutation of the compressor
-  // requires holding the VMO lock of the relevant page, and this allows for usage with just holding
-  // the VMO lock and not the instance_lock_. See VmCompressor for more details on what fields may
-  // be read/written with which locks held.
-  VmCompressor instance_ TA_GUARDED(instance_lock_);
-
-  // Lock for compression state. In practice this should never be contended, since presently only a
-  // single VmCompressor is supported.
-  DECLARE_MUTEX(VmCompression) compression_lock_;
-  // The buffer_page_ is used as the destination for compressing any input page. To avoid going to
-  // and from the pmm every compression attempt we attempt to re-use a single buffer page as much as
-  // possible.
-  vm_page_t* buffer_page_ TA_GUARDED(compression_lock_) = nullptr;
-
-  // Internal helpers to operate on the temporary references.
-  ktl::optional<PageAndMetadata> MoveTempReference(CompressedRef ref);
-  void DecompressTempReference(CompressedRef ref, void* page_dest, uint32_t* metadata_dest);
-  void FreeTempReference(CompressedRef ref);
-
-  // Statistics
-  RelaxedAtomic<zx_duration_mono_t> compression_time_ = 0;
-  RelaxedAtomic<zx_duration_mono_t> decompression_time_ = 0;
-  RelaxedAtomic<uint64_t> compression_attempts_ = 0;
-  RelaxedAtomic<uint64_t> compression_success_ = 0;
-  RelaxedAtomic<uint64_t> compression_zero_page_ = 0;
-  RelaxedAtomic<uint64_t> compression_fail_ = 0;
-  RelaxedAtomic<uint64_t> decompressions_ = 0;
-  RelaxedAtomic<uint64_t> decompression_skipped_ = 0;
-  RelaxedAtomic<uint64_t> decompressions_within_log_seconds_[kNumLogBuckets] = {};
+  // Internal helper to operate on the temporary references.
+  PageAndMetadata MoveTempReference(CompressedRef ref);
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSION_H_

@@ -8,43 +8,98 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_COMPRESSION_FFI_H_
 
 #include <zircon/compiler.h>
+#include <zircon/types.h>
 
+#include <fbl/ref_counted.h>
 #include <kernel/ffi.h>
+#include <vm/compression.h>
 
-#include "vm/compression.h"
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 __BEGIN_CDECLS
 
-struct FfiCompressResult {
-  uint8_t tag;
-  uint32_t ref;
-  vm_page_t* fail_page;
-  uint32_t fail_metadata;
-};
+// C++ -> Rust FFI shims for VmCompressedStorage and VmCompressionStrategy.
 
-FFI_ALWAYS_INLINE void cpp_vmcompression_destroy(VmCompression* compression);
-FFI_ALWAYS_INLINE void cpp_vmcompression_free(VmCompression* compression);
-FFI_ALWAYS_INLINE fbl::RefCounted<VmCompression>* cpp_vmcompression_get_ref_counted(
-    VmCompression* compression);
-FFI_ALWAYS_INLINE void cpp_vmcompression_acquire_compressor(
-    ffi::Uninitialized<VmCompression::CompressorGuard>* guard, VmCompression* compression);
-FFI_ALWAYS_INLINE void cpp_vmcompression_compressor_guard_destroy(
-    VmCompression::CompressorGuard* guard);
-FFI_ALWAYS_INLINE VmCompressor* cpp_vmcompression_compressor_guard_get(
-    VmCompression::CompressorGuard* guard);
-FFI_ALWAYS_INLINE FfiCompressResult cpp_vmcompression_compress(VmCompression* compression,
-                                                               const void* page_src);
-FFI_ALWAYS_INLINE void cpp_vmcompression_set_metadata(VmCompression* compression, uint32_t ref,
-                                                      uint32_t metadata);
-FFI_ALWAYS_INLINE void cpp_vmcompression_free_reference(VmCompression* compression, uint32_t ref);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_free_instance(VmCompressedStorage* storage);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_vm_compressed_storage_get_ref_counted(
+    const VmCompressedStorage* storage);
+
+VmCompressedStorage* cpp_vm_slot_page_storage_create();
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_vm_compressed_storage_store(VmCompressedStorage* storage,
+                                                       vm_page_t* page, size_t len,
+                                                       uint32_t* out_ref, vm_page_t** out_page);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_free(VmCompressedStorage* storage, uint32_t ref);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const void* cpp_vm_compressed_storage_compressed_data(
+    const VmCompressedStorage* storage, uint32_t ref, uint32_t* out_metadata, size_t* out_len);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_vm_compressed_storage_get_metadata(VmCompressedStorage* storage,
+                                                                  uint32_t ref);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_set_metadata(VmCompressedStorage* storage,
+                                                              uint32_t ref, uint32_t metadata);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compressed_storage_dump(const VmCompressedStorage* storage);
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
-FFI_ALWAYS_INLINE VmCompression::Stats cpp_vmcompression_get_stats(
-    const VmCompression* compression);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmCompressedStorage::MemoryUsage cpp_vm_compressed_storage_get_memory_usage(
+    const VmCompressedStorage* storage);
 #pragma clang diagnostic pop
-FFI_ALWAYS_INLINE VmCompression* cpp_vmcompression_create_default();
-FFI_ALWAYS_INLINE void cpp_vmcompression_dump(const VmCompression* compression);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compression_strategy_free_instance(VmCompressionStrategy* strategy);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_vm_compression_strategy_get_ref_counted(
+    const VmCompressionStrategy* strategy);
+
+VmCompressionStrategy* cpp_vm_lz4_compressor_create();
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint8_t cpp_vm_compression_strategy_compress(VmCompressionStrategy* strategy,
+                                                               const void* src, void* dst,
+                                                               size_t dst_limit, size_t* out_size);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compression_strategy_decompress(VmCompressionStrategy* strategy,
+                                                              const void* src, size_t src_len,
+                                                              void* dst);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_compression_strategy_dump(const VmCompressionStrategy* strategy);
+
+// Rust -> C++ FFI shims for VmCompression and VmCompression::CompressorGuard.
+
+void rust_vm_compression_recycle(VmCompression* compression);
+VmCompression* rust_vm_compression_create(VmCompressedStorage* storage,
+                                          VmCompressionStrategy* strategy,
+                                          size_t compression_threshold);
+void rust_vm_compression_decompress(const VmCompression* compression, uint32_t ref, void* page_dest,
+                                    uint32_t* metadata_dest);
+void rust_vm_compression_free(const VmCompression* compression, uint32_t ref);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
+VmCompressor::PageAndMetadata rust_vm_compression_move_temp_reference(
+    const VmCompression* compression, uint32_t ref);
+#pragma clang diagnostic pop
+uint32_t rust_vm_compression_get_metadata(const VmCompression* compression, uint32_t ref);
+void rust_vm_compression_set_metadata(const VmCompression* compression, uint32_t ref,
+                                      uint32_t metadata);
+void rust_vm_compression_acquire_compressor(const VmCompression* compression,
+                                            VmCompression::CompressorGuard* out_guard);
+void rust_vm_compression_compressor_guard_destroy(VmCompression::CompressorGuard* guard);
+VmCompressor* rust_vm_compression_compressor_guard_get(const VmCompression::CompressorGuard* guard);
 
 __END_CDECLS
 

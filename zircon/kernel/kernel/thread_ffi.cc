@@ -615,6 +615,11 @@ FFI_ALWAYS_INLINE void cpp_thread_get_backtrace(Thread* thread, Backtrace* out_b
 FFI_ALWAYS_INLINE void cpp_thread_dump(const Thread* thread, bool full) { thread->Dump(full); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_duration_mono_t cpp_thread_runtime(const Thread* thread) {
+  return thread->Runtime();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint32_t cpp_thread_signals(const Thread* thread) {
   DEBUG_ASSERT(thread != nullptr);
   return thread->signals();

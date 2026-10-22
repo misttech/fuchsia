@@ -28,6 +28,9 @@ FFI_ALWAYS_INLINE zx_instant_mono_t cpp_current_mono_time() { return current_mon
 FFI_ALWAYS_INLINE zx_instant_boot_t cpp_current_boot_time() { return current_boot_time(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_ticks_t cpp_ticks_per_second() { return ticks_per_second(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE CppRatio cpp_timer_get_ticks_to_time_ratio() {
   const affine::Ratio& r = timer_get_ticks_to_time_ratio();
   return {r.numerator(), r.denominator()};
