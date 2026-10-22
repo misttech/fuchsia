@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "go-benchmarking",
+    srcs = ["results.go"],
+    importpath = "go.fuchsia.dev/fuchsia/src/lib/go-benchmarking",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/tests/end_to_end/idle:__pkg__"],
+)
+
+host_go_test(
+    name = "go_benchmarking_test",
+    srcs = ["results_test.go"],
+    embed = [":go-benchmarking"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib:__pkg__"],
+)

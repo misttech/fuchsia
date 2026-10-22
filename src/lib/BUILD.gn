@@ -65,7 +65,6 @@ group("tests") {
     "fuchsia-url:tests",
     "fxl:tests",
     "gcs:tests($host_toolchain)",
-    "go-benchmarking:tests",
     "http-sse:tests",
     "http-uri-ext:tests",
     "icu:tests",
