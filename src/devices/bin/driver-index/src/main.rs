@@ -21,7 +21,7 @@ use fidl_fuchsia_driver_registrar as fdr;
 use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::escrow::EscrowOperation;
-use fuchsia_component::server::ServiceFs;
+use fuchsia_component::server::{Item, ServiceFs, ServiceObjTrait, StallableServiceFs};
 use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use std::collections::HashSet;
@@ -374,6 +374,43 @@ async fn run_load_base_drivers(
     }
 }
 
+/// Drives `fs` to completion, handling each yielded item with `handler`, while concurrently
+/// running `background_work`.
+///
+/// An active guard is held on `fs` for as long as `background_work` is running. This prevents
+/// `fs` from stalling (i.e. yielding [`Item::Stalled`]) until `background_work` has completed,
+/// even if the outgoing directory is otherwise idle for longer than the stall timeout.
+///
+/// The driver index uses this to load base drivers. Without the guard, if loading base drivers
+/// took longer than the idle timeout, the stall handler could take the driver notifier and
+/// escrow the index state before the base drivers were indexed and before driver manager was
+/// notified that they are available. `main` would then return, abandoning the load, and base
+/// drivers would never bind.
+async fn run_until_stalled_with_background_work<ServiceObjTy, HandlerFut>(
+    fs: StallableServiceFs<ServiceObjTy>,
+    background_work: impl Future<Output = ()>,
+    handler: impl FnMut(Item<ServiceObjTy::Output>) -> HandlerFut,
+) where
+    ServiceObjTy: ServiceObjTrait,
+    HandlerFut: Future<Output = ()>,
+{
+    let active_guard = fs.try_active_guard();
+    // This is defensive: `fs` has not been polled yet, so its scope cannot be shutting down and
+    // obtaining a guard should not fail.
+    if active_guard.is_none() {
+        log::warn!(
+            "Failed to obtain an active guard. The outgoing directory may stall before background \
+            work completes."
+        );
+    }
+    let background_work = async move {
+        background_work.await;
+        // Allow `fs` to stall now that the background work is done.
+        drop(active_guard);
+    };
+    let ((), ()) = future::join(fs.for_each_concurrent(None, handler), background_work).await;
+}
+
 async fn run_driver_index(
     index: &Rc<Indexer>,
     idle_timeout: fasync::MonotonicDuration,
@@ -382,6 +419,7 @@ async fn run_driver_index(
     capability_store: fsandbox::CapabilityStoreProxy,
     id_gen: sandbox::CapabilityIdGenerator,
     dict_id: u64,
+    load_base_drivers: impl Future<Output = ()>,
 ) -> Result<()> {
     let mut service_fs = ServiceFs::new();
 
@@ -391,70 +429,64 @@ async fn run_driver_index(
     service_fs.take_and_serve_directory_handle().context("failed to serve outgoing namespace")?;
 
     let staller_service_fs = service_fs.until_stalled(idle_timeout);
-    staller_service_fs
-                .for_each_concurrent(None, |item| async {
-                    // match on `request` and handle each protocol.
-                    match item {
-                        fuchsia_component::server::Item::Request(request, _active_guard) => {
-                            // Note on |_active_guard|:
-                            // While we have an active server running for any of the below protocols
-                            // (driver index, driver development, driver registrar) we hold the
-                            // |_active_guard| alive. This prevents the stall logic in the
-                            // service_fs from kicking in and sending us into the stall branch.
-                            //
-                            // The driver development and driver registrar protocols are generally
-                            // very short lived as the clients are ffx tools, so they connect, call
-                            // the method they want, and then disconnect.
-                            //
-                            // The driver index is used by the driver manager actively during
-                            // the startup of a device, but then once in a stable state it becomes
-                            // idle. When that happens and the idle timeout is reached, the
-                            // index_server will exit and escrow its server end with the component
-                            // framework and return back out to here.
-                            //
-                            // Both of these mechanisms will allow the |_active_guard| to release
-                            // and allow the stall handler to be reached.
-                            match request {
-                                IncomingRequest::DriverIndexProtocol(stream) => {
-                                    run_index_server_with_timeout(
-                                        index.clone(),
-                                        stream,
-                                        idle_timeout,
-                                    )
-                                    .await
-                                }
-                                IncomingRequest::DriverDevelopmentProtocol(stream) => {
-                                    run_driver_development_server(index.clone(), stream).await
-                                }
-                                IncomingRequest::DriverRegistrarProtocol(stream) => {
-                                    run_driver_registrar_server(
-                                        index.clone(),
-                                        stream,
-                                        &full_resolver,
-                                    )
-                                    .await
-                                }
-                            }
-                        }
-                        fuchsia_component::server::Item::Stalled(outgoing_directory) => {
-                            let stall_result = handle_stall(
-                                index.clone(),
-                                &escrow_operation,
-                                outgoing_directory,
-                                &capability_store,
-                                &id_gen,
-                                dict_id,
-                            )
-                            .await;
-                            if let Err(e) = stall_result {
-                                panic!("Stall handler failed with '{:?}'. Next index run will have incomplete data.", e);
-                            }
-                            Ok(())
-                        }
+    // Prevent stalling until base drivers are loaded. See
+    // `run_until_stalled_with_background_work`.
+    run_until_stalled_with_background_work(staller_service_fs, load_base_drivers, |item| async {
+        // match on `request` and handle each protocol.
+        match item {
+            Item::Request(request, _active_guard) => {
+                // Note on |_active_guard|:
+                // While we have an active server running for any of the below protocols
+                // (driver index, driver development, driver registrar) we hold the
+                // |_active_guard| alive. This prevents the stall logic in the
+                // service_fs from kicking in and sending us into the stall branch.
+                //
+                // The driver development and driver registrar protocols are generally
+                // very short lived as the clients are ffx tools, so they connect, call
+                // the method they want, and then disconnect.
+                //
+                // The driver index is used by the driver manager actively during
+                // the startup of a device, but then once in a stable state it becomes
+                // idle. When that happens and the idle timeout is reached, the
+                // index_server will exit and escrow its server end with the component
+                // framework and return back out to here.
+                //
+                // Both of these mechanisms will allow the |_active_guard| to release
+                // and allow the stall handler to be reached.
+                match request {
+                    IncomingRequest::DriverIndexProtocol(stream) => {
+                        run_index_server_with_timeout(index.clone(), stream, idle_timeout).await
                     }
-                    .unwrap_or_else(|e| log::error!("Error running index_server: {:?}", e))
-                })
+                    IncomingRequest::DriverDevelopmentProtocol(stream) => {
+                        run_driver_development_server(index.clone(), stream).await
+                    }
+                    IncomingRequest::DriverRegistrarProtocol(stream) => {
+                        run_driver_registrar_server(index.clone(), stream, &full_resolver).await
+                    }
+                }
+            }
+            Item::Stalled(outgoing_directory) => {
+                let stall_result = handle_stall(
+                    index.clone(),
+                    &escrow_operation,
+                    outgoing_directory,
+                    &capability_store,
+                    &id_gen,
+                    dict_id,
+                )
                 .await;
+                if let Err(e) = stall_result {
+                    panic!(
+                        "Stall handler failed with '{e:?}'. Next index run will have incomplete \
+                        data."
+                    );
+                }
+                Ok(())
+            }
+        }
+        .unwrap_or_else(|e| log::error!("Error running index_server: {:?}", e))
+    })
+    .await;
     Ok(())
 }
 
@@ -583,13 +615,10 @@ async fn main() -> Result<()> {
     };
 
     // We don't want to block driver manager from matching up with boot drivers while we resolve
-    // base drivers, so we run them in parallel.
-    // The base drivers task completes when the base drivers are loaded in.
-    // The driver index task does not complete unless the idle timeout is reached.
-    // Therefore the join of these two does not complete unless the index task completes when idle
-    // timeout is reached.
+    // base drivers, so `run_driver_index` loads them concurrently with serving the index, and
+    // does not go idle until they are loaded (see `run_until_stalled_with_background_work`).
     let index_clone = index.clone();
-    let load_base_task = fasync::Task::local(async move {
+    let load_base_drivers = async move {
         let _ = run_load_base_drivers(
             should_load_base_drivers,
             index_clone,
@@ -598,8 +627,7 @@ async fn main() -> Result<()> {
             disabled_drivers,
         )
         .await;
-    });
-    load_base_task.detach();
+    };
 
     // Start the task which watches for an instruction to stop from component manager, and kills
     // this process if such an instruction is received.
@@ -613,6 +641,7 @@ async fn main() -> Result<()> {
         capability_store,
         id_gen,
         dict_id,
+        load_base_drivers,
     )
     .fuse();
 
@@ -638,6 +667,8 @@ mod tests {
     use fidl_fuchsia_driver_index as fdi;
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_mem as fmem;
+    use fuchsia_component::server::ServiceObj;
+    use std::cell::Cell;
     use std::collections::HashMap;
 
     fn create_driver_info(
@@ -3623,5 +3654,49 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_no_stall_until_background_work_completes() {
+        const IDLE_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_millis(10);
+        let initial = fasync::MonotonicInstant::from_nanos(0);
+        fasync::TestExecutor::advance_to(initial).await;
+
+        // Keep the client end alive so that the outgoing directory stalls rather than closes.
+        let (_client_end, server_end) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+        let mut fs: ServiceFs<ServiceObj<'_, ()>> = ServiceFs::new();
+        fs.serve_connection(server_end).unwrap();
+        let fs = fs.until_stalled(IDLE_TIMEOUT);
+
+        let (background_done_sender, background_done_receiver) =
+            futures::channel::oneshot::channel::<()>();
+        let background_work = async move {
+            background_done_receiver.await.unwrap();
+        };
+
+        let stalled = Rc::new(Cell::new(false));
+        let stalled_clone = stalled.clone();
+        let run = run_until_stalled_with_background_work(fs, background_work, move |item| {
+            let stalled = stalled_clone.clone();
+            async move {
+                if let Item::Stalled(_) = item {
+                    stalled.set(true);
+                }
+            }
+        });
+        futures::pin_mut!(run);
+
+        assert!(fasync::TestExecutor::poll_until_stalled(&mut run).await.is_pending());
+
+        // The fs must not stall while the background work is still running, even well past the
+        // idle timeout.
+        fasync::TestExecutor::advance_to(initial + IDLE_TIMEOUT * 3).await;
+        assert!(fasync::TestExecutor::poll_until_stalled(&mut run).await.is_pending());
+        assert!(!stalled.get());
+
+        // Once the background work completes, the fs is free to stall.
+        background_done_sender.send(()).unwrap();
+        assert!(fasync::TestExecutor::poll_until_stalled(&mut run).await.is_ready());
+        assert!(stalled.get());
     }
 }
