@@ -536,6 +536,25 @@ impl SchedulerState {
         }
     }
 
+    /// Returns the task priority value as reported in `/proc/<pid>/stat` (see `task_prio` in
+    /// Linux `kernel/sched/core.c` and `proc_pid_stat(5)`).
+    ///
+    /// For non-real-time scheduling policies (`SCHED_NORMAL`, `SCHED_BATCH`, `SCHED_IDLE`),
+    /// this is `20 + nice` in the range `0..=39` (corresponding to nice `-20..=19`).
+    /// For real-time scheduling policies (`SCHED_FIFO`, `SCHED_RR`), this is
+    /// `-1 - rt_priority` in the range `-100..=-2` (corresponding to real-time priorities
+    /// `1..=99`).
+    pub fn task_priority(&self) -> i64 {
+        match self.policy {
+            SchedulingPolicy::Normal | SchedulingPolicy::Batch | SchedulingPolicy::Idle => {
+                (NormalPriority::DEFAULT_VALUE as i64) + (self.normal_priority.as_nice() as i64)
+            }
+            SchedulingPolicy::Fifo | SchedulingPolicy::RoundRobin => {
+                -1 - (self.realtime_priority.value as i64)
+            }
+        }
+    }
+
     fn is_realtime(&self) -> bool {
         match self.policy {
             SchedulingPolicy::Normal | SchedulingPolicy::Batch | SchedulingPolicy::Idle => false,
@@ -1057,5 +1076,79 @@ mod tests {
         assert_eq!(batch_high.futex_priority(), 40);
         assert_eq!(fifo_min.futex_priority(), 41);
         assert_eq!(rr_max.futex_priority(), 139);
+    }
+
+    #[fuchsia::test]
+    fn task_priority_values() {
+        assert_eq!(SchedulerState::default().task_priority(), 20);
+        assert_eq!(
+            SchedulerState {
+                normal_priority: NormalPriority::from_setpriority_syscall(1),
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            21
+        );
+        assert_eq!(
+            SchedulerState {
+                normal_priority: NormalPriority::from_setpriority_syscall(-20),
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            0
+        );
+        assert_eq!(
+            SchedulerState {
+                normal_priority: NormalPriority::from_setpriority_syscall(19),
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            39
+        );
+        assert_eq!(
+            SchedulerState {
+                policy: SchedulingPolicy::Batch,
+                normal_priority: NormalPriority::from_setpriority_syscall(-20),
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            0
+        );
+        assert_eq!(
+            SchedulerState {
+                policy: SchedulingPolicy::Idle,
+                normal_priority: NormalPriority::from_setpriority_syscall(-20),
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            0
+        );
+        assert_eq!(
+            SchedulerState {
+                policy: SchedulingPolicy::Idle,
+                normal_priority: NormalPriority::from_setpriority_syscall(5),
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            25
+        );
+        assert_eq!(
+            SchedulerState {
+                policy: SchedulingPolicy::Fifo,
+                realtime_priority: RealtimePriority { value: 1 },
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            -2
+        );
+        assert_eq!(
+            SchedulerState {
+                policy: SchedulingPolicy::RoundRobin,
+                realtime_priority: RealtimePriority { value: 99 },
+                ..SchedulerState::default()
+            }
+            .task_priority(),
+            -100
+        );
     }
 }

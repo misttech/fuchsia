@@ -1265,7 +1265,7 @@ impl DynamicFileSource for StatFile {
         let stime: i64; // 15
         let cutime: i64;
         let cstime: i64;
-        let priority: i64 = 0;
+        let priority: i64;
         let nice: i64;
         let num_threads: i64; // 20
         let itrealvalue: i64 = 0;
@@ -1304,7 +1304,11 @@ impl DynamicFileSource for StatFile {
         pid = self.target.tid.id;
         comm = task.command();
         state = task.state_code().code_char();
-        nice = task.scheduler_state.lock().normal_priority().as_nice() as i64;
+        {
+            let scheduler_state = task.scheduler_state.lock();
+            priority = scheduler_state.task_priority();
+            nice = scheduler_state.normal_priority().as_nice() as i64;
+        }
 
         {
             let thread_group = task.thread_group();

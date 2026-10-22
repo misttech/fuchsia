@@ -5,12 +5,14 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <lib/fit/defer.h>
+#include <sched.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/fsuid.h>
 #include <sys/inotify.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -735,6 +737,72 @@ TEST_F(ProcTaskDirTest, ParentFieldsValidWithCapSysPtrace) {
     EXPECT_NE(fields[51], "0") << "env_end(51)";
 
     // exit_code(52) will be zero.
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(ProcTaskDirTest, SelfStatPriorityAndNice) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    auto read_stat_fields = [] {
+      std::string contents;
+      EXPECT_TRUE(files::ReadFileToString("/proc/self/stat", &contents));
+      return ProcPidStatElements(contents);
+    };
+
+    sched_param zero_param = {.sched_priority = 0};
+    ASSERT_THAT(sched_setscheduler(0, SCHED_OTHER, &zero_param), SyscallSucceeds());
+    if (getpriority(PRIO_PROCESS, 0) < 0) {
+      ASSERT_THAT(setpriority(PRIO_PROCESS, 0, 0), SyscallSucceeds());
+    }
+
+    int initial_nice = getpriority(PRIO_PROCESS, 0);
+    auto fields = read_stat_fields();
+    ASSERT_GT(fields.size(), 19u);
+    EXPECT_EQ(fields[18], std::to_string(20 + initial_nice)) << "priority(18)";
+    EXPECT_EQ(fields[19], std::to_string(initial_nice)) << "nice(19)";
+
+    int raised_nice = std::min(19, initial_nice + 5);
+    ASSERT_THAT(setpriority(PRIO_PROCESS, 0, raised_nice), SyscallSucceeds());
+    fields = read_stat_fields();
+    ASSERT_GT(fields.size(), 19u);
+    EXPECT_EQ(fields[18], std::to_string(20 + raised_nice)) << "priority(18)";
+    EXPECT_EQ(fields[19], std::to_string(raised_nice)) << "nice(19)";
+
+    ASSERT_THAT(sched_setscheduler(0, SCHED_BATCH, &zero_param), SyscallSucceeds());
+    fields = read_stat_fields();
+    ASSERT_GT(fields.size(), 19u);
+    EXPECT_EQ(fields[18], std::to_string(20 + raised_nice)) << "priority(18)";
+    EXPECT_EQ(fields[19], std::to_string(raised_nice)) << "nice(19)";
+
+    ASSERT_THAT(sched_setscheduler(0, SCHED_IDLE, &zero_param), SyscallSucceeds());
+    fields = read_stat_fields();
+    ASSERT_GT(fields.size(), 19u);
+    EXPECT_EQ(fields[18], std::to_string(20 + raised_nice)) << "priority(18)";
+    EXPECT_EQ(fields[19], std::to_string(raised_nice)) << "nice(19)";
+
+    if (test_helper::HasCapabilityEffective(CAP_SYS_NICE)) {
+      ASSERT_THAT(sched_setscheduler(0, SCHED_OTHER, &zero_param), SyscallSucceeds());
+      ASSERT_THAT(setpriority(PRIO_PROCESS, 0, -5), SyscallSucceeds());
+      fields = read_stat_fields();
+      ASSERT_GT(fields.size(), 19u);
+      EXPECT_EQ(fields[18], "15") << "priority(18)";
+      EXPECT_EQ(fields[19], "-5") << "nice(19)";
+
+      sched_param fifo_param = {.sched_priority = 10};
+      ASSERT_THAT(sched_setscheduler(0, SCHED_FIFO, &fifo_param), SyscallSucceeds());
+      fields = read_stat_fields();
+      ASSERT_GT(fields.size(), 19u);
+      EXPECT_EQ(fields[18], "-11") << "priority(18)";
+      EXPECT_EQ(fields[19], "-5") << "nice(19)";
+
+      sched_param rr_param = {.sched_priority = 99};
+      ASSERT_THAT(sched_setscheduler(0, SCHED_RR, &rr_param), SyscallSucceeds());
+      fields = read_stat_fields();
+      ASSERT_GT(fields.size(), 19u);
+      EXPECT_EQ(fields[18], "-100") << "priority(18)";
+      EXPECT_EQ(fields[19], "-5") << "nice(19)";
+    }
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }
