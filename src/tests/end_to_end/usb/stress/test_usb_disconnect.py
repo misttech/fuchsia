@@ -12,6 +12,11 @@ from honeydew import errors
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.typing import custom_types
 from mobly import asserts, signals, test_runner
+from usb_lib.irq_storm import (
+    IrqStormSnapshot,
+    assert_no_irq_storm,
+    take_irq_storm_snapshot,
+)
 from usb_lib.link_speed import assert_link_speed
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -42,6 +47,10 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             retry, since ffx re-sends its mDNS query every 10s.
         expected_usb_link_speed (str, optional): When set, e.g. to "high",
             assert the USB link negotiated this speed after every reconnect.
+        verify_no_irq_storm (bool, optional): Verify that no driver dispatcher
+            spin-loop or unhandled IRQ storm occurred across each disconnect
+            cycle (checked across all drivers on the DUT, not only USB
+            drivers). Defaults to False.
         test_case_prefix (str, optional): Prefix of the generated test case
             names, which end in the iteration number. Defaults to
             "test_usb_disconnect".
@@ -122,6 +131,14 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
 
         pre_disconnect_boot_id = await self.dut.boot_id()
         _LOGGER.info("Pre-disconnect Boot ID: %s", pre_disconnect_boot_id)
+        verify_no_irq_storm = bool(
+            self.user_params.get("verify_no_irq_storm", False)
+        )
+        pre_disconnect_irq_snapshot: IrqStormSnapshot | None = None
+        if verify_no_irq_storm:
+            pre_disconnect_irq_snapshot = await take_irq_storm_snapshot(
+                self.dut
+            )
         self.dut.fuchsia_controller.before_usb_disconnect()
         try:
             self.dut.ffx.notify_intentional_disconnect()
@@ -158,8 +175,23 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             _LOGGER.info("Device is successfully back online.")
             self.dut.health_check()
 
-        # Outside the `finally` block so that an mDNS or link speed failure
-        # cannot mask a disconnect failure.
+        # Outside the `finally` block so that an mDNS, link speed, or IRQ storm
+        # failure cannot mask a disconnect failure.
+        if pre_disconnect_irq_snapshot is not None:
+            # Note: `assert_no_irq_storm` checks for driver dispatcher
+            # spin-loops and hardware IRQ storms across all drivers on the DUT
+            # (not only USB drivers).
+            # TODO(b/568334574): Add DWC3 USB controller Inspect metrics
+            # (`root/dwc3:irq_count` and `root/dwc3:unhandled_irq_count`) check
+            # once the DWC3 driver exposes those properties in Inspect.
+            post_reconnect_irq_snapshot = await take_irq_storm_snapshot(
+                self.dut
+            )
+            assert_no_irq_storm(
+                pre_disconnect_irq_snapshot,
+                post_reconnect_irq_snapshot,
+                phase=f"iteration {iteration}",
+            )
         if self.user_params.get("verify_mdns", False):
             self._verify_mdns_advertisement(f"iteration {iteration}")
         if expected_speed := self.user_params.get("expected_usb_link_speed"):

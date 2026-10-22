@@ -8,6 +8,12 @@ from .fastboot_utils import (
     reboot_to_fastboot_mode,
     recover_to_fuchsia_mode,
 )
+from .irq_storm import (
+    DispatcherSnapshot,
+    IrqStormSnapshot,
+    assert_no_irq_storm,
+    take_irq_storm_snapshot,
+)
 from .sysfs_usb import (
     HostDevice,
     find_host_device,
@@ -31,12 +37,15 @@ from .usb_config import (
 from .usb_power_hub_base_test import UsbPowerHubBaseTest
 
 __all__ = [
+    "DispatcherSnapshot",
     "FUNCTION_INTERFACES",
     "FUNCTION_PIDS",
     "GOOGLE_USB_VID",
     "HostDevice",
+    "IrqStormSnapshot",
     "KERNEL_LOG_RE",
     "UsbPowerHubBaseTest",
+    "assert_no_irq_storm",
     "build_config_matrix",
     "find_host_device",
     "find_usb_device_node",
@@ -49,5 +58,6 @@ __all__ = [
     "reboot_to_fastboot_mode",
     "recover_to_fuchsia_mode",
     "set_usb_config",
+    "take_irq_storm_snapshot",
     "wait_for_usb_device",
 ]
