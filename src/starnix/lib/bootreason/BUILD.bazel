@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+# Dual-build with BUILD.gn via bazel2gn; starnix_bootreason_integration_test
+# and its helper targets remain in BUILD.gn above the bazel2gn sentinel.
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "bootreason",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = [
+        "//src/starnix/kernel/runner:__pkg__",
+        "//src/starnix/modules/pstore:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//sdk/rust/zx-status",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:async-lock",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
