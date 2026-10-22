@@ -247,14 +247,11 @@ void rust_kernel_scheduler_pi_join_owq_thread(const OwnedWaitQueue* upstream, Th
                                               ForceInheritance force_inheritance);
 void rust_kernel_scheduler_pi_join_owq_owq(const OwnedWaitQueue* upstream, OwnedWaitQueue* target,
                                            ForceInheritance force_inheritance);
-void rust_kernel_scheduler_pi_split_thread_thread(
-    Thread* upstream, Thread* target, const SchedulerState::EffectiveProfile* old_target_ep);
+void rust_kernel_scheduler_pi_split_thread_thread(Thread* upstream, Thread* target);
 void rust_kernel_scheduler_pi_split_thread_owq(
     Thread* upstream, OwnedWaitQueue* target,
     const SchedulerState::EffectiveProfile* old_target_ep);
-void rust_kernel_scheduler_pi_split_owq_thread(
-    OwnedWaitQueue* upstream, Thread* target,
-    const SchedulerState::EffectiveProfile* old_target_ep);
+void rust_kernel_scheduler_pi_split_owq_thread(OwnedWaitQueue* upstream, Thread* target);
 void rust_kernel_scheduler_pi_split_owq_owq(OwnedWaitQueue* upstream, OwnedWaitQueue* target,
                                             const SchedulerState::EffectiveProfile* old_target_ep);
 void rust_kernel_scheduler_state_recompute_effective_profile(SchedulerState* state);
@@ -2109,31 +2106,6 @@ void cpp_scheduler_block(Thread* current_thread);
 FFI_ALWAYS_INLINE zx_status_t cpp_scheduler_update_power_level(
     uint32_t domain_id, uint64_t controller_id, power_management::ControlInterface interface,
     uint64_t arg, cpu_mask_t* out_mask);
-void cpp_scheduler_thread_base_profile_changed(Thread* thread);
-void cpp_scheduler_upstream_thread_base_profile_changed_thread(const Thread* upstream,
-                                                               Thread* target);
-void cpp_scheduler_upstream_thread_base_profile_changed_owq(const Thread* upstream,
-                                                            OwnedWaitQueue* target);
-void cpp_scheduler_join_node_to_pi_graph_thread_thread(const Thread* upstream, Thread* target,
-                                                       ForceInheritance force_inheritance);
-void cpp_scheduler_join_node_to_pi_graph_thread_owq(const Thread* upstream, OwnedWaitQueue* target,
-                                                    ForceInheritance force_inheritance);
-void cpp_scheduler_join_node_to_pi_graph_owq_thread(const OwnedWaitQueue* upstream, Thread* target,
-                                                    ForceInheritance force_inheritance);
-void cpp_scheduler_join_node_to_pi_graph_owq_owq(const OwnedWaitQueue* upstream,
-                                                 OwnedWaitQueue* target,
-                                                 ForceInheritance force_inheritance);
-void cpp_scheduler_split_node_from_pi_graph_thread_thread(
-    Thread* upstream, Thread* target, const SchedulerState::EffectiveProfile* old_target_ep);
-void cpp_scheduler_split_node_from_pi_graph_thread_owq(
-    Thread* upstream, OwnedWaitQueue* target,
-    const SchedulerState::EffectiveProfile* old_target_ep);
-void cpp_scheduler_split_node_from_pi_graph_owq_thread(
-    OwnedWaitQueue* upstream, Thread* target,
-    const SchedulerState::EffectiveProfile* old_target_ep);
-void cpp_scheduler_split_node_from_pi_graph_owq_owq(
-    OwnedWaitQueue* upstream, OwnedWaitQueue* target,
-    const SchedulerState::EffectiveProfile* old_target_ep);
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_H_

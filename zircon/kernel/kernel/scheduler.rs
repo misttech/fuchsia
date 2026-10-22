@@ -2214,55 +2214,6 @@ unsafe extern "C" {
 
     fn cpp_thread_call_migrate_fn_for_cpu(cpu: CpuNum);
     fn cpp_scheduler_block(current_thread: *mut Thread);
-    fn cpp_scheduler_thread_base_profile_changed(thread: *mut Thread);
-    fn cpp_scheduler_upstream_thread_base_profile_changed_thread(
-        upstream: *const Thread,
-        target: *mut Thread,
-    );
-    fn cpp_scheduler_upstream_thread_base_profile_changed_owq(
-        upstream: *const Thread,
-        target: *mut OwnedWaitQueue,
-    );
-    fn cpp_scheduler_join_node_to_pi_graph_thread_thread(
-        upstream: *const Thread,
-        target: *mut Thread,
-        force_inheritance: super::wait_queue::ForceInheritance,
-    );
-    fn cpp_scheduler_join_node_to_pi_graph_thread_owq(
-        upstream: *const Thread,
-        target: *mut OwnedWaitQueue,
-        force_inheritance: super::wait_queue::ForceInheritance,
-    );
-    fn cpp_scheduler_join_node_to_pi_graph_owq_thread(
-        upstream: *const OwnedWaitQueue,
-        target: *mut Thread,
-        force_inheritance: super::wait_queue::ForceInheritance,
-    );
-    fn cpp_scheduler_join_node_to_pi_graph_owq_owq(
-        upstream: *const OwnedWaitQueue,
-        target: *mut OwnedWaitQueue,
-        force_inheritance: super::wait_queue::ForceInheritance,
-    );
-    fn cpp_scheduler_split_node_from_pi_graph_thread_thread(
-        upstream: *mut Thread,
-        target: *mut Thread,
-        old_target_ep: *const EffectiveProfile,
-    );
-    fn cpp_scheduler_split_node_from_pi_graph_thread_owq(
-        upstream: *mut Thread,
-        target: *mut OwnedWaitQueue,
-        old_target_ep: *const EffectiveProfile,
-    );
-    fn cpp_scheduler_split_node_from_pi_graph_owq_thread(
-        upstream: *mut OwnedWaitQueue,
-        target: *mut Thread,
-        old_target_ep: *const EffectiveProfile,
-    );
-    fn cpp_scheduler_split_node_from_pi_graph_owq_owq(
-        upstream: *mut OwnedWaitQueue,
-        target: *mut OwnedWaitQueue,
-        old_target_ep: *const EffectiveProfile,
-    );
 }
 
 /// Returns a pointer to the `ChainLock` embedded in `thread`.
@@ -7896,6 +7847,197 @@ pub unsafe extern "C" fn rust_kernel_run_queue_destroy(rq: *mut RunQueue) {
         core::ptr::drop_in_place(rq);
     }
 }
+/// Provides accessors that abstract the distinction between a thread's
+/// `SchedulerState` and an owned wait queue's `WaitQueueInheritedSchedulerState`
+/// when working with generic methods that operate on an upstream type and a
+/// target type, where each type might be either a `Thread` or an
+/// `OwnedWaitQueue`.
+trait PiNodeState {
+    /// The node's current effective profile (base profile combined with any
+    /// inherited profile), as of the last `recompute_effective_profile`.
+    fn effective_profile(&self) -> EffectiveProfile;
+    /// Start of the node's current activation period (eligible time). For
+    /// deadline nodes this is `finish_time - relative deadline`.
+    fn start_time(&self) -> SchedTime;
+    fn set_start_time(&mut self, val: SchedTime);
+    /// End of the node's current activation period (absolute deadline for
+    /// deadline nodes). Must be strictly greater than `start_time`.
+    fn finish_time(&self) -> SchedTime;
+    fn set_finish_time(&mut self, val: SchedTime);
+    /// Total time slice (capacity) granted for the current activation period.
+    fn time_slice_ns(&self) -> SchedDuration;
+    fn set_time_slice_ns(&mut self, val: SchedDuration);
+    /// Portion of `time_slice_ns` already consumed in the current period. The
+    /// PI code adjusts this, rather than `time_slice_ns`, when it transfers
+    /// remaining bandwidth between nodes so that `time_slice_ns` continues to
+    /// reflect the capacity of the effective profile.
+    fn time_slice_used_ns(&self) -> SchedDuration;
+    fn set_time_slice_used_ns(&mut self, val: SchedDuration);
+
+    /// Time slice remaining in the current period. Never negative after a PI
+    /// update; see the clamping in `join_node_to_pi_graph_impl`.
+    fn remaining_time_slice_ns(&self) -> SchedDuration {
+        self.time_slice_ns() - self.time_slice_used_ns()
+    }
+}
+
+/// Panics with the diagnostic state logged by the C++ `DEBUG_ASSERT_MSG`s in
+/// the PI paths. Kept out of line and cold so that formatting state does not
+/// occupy the stack frames of the PI hot paths.
+#[cold]
+#[inline(never)]
+fn panic_pi_start_not_before_finish(
+    label: &str,
+    start_time: SchedTime,
+    finish_time: SchedTime,
+    deadline_ns: SchedDuration,
+) -> ! {
+    panic!(
+        "{label}: start_time={} finish_time={} deadline_ns={}",
+        start_time.raw_value(),
+        finish_time.raw_value(),
+        deadline_ns.raw_value()
+    );
+}
+
+/// Asserts `node.start_time() < node.finish_time()` in debug builds, reporting
+/// the node's times and `deadline_ns` on failure.
+#[inline]
+fn debug_assert_pi_start_before_finish<N: PiNodeState>(
+    label: &str,
+    node: &N,
+    deadline_ns: SchedDuration,
+) {
+    if cfg!(debug_assertions) && !(node.start_time() < node.finish_time()) {
+        panic_pi_start_not_before_finish(label, node.start_time(), node.finish_time(), deadline_ns);
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn panic_pi_negative_finish_time(finish_time: SchedTime) -> ! {
+    panic!("finish_time {}", finish_time.raw_value());
+}
+
+#[cold]
+#[inline(never)]
+fn panic_pi_unexpected_thread_state(thread_state: ThreadState, tid: u64) -> ! {
+    panic!("Unexpected target_ state {} for tid {tid}", thread_state as u32);
+}
+
+#[cold]
+#[inline(never)]
+fn panic_pi_unassociated_thread(
+    name: &ThreadName,
+    tid: u64,
+    thread_state: ThreadState,
+    curr_cpu: CpuNum,
+) -> ! {
+    panic!(
+        "Found unassociated thread {} with tid {tid} in state {}, curr_cpu is: {curr_cpu}",
+        name.as_str(),
+        thread_state as u32
+    );
+}
+
+#[cold]
+#[inline(never)]
+fn panic_pi_negative_remaining_time_slice(
+    capacity_ns: SchedDuration,
+    remaining_time_slice: SchedDuration,
+    remaining_period: SchedDuration,
+) -> ! {
+    panic!(
+        "capacity={} remaining_time_slice={} remaining_period={}",
+        capacity_ns.raw_value(),
+        remaining_time_slice.raw_value(),
+        remaining_period.raw_value()
+    );
+}
+
+#[cold]
+#[inline(never)]
+fn panic_pi_deadline_param_mismatch(
+    what: &str,
+    target_old: SchedDuration,
+    upstream: SchedDuration,
+) -> ! {
+    panic!(
+        "toep.deadline.{what}={} uep.deadline.{what}={}",
+        target_old.raw_value(),
+        upstream.raw_value()
+    );
+}
+
+impl PiNodeState for SchedulerState {
+    fn effective_profile(&self) -> EffectiveProfile {
+        self.effective_profile
+    }
+    fn start_time(&self) -> SchedTime {
+        self.start_time
+    }
+    fn set_start_time(&mut self, val: SchedTime) {
+        self.start_time = val;
+    }
+    fn finish_time(&self) -> SchedTime {
+        self.finish_time
+    }
+    fn set_finish_time(&mut self, val: SchedTime) {
+        self.finish_time = val;
+    }
+    fn time_slice_ns(&self) -> SchedDuration {
+        self.time_slice_ns
+    }
+    fn set_time_slice_ns(&mut self, val: SchedDuration) {
+        self.time_slice_ns = val;
+    }
+    fn time_slice_used_ns(&self) -> SchedDuration {
+        self.time_slice_used_ns
+    }
+    fn set_time_slice_used_ns(&mut self, val: SchedDuration) {
+        self.time_slice_used_ns = val;
+    }
+}
+
+// OwnedWaitQueues do not need to bother to track the dirty or clean state of
+// their implied effective profile. They have no base profile (only inherited
+// values) which gets turned into an effective profile by `get_effective_profile`
+// during a PI interaction. We can get away with this because OWQs:
+//
+// 1) Cannot exist in any collections where their position is determined by
+//    effective profile (otherwise we would need to remove and re-insert the
+//    node in the collection during an update).
+// 2) Cannot contribute to a scheduler's bookkeeping (because OWQs are not
+//    things which get scheduled).
+impl PiNodeState for WaitQueueInheritedSchedulerState {
+    fn effective_profile(&self) -> EffectiveProfile {
+        self.get_effective_profile()
+    }
+    fn start_time(&self) -> SchedTime {
+        self.start_time
+    }
+    fn set_start_time(&mut self, val: SchedTime) {
+        self.start_time = val;
+    }
+    fn finish_time(&self) -> SchedTime {
+        self.finish_time
+    }
+    fn set_finish_time(&mut self, val: SchedTime) {
+        self.finish_time = val;
+    }
+    fn time_slice_ns(&self) -> SchedDuration {
+        self.time_slice_ns
+    }
+    fn set_time_slice_ns(&mut self, val: SchedDuration) {
+        self.time_slice_ns = val;
+    }
+    fn time_slice_used_ns(&self) -> SchedDuration {
+        self.time_slice_used_ns
+    }
+    fn set_time_slice_used_ns(&mut self, val: SchedDuration) {
+        self.time_slice_used_ns = val;
+    }
+}
 
 // RAII lock helper
 struct QueueLockGuard {
@@ -7968,6 +8110,46 @@ impl Drop for QueueLockIrqSaveGuard {
     }
 }
 
+// Threads contain internal storage which holds their "effective profile", the
+// combination of their base profile and all of their inherited profile
+// pressure, as well as a set of dirty/clean flags.
+//
+// Owned wait queues don't have quite the same arrangement. They themselves
+// have no base profile, and their effective profile is really only their
+// inherited deadline profile (if any), or the total of their inherited fair
+// weight (if there is no inherited deadline). They do not explicitly maintain
+// storage for their effective profile.
+//
+// When we get to this point in profile propagation, however, we need to be able
+// to compute 3 things:
+//
+// 1) The effective profile of the target node before recomputing it because of
+//    the change in profile pressure.
+// 2) The effective profile of the target node after recomputing it because of
+//    the change in profile pressure (note that this is the same for OWQs, but
+//    not threads).
+// 3) The effective profile of the upstream node which gave rise to the change
+//    in target profile pressure.
+//
+// `owq_get_effective_profile` and `PiNodeState::effective_profile` provide a uniform
+// way to compute an OWQ's effective profile, based on its IPVs, or to retrieve
+// a thread's existing effective profile.
+/// Computes an `OwnedWaitQueue`'s effective profile from its inherited
+/// scheduler state.
+///
+/// # Safety
+/// `owq` must point to a valid `OwnedWaitQueue` whose lock is held by the
+/// caller (`TA_REQ(owq->get_lock())`) with non-null
+/// `inherited_scheduler_state_storage()`.
+unsafe fn owq_get_effective_profile(owq: *const OwnedWaitQueue) -> EffectiveProfile {
+    // SAFETY: `owq` is valid and its lock is held by the caller.
+    let iss_ptr = unsafe { cpp_owq_get_inherited_state_const(owq) };
+    debug_assert!(!iss_ptr.is_null());
+    // SAFETY: `iss_ptr` is non-null and synchronized by `owq`'s lock.
+    let iss = unsafe { &*iss_ptr };
+    iss.get_effective_profile()
+}
+
 // Handle all of the common tasks associated with each of the possible PI
 // interactions. The outline of this is:
 //
@@ -7990,6 +8172,949 @@ impl Drop for QueueLockIrqSaveGuard {
 //      in its wait queue if the target is a thread which is currently
 //      blocked in a wait queue.
 // 2.2) Recompute the target's dynamic scheduler parameters.
+
+/// Common priority inheritance handler for a target `Thread`.
+///
+/// # Safety
+/// - `thread` must point to a valid, initialized `Thread` whose lock is held
+///   exclusively by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, thread->get_lock())`).
+/// - Preemption/interrupts must be disabled (`preempt_disabled_token`), and
+///   no scheduler `queue_lock_` may be held (`TA_EXCL(queue_lock_)`).
+/// - If `thread` is blocked in a wait queue, that wait queue's lock must also
+///   be held in the active `ChainLockTransaction`.
+unsafe fn pi_common_thread<F>(thread: *mut Thread, update_dynamic_params: F)
+where
+    F: FnOnce(&mut SchedulerState, &EffectiveProfile, &EffectiveProfile, SchedTime),
+{
+    let _trace = local_ktrace_begin_scope!(COMMON, "Pi::Common(Thread)");
+    // SAFETY: `thread` is valid and its lock is held by the caller.
+    let state_ptr = unsafe { cpp_thread_get_scheduler_state(thread) };
+    // SAFETY: `thread`'s lock is held exclusively by the caller.
+    let (curr_cpu, thread_state) = unsafe { ((*state_ptr).curr_cpu, (*state_ptr).state) };
+    if curr_cpu != INVALID_CPU {
+        if cfg!(debug_assertions)
+            && !(thread_state == ThreadState::Running || thread_state == ThreadState::Ready)
+        {
+            // SAFETY: `thread` is valid per the caller's contract.
+            panic_pi_unexpected_thread_state(thread_state, unsafe { cpp_thread_get_tid(thread) });
+        }
+        // SAFETY: `curr_cpu` is a valid CPU number, interrupts are disabled, and
+        // `queue_lock_` is not already held.
+        let scheduler = unsafe { cpp_scheduler_get(curr_cpu) };
+        let _guard = unsafe { QueueLockGuard::acquire(scheduler) };
+        // SAFETY: `scheduler`'s `queue_lock_` and `thread`'s lock are held.
+        unsafe {
+            (*scheduler).validate_invariants();
+            (*scheduler).assert_in_scheduler(thread);
+        }
+
+        // Sample the current time after acquiring the queue lock to avoid large
+        // skews under contention.
+        let mut now =
+            SchedMonoTimeAndBootTicks { mono_time: SchedTime::from_raw(0), boot_ticks: 0 };
+        // SAFETY: `now` is a valid mutable stack variable.
+        unsafe { cpp_current_mono_time_and_boot_ticks(&mut now) };
+
+        // Keep track of the original disposition. See SchedulerQueueState for
+        // more details on how the disposition and thread state indicate which
+        // operations are permitted on the thread and its associated scheduler
+        // bookkeeping.
+        // SAFETY: `thread` is valid and both `thread`'s lock and `queue_lock_` are held.
+        let disposition = unsafe { cpp_thread_get_disposition(thread) };
+        if cfg!(debug_assertions) && disposition == QueueDisposition::Unassociated as i32 {
+            // SAFETY: `thread` is valid per the caller's contract.
+            let (name, tid) = unsafe { (thread_name(thread), cpp_thread_get_tid(thread)) };
+            panic_pi_unassociated_thread(&name, tid, thread_state, curr_cpu);
+        }
+
+        if thread_state == ThreadState::Ready {
+            if disposition == QueueDisposition::Enqueued as i32 {
+                // SAFETY: `thread` is enqueued in `scheduler` and both locks are held.
+                unsafe { (*scheduler).erase_from_queue(thread) };
+            } else {
+                COUNTER_UPDATE_IN_TRANSITION.add(1);
+            }
+        } else {
+            let trace_update = local_ktrace_begin_scope!(
+                COMMON,
+                "Update Timeslice",
+                // SAFETY: `scheduler` is valid and initialized.
+                "target cpu" => unsafe { (*scheduler).this_cpu() },
+            );
+            debug_assert!(disposition == QueueDisposition::Associated as i32);
+
+            // Update the time slice before updating other bookkeeping.
+            // SAFETY: `thread`'s lock and `scheduler`'s `queue_lock_` are held.
+            let actual_runtime_ns = core::cmp::max(
+                now.mono_time - unsafe { (*state_ptr).last_started_running },
+                SchedDuration::from_raw(0),
+            );
+            // SAFETY: `thread`'s lock and `scheduler`'s `queue_lock_` are held.
+            let scaled_actual_runtime_ns = unsafe {
+                if (*state_ptr).effective_profile.is_deadline() {
+                    (*scheduler).scale_down(actual_runtime_ns)
+                } else {
+                    actual_runtime_ns
+                }
+            };
+
+            // SAFETY: Both `thread`'s lock and `scheduler`'s `queue_lock_` are held.
+            unsafe {
+                (*state_ptr).runtime_ns += actual_runtime_ns;
+                (*state_ptr).time_slice_used_ns += scaled_actual_runtime_ns;
+                (*state_ptr).last_started_running = now.mono_time;
+                (*(*scheduler).state.get()).start_of_current_time_slice_ns = now.mono_time;
+                (*scheduler).update_estimated_energy_consumption(
+                    thread,
+                    now.mono_time,
+                    now.boot_ticks,
+                    actual_runtime_ns,
+                );
+            }
+            ktrace_rs::end_scope!(
+                trace_update,
+                "mono_now" => now.mono_time,
+                "boot_ticks" => now.boot_ticks,
+                "actual_runtime_ns" => actual_runtime_ns,
+            );
+        }
+
+        // Copy the original effective profile before updating it to compute the
+        // changes to the scheduler bookkeeping.
+        // SAFETY: `thread`'s lock and `scheduler`'s `queue_lock_` are held.
+        let (old_ep, new_ep) = unsafe {
+            let old = (*state_ptr).effective_profile;
+            (*state_ptr).recompute_effective_profile();
+            (old, (*state_ptr).effective_profile)
+        };
+
+        // Update the scheduler bookkeeping, if necessary.
+        let mut bandwidth_demand_changed = false;
+        if disposition == QueueDisposition::Associated as i32
+            || disposition == QueueDisposition::Enqueued as i32
+        {
+            let mut weight_delta = SchedWeight::from_raw(0);
+            let mut utilization_delta = SchedUtilization::from_raw(0);
+            let mut critical_utilization_delta = SchedUtilization::from_raw(0);
+
+            if old_ep.is_fair() {
+                weight_delta -= old_ep.weight_or(SchedWeight::from_raw(0));
+            } else {
+                utilization_delta -= old_ep.deadline().utilization;
+                if old_ep.critical {
+                    critical_utilization_delta -= old_ep.deadline().utilization;
+                }
+            }
+            if new_ep.is_fair() {
+                weight_delta += new_ep.weight_or(SchedWeight::from_raw(0));
+            } else {
+                utilization_delta += new_ep.deadline().utilization;
+                if new_ep.critical {
+                    critical_utilization_delta += new_ep.deadline().utilization;
+                }
+            }
+
+            if weight_delta.raw_value() != 0 {
+                bandwidth_demand_changed = true;
+                // SAFETY: `scheduler`'s `queue_lock_` is held.
+                unsafe {
+                    (*(*scheduler).state.get()).weight_total += weight_delta;
+                    (*scheduler).update_fair_bandwidth_period(now.mono_time);
+                }
+            }
+            if utilization_delta.raw_value() != 0 {
+                bandwidth_demand_changed = true;
+                // SAFETY: `scheduler`'s `queue_lock_` is held.
+                unsafe {
+                    (*scheduler).update_total_deadline_utilization(utilization_delta);
+                }
+            }
+            // SAFETY: `scheduler`'s `queue_lock_` is held.
+            unsafe {
+                (*(*scheduler).state.get()).critical_deadline_utilization +=
+                    critical_utilization_delta;
+            }
+        }
+
+        // SAFETY: `scheduler`'s `queue_lock_` is held.
+        debug_assert!(
+            unsafe { (*(*scheduler).state.get()).weight_total } >= SchedWeight::from_raw(0)
+        );
+        // SAFETY: `scheduler`'s `queue_lock_` is held.
+        debug_assert!(
+            unsafe { (*(*scheduler).state.get()).critical_deadline_utilization }
+                >= SchedUtilization::from_raw(0)
+        );
+        // SAFETY: `scheduler`'s `queue_lock_` is held.
+        debug_assert!(
+            unsafe { cpp_scheduler_get_normalized_utilization(scheduler) }
+                >= SchedUtilization::from_raw(0)
+        );
+
+        // SAFETY: Both `thread`'s lock and `scheduler`'s `queue_lock_` are held, and
+        // no other reference to `*state_ptr` is active during `update_dynamic_params`.
+        update_dynamic_params(unsafe { &mut *state_ptr }, &old_ep, &new_ep, now.mono_time);
+
+        if thread_state == ThreadState::Ready {
+            if disposition == QueueDisposition::Enqueued as i32 {
+                // SAFETY: `thread`'s lock and `scheduler`'s `queue_lock_` are held.
+                unsafe { (*scheduler).queue_thread(thread, Placement::Adjustment, now.mono_time) };
+            }
+        } else {
+            debug_assert!(thread_state == ThreadState::Running);
+            // SAFETY: `thread`'s lock and `scheduler`'s `queue_lock_` are held.
+            let (remaining, finish_time) =
+                unsafe { ((*state_ptr).remaining_time_slice_ns(), (*state_ptr).finish_time) };
+            if new_ep.is_fair() {
+                // SAFETY: `scheduler`'s `queue_lock_` is held.
+                unsafe {
+                    let sched_state = (*scheduler).state.get();
+                    (*sched_state).target_preemption_time_ns =
+                        (*sched_state).start_of_current_time_slice_ns + remaining;
+                }
+            } else {
+                // SAFETY: `scheduler`'s `queue_lock_` is held.
+                let scaled_remaining_time_slice_ns = unsafe { (*scheduler).scale_up(remaining) };
+                // SAFETY: `scheduler`'s `queue_lock_` is held.
+                unsafe {
+                    let sched_state = (*scheduler).state.get();
+                    (*sched_state).target_preemption_time_ns = core::cmp::min(
+                        (*sched_state).start_of_current_time_slice_ns
+                            + scaled_remaining_time_slice_ns,
+                        finish_time,
+                    );
+                }
+            }
+
+            // Emit a context switch event to and from the same thread to update the
+            // visualized scheduling parameters if the bandwidth demand actually
+            // changed.
+            if bandwidth_demand_changed {
+                // SAFETY: `thread` is valid and its lock is held exclusively.
+                unsafe { sched_trace_context_switch(thread, thread, curr_cpu) };
+            }
+        }
+
+        // Check that target is left in the same disposition.
+        // SAFETY: `thread` is valid and both `thread`'s lock and `queue_lock_` are held.
+        debug_assert!(disposition == unsafe { cpp_thread_get_disposition(thread) });
+
+        // Reschedule to reflect the updated state.
+        // SAFETY: `scheduler`'s `queue_lock_` and `thread`'s lock are held.
+        unsafe {
+            Scheduler::reschedule_mask(cpu_num_to_mask((*state_ptr).curr_cpu));
+            (*scheduler).validate_invariants();
+        };
+    } else {
+        // The target thread is not runnable; update its effective profile and the
+        // scheduler bookkeeping.
+        // SAFETY: `thread` is valid and its lock is held by the caller.
+        let old_ep = unsafe { (*state_ptr).effective_profile };
+        // SAFETY: `thread` is valid and its lock is held by the caller.
+        let wq = unsafe { cpp_thread_get_blocking_wait_queue(thread) };
+        if !wq.is_null() {
+            // SAFETY: `wq` is non-null, an active `ChainLockTransaction` is held by
+            // caller contract, and `wq`'s lock is held in that transaction.
+            unsafe {
+                let token = ChainLockTransaction::assert_active();
+                (*cpp_wait_queue_get_lock(wq)).assert_acquired(&token);
+                cpp_wait_queue_update_blocked_thread_effective_profile(wq, thread);
+            }
+        } else {
+            // SAFETY: `thread`'s lock is held exclusively by the caller.
+            unsafe { (*state_ptr).recompute_effective_profile() };
+        }
+        let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+        // SAFETY: `thread`'s lock is held exclusively by the caller.
+        let new_ep = unsafe { (*state_ptr).effective_profile };
+        // SAFETY: `thread`'s lock is held exclusively and no other reference to
+        // `*state_ptr` is active during `update_dynamic_params`.
+        update_dynamic_params(unsafe { &mut *state_ptr }, &old_ep, &new_ep, now);
+    }
+
+    // SAFETY: `thread`'s lock is held exclusively by the caller.
+    let finish_time = unsafe { (*state_ptr).finish_time };
+    if cfg!(debug_assertions) && finish_time.raw_value() < 0 {
+        panic_pi_negative_finish_time(finish_time);
+    }
+}
+
+/// Common priority inheritance handler for a target `OwnedWaitQueue`.
+///
+/// # Safety
+/// - `owq` must point to a valid, initialized `OwnedWaitQueue` whose lock is
+///   held exclusively by an active `ChainLockTransaction` (`TA_REQ(owq->get_lock())`)
+///   and whose `inherited_scheduler_state_storage()` is non-null.
+unsafe fn pi_common_owq<F>(
+    owq: *mut OwnedWaitQueue,
+    update_dynamic_params: F,
+    old_target_ep: Option<&EffectiveProfile>,
+) where
+    F: FnOnce(
+        &mut WaitQueueInheritedSchedulerState,
+        &EffectiveProfile,
+        &EffectiveProfile,
+        SchedTime,
+    ),
+{
+    let _trace = local_ktrace_begin_scope!(COMMON, "Pi::Common(OwnedWaitQueue)");
+    let old_ep = match old_target_ep {
+        Some(ep) => *ep,
+        // SAFETY: `owq` is valid and locked by the caller.
+        None => unsafe { owq_get_effective_profile(owq) },
+    };
+    // SAFETY: `owq` is valid and locked by the caller.
+    let new_ep = unsafe { owq_get_effective_profile(owq) };
+    // SAFETY: `owq` is valid, locked exclusively by the caller, and has non-null
+    // inherited scheduler state storage.
+    let iss = unsafe { &mut *cpp_owq_get_inherited_state(owq) };
+    let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+
+    update_dynamic_params(iss, &old_ep, &new_ep, now);
+
+    if cfg!(debug_assertions) && iss.finish_time.raw_value() < 0 {
+        panic_pi_negative_finish_time(iss.finish_time);
+    }
+}
+
+// Called when a new edge is added connecting the target of one PI graph (the
+// upstream node) to a different PI graph.
+//
+// At the point that this method is called, propagation of the static profile
+// pressure parameters (weight, deadline utilization, and minimum deadline)
+// should have already been propagated to `target`, and its `EffectiveProfile`
+// updated. This method updates the dynamic scheduling parameters (start time,
+// finish time, time slice remaining) of `target` as needed because of the join
+// operation.
+fn join_node_to_pi_graph_impl<U: PiNodeState, T: PiNodeState>(
+    upstream: &U,
+    target: &mut T,
+    target_old_ep: &EffectiveProfile,
+    target_new_ep: &EffectiveProfile,
+    mono_now: SchedTime,
+) {
+    let upstream_ep = upstream.effective_profile();
+
+    // If our upstream node is fair, then we have nothing more to do in the
+    // common path. Our target's effective profile has already been updated
+    // appropriately, and no changes to the target's dynamic deadline scheduling
+    // parameters needs to be done (since new pressure from a fair thread
+    // currently has no effect on deadline utilization). Any scheduler specific
+    // side effects will be handled by the active thread path in `pi_common_thread`
+    // if the target is an active thread.
+    // TODO(https://fxbug.dev/42182908): Implement fair-to-fair priority
+    // inheritance.
+    if upstream_ep.is_fair() {
+        return;
+    }
+
+    // Our upstream node is not a fair node, therefore it must be a deadline
+    // node. In addition, no matter what it was before, our target node must now
+    // be a deadline node.
+    debug_assert!(upstream_ep.is_deadline());
+    debug_assert!(target_new_ep.is_deadline());
+
+    // Verify the start/finish times of the upstream node have the required
+    // relationship.
+    // TODO(https://fxbug.dev/448121736): Start time == finish time.
+    debug_assert_pi_start_before_finish(
+        "upstream_ep",
+        upstream,
+        upstream_ep.deadline().deadline_ns,
+    );
+
+    if target_old_ep.is_fair() {
+        // If target has just now become deadline, we can simply transfer the
+        // dynamic deadline parameters from upstream to the target.
+        target.set_start_time(upstream.start_time());
+        target.set_finish_time(upstream.finish_time());
+        target.set_time_slice_ns(upstream.time_slice_ns());
+        target.set_time_slice_used_ns(upstream.time_slice_used_ns());
+    } else {
+        // The target was already a deadline thread, then we need to recompute the
+        // target's dynamic deadline parameters using the lag equation. Compute
+        // the remaining periods of the target and upstream threads.
+        let zero = SchedDuration::from_raw(0);
+        let target_remaining_period = core::cmp::max(target.finish_time() - mono_now, zero);
+        let upstream_remaining_period = core::cmp::max(upstream.finish_time() - mono_now, zero);
+        let min_remaining_period =
+            core::cmp::min(target_remaining_period, upstream_remaining_period);
+
+        target.set_finish_time(core::cmp::min(target.finish_time(), upstream.finish_time()));
+        target.set_start_time(target.finish_time() - target_new_ep.deadline().deadline_ns);
+
+        // Verify the start/finish times of the target node have the required
+        // relationship.
+        // TODO(https://fxbug.dev/448121736): Start time == finish time.
+        debug_assert_pi_start_before_finish(
+            "target_new_ep",
+            target,
+            target_new_ep.deadline().deadline_ns,
+        );
+
+        // TODO(eieio): If a period is expired, the full bandwidth contribution of
+        // the respective task is available to the target and downstream, if any.
+        let new_remaining_time_slice = target.remaining_time_slice_ns()
+            + upstream.remaining_time_slice_ns()
+            + (target_old_ep.deadline().utilization
+                * (min_remaining_period - target_remaining_period))
+            + (upstream_ep.deadline().utilization
+                * (min_remaining_period - upstream_remaining_period));
+
+        // Limit the TSR. It cannot be less than zero nor can it be more than the
+        // time until the absolute deadline of the new combined thread.
+        //
+        // TODO(johngro): If we did have to clamp the TSR, the amount we clamp by
+        // needs to turn into carried lag.
+        let clamped_remaining_time_slice =
+            new_remaining_time_slice.clamp(zero, min_remaining_period);
+        let target_cap = target_new_ep.deadline().capacity_ns;
+        target.set_time_slice_ns(target_cap);
+        target.set_time_slice_used_ns(target_cap - clamped_remaining_time_slice);
+        if cfg!(debug_assertions) && target.remaining_time_slice_ns() < zero {
+            panic_pi_negative_remaining_time_slice(
+                target_cap,
+                new_remaining_time_slice,
+                min_remaining_period,
+            );
+        }
+    }
+}
+
+// Called when an upstream node has its downstream edge removed, splitting it
+// from the PI graph it was a member of and becoming the target of a new graph
+// in the process.
+//
+// At the point that this method is called, propagation of the static profile
+// pressure parameters (weight, deadline utilization, and minimum deadline)
+// should have already been propagated to `target`, and its `EffectiveProfile`
+// updated. This method updates the dynamic scheduling parameters (start time,
+// finish time, time slice remaining) in both `target` and `upstream` as needed
+// because of the split operation.
+fn split_node_from_pi_graph_impl<U: PiNodeState, T: PiNodeState>(
+    upstream: &mut U,
+    target: &mut T,
+    target_old_ep: &EffectiveProfile,
+    target_new_ep: &EffectiveProfile,
+    mono_now: SchedTime,
+) {
+    let upstream_ep = upstream.effective_profile();
+
+    // Was the target node a fair node? If so, there is really nothing for us to
+    // do here.
+    if target_old_ep.is_fair() {
+        return;
+    }
+
+    debug_assert!(target_old_ep.is_deadline());
+    if target_new_ep.is_fair() {
+        // If target node is now a fair node, then the upstream node must have
+        // been a deadline node. This split operation is what caused the target
+        // node to change from deadline to fair, all of the deadline pressure must
+        // have been coming from the upstream node. Assert all of this.
+        debug_assert!(upstream_ep.is_deadline());
+        if cfg!(debug_assertions) {
+            let (toep, uep) = (target_old_ep.deadline(), upstream_ep.deadline());
+            if toep.capacity_ns != uep.capacity_ns {
+                panic_pi_deadline_param_mismatch("capacity", toep.capacity_ns, uep.capacity_ns);
+            }
+            if toep.deadline_ns != uep.deadline_ns {
+                panic_pi_deadline_param_mismatch("deadline", toep.deadline_ns, uep.deadline_ns);
+            }
+        }
+
+        // Verify the start/finish times of the target node have the required
+        // relationship.
+        // TODO(https://fxbug.dev/448121736): Start time == finish time.
+        debug_assert_pi_start_before_finish(
+            "target_old_ep",
+            target,
+            target_old_ep.deadline().deadline_ns,
+        );
+
+        // Give the dynamic deadline parameters over to the upstream node.
+        upstream.set_start_time(target.start_time());
+        upstream.set_finish_time(target.finish_time());
+        upstream.set_time_slice_ns(target.time_slice_ns());
+        upstream.set_time_slice_used_ns(target.time_slice_used_ns());
+
+        // TODO(eieio): Just expire the time slice for now. This should actually
+        // be split out the same way as for deadline threads.
+        target.set_time_slice_used_ns(target.time_slice_ns());
+    } else {
+        // OK, the target node is still a deadline node. If the upstream node is a
+        // fair node, we don't have to do anything at all. A fair node splitting
+        // off from a deadline node should not change the deadline node's dynamic
+        // parameters. If the upstream fair node is a thread, it is going to
+        // arrive in a new scheduler queue Real Soon Now, and have new dynamic
+        // parameters computed for it.
+        //
+        // If both nodes are deadline nodes, then we need to invoke the lag
+        // equation in order to figure out what the new time slice remaining and
+        // absolute deadlines are.
+        if upstream_ep.is_deadline() {
+            // Compute the time until absolute deadline of the target and upstream.
+            let zero = SchedDuration::from_raw(0);
+            let target_remaining_period = core::cmp::max(target.finish_time() - mono_now, zero);
+            let upstream_remaining_period = core::cmp::max(upstream.finish_time() - mono_now, zero);
+
+            // Figure out what the uncapped utilization of the combined thread
+            // would have been based on the utilizations of the target and
+            // upstream nodes after the split. It is important when scaling
+            // timeslices to be sure that we divide by a utilization value which
+            // is the sum of the two (now separated) utilization values.
+            let combined_uncapped_utilization =
+                target_new_ep.deadline().utilization + upstream_ep.deadline().utilization;
+            let upstream_utilization_ratio = SchedUtilization::from(
+                upstream_ep.deadline().utilization / combined_uncapped_utilization,
+            );
+
+            let new_upstream_remaining_time_slice = SchedDuration::from(
+                upstream_utilization_ratio * target.remaining_time_slice_ns()
+                    + upstream_ep.deadline().utilization
+                        * (upstream_remaining_period - target_remaining_period),
+            );
+
+            // TODO(johngro): This also changes when carried lag comes into play.
+            let upstream_cap = upstream_ep.deadline().capacity_ns;
+            upstream.set_time_slice_ns(upstream_cap);
+            upstream.set_time_slice_used_ns(
+                upstream_cap - core::cmp::max(new_upstream_remaining_time_slice, zero),
+            );
+
+            // TODO(johngro): Fix this. Logically, it is not correct to preserve the
+            // abs deadline of the target after the split. The target's bookkeeping
+            // should be equivalent to the values which would be obtained by joining
+            // all of the threads which exist upstream of this node together.
+            // Because of this, our new target finish time should be equal to the
+            // min across all finish times immediately upstream of this node.
+            //
+            // Now handle the target node. We preserve the absolute deadline of the
+            // target node before and after the split, so we need to recompute its
+            // start time so that the distance between the absolute deadline and the
+            // start time is equal to the new relative deadline of the target node.
+            target.set_start_time(target.finish_time() - target_new_ep.deadline().deadline_ns);
+
+            // Verify the start/finish times of the target node have the required
+            // relationship.
+            // TODO(https://fxbug.dev/448121736): Start time == finish time.
+            debug_assert_pi_start_before_finish(
+                "target_new_ep",
+                target,
+                target_new_ep.deadline().deadline_ns,
+            );
+
+            // The time till absolute deadline of the pre and post split target
+            // remains the same, so the ttad contributions to the timeslice
+            // remaining simply drop out of the lag equation.
+            //
+            // Note that fixed point division takes the precision of the assignee
+            // into account to provide headroom in certain situations. Use an
+            // intermediate with the same fractional precision as the utilization
+            // operands before scaling the non-fractional timeslice.
+            let target_utilization_ratio = SchedUtilization::from(
+                target_new_ep.deadline().utilization / combined_uncapped_utilization,
+            );
+            let new_target_remaining_time_slice =
+                SchedDuration::from(target.remaining_time_slice_ns() * target_utilization_ratio);
+
+            let target_cap = target_new_ep.deadline().capacity_ns;
+            target.set_time_slice_ns(target_cap);
+            target.set_time_slice_used_ns(
+                target_cap - core::cmp::max(new_target_remaining_time_slice, zero),
+            );
+        }
+    }
+}
+
+/// Updates a thread's effective profile and position in its container at the
+/// start of a base profile update operation, regardless of whether or not the
+/// target thread is currently blocked or currently assigned to a scheduler.
+///
+/// Later on, if the thread happens to be an upstream member of a PI graph whose
+/// target is either an `OwnedWaitQueue` or another thread, the
+/// `rust_kernel_scheduler_pi_upstream_thread_base_profile_changed_*` operation
+/// will be triggered to handle the downstream target of the graph.
+///
+/// # Safety
+/// - `thread` must point to a valid, initialized `Thread` whose lock is held
+///   exclusively by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, thread->get_lock(), preempt_disabled_token)`).
+/// - If `thread` is blocked in a wait queue, that wait queue's lock must also
+///   be held in the transaction.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_thread_base_profile_changed(thread: *mut Thread) {
+    // The base profile of this thread has changed. While there may or may not be
+    // something downstream of this thread, we need to start by dealing with
+    // updating this thread's static and dynamic scheduling parameters first.
+    // SAFETY: `thread` is valid and its lock is held by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(thread))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_BASE_DIRTY);
+        pi_common_thread(thread, |target_state, _target_old_ep, target_new_ep, _mono_now| {
+            // Make sure the start and finish times are consistent with the bandwidth
+            // parameters of the deadline profile. Consistency in fair profiles is
+            // handled by `Scheduler::adjust_fair_bandwidth`.
+            if target_new_ep.is_deadline() {
+                target_state.start_time =
+                    target_state.finish_time - target_new_ep.deadline().deadline_ns;
+            }
+        });
+    }
+}
+
+/// Called when a thread (`_upstream`) in a graph whose target is a different
+/// `Thread` (`target`) changes its base profile in order to update the target's
+/// new effective profile, position in container, and dynamic scheduling
+/// parameters.
+///
+/// # Safety
+/// - `_upstream` and `target` must point to distinct, valid, initialized `Thread`s
+///   whose locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, _upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_upstream_thread_base_profile_changed_thread(
+    _upstream: *const Thread,
+    target: *mut Thread,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: base profile changed");
+    // The base profile of a thread upstream of this target node has changed. We need to
+    // do the following:
+    //
+    // 1) Recompute the target's effective profile.
+    // 2) Handle any bookkeeping updates for the scheduler's state, if the target
+    //    is a thread which is either RUNNING or READY, and therefore has a
+    //    scheduler assigned to it.
+    // 3) Handle any updates to the target's dynamic scheduling parameters (e.g.,
+    //    start time, finish time, time slice remaining).
+    debug_assert!(!core::ptr::eq(_upstream, target));
+    // SAFETY: `_upstream` and `target` are distinct, valid, and locked by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(target))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_INHERITED_DIRTY);
+        (*cpp_thread_get_scheduler_state(_upstream.cast_mut()))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
+        pi_common_thread(target, |target_state, _target_old_ep, target_new_ep, _mono_now| {
+            // Make sure the start and finish times are consistent with the bandwidth
+            // parameters of the deadline profile. Consistency in fair profiles is
+            // handled by `Scheduler::adjust_fair_bandwidth`.
+            if target_new_ep.is_deadline() {
+                target_state.start_time =
+                    target_state.finish_time - target_new_ep.deadline().deadline_ns;
+            }
+        });
+    }
+}
+
+/// Called when a thread (`_upstream`) in a graph whose target is an
+/// `OwnedWaitQueue` (`target`) changes its base profile in order to update the
+/// target's new effective profile, position in container, and dynamic
+/// scheduling parameters.
+///
+/// # Safety
+/// - `_upstream` and `target` must point to valid, initialized objects whose
+///   locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, _upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_upstream_thread_base_profile_changed_owq(
+    _upstream: *const Thread,
+    target: *mut OwnedWaitQueue,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: base profile changed");
+    // SAFETY: `_upstream` and `target` are valid and locked by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(_upstream.cast_mut()))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
+        pi_common_owq(
+            target,
+            |target_iss, _target_old_ep, target_new_ep, _mono_now| {
+                // Make sure the start and finish times are consistent with the bandwidth
+                // parameters of the deadline profile. Consistency in fair profiles is
+                // handled by `Scheduler::adjust_fair_bandwidth`.
+                if target_new_ep.is_deadline() {
+                    target_iss.start_time =
+                        target_iss.finish_time - target_new_ep.deadline().deadline_ns;
+                }
+            },
+            None,
+        );
+    }
+}
+
+/// Joins an upstream thread to a target thread in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to distinct, valid, initialized `Thread`s
+///   whose locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_thread_thread(
+    upstream: *const Thread,
+    target: *mut Thread,
+    _force_inheritance: super::wait_queue::ForceInheritance,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: join");
+    debug_assert!(!core::ptr::eq(upstream, target));
+    // SAFETY: `upstream` and `target` are distinct, valid, and locked by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(target))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_INHERITED_DIRTY);
+        (*cpp_thread_get_scheduler_state(upstream.cast_mut()))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
+        pi_common_thread(target, |target_state, target_old_ep, target_new_ep, mono_now| {
+            let upstream_state = &*cpp_thread_get_scheduler_state(upstream.cast_mut());
+            join_node_to_pi_graph_impl(
+                upstream_state,
+                target_state,
+                target_old_ep,
+                target_new_ep,
+                mono_now,
+            );
+        });
+    }
+}
+
+/// Joins an upstream thread to a target OwnedWaitQueue in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to valid, initialized objects whose
+///   locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_thread_owq(
+    upstream: *const Thread,
+    target: *mut OwnedWaitQueue,
+    _force_inheritance: super::wait_queue::ForceInheritance,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: join");
+    // SAFETY: `upstream` and `target` are valid and locked by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(upstream.cast_mut()))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
+        pi_common_owq(
+            target,
+            |target_iss, target_old_ep, target_new_ep, mono_now| {
+                let upstream_state = &*cpp_thread_get_scheduler_state(upstream.cast_mut());
+                join_node_to_pi_graph_impl(
+                    upstream_state,
+                    target_iss,
+                    target_old_ep,
+                    target_new_ep,
+                    mono_now,
+                );
+            },
+            None,
+        );
+    }
+}
+
+/// Joins an upstream OwnedWaitQueue to a target thread in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to valid, initialized objects whose
+///   locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_owq_thread(
+    upstream: *const OwnedWaitQueue,
+    target: *mut Thread,
+    _force_inheritance: super::wait_queue::ForceInheritance,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: join");
+    // SAFETY: `upstream` and `target` are valid and locked by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(target))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_INHERITED_DIRTY);
+        pi_common_thread(target, |target_state, target_old_ep, target_new_ep, mono_now| {
+            let upstream_iss = &*cpp_owq_get_inherited_state_const(upstream);
+            join_node_to_pi_graph_impl(
+                upstream_iss,
+                target_state,
+                target_old_ep,
+                target_new_ep,
+                mono_now,
+            );
+        });
+    }
+}
+
+/// Joins an upstream OwnedWaitQueue to a target OwnedWaitQueue in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to distinct, valid, initialized
+///   `OwnedWaitQueue`s whose locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_join_owq_owq(
+    upstream: *const OwnedWaitQueue,
+    target: *mut OwnedWaitQueue,
+    _force_inheritance: super::wait_queue::ForceInheritance,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: join");
+    debug_assert!(!core::ptr::eq(upstream, target));
+    // SAFETY: `upstream` and `target` are distinct, valid, and locked by the caller.
+    unsafe {
+        pi_common_owq(
+            target,
+            |target_iss, target_old_ep, target_new_ep, mono_now| {
+                let upstream_iss = &*cpp_owq_get_inherited_state_const(upstream);
+                join_node_to_pi_graph_impl(
+                    upstream_iss,
+                    target_iss,
+                    target_old_ep,
+                    target_new_ep,
+                    mono_now,
+                );
+            },
+            None,
+        );
+    }
+}
+
+/// Splits an upstream thread from a target thread in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to distinct, valid, initialized `Thread`s
+///   whose locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_thread_thread(
+    upstream: *mut Thread,
+    target: *mut Thread,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: split");
+    debug_assert!(!core::ptr::eq(upstream, target));
+    // SAFETY: `upstream` and `target` are distinct, valid, and locked by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(target))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_INHERITED_DIRTY);
+        (*cpp_thread_get_scheduler_state(upstream))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
+        pi_common_thread(target, |target_state, target_old_ep, target_new_ep, mono_now| {
+            let upstream_state = &mut *cpp_thread_get_scheduler_state(upstream);
+            split_node_from_pi_graph_impl(
+                upstream_state,
+                target_state,
+                target_old_ep,
+                target_new_ep,
+                mono_now,
+            );
+        });
+    }
+}
+
+/// Splits an upstream thread from a target OwnedWaitQueue in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to valid, initialized objects whose
+///   locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+/// - `old_target_ep` may be null or point to a valid `EffectiveProfile`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_thread_owq(
+    upstream: *mut Thread,
+    target: *mut OwnedWaitQueue,
+    old_target_ep: *const EffectiveProfile,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: split");
+    // SAFETY: `upstream` and `target` are valid and locked by the caller, and
+    // `old_target_ep` is either null or points to a valid `EffectiveProfile`.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(upstream))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
+        pi_common_owq(
+            target,
+            |target_iss, target_old_ep, target_new_ep, mono_now| {
+                let upstream_state = &mut *cpp_thread_get_scheduler_state(upstream);
+                split_node_from_pi_graph_impl(
+                    upstream_state,
+                    target_iss,
+                    target_old_ep,
+                    target_new_ep,
+                    mono_now,
+                );
+            },
+            old_target_ep.as_ref(),
+        );
+    }
+}
+
+/// Splits an upstream OwnedWaitQueue from a target thread in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to valid, initialized objects whose
+///   locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_owq_thread(
+    upstream: *mut OwnedWaitQueue,
+    target: *mut Thread,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: split");
+    // SAFETY: `upstream` and `target` are valid and locked by the caller.
+    unsafe {
+        (*cpp_thread_get_scheduler_state(target))
+            .effective_profile
+            .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_INHERITED_DIRTY);
+        pi_common_thread(target, |target_state, target_old_ep, target_new_ep, mono_now| {
+            let upstream_iss = &mut *cpp_owq_get_inherited_state(upstream);
+            split_node_from_pi_graph_impl(
+                upstream_iss,
+                target_state,
+                target_old_ep,
+                target_new_ep,
+                mono_now,
+            );
+        });
+    }
+}
+
+/// Splits an upstream OwnedWaitQueue from a target OwnedWaitQueue in the PI graph.
+///
+/// # Safety
+/// - `upstream` and `target` must point to distinct, valid, initialized
+///   `OwnedWaitQueue`s whose locks are both held by an active `ChainLockTransaction`
+///   (`TA_REQ(chainlock_transaction_token, upstream->get_lock(), target->get_lock(), preempt_disabled_token)`).
+/// - `old_target_ep` may be null or point to a valid `EffectiveProfile`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_pi_split_owq_owq(
+    upstream: *mut OwnedWaitQueue,
+    target: *mut OwnedWaitQueue,
+    old_target_ep: *const EffectiveProfile,
+) {
+    let _trace = local_ktrace_begin_scope!(COMMON, "sched_pi: split");
+    debug_assert!(!core::ptr::eq(upstream, target));
+    // SAFETY: `upstream` and `target` are distinct, valid, and locked by the caller,
+    // and `old_target_ep` is either null or points to a valid `EffectiveProfile`.
+    unsafe {
+        pi_common_owq(
+            target,
+            |target_iss, target_old_ep, target_new_ep, mono_now| {
+                let upstream_iss = &mut *cpp_owq_get_inherited_state(upstream);
+                split_node_from_pi_graph_impl(
+                    upstream_iss,
+                    target_iss,
+                    target_old_ep,
+                    target_new_ep,
+                    mono_now,
+                );
+            },
+            old_target_ep.as_ref(),
+        );
+    }
+}
 
 const MIGRATE_STAGE_SAVE: i32 = 0;
 const MIGRATE_STAGE_RESTORE: i32 = 1;
@@ -11907,7 +13032,7 @@ pub unsafe fn thread_base_profile_changed(thread: &Thread, clt_token: &ChainLock
     assert_transaction_active(clt_token);
     // SAFETY: The caller guarantees `thread`'s PI chain is locked and its base profile is dirty.
     unsafe {
-        cpp_scheduler_thread_base_profile_changed(thread.as_raw());
+        rust_kernel_scheduler_pi_thread_base_profile_changed(thread.as_raw());
     }
 }
 
@@ -11927,17 +13052,22 @@ pub unsafe fn upstream_thread_base_profile_changed<T: PiNode>(
 ) {
     assert_transaction_active(clt_token);
     // SAFETY: The caller guarantees that the required PI chain locks are held. The `*mut` derived
-    // from `&OwnedWaitQueue` is only written by C++ through `UnsafeCell`-backed fields (the
-    // `KCell` collection) or through the thread-owned inherited scheduler state storage.
+    // from `&OwnedWaitQueue` is only written through `UnsafeCell`-backed fields (the `KCell`
+    // collection) or through the thread-owned inherited scheduler state storage.
     unsafe {
         match target.pi_node_ref() {
             PiNodeRef::Thread(t) => {
-                cpp_scheduler_upstream_thread_base_profile_changed_thread(upstream, t.as_raw())
+                rust_kernel_scheduler_pi_upstream_thread_base_profile_changed_thread(
+                    upstream,
+                    t.as_raw(),
+                )
             }
-            PiNodeRef::OwnedWaitQueue(t) => cpp_scheduler_upstream_thread_base_profile_changed_owq(
-                upstream,
-                core::ptr::from_ref(t).cast_mut(),
-            ),
+            PiNodeRef::OwnedWaitQueue(t) => {
+                rust_kernel_scheduler_pi_upstream_thread_base_profile_changed_owq(
+                    upstream,
+                    core::ptr::from_ref(t).cast_mut(),
+                )
+            }
         }
     }
 }
@@ -11960,25 +13090,25 @@ pub unsafe fn join_node_to_pi_graph<U: PiNode, T: PiNode>(
 ) {
     assert_transaction_active(clt_token);
     // SAFETY: The caller guarantees that the required PI chain locks are held. Each `*mut`
-    // derived from `&OwnedWaitQueue` is only written by C++ through `UnsafeCell`-backed fields
+    // derived from `&OwnedWaitQueue` is only written through `UnsafeCell`-backed fields
     // (the `KCell` collection) or through the thread-owned inherited scheduler state storage.
     unsafe {
         match (upstream.pi_node_ref(), target.pi_node_ref()) {
             (PiNodeRef::Thread(u), PiNodeRef::Thread(t)) => {
-                cpp_scheduler_join_node_to_pi_graph_thread_thread(u, t.as_raw(), force_inheritance)
+                rust_kernel_scheduler_pi_join_thread_thread(u, t.as_raw(), force_inheritance)
             }
             (PiNodeRef::Thread(u), PiNodeRef::OwnedWaitQueue(t)) => {
-                cpp_scheduler_join_node_to_pi_graph_thread_owq(
+                rust_kernel_scheduler_pi_join_thread_owq(
                     u,
                     core::ptr::from_ref(t).cast_mut(),
                     force_inheritance,
                 )
             }
             (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::Thread(t)) => {
-                cpp_scheduler_join_node_to_pi_graph_owq_thread(u, t.as_raw(), force_inheritance)
+                rust_kernel_scheduler_pi_join_owq_thread(u, t.as_raw(), force_inheritance)
             }
             (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::OwnedWaitQueue(t)) => {
-                cpp_scheduler_join_node_to_pi_graph_owq_owq(
+                rust_kernel_scheduler_pi_join_owq_owq(
                     u,
                     core::ptr::from_ref(t).cast_mut(),
                     force_inheritance,
@@ -12007,34 +13137,31 @@ pub unsafe fn split_node_from_pi_graph<U: PiNode, T: PiNode>(
     assert_transaction_active(clt_token);
     let old_target_ep = old_target_ep.map_or(core::ptr::null(), core::ptr::from_ref);
     // SAFETY: The caller guarantees that the required PI chain locks are held. Each `*mut`
-    // derived from `&OwnedWaitQueue` is only written by C++ through `UnsafeCell`-backed fields
+    // derived from `&OwnedWaitQueue` is only written through `UnsafeCell`-backed fields
     // (the `KCell` collection) or through the thread-owned inherited scheduler state storage
     // (for example, the upstream queue's dynamic scheduling parameters).
     unsafe {
         match (upstream.pi_node_ref(), target.pi_node_ref()) {
             (PiNodeRef::Thread(u), PiNodeRef::Thread(t)) => {
-                cpp_scheduler_split_node_from_pi_graph_thread_thread(
-                    u.as_raw(),
-                    t.as_raw(),
-                    old_target_ep,
-                )
+                debug_assert!(old_target_ep.is_null());
+                rust_kernel_scheduler_pi_split_thread_thread(u.as_raw(), t.as_raw())
             }
             (PiNodeRef::Thread(u), PiNodeRef::OwnedWaitQueue(t)) => {
-                cpp_scheduler_split_node_from_pi_graph_thread_owq(
+                rust_kernel_scheduler_pi_split_thread_owq(
                     u.as_raw(),
                     core::ptr::from_ref(t).cast_mut(),
                     old_target_ep,
                 )
             }
             (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::Thread(t)) => {
-                cpp_scheduler_split_node_from_pi_graph_owq_thread(
+                debug_assert!(old_target_ep.is_null());
+                rust_kernel_scheduler_pi_split_owq_thread(
                     core::ptr::from_ref(u).cast_mut(),
                     t.as_raw(),
-                    old_target_ep,
                 )
             }
             (PiNodeRef::OwnedWaitQueue(u), PiNodeRef::OwnedWaitQueue(t)) => {
-                cpp_scheduler_split_node_from_pi_graph_owq_owq(
+                rust_kernel_scheduler_pi_split_owq_owq(
                     core::ptr::from_ref(u).cast_mut(),
                     core::ptr::from_ref(t).cast_mut(),
                     old_target_ep,
