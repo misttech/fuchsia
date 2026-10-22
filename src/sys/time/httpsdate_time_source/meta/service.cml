@@ -22,10 +22,7 @@
     ],
     use: [
         {
-            protocol: [
-                "fuchsia.component.sandbox.CapabilityStore",
-                "fuchsia.metrics.MetricEventLoggerFactory",
-            ],
+            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
             from: "parent",
         },
         {
