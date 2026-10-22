@@ -1940,11 +1940,11 @@ group("rustls-pemfile-2.2.0") {
 }
 
 group("rustls-webpki") {
-  public_deps = [ ":rustls-webpki-v0_102_8" ]
+  public_deps = [ ":rustls-webpki-v0_103_16" ]
 }
 
-group("rustls-webpki-0.102.8") {
-  public_deps = [ ":rustls-webpki-v0_102_8" ]
+group("rustls-webpki-0.103.16") {
+  public_deps = [ ":rustls-webpki-v0_103_16" ]
 }
 
 group("rustyline") {
@@ -19125,16 +19125,11 @@ rustc_library("ring-v0_17_14") {
   visibility += [ ":rustls-v0_23_45.aux.deps.deps" ]
   visibility += [ ":rustls-v0_23_45.aux.deps.transdeps" ]
   visibility += [ ":rustls-v0_23_45.actual.rust_compilation_deps" ]
-  visibility += [ ":rustls-webpki-v0_102_8.actual" ]
-  visibility += [ ":rustls-webpki-v0_102_8.rustdoc" ]
-  visibility += [ ":rustls-webpki-v0_102_8.aux.deps.deps" ]
-  visibility += [ ":rustls-webpki-v0_102_8.aux.deps.transdeps" ]
-  visibility += [ ":rustls-webpki-v0_102_8.actual.rust_compilation_deps" ]
-  visibility += [ ":rustls-webpki-v0_103_15.actual" ]
-  visibility += [ ":rustls-webpki-v0_103_15.rustdoc" ]
-  visibility += [ ":rustls-webpki-v0_103_15.aux.deps.deps" ]
-  visibility += [ ":rustls-webpki-v0_103_15.aux.deps.transdeps" ]
-  visibility += [ ":rustls-webpki-v0_103_15.actual.rust_compilation_deps" ]
+  visibility += [ ":rustls-webpki-v0_103_16.actual" ]
+  visibility += [ ":rustls-webpki-v0_103_16.rustdoc" ]
+  visibility += [ ":rustls-webpki-v0_103_16.aux.deps.deps" ]
+  visibility += [ ":rustls-webpki-v0_103_16.aux.deps.transdeps" ]
+  visibility += [ ":rustls-webpki-v0_103_16.actual.rust_compilation_deps" ]
   visibility += [ ":tuf-v0_3_0-beta14.actual" ]
   visibility += [ ":tuf-v0_3_0-beta14.rustdoc" ]
   visibility += [ ":tuf-v0_3_0-beta14.aux.deps.deps" ]
@@ -19870,7 +19865,7 @@ rustc_library("rustls-v0_23_45") {
   deps += [ ":once_cell-v1_21_4" ]
   deps += [ ":ring-v0_17_14" ]
   deps += [ ":rustls-pki-types-v1_15_1" ]
-  deps += [ ":rustls-webpki-v0_103_15" ]
+  deps += [ ":rustls-webpki-v0_103_16" ]
   deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
@@ -19888,7 +19883,7 @@ rustc_library("rustls-v0_23_45") {
 
   aliased_deps = {
     pki_types = ":rustls-pki-types-v1_15_1.actual"
-    webpki = ":rustls-webpki-v0_103_15.actual"
+    webpki = ":rustls-webpki-v0_103_16.actual"
   }
   visibility = [ ":*" ]
 
@@ -26400,17 +26395,17 @@ rustc_library("wasm-bindgen-v0_2_125") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("rustls-webpki-v0_102_8.license") {
+license("rustls-webpki-v0_103_16.license") {
   public_package_name = "webpki"
   license_files =
-      [ "//third_party/rust_crates/vendor/rustls-webpki-0.102.8/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rustls-webpki-0.103.16/LICENSE" ]
 }
 
-rustc_library("rustls-webpki-v0_102_8") {
+rustc_library("rustls-webpki-v0_103_16") {
   crate_name = "webpki"
   source_root =
-      "//third_party/rust_crates/vendor/rustls-webpki-0.102.8/src/lib.rs"
-  output_name = "webpki-fe9b7c583bb82aa6"
+      "//third_party/rust_crates/vendor/rustls-webpki-0.103.16/src/lib.rs"
+  output_name = "webpki-7e6cb50d4fc61efd"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -26425,8 +26420,8 @@ rustc_library("rustls-webpki-v0_102_8") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fe9b7c583bb82aa6",
-    "-Cextra-filename=-fe9b7c583bb82aa6",
+    "-Cmetadata=7e6cb50d4fc61efd",
+    "-Cextra-filename=-7e6cb50d4fc61efd",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"ring\"",
@@ -26438,47 +26433,7 @@ rustc_library("rustls-webpki-v0_102_8") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustls-webpki-v0_102_8.license" ]
-}
-
-license("rustls-webpki-v0_103_15.license") {
-  public_package_name = "webpki"
-  license_files =
-      [ "//third_party/rust_crates/vendor/rustls-webpki-0.103.15/LICENSE" ]
-}
-
-rustc_library("rustls-webpki-v0_103_15") {
-  crate_name = "webpki"
-  source_root =
-      "//third_party/rust_crates/vendor/rustls-webpki-0.103.15/src/lib.rs"
-  output_name = "webpki-b518ef048079e6cc"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":ring-v0_17_14" ]
-  deps += [ ":rustls-pki-types-v1_15_1" ]
-  deps += [ ":untrusted-v0_9_0" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=b518ef048079e6cc",
-    "-Cextra-filename=-b518ef048079e6cc",
-    "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"ring\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  aliased_deps = {
-    pki_types = ":rustls-pki-types-v1_15_1.actual"
-  }
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":rustls-webpki-v0_103_15.license" ]
+  applicable_licenses = [ ":rustls-webpki-v0_103_16.license" ]
 }
 
 license("which-v8_0_4.license") {

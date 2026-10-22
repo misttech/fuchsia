@@ -213,7 +213,7 @@ rsa = { version = "0.9.10", default-features = false }
 rustc-hash = "2.1.3"
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 rustls-pemfile = "2"
-rustls-webpki = "0.102"
+rustls-webpki = { version = "0.103.16", features = ["ring", "std"] }
 rustyline = "18.0.1"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
@@ -1067,16 +1067,11 @@ visibility = [
   ":rustls-v0_23_45.aux.deps.deps",
   ":rustls-v0_23_45.aux.deps.transdeps",
   ":rustls-v0_23_45.actual.rust_compilation_deps",
-  ":rustls-webpki-v0_102_8.actual",
-  ":rustls-webpki-v0_102_8.rustdoc",
-  ":rustls-webpki-v0_102_8.aux.deps.deps",
-  ":rustls-webpki-v0_102_8.aux.deps.transdeps",
-  ":rustls-webpki-v0_102_8.actual.rust_compilation_deps",
-  ":rustls-webpki-v0_103_15.actual",
-  ":rustls-webpki-v0_103_15.rustdoc",
-  ":rustls-webpki-v0_103_15.aux.deps.deps",
-  ":rustls-webpki-v0_103_15.aux.deps.transdeps",
-  ":rustls-webpki-v0_103_15.actual.rust_compilation_deps",
+  ":rustls-webpki-v0_103_16.actual",
+  ":rustls-webpki-v0_103_16.rustdoc",
+  ":rustls-webpki-v0_103_16.aux.deps.deps",
+  ":rustls-webpki-v0_103_16.aux.deps.transdeps",
+  ":rustls-webpki-v0_103_16.actual.rust_compilation_deps",
   ":tuf-v0_3_0-beta14.actual",
   ":tuf-v0_3_0-beta14.rustdoc",
   ":tuf-v0_3_0-beta14.aux.deps.deps",

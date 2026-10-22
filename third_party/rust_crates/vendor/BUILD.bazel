@@ -2556,14 +2556,14 @@ alias(
 )
 
 alias(
-    name = "rustls-webpki-0.102.8",
-    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.102.8:webpki",
+    name = "rustls-webpki-0.103.16",
+    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.103.16:webpki",
     tags = ["manual"],
 )
 
 alias(
     name = "rustls-webpki",
-    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.102.8:webpki",
+    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.103.16:webpki",
     tags = ["manual"],
 )
 

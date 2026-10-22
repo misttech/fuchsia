@@ -475,7 +475,7 @@ _NORMAL_DEPENDENCIES = {
             "rustc-hash": Label("//third_party/rust_crates/vendor/rustc-hash-2.1.3:rustc_hash"),
             "rustls": Label("//third_party/rust_crates/vendor/rustls-0.23.45:rustls"),
             "rustls-pemfile": Label("//third_party/rust_crates/vendor/rustls-pemfile-2.2.0:rustls_pemfile"),
-            "rustls-webpki": Label("//third_party/rust_crates/vendor/rustls-webpki-0.102.8:webpki"),
+            "rustls-webpki": Label("//third_party/rust_crates/vendor/rustls-webpki-0.103.16:webpki"),
             "rustyline": Label("//third_party/rust_crates/vendor/rustyline-18.0.1:rustyline"),
             "rutabaga_gfx": Label("//third_party/rust_crates/vendor/rutabaga_gfx-0.1.75:rutabaga_gfx"),
             "sapphire-async": Label("//third_party/rust_crates/vendor/sapphire-async-0.1.0:sapphire_async"),

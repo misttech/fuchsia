@@ -18,6 +18,7 @@ rustc_library(
     deps = [
         "//third_party/rust_crates/vendor:base64",
         "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rustls",
         "//third_party/rust_crates/vendor:rustls-webpki",
     ],
 )

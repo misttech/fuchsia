@@ -46,13 +46,14 @@ static CERT_DERS: LazyLock<Vec<Vec<u8>>> = LazyLock::new(|| {
     }
     cert_ders
 });
-static CERT_PKI_DERS: LazyLock<Vec<webpki::types::CertificateDer<'static>>> = LazyLock::new(|| {
-    CERT_DERS
-        .iter()
-        .map(|cert_bytes| webpki::types::CertificateDer::from(cert_bytes.as_slice()))
-        .collect()
-});
-pub static TLS_SERVER_ROOTS: LazyLock<Vec<webpki::types::TrustAnchor<'static>>> =
+static CERT_PKI_DERS: LazyLock<Vec<rustls::pki_types::CertificateDer<'static>>> =
+    LazyLock::new(|| {
+        CERT_DERS
+            .iter()
+            .map(|cert_bytes| rustls::pki_types::CertificateDer::from(cert_bytes.as_slice()))
+            .collect()
+    });
+pub static TLS_SERVER_ROOTS: LazyLock<Vec<rustls::pki_types::TrustAnchor<'static>>> =
     LazyLock::new(|| {
         CERT_PKI_DERS
             .iter()
