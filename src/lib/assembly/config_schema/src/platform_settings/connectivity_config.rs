@@ -129,10 +129,10 @@ impl NetstackThreadCount {
 #[serde(rename_all = "lowercase")]
 pub enum NetworkingConfig {
     /// The standard network configuration
-    #[default]
     Standard,
 
     /// A more-basic networking configuration for constrained devices
+    #[default]
     Basic,
 }
 

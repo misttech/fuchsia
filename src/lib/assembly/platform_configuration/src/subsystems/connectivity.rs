@@ -84,8 +84,8 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
             // all other combinations get the network package that they request
             (_, _, Some(networking)) => Some(networking),
 
-            // otherwise, the 'standard' networking package is used
-            (_, _, None) => Some(&NetworkingConfig::Standard),
+            // otherwise, the 'basic' networking package is used
+            (_, _, None) => Some(&NetworkingConfig::Basic),
         };
         if let Some(networking) = networking {
             // The 'core_realm_networking' and 'network_realm' bundles are
