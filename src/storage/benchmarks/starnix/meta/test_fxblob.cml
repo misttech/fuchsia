@@ -1,0 +1,43 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [
+        "//sdk/lib/sys/component/realm_builder.shard.cml",
+        "//sdk/lib/syslog/client.shard.cml",
+        "//src/storage/fs_test/meta/fxfs_crypt_test.shard.cml",
+        "//src/storage/lib/fs_management/client.shard.cml",
+    ],
+    program: {
+        runner: "elf",
+        binary: "bin/test_fxblob_bin",
+    },
+    capabilities: [
+        {
+            directory: "erofs_blobs",
+            rights: [ "rx*" ],
+            path: "/erofs_blobs",
+        },
+        { protocol: "fuchsia.process.lifecycle.Lifecycle" },
+    ],
+    use: [
+        {
+            service: [ "fuchsia.storage.partitions.PartitionService" ],
+            availability: "optional",
+        },
+        {
+            protocol: [ "fuchsia.storage.partitions.PartitionsManager" ],
+            availability: "optional",
+        },
+    ],
+    expose: [
+        {
+            directory: "erofs_blobs",
+            from: "self",
+        },
+        {
+            protocol: "fuchsia.process.lifecycle.Lifecycle",
+            from: "self",
+        },
+    ],
+}

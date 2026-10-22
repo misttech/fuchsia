@@ -118,6 +118,7 @@ group("tests_to_run_on_internal_builders") {
   deps = [
     "//src/media/audio/audio_core/mixer/tools:benchmarks",
     "//src/storage/benchmarks/fuchsia:benchmarks",
+    "//src/storage/benchmarks/starnix:benchmarks",
     "//src/sys/component_manager/tests/bootfs_launching_benchmark:benchmark",
     "//src/tests/benchmarks:kernel_boot_benchmarks",
   ]
