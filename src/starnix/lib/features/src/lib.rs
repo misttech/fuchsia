@@ -55,6 +55,7 @@ pub enum Feature {
     Bpf,
     Container,
     CustomArtifacts,
+    Devtmpfs,
     EnableSuid,
     ErrorOnFailedReboot,
     // TODO(https://fxbug.dev/485370648) remove when unnecessary
@@ -135,6 +136,7 @@ mod test {
             (Feature::AspectRatio, "aspect_ratio"),
             (Feature::Container, "container"),
             (Feature::CustomArtifacts, "custom_artifacts"),
+            (Feature::Devtmpfs, "devtmpfs"),
             (Feature::Ashmem, "ashmem"),
             (Feature::BootNotifier, "boot_notifier"),
             (Feature::BootNotifierCpuBoost, "boot_notifier_cpu_boost"),

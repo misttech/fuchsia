@@ -413,7 +413,8 @@ mod tests {
     use super::*;
     use starnix_core::device::DeviceListener;
     use starnix_core::device::kobject::{UEventAction, UEventContext};
-    use starnix_core::testing::spawn_kernel_and_run;
+    use starnix_core::task::KernelFeatures;
+    use starnix_core::testing::{spawn_kernel_and_run, spawn_kernel_with_features_and_run};
     use starnix_core::vfs::{FsStr, FsString};
     use starnix_uapi::{
         error, usb_config_descriptor, usb_endpoint_descriptor, usb_interface_descriptor,
@@ -525,64 +526,87 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_usbfs_registration_and_devtmpfs() {
-        spawn_kernel_and_run(async |current_task| {
-            let kernel = current_task.kernel();
-            let manager = usbfs_init(kernel).expect("usbfs_init failed");
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let kernel = current_task.kernel();
+                let manager = usbfs_init(kernel).expect("usbfs_init failed");
 
-            let (device_desc, config_bytes) = create_mock_hid_descriptors();
-            let usb_dev = Arc::new(UsbDevice::new(1, 2, USB_SPEED_HIGH, device_desc, config_bytes));
+                let (device_desc, config_bytes) = create_mock_hid_descriptors();
+                let usb_dev =
+                    Arc::new(UsbDevice::new(1, 2, USB_SPEED_HIGH, device_desc, config_bytes));
 
-            let registered = manager.add_device(kernel, usb_dev).expect("add_device failed");
-            let metadata = registered.metadata().expect("metadata present");
-            assert_eq!(metadata.devname.as_slice(), b"bus/usb/001/002");
-            assert_eq!(metadata.devt.major(), USB_DEVICE_MAJOR);
-            assert_eq!(metadata.devt.minor(), 1);
+                let registered = manager.add_device(kernel, usb_dev).expect("add_device failed");
+                let metadata = registered.metadata().expect("metadata present");
+                assert_eq!(metadata.devname.as_slice(), b"bus/usb/001/002");
+                assert_eq!(metadata.devt.major(), USB_DEVICE_MAJOR);
+                assert_eq!(metadata.devt.minor(), 1);
 
-            let node = open_dev_node(current_task, b"bus/usb/001/002".into(), OpenFlags::RDWR)
-                .expect("open_dev_node failed");
-            assert!(node.ops().is_seekable());
+                let node = open_dev_node(current_task, b"bus/usb/001/002".into(), OpenFlags::RDWR)
+                    .expect("open_dev_node failed");
+                assert!(node.ops().is_seekable());
 
-            // Verify device appears under /sys/bus/usb/devices/1-2.
-            assert!(
-                kernel.device_registry.objects.root.lookup("bus/usb/devices/1-2".into()).is_some()
-            );
+                // Verify device appears under /sys/bus/usb/devices/1-2.
+                assert!(
+                    kernel
+                        .device_registry
+                        .objects
+                        .root
+                        .lookup("bus/usb/devices/1-2".into())
+                        .is_some()
+                );
 
-            manager.remove_device(current_task, registered).expect("remove_device failed");
+                manager.remove_device(current_task, registered).expect("remove_device failed");
 
-            // Verify device is removed from /sys/bus/usb/devices/1-2.
-            assert!(
-                kernel.device_registry.objects.root.lookup("bus/usb/devices/1-2".into()).is_none()
-            );
-        })
+                // Verify device is removed from /sys/bus/usb/devices/1-2.
+                assert!(
+                    kernel
+                        .device_registry
+                        .objects
+                        .root
+                        .lookup("bus/usb/devices/1-2".into())
+                        .is_none()
+                );
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
         .await;
     }
 
     #[::fuchsia::test]
     async fn test_usbfs_read_descriptors() {
-        spawn_kernel_and_run(async |current_task| {
-            let kernel = current_task.kernel();
-            let manager = usbfs_init(kernel).expect("usbfs_init failed");
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let kernel = current_task.kernel();
+                let manager = usbfs_init(kernel).expect("usbfs_init failed");
 
-            let (device_desc, config_bytes) = create_mock_hid_descriptors();
-            let mut expected_raw = Vec::new();
-            expected_raw.extend_from_slice(device_desc.as_bytes());
-            expected_raw.extend_from_slice(&config_bytes);
+                let (device_desc, config_bytes) = create_mock_hid_descriptors();
+                let mut expected_raw = Vec::new();
+                expected_raw.extend_from_slice(device_desc.as_bytes());
+                expected_raw.extend_from_slice(&config_bytes);
 
-            let usb_dev =
-                Arc::new(UsbDevice::new(1, 3, USB_SPEED_FULL, device_desc, config_bytes.clone()));
-            let registered = manager.add_device(kernel, usb_dev).unwrap();
+                let usb_dev = Arc::new(UsbDevice::new(
+                    1,
+                    3,
+                    USB_SPEED_FULL,
+                    device_desc,
+                    config_bytes.clone(),
+                ));
+                let registered = manager.add_device(kernel, usb_dev).unwrap();
 
-            let file = open_dev_node(current_task, b"bus/usb/001/003".into(), OpenFlags::RDONLY)
-                .expect("open_dev_node failed");
+                let file =
+                    open_dev_node(current_task, b"bus/usb/001/003".into(), OpenFlags::RDONLY)
+                        .expect("open_dev_node failed");
 
-            let mut output_buf = starnix_core::vfs::buffers::VecOutputBuffer::new(128);
-            let bytes_read = file.ops().read(&file, current_task, 0, &mut output_buf).unwrap();
+                let mut output_buf = starnix_core::vfs::buffers::VecOutputBuffer::new(128);
+                let bytes_read = file.ops().read(&file, current_task, 0, &mut output_buf).unwrap();
 
-            assert_eq!(bytes_read, expected_raw.len());
-            assert_eq!(Vec::from(output_buf), expected_raw);
+                assert_eq!(bytes_read, expected_raw.len());
+                assert_eq!(Vec::from(output_buf), expected_raw);
 
-            manager.remove_device(current_task, registered).unwrap();
-        })
+                manager.remove_device(current_task, registered).unwrap();
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
         .await;
     }
 
@@ -681,28 +705,32 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_barebones_ioctl_returns_enotty() {
-        spawn_kernel_and_run(async |current_task| {
-            let kernel = current_task.kernel();
-            let manager = usbfs_init(kernel).expect("usbfs_init failed");
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let kernel = current_task.kernel();
+                let manager = usbfs_init(kernel).expect("usbfs_init failed");
 
-            let (device_desc, config_bytes) = create_mock_hid_descriptors();
-            let usb_dev = Arc::new(UsbDevice::new(1, 2, USB_SPEED_HIGH, device_desc, config_bytes));
-            let registered = manager.add_device(kernel, usb_dev.clone()).unwrap();
+                let (device_desc, config_bytes) = create_mock_hid_descriptors();
+                let usb_dev =
+                    Arc::new(UsbDevice::new(1, 2, USB_SPEED_HIGH, device_desc, config_bytes));
+                let registered = manager.add_device(kernel, usb_dev.clone()).unwrap();
 
-            let file = open_dev_node(current_task, b"bus/usb/001/002".into(), OpenFlags::RDWR)
-                .expect("open_dev_node failed");
+                let file = open_dev_node(current_task, b"bus/usb/001/002".into(), OpenFlags::RDWR)
+                    .expect("open_dev_node failed");
 
-            // Calling any ioctl in barebones returns ENOTTY
-            let res = file.ops().ioctl(&file, current_task, 0x1234, 0u64.into());
-            assert_eq!(res, error!(ENOTTY));
+                // Calling any ioctl in barebones returns ENOTTY
+                let res = file.ops().ioctl(&file, current_task, 0x1234, 0u64.into());
+                assert_eq!(res, error!(ENOTTY));
 
-            // Disconnecting the device causes ioctl to return ENODEV
-            usb_dev.on_disconnect();
-            let res_disconn = file.ops().ioctl(&file, current_task, 0x1234, 0u64.into());
-            assert_eq!(res_disconn, error!(ENODEV));
+                // Disconnecting the device causes ioctl to return ENODEV
+                usb_dev.on_disconnect();
+                let res_disconn = file.ops().ioctl(&file, current_task, 0x1234, 0u64.into());
+                assert_eq!(res_disconn, error!(ENODEV));
 
-            manager.remove_device(current_task, registered).unwrap();
-        })
+                manager.remove_device(current_task, registered).unwrap();
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
         .await;
     }
 }

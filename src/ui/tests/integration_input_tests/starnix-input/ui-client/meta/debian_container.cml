@@ -10,6 +10,7 @@
         runner: "starnix",
         features: [
             "container",
+            "devtmpfs",
             "framebuffer",
         ],
         init: [],

@@ -85,6 +85,9 @@ pub struct OomWatermarksMb {
 pub struct KernelFeatures {
     pub bpf_v2: bool,
 
+    /// Whether the `devtmpfs` filesystem and automatic device node creation are enabled.
+    pub devtmpfs: bool,
+
     /// Whether the kernel supports the S_ISUID and S_ISGID bits.
     ///
     /// For example, these bits are used by `sudo`.

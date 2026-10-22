@@ -486,9 +486,8 @@ fn init_framebuffer_module(
 
 /// Initializes common devices in `Kernel`.
 ///
-/// Adding device nodes to devtmpfs requires the current running task. The `Kernel` constructor does
-/// not create an initial task, so this function should be triggered after a `CurrentTask` has been
-/// initialized.
+/// When `KernelFeatures::devtmpfs` is enabled, adding device nodes to `devtmpfs` dispatches work to
+/// `kernel.kthreads`, so this function must be called after `kernel.kthreads` has been initialized.
 pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
     registry.register_device(
@@ -514,7 +513,9 @@ pub fn register_common_file_systems(kernel: &Kernel) {
     registry.register(b"cpuset".into(), FileSystemTypeFlags::empty(), CgroupV1Fs::new_fs_cpuset);
     registry.register(b"debugfs".into(), FileSystemTypeFlags::empty(), debug_fs);
     registry.register(b"devpts".into(), FileSystemTypeFlags::empty(), dev_pts_fs);
-    registry.register(b"devtmpfs".into(), FileSystemTypeFlags::empty(), dev_tmp_fs);
+    if kernel.features.devtmpfs {
+        registry.register(b"devtmpfs".into(), FileSystemTypeFlags::empty(), dev_tmp_fs);
+    }
     registry.register(b"erofs".into(), FileSystemTypeFlags::empty(), starnix_modules_erofs::new_fs);
     registry.register(b"ext4".into(), FileSystemTypeFlags::REQUIRES_DEV, ExtFilesystem::new_fs);
     registry.register(b"functionfs".into(), FileSystemTypeFlags::empty(), FunctionFs::new_fs);

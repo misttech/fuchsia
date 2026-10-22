@@ -5,7 +5,6 @@
 use crate::device::DeviceMode;
 use crate::device::kobject::DeviceMetadata;
 use crate::fs::tmpfs::{TmpFs, TmpFsData, TmpFsNodeType};
-use crate::security;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{
@@ -29,6 +28,7 @@ pub struct DevTmpFs(());
 
 impl DevTmpFs {
     pub fn from_kernel(kernel: &Kernel) -> FileSystemHandle {
+        assert!(kernel.features.devtmpfs, "devtmpfs must be enabled in KernelFeatures");
         struct DevTmpFsHandle(FileSystemHandle);
 
         kernel.expando.get_or_init(|| DevTmpFsHandle(Self::init(kernel))).0.clone()
@@ -83,9 +83,7 @@ pub fn devtmpfs_create_device(
     device_metadata: DeviceMetadata,
 ) -> Result<(), Errno> {
     let closure = move |current_task: &CurrentTask| {
-        current_task.override_creds(security::creds_start_internal_operation(current_task), || {
-            devtmpfs_create_device_internal(current_task, &device_metadata)
-        })
+        devtmpfs_create_device_internal(current_task, &device_metadata)
     };
     let (result_fn, req) = SpawnRequestBuilder::new()
         .with_debug_name("devtmpfs-create-device")

@@ -275,7 +275,9 @@ impl DeviceRegistry {
     /// Notify devfs and listeners that a device has been added to the registry.
     fn notify_device(&self, kernel: &Kernel, device: Device) -> Result<(), Errno> {
         if let Some(metadata) = device.metadata() {
-            devtmpfs_create_device(kernel, metadata.clone())?;
+            if kernel.features.devtmpfs {
+                devtmpfs_create_device(kernel, metadata.clone())?;
+            }
             self.dispatch_uevent(UEventAction::Add, device);
         }
         Ok(())
@@ -612,8 +614,10 @@ impl DeviceRegistry {
         if let Some(metadata) = device.metadata() {
             self.dispatch_uevent(UEventAction::Remove, device.clone());
 
-            if let Err(err) = devtmpfs_remove_path(current_task, metadata.devname.as_ref()) {
-                log_error!("Cannot remove device {:?} ({:?})", device, err);
+            if current_task.kernel().features.devtmpfs {
+                if let Err(err) = devtmpfs_remove_path(current_task, metadata.devname.as_ref()) {
+                    log_error!("Cannot remove device {:?} ({:?})", device, err);
+                }
             }
         }
 
@@ -817,7 +821,7 @@ impl DeviceIdAllocator {
 mod tests {
     use super::*;
     use crate::device::mem::DevNull;
-    use crate::task::DelayedReleaser;
+    use crate::task::{DelayedReleaser, KernelFeatures};
     use crate::testing::*;
     use crate::vfs::*;
     use starnix_uapi::device_id::{INPUT_MAJOR, MEM_MAJOR};
@@ -1269,73 +1273,79 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_remove_minor_device() {
-        spawn_kernel_and_run(async |current_task| {
-            let kernel = current_task.kernel();
-            let registry = &kernel.device_registry;
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let kernel = current_task.kernel();
+                let registry = &kernel.device_registry;
 
-            let dev = registry
-                .register_misc_device(kernel, "test_misc".into(), simple_device_ops::<DevNull>)
-                .expect("register misc device");
-            let devt = dev.metadata().expect("metadata").devt;
+                let dev = registry
+                    .register_misc_device(kernel, "test_misc".into(), simple_device_ops::<DevNull>)
+                    .expect("register misc device");
+                let devt = dev.metadata().expect("metadata").devt;
 
-            assert!(registry.get_device(devt, DeviceMode::Char).is_ok());
+                assert!(registry.get_device(devt, DeviceMode::Char).is_ok());
 
-            registry.remove_device(&current_task, dev);
+                registry.remove_device(&current_task, dev);
 
-            assert_eq!(registry.get_device(devt, DeviceMode::Char).map(|_| ()), error!(ENODEV));
+                assert_eq!(registry.get_device(devt, DeviceMode::Char).map(|_| ()), error!(ENODEV));
 
-            // Re-registering after removal reuses the freed dynamic misc DeviceId and devtmpfs path.
-            let dev2 = registry
-                .register_misc_device(kernel, "test_misc".into(), simple_device_ops::<DevNull>)
-                .expect("re-register misc device");
-            assert_eq!(dev2.metadata().expect("metadata").devt, devt);
-            registry.remove_device(&current_task, dev2);
-        })
+                // Re-registering after removal reuses the freed dynamic misc DeviceId and devtmpfs path.
+                let dev2 = registry
+                    .register_misc_device(kernel, "test_misc".into(), simple_device_ops::<DevNull>)
+                    .expect("re-register misc device");
+                assert_eq!(dev2.metadata().expect("metadata").devt, devt);
+                registry.remove_device(&current_task, dev2);
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
         .await;
     }
 
     #[::fuchsia::test]
     async fn registry_remove_dyn_device_recycles_device_id() {
-        spawn_kernel_and_run(async |current_task| {
-            let kernel = current_task.kernel();
-            let registry = &kernel.device_registry;
-            let class = registry.objects.get_or_create_class("test_dyn_class".into());
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let kernel = current_task.kernel();
+                let registry = &kernel.device_registry;
+                let class = registry.objects.get_or_create_class("test_dyn_class".into());
 
-            let dev1 = registry
-                .register_dyn_device(
-                    kernel,
-                    "test_dyn_0".into(),
-                    class.clone(),
-                    simple_device_ops::<DevNull>,
-                )
-                .expect("register first dyn device");
-            let dev2 = registry
-                .register_dyn_device(
-                    kernel,
-                    "test_dyn_1".into(),
-                    class.clone(),
-                    simple_device_ops::<DevNull>,
-                )
-                .expect("register second dyn device");
-            let devt1 = dev1.metadata().expect("metadata").devt;
-            let devt2 = dev2.metadata().expect("metadata").devt;
-            assert_ne!(devt1, devt2);
+                let dev1 = registry
+                    .register_dyn_device(
+                        kernel,
+                        "test_dyn_0".into(),
+                        class.clone(),
+                        simple_device_ops::<DevNull>,
+                    )
+                    .expect("register first dyn device");
+                let dev2 = registry
+                    .register_dyn_device(
+                        kernel,
+                        "test_dyn_1".into(),
+                        class.clone(),
+                        simple_device_ops::<DevNull>,
+                    )
+                    .expect("register second dyn device");
+                let devt1 = dev1.metadata().expect("metadata").devt;
+                let devt2 = dev2.metadata().expect("metadata").devt;
+                assert_ne!(devt1, devt2);
 
-            // Free out of order, then in order, verifying range coalescing and reallocation.
-            registry.remove_device(&current_task, dev1);
-            registry.remove_device(&current_task, dev2);
+                // Free out of order, then in order, verifying range coalescing and reallocation.
+                registry.remove_device(&current_task, dev1);
+                registry.remove_device(&current_task, dev2);
 
-            let dev1_rebound = registry
-                .register_dyn_device(
-                    kernel,
-                    "test_dyn_0".into(),
-                    class,
-                    simple_device_ops::<DevNull>,
-                )
-                .expect("re-register dyn device");
-            assert_eq!(dev1_rebound.metadata().expect("metadata").devt, devt1);
-            registry.remove_device(&current_task, dev1_rebound);
-        })
+                let dev1_rebound = registry
+                    .register_dyn_device(
+                        kernel,
+                        "test_dyn_0".into(),
+                        class,
+                        simple_device_ops::<DevNull>,
+                    )
+                    .expect("re-register dyn device");
+                assert_eq!(dev1_rebound.metadata().expect("metadata").devt, devt1);
+                registry.remove_device(&current_task, dev1_rebound);
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
         .await;
     }
 }

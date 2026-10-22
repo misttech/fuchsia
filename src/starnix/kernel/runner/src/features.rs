@@ -77,6 +77,7 @@ impl Features {
                 kernel:
                     KernelFeatures {
                         bpf_v2,
+                        devtmpfs,
                         enable_suid,
                         io_uring,
                         error_on_failed_reboot,
@@ -129,6 +130,7 @@ impl Features {
 
                 inspect_node.record_child("kernel", |kernel_node| {
                     kernel_node.record_bool("bpf_v2", *bpf_v2);
+                    kernel_node.record_bool("devtmpfs", *devtmpfs);
                     kernel_node.record_bool("enable_suid", *enable_suid);
                     kernel_node.record_bool("io_uring", *io_uring);
                     kernel_node.record_bool("error_on_failed_reboot", *error_on_failed_reboot);
@@ -224,6 +226,7 @@ pub fn parse_features(
             }
             (Feature::Container, _) => features.container = true,
             (Feature::CustomArtifacts, _) => features.custom_artifacts = true,
+            (Feature::Devtmpfs, _) => features.kernel.devtmpfs = true,
             (
                 Feature::AndroidUsb
                 | Feature::Ashmem
@@ -348,6 +351,15 @@ pub fn parse_features(
 
     features.kernel.default_uid = start_info.program.default_uid.0;
     features.kernel.default_seclabel = start_info.program.default_seclabel.clone();
+    // Soft-transition fallback for out-of-tree container manifests that mount `devtmpfs`
+    // before adding `"devtmpfs"` to `program.features`.
+    if start_info.program.mounts.iter().chain(additional_mounts.iter()).any(|mount| {
+        let mut parts = mount.splitn(3, ':');
+        let _mount_point = parts.next();
+        parts.next() == Some("devtmpfs")
+    }) {
+        features.kernel.devtmpfs = true;
+    }
     features.kernel.stop_last_on_shutdown =
         start_info.program.stop_last_on_shutdown.iter().map(|path| path.as_str().into()).collect();
     features.kernel.default_ns_mount_options =
@@ -706,5 +718,33 @@ mod tests {
                 "expected '{invalid_spec}' to be rejected"
             );
         }
+    }
+
+    #[fuchsia::test]
+    fn parse_devtmpfs_feature_and_mount_fallback() {
+        let default_info = test_start_info(Vec::new(), Vec::new());
+        let (features, _modules) =
+            parse_features(&default_info, &[]).expect("parse_features should succeed");
+        assert!(!features.kernel.devtmpfs);
+
+        let feature_info = test_start_info(vec!["devtmpfs".to_string()], Vec::new());
+        let (features, _modules) =
+            parse_features(&feature_info, &[]).expect("parse_features should succeed");
+        assert!(features.kernel.devtmpfs);
+
+        let mut program_mount_info = test_start_info(Vec::new(), Vec::new());
+        program_mount_info.program.mounts.push("/dev:devtmpfs::nosuid,relatime".to_string());
+        let (features, _modules) =
+            parse_features(&program_mount_info, &[]).expect("parse_features should succeed");
+        assert!(features.kernel.devtmpfs);
+
+        let mut additional_mount_info = test_start_info(Vec::new(), Vec::new());
+        additional_mount_info
+            .config
+            .additional_mounts
+            .push("/dev:devtmpfs::nosuid,relatime".to_string());
+        let (features, _modules) =
+            parse_features(&additional_mount_info, &[]).expect("parse_features should succeed");
+        assert!(features.kernel.devtmpfs);
     }
 }

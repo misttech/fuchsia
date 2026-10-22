@@ -268,7 +268,7 @@ pub struct ContainerProgram {
 
     /// The specifications for the file system mounts for this container.
     #[serde(default)]
-    mounts: Vec<String>,
+    pub mounts: Vec<String>,
 
     /// The features enabled for this container.
     #[serde(default)]

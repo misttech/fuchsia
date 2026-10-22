@@ -9,6 +9,7 @@
         features: [
             // keep-sorted start
             "container",
+            "devtmpfs",
 
             // keep-sorted end
         ],

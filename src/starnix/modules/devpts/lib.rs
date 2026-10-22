@@ -913,7 +913,7 @@ mod tests {
     use super::*;
     use crate::tty_device_init;
     use starnix_core::fs::tmpfs::TmpFs;
-    use starnix_core::task::ExitStatus;
+    use starnix_core::task::{ExitStatus, KernelFeatures};
     use starnix_core::testing::*;
     use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use starnix_core::vfs::fs_args::MountParams;
@@ -1079,32 +1079,35 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_open_tty() {
-        spawn_kernel_and_run(async |task| {
-            let kernel = task.kernel();
-            tty_device_init(kernel).expect("tty_device_init");
-            let fs = new_pts_fs(kernel);
-            let devfs = starnix_core::fs::devtmpfs::DevTmpFs::from_kernel(kernel);
+        spawn_kernel_with_features_and_run(
+            async |task| {
+                let kernel = task.kernel();
+                tty_device_init(kernel).expect("tty_device_init");
+                let fs = new_pts_fs(kernel);
+                let devfs = starnix_core::fs::devtmpfs::DevTmpFs::from_kernel(kernel);
 
-            let ptmx = open_ptmx_and_unlock(task, &fs).expect("ptmx");
-            set_controlling_terminal(task, &ptmx, false).expect("set_controlling_terminal");
-            let tty =
-                open_file_with_flags(task, &devfs, "tty".into(), OpenFlags::RDWR).expect("tty");
-            // Check that tty is the main terminal by calling the ioctl TIOCGPTN and checking it is
-            // has the same result as on ptmx.
-            assert_eq!(
-                ioctl::<i32>(task, &tty, TIOCGPTN, &0),
-                ioctl::<i32>(task, &ptmx, TIOCGPTN, &0)
-            );
+                let ptmx = open_ptmx_and_unlock(task, &fs).expect("ptmx");
+                set_controlling_terminal(task, &ptmx, false).expect("set_controlling_terminal");
+                let tty =
+                    open_file_with_flags(task, &devfs, "tty".into(), OpenFlags::RDWR).expect("tty");
+                // Check that tty is the main terminal by calling the ioctl TIOCGPTN and checking it is
+                // has the same result as on ptmx.
+                assert_eq!(
+                    ioctl::<i32>(task, &tty, TIOCGPTN, &0),
+                    ioctl::<i32>(task, &ptmx, TIOCGPTN, &0)
+                );
 
-            // Detach the controlling terminal.
-            ioctl::<i32>(task, &ptmx, TIOCNOTTY, &0).expect("detach terminal");
-            let pts = open_file(task, &fs, "0".into()).expect("open file");
-            set_controlling_terminal(task, &pts, false).expect("set_controlling_terminal");
-            let tty =
-                open_file_with_flags(task, &devfs, "tty".into(), OpenFlags::RDWR).expect("tty");
-            // TIOCGPTN is not implemented on replica terminals
-            assert!(ioctl::<i32>(task, &tty, TIOCGPTN, &0).is_err());
-        })
+                // Detach the controlling terminal.
+                ioctl::<i32>(task, &ptmx, TIOCNOTTY, &0).expect("detach terminal");
+                let pts = open_file(task, &fs, "0".into()).expect("open file");
+                set_controlling_terminal(task, &pts, false).expect("set_controlling_terminal");
+                let tty =
+                    open_file_with_flags(task, &devfs, "tty".into(), OpenFlags::RDWR).expect("tty");
+                // TIOCGPTN is not implemented on replica terminals
+                assert!(ioctl::<i32>(task, &tty, TIOCGPTN, &0).is_err());
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
         .await;
     }
 

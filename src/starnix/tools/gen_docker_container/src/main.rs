@@ -53,6 +53,7 @@ fn main() -> Result<()> {
     // TODO(https://fxbug.dev/356684424): Do we always want this feature in these containers?
     // We might because we use the starnix_container runner to run the default command.
     features.push("container".to_string());
+    features.push("devtmpfs".to_string());
 
     let container_manifest = generate_container_manifest(&cmd.container_name, &mounts, &features);
     let default_command_manifest =
