@@ -17,8 +17,6 @@ load(
 
 # LINT.IfChange(bazel2gn_output)
 _BAZEL2GN_SENTINEL = "## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##"
-_BATCH_ERROR_PREFIX = "* syncing directory "
-_OUT_OF_SYNC_MESSAGE = "BUILD.gn is out of sync with BUILD.bazel"
 # LINT.ThenChange(//build/tools/bazel2gn/cmd/main.go:bazel2gn_output)
 
 # Changes to these files can change bazel2gn's output for any directory, so
@@ -122,6 +120,7 @@ def _verify_bazel2gn(ctx):
     cmd = [
         compiled_tool_path(ctx, "bazel2gn"),
         "--check_only",
+        "--json",
         "--fuchsia_dir",
         fuchsia_dir,
         "--gn_bin",
@@ -135,43 +134,51 @@ def _verify_bazel2gn(ctx):
         cmd += ["--directory_list", ctx.io.tempfile("\n".join(dirs) + "\n")]
 
     res = os_exec(ctx, cmd, ok_retcodes = (0, 1)).wait()
-    if res.retcode != 0:
-        _emit_bazel2gn_findings(ctx, res.stderr + "\n" + res.stdout)
+    if res.retcode == 0:
+        return
 
-def _emit_bazel2gn_findings(ctx, output):
-    """Emits findings for a failed `bazel2gn --check_only` run."""
-
-    # Per-directory errors, keyed by directory.
-    errors = {}
-    for chunk in ("\n" + output).split("\n" + _BATCH_ERROR_PREFIX)[1:]:
-        d, _, err = chunk.partition(": ")
-        errors[d] = err.strip()
-
-    out_of_sync = sorted([d for d, err in errors.items() if err.startswith(_OUT_OF_SYNC_MESSAGE)])
-    fix_cmd = "fx bazel2gn " + " ".join(["-d " + d for d in out_of_sync])
-    for d in out_of_sync:
+    # bazel2gn prints no diagnostics if it fails before syncing any directory,
+    # e.g. due to a bad flag. A non-zero exit must never pass silently.
+    diagnostics = json.decode(res.stdout, default = None)
+    if not diagnostics:
+        error_msg = res.stderr.strip() or res.stdout.strip() or "no error message"
         ctx.emit.finding(
             level = "error",
-            filepath = "BUILD.gn" if d == "." else d + "/BUILD.gn",
+            message = "bazel2gn failed: " + error_msg,
+        )
+        return
+    _emit_bazel2gn_findings(ctx, diagnostics)
+
+# LINT.IfChange(bazel2gn_json)
+def _emit_bazel2gn_findings(ctx, diagnostics):
+    """Emits findings for the diagnostics printed by `bazel2gn --json`."""
+    out_of_sync_dirs = [diag["directory"] for diag in diagnostics if diag.get("out_of_sync")]
+    fix_cmd = "fx bazel2gn " + " ".join(["-d " + d for d in out_of_sync_dirs])
+    for diag in diagnostics:
+        if diag.get("out_of_sync"):
             message = (
                 "This file is out of sync with BUILD.bazel. Update BUILD.bazel " +
                 "instead of editing below the BAZEL2GN SENTINEL, then sync " +
                 "all out-of-sync directories with:\n  %s\n\n%s"
-            ) % (fix_cmd, errors[d][len(_OUT_OF_SYNC_MESSAGE):].strip()),
-        )
+            ) % (fix_cmd, diag["message"])
+        else:
+            # The recipe that runs shac only shows the first line of each
+            # finding in the build summary, so the error must come first.
+            message = "bazel2gn failed: " + diag["message"]
 
-    # Any other errors, e.g. a BUILD.bazel that fails to parse. A non-zero exit
-    # must never pass silently.
-    other_errors = [
-        _BATCH_ERROR_PREFIX + "%s: %s" % (d, err)
-        for d, err in errors.items()
-        if d not in out_of_sync
-    ]
-    if other_errors or not out_of_sync:
-        ctx.emit.finding(
-            level = "error",
-            message = "bazel2gn failed:\n" + ("\n".join(other_errors) or output.strip()),
-        )
+        filepath = diag.get("file", "")
+        line = diag.get("line", 0)
+
+        # Paths are relative to the Fuchsia root, which may not be the root of
+        # this repository (e.g. for vendor/google), and shac rejects findings
+        # on files it doesn't know about.
+        if filepath and not ctx.scm.all_files(glob = "/" + filepath):
+            message = "%s:%s: %s" % (filepath, line, message) if line else "%s: %s" % (filepath, message)
+            filepath, line = "", 0
+
+        ctx.emit.finding(level = "error", filepath = filepath, line = line, message = message)
+
+# LINT.ThenChange(//build/tools/bazel2gn/cmd/main.go:bazel2gn_json)
 
 def register_bazel_migration_checks():
     shac.register_check(shac.check(_enforce_bazel_build_file_for_new_fidl_library))

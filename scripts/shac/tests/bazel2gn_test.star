@@ -19,11 +19,13 @@ _TOOL_PATHS = testing.file(
     affected = False,
 )
 
-_OUT_OF_SYNC = "BUILD.gn is out of sync with BUILD.bazel"
+# Example messages, as produced by bazel2gn.
+_NO_BAZEL_FILE = "BUILD.gn has the bazel2gn sentinel but there's no BUILD.bazel next to it"
+_BAD_CRATE = "crate \":lib\" of rustc_test is not defined in the same BUILD.bazel"
 
-_WITH_DIRECTORY_LIST = [testing.any_args, "--check_only", testing.any_args, "--directory_list", testing.any_args]
+_WITH_DIRECTORY_LIST = [testing.any_args, "--check_only", "--json", testing.any_args, "--directory_list", testing.any_args]
 
-def _run(files, retcode = 1, stderr = "", expected_bazel2gn_cmd = _WITH_DIRECTORY_LIST):
+def _run(files, retcode = 1, diagnostics = None, stdout = "", stderr = "", expected_bazel2gn_cmd = _WITH_DIRECTORY_LIST):
     """Runs the check with a mocked bazel2gn, which must match `expected_bazel2gn_cmd`."""
     return testing.run(
         _verify_bazel2gn,
@@ -36,6 +38,7 @@ def _run(files, retcode = 1, stderr = "", expected_bazel2gn_cmd = _WITH_DIRECTOR
             testing.exec_mock(
                 cmd = expected_bazel2gn_cmd,
                 retcode = retcode,
+                stdout = json.encode(diagnostics) if diagnostics != None else stdout,
                 stderr = stderr,
             ),
         ],
@@ -63,20 +66,17 @@ def test_in_sync():
     asserts.eq(res.findings, ())
 
 def test_out_of_sync():
-    """Out-of-sync affected directories are reported on their BUILD.gn."""
+    """Out-of-sync directories are reported on their BUILD.gn."""
     res = _run(
         files = {
             "BUILD.gn": testing.file(content = _SENTINEL_GN, affected = False),
             "BUILD.bazel": testing.file(action = "M"),
             "foo/BUILD.gn": testing.file(content = _SENTINEL_GN, action = "M"),
         },
-        stderr = """\
-FATAL: syncing in batch mode:
-* syncing directory foo: %s
-foo diff
-* syncing directory .: %s
-root diff
-""" % (_OUT_OF_SYNC, _OUT_OF_SYNC),
+        diagnostics = [
+            {"directory": ".", "file": "BUILD.gn", "out_of_sync": True, "message": "root diff"},
+            {"directory": "foo", "file": "foo/BUILD.gn", "out_of_sync": True, "message": "foo diff"},
+        ],
     )
     fix = "fx bazel2gn -d . -d foo\n"
     asserts.eq([f.filepath for f in res.findings], ["BUILD.gn", "foo/BUILD.gn"])
@@ -90,10 +90,24 @@ def test_deleted_bazel_file():
             "foo/BUILD.gn": testing.file(content = _SENTINEL_GN, affected = False),
             "foo/BUILD.bazel": testing.file(action = "D"),
         },
-        stderr = "FATAL: syncing in batch mode:\n* syncing directory foo: formatting foo/BUILD.bazel: no such file\n",
+        diagnostics = [{"directory": "foo", "file": "foo/BUILD.gn", "message": _NO_BAZEL_FILE}],
     )
     asserts.eq(res.findings, (
-        testing.finding(message = "bazel2gn failed:\n* syncing directory foo: formatting foo/BUILD.bazel: no such file"),
+        testing.finding(filepath = "foo/BUILD.gn", message = "bazel2gn failed: " + _NO_BAZEL_FILE),
+    ))
+
+def test_untracked_file():
+    """Findings on files outside this repository go in the message instead."""
+    res = _run(
+        files = {"foo/BUILD.gn": testing.file(content = _SENTINEL_GN, action = "M")},
+        diagnostics = [
+            {"directory": "vendor/x", "file": "vendor/x/BUILD.bazel", "line": 3, "message": _BAD_CRATE},
+            {"directory": "vendor/y", "file": "vendor/y/BUILD.gn", "message": _NO_BAZEL_FILE},
+        ],
+    )
+    asserts.eq(res.findings, (
+        testing.finding(message = "vendor/x/BUILD.bazel:3: bazel2gn failed: " + _BAD_CRATE),
+        testing.finding(message = "vendor/y/BUILD.gn: bazel2gn failed: " + _NO_BAZEL_FILE),
     ))
 
 def test_modified_tool_checks_all():
@@ -103,36 +117,53 @@ def test_modified_tool_checks_all():
             "foo/BUILD.gn": testing.file(content = _SENTINEL_GN, affected = False),
         },
         # Without --directory_list, bazel2gn checks all directories.
-        expected_bazel2gn_cmd = [testing.any_args, "--check_only", testing.any_args],
-        stderr = "* syncing directory foo: %s\n" % _OUT_OF_SYNC,
+        expected_bazel2gn_cmd = [testing.any_args, "--check_only", "--json", testing.any_args],
+        diagnostics = [{"directory": "foo", "file": "foo/BUILD.gn", "out_of_sync": True, "message": "diff"}],
     )
     asserts.eq([f.filepath for f in res.findings], ["foo/BUILD.gn"])
 
 def test_other_errors():
+    """Errors other than out-of-sync BUILD.gn files start with the error itself."""
     res = _run(
         files = {
-            "foo/BUILD.gn": testing.file(content = _SENTINEL_GN, action = "M"),
+            "foo/BUILD.gn": testing.file(content = _SENTINEL_GN, affected = False),
+            "foo/BUILD.bazel": testing.file(content = "load()\n\nrustc_test()\n", action = "M"),
             "bar/BUILD.gn": testing.file(content = _SENTINEL_GN, action = "M"),
         },
-        stderr = """\
-FATAL: syncing in batch mode:
-* syncing directory foo: %s
-The following BUILD files are not in sync:
-  - /abs/bar/BUILD.gn
-* syncing directory bar: parsing bar/BUILD.bazel: syntax error
-""" % _OUT_OF_SYNC,
+        diagnostics = [
+            {"directory": "bar", "file": "bar/BUILD.gn", "message": _NO_BAZEL_FILE},
+            {"directory": "foo", "file": "foo/BUILD.bazel", "line": 3, "message": _BAD_CRATE},
+        ],
     )
-    asserts.eq([f.filepath for f in res.findings], ["foo/BUILD.gn", ""])
-    asserts.eq(
-        res.findings[1].message,
-        "bazel2gn failed:\n* syncing directory bar: parsing bar/BUILD.bazel: syntax error",
-    )
+    asserts.eq(res.findings, (
+        testing.finding(filepath = "bar/BUILD.gn", message = "bazel2gn failed: " + _NO_BAZEL_FILE),
+        testing.finding(filepath = "foo/BUILD.bazel", line = 3, message = "bazel2gn failed: " + _BAD_CRATE),
+    ))
 
-def test_unparseable_error():
+def test_error_without_file():
+    res = _run(
+        files = {"foo/BUILD.gn": testing.file(content = _SENTINEL_GN, action = "M")},
+        diagnostics = [{"directory": "/elsewhere", "message": "directory is not inside --fuchsia_dir"}],
+    )
+    asserts.eq(res.findings, (
+        testing.finding(message = "bazel2gn failed: directory is not inside --fuchsia_dir"),
+    ))
+
+def test_fatal_error():
+    """bazel2gn prints no diagnostics if it fails before syncing directories."""
     res = _run(
         files = {"foo/BUILD.gn": testing.file(content = _SENTINEL_GN, action = "M")},
         stderr = "FATAL: --gn_bin is required\n",
     )
     asserts.eq(res.findings, (
-        testing.finding(message = "bazel2gn failed:\nFATAL: --gn_bin is required"),
+        testing.finding(message = "bazel2gn failed: FATAL: --gn_bin is required"),
+    ))
+
+def test_non_json_output():
+    res = _run(
+        files = {"foo/BUILD.gn": testing.file(content = _SENTINEL_GN, action = "M")},
+        stdout = "panic: oops\n",
+    )
+    asserts.eq(res.findings, (
+        testing.finding(message = "bazel2gn failed: panic: oops"),
     ))

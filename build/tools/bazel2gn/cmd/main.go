@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,7 +17,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -29,6 +33,7 @@ var (
 	gnBin         = flag.String("gn_bin", "", "Path to the GN binary.")
 	buildifierBin = flag.String("buildifier_bin", "", "Path to the buildifier binary.")
 	checkOnly     = flag.Bool("check_only", false, "When true, compare generated GN content with existing BUILD.gn files without writing to them.")
+	jsonOutput    = flag.Bool("json", false, "When true, print a JSON list of per-directory errors to stdout instead of logging them.")
 
 	directoryList = flag.String("directory_list", "", "Path to a file containing a list of directories to sync, directory paths are relative to --fuchsia_dir.")
 	fuchsiaDir    = flag.String("fuchsia_dir", "", "Path to the Fuchsia root directory.")
@@ -65,20 +70,17 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 
 	// LINT.IfChange(bazel2gn_output)
 	sentinelComment = "## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##"
-
-	// batchErrorPrefix prefixes each per-directory error in batch mode, which
-	// is followed by "<directory>: <error>". Parsed by shac.
-	batchErrorPrefix = "* syncing directory "
-
-	// outOfSyncMessage starts the error for a directory whose BUILD.gn is out
-	// of sync with BUILD.bazel in check-only mode.
-	outOfSyncMessage = "BUILD.gn is out of sync with BUILD.bazel"
 	// LINT.ThenChange(//scripts/shac/bazel_migration.star:bazel2gn_output)
 )
 
 func main() {
 	flag.Parse()
-	log := logger.NewLogger(logger.InfoLevel, color.NewColor(color.ColorAuto), os.Stdout, os.Stderr, "[bazel2gn] ")
+	logOut := io.Writer(os.Stdout)
+	if *jsonOutput {
+		// Keep stdout parseable as JSON.
+		logOut = os.Stderr
+	}
+	log := logger.NewLogger(logger.InfoLevel, color.NewColor(color.ColorAuto), logOut, os.Stderr, "[bazel2gn] ")
 
 	if *gnBin == "" {
 		log.Fatalf("--gn_bin is required, see --help")
@@ -113,9 +115,113 @@ func main() {
 		log:           log,
 	}
 
-	if err := runBatch(context.Background(), dirs, *fuchsiaDir, *workers, commonParams); err != nil {
-		log.Fatalf("%v", err)
+	errs := runBatch(context.Background(), dirs, *fuchsiaDir, *workers, commonParams)
+	if *jsonOutput {
+		if err := writeDiagnostics(os.Stdout, *fuchsiaDir, errs); err != nil {
+			log.Fatalf("%v", err)
+		}
+		if len(errs) > 0 {
+			os.Exit(1)
+		}
+		return
 	}
+	if len(errs) > 0 {
+		var sb strings.Builder
+		sb.WriteString("syncing in batch mode:\n")
+		for _, e := range errs {
+			fmt.Fprintf(&sb, "* syncing directory %s: %v\n", e.dir, e.err)
+		}
+		log.Fatalf("%s", sb.String())
+	}
+}
+
+// dirError pairs a directory with the error from syncing it. It's a record
+// that runBatch collects for each failed directory, not an error itself:
+// nothing returns it as an `error`, and keeping the directory separate lets
+// callers report it without parsing it back out of a message.
+//
+// err may wrap a *bazel2gn.FileError or *outOfSyncError, which toDiagnostic
+// uses to say which file and line in the directory the error applies to.
+type dirError struct {
+	// dir is the directory relative to --fuchsia_dir, or as given if it's
+	// not inside --fuchsia_dir.
+	dir string
+	err error
+}
+
+// outOfSyncError means that BUILD.gn doesn't match what bazel2gn generates
+// from BUILD.bazel.
+type outOfSyncError struct {
+	bazelPath string
+	gnPath    string
+	relDir    string
+	// diff is the diff of GN targets (-actual, +expected).
+	diff string
+}
+
+func (e *outOfSyncError) Error() string {
+	return fmt.Sprintf(`BUILD.gn is out of sync with BUILD.bazel
+The following BUILD files are not in sync:
+
+  - %s
+  - %s
+
+Make sure you update the BUILD.bazel file, then run this command to sync BUILD.gn:
+
+  fx bazel2gn -d %s
+
+Diff of GN targets (-actual, +expected):
+
+%s`, e.bazelPath, e.gnPath, e.relDir, e.diff)
+}
+
+// LINT.IfChange(bazel2gn_json)
+
+// diagnostic is the JSON representation of a dirError, printed with --json.
+type diagnostic struct {
+	// Directory is the directory relative to --fuchsia_dir.
+	Directory string `json:"directory"`
+	// File is the path relative to --fuchsia_dir of the file that the error
+	// applies to, or empty if it doesn't apply to a specific file.
+	File string `json:"file,omitempty"`
+	// Line is the 1-based line within File, or 0 for the whole file.
+	Line int `json:"line,omitempty"`
+	// OutOfSync is true if BUILD.gn is out of sync with BUILD.bazel, in which
+	// case Message is the diff of GN targets (-actual, +expected).
+	OutOfSync bool   `json:"out_of_sync,omitempty"`
+	Message   string `json:"message"`
+}
+
+// LINT.ThenChange(//scripts/shac/bazel_migration.star:bazel2gn_json)
+
+func toDiagnostic(fuchsiaDir string, e dirError) diagnostic {
+	d := diagnostic{Directory: e.dir, Message: e.err.Error()}
+	var outOfSync *outOfSyncError
+	var fileErr *bazel2gn.FileError
+	if errors.As(e.err, &outOfSync) {
+		d.File = filepath.Join(e.dir, "BUILD.gn")
+		d.OutOfSync = true
+		d.Message = outOfSync.diff
+	} else if errors.As(e.err, &fileErr) {
+		if rel, err := filepath.Rel(fuchsiaDir, fileErr.Path); err == nil && filepath.IsLocal(rel) {
+			d.File = rel
+			d.Line = fileErr.Line
+			d.Message = fileErr.Err.Error()
+		}
+	}
+	return d
+}
+
+// writeDiagnostics writes `errs` as a JSON list of diagnostics to `w`.
+func writeDiagnostics(w io.Writer, fuchsiaDir string, errs []dirError) error {
+	// Not a nil slice, which would be encoded as null rather than [].
+	diags := []diagnostic{}
+	for _, e := range errs {
+		diags = append(diags, toDiagnostic(fuchsiaDir, e))
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(diags)
 }
 
 type syncParams struct {
@@ -140,8 +246,10 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 	// when not in check-only mode, so --check_only never modifies the source
 	// tree (e.g. shac mounts the repository read-only).
 	original, formatted, err := formatBazelFile(ctx, p.buildifierBin, bazelInputPath)
-	if err != nil {
-		return fmt.Errorf("formatting %s: %v", bazelInputPath, err)
+	if errors.Is(err, fs.ErrNotExist) {
+		return &bazel2gn.FileError{Path: gnOutputPath, Err: errors.New("BUILD.gn has the bazel2gn sentinel but there's no BUILD.bazel next to it")}
+	} else if err != nil {
+		return err
 	}
 	if !p.checkOnly && !bytes.Equal(original, formatted) {
 		if err := os.WriteFile(bazelInputPath, formatted, 0644); err != nil {
@@ -151,12 +259,21 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 
 	bazelIn, err := bazel2gn.ParseBytes(bazelInputPath, formatted)
 	if err != nil {
-		return fmt.Errorf("parsing input Bazel file %s: %v", bazelInputPath, err)
+		return &bazel2gn.FileError{Path: bazelInputPath, Err: fmt.Errorf("parsing: %w", err)}
 	}
 
 	finalLines, err := bazel2gn.FileToGN(bazelIn)
 	if err != nil {
-		return fmt.Errorf("converting statement in %s to GN: %v", bazelInputPath, err)
+		var fileErr *bazel2gn.FileError
+		if !errors.As(err, &fileErr) {
+			return &bazel2gn.FileError{Path: bazelInputPath, Err: fmt.Errorf("converting to GN: %v", err)}
+		}
+		// Line numbers refer to the formatted content, so they're only
+		// meaningful for the file on disk if it's already formatted.
+		if !bytes.Equal(original, formatted) {
+			fileErr.Line = 0
+		}
+		return fileErr
 	}
 
 	// Open the GN build file with readonly first, to read the GN targets that
@@ -177,7 +294,7 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 		toPreserve+"\n"+sentinelComment+"\n"+bazel2gnComment+"\n"+strings.Join(finalLines, "\n"),
 	)
 	if err != nil {
-		return fmt.Errorf("formatting GN targets for %s: %v", gnOutputPath, err)
+		return &bazel2gn.FileError{Path: gnOutputPath, Err: fmt.Errorf("formatting GN targets: %v", err)}
 	}
 
 	gnOut, err = os.Open(gnOutputPath)
@@ -194,22 +311,7 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 
 	if p.checkOnly {
 		if diff != "" {
-			fixCmd := "fx bazel2gn -d " + p.relDir
-			diffPrintout := fmt.Sprintf(`
-The following BUILD files are not in sync:
-
-  - %s
-  - %s
-
-Make sure you update the BUILD.bazel file, then run this command to sync BUILD.gn:
-
-  %s
-
-Diff of GN targets (-actual, +expected):
-
-%s`,
-				bazelInputPath, gnOutputPath, fixCmd, diff)
-			return errors.New(outOfSyncMessage + diffPrintout)
+			return &outOfSyncError{bazelPath: bazelInputPath, gnPath: gnOutputPath, relDir: p.relDir, diff: diff}
 		}
 	} else {
 		// Avoid touching BUILD.gn when no changes are made, which can trigger unnecessary `gn gen`s.
@@ -314,13 +416,9 @@ func skipDiscovery(rel string) bool {
 
 // runBatch runs syncDirectory in parallel over a list of directories `dirs`,
 // with paths relative to `fuchsiaDir`. Absolute paths must be inside
-// `fuchsiaDir`.
+// `fuchsiaDir`. It returns the errors sorted by directory.
 // `workers` controls the maximum number of goroutines to run in parallel.
-func runBatch(ctx context.Context, dirs []string, fuchsiaDir string, workers int, p syncParams) error {
-	type dirError struct {
-		dir string
-		err error
-	}
+func runBatch(ctx context.Context, dirs []string, fuchsiaDir string, workers int, p syncParams) []dirError {
 	sem := make(chan struct{}, workers)
 	errChan := make(chan dirError, len(dirs))
 	for _, dir := range dirs {
@@ -328,7 +426,7 @@ func runBatch(ctx context.Context, dirs []string, fuchsiaDir string, workers int
 		go func(d string) {
 			defer func() { <-sem }()
 
-			relDir := d
+			relDir := filepath.Clean(d)
 			if filepath.IsAbs(d) {
 				var err error
 				relDir, err = filepath.Rel(fuchsiaDir, d)
@@ -360,15 +458,8 @@ func runBatch(ctx context.Context, dirs []string, fuchsiaDir string, workers int
 	for e := range errChan {
 		errs = append(errs, e)
 	}
-	if len(errs) > 0 {
-		var sb strings.Builder
-		sb.WriteString("syncing in batch mode:\n")
-		for _, e := range errs {
-			sb.WriteString(fmt.Sprintf("%s%s: %v\n", batchErrorPrefix, e.dir, e.err))
-		}
-		return errors.New(sb.String())
-	}
-	return nil
+	slices.SortFunc(errs, func(a, b dirError) int { return strings.Compare(a.dir, b.dir) })
+	return errs
 }
 
 func gnTargetsToPreserve(r io.Reader) (string, error) {
@@ -392,10 +483,12 @@ func gnFormatted(ctx context.Context, gnBin string, original string) (string, er
 	cmd.Stdin = strings.NewReader(original)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("`gn format` error: %v\nCombinedOutput:\n%s", err, string(out))
+		return "", fmt.Errorf("`gn format` failed (%v): %s", err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }
+
+var buildifierErrorRE = regexp.MustCompile(`(?m)^<stdin>:(\d+):\d+: (.*)`)
 
 // formatBazelFile formats the given Bazel file in memory by piping its content
 // through `buildifier -mode=fix -type=build`, without modifying the file on
@@ -403,7 +496,7 @@ func gnFormatted(ctx context.Context, gnBin string, original string) (string, er
 func formatBazelFile(ctx context.Context, buildifierBin string, path string) ([]byte, []byte, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading %s: %v", path, err)
+		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 	cmd := exec.CommandContext(ctx, buildifierBin, "-mode=fix", "-type=build")
 	cmd.Stdin = bytes.NewReader(content)
@@ -411,7 +504,13 @@ func formatBazelFile(ctx context.Context, buildifierBin string, path string) ([]
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, nil, fmt.Errorf("`buildifier` error: %v\nStderr:\n%s", err, stderr.String())
+		fileErr := &bazel2gn.FileError{Path: path, Err: fmt.Errorf("`buildifier` failed (%v): %s", err, strings.TrimSpace(stderr.String()))}
+		// buildifier reports syntax errors as "<stdin>:<line>:<col>: <msg>".
+		if m := buildifierErrorRE.FindStringSubmatch(stderr.String()); m != nil {
+			fileErr.Line, _ = strconv.Atoi(m[1])
+			fileErr.Err = errors.New(m[2])
+		}
+		return nil, nil, fileErr
 	}
 	return content, out, nil
 }

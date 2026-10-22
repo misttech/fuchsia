@@ -98,14 +98,14 @@ func inlineRustTestCrates(f *syntax.File) error {
 		}
 		crate, err := stringLiteralValue(call.Args[crateIdx].(*syntax.BinaryExpr).Y)
 		if err != nil {
-			return fmt.Errorf("crate attribute of %s: %v", fn.Name, err)
+			return stmtError(stmt, fmt.Errorf("crate attribute of %s: %v", fn.Name, err))
 		}
 		if !strings.HasPrefix(crate, ":") {
-			return fmt.Errorf("bazel2gn only supports a crate attribute that names a target in the same BUILD.bazel, got %q; use # @bazel2gn:skip and write the GN copy by hand", crate)
+			return stmtError(stmt, fmt.Errorf("bazel2gn only supports a crate attribute that names a target in the same BUILD.bazel, got %q; use # @bazel2gn:skip and write the GN copy by hand", crate))
 		}
 		crateCall, ok := targets[strings.TrimPrefix(crate, ":")]
 		if !ok {
-			return fmt.Errorf("crate %q of %s is not defined in the same BUILD.bazel", crate, fn.Name)
+			return stmtError(stmt, fmt.Errorf("crate %q of %s is not defined in the same BUILD.bazel", crate, fn.Name))
 		}
 
 		testArgs := map[string]*syntax.BinaryExpr{}
@@ -137,7 +137,7 @@ func inlineRustTestCrates(f *syntax.File) error {
 				merged.Y = &syntax.BinaryExpr{X: crateArg.Y, Op: syntax.PLUS, Y: testArg.Y}
 				newArgs = append(newArgs, &merged)
 			case attr == "rustc_env":
-				return fmt.Errorf("bazel2gn doesn't support setting rustc_env on both %s and its crate %q; use # @bazel2gn:skip and write the GN copy by hand", fn.Name, crate)
+				return stmtError(stmt, fmt.Errorf("bazel2gn doesn't support setting rustc_env on both %s and its crate %q; use # @bazel2gn:skip and write the GN copy by hand", fn.Name, crate))
 			default:
 				newArgs = append(newArgs, crateArg)
 			}

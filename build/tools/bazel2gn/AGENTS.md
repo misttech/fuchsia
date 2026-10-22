@@ -124,10 +124,13 @@ When adding support for a Bazel rule or attribute, check all five touchpoints:
     `formatBazelFile` and `syncDirectory` in [`cmd/main.go`](./cmd/main.go) must
     format in memory via `stdin`/`stdout` and never modify `BUILD.bazel` or
     `BUILD.gn` when `--check_only` is set.
--   **`shac` output coupling (`LINT.IfChange`)**: `sentinelComment`,
-    `batchErrorPrefix`, and `outOfSyncMessage` in `cmd/main.go` are parsed by
-    [`//scripts/shac/bazel_migration.star`](../../../scripts/shac/bazel_migration.star).
-    Keep both sides of `LINT.IfChange(bazel2gn_output)` synchronized.
+-   **`shac` output coupling (`LINT.IfChange`)**:
+    [`//scripts/shac/bazel_migration.star`](../../../scripts/shac/bazel_migration.star)
+    runs `bazel2gn --check_only --json` and depends on two things in
+    `cmd/main.go`: `sentinelComment` (`LINT.IfChange(bazel2gn_output)`) and the
+    fields of the JSON `diagnostic` struct (`LINT.IfChange(bazel2gn_json)`).
+    Keep both sides of each block synchronized, and keep stdout valid JSON in
+    `--json` mode (log to stderr).
 -   **Avoid unnecessary `BUILD.gn` writes**: When `--check_only` is false and
     the formatted output matches the existing `BUILD.gn`, do not touch
     `BUILD.gn` on disk so `ninja` / `gn gen` timestamps remain clean.

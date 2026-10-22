@@ -52,11 +52,39 @@ func FileToGN(f *syntax.File) ([]string, error) {
 	for _, stmt := range f.Stmts {
 		stmtLines, err := StmtToGN(stmt)
 		if err != nil {
-			return nil, err
+			return nil, stmtError(stmt, err)
 		}
 		lines = append(lines, stmtLines...)
 	}
 	return lines, nil
+}
+
+// FileError is an error caused by the contents of a specific file, such as a
+// statement in a BUILD.bazel file that can't be converted to GN.
+type FileError struct {
+	// Path is the path of the file. For errors from this package, it's the
+	// path passed to ParseBytes.
+	Path string
+	// Line is the 1-based line in the file, or 0 if unknown.
+	Line int
+	Err  error
+}
+
+// stmtError returns a FileError for an error converting `stmt` to GN.
+func stmtError(stmt syntax.Stmt, err error) *FileError {
+	start, _ := stmt.Span()
+	return &FileError{Path: start.Filename(), Line: int(start.Line), Err: err}
+}
+
+func (e *FileError) Error() string {
+	if e.Line > 0 {
+		return fmt.Sprintf("%s:%d: %v", e.Path, e.Line, e.Err)
+	}
+	return fmt.Sprintf("%s: %v", e.Path, e.Err)
+}
+
+func (e *FileError) Unwrap() error {
+	return e.Err
 }
 
 // StmtToGN converts a Bazel statement [0] to GN.
