@@ -12,9 +12,7 @@ use nom::number::streaming::{le_u8, le_u16};
 use nom::sequence::terminated;
 use nom::{IResult, Parser};
 use wlan_common::append::{BufferTooSmall, TrackedAppend, VecCursor};
-#[cfg(test)]
-use wlan_common::ie::{RsnxeOctet1, write_rsnxe};
-use wlan_common::ie::{wpa, write_wpa1_ie};
+use wlan_common::ie::{RsnxeOctet1, wpa, write_rsnxe, write_wpa1_ie};
 use wlan_common::organization::Oui;
 
 pub const TYPE: u8 = 0xDD;
@@ -225,15 +223,18 @@ impl<A: TrackedAppend> Writer<A> {
 
     pub fn write_protection(&mut self, protection: &ProtectionInfo) -> Result<(), BufferTooSmall> {
         match protection {
-            ProtectionInfo::Rsne(rsne) => rsne.write_into(&mut self.buf),
+            ProtectionInfo::Rsne { rsne, rsnxe } => {
+                rsne.write_into(&mut self.buf)?;
+                if let Some(rsnxe) = rsnxe {
+                    self.write_rsnxe(*rsnxe)?;
+                }
+                Ok(())
+            }
             ProtectionInfo::LegacyWpa(wpa) => write_wpa1_ie(&mut self.buf, wpa),
         }
     }
 
-    // TODO(https://fxbug.dev/510921630): Remove `#[cfg(test)]` once RSNXE is written in EAPOL
-    // Message 2.
-    #[cfg(test)]
-    pub fn write_rsnxe(&mut self, octet_1: RsnxeOctet1) -> Result<(), BufferTooSmall> {
+    fn write_rsnxe(&mut self, octet_1: RsnxeOctet1) -> Result<(), BufferTooSmall> {
         write_rsnxe(&mut self.buf, octet_1).map_err(|_| BufferTooSmall)
     }
 

@@ -6741,7 +6741,7 @@ mod tests {
             bss: Box::new(bss),
             connect_txn_sink,
             protection: Protection::Rsna(Rsna {
-                negotiated_protection: NegotiatedProtection::from_rsne(&rsne)
+                negotiated_protection: NegotiatedProtection::from_rsne(&rsne, None)
                     .expect("invalid NegotiatedProtection"),
                 supplicant: Box::new(supplicant),
             }),
@@ -6760,7 +6760,7 @@ mod tests {
             bss: Box::new(bss),
             connect_txn_sink,
             protection: Protection::Rsna(Rsna {
-                negotiated_protection: NegotiatedProtection::from_rsne(&rsne)
+                negotiated_protection: NegotiatedProtection::from_rsne(&rsne, None)
                     .expect("invalid NegotiatedProtection"),
                 supplicant: Box::new(supplicant),
             }),
@@ -6779,7 +6779,7 @@ mod tests {
             bss: Box::new(bss),
             connect_txn_sink,
             protection: Protection::Rsna(Rsna {
-                negotiated_protection: NegotiatedProtection::from_rsne(&rsne)
+                negotiated_protection: NegotiatedProtection::from_rsne(&rsne, None)
                     .expect("invalid NegotiatedProtection"),
                 supplicant: Box::new(supplicant),
             }),

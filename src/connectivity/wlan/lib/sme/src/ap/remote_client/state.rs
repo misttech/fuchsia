@@ -89,7 +89,7 @@ fn new_authenticator_from_rsne(
     // encrypted packets. This ESSSA implementation does not support tracking the
     // packet number of GTK encrypted packets.
     let gtk_provider =
-        GtkProvider::new(NegotiatedProtection::from_rsne(&s_rsne)?.group_data, 1, 0)?;
+        GtkProvider::new(NegotiatedProtection::from_rsne(&s_rsne, None)?.group_data, 1, 0)?;
 
     Ok(Box::new(wlan_rsn::Authenticator::new_wpa2psk_ccmp128(
         // Note: There should be one Reader per device, not per SME.
@@ -98,9 +98,9 @@ fn new_authenticator_from_rsne(
         Arc::new(Mutex::new(gtk_provider)),
         a_rsn.psk.clone(),
         client_addr,
-        ProtectionInfo::Rsne(s_rsne),
+        ProtectionInfo::from_rsne(s_rsne),
         device_addr,
-        ProtectionInfo::Rsne(a_rsn.rsne.clone()),
+        ProtectionInfo::from_rsne(a_rsn.rsne.clone()),
     )?))
 }
 

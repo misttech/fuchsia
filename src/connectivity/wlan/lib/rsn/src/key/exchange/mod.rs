@@ -77,6 +77,7 @@ impl Method {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Config {
     FourWayHandshake(fourway::Config),

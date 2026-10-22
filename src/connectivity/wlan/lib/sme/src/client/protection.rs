@@ -113,7 +113,7 @@ impl SecurityContext<'_, OweAuthenticator> {
         let (_, a_rsne) = rsne::from_bytes(a_rsne_ie)
             .map_err(|error| format_err!("Invalid RSNE IE {:02x?}: {:?}", a_rsne_ie, error))?;
         let s_rsne = a_rsne.derive_owe_s_rsne(self.security_support)?;
-        Ok((ProtectionInfo::Rsne(a_rsne), ProtectionInfo::Rsne(s_rsne)))
+        Ok((ProtectionInfo::from_rsne(a_rsne), ProtectionInfo::from_rsne(s_rsne)))
     }
 
     fn authentication_config(&self) -> Result<auth::Config, Error> {
@@ -152,7 +152,7 @@ impl SecurityContext<'_, wpa::Wpa2PersonalCredentials> {
         let (_, a_rsne) = rsne::from_bytes(a_rsne_ie)
             .map_err(|error| format_err!("Invalid RSNE IE {:02x?}: {:?}", a_rsne_ie, error))?;
         let s_rsne = a_rsne.derive_wpa2_s_rsne(self.security_support)?;
-        Ok((ProtectionInfo::Rsne(a_rsne), ProtectionInfo::Rsne(s_rsne)))
+        Ok((ProtectionInfo::from_rsne(a_rsne), ProtectionInfo::from_rsne(s_rsne)))
     }
 
     /// Gets the PSK used to authenticate via WPA2 Personal.
@@ -173,7 +173,30 @@ impl SecurityContext<'_, wpa::Wpa3PersonalCredentials> {
         let (_, a_rsne) = rsne::from_bytes(a_rsne_ie)
             .map_err(|error| format_err!("Invalid RSNE IE {:02x?}: {:?}", a_rsne_ie, error))?;
         let s_rsne = a_rsne.derive_wpa3_s_rsne(self.security_support)?;
-        Ok((ProtectionInfo::Rsne(a_rsne), ProtectionInfo::Rsne(s_rsne)))
+        Ok((
+            ProtectionInfo::from_rsne(a_rsne),
+            ProtectionInfo::Rsne { rsne: s_rsne, rsnxe: self.supplicant_rsnxe() },
+        ))
+    }
+
+    fn is_sae_h2e_supported(&self) -> bool {
+        let direct_hash_supported_by_peer = self
+            .bss
+            .rsnxe()
+            .and_then(|rsnxe| rsnxe.rsnxe_octet_1)
+            .map(|octet| octet.sae_hash_to_element())
+            .unwrap_or(false);
+        let direct_hash_supported_by_driver = self
+            .security_support
+            .sae
+            .as_ref()
+            .and_then(|sae| sae.hash_to_element_supported)
+            .unwrap_or(false);
+        direct_hash_supported_by_peer && direct_hash_supported_by_driver
+    }
+
+    fn supplicant_rsnxe(&self) -> Option<ie::RsnxeOctet1> {
+        self.is_sae_h2e_supported().then(|| ie::RsnxeOctet1(0).with_sae_hash_to_element(true))
     }
 
     /// Gets the SAE used to authenticate via WPA3 Personal.
@@ -188,26 +211,12 @@ impl SecurityContext<'_, wpa::Wpa3PersonalCredentials> {
                     .and_then(|sae| sae.sme_handler_supported)
                     .unwrap_or(false)
                 {
-                    let direct_hash_supported_by_peer = self
-                        .bss
-                        .rsnxe()
-                        .and_then(|rsnxe| rsnxe.rsnxe_octet_1)
-                        .map(|octet| octet.sae_hash_to_element())
-                        .unwrap_or(false);
-                    let direct_hash_supported_by_driver = self
-                        .security_support
-                        .sae
-                        .as_ref()
-                        .and_then(|sae| sae.hash_to_element_supported)
-                        .unwrap_or(false);
                     Ok(auth::Config::Sae {
                         ssid: self.bss.ssid.clone(),
                         password: passphrase.clone().into(),
                         mac: self.device.sta_addr.into(),
                         peer_mac: self.bss.bssid.into(),
-                        pwe_method: if direct_hash_supported_by_peer
-                            && direct_hash_supported_by_driver
-                        {
+                        pwe_method: if self.is_sae_h2e_supported() {
                             PweMethod::Direct
                         } else {
                             PweMethod::Loop
@@ -425,7 +434,7 @@ pub(crate) fn build_protection_ie(protection: &Protection) -> Result<Option<Prot
         Protection::LegacyWpa(rsna) => {
             let s_protection = rsna.negotiated_protection.to_full_protection();
             let s_wpa = match s_protection {
-                ProtectionInfo::Rsne(_) => {
+                ProtectionInfo::Rsne { .. } => {
                     return Err(format_err!("found RSNE protection inside a WPA1 association..."));
                 }
                 ProtectionInfo::LegacyWpa(wpa) => wpa,
@@ -438,7 +447,7 @@ pub(crate) fn build_protection_ie(protection: &Protection) -> Result<Option<Prot
         Protection::Rsna(rsna) => {
             let s_protection = rsna.negotiated_protection.to_full_protection();
             let s_rsne = match s_protection {
-                ProtectionInfo::Rsne(rsne) => rsne,
+                ProtectionInfo::Rsne { rsne: s_rsne, .. } => s_rsne,
                 ProtectionInfo::LegacyWpa(_) => {
                     return Err(format_err!("found WPA protection inside an RSNA..."));
                 }
@@ -491,7 +500,7 @@ mod tests {
         assert_eq!(protection.rsn_auth_method(), Some(auth::MethodName::Psk));
 
         // WPA2
-        let protection_info = ProtectionInfo::Rsne(fake_wpa2_s_rsne());
+        let protection_info = ProtectionInfo::from_rsne(fake_wpa2_s_rsne());
         let negotiated_protection = NegotiatedProtection::from_protection(&protection_info)
             .expect("could create mocked WPA2 NegotiatedProtection");
         let protection = Protection::Rsna(Rsna {
@@ -501,7 +510,7 @@ mod tests {
         assert_eq!(protection.rsn_auth_method(), Some(auth::MethodName::Psk));
 
         // WPA3
-        let protection_info = ProtectionInfo::Rsne(fake_wpa3_s_rsne());
+        let protection_info = ProtectionInfo::from_rsne(fake_wpa3_s_rsne());
         let negotiated_protection = NegotiatedProtection::from_protection(&protection_info)
             .expect("could create mocked WPA3 NegotiatedProtection");
         let protection = Protection::Rsna(Rsna {
@@ -511,7 +520,7 @@ mod tests {
         assert_eq!(protection.rsn_auth_method(), Some(auth::MethodName::Sae));
 
         // OWE
-        let protection_info = ProtectionInfo::Rsne(Rsne::common_owe_rsne());
+        let protection_info = ProtectionInfo::from_rsne(Rsne::common_owe_rsne());
         let negotiated_protection = NegotiatedProtection::from_protection(&protection_info)
             .expect("could create mocked OWE NegotiatedProtection");
         let protection = Protection::Rsna(Rsna {
@@ -810,14 +819,15 @@ mod tests {
         });
     }
 
-    #[test_case(false, fake_bss_description!(Wpa3), PweMethod::Loop; "looping")]
-    #[test_case(true, fake_bss_description!(Wpa3), PweMethod::Loop; "only driver supports direct")]
-    #[test_case(false, fake_bss_description!(Wpa3, sae_hash_to_element: true), PweMethod::Loop; "only peer supports direct")]
-    #[test_case(true, fake_bss_description!(Wpa3, sae_hash_to_element: true), PweMethod::Direct; "direct")]
+    #[test_case(false, fake_bss_description!(Wpa3), PweMethod::Loop, None; "looping")]
+    #[test_case(true, fake_bss_description!(Wpa3), PweMethod::Loop, None; "only driver supports direct")]
+    #[test_case(false, fake_bss_description!(Wpa3, sae_hash_to_element: true), PweMethod::Loop, None; "only peer supports direct")]
+    #[test_case(true, fake_bss_description!(Wpa3, sae_hash_to_element: true), PweMethod::Direct, Some(ie::RsnxeOctet1(0x20)); "direct")]
     fn wpa3_personal_passphrase_rsna_sme_auth_hash_to_element(
         driver_supports_h2e: bool,
         bss: BssDescription,
         expected_pwe_method: PweMethod,
+        expected_s_rsnxe: Option<ie::RsnxeOctet1>,
     ) {
         let device = crate::test_utils::fake_device_info([1u8; 6].into());
         let mut security_support = fake_security_support();
@@ -834,7 +844,13 @@ mod tests {
             config: &config,
             bss: &bss,
         };
-        assert!(context.authenticator_supplicant_protection().is_ok());
+        let (_, s_protection) = context.authenticator_supplicant_protection().unwrap();
+        let ProtectionInfo::Rsne { rsne: s_rsne, rsnxe: s_rsnxe } = s_protection else {
+            panic!("expected ProtectionInfo::Rsne");
+        };
+        assert_eq!(s_rsnxe, expected_s_rsnxe);
+        let mut expected_ie = vec![];
+        s_rsne.write_into(&mut expected_ie).unwrap();
         let pwe_method = assert_matches!(
             context.authentication_config(),
             Ok(auth::Config::Sae { pwe_method, .. }) => pwe_method
@@ -842,7 +858,55 @@ mod tests {
         assert_eq!(pwe_method, expected_pwe_method);
 
         let protection = Protection::try_from(context).unwrap();
+        assert_matches!(build_protection_ie(&protection), Ok(Some(ProtectionIe::Rsne(buf))) => {
+            assert_eq!(buf, expected_ie);
+        });
         assert_matches!(protection, Protection::Rsna(rsna) => {
+            assert_eq!(rsna.negotiated_protection.rsnxe, expected_s_rsnxe);
+            assert_eq!(rsna.supplicant.get_auth_method(), auth::MethodName::Sae);
+        });
+    }
+
+    #[test_case(false, fake_bss_description!(Wpa3), None; "neither supports h2e")]
+    #[test_case(true, fake_bss_description!(Wpa3), None; "only driver supports h2e")]
+    #[test_case(false, fake_bss_description!(Wpa3, sae_hash_to_element: true), None; "only peer supports h2e")]
+    #[test_case(true, fake_bss_description!(Wpa3, sae_hash_to_element: true), Some(ie::RsnxeOctet1(0x20)); "both support h2e")]
+    fn wpa3_personal_passphrase_rsna_driver_auth_hash_to_element(
+        driver_supports_h2e: bool,
+        bss: BssDescription,
+        expected_s_rsnxe: Option<ie::RsnxeOctet1>,
+    ) {
+        let device = crate::test_utils::fake_device_info([1u8; 6].into());
+        let mut security_support = fake_security_support_empty();
+        security_support.mfp.get_or_insert_with(Default::default).supported = Some(true);
+        let sae_support = security_support.sae.get_or_insert_with(Default::default);
+        sae_support.driver_handler_supported = Some(true);
+        sae_support.hash_to_element_supported = Some(driver_supports_h2e);
+        let config = ClientConfig { wpa3_supported: true, ..Default::default() };
+        let credentials =
+            wpa::Wpa3PersonalCredentials::Passphrase("password".as_bytes().try_into().unwrap());
+        let context = SecurityContext {
+            security: &credentials,
+            device: &device,
+            security_support: &security_support,
+            config: &config,
+            bss: &bss,
+        };
+        let (_, s_protection) = context.authenticator_supplicant_protection().unwrap();
+        let ProtectionInfo::Rsne { rsne: s_rsne, rsnxe: s_rsnxe } = s_protection else {
+            panic!("expected ProtectionInfo::Rsne");
+        };
+        assert_eq!(s_rsnxe, expected_s_rsnxe);
+        let mut expected_ie = vec![];
+        s_rsne.write_into(&mut expected_ie).unwrap();
+        assert_matches!(context.authentication_config(), Ok(auth::Config::DriverSae { .. }));
+
+        let protection = Protection::try_from(context).unwrap();
+        assert_matches!(build_protection_ie(&protection), Ok(Some(ProtectionIe::Rsne(buf))) => {
+            assert_eq!(buf, expected_ie);
+        });
+        assert_matches!(protection, Protection::Rsna(rsna) => {
+            assert_eq!(rsna.negotiated_protection.rsnxe, expected_s_rsnxe);
             assert_eq!(rsna.supplicant.get_auth_method(), auth::MethodName::Sae);
         });
     }

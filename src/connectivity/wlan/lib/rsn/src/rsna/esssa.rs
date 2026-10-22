@@ -53,7 +53,9 @@ impl Ptksa {
                 exchange::Config::FourWayHandshake(mut method_cfg) => {
                     if method_cfg.pmksa_caching_supported {
                         if let Some(ref pmkid) = pmk.pmkid {
-                            if let ProtectionInfo::Rsne(ref mut s_rsne) = method_cfg.s_protection {
+                            if let ProtectionInfo::Rsne { rsne: ref mut s_rsne, .. } =
+                                method_cfg.s_protection
+                            {
                                 s_rsne.pmkids = vec![bytes::Bytes::copy_from_slice(pmkid)];
                             }
                         }

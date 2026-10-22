@@ -9,6 +9,7 @@ use crate::keywrap::{self, keywrap_algorithm};
 use crate::{Error, ProtectionInfo, rsn_ensure};
 use anyhow::{anyhow, ensure};
 use fidl_fuchsia_wlan_mlme::SaeFrame;
+use wlan_common::ie::RsnxeOctet1;
 use wlan_common::ie::rsn::akm::Akm;
 use wlan_common::ie::rsn::cipher::{CIPHER_BIP_CMAC_128, Cipher, GROUP_CIPHER_SUITE, TKIP};
 use wlan_common::ie::rsn::rsne::{RsnCapabilities, Rsne};
@@ -44,12 +45,13 @@ pub struct NegotiatedProtection {
     // Some networks carry RSN capabilities.
     // To construct a valid RSNE, these capabilities must be tracked.
     caps: Option<RsnCapabilities>,
+    pub rsnxe: Option<RsnxeOctet1>,
 }
 
 impl NegotiatedProtection {
     pub fn from_protection(protection: &ProtectionInfo) -> Result<Self, anyhow::Error> {
         match protection {
-            ProtectionInfo::Rsne(rsne) => Self::from_rsne(rsne),
+            ProtectionInfo::Rsne { rsne, rsnxe } => Self::from_rsne(rsne, *rsnxe),
             ProtectionInfo::LegacyWpa(wpa) => Self::from_legacy_wpa(wpa),
         }
     }
@@ -76,7 +78,7 @@ impl NegotiatedProtection {
 
     /// Validates this RSNE contains only one of each cipher type and only one AKM with
     /// a defined number of MIC bytes, and produces a corresponding negotiated protection scheme.
-    pub fn from_rsne(rsne: &Rsne) -> Result<Self, anyhow::Error> {
+    pub fn from_rsne(rsne: &Rsne, rsnxe: Option<RsnxeOctet1>) -> Result<Self, anyhow::Error> {
         rsne.ensure_valid_s_rsne()
             .map_err(|e| anyhow!(e).context(Error::InvalidNegotiatedProtection))?;
 
@@ -96,6 +98,7 @@ impl NegotiatedProtection {
             mic_size,
             protection_type: ProtectionType::Rsne,
             caps: rsne.rsn_capabilities.clone(),
+            rsnxe,
         })
     }
 
@@ -116,6 +119,7 @@ impl NegotiatedProtection {
             mic_size,
             protection_type: ProtectionType::LegacyWpa1,
             caps: None,
+            rsnxe: None,
         })
     }
 
@@ -123,14 +127,17 @@ impl NegotiatedProtection {
     /// frames.
     pub fn to_full_protection(&self) -> ProtectionInfo {
         match self.protection_type {
-            ProtectionType::Rsne => ProtectionInfo::Rsne(Rsne {
-                group_data_cipher_suite: Some(self.group_data.clone()),
-                pairwise_cipher_suites: vec![self.pairwise.clone()],
-                group_mgmt_cipher_suite: self.group_mgmt.clone(),
-                akm_suites: vec![self.akm.clone()],
-                rsn_capabilities: self.caps.clone(),
-                ..Default::default()
-            }),
+            ProtectionType::Rsne => ProtectionInfo::Rsne {
+                rsne: Rsne {
+                    group_data_cipher_suite: Some(self.group_data.clone()),
+                    pairwise_cipher_suites: vec![self.pairwise.clone()],
+                    group_mgmt_cipher_suite: self.group_mgmt.clone(),
+                    akm_suites: vec![self.akm.clone()],
+                    rsn_capabilities: self.caps.clone(),
+                    ..Default::default()
+                },
+                rsnxe: self.rsnxe,
+            },
             ProtectionType::LegacyWpa1 => ProtectionInfo::LegacyWpa(WpaIe {
                 multicast_cipher: self.group_data.clone(),
                 unicast_cipher_list: vec![self.pairwise.clone()],
@@ -559,31 +566,33 @@ mod tests {
             akm_suites: vec![AKM_PSK],
             ..Default::default()
         };
-        NegotiatedProtection::from_rsne(&rsne).expect("error, could not create negotiated RSNE");
+        NegotiatedProtection::from_rsne(&rsne, None)
+            .expect("error, could not create negotiated RSNE");
 
         let rsne = Rsne::wpa3_rsne();
-        NegotiatedProtection::from_rsne(&rsne).expect("error, could not create negotiated RSNE");
+        NegotiatedProtection::from_rsne(&rsne, None)
+            .expect("error, could not create negotiated RSNE");
 
         let rsne = Rsne {
             pairwise_cipher_suites: vec![CIPHER_CCMP_128],
             akm_suites: vec![AKM_PSK],
             ..Default::default()
         };
-        NegotiatedProtection::from_rsne(&rsne).expect_err("error, created negotiated RSNE");
+        NegotiatedProtection::from_rsne(&rsne, None).expect_err("error, created negotiated RSNE");
 
         let rsne = Rsne {
             group_data_cipher_suite: Some(CIPHER_CCMP_128),
             akm_suites: vec![AKM_PSK],
             ..Default::default()
         };
-        NegotiatedProtection::from_rsne(&rsne).expect_err("error, created negotiated RSNE");
+        NegotiatedProtection::from_rsne(&rsne, None).expect_err("error, created negotiated RSNE");
 
         let rsne = Rsne {
             group_data_cipher_suite: Some(CIPHER_CCMP_128),
             pairwise_cipher_suites: vec![CIPHER_CCMP_128],
             ..Default::default()
         };
-        NegotiatedProtection::from_rsne(&rsne).expect_err("error, created negotiated RSNE");
+        NegotiatedProtection::from_rsne(&rsne, None).expect_err("error, created negotiated RSNE");
     }
 
     // IEEE requires the key length to be zeroed in the 4-Way Handshake but some vendors send the
@@ -591,7 +600,7 @@ mod tests {
     // interoperability,
     #[test]
     fn test_supplicant_sends_zeroed_and_non_zeroed_key_length() {
-        let protection = NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne())
+        let protection = NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne(), None)
             .expect("could not derive negotiated RSNE");
         let mut env = test_util::FourwayTestEnv::new(test_util::HandshakeKind::Wpa2, 1, 3);
 
@@ -632,7 +641,7 @@ mod tests {
         msg2.key_frame_fields.key_len = U16::new(29);
         env.finalize_key_frame(&mut msg2, Some(ptk.kck()));
 
-        let protection = NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne())
+        let protection = NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne(), None)
             .expect("could not derive negotiated RSNE");
         let result = Dot11VerifiedKeyFrame::from_frame(msg2, &Role::Authenticator, &protection, 12);
         assert!(result.is_err(), "successfully verified illegal message");
@@ -641,12 +650,23 @@ mod tests {
     #[test]
     fn test_to_rsne() {
         let rsne = Rsne::wpa2_rsne();
-        let negotiated_protection = NegotiatedProtection::from_rsne(&rsne)
+        let negotiated_protection = NegotiatedProtection::from_rsne(&rsne, None)
             .expect("error, could not create negotiated RSNE")
             .to_full_protection();
-        assert_matches!(negotiated_protection, ProtectionInfo::Rsne(actual_protection) => {
+        assert_matches!(negotiated_protection, ProtectionInfo::Rsne { rsne: actual_protection, rsnxe: None } => {
             assert_eq!(actual_protection, rsne);
         });
+    }
+
+    #[test]
+    fn test_to_rsne_with_rsnxe() {
+        let rsne = Rsne::wpa3_rsne();
+        let rsnxe = Some(RsnxeOctet1(0x20));
+        let protection = ProtectionInfo::Rsne { rsne: rsne.clone(), rsnxe };
+        let negotiated_protection = NegotiatedProtection::from_protection(&protection)
+            .expect("error, could not create negotiated RSNE")
+            .to_full_protection();
+        assert_eq!(negotiated_protection, protection);
     }
 
     #[test]
@@ -665,7 +685,7 @@ mod tests {
         // Standard WPA3 RSNE requires MFP.
         let rsne = Rsne::wpa3_rsne();
         let negotiated_protection =
-            NegotiatedProtection::from_rsne(&rsne).expect("Could not create negotiated RSNE");
+            NegotiatedProtection::from_rsne(&rsne, None).expect("Could not create negotiated RSNE");
         assert_matches!(negotiated_protection.igtk_support(), IgtkSupport::Required);
         assert_eq!(negotiated_protection.group_mgmt_cipher(), CIPHER_BIP_CMAC_128);
 
@@ -673,13 +693,13 @@ mod tests {
         let mut rsne = Rsne::wpa3_rsne();
         rsne.rsn_capabilities.replace(RsnCapabilities(0).with_mgmt_frame_protection_cap(true));
         let negotiated_protection =
-            NegotiatedProtection::from_rsne(&rsne).expect("Could not create negotiated RSNE");
+            NegotiatedProtection::from_rsne(&rsne, None).expect("Could not create negotiated RSNE");
         assert_matches!(negotiated_protection.igtk_support(), IgtkSupport::Capable);
 
         // WPA2 RSNE doesn't support MFP.
         let rsne = Rsne::wpa2_rsne();
         let negotiated_protection =
-            NegotiatedProtection::from_rsne(&rsne).expect("Could not create negotiated RSNE");
+            NegotiatedProtection::from_rsne(&rsne, None).expect("Could not create negotiated RSNE");
         assert_matches!(negotiated_protection.igtk_support(), IgtkSupport::Unsupported);
     }
 
@@ -688,7 +708,7 @@ mod tests {
         let mut rsne = Rsne::wpa3_rsne();
         rsne.group_mgmt_cipher_suite.take(); // Default to BIP_CMAC_128.
         let negotiated_protection =
-            NegotiatedProtection::from_rsne(&rsne).expect("Could not create negotiated RSNE");
+            NegotiatedProtection::from_rsne(&rsne, None).expect("Could not create negotiated RSNE");
         assert_matches!(negotiated_protection.igtk_support(), IgtkSupport::Required);
         assert_eq!(negotiated_protection.group_mgmt_cipher(), CIPHER_BIP_CMAC_128);
     }

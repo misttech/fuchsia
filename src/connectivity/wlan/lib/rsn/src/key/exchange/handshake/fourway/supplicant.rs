@@ -132,13 +132,15 @@ fn handle_message_3<B: SplitByteSlice>(
             (key_data::Element::Igtk(_, e), _) => {
                 igtk = Some(Igtk::from_kde(e, negotiated_protection.group_mgmt_cipher())?)
             }
-            (key_data::Element::Rsne(e), None) => protection = Some(ProtectionInfo::Rsne(e)),
+            (key_data::Element::Rsne(e), None) => protection = Some(ProtectionInfo::from_rsne(e)),
             (key_data::Element::Rsne(e), Some(_)) => {
-                _second_protection = Some(ProtectionInfo::Rsne(e))
+                _second_protection = Some(ProtectionInfo::from_rsne(e))
             }
             (key_data::Element::LegacyWpa1(e), None) => {
                 protection = Some(ProtectionInfo::LegacyWpa(e))
             }
+            // TODO(https://fxbug.dev/510921630): Verify Authenticator's RSNXE in Msg 3 against the
+            // RSNXE advertised in Beacon/Probe Response frames per IEEE Std 802.11-2020 12.7.6.4.
             _ => (),
         }
     }

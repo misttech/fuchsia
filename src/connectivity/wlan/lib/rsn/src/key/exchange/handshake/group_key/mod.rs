@@ -177,7 +177,7 @@ mod tests {
 
     fn verify_group_key_frame(key_frame: eapol::KeyFrameBuf, role: Role) {
         let protection =
-            NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne()).expect("error getting RNSE");
+            NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne(), None).expect("error getting RNSE");
         let parsed_frame = eapol::KeyFrameRx::parse(test_util::mic_len(), &key_frame[..])
             .expect("failed to parse group key frame");
         let frame = Dot11VerifiedKeyFrame::from_frame(parsed_frame, &role, &protection, 0)

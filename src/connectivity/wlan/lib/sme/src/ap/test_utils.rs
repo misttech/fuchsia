@@ -61,7 +61,7 @@ impl MockAuthenticator {
         MockAuthenticator {
             initiate: initiate_mock,
             on_eapol_frame: on_eapol_frame_mock,
-            negotiated_protection: NegotiatedProtection::from_rsne(&rsne).unwrap(),
+            negotiated_protection: NegotiatedProtection::from_rsne(&rsne, None).unwrap(),
         }
     }
 }

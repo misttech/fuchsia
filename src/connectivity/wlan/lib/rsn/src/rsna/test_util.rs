@@ -23,7 +23,7 @@ use wlan_common::ie::rsn::suite_selector::OUI;
 use wlan_common::ie::rsn::{
     akm, fake_wpa2_a_rsne, fake_wpa2_s_rsne, fake_wpa3_a_rsne, fake_wpa3_s_rsne,
 };
-use wlan_common::ie::{fake_wpa_ie, write_wpa1_ie};
+use wlan_common::ie::{RsnxeOctet1, fake_wpa_ie, write_wpa1_ie};
 use wlan_common::organization::Oui;
 use wlan_fcg_crypto::sae::PweMethod;
 
@@ -38,7 +38,7 @@ static PMK: LazyLock<Box<[u8]>> = LazyLock::new(|| {
 });
 
 pub fn get_rsne_protection() -> NegotiatedProtection {
-    NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne())
+    NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne(), None)
         .expect("error creating RSNE NegotiatedProtection")
 }
 
@@ -50,9 +50,9 @@ pub fn get_wpa2_supplicant() -> Supplicant {
         nonce_rdr,
         auth::Config::ComputedPsk(psk),
         *S_ADDR,
-        ProtectionInfo::Rsne(fake_wpa2_s_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa2_s_rsne()),
         *A_ADDR,
-        ProtectionInfo::Rsne(fake_wpa2_a_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa2_a_rsne()),
         false,
     )
     .expect("could not create Supplicant")
@@ -69,9 +69,9 @@ pub fn get_wpa2_authenticator() -> Authenticator {
         Arc::new(Mutex::new(gtk_provider)),
         psk,
         *S_ADDR,
-        ProtectionInfo::Rsne(fake_wpa2_s_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa2_s_rsne()),
         *A_ADDR,
-        ProtectionInfo::Rsne(fake_wpa2_a_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa2_a_rsne()),
     )
     .expect("could not create Authenticator")
 }
@@ -88,9 +88,9 @@ pub fn get_wpa3_supplicant() -> Supplicant {
             pwe_method: PweMethod::Loop,
         },
         *S_ADDR,
-        ProtectionInfo::Rsne(fake_wpa3_s_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa3_s_rsne()),
         *A_ADDR,
-        ProtectionInfo::Rsne(fake_wpa3_a_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa3_a_rsne()),
         false,
     )
     .expect("could not create Supplicant")
@@ -111,9 +111,9 @@ pub fn get_wpa3_authenticator() -> Authenticator {
         ssid,
         password,
         *S_ADDR,
-        ProtectionInfo::Rsne(fake_wpa3_s_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa3_s_rsne()),
         *A_ADDR,
-        ProtectionInfo::Rsne(fake_wpa3_a_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa3_a_rsne()),
     )
     .expect("could not create Authenticator")
 }
@@ -124,27 +124,38 @@ pub fn get_owe_supplicant() -> Supplicant {
         nonce_rdr,
         auth::Config::Owe,
         *S_ADDR,
-        ProtectionInfo::Rsne(Rsne::common_owe_rsne()),
+        ProtectionInfo::from_rsne(Rsne::common_owe_rsne()),
         *A_ADDR,
-        ProtectionInfo::Rsne(Rsne::common_owe_rsne()),
+        ProtectionInfo::from_rsne(Rsne::common_owe_rsne()),
         false,
     )
     .expect("could not create Supplicant")
 }
 
 pub fn get_driver_sae_supplicant() -> Supplicant {
-    get_driver_sae_supplicant_with_pmksa_caching(true)
+    get_driver_sae_supplicant_with_opts(true, None)
 }
 
 pub fn get_driver_sae_supplicant_with_pmksa_caching(pmksa_caching_supported: bool) -> Supplicant {
+    get_driver_sae_supplicant_with_opts(pmksa_caching_supported, None)
+}
+
+pub fn get_driver_sae_supplicant_with_rsnxe(s_rsnxe: Option<RsnxeOctet1>) -> Supplicant {
+    get_driver_sae_supplicant_with_opts(true, s_rsnxe)
+}
+
+fn get_driver_sae_supplicant_with_opts(
+    pmksa_caching_supported: bool,
+    s_rsnxe: Option<RsnxeOctet1>,
+) -> Supplicant {
     let nonce_rdr = NonceReader::new(&S_ADDR).expect("error creating Reader");
     Supplicant::new_wpa_personal(
         nonce_rdr,
         auth::Config::DriverSae { password: "ThisIsAPassword".as_bytes().to_vec() },
         *S_ADDR,
-        ProtectionInfo::Rsne(fake_wpa3_s_rsne()),
+        ProtectionInfo::Rsne { rsne: fake_wpa3_s_rsne(), rsnxe: s_rsnxe },
         *A_ADDR,
-        ProtectionInfo::Rsne(fake_wpa3_a_rsne()),
+        ProtectionInfo::from_rsne(fake_wpa3_a_rsne()),
         pmksa_caching_supported,
     )
     .expect("could not create Supplicant")
@@ -156,7 +167,7 @@ pub fn get_wpa1_protection() -> NegotiatedProtection {
 }
 
 pub fn get_wpa3_protection() -> NegotiatedProtection {
-    NegotiatedProtection::from_rsne(&fake_wpa3_s_rsne())
+    NegotiatedProtection::from_rsne(&fake_wpa3_s_rsne(), None)
         .expect("error creating WPA3 NegotiatedProtection")
 }
 
@@ -345,10 +356,10 @@ where
     if let Some(igtk) = igtk {
         w.write_igtk(&kde::Igtk::new(4, &[0u8; 6], igtk)).expect("error writing IGTK KDE");
     }
-    w.write_protection(&ProtectionInfo::Rsne(a_rsne)).expect("error writing RSNE");
+    w.write_protection(&ProtectionInfo::from_rsne(a_rsne)).expect("error writing RSNE");
 
-    let protection =
-        NegotiatedProtection::from_rsne(&s_rsne).expect("error creating RSNE NegotiatedProtection");
+    let protection = NegotiatedProtection::from_rsne(&s_rsne, None)
+        .expect("error creating RSNE NegotiatedProtection");
     let key_data = w.finalize_for_encryption().expect("error finalizing key data");
     let encrypted_key_data = encrypt_key_data(ptk.kek(), &protection, &key_data[..]);
 
@@ -490,15 +501,15 @@ fn make_fourway_cfg(
 
 pub fn make_wpa2_fourway_cfg(role: Role, gtk_key_id: u8, gtk_key_rsc: u64) -> fourway::Config {
     let cipher = Cipher { oui: OUI, suite_type: cipher::CCMP_128 };
-    let s_protection = ProtectionInfo::Rsne(fake_wpa2_s_rsne());
-    let a_protection = ProtectionInfo::Rsne(fake_wpa2_a_rsne());
+    let s_protection = ProtectionInfo::from_rsne(fake_wpa2_s_rsne());
+    let a_protection = ProtectionInfo::from_rsne(fake_wpa2_a_rsne());
     make_fourway_cfg(role, cipher, s_protection, a_protection, gtk_key_id, gtk_key_rsc)
 }
 
 pub fn make_wpa3_fourway_cfg(role: Role, gtk_key_id: u8, gtk_key_rsc: u64) -> fourway::Config {
     let cipher = Cipher { oui: OUI, suite_type: cipher::CCMP_128 };
-    let s_protection = ProtectionInfo::Rsne(fake_wpa3_s_rsne());
-    let a_protection = ProtectionInfo::Rsne(fake_wpa3_a_rsne());
+    let s_protection = ProtectionInfo::from_rsne(fake_wpa3_s_rsne());
+    let a_protection = ProtectionInfo::from_rsne(fake_wpa3_a_rsne());
     make_fourway_cfg(role, cipher, s_protection, a_protection, gtk_key_id, gtk_key_rsc)
 }
 

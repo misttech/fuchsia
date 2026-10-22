@@ -136,16 +136,24 @@ pub fn get_group_mgmt_cipher(
     // RSNEs in the (re)association procedure, ...
     match (s_protection, a_protection) {
         (
-            ProtectionInfo::Rsne(Rsne {
-                rsn_capabilities: Some(s_rsn_capabilities),
-                group_mgmt_cipher_suite: s_group_mgmt_cipher_suite,
+            ProtectionInfo::Rsne {
+                rsne:
+                    Rsne {
+                        rsn_capabilities: Some(s_rsn_capabilities),
+                        group_mgmt_cipher_suite: s_group_mgmt_cipher_suite,
+                        ..
+                    },
                 ..
-            }),
-            ProtectionInfo::Rsne(Rsne {
-                rsn_capabilities: Some(a_rsn_capabilities),
-                group_mgmt_cipher_suite: a_group_mgmt_cipher_suite,
+            },
+            ProtectionInfo::Rsne {
+                rsne:
+                    Rsne {
+                        rsn_capabilities: Some(a_rsn_capabilities),
+                        group_mgmt_cipher_suite: a_group_mgmt_cipher_suite,
+                        ..
+                    },
                 ..
-            }),
+            },
         ) => {
             // Check for invalid bits
             if !s_rsn_capabilities.mgmt_frame_protection_cap()
@@ -189,12 +197,24 @@ pub fn get_group_mgmt_cipher(
                 return Ok(Some(s_group_mgmt_cipher_suite));
             }
         }
-        (_, ProtectionInfo::Rsne(Rsne { rsn_capabilities: Some(a_rsn_capabilities), .. })) => {
+        (
+            _,
+            ProtectionInfo::Rsne {
+                rsne: Rsne { rsn_capabilities: Some(a_rsn_capabilities), .. },
+                ..
+            },
+        ) => {
             if a_rsn_capabilities.mgmt_frame_protection_req() {
                 return Err(Error::MgmtFrameProtectionRequiredByAp);
             }
         }
-        (ProtectionInfo::Rsne(Rsne { rsn_capabilities: Some(s_rsn_capabilities), .. }), _) => {
+        (
+            ProtectionInfo::Rsne {
+                rsne: Rsne { rsn_capabilities: Some(s_rsn_capabilities), .. },
+                ..
+            },
+            _,
+        ) => {
             if s_rsn_capabilities.mgmt_frame_protection_req() {
                 return Err(Error::MgmtFrameProtectionRequiredByClient);
             }
@@ -202,7 +222,7 @@ pub fn get_group_mgmt_cipher(
 
         // If management frame protection will not be used or is not required, then we can
         // safely ignore the supplicant ProtectionInfo
-        (ProtectionInfo::Rsne(Rsne { rsn_capabilities: None, .. }), _)
+        (ProtectionInfo::Rsne { rsne: Rsne { rsn_capabilities: None, .. }, .. }, _)
         | (ProtectionInfo::LegacyWpa(_), _) => {}
     }
 
@@ -241,7 +261,10 @@ impl Config {
     ) -> Result<Config, Error> {
         // Check that the supplicant protection is a subset of the authenticator protection.
         match (&s_protection, &a_protection) {
-            (ProtectionInfo::Rsne(s_rsne), ProtectionInfo::Rsne(a_rsne)) => {
+            (
+                ProtectionInfo::Rsne { rsne: s_rsne, .. },
+                ProtectionInfo::Rsne { rsne: a_rsne, .. },
+            ) => {
                 // TODO(https://fxbug.dev/42104575): Replace with ? syntax when
                 // NegotiatedProtection::from_protection no longer returns
                 // anyhow::Error.
@@ -951,7 +974,7 @@ mod tests {
         mfp_bits: Option<(bool, bool)>, // Option<(mfpc, mfpr)>
         group_mgmt_cipher_suite: Option<Cipher>,
     ) -> ProtectionInfo {
-        ProtectionInfo::Rsne(Rsne {
+        ProtectionInfo::from_rsne(Rsne {
             rsn_capabilities: match mfp_bits {
                 None => None,
                 Some((mfpc, mfpr)) => Some(

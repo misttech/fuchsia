@@ -286,13 +286,15 @@ pub fn create_authenticator(
     let gtk_provider = wlan_rsn::GtkProvider::new(gtk_cipher, 1, 0).expect("creating gtk provider");
 
     let advertised_protection_info = match advertised_protection {
-        Protection::Wpa3Personal => wlan_rsn::ProtectionInfo::Rsne(rsne::Rsne::wpa3_rsne()),
+        Protection::Wpa3Personal => wlan_rsn::ProtectionInfo::from_rsne(rsne::Rsne::wpa3_rsne()),
         Protection::Wpa2Wpa3Personal => {
-            wlan_rsn::ProtectionInfo::Rsne(rsne::Rsne::wpa2_wpa3_rsne())
+            wlan_rsn::ProtectionInfo::from_rsne(rsne::Rsne::wpa2_wpa3_rsne())
         }
-        Protection::Wpa2Personal | Protection::Wpa1Wpa2Personal => wlan_rsn::ProtectionInfo::Rsne(
-            rsne::Rsne::wpa2_rsne_with_caps(rsne::RsnCapabilities(0)),
-        ),
+        Protection::Wpa2Personal | Protection::Wpa1Wpa2Personal => {
+            wlan_rsn::ProtectionInfo::from_rsne(rsne::Rsne::wpa2_rsne_with_caps(
+                rsne::RsnCapabilities(0),
+            ))
+        }
         Protection::Wpa2PersonalTkipOnly | Protection::Wpa1Wpa2PersonalTkipOnly => {
             panic!("need tkip support")
         }
@@ -319,7 +321,7 @@ pub fn create_authenticator(
                 Protection::Wpa1 => wlan_rsn::ProtectionInfo::LegacyWpa(
                     wpa::fake_wpa_ies::fake_deprecated_wpa1_vendor_ie(),
                 ),
-                Protection::Wpa2Personal => wlan_rsn::ProtectionInfo::Rsne(
+                Protection::Wpa2Personal => wlan_rsn::ProtectionInfo::from_rsne(
                     rsne::Rsne::wpa2_rsne_with_caps(rsne::RsnCapabilities(0)),
                 ),
                 _ => unreachable!("impossible combination in this nested match"),
@@ -339,7 +341,7 @@ pub fn create_authenticator(
             let igtk_provider = wlan_rsn::IgtkProvider::new(DEFAULT_GROUP_MGMT_CIPHER)
                 .expect("creating igtk provider");
             let supplicant_protection_info =
-                wlan_rsn::ProtectionInfo::Rsne(rsne::Rsne::wpa3_rsne());
+                wlan_rsn::ProtectionInfo::from_rsne(rsne::Rsne::wpa3_rsne());
             wlan_rsn::Authenticator::new_wpa3(
                 nonce_rdr,
                 std::sync::Arc::new(fuchsia_sync::Mutex::new(gtk_provider)),

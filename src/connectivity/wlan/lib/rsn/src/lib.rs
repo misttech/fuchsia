@@ -28,6 +28,7 @@ use fuchsia_sync::Mutex;
 use ieee80211::{MacAddr, Ssid};
 use log::warn;
 use std::sync::Arc;
+use wlan_common::ie::RsnxeOctet1;
 use wlan_common::ie::rsn::cipher::Cipher;
 use wlan_common::ie::rsn::rsne::{self, Rsne};
 use wlan_common::ie::wpa::WpaIe;
@@ -50,8 +51,14 @@ pub struct Supplicant {
 /// Any information (i.e. info elements) used to negotiate protection on an RSN.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProtectionInfo {
-    Rsne(Rsne),
+    Rsne { rsne: Rsne, rsnxe: Option<RsnxeOctet1> },
     LegacyWpa(WpaIe),
+}
+
+impl ProtectionInfo {
+    pub fn from_rsne(rsne: Rsne) -> Self {
+        Self::Rsne { rsne, rsnxe: None }
+    }
 }
 
 fn extract_pmk_helper(update_sink: &UpdateSink) -> Option<Pmk> {
@@ -620,6 +627,7 @@ mod tests {
     use crate::{Pmk, key_data};
     use assert_matches::assert_matches;
     use test_case::test_case;
+    use wlan_common::ie::RsnxeOctet1;
 
     #[test]
     fn supplicant_extract_sae_key() {
@@ -777,5 +785,37 @@ mod tests {
             vec![]
         };
         assert_eq!(rsne.pmkids, expected_pmkids);
+    }
+
+    #[test_case(Some(RsnxeOctet1(0x20)); "with rsnxe")]
+    #[test_case(None; "without rsnxe")]
+    #[fuchsia::test(add_test_attr = false)]
+    fn supplicant_driver_sae_rsnxe_in_msg2(s_rsnxe: Option<RsnxeOctet1>) {
+        let mut supplicant = test_util::get_driver_sae_supplicant_with_rsnxe(s_rsnxe);
+        let mut update_sink = vec![];
+        let pmk = vec![0x11; 32];
+        let pmkid = vec![0x22; 16];
+        supplicant
+            .on_pmk_available(&mut update_sink, &pmk, &pmkid)
+            .expect("Failed to process OnPmkAvailable");
+        update_sink.clear();
+
+        let anonce = [0xaa; 32];
+        let msg1 = test_util::get_wpa3_4whs_msg1(&anonce[..]);
+        let msg1_frame = eapol::Frame::Key(msg1.keyframe());
+        supplicant
+            .on_eapol_frame(&mut update_sink, msg1_frame)
+            .expect("Failed to process EAPOL Msg 1");
+        let msg2 = test_util::expect_eapol_resp(&update_sink[..]);
+        let raw_key_data = &msg2.keyframe().key_data[..];
+        let elements =
+            key_data::extract_elements(raw_key_data).expect("Failed to extract key data");
+        let mut expected_rsne = wlan_common::ie::rsn::fake_wpa3_s_rsne();
+        expected_rsne.pmkids = vec![bytes::Bytes::copy_from_slice(&pmkid)];
+        let mut expected_elements = vec![key_data::Element::Rsne(expected_rsne)];
+        if let Some(s_rsnxe) = s_rsnxe {
+            expected_elements.push(key_data::Element::Rsnxe(s_rsnxe));
+        }
+        assert_eq!(elements, expected_elements);
     }
 }

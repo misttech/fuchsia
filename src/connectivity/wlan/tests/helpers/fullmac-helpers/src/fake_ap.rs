@@ -247,7 +247,7 @@ async fn get_eapol_frame_from_test_realm(
 
 fn get_protection_info(bss_description: &bss::BssDescription) -> wlan_rsn::ProtectionInfo {
     let (_, rsne) = rsne::from_bytes(bss_description.rsne().unwrap()).expect("Could not get RSNE");
-    wlan_rsn::ProtectionInfo::Rsne(rsne)
+    wlan_rsn::ProtectionInfo::from_rsne(rsne)
 }
 
 async fn get_sae_frame_from_test_realm(
