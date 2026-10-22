@@ -1,0 +1,54 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "circuit",
+    srcs = [
+        "src/connection.rs",
+        "src/error.rs",
+        "src/lib.rs",
+        "src/multi_stream.rs",
+        "src/protocol.rs",
+        "src/stream.rs",
+        "src/test.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/overnet:__subpackages__",
+        "//src/developer/ffx/lib/target:__pkg__",
+        "//src/developer/remote-control:__pkg__",
+    ],
+    deps = [
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "circuit_test",
+    crate = ":circuit",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_package(
+    name = "overnet-circuit-tests",
+    unit_tests = [":circuit_test"],
+)
+
+wrap_host_rust_test(
+    name = "circuit_host_test",
+    binary_name = "circuit_test",
+)
