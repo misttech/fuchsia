@@ -1,0 +1,71 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(https://fxbug.dev/571945302): Migrate the unit tests, which remain in
+# BUILD.gn.
+rustc_library(
+    name = "bt-hfp",
+    srcs = [
+        "src/a2dp.rs",
+        "src/audio.rs",
+        "src/audio/codec.rs",
+        "src/audio/dai.rs",
+        "src/audio/inband.rs",
+        "src/audio/partial_offload.rs",
+        "src/audio/test.rs",
+        "src/call.rs",
+        "src/call/direction.rs",
+        "src/call/indicators.rs",
+        "src/call/list.rs",
+        "src/call/number.rs",
+        "src/codec_id.rs",
+        "src/dtmf.rs",
+        "src/lib.rs",
+        "src/sco.rs",
+        "src/sco/connector.rs",
+        "src/sco/state.rs",
+        "src/sco/test_utils.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free:__pkg__",
+        "//src/connectivity/bluetooth/tools/bt-hfp-hf-tool:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.hfp:fuchsia.bluetooth.hfp_rust",
+        "//sdk/fidl/fuchsia.bluetooth.internal.a2dp:fuchsia.bluetooth.internal.a2dp_rust",
+        "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust",
+        "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/bt-a2dp",
+        "//src/connectivity/bluetooth/lib/fuchsia-audio-codec",
+        "//src/connectivity/bluetooth/lib/fuchsia-audio-dai",
+        "//src/connectivity/bluetooth/lib/fuchsia-audio-device",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//src/connectivity/bluetooth/lib/profile-client",
+        "//src/connectivity/bluetooth/lib/vigil",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
