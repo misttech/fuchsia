@@ -388,6 +388,7 @@ lock_ordering! {
     Terminal(SyslogStateLock),
     Terminal(TaskCommandLevel),
     Terminal(ThermalChargeLevelLock),
+    Terminal(ThermalTripPointStateLock),
     Terminal(ThreadLockupDetectorRegistryLock),
     Terminal(ThrottledCoreDumpsLock),
     Terminal(TouchPowerPolicyEnabledLock),

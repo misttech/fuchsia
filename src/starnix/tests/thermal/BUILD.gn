@@ -19,11 +19,13 @@ rustc_binary("bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
+    "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
     "//sdk/fidl/fuchsia.power.powercap:fuchsia.power.powercap_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",

@@ -27,6 +27,7 @@ fn main() {
 
     check_thermal_zone_is_available();
     check_emul_temp();
+    check_trip_points();
 
     check_cpu_cooling_device_is_available();
     check_cpu_cooling_device();
@@ -96,6 +97,50 @@ fn check_emul_temp() {
     let real_temp_str = std::fs::read("/sys/class/thermal/thermal_zone0/temp").unwrap();
     let expected_real_temp = celsius_to_millicelsius(EXPECTED_TEMP_C) as u32;
     assert_eq!(&format!("{}\n", expected_real_temp), str::from_utf8(&real_temp_str).unwrap());
+}
+
+fn check_trip_points() {
+    let temp_path = "/sys/class/thermal/thermal_zone0/trip_point_0_temp";
+    let hyst_path = "/sys/class/thermal/thermal_zone0/trip_point_0_hyst";
+
+    // Initial trip point values are 0.
+    assert_eq!("0\n", std::fs::read_to_string(temp_path).unwrap());
+    assert_eq!("0\n", std::fs::read_to_string(hyst_path).unwrap());
+
+    // Configure hysteresis then trip temperature (matching Android Thermal HAL order).
+    std::fs::write(hyst_path, "2000\n").unwrap();
+    assert_eq!("2000\n", std::fs::read_to_string(hyst_path).unwrap());
+
+    std::fs::write(temp_path, "75000\n").unwrap();
+    assert_eq!("75000\n", std::fs::read_to_string(temp_path).unwrap());
+
+    // Updating hysteresis while a trip point is active updates the low threshold.
+    std::fs::write(hyst_path, "3000").unwrap();
+    assert_eq!("3000\n", std::fs::read_to_string(hyst_path).unwrap());
+
+    // Negative hysteresis is rejected with EINVAL.
+    let err = std::fs::write(hyst_path, "-1000").unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
+    assert_eq!("3000\n", std::fs::read_to_string(hyst_path).unwrap());
+
+    // Out-of-range trip temperature (below absolute zero) is rejected by the driver with
+    // ZX_ERR_OUT_OF_RANGE, which maps to EINVAL and leaves trip_point_0_temp unchanged.
+    let err = std::fs::write(temp_path, "-300000").unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
+    assert_eq!("75000\n", std::fs::read_to_string(temp_path).unwrap());
+
+    // Writing 0 clears the trip point.
+    std::fs::write(temp_path, "0").unwrap();
+    assert_eq!("0\n", std::fs::read_to_string(temp_path).unwrap());
+    std::fs::write(hyst_path, "0").unwrap();
+    assert_eq!("0\n", std::fs::read_to_string(hyst_path).unwrap());
+
+    // Leave a known non-zero trip point and hysteresis configured so the host integration test
+    // can verify the programmed OneshotTempAbove and OneshotTempBelow descriptors over FIDL.
+    std::fs::write(hyst_path, "3000\n").unwrap();
+    std::fs::write(temp_path, "75000\n").unwrap();
+    assert_eq!("3000\n", std::fs::read_to_string(hyst_path).unwrap());
+    assert_eq!("75000\n", std::fs::read_to_string(temp_path).unwrap());
 }
 
 /// The test harness caps domain 0 (`policy0`, 4 OPPs) at intermediate OPP 1 (`1512000` kHz)
