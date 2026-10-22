@@ -1,0 +1,34 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wep_deprecated",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_rust",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "wep_deprecated_test",
+    crate = ":wep_deprecated",
+)
+
+fx_unittest_package(
+    name = "wep-deprecated-tests",
+    unit_tests = [":wep_deprecated_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
