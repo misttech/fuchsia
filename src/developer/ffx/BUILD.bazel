@@ -37,6 +37,7 @@ test_suite(
         "//src/developer/ffx/lib/fastboot/interface:lib_test",
         "//src/developer/ffx/lib/isolate:lib_test",
         "//src/developer/ffx/lib/logging:lib_test",
+        "//src/developer/ffx/lib/manual_targets:lib_test",
         "//src/developer/ffx/lib/metrics:lib_test",
         "//src/developer/ffx/lib/netext:lib_test",
         "//src/developer/ffx/lib/port_picker:lib_test",
