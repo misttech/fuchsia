@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "network",
+    testonly = True,
+    srcs = ["network.fidl"],
+    enable_hlcpp = True,
+    library_name = "fuchsia.netemul.network",
+    visibility = [
+        "//src/bringup/bin/netsvc/test/integration:__pkg__",
+        "//src/connectivity/network:__subpackages__",
+        "//src/connectivity/policy/tests/integration/common:__pkg__",
+        "//src/connectivity/policy/tests/integration/management:__pkg__",
+        "//src/lib/network/fidl_fuchsia_posix_socket_ext:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.device",
+        "//sdk/fidl/fuchsia.hardware.network",
+        "//sdk/fidl/fuchsia.net",
+        "//sdk/fidl/fuchsia.net.virtualization",
+    ],
+)
