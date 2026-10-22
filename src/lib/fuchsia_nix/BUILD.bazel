@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuchsia_nix",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/network/dhcpv4/server:__pkg__",
+        "//src/connectivity/network/dhcpv6/client:__pkg__",
+        "//src/connectivity/wlan/lib/storage:__pkg__",
+        "//src/session/bin/element_manager:__pkg__",
+        "//src/sys/stash:__pkg__",
+    ],
+    deps = ["//third_party/rust_crates/vendor:nix"],
+)

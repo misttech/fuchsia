@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: `bin_test`, `stash-tests`, and the `stash_v2`/`stash2_v2`/`stash_secure_v2`
+# component and `pkg` package targets remain in BUILD.gn above the sentinel.
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/accessor.rs",
+        "src/instance.rs",
+        "src/main.rs",
+        "src/store.rs",
+    ],
+    crate_name = "stash",
+    edition = "2024",
+    visibility = ["//src/connectivity/bluetooth/core/bt-gap:__pkg__"],
+    deps = [
+        ":measure_tape_for_stash",
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia_nix",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+measure_tape(
+    name = "measure_tape_for_stash",
+    fidls = [
+        "//sdk/fidl/fuchsia.stash",
+        "//sdk/fidl/fuchsia.mem",
+    ],
+    target_binding = "rust",
+    target_types = [
+        "fuchsia.stash/ListItem",
+        "fuchsia.stash/KeyValue",
+    ],
+)
