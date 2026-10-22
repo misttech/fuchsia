@@ -276,7 +276,7 @@ if (current_toolchain == default_toolchain) {
       enable_variants = [ "asan" ]
 
       # TODO(https://fxbug.dev/327442322): Support hwasan for x64 and riscv64.
-      if (target_cpu == "arm64") {
+      if (cpu == "arm64") {
         enable_variants += [ "hwasan" ]
       }
     }
@@ -293,7 +293,20 @@ if (current_toolchain == default_toolchain) {
 
     # TODO(https://fxbug.dev/42055641): Ensure all of libc uses libcalls into the hwasan
     # runtime for storing frame record info.
-    if (is_fuchsia_hwasan && !is_gcc) {
+    #
+    # IMPORTANT: Check `toolchain_variant.tags` for the current `user.libc`
+    # toolchain rather than the global `is_fuchsia_hwasan` flag.
+    # `is_fuchsia_hwasan` reflects the default Fuchsia variant from
+    # `select_variant` across the entire build, whereas `libc_config` is
+    # evaluated in every `user.libc_$cpu-*` variant toolchain (including
+    # non-hwasan variants like `asan`, `asan-ubsan`, and `novariant` built for
+    # the IDK sysroot). Applying `-nostdlib++` to non-hwasan `user.libc`
+    # variants breaks linking (e.g. undefined `std::__libcpp_verbose_abort` in
+    # `asan-ubsan`) because the hermetic fallback definition in
+    # `//sdk/lib/c/sanitizers/hwasan-stubs.cc` is guarded by
+    # `#if __has_feature(hwaddress_sanitizer)`.
+    if (!is_gcc && toolchain_variant.tags + [ "hwasan" ] - [ "hwasan" ] !=
+                   toolchain_variant.tags) {
       cflags = [
         "-mllvm",
         "-hwasan-record-stack-history=libcall",
