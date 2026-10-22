@@ -70,6 +70,58 @@ rustc_test("foo_lib_test") {
 	}
 }
 
+// Verifies that when a `rustc_test` sets `crate = ":bin"` on a `rustc_binary`
+// whose `srcs` is `["src/main.rs"]` (with no explicit `crate_root`), the
+// generated GN `rustc_test` inherits `sources = ["src/main.rs"]` and explicitly
+// sets `source_root = "src/main.rs"` instead of falling back to GN
+// `rustc_test`'s `src/lib.rs` default.
+func TestRustTestBinaryCrate(t *testing.T) {
+	bazel := `rustc_binary(
+	name = "bin",
+	srcs = ["src/main.rs"],
+	crate_name = "foo",
+	edition = "2024",
+	deps = [":bar"],
+)
+
+rustc_test(
+	name = "bin_test",
+	crate = ":bin",
+	edition = "2024",
+	deps = [":baz"],
+)`
+	wantGN := `rustc_binary("bin") {
+	sources = [
+		"src/main.rs",
+	]
+	output_name = "foo"
+	edition = "2024"
+	deps = [
+		":bar",
+	]
+}
+rustc_test("bin_test") {
+	sources = [
+		"src/main.rs",
+	]
+	edition = "2024"
+	deps = [
+		":bar",
+	] + [
+		":baz",
+	]
+	source_root = "src/main.rs"
+}`
+	f := toSyntaxFile(t, bazel)
+	lines, err := bazel2gn.FileToGN(f)
+	if err != nil {
+		t.Fatalf("FileToGN() failed: %s", err)
+	}
+	if diff := cmp.Diff(strings.Join(lines, "\n"), wantGN); diff != "" {
+		t.Errorf("FileToGN() diff (-got +want):\n%s", diff)
+	}
+}
+
 func TestRustTestCrateSkippedAttrs(t *testing.T) {
 	bazel := `# @bazel2gn:skip
 rustc_library(

@@ -25,6 +25,18 @@ var procMacroRules = map[string]bool{
 	"rust_proc_macro":  true,
 }
 
+// rustBinaryRules are the Bazel rules for Rust binary crates. In Bazel, a
+// `rustc_binary` defaults `crate_root` to `src/main.rs`, and a `rustc_test`
+// with `crate = ":<bin>"` inherits that crate root. In GN, however,
+// `rustc_test()` has no `crate` attribute and defaults `source_root` to
+// `src/lib.rs`, so `bazel2gn` must explicitly emit `source_root = "src/main.rs"`
+// when inlining a binary crate into `rustc_test()`.
+var rustBinaryRules = map[string]bool{
+	"rustc_binary":           true,
+	"rust_binary":            true,
+	"rustc_binary_host_tool": true,
+}
+
 // crateAttrs are attributes that a Rust test with `crate` takes from the
 // target named by `crate` instead of from the test, like rules_rust's
 // `rust_test()` does. rules_rust ignores the test's own `edition`.
@@ -143,6 +155,13 @@ func inlineRustTestCrates(f *syntax.File) error {
 			}
 		}
 		crateArgs := crateArgNames(crateCall)
+		// When `crate` points to a Rust binary that relies on Bazel's default
+		// `crate_root` (`src/main.rs`), explicitly set `crate_root = "src/main.rs"`
+		// (which converts to `source_root = "src/main.rs"` in GN) so GN's
+		// `rustc_test()` does not fall back to its own `src/lib.rs` default.
+		if cfn, ok := crateCall.Fn.(*syntax.Ident); ok && rustBinaryRules[cfn.Name] && !crateArgs["crate_root"] && testArgs["crate_root"] == nil {
+			newArgs = append(newArgs, attrExpr("crate_root", stringLiteral("src/main.rs")))
+		}
 		for i, arg := range call.Args {
 			if i == crateIdx {
 				continue
