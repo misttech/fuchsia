@@ -993,7 +993,7 @@ class ExportDebugSymbolsTest(unittest.TestCase):
             mock_proc.returncode = 0
             mock_run.return_value = mock_proc
 
-            ctx._export_debug_symbols()
+            ctx._export_debug_symbols(targets=["default"])
 
             mock_run.assert_called_once_with(
                 [
@@ -1006,6 +1006,39 @@ class ExportDebugSymbolsTest(unittest.TestCase):
                 ]
             )
             self.assertTrue((build_dir / "debug_symbols").is_dir())
+
+    @mock.patch.object(subprocess, "run")
+    def test_export_debug_symbols_empty_targets(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Verifies _export_debug_symbols writes empty manifests without subprocess when targets is empty."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            build_dir = temp_path / "build"
+            checkout_dir = temp_path / "checkout"
+            build_dir.mkdir()
+            checkout_dir.mkdir()
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(
+                build_dir=str(build_dir),
+                checkout_dir=str(checkout_dir),
+            )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(
+                static_spec, context_spec, host, verbose=False
+            )
+
+            ctx._export_debug_symbols(targets=[])
+
+            mock_run.assert_not_called()
+            debug_dir = build_dir / "debug_symbols"
+            self.assertTrue(debug_dir.is_dir())
+            self.assertEqual((debug_dir / "build-ids.json").read_text(), "{}\n")
+            self.assertEqual((debug_dir / "build-ids.txt").read_text(), "")
+            self.assertEqual(
+                (debug_dir / "debug_symbols.json").read_text(), "[]\n"
+            )
 
 
 class ParseNinjaFailuresTest(unittest.TestCase):
@@ -1546,6 +1579,34 @@ class NinjaBuildWrapTest(unittest.TestCase):
             ctx = fint_build.BuildContext(static_spec, context_spec, host)
             self.assertEqual(ctx._get_targets(), ["prebuilt_binaries.manifest"])
 
+    def test_wrap_ninja_empty_targets_skips_ninja(self) -> None:
+        """Verifies wrap_ninja runs no-op python command when targets is empty and default ninja target is disabled."""
+        static_spec = static_pb2.Static(include_default_ninja_target=False)
+        context_spec = context_pb2.Context(
+            checkout_dir="fake_checkout", build_dir="fake_dir"
+        )
+        host = fint_build.HostProperties(os="linux", cpu="x64")
+        ctx = fint_build.BuildContext(static_spec, context_spec, host)
+        self.assertTrue(ctx.ninja_skipped)
+        with ctx.wrap_ninja(["ninja", "-C", "out/default"]) as run:
+            self.assertEqual(run.command, [sys.executable, "-c", ""])
+            run.exit_code = 1  # prevent post-build checks in mock dir
+
+    def test_wrap_ninja_with_targets(self) -> None:
+        """Verifies wrap_ninja appends resolved targets to base command."""
+        static_spec = static_pb2.Static(include_default_ninja_target=True)
+        context_spec = context_pb2.Context(
+            checkout_dir="fake_checkout", build_dir="fake_dir"
+        )
+        host = fint_build.HostProperties(os="linux", cpu="x64")
+        ctx = fint_build.BuildContext(static_spec, context_spec, host)
+        self.assertFalse(ctx.ninja_skipped)
+        with ctx.wrap_ninja(["ninja", "-C", "out/default"]) as run:
+            self.assertEqual(
+                run.command, ["ninja", "-C", "out/default", ":default"]
+            )
+            run.exit_code = 1  # prevent post-build checks in mock dir
+
     def test_clippy_target_spec_from_dict_pure(self) -> None:
         """Verifies ClippyTargetSpec.from_dict safely parses dictionaries."""
         valid_dict: fint_build.JSONObject = {
@@ -1999,7 +2060,9 @@ class MainExecutionTest(unittest.TestCase):
         """Verifies that a post-build ninja no-op failure propagates its summary to build_artifacts.json."""
         with tempfile.TemporaryDirectory() as artifact_dir, tempfile.TemporaryDirectory() as build_dir:
             static_path = os.path.join(build_dir, "static.textproto")
-            pathlib.Path(static_path).write_text("incremental: true")
+            pathlib.Path(static_path).write_text(
+                "incremental: true\ninclude_default_ninja_target: true\n"
+            )
             context_path = os.path.join(build_dir, "context.textproto")
             pathlib.Path(context_path).write_text(
                 f'checkout_dir: "fake_checkout"\nartifact_dir: "{artifact_dir}"\nbuild_dir: "{build_dir}"'

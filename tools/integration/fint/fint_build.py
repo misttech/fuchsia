@@ -1192,6 +1192,22 @@ class BuildContext:
         yield from self._custom_ninja_targets()
         yield from self._clippy_targets()
 
+    @property
+    def ninja_skipped(self) -> bool:
+        """Whether to skip the Ninja invocation.
+
+        For builders where include_default_ninja_target is disabled and no
+        targets are resolved (such as Tricium), running Ninja with an empty
+        target list causes Ninja to default to building ':default' (the
+        entire operating system, ~145k actions).
+        """
+        return not self.targets
+
+    @functools.cached_property
+    def targets(self) -> list[str]:
+        """Resolves Ninja build targets based on specifications and build API JSON files."""
+        return self._get_targets()
+
     def _get_targets(self) -> list[str]:
         """Resolves Ninja build targets based on specifications and build API JSON files."""
         return sorted(list(set(self._stream_all_targets())))
@@ -1220,9 +1236,14 @@ class BuildContext:
         if success_stamp_path.exists():
             success_stamp_path.unlink()
 
-        # Target expansion and handling
-        targets = self._get_targets()
-        full_command = base_command + targets
+        targets = self.targets
+        if self.ninja_skipped:
+            msg(
+                "No Ninja targets specified and default target is disabled; skipping Ninja invocation."
+            )
+            full_command = [sys.executable, "-c", ""]
+        else:
+            full_command = base_command + targets
 
         result = BuildExecution(command=full_command)
         success = False
@@ -1231,7 +1252,11 @@ class BuildContext:
             if result.exit_code != 0:
                 return
 
-            self._run_post_ninja_checks(result, targets, success_stamp_path)
+            self._run_post_ninja_checks(
+                result,
+                targets,
+                success_stamp_path,
+            )
             success = result.exit_code == 0
         finally:
             if not success:
@@ -1267,7 +1292,10 @@ class BuildContext:
             result.failure_summary = gn_failure_summary
             return
 
-        if not self.context_spec.skip_ninja_noop_check:
+        if (
+            not self.ninja_skipped
+            and not self.context_spec.skip_ninja_noop_check
+        ):
             noop_status, noop_failure_summary = check_ninja_noop(
                 checkout_dir=self.checkout_dir,
                 build_dir=self.build_dir,
@@ -1281,9 +1309,9 @@ class BuildContext:
                 return
 
         # Export debug symbols at the very end to avoid spending time on symbols
-        # dumping/exporting if the gn_check or ninja_noop verifications fail.
+        # dumping/exporting if the gn_check or ninja_noop verification fails.
         try:
-            self._export_debug_symbols()
+            self._export_debug_symbols(targets=targets)
         except RuntimeError as e:
             msg(f"Error: {e}", file=sys.stderr)
             result.exit_code = 1
@@ -1322,11 +1350,18 @@ class BuildContext:
                 # TODO: Implement Bazel-specific post-build failure/diagnostic collections
                 pass
 
-    def _export_debug_symbols(self) -> None:
+    def _export_debug_symbols(self, targets: list[str]) -> None:
         """Invokes the build API to export last build's debug symbols."""
         if self.debug_symbols_dir.exists():
             shutil.rmtree(self.debug_symbols_dir)
         self.debug_symbols_dir.mkdir(parents=True, exist_ok=True)
+
+        if not targets:
+            # If no targets were built, write empty debug symbols manifests directly.
+            (self.debug_symbols_dir / "build-ids.json").write_text("{}\n")
+            (self.debug_symbols_dir / "build-ids.txt").write_text("")
+            (self.debug_symbols_dir / "debug_symbols.json").write_text("[]\n")
+            return
 
         cmd = [
             str(self.api_client_path),

@@ -158,45 +158,6 @@ FAILED COMMAND STDOUT
     return ret.returncode
 
 
-def update_prebuilt_build_ids_list(fuchsia_dir: Path, list_file: Path) -> None:
-    """Update the file containing the list of files under //prebuilt/.build-id
-
-    This just does the equivalent of a glob() over the directory to find all
-    file paths in the directory, and write that to a text-based list_file.
-
-    If list_file exists and has the same content, its timestamp will not be
-    modified.
-
-    See https://fxbug.dev/454618550 for context.
-
-    Args:
-        fuchsia_dir: Fuchsia source directory.
-        list_file: Path to list file.
-    """
-    # First compute the list of file paths relative to //prebuilt/.build-id
-    # Note that this directory does not always exists.
-    build_id_files: set[str] = set()
-    build_id_dir = fuchsia_dir / "prebuilt/.build-id"
-    if build_id_dir.is_dir():
-        for dirpath, dirnames, filenames in os.walk(build_id_dir):
-            for filename in filenames:
-                build_id_files.add(
-                    os.path.relpath(
-                        os.path.join(dirpath, filename), build_id_dir
-                    )
-                )
-
-    list_content = "\n".join(sorted(build_id_files))
-    if not list_file.exists() or list_file.read_text() != list_content:
-        # Write to a PID-scoped temporary file and atomically replace list_file
-        # so that concurrent //build/regenerator.py invocations sharing the same
-        # source checkout never observe a truncated/partially-written file or
-        # corrupt it with overlapping writes.
-        tmp_file = list_file.with_name(f".{list_file.name}.{os.getpid()}.tmp")
-        tmp_file.write_text(list_content)
-        os.replace(tmp_file, list_file)
-
-
 def patch_build_ninja_d(
     build_ninja_d_path: Path, extra_ninja_build_inputs: T.Sequence[str]
 ) -> None:
@@ -581,25 +542,6 @@ def main() -> int:
             build_dir,
             regenerator_outputs_dir / "bazel_content_hashes",
             bazel_content_hashes,
-        )
-
-        time_profile.start(
-            "prebuilt_build_ids",
-            "Generating list of files for //prebuilt/.build-id",
-        )
-        # LINT.IfChange(prebuilt_build_ids_list)
-        prebuilt_build_ids_list = (
-            fuchsia_dir / "prebuilt/prebuilt-build-id-list.txt"
-        )
-        # LINT.ThenChange(//build/prebuilt_binaries.gni:prebuilt_build_ids_list)
-        update_prebuilt_build_ids_list(fuchsia_dir, prebuilt_build_ids_list)
-
-        # Ensure that //build/regenerator is re-run by `fx build` after any `jiri update`
-        # call, as this may have modified the content of //prebuilt/.build-id. Ideally,
-        # using a Jiri hook to update the list file would be better, as it would completely
-        # avoid a regeneration step if the content of //prebuilt/.build-id didn't change at all.
-        extra_ninja_build_inputs.add(
-            fuchsia_dir / ".jiri_root/update_history/latest"
         )
 
         # Generate remote_services.bazelrc
