@@ -70,7 +70,7 @@ group("tests") {
     "testing/wlan-service-util:wlan-service-util-tests",
     "testing/wlantap-driver:tests",
     "tests",
-    "tools/wlantool:wlantool-tests",
+    "tools/wlantool/wlan_dev:wlantool-tests",
     "wlancfg:tests",
     "wlandevicemonitor:tests",
     "wlanix:wlanix-tests",

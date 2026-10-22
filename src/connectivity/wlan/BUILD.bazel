@@ -22,6 +22,7 @@ test_suite(
         "//src/connectivity/wlan/lib/trace:wlan-trace-tests",
         "//src/connectivity/wlan/lib/wep_deprecated:wep-deprecated-tests",
         "//src/connectivity/wlan/testing/wlan-service-util:wlan-service-util-tests",
+        "//src/connectivity/wlan/tools/wlantool/wlan_dev:wlantool-tests",
         "//src/connectivity/wlan/wlancfg/tool/policy:donut-lib-tests",
     ],
 )

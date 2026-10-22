@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    binary_name = "wlan-dev",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/connectivity/wlan/tools/wlantool:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+        "//src/connectivity/wlan/tools/wlantool/wlan_dev:wlan-dev",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
+    ],
+)
