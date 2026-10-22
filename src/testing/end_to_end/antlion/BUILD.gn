@@ -81,9 +81,7 @@ python_library("antlion") {
     "test_utils/__init__.py",
     "test_utils/abstract_devices/__init__.py",
     "test_utils/abstract_devices/wlan_device.py",
-    "test_utils/abstract_devices/wmm_transceiver.py",
     "test_utils/fuchsia/__init__.py",
-    "test_utils/fuchsia/wmm_test_cases.py",
     "utils.py",
   ]
   library_deps = [

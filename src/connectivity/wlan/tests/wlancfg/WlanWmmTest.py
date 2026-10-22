@@ -11,8 +11,6 @@ import time
 from typing import Any
 
 import fuchsia_wlan_base_test
-from antlion.test_utils.abstract_devices import wmm_transceiver
-from antlion.test_utils.fuchsia import wmm_test_cases
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
@@ -44,6 +42,7 @@ from openwrt_access_point.lib.hostapd_options import (
     WmmAcm,
     WmmParams,
 )
+from wmm_testing import wmm_test_cases, wmm_transceiver
 
 DEFAULT_N_CAPABILITIES_20_MHZ = [
     capabilities.N_CAPABILITY_LDPC,
