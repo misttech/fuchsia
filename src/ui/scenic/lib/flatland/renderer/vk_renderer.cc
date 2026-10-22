@@ -272,8 +272,18 @@ VkRenderer::SetConstraintsAndCreateVulkanBufferCollection(
 
   vk::BufferCollectionCreateInfoFUCHSIA bc_create_info;
   bc_create_info.collectionToken = token.TakeChannel().release();
-  const vk::BufferCollectionFUCHSIA vk_collection = escher::ESCHER_CHECKED_VK_RESULT(
-      vk_device.createBufferCollectionFUCHSIA(bc_create_info, nullptr, vk_loader));
+  vk::BufferCollectionFUCHSIA vk_collection;
+  {
+    const auto vk_result =
+        vk_device.createBufferCollectionFUCHSIA(bc_create_info, nullptr, vk_loader);
+    if (vk_result.result != vk::Result::eSuccess) {
+      FX_LOGS(ERROR) << "Cannot create vulkan buffer collection: "
+                     << vk::to_string(vk_result.result)
+                     << "; The client may have invalidated the token.";
+      return std::nullopt;
+    }
+    vk_collection = vk_result.value;
+  }
 
   vk::ImageConstraintsInfoFUCHSIA vk_image_constraints;
   const auto image_format_constraints = GetVulkanImageFormatConstraints(usage, size);

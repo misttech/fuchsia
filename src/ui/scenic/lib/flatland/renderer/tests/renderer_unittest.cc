@@ -777,6 +777,83 @@ VK_TEST_F(VulkanRendererTest, ImportCollectionTest) {
   ImportCollectionTest(loop, renderer.get(), sysmem_allocator);
 }
 
+// Regression test for https://fxbug.dev/573602747: verify that if
+// vkCreateBufferCollectionFUCHSIA fails (e.g. with VK_ERROR_OUT_OF_HOST_MEMORY
+// or VK_ERROR_INITIALIZATION_FAILED under transient driver/memory pressure),
+// VkRenderer::SetConstraintsAndCreateVulkanBufferCollection returns
+// std::nullopt and ImportBufferCollection completes its promise with an error
+// rather than crashing Scenic via ESCHER_CHECKED_VK_RESULT.
+VK_TEST_F(VulkanRendererTest, ImportCollectionHandlesCreateBufferCollectionFailure) {
+  async::TestLoop loop;
+  auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
+  auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
+
+  struct ScopedCreateBufferCollectionHook {
+    vk::detail::DispatchLoaderDynamic& loader;
+    PFN_vkCreateBufferCollectionFUCHSIA original;
+    ScopedCreateBufferCollectionHook(vk::detail::DispatchLoaderDynamic& l,
+                                     PFN_vkCreateBufferCollectionFUCHSIA replacement)
+        : loader(l), original(l.vkCreateBufferCollectionFUCHSIA) {
+      loader.vkCreateBufferCollectionFUCHSIA = replacement;
+    }
+    ~ScopedCreateBufferCollectionHook() { loader.vkCreateBufferCollectionFUCHSIA = original; }
+  };
+
+  auto& dispatch_loader =
+      const_cast<vk::detail::DispatchLoaderDynamic&>(escher->device()->dispatch_loader());
+  const auto bcid = allocation::GenerateUniqueBufferCollectionId();
+
+  {
+    auto [token_client, token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+    fidl::Arena arena;
+    auto alloc_result = sysmem_allocator->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(std::move(token_server))
+            .Build());
+    ASSERT_TRUE(alloc_result.ok());
+    ASSERT_TRUE(fidl::WireCall(token_client)->Sync().ok());
+
+    ScopedCreateBufferCollectionHook hook(
+        dispatch_loader,
+        [](VkDevice /*device*/, const VkBufferCollectionCreateInfoFUCHSIA* pCreateInfo,
+           const VkAllocationCallbacks* /*pAllocator*/,
+           VkBufferCollectionFUCHSIA* pCollection) -> VkResult {
+          if (pCreateInfo && pCreateInfo->collectionToken != ZX_HANDLE_INVALID) {
+            zx_handle_close(pCreateInfo->collectionToken);
+          }
+          if (pCollection) {
+            *pCollection = VK_NULL_HANDLE;
+          }
+          return VK_ERROR_OUT_OF_HOST_MEMORY;
+        });
+
+    auto promise =
+        renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(token_client),
+                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
+    EXPECT_FALSE(RunPromise(loop, std::move(promise)));
+  }
+
+  // After the transient failure, importing with the same collection ID and a
+  // healthy vkCreateBufferCollectionFUCHSIA implementation should succeed.
+  {
+    auto [token_client, token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+    fidl::Arena arena;
+    auto alloc_result = sysmem_allocator->AllocateSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+            .token_request(std::move(token_server))
+            .Build());
+    ASSERT_TRUE(alloc_result.ok());
+    ASSERT_TRUE(fidl::WireCall(token_client)->Sync().ok());
+
+    auto promise =
+        renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(token_client),
+                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
+    EXPECT_TRUE(RunPromise(loop, std::move(promise)));
+  }
+}
+
 VK_TEST_F(VulkanRendererTest, SameTokenTwiceTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
