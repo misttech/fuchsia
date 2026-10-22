@@ -492,9 +492,9 @@ _zither_syscall_docs = macro(
 #    - Required: Describes the output subdirectory of the output directory
 #      passed to zither in which the backend artifacts will be written. This
 #      subdirectory has backend-specific significance as a C include path,
-#      Go package name, etc. Given a FIDL library name `library_name` and
-#      referring to this dictionary as `output_namespace_info`, one can
-#      reconstruct this path as follows:
+#      for example. Given a FIDL library name `library_name` and referring to
+#      dictionary as `output_namespace_info`, one can reconstruct this path as
+#      follows:
 #      ```
 #      output_namespace_info = {
 #        prefix_parts = []

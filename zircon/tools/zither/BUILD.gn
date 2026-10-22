@@ -45,7 +45,6 @@ if (is_host) {
       ":common",
       "backends/asm",
       "backends/c",
-      "backends/go_runtime",
       "backends/golang",
       "backends/kernel",
       "backends/legacy_syscall_cdecl",
@@ -370,7 +369,7 @@ template("zither_golden_test") {
                  ])
     } else if (case.backend == "rust" || case.backend == "kernel" ||
                case.backend == "legacy_syscall_cdecl" ||
-               case.backend == "rust_syscall" || case.backend == "go_runtime" ||
+               case.backend == "rust_syscall" ||
                case.backend == "syscall_docs") {
       # The generated rust library targets should already enforce compilation.
       #
@@ -678,17 +677,6 @@ zither_golden_test("zx.test") {
     {
       backend = "rust_syscall"
       files = [ "definitions.rs" ]
-    },
-    {
-      backend = "go_runtime"
-      files = [
-        "syscalls_fuchsia.go",
-        "syscalls_fuchsia_amd64.s",
-        "syscalls_fuchsia_arm64.s",
-        "vdso_keys_fuchsia.go",
-        "vdsocalls_fuchsia_amd64.s",
-        "vdsocalls_fuchsia_arm64.s",
-      ]
     },
     {
       backend = "syscall_docs"

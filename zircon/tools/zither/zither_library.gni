@@ -22,7 +22,6 @@ supported_zither_backends = [
   "legacy_syscall_cdecl",  # Legacy C syscall declarations.
   "zircon_ifs",  # Syscall text ABI bindings.
   "kernel",  # Internal kernel bindings.
-  "go_runtime",  # go.git source files for Fuchsia support.
   "rust_syscall",  # Thin Rust FFI syscall wrappers.
   "syscall_docs",  # Syscall documentation markdown.
 ]
@@ -186,13 +185,6 @@ supported_zither_backend_info = {
     }
     formatter = _rustfmt
     _library_template = "_zither_rust_library"
-  }
-
-  go_runtime = {
-    output_namespace = {
-    }
-    formatter = _gofmt
-    _library_template = "_zither_go_runtime_sources"
   }
 
   syscall_docs = {
@@ -709,49 +701,6 @@ template("_zither_legacy_syscall_cdecl_sources") {
                            ])
     fuchsia = true
     public_deps = [ ":$headers_target" ]
-  }
-}
-
-template("_zither_go_runtime_sources") {
-  assert(invoker.backend == "go_runtime")
-
-  main_target = target_name
-  zither_target = "$target_name.gen"
-
-  not_needed(invoker, [ "source_names" ])
-
-  _zither(zither_target) {
-    forward_variables_from(invoker,
-                           [
-                             "testonly",
-                             "visibility",
-                             "deps",
-                             "fidl_ir_json",
-                             "fidl_ir_target",
-                             "formatter",
-                             "output_dir",
-                           ])
-    backend = "go_runtime"
-    generated_files = [
-      "${output_dir}/src/runtime/vdso_keys_fuchsia.go",
-      "${output_dir}/src/runtime/vdsocalls_fuchsia_amd64.s",
-      "${output_dir}/src/runtime/vdsocalls_fuchsia_arm64.s",
-      "${output_dir}/src/syscall/zx/syscalls_fuchsia_amd64.s",
-      "${output_dir}/src/syscall/zx/syscalls_fuchsia_arm64.s",
-      "${output_dir}/src/syscall/zx/syscalls_fuchsia.go",
-    ]
-  }
-
-  group(main_target) {
-    forward_variables_from(invoker,
-                           [
-                             "testonly",
-                             "visibility",
-                           ])
-    deps = [
-      ":${zither_target}($default_toolchain)",
-      ":${zither_target}.check($default_toolchain)",
-    ]
   }
 }
 
