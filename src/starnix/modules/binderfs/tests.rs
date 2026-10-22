@@ -7590,4 +7590,111 @@ pub mod tests {
         })
         .await;
     }
+
+    #[fuchsia::test]
+    async fn ref_count_actions_deduplication_and_release() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+
+            // 1-element inline path: releasing a single object disarms DropGuard and enqueues
+            // ReleaseRef.
+            let (obj_single, guard_single) = register_binder_object(
+                &proc.proc,
+                UserAddress::const_from(0x10),
+                UserAddress::const_from(0x11),
+            );
+            obj_single.ack_acquire(&mut RefCountActions::default_released()).expect("ack_acquire");
+            let mut actions_1 = RefCountActions::default();
+            guard_single.release(&mut actions_1);
+            actions_1.release(());
+            assert!(proc.proc.lock().find_object(&obj_single.local).is_none());
+
+            // 2-element inline path: releasing two distinct objects stays inline without spilling.
+            let (obj_a, guard_a) = register_binder_object(
+                &proc.proc,
+                UserAddress::const_from(0x20),
+                UserAddress::const_from(0x21),
+            );
+            let (obj_b, guard_b) = register_binder_object(
+                &proc.proc,
+                UserAddress::const_from(0x30),
+                UserAddress::const_from(0x31),
+            );
+            obj_a.ack_acquire(&mut RefCountActions::default_released()).expect("ack_acquire a");
+            obj_b.ack_acquire(&mut RefCountActions::default_released()).expect("ack_acquire b");
+            proc.proc.lock().command_queue.clear();
+            let mut actions_2 = RefCountActions::default();
+            guard_a.release(&mut actions_2);
+            guard_b.release(&mut actions_2);
+            actions_2.release(());
+            assert!(proc.proc.lock().find_object(&obj_a.local).is_none());
+            assert!(proc.proc.lock().find_object(&obj_b.local).is_none());
+            let release_cmds_2 = proc
+                .proc
+                .lock()
+                .command_queue
+                .iter()
+                .filter(|q| matches!(q.command, Command::ReleaseRef(_)))
+                .count();
+            assert_eq!(release_cmds_2, 2, "both objects in 2-element inline path must be released");
+
+            // 3-element spilled path with non-adjacent duplicate pattern (A, B, A).
+            let (obj_3a, guard_3a) = register_binder_object(
+                &proc.proc,
+                UserAddress::const_from(0x40),
+                UserAddress::const_from(0x41),
+            );
+            let (obj_3b, guard_3b) = register_binder_object(
+                &proc.proc,
+                UserAddress::const_from(0x50),
+                UserAddress::const_from(0x51),
+            );
+            obj_3b.ack_acquire(&mut RefCountActions::default_released()).expect("ack_acquire 3b");
+            proc.proc.lock().command_queue.clear();
+            let mut actions_3 = RefCountActions::default();
+            obj_3a.ack_acquire(&mut actions_3).expect("ack_acquire 3a");
+            guard_3b.release(&mut actions_3);
+            guard_3a.release(&mut actions_3);
+            actions_3.release(());
+            assert!(proc.proc.lock().find_object(&obj_3a.local).is_none());
+            assert!(proc.proc.lock().find_object(&obj_3b.local).is_none());
+            let release_cmds_3 = proc
+                .proc
+                .lock()
+                .command_queue
+                .iter()
+                .filter(|q| matches!(q.command, Command::ReleaseRef(_)))
+                .count();
+            assert_eq!(release_cmds_3, 2, "each object in A, B, A must be applied once");
+
+            // Spilled path with non-adjacent duplicates across 12 distinct objects.
+            let mut guards = Vec::new();
+            let mut actions_many = RefCountActions::default();
+            for i in 0..12u64 {
+                let base = 0x100 + i * 0x10;
+                let (obj, guard) = register_binder_object(
+                    &proc.proc,
+                    UserAddress::const_from(base),
+                    UserAddress::const_from(base + 1),
+                );
+                obj.ack_acquire(&mut actions_many).expect("ack_acquire");
+                guards.push(guard);
+            }
+            for guard in guards {
+                guard.release(&mut actions_many);
+            }
+            proc.proc.lock().command_queue.clear();
+            actions_many.release(());
+            let release_cmds_many = proc
+                .proc
+                .lock()
+                .command_queue
+                .iter()
+                .filter(|q| matches!(q.command, Command::ReleaseRef(_)))
+                .count();
+            assert_eq!(release_cmds_many, 12, "all 12 deduplicated objects must be released once");
+        })
+        .await;
+    }
 }

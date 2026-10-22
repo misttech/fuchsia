@@ -6,6 +6,7 @@ use crate::process::BinderProcess;
 use crate::shared_memory::TransactionBuffers;
 use crate::thread::{BinderThread, Command};
 use bitflags::bitflags;
+use itertools::Itertools;
 use starnix_core::task::Pid;
 use starnix_core::vfs::FdNumber;
 use starnix_logging::{log_error, log_trace, track_stub};
@@ -21,7 +22,7 @@ use starnix_uapi::{
     binder_buffer_object, binder_fd_array_object, binder_fd_object, binder_object_header,
     binder_transaction_data, binder_uintptr_t, flat_binder_object, uapi,
 };
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
@@ -168,45 +169,38 @@ impl BinderObjectRef {
     }
 }
 
-/// A set of `BinderObject` whose reference counts may have changed. Releasing it will enqueue all
-/// the corresponding actions and remove any freed object from the owner process.
+/// A collection of `BinderObject`s whose reference counts may have changed. Releasing it
+/// deduplicates the collected objects, enqueues all corresponding refcount commands, and removes
+/// any freed objects from their owner processes.
 #[derive(Default)]
 pub struct RefCountActions {
-    objects: BTreeSet<ArcKey<BinderObject>>,
+    objects: smallvec::SmallVec<[ArcKey<BinderObject>; 2]>,
     drop_guard: DropGuard,
 }
 
-impl Deref for RefCountActions {
-    type Target = BTreeSet<ArcKey<BinderObject>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.objects
+impl RefCountActions {
+    /// Records `object` as having pending deferred reference count actions.
+    pub fn insert(&mut self, object: ArcKey<BinderObject>) {
+        self.objects.push(object);
     }
-}
 
-impl DerefMut for RefCountActions {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.objects
+    #[cfg(test)]
+    pub fn default_released() -> Self {
+        let r = RefCountActions::default();
+        r.drop_guard.disarm();
+        r
     }
 }
 
 impl Releasable for RefCountActions {
     type Context<'a> = ();
 
-    fn release<'a>(self, _context: ()) {
-        for object in self.objects.into_iter() {
+    fn release<'a>(mut self, _context: ()) {
+        self.objects.sort_unstable();
+        for object in self.objects.into_iter().dedup() {
             object.apply_deferred_refcounts();
         }
         self.drop_guard.disarm();
-    }
-}
-
-impl RefCountActions {
-    #[cfg(test)]
-    pub fn default_released() -> Self {
-        let r = RefCountActions::default();
-        r.drop_guard.disarm();
-        r
     }
 }
 
