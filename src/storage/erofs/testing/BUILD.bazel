@@ -1,0 +1,46 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "fuchsia_package_resource_group",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+# An uncompressed erofs image with a few files in the root directory.
+fuchsia_package_resource_group(
+    name = "simple_erofs_image",
+    srcs = [
+        "data/simple.erofs",
+        "data/simple_512.erofs",
+        "data/simple_lz4.erofs",
+        "data/simple_lz4_legacy.erofs",
+    ],
+    basename_only = True,
+    dest = "data",
+    visibility = [
+        "//src/starnix/modules/erofs:__pkg__",
+        "//src/storage/erofs:__subpackages__",
+    ],
+)
+
+# The raw source files that were packed into simple.erofs.
+fuchsia_package_resource_group(
+    name = "simple_raw_files",
+    srcs = [
+        "data/simple/file1",
+        "data/simple/mixed_compression",
+        "data/simple/photosynthesis",
+        "data/simple/quantum",
+    ],
+    basename_only = True,
+    dest = "data/simple",
+    visibility = [
+        "//src/starnix/modules/erofs:__pkg__",
+        "//src/storage/erofs:__subpackages__",
+    ],
+)
+# LINT.ThenChange(BUILD.gn)

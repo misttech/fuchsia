@@ -4,6 +4,7 @@
 
 import("//build/dist/resource.gni")
 
+# LINT.IfChange
 # An uncompressed erofs image with a few files in the root directory.
 resource("simple_erofs_image") {
   sources = [
@@ -25,3 +26,4 @@ resource("simple_raw_files") {
   ]
   outputs = [ "data/simple/{{source_file_part}}" ]
 }
+# LINT.ThenChange(BUILD.bazel)

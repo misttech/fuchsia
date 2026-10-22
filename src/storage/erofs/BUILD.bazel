@@ -1,0 +1,65 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "erofs",
+    srcs = [
+        "src/format.rs",
+        "src/lib.rs",
+        "src/mapper.rs",
+        "src/readers.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/starnix/modules/erofs:__pkg__",
+        "//src/storage/erofs/component:__pkg__",
+        "//src/storage/erofs/serializer:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/lib/mapping",
+        "//src/storage/lib/vmo-fifo",
+        "//third_party/lz4/rust:lz4",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:crc",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "erofs_test",
+    crate = ":erofs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "erofs-tests",
+    resources = [
+        "//src/storage/erofs/testing:simple_erofs_image",
+        "//src/storage/erofs/testing:simple_raw_files",
+    ],
+    unit_tests = [":erofs_test"],
+)
