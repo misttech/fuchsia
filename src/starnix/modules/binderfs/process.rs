@@ -13,7 +13,8 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::SharedMemory;
 use crate::thread::{
-    BinderThread, Command, QueuedCommand, RegistrationState, generate_dead_replies,
+    BinderThread, BinderThreadState, Command, QueuedCommand, RegistrationState,
+    generate_dead_replies,
 };
 use crossbeam::queue::SegQueue;
 use starnix_core::mm::MemoryAccessor;
@@ -996,10 +997,18 @@ impl<'a> BinderProcessGuard<'a> {
     }
 
     /// Whether the driver should request that the client starts a new thread.
+    #[cfg(test)]
     pub fn should_request_thread(&self, thread: &BinderThread) -> bool {
+        self.should_request_thread_locked(&thread.lock())
+    }
+
+    /// Whether the driver should request that the client starts a new thread,
+    /// using an already-acquired `BinderThreadState` lock guard.
+    #[inline]
+    pub fn should_request_thread_locked(&self, thread_state: &BinderThreadState) -> bool {
         !self.thread_requested
             && self.auxiliary_threads_count < self.max_thread_count
-            && thread.lock().is_main_or_registered()
+            && thread_state.is_main_or_registered()
             && self.base.available_threads.is_empty()
     }
 
