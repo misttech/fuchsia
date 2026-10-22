@@ -10,6 +10,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/driver_test_realm/realm_builder/cpp/builder.h>
@@ -38,7 +39,13 @@ class HidDriverTest : public zxtest::Test {
 
     // Create and build the realm.
     auto realm_builder = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(realm_builder, loop_.dispatcher(), {}, {});
+    std::vector<fuchsia_component_test::Capability> exposes = {{
+        fuchsia_component_test::Capability::WithService(
+            fuchsia_component_test::Service{{.name = fuchsia_input_report::Service::Name}}),
+    }};
+    driver_test_realm::Setup(realm_builder, loop_.dispatcher(),
+                             driver_test_realm::OptionsBuilder().driver_exposes(exposes).Build(),
+                             {});
     realm_ =
         std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop_.dispatcher()));
 
@@ -85,6 +92,14 @@ class HidDriverTest : public zxtest::Test {
       return watch_result.take_error();
     }
     return std::move(*watch_result);
+  }
+
+  zx::result<fidl::ClientEnd<fuchsia_input_report::InputDevice>> WaitForFirstInputReportDevice() {
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir{
+        realm_->component().exposed().unowned_channel()->get()};
+    component::SyncServiceMemberWatcher<fuchsia_input_report::Service::InputDevice> watcher(
+        svc_dir);
+    return watcher.GetNextInstance(false);
   }
 
   async::Loop loop_ = async::Loop(&kAsyncLoopConfigNoAttachToCurrentThread);
@@ -138,9 +153,7 @@ TEST_F(HidDriverTest, BootMouseTest) {
   fbl::unique_fd fd_device;
 
   // Wait for input-report driver to bind to avoid binding to a device which is being torn down.
-  ASSERT_OK(
-      WaitForFirstDevice<fuchsia_input_report::InputDevice>("dev-topological/class/input-report")
-          .status_value());
+  ASSERT_OK(WaitForFirstInputReportDevice().status_value());
   // Open the /dev/class/input/ device created by MakeHidDevice.
   zx::result input_client =
       WaitForFirstDevice<fuchsia_hardware_input::Controller>("dev-topological/class/input");
@@ -213,9 +226,8 @@ TEST_F(HidDriverTest, BootMouseTestInputReport) {
   ASSERT_OK(result.status());
   zx::socket hidctl_socket = std::move(result.value().report_socket);
 
-  // Open the /dev/class/input/ device created by MakeHidDevice.
-  zx::result input_client =
-      WaitForFirstDevice<fuchsia_input_report::InputDevice>("dev-topological/class/input-report");
+  // Open the fuchsia.input.report.Service device created by MakeHidDevice.
+  zx::result input_client = WaitForFirstInputReportDevice();
   ASSERT_OK(input_client.status_value());
   fidl::WireSyncClient client(std::move(input_client.value()));
 

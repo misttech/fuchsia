@@ -169,13 +169,6 @@
 
         // The routes listed below originate from `parent` or from `self`.
         {
-            directory: "dev-class",
-            from: "parent",
-            as: "dev-input-report",
-            to: "#session-manager",
-            subdir: "input-report",
-        },
-        {
             directory: "root-ssl-certificates",
             from: "parent",
             to: "#session-manager",

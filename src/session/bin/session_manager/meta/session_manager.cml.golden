@@ -506,7 +506,6 @@
                 "config-data",
                 "dev-class-radar",
                 "dev-hrtimer",
-                "dev-input-report",
                 "root-ssl-certificates",
 
                 // `tzdata-icu` offers /config/tzdata/icu.

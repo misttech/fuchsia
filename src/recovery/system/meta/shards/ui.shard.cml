@@ -11,17 +11,7 @@
     ],
     use: [
         { service: "fuchsia.hardware.display.Service" },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-class-input-report",
-            rights: [ "r*" ],
-            path: "/dev/class/input-report",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.input.report.Service",
-        },
+        { service: "fuchsia.input.report.Service" },
         {
             config: "fuchsia.recovery.DisplayRotation",
             key: "display_rotation",

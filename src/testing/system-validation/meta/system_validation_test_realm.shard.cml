@@ -98,16 +98,13 @@
         {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
             // been migrated to services. The service capability has been added below.
-            directory: [
-                "dev-input-report",
-                "dev-mediacodec",
-            ],
+            directory: [ "dev-mediacodec" ],
             from: "parent",
             to: "#system-validation-tests",
             rights: [ "r*" ],
         },
         {
-            // These services replace the directory capabilities above.
+            // This service replaces the directory capability above.
             service: [
                 "fuchsia.hardware.mediacodec.Service",
                 "fuchsia.input.report.Service",

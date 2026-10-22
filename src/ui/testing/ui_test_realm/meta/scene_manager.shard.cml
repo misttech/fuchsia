@@ -17,9 +17,6 @@
             //
             // fuchsia.settings.Keyboard: should be non-essential so long as
             // the tests don't require changing keyboard settings.
-            //
-            // dev-input-report: this should be turned off, but no such
-            // test component exists yet.
         },
         {
             name: "scene_manager_config",

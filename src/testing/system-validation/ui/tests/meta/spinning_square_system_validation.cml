@@ -40,16 +40,16 @@
         {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
             // been migrated to services. The service capability has been added below.
-            directory: [
-                "dev-input",
-                "dev-input-report",
-            ],
+            directory: [ "dev-input" ],
             from: "parent",
             to: [ "#sample-app" ],
             rights: [ "r*" ],
         },
         {
-            service: [ "fuchsia.hardware.display.Service" ],
+            service: [
+                "fuchsia.hardware.display.Service",
+                "fuchsia.input.report.Service",
+            ],
             from: "parent",
             to: [ "#sample-app" ],
         },
