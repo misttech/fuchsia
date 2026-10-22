@@ -77,8 +77,10 @@ source_set("simple_present") {
     "//src/ui/examples/screen_recording:*",
     "//src/ui/tests/integration_input_tests/touch/touch-flatland-client:*",
   ]
-  public_deps =
-      [ "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/lib/async-loop:async-loop-cpp",
+  ]
 }
 rustc_test("flatland-frame-scheduling-lib_test") {
   sources = [

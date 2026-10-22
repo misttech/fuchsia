@@ -49,7 +49,10 @@ fx_cc_library(
         "//src/ui/examples/screen_recording:__pkg__",
         "//src/ui/tests/integration_input_tests/touch/touch-flatland-client:__pkg__",
     ],
-    deps = ["//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp"],
+    deps = [
+        "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+    ],
     alwayslink = True,
 )
 
