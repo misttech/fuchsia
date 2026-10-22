@@ -161,6 +161,7 @@
                 "fuchsia.ui.display.singleton.DisplayPower",
                 "fuchsia.ui.display.singleton.Info",
                 "fuchsia.ui.input.DeviceListenerRegistry",
+                "fuchsia.ui.input.internal.InputOwnership",
                 "fuchsia.ui.input3.Keyboard",
                 "fuchsia.ui.policy.DeviceListenerRegistry",
                 "fuchsia.ui.test.input.Registry",
@@ -227,6 +228,12 @@
             ],
             from: "parent",
             to: [ "#kernels" ],
+        },
+        {
+            service: "fuchsia.input.report.Service",
+            from: "parent",
+            to: [ "#kernels" ],
+            availability: "optional",
         },
         {
             config: [
