@@ -4,18 +4,19 @@
 
 use crate::device::DeviceMode;
 use crate::device::kobject::DeviceMetadata;
-use crate::fs::tmpfs::{TmpFs, TmpFsData, TmpFsNodeType};
+use crate::fs::tmpfs::TmpFs;
+use crate::security;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{
-    DirEntryHandle, FileSystemHandle, FileSystemOptions, FsStr, LookupContext, MountInfo,
-    NamespaceNode, path,
+    DirEntryHandle, FileSystemHandle, FileSystemOptions, FsNodeHandle, FsStr, LookupContext,
+    MountInfo, NamespaceNode, path,
 };
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 pub fn dev_tmp_fs(
     current_task: &CurrentTask,
@@ -26,49 +27,49 @@ pub fn dev_tmp_fs(
 
 pub struct DevTmpFs(());
 
+#[derive(Default)]
+struct DevTmpFsHandle(OnceLock<FileSystemHandle>);
+
 impl DevTmpFs {
     pub fn from_kernel(kernel: &Kernel) -> FileSystemHandle {
         assert!(kernel.features.devtmpfs, "devtmpfs must be enabled in KernelFeatures");
-        struct DevTmpFsHandle(FileSystemHandle);
+        kernel.expando.get::<DevTmpFsHandle>().0.get_or_init(|| Self::init(kernel)).clone()
+    }
 
-        kernel.expando.get_or_init(|| DevTmpFsHandle(Self::init(kernel))).0.clone()
+    fn from_kthread(current_task: &CurrentTask) -> FileSystemHandle {
+        let kernel = current_task.kernel();
+        assert!(kernel.features.devtmpfs, "devtmpfs must be enabled in KernelFeatures");
+        kernel
+            .expando
+            .get::<DevTmpFsHandle>()
+            .0
+            .get_or_init(|| Self::init_on_kthread(current_task))
+            .clone()
     }
 
     fn init(kernel: &Kernel) -> FileSystemHandle {
+        let (result_fn, req) = SpawnRequestBuilder::new()
+            .with_debug_name("devtmpfs-init")
+            .with_sync_closure(Self::init_on_kthread)
+            .build_with_sync_result();
+        kernel.kthreads.spawner().spawn_from_request(req);
+        result_fn().unwrap()
+    }
+
+    fn init_on_kthread(current_task: &CurrentTask) -> FileSystemHandle {
+        let kernel = current_task.kernel();
         let fs = TmpFs::new_fs_with_name(kernel, "devtmpfs".into());
-
-        let initial_content = TmpFsData {
-            owner: FsCred::root(),
-            perm: 0o755,
-            node_type: TmpFsNodeType::Directory(BTreeMap::from([
-                (
-                    "shm".into(),
-                    TmpFsData {
-                        owner: FsCred::root(),
-                        perm: 0o755,
-                        node_type: TmpFsNodeType::Directory(Default::default()),
-                    },
-                ),
-                (
-                    "pts".into(),
-                    TmpFsData {
-                        owner: FsCred::root(),
-                        perm: 0o755,
-                        node_type: TmpFsNodeType::Directory(Default::default()),
-                    },
-                ),
-                (
-                    "fd".into(),
-                    TmpFsData {
-                        owner: FsCred::root(),
-                        perm: 0o777,
-                        node_type: TmpFsNodeType::Link("/proc/self/fd".into()),
-                    },
-                ),
-            ])),
+        security::file_system_resolve_security(current_task, &fs)
+            .expect("resolve devtmpfs security");
+        let root = fs.root();
+        devtmpfs_get_or_create_directory_at(current_task, root, "shm".into()).unwrap();
+        devtmpfs_get_or_create_directory_at(current_task, root, "pts".into()).unwrap();
+        let create_symlink = |dir: &FsNodeHandle, mount: &MountInfo, name: &FsStr| {
+            let target = "/proc/self/fd".into();
+            dir.create_symlink(current_task, mount, name, target, FsCred::root())
         };
-        TmpFs::set_initial_content(kernel, &fs, initial_content);
-
+        let mount = MountInfo::detached();
+        root.create_entry(current_task, &mount, "fd".into(), create_symlink).unwrap();
         fs
     }
 }
@@ -106,12 +107,9 @@ fn devtmpfs_create_device_internal(
         .split(|&c| c == path::SEPARATOR)
         // Avoid EEXIST for 'foo//bar' and the last directory name.
         .filter(|dir_name| dir_name.len() > 0)
-        .try_fold(
-            DevTmpFs::from_kernel(current_task.kernel()).root().clone(),
-            |parent_dir, dir_name| {
-                devtmpfs_get_or_create_directory_at(current_task, parent_dir, dir_name.into())
-            },
-        )?;
+        .try_fold(DevTmpFs::from_kthread(current_task).root().clone(), |parent_dir, dir_name| {
+            devtmpfs_get_or_create_directory_at(current_task, &parent_dir, dir_name.into())
+        })?;
     devtmpfs_create_device_node(
         current_task,
         parent_dir,
@@ -121,26 +119,18 @@ fn devtmpfs_create_device_internal(
     )
 }
 
-pub fn devtmpfs_get_or_create_directory_at(
+fn devtmpfs_get_or_create_directory_at(
     current_task: &CurrentTask,
-    parent_dir: DirEntryHandle,
+    parent_dir: &DirEntryHandle,
     dir_name: &FsStr,
 ) -> Result<DirEntryHandle, Errno> {
-    let (entry, _status) = parent_dir.get_or_create_entry(
-        current_task,
-        &MountInfo::detached(),
-        dir_name,
-        |dir, mount, name| {
-            dir.create_node(
-                current_task,
-                mount,
-                name,
-                mode!(IFDIR, 0o755),
-                DeviceId::NONE,
-                FsCred::root(),
-            )
-        },
-    )?;
+    let create_dir = |dir: &FsNodeHandle, mount: &MountInfo, name: &FsStr| {
+        let mode = mode!(IFDIR, 0o755);
+        dir.create_node(current_task, mount, name, mode, DeviceId::NONE, FsCred::root())
+    };
+    let mount = MountInfo::detached();
+    let (entry, _status) =
+        parent_dir.get_or_create_entry(current_task, &mount, dir_name, create_dir)?;
     Ok(entry)
 }
 
