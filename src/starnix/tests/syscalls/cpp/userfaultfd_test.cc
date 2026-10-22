@@ -841,3 +841,69 @@ TEST(UffdTest, NonUserModeOnlyRequiresCapSysPtrace) {
 
   EXPECT_TRUE(helper.WaitForChildren());
 }
+
+// This test intentionally triggers a deadly signal (SIGBUS) which can't pass on sanitizer runs.
+#if (!__has_feature(address_sanitizer))
+TEST_F(UffdProcTest, SmapsInheritanceOnFork) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+  size_t len = 2 * page_size;
+
+  UffdWrapper uffd;
+  uffd.api(UFFD_FEATURE_SIGBUS);
+
+  auto full_range = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+  uintptr_t start = reinterpret_cast<uintptr_t>(full_range.mapping());
+
+  // Parent registers uffd BEFORE fork.
+  uffd.register_range(start, len, UFFDIO_REGISTER_MODE_MISSING);
+
+  // Reflects in parent's smaps.
+  auto registered_mapping = FindMemoryMappingInSmaps(start);
+  ASSERT_TRUE(registered_mapping->ContainsFlag("um"));
+
+  test_helper::ForkHelper helper;
+  helper.ExpectSignal(SIGBUS);
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([&] {
+    // Register the first page in the child before reading /proc/self/smaps so the forked mapping
+    // is still lazy when registered.
+    UffdWrapper child_uffd;
+    child_uffd.api(UFFD_FEATURE_SIGBUS);
+    child_uffd.register_range(start, page_size, UFFDIO_REGISTER_MODE_MISSING);
+
+    auto first_page = FindMemoryMappingInSmaps(start);
+    ASSERT_TRUE(first_page.has_value());
+    ASSERT_TRUE(first_page->ContainsFlag("um"));
+
+    // The second page was only registered in the parent before fork, so it should NOT have "um" in
+    // the child's smaps.
+    auto second_page = FindMemoryMappingInSmaps(start + page_size);
+    ASSERT_TRUE(second_page.has_value());
+    ASSERT_FALSE(second_page->ContainsFlag("um"));
+
+    // Accessing the second page succeeds without triggering SIGBUS.
+    ASSERT_EQ(reinterpret_cast<char *>(full_range.mapping())[page_size], '\0');
+
+    // Accessing the registered first page triggers SIGBUS.
+    ASSERT_EQ(reinterpret_cast<char *>(full_range.mapping())[0], '\0');
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+#endif
+
+TEST(UffdTest, MprotectRegisteredRange) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+  size_t len = page_size;
+
+  UffdWrapper uffd;
+  uffd.api(UFFD_FEATURE_SIGBUS);
+
+  auto full_range = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+  uintptr_t start = reinterpret_cast<uintptr_t>(full_range.mapping());
+
+  uffd.register_range(start, len, UFFDIO_REGISTER_MODE_MISSING);
+
+  EXPECT_THAT(mprotect(full_range.mapping(), len, PROT_READ), SyscallSucceeds());
+}

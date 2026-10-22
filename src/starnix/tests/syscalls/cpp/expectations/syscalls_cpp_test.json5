@@ -171,6 +171,11 @@
                 // TODO(https://fxbug.dev/565365826): Unlinking the watched hard link first still pins its
                 // DirEntryHandle in InotifyState::watches.
                 "InotifyTest.UnlinkWatchedHardLinkFirstEmitsDeleteSelfOnLastUnlink",
+
+                // TODO(https://fxbug.dev/391599171): Starnix cannot currently mprotect
+                // userfaultfd-registered ranges due to how it implements userfaultfd page fault
+                // interception by removing VMAR protections.
+                "UffdTest.MprotectRegisteredRange",
             ],
         },
     ],

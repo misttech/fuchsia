@@ -3302,6 +3302,8 @@ impl MemoryManagerState {
     ) -> Result<(), Errno> {
         let end_addr = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?;
         let range_for_op = addr..end_addr;
+        self.ensure_range_mapped_in_user_vmar(addr, Some(length), &mm.mapping_context)?;
+
         let mut updates = vec![];
 
         for (range, mapping) in self.mappings.range(range_for_op.clone()) {
@@ -4471,8 +4473,10 @@ impl MemoryManager {
                 if mapping.flags().contains(MappingFlags::DONTFORK) {
                     continue;
                 }
-                // Locking is not inherited when forking.
-                let target_mapping_flags = mapping.flags().difference(MappingFlags::LOCKED);
+                // Locking and UFFD registrations are not inherited when forking.
+                let target_mapping_flags = mapping.flags().difference(
+                    MappingFlags::LOCKED | MappingFlags::UFFD | MappingFlags::UFFD_MISSING,
+                );
                 match state.get_mapping_backing(mapping) {
                     MappingBacking::Memory(backing) => {
                         fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "memory_backing_clone");
