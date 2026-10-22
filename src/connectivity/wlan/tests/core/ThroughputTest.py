@@ -11,8 +11,21 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
 from iperf.iperf_server import IPerfServerOverSsh
+from legacy_access_point.access_point import AccessPoint, setup_ap
+from legacy_access_point.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from mobly import asserts, signals, test_runner
-from openwrt_access_point.lib.access_point_config import AccessPointConfig
+from openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    BssChannel,
+    BssSettings,
+    HeMode,
+    RadioConfig,
+)
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 from wlan_test_utils import odpm_utils, throughput_utils
 
 
@@ -108,13 +121,45 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         iface = await self.phy.create_client_iface()
         ssid = AccessPointConfig.random_string(8)
         password = throughput_utils.generate_password(test.security_mode)
-        throughput_utils.configure_ap(
-            self.openwrt_ap,
-            test,
-            ssid,
-            password,
-            access_point=self.access_point,
-        )
+        if self.openwrt_ap:
+            # HE / Wifi 6 / 802.11ax is the latest supported by OpenWRT One
+            phy_mode = HeMode(bw=test.channel_bandwidth)
+            self.openwrt_ap.configure_wifi(
+                AccessPointConfig(
+                    radios=[
+                        RadioConfig(
+                            channel=BssChannel(
+                                band=test.band,
+                                number=test.channel,
+                                phy_mode=phy_mode,
+                            ),
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    password=password,
+                                    security=test.security_mode,
+                                )
+                            ],
+                        )
+                    ]
+                )
+            )
+        elif isinstance(self.access_point, AccessPoint):
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=test.channel,
+                ssid=ssid,
+                vht_bandwidth=test.channel_bandwidth,
+                security=DeprecatedSecurity(
+                    security_mode=ConfigMapper.to_hostapd_security(
+                        test.security_mode
+                    ),
+                    password=password,
+                ),
+                force_wmm=True,  # Gets maximum speed in 802.11ac
+                setup_bridge=True,  # Necessary for the separate iperf server
+            )
 
         await iface.scan_and_connect(
             ssid=ssid,

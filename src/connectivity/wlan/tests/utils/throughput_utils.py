@@ -15,13 +15,10 @@ from typing import Any, Literal, TypedDict, get_args, overload
 
 import perf_publish.publish as publish
 from honeydew.typing.custom_types import MacAddress
-from legacy_access_point.access_point import AccessPoint, setup_ap
+from legacy_access_point.access_point import AccessPoint
 from legacy_access_point.ap_lib import hostapd_constants
 from legacy_access_point.ap_lib.hostapd import (
     StationStatus as HostapdStationStatus,
-)
-from legacy_access_point.ap_lib.hostapd_security import (
-    Security as DeprecatedSecurity,
 )
 from mobly import asserts, signals
 from openwrt_access_point import OpenWrtAP
@@ -29,10 +26,6 @@ from openwrt_access_point import StationStatus as OpenWrtStationStatus
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
-    BssChannel,
-    BssSettings,
-    HeMode,
-    RadioConfig,
     Security,
     SecurityOpen,
     SecurityOwe,
@@ -443,7 +436,7 @@ class IperfTcpResult(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Test Execution Parameters & AP Configuration
+# Test Execution Parameters
 # ---------------------------------------------------------------------------
 
 
@@ -503,55 +496,6 @@ def generate_password(security: Security) -> str | None:
             hostapd_constants.WEP_DEFAULT_STR_LENGTH
         )
     return AccessPointConfig.random_string(hostapd_constants.MIN_WPA_PSK_LENGTH)
-
-
-def configure_ap(
-    openwrt_ap: OpenWrtAP | None,
-    test: TestParams,
-    ssid: str,
-    password: str | None,
-    access_point: AccessPoint | None = None,
-) -> None:
-    security = test.security_mode
-    band = test.band
-
-    if openwrt_ap:
-        # HE / Wifi 6 / 802.11ax is the latest supported by OpenWRT One
-        phy_mode = HeMode(bw=test.channel_bandwidth)
-        openwrt_ap.configure_wifi(
-            AccessPointConfig(
-                radios=[
-                    RadioConfig(
-                        channel=BssChannel(
-                            band=band,
-                            number=test.channel,
-                            phy_mode=phy_mode,
-                        ),
-                        bss_settings=[
-                            BssSettings(
-                                ssid=ssid,
-                                password=password,
-                                security=security,
-                            )
-                        ],
-                    )
-                ]
-            )
-        )
-    elif isinstance(access_point, AccessPoint):
-        setup_ap(
-            access_point=access_point,
-            profile_name="whirlwind",
-            channel=test.channel,
-            ssid=ssid,
-            vht_bandwidth=test.channel_bandwidth,
-            security=DeprecatedSecurity(
-                security_mode=ConfigMapper.to_hostapd_security(security),
-                password=password,
-            ),
-            force_wmm=True,  # Gets maximum speed in 802.11ac
-            setup_bridge=True,  # Necessary for the separate iperf server
-        )
 
 
 # ---------------------------------------------------------------------------
