@@ -4,6 +4,15 @@
 - **Date:** 2026-10-15
 - **Changed:** `checks/migration_sanity.sh`
 
+## Status: partly outdated
+
+`fuchsia_structured_config_rust_lib` is no longer a non-convertible GN-only
+template: Bazel has `fuchsia_structured_config_rust_lib()` in
+`//build/bazel/rules/components:structured_config.bzl` and bazel2gn translates
+it. Migrate it to Bazel instead of keeping it above the sentinel.
+`fuchsia_structured_config_cpp_elf_lib` is still GN-only. The testonly binary
+exemption below still applies.
+
 ## Root cause
 
 In checks/migration_sanity.sh, duplicate_target_above_sentinel only exempted

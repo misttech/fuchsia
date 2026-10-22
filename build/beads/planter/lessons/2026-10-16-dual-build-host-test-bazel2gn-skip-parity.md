@@ -3,6 +3,16 @@
 - **Learned from:** inner loop friction on a local task (task `netstack3-macros`)
 - **Date:** 2026-10-16
 - **Changed:** `checks/manifest.json`, `checks/migration_sanity.sh`, `prompts/coder.md`, `prompts/playbooks/case2_dual_build.md`
+- **Superseded by:** `2026-10-22-policy-drift-public-visibility-and-test-skip.md`
+
+## Status: superseded
+
+Do not follow this lesson. Tests of dual-built targets are defined without
+`# @bazel2gn:skip` by default so bazel2gn generates their GN copies, and only
+the exceptions in
+docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems
+justify a skip. The review_diff `two_case_rule` error described below was
+removed from the diffengine. The text below is kept only as history.
 
 ## Root cause
 

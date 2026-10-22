@@ -3,6 +3,9 @@
 - **Learned from:** audit of planter machinery against the settled GN-to-Bazel
   migration decisions (https://fxbug.dev/574121341)
 - **Date:** 2026-10-22
+- **Supersedes:** `2026-09-24-three-tier-visibility-scoping-for-globally-used.md`
+  (public tier), `2026-10-16-dual-build-host-test-bazel2gn-skip-parity.md`, and
+  the test-skip rule of `2026-09-30-all-tests-move-to-bazel-explicit-manifests.md`
 - **Changed:** `checks/manifest.json`, `checks/visibility_audit.sh`,
   `prompts/reviewers/dual_build_sentinel.md`,
   `prompts/reviewers/target_parity.md`, `tools/manifest.json`

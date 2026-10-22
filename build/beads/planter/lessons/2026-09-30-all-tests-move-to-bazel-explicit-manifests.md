@@ -4,6 +4,17 @@
 - **Date:** 2026-09-30
 - **Supersedes:** the Rust part of `2026-09-29-bazel-device-and-host-test-migration.md`
 - **Changed:** `prompts/coder.md`, `prompts/playbooks/case1_full_removal.md`, `prompts/playbooks/case2_dual_build.md`, `prompts/reviewers/target_parity.md`, `prompts/reviewers/dual_build_sentinel.md`, `checks/migration_sanity.sh`, `checks/cq_reachability.sh`, `checks/build_only_scope.sh`, `checks/gn_target_type_parity.sh`, `checks/build_verification.sh`, `checks/manifest.json`
+- **Superseded by:** `2026-10-22-policy-drift-public-visibility-and-test-skip.md` (test skips only)
+
+## Status: partly superseded
+
+The claim that bazel2gn does not translate tests, and the rule to put
+`# @bazel2gn:skip` on tests and test attributes in dual-build packages, are
+outdated. bazel2gn now generates GN copies of tests, and tests of dual-built
+targets run in both build systems by default
+(docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems).
+The explicit-manifest guidance below still applies where a custom `.cml` is
+needed.
 
 ## Root cause
 
