@@ -579,13 +579,13 @@ type CreateVmoOptions = strict bits : uint32 {
 open protocol MapperSession {
     compose fuchsia.unknown.Closeable;
 
-    /// Creates a pager-backed VMO of `size` bytes associated with `key`.
+    /// Creates a pager-backed VMO of `size` bytes and returns its assigned session `key`.
     /// Page faults on this VMO are handled directly by the driver mapper.
     flexible CreateVmo(struct {
-        key uint64;
         size uint64;
         options CreateVmoOptions;
     }) -> (resource struct {
+        key uint64;
         vmo zx.Handle:VMO;
     }) error zx.Status;
 

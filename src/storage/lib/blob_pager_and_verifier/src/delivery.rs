@@ -50,7 +50,6 @@ impl<'a> UnverifiedPages<'a> {
 
 /// Parameters for delivering verified parent blob data (or sparse zeroes) into a child VMO.
 pub struct ChildData<'a> {
-    pub parent_key: u64,
     pub parent_offset: u64,
     pub offset: u32,
     pub length: u32,
@@ -66,7 +65,6 @@ pub struct ChildData<'a> {
 /// `pkg-cache`.
 #[derive(Copy, Clone, Debug)]
 pub struct ChildInlineTail {
-    pub parent_key: u64,
     pub parent_byte_offset: u64,
     pub child_key: u64,
     pub child_target_offset: u64,
@@ -202,7 +200,6 @@ impl DeliveryQueueProcessor {
                 }) {
                     match maybe_cmd {
                         Some(DeliveryCommand::ChildInlineTail {
-                            parent_key,
                             parent_byte_offset,
                             child_key,
                             child_target_offset,
@@ -217,7 +214,6 @@ impl DeliveryQueueProcessor {
                             }
                             if let Err(e) = provider.deliver_child_inline_tail(
                                 ChildInlineTail {
-                                    parent_key,
                                     parent_byte_offset,
                                     child_key,
                                     child_target_offset,
@@ -295,7 +291,6 @@ impl DeliveryQueueProcessor {
                 provider.register_blob(key, leaf_data, read_alignment as usize)?;
             }
             DeliveryCommand::ChildData {
-                parent_key,
                 parent_offset,
                 offset,
                 length,
@@ -311,7 +306,6 @@ impl DeliveryQueueProcessor {
                         .is_some_and(|end| end <= DELIVERY_VMO_SIZE as u32))
                 .then(|| raw_msg.payload_mut_slice(offset, length));
                 provider.deliver_child_pages(ChildData {
-                    parent_key,
                     parent_offset,
                     offset,
                     length,

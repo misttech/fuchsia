@@ -49,30 +49,40 @@ struct PagedVmo {
     options: fblock::CreateVmoOptions,
 }
 
+struct DirectPagerInner {
+    vmos: HashMap<u64, PagedVmo>,
+    next_key: u64,
+}
+
 /// Services page faults directly using a [`zx::Pager`] owned by the driver mapper session.
 #[derive(Clone)]
 pub struct DirectPager {
     pager: Arc<zx::Pager>,
     port: Arc<zx::Port>,
-    vmos: Arc<Mutex<HashMap<u64, PagedVmo>>>,
+    inner: Arc<Mutex<DirectPagerInner>>,
 }
 
 impl DirectPager {
     pub fn new(pager: Arc<zx::Pager>, port: zx::Port) -> Self {
-        Self { pager, port: Arc::new(port), vmos: Arc::new(Mutex::new(HashMap::new())) }
+        Self {
+            pager,
+            port: Arc::new(port),
+            inner: Arc::new(Mutex::new(DirectPagerInner { vmos: HashMap::new(), next_key: 1 })),
+        }
     }
 
     pub fn create_vmo(
         &self,
-        key: u64,
         size: u64,
         options: fblock::CreateVmoOptions,
-    ) -> Result<zx::Vmo, zx::Status> {
+    ) -> Result<(u64, zx::Vmo), zx::Status> {
+        let mut inner = self.inner.lock();
+        let key = inner.next_key;
         let vmo = self.pager.create_vmo(zx::VmoOptions::empty(), &self.port, key, size)?;
-        self.vmos
-            .lock()
-            .insert(key, PagedVmo { vmo: vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?, options });
-        Ok(vmo)
+        let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+        inner.next_key += 1;
+        inner.vmos.insert(key, PagedVmo { vmo: dup, options });
+        Ok((key, vmo))
     }
 }
 
@@ -96,7 +106,7 @@ impl DeliveryHandler for DirectPager {
     }
 
     fn unregister_file(&self, key: u64) {
-        self.vmos.lock().remove(&key);
+        self.inner.lock().vmos.remove(&key);
     }
 }
 
@@ -133,8 +143,8 @@ impl DataBuffer for DirectPageRequest {
     }
 
     fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
-        let vmos_guard = self.pager.vmos.lock();
-        if let Some(paged_vmo) = vmos_guard.get(&self.key) {
+        let inner = self.pager.inner.lock();
+        if let Some(paged_vmo) = inner.vmos.get(&self.key) {
             let offset = self.read_range.start + self.committed_len as u64;
             self.pager
                 .pager
@@ -182,8 +192,8 @@ impl Drop for DirectPageRequest {
             self.read_range.start + self.committed_len as u64,
         );
         if uncommitted_start < self.original_range.end {
-            let vmos_guard = self.pager.vmos.lock();
-            if let Some(paged_vmo) = vmos_guard.get(&self.key) {
+            let inner = self.pager.inner.lock();
+            if let Some(paged_vmo) = inner.vmos.get(&self.key) {
                 if paged_vmo.options.contains(fblock::CreateVmoOptions::SUPPLY_ZEROES_ON_ERROR) {
                     let _ = paged_vmo.vmo.signal(zx::Signals::empty(), zx::Signals::USER_0);
                     let uncommitted_len = self.original_range.end - uncommitted_start;
@@ -325,11 +335,11 @@ async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
     let mut stream = session.into_stream();
     while let Some(request) = stream.try_next().await? {
         match request {
-            fblock::MapperSessionRequest::CreateVmo { key, size, options, responder } => {
+            fblock::MapperSessionRequest::CreateVmo { size, options, responder } => {
                 if let Some(direct_pager) = direct_pager.as_ref() {
-                    match direct_pager.create_vmo(key, size, options) {
-                        Ok(vmo) => {
-                            responder.send(Ok(vmo))?;
+                    match direct_pager.create_vmo(size, options) {
+                        Ok((key, vmo)) => {
+                            responder.send(Ok((key, vmo)))?;
                         }
                         Err(status) => {
                             responder.send(Err(status.into_raw()))?;
@@ -341,7 +351,7 @@ async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
             }
             fblock::MapperSessionRequest::CloseVmo { key, .. } => {
                 if let Some(direct_pager) = direct_pager.as_ref() {
-                    direct_pager.vmos.lock().remove(&key);
+                    direct_pager.inner.lock().vmos.remove(&key);
                 }
             }
             fblock::MapperSessionRequest::OpenChildSession {
@@ -370,7 +380,7 @@ async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: DeliveryHandler>(
                         service.clone(),
                         files.delivery_handler().clone(),
                         child_port,
-                        Some((parent_key, parent_file)),
+                        Some(parent_file),
                     ));
                     let pager_thread = child_files.spawn_pager_thread();
                     scope.spawn(async move {
@@ -554,8 +564,7 @@ mod tests {
             port.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         ));
 
-        let key = 42u64;
-        let vmo = direct_pager.create_vmo(key, 8192, fblock::CreateVmoOptions::empty()).unwrap();
+        let (key, vmo) = direct_pager.create_vmo(8192, fblock::CreateVmoOptions::empty()).unwrap();
 
         let mut request = direct_pager.get_page_request(key, 0..8192);
         request.prepare(0..8192, 128 * 1024).expect("prepare");
@@ -583,8 +592,7 @@ mod tests {
             port.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         ));
 
-        let key = 43u64;
-        let vmo = direct_pager.create_vmo(key, 8192, fblock::CreateVmoOptions::empty()).unwrap();
+        let (key, vmo) = direct_pager.create_vmo(8192, fblock::CreateVmoOptions::empty()).unwrap();
         let vmo_clone = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
 
         let reader_thread = std::thread::spawn(move || {
@@ -611,9 +619,8 @@ mod tests {
             port.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         ));
 
-        let key = 44u64;
-        let vmo = direct_pager
-            .create_vmo(key, 8192, fblock::CreateVmoOptions::SUPPLY_ZEROES_ON_ERROR)
+        let (key, vmo) = direct_pager
+            .create_vmo(8192, fblock::CreateVmoOptions::SUPPLY_ZEROES_ON_ERROR)
             .unwrap();
         assert_eq!(
             vmo.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).to_result(),
@@ -665,9 +672,8 @@ mod tests {
             let _ = fut.await;
         });
 
-        let key = 100u64;
-        let paged_vmo = proxy
-            .create_vmo(key, 8192, fblock::CreateVmoOptions::empty())
+        let (key, paged_vmo) = proxy
+            .create_vmo(8192, fblock::CreateVmoOptions::empty())
             .await
             .unwrap()
             .expect("create_vmo failed");
@@ -752,15 +758,13 @@ mod tests {
             payload.commit(cmd.into()).expect("payload commit failed");
         };
 
-        let key1 = 10u64;
-        let key2 = 20u64;
-        let vmo1 = proxy
-            .create_vmo(key1, file_size, fblock::CreateVmoOptions::empty())
+        let (key1, vmo1) = proxy
+            .create_vmo(file_size, fblock::CreateVmoOptions::empty())
             .await
             .expect("create_vmo fidl failed")
             .expect("create_vmo failed");
-        let vmo2 = proxy
-            .create_vmo(key2, file_size, fblock::CreateVmoOptions::empty())
+        let (key2, vmo2) = proxy
+            .create_vmo(file_size, fblock::CreateVmoOptions::empty())
             .await
             .expect("create_vmo fidl failed")
             .expect("create_vmo failed");

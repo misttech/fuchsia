@@ -173,8 +173,9 @@ pub(crate) struct ActiveRecording {
 }
 
 // Holds a pager-backed VMO created for a file in a child `MapperSession` (e.g. an EROFS file
-// mapped inside a parent blob) along with its unaligned logical byte size.
+// mapped inside a parent blob) along with its parent blob key and unaligned logical byte size.
 struct ChildVmo {
+    parent_key: u64,
     vmo: zx::Vmo,
     len: u64,
 }
@@ -185,9 +186,9 @@ struct CacheState {
     keys_by_hash: HashMap<[u8; 32], u64>,
     blob_states_by_key: HashMap<u64, BlobState>,
     recording: Option<ActiveRecording>,
-    // Maps `(parent_blob_key, child_vmo_key)` to the child VMO registered via
+    // Maps `child_vmo_key` to the child VMO registered via
     // `BlobPagerAndVerifier::open_child_session`.
-    child_vmos: HashMap<(u64, u64), Arc<ChildVmo>>,
+    child_vmos: HashMap<u64, Arc<ChildVmo>>,
     // LRU map of `vmo_key`s for `Ready` blobs that currently have zero open child VMOs.
     unreferenced_lru: LinkedHashMap<u64, ()>,
 }
@@ -416,20 +417,17 @@ impl Cache {
     // Registers a pager-backed child VMO (`child_key`) with logical byte size `len` under the
     // parent blob `parent_key`.
     fn register_child_vmo(&self, parent_key: u64, child_key: u64, vmo: zx::Vmo, len: u64) {
-        self.state
-            .lock()
-            .child_vmos
-            .insert((parent_key, child_key), Arc::new(ChildVmo { vmo, len }));
+        self.state.lock().child_vmos.insert(child_key, Arc::new(ChildVmo { parent_key, vmo, len }));
     }
 
-    // Removes the child VMO registered under `(parent_key, child_key)`.
-    fn unregister_child_vmo(&self, parent_key: u64, child_key: u64) {
-        self.state.lock().child_vmos.remove(&(parent_key, child_key));
+    // Removes the child VMO registered under `child_key`.
+    fn unregister_child_vmo(&self, child_key: u64) {
+        self.state.lock().child_vmos.remove(&child_key);
     }
 
-    // Looks up the child VMO registered under `(parent_key, child_key)`.
-    fn get_child_vmo(&self, parent_key: u64, child_key: u64) -> Option<Arc<ChildVmo>> {
-        self.state.lock().child_vmos.get(&(parent_key, child_key)).cloned()
+    // Looks up the child VMO registered under `child_key`.
+    fn get_child_vmo(&self, child_key: u64) -> Option<Arc<ChildVmo>> {
+        self.state.lock().child_vmos.get(&child_key).cloned()
     }
 
     // Borrows an unbounded temporary transfer VMO from `self.transfer_vmos`, or creates a new one
@@ -521,7 +519,7 @@ impl Cache {
     }
 
     // Reads `data.tail_length` bytes from `data.parent_byte_offset` in the verified parent blob VMO
-    // (`data.parent_key`) and supplies a zero-padded page to `data.child_key` at
+    // (`child_vmo.parent_key`) and supplies a zero-padded page to `data.child_key` at
     // `data.child_target_offset`.
     //
     // DANGER: This function is reentrant! Reading from `cached_blob.vmo` can trigger a kernel page
@@ -531,9 +529,10 @@ impl Cache {
     // message from the FIFO and ensure another delivery worker thread is available (and woken via
     // `receiver.will_maybe_reenter()`) to service incoming `DeliveryCommand::Data` messages.
     fn process_one_inline_tail(&self, data: delivery::ChildInlineTail) -> Result<(), Error> {
-        let Some(child_vmo) = self.get_child_vmo(data.parent_key, data.child_key) else {
-            bail!("Unknown child VMO ({}, {})", data.parent_key, data.child_key);
+        let Some(child_vmo) = self.get_child_vmo(data.child_key) else {
+            bail!("Unknown child VMO {}", data.child_key);
         };
+        let parent_key = child_vmo.parent_key;
         let page_size = zx::system_get_page_size() as u64;
         if data.child_target_offset % page_size != 0 {
             bail!(
@@ -551,10 +550,9 @@ impl Cache {
         let child_range = data.child_target_offset..data.child_target_offset + page_size;
 
         let res: Result<(), Error> = (|| {
-            let cached_blob = self.get_by_key(data.parent_key).ok_or_else(|| {
+            let cached_blob = self.get_by_key(parent_key).ok_or_else(|| {
                 Error::from(zx::Status::BAD_STATE).context(format!(
-                    "Unknown or expired parent key {} in deliver_child_inline_tail",
-                    data.parent_key
+                    "Unknown or expired parent key {parent_key} in deliver_child_inline_tail",
                 ))
             })?;
             let valid_in_child = child_vmo.len.saturating_sub(data.child_target_offset);
@@ -801,9 +799,9 @@ impl<'a> ChildPagesDelivery<'a> {
     // Validates target alignment and bounds `data` to the child VMO's page-aligned size. Returns
     // `Ok(None)` if `child_target_offset` is already at or beyond the end of the child VMO.
     fn new(cache: &'a Cache, data: delivery::ChildData<'a>) -> Result<Option<Self>, Error> {
-        let child_vmo = cache.get_child_vmo(data.parent_key, data.child_key).ok_or_else(|| {
-            anyhow!("Unknown child VMO ({}, {})", data.parent_key, data.child_key)
-        })?;
+        let child_vmo = cache
+            .get_child_vmo(data.child_key)
+            .ok_or_else(|| anyhow!("Unknown child VMO {}", data.child_key))?;
 
         let page_size = zx::system_get_page_size() as u64;
         if data.child_target_offset % page_size != 0 {
@@ -867,7 +865,7 @@ impl<'a> ChildPagesDelivery<'a> {
         }
 
         if let Err(err) = self.cache.verify_parent_chunk(
-            self.data.parent_key,
+            self.child_vmo.parent_key,
             self.data.parent_offset,
             self.data.offset,
             self.data.length,
@@ -1300,25 +1298,21 @@ impl BlobPagerAndVerifier {
             let mut child_keys = HashSet::new();
             while let Ok(Some(request)) = stream.try_next().await {
                 match request {
-                    fblock::MapperSessionRequest::CreateVmo {
-                        key,
-                        size,
-                        options: _,
-                        responder,
-                    } => {
+                    fblock::MapperSessionRequest::CreateVmo { size, options: _, responder } => {
+                        let key = cache.state.lock().generate_key();
                         let res = pager
                             .create_vmo(zx::VmoOptions::empty(), &child_port, key, size)
                             .and_then(|vmo| {
                                 let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
                                 cache.register_child_vmo(parent_key, key, dup, size);
                                 child_keys.insert(key);
-                                Ok(vmo)
+                                Ok((key, vmo))
                             });
                         let _ = responder.send(res.map_err(zx::Status::into_raw));
                     }
                     fblock::MapperSessionRequest::CloseVmo { key, .. } => {
                         if child_keys.remove(&key) {
-                            cache.unregister_child_vmo(parent_key, key);
+                            cache.unregister_child_vmo(key);
                         }
                     }
                     fblock::MapperSessionRequest::OpenChildSession { responder, .. } => {
@@ -1336,7 +1330,7 @@ impl BlobPagerAndVerifier {
                 }
             }
             for child_key in child_keys {
-                cache.unregister_child_vmo(parent_key, child_key);
+                cache.unregister_child_vmo(child_key);
             }
         });
 
@@ -2900,15 +2894,15 @@ mod tests {
         let parent_key = child_key_rx.await.expect("failed to receive parent_key");
         assert_eq!(parent_key, TEST_VMO_KEY);
 
-        let _child_vmo = client_proxy
-            .create_vmo(7, 4096, fblock::CreateVmoOptions::empty())
+        let (child_key, _child_vmo) = client_proxy
+            .create_vmo(4096, fblock::CreateVmoOptions::empty())
             .await
             .expect("create_vmo fidl failed")
             .expect("create_vmo returned error");
-        assert!(pager_and_verifier.cache.get_child_vmo(TEST_VMO_KEY, 7).is_some());
+        assert!(pager_and_verifier.cache.get_child_vmo(child_key).is_some());
 
-        client_proxy.close_vmo(7).expect("close_vmo fidl failed");
-        while pager_and_verifier.cache.get_child_vmo(TEST_VMO_KEY, 7).is_some() {
+        client_proxy.close_vmo(child_key).expect("close_vmo fidl failed");
+        while pager_and_verifier.cache.get_child_vmo(child_key).is_some() {
             fasync::Timer::new(std::time::Duration::from_millis(5)).await;
         }
         drop(vmo);
@@ -2973,7 +2967,6 @@ mod tests {
         payload
             .commit(
                 DeliveryCommand::ChildData {
-                    parent_key: TEST_VMO_KEY,
                     parent_offset: 0,
                     offset: off,
                     length: 32 * 1024,
@@ -3056,7 +3049,6 @@ mod tests {
             .expect("reserve_payload failed")
             .commit(
                 DeliveryCommand::ChildInlineTail {
-                    parent_key: TEST_VMO_KEY,
                     parent_byte_offset: 4096 + 500,
                     child_key,
                     child_target_offset: 0,
@@ -3262,13 +3254,211 @@ mod tests {
         let parent_key = child_key_rx.await.expect("failed to receive parent_key");
         assert_eq!(parent_key, TEST_VMO_KEY);
 
-        let _child_vmo = client_proxy
-            .create_vmo(7, 4096, fblock::CreateVmoOptions::empty())
+        let (child_key, _child_vmo) = client_proxy
+            .create_vmo(4096, fblock::CreateVmoOptions::empty())
             .await
             .expect("create_vmo fidl failed")
             .expect("create_vmo returned error");
-        assert!(pager_and_verifier.cache.get_child_vmo(TEST_VMO_KEY, 7).is_some());
+        assert!(pager_and_verifier.cache.get_child_vmo(child_key).is_some());
 
         drop(vmo);
+    }
+
+    #[fuchsia::test]
+    async fn test_multiple_child_sessions_same_parent_blob() {
+        let blob_size = 32 * 1024usize;
+        let mut blob_data = vec![0u8; blob_size];
+        blob_data[4096..8192].fill(0xAA);
+        blob_data[8192..12288].fill(0xBB);
+        let (root, leaf_hashes) =
+            fuchsia_merkle::MerkleRootBuilder::new(Vec::new()).complete(&blob_data);
+        let hash: [u8; 32] = root.into();
+        let mut valid_leaves = Vec::new();
+        for leaf in &leaf_hashes {
+            valid_leaves.extend_from_slice(leaf.as_bytes());
+        }
+
+        let (mapping_proxy, mut mapping_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fmapping::MappingProviderMarker>();
+        let (mapper_proxy, mut mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+
+        let _mapping_task = fasync::Task::spawn(async move {
+            if let Some(fmapping::MappingProviderRequest::OpenSession { session, responder }) =
+                mapping_stream.try_next().await.expect("try_next failed")
+            {
+                let mapping_vmo = zx::Vmo::create(zx::system_get_page_size().into())
+                    .expect("zx::Vmo::create failed");
+                responder.send(Ok(mapping_vmo)).expect("send failed");
+
+                let mut session_stream = session.into_stream();
+                while let Some(request) = session_stream.try_next().await.expect("try_next failed")
+                {
+                    match request {
+                        fmapping::MappingSessionRequest::Open { responder, .. } => {
+                            responder.send(Ok(blob_size as u64)).expect("send failed");
+                        }
+                        fmapping::MappingSessionRequest::Close { responder, .. } => {
+                            responder.send(Ok(())).expect("send failed");
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+
+        let (tx_delivery, rx_delivery) = oneshot::channel();
+        let (session_keys_tx, mut session_keys_rx) = futures::channel::mpsc::unbounded();
+        let _mapper_task = fasync::Task::spawn(async move {
+            if let Some(fblock::MapperRequest::OpenSession {
+                session,
+                delivery_queue,
+                responder,
+                ..
+            }) = mapper_stream.try_next().await.expect("try_next failed")
+            {
+                tx_delivery.send(delivery_queue).expect("send failed");
+                responder.send(Ok(())).expect("send failed");
+                let mut session_stream = session.into_stream();
+                while let Some(request) = session_stream.try_next().await.expect("try_next failed")
+                {
+                    if let fblock::MapperSessionRequest::OpenChildSession {
+                        parent_key,
+                        responder,
+                        ..
+                    } = request
+                    {
+                        session_keys_tx.unbounded_send(parent_key).expect("unbounded_send failed");
+                        responder.send(Ok(())).expect("send failed");
+                    }
+                }
+            }
+        });
+
+        let pager_and_verifier = Arc::new(
+            BlobPagerAndVerifier::new(&mapping_proxy, &mapper_proxy)
+                .await
+                .expect("BlobPagerAndVerifier::new failed"),
+        );
+        let delivery_vmo =
+            rx_delivery.await.expect("rx_delivery wait failed").expect("delivery_vmo was None");
+        let _parent_vmo = pager_and_verifier.create_vmo(&hash).await.expect("create_vmo failed");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            delivery_vmo,
+            zx::system_get_page_size() as usize,
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        let mut payload =
+            sender.reserve_payload(valid_leaves.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&valid_leaves);
+        let off = payload.offset();
+        payload
+            .commit(
+                DeliveryCommand::RegisterBlob {
+                    key: TEST_VMO_KEY,
+                    offset: off,
+                    length: valid_leaves.len() as u32,
+                    read_alignment: blob_size as u32,
+                }
+                .into(),
+            )
+            .expect("commit failed");
+
+        let blob = pager_and_verifier.cache.get_by_key(TEST_VMO_KEY).expect("get_by_key failed");
+        while blob.merkle_verifier.get().is_none() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        // Open two independent child sessions on the same parent blob.
+        let (session1_proxy, session1_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        pager_and_verifier
+            .open_child_session(&hash, zx::Vmo::create(4096).expect("Vmo::create"), session1_server)
+            .await
+            .expect("open_child_session 1 failed");
+        let session1_parent_key =
+            futures::StreamExt::next(&mut session_keys_rx).await.expect("session1_key missing");
+
+        let (session2_proxy, session2_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        pager_and_verifier
+            .open_child_session(&hash, zx::Vmo::create(4096).expect("Vmo::create"), session2_server)
+            .await
+            .expect("open_child_session 2 failed");
+        let session2_parent_key =
+            futures::StreamExt::next(&mut session_keys_rx).await.expect("session2_key missing");
+
+        assert_eq!(session1_parent_key, TEST_VMO_KEY);
+        assert_eq!(session2_parent_key, TEST_VMO_KEY);
+
+        // Create VMOs on both child sessions; each receives a globally unique `child_key`.
+        let (child_key1, vmo1) = session1_proxy
+            .create_vmo(4096, fblock::CreateVmoOptions::empty())
+            .await
+            .expect("session1 create_vmo fidl failed")
+            .expect("session1 create_vmo failed");
+        let (child_key2, vmo2) = session2_proxy
+            .create_vmo(4096, fblock::CreateVmoOptions::empty())
+            .await
+            .expect("session2 create_vmo fidl failed")
+            .expect("session2 create_vmo failed");
+        assert_ne!(child_key1, child_key2);
+
+        // Supply distinct slices of the parent blob to vmo1 and vmo2.
+        let mut payload1 = sender.reserve_payload(blob_size).expect("reserve_payload failed");
+        payload1.data().copy_from_slice(&blob_data);
+        let off1 = payload1.offset();
+        payload1
+            .commit(
+                DeliveryCommand::ChildData {
+                    parent_offset: 0,
+                    offset: off1,
+                    length: blob_size as u32,
+                    child_key: child_key1,
+                    child_target_offset: 0,
+                    in_chunk_offset: 4096,
+                    child_length: 4096,
+                }
+                .into(),
+            )
+            .expect("commit 1 failed");
+
+        let mut payload2 = sender.reserve_payload(blob_size).expect("reserve_payload failed");
+        payload2.data().copy_from_slice(&blob_data);
+        let off2 = payload2.offset();
+        payload2
+            .commit(
+                DeliveryCommand::ChildData {
+                    parent_offset: 0,
+                    offset: off2,
+                    length: blob_size as u32,
+                    child_key: child_key2,
+                    child_target_offset: 0,
+                    in_chunk_offset: 8192,
+                    child_length: 4096,
+                }
+                .into(),
+            )
+            .expect("commit 2 failed");
+
+        let mut buf1 = vec![0u8; 4096];
+        vmo1.read(&mut buf1, 0).expect("vmo1 read failed");
+        assert_eq!(buf1, vec![0xAAu8; 4096]);
+
+        let mut buf2 = vec![0u8; 4096];
+        vmo2.read(&mut buf2, 0).expect("vmo2 read failed");
+        assert_eq!(buf2, vec![0xBBu8; 4096]);
+
+        // Session 2 cannot close session 1's VMO (`CloseVmo` isolation check).
+        session2_proxy.close_vmo(child_key1).expect("close_vmo failed");
+        // Close session 2's own VMO and wait for it to be unregistered.
+        session2_proxy.close_vmo(child_key2).expect("close_vmo failed");
+        while pager_and_verifier.cache.get_child_vmo(child_key2).is_some() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(pager_and_verifier.cache.get_child_vmo(child_key1).is_some());
     }
 }

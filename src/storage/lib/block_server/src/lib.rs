@@ -4857,8 +4857,8 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let _paged_vmo = session_proxy
-                .create_vmo(1, 4096, fblock::CreateVmoOptions::empty())
+            let (_key, _paged_vmo) = session_proxy
+                .create_vmo(4096, fblock::CreateVmoOptions::empty())
                 .await
                 .unwrap()
                 .unwrap();
@@ -4888,8 +4888,8 @@ mod tests {
         let mapping_vmo = zx::Vmo::create(4096).unwrap();
         mapper_proxy.open_session(session_server, mapping_vmo, None, None).await.unwrap().unwrap();
 
-        let _paged_vmo = session_proxy
-            .create_vmo(1, 4096, fblock::CreateVmoOptions::empty())
+        let (_key, _paged_vmo) = session_proxy
+            .create_vmo(4096, fblock::CreateVmoOptions::empty())
             .await
             .unwrap()
             .unwrap();

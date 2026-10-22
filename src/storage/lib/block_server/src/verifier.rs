@@ -58,20 +58,19 @@ impl DeliveryHandler for Verifier {
     /// [`DeliveryCommand::ChildData`].
     fn get_child_page_request(
         self: &Arc<Self>,
-        parent_key: u64,
         child_key: u64,
         child_target_offset: u64,
         parent_byte_range: Range<u64>,
     ) -> Buffer {
         Buffer {
             verifier: Arc::clone(self),
-            key: parent_key,
+            key: child_key,
             read_range: parent_byte_range.clone(),
             read_alignment: 0,
             committed_len: 0,
             delivered_len: 0,
             data: Vec::new(),
-            child_target: Some(ChildTarget { child_key, child_target_offset, parent_byte_range }),
+            child_target: Some(ChildTarget { child_target_offset, parent_byte_range }),
         }
     }
 
@@ -79,7 +78,6 @@ impl DeliveryHandler for Verifier {
     /// so the verifier can supply the child tail page from the verified parent VMO.
     fn deliver_child_inline_tail(
         self: &Arc<Self>,
-        parent_key: u64,
         parent_byte_offset: u64,
         child_key: u64,
         child_target_offset: u64,
@@ -88,7 +86,6 @@ impl DeliveryHandler for Verifier {
         let mut sender = self.sender.lock();
         if let Some(sender) = sender.as_mut() {
             let cmd = DeliveryCommand::ChildInlineTail {
-                parent_key,
                 parent_byte_offset,
                 child_key,
                 child_target_offset,
@@ -102,7 +99,6 @@ impl DeliveryHandler for Verifier {
     /// to supply a zero-filled sparse range to `child_key`.
     fn deliver_child_sparse(
         &self,
-        parent_key: u64,
         child_key: u64,
         child_target_offset: u64,
         child_length: u64,
@@ -110,7 +106,6 @@ impl DeliveryHandler for Verifier {
         let mut sender = self.sender.lock();
         if let Some(sender) = sender.as_mut() {
             let cmd = DeliveryCommand::ChildData {
-                parent_key,
                 parent_offset: 0,
                 offset: 0,
                 length: 0,
@@ -151,8 +146,6 @@ impl DeliveryHandler for Verifier {
 /// Target metadata for a [`Buffer`] servicing a page request on a child file mapped over a
 /// parent blob.
 struct ChildTarget {
-    /// Key identifying the child VMO within the child session.
-    child_key: u64,
     /// Starting page-aligned logical byte offset in the child VMO for this request.
     child_target_offset: u64,
     /// Byte range in the parent blob corresponding to this child extent slice.
@@ -203,11 +196,10 @@ impl Buffer {
                     target.child_target_offset + (slice_start - target.parent_byte_range.start);
                 let child_length = (slice_end.saturating_sub(slice_start)) as u32;
                 DeliveryCommand::ChildData {
-                    parent_key: self.key,
                     parent_offset: offset,
                     offset: payload.offset(),
                     length: aligned_size as u32,
-                    child_key: target.child_key,
+                    child_key: self.key,
                     child_target_offset,
                     in_chunk_offset,
                     child_length,

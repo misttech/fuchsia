@@ -202,11 +202,10 @@ pub struct RawDeliveryCommand {
     pub target_offset: u64,
     pub length: u32,
     pub offset: u32,
-    /// Used by child delivery commands to identify the child VMO and target slice.
-    pub child_key: u64,
+    /// Used by child delivery commands to specify the target slice in the child VMO.
     pub child_target_offset: u64,
     pub child_length: u32,
-    pub padding: [u32; 3],
+    pub padding: [u32; 5],
 }
 
 const _: () = assert!(std::mem::size_of::<RawDeliveryCommand>() == 64);
@@ -244,21 +243,19 @@ pub enum DeliveryCommand {
     /// Informs the verifier that a parent blob chunk has been read and decompressed into the
     /// delivery queue VMO to service a page fault on a child file mapped over that blob.
     ///
-    /// When `length > 0`, the verifier first verifies `[offset .. offset + length]` against
-    /// `parent_key`'s Merkle tree at `parent_offset` and supplies `child_length` bytes from
+    /// When `length > 0`, the verifier first verifies `[offset .. offset + length]` against the
+    /// parent blob's Merkle tree at `parent_offset` and supplies `child_length` bytes from
     /// `in_chunk_offset` to `child_key` at `child_target_offset`.
     /// When `length == 0`, the child range is sparse and the verifier supplies `child_length` zero
     /// bytes to `child_key` at `child_target_offset`.
     ChildData {
-        /// Identifies the parent blob in the verifier.
-        parent_key: u64,
         /// The `verification_alignment`-aligned byte offset of the chunk in the parent blob.
         parent_offset: u64,
         /// The byte offset in the delivery queue VMO where the parent blob chunk resides.
         offset: u32,
         /// The byte length of the parent blob chunk in the delivery queue VMO (0 if sparse).
         length: u32,
-        /// Identifies the child VMO within the child session for `parent_key`.
+        /// Identifies the child VMO (and its associated parent blob in the verifier).
         child_key: u64,
         /// The page-aligned logical byte offset in the child VMO where pages should be supplied.
         child_target_offset: u64,
@@ -272,11 +269,9 @@ pub enum DeliveryCommand {
     /// VMO by reading `tail_length` bytes directly from the verified parent VMO at
     /// `parent_byte_offset`.
     ChildInlineTail {
-        /// Identifies the parent blob in the verifier.
-        parent_key: u64,
         /// Unaligned byte offset in the parent blob where the inline tail begins.
         parent_byte_offset: u64,
-        /// Identifies the child VMO within the child session for `parent_key`.
+        /// Identifies the child VMO (and its associated parent blob in the verifier).
         child_key: u64,
         /// Page-aligned logical byte offset of the tail page in the child VMO.
         child_target_offset: u64,
@@ -295,10 +290,9 @@ impl From<DeliveryCommand> for RawDeliveryCommand {
                 target_offset,
                 length,
                 offset,
-                child_key: 0,
                 child_target_offset: 0,
                 child_length: 0,
-                padding: [0; 3],
+                padding: [0; 5],
             },
             DeliveryCommand::RegisterBlob { key, offset, length, read_alignment } => {
                 RawDeliveryCommand {
@@ -308,14 +302,12 @@ impl From<DeliveryCommand> for RawDeliveryCommand {
                     target_offset: 0,
                     length,
                     offset,
-                    child_key: 0,
                     child_target_offset: 0,
                     child_length: 0,
-                    padding: [0; 3],
+                    padding: [0; 5],
                 }
             }
             DeliveryCommand::ChildData {
-                parent_key,
                 parent_offset,
                 offset,
                 length,
@@ -326,17 +318,15 @@ impl From<DeliveryCommand> for RawDeliveryCommand {
             } => RawDeliveryCommand {
                 opcode: DELIVERY_CHILD_DATA_COMMAND,
                 read_alignment: in_chunk_offset,
-                key: parent_key,
+                key: child_key,
                 target_offset: parent_offset,
                 length,
                 offset,
-                child_key,
                 child_target_offset,
                 child_length,
-                padding: [0; 3],
+                padding: [0; 5],
             },
             DeliveryCommand::ChildInlineTail {
-                parent_key,
                 parent_byte_offset,
                 child_key,
                 child_target_offset,
@@ -344,14 +334,13 @@ impl From<DeliveryCommand> for RawDeliveryCommand {
             } => RawDeliveryCommand {
                 opcode: DELIVERY_CHILD_INLINE_TAIL_COMMAND,
                 read_alignment: 0,
-                key: parent_key,
+                key: child_key,
                 target_offset: parent_byte_offset,
                 length: 0,
                 offset: 0,
-                child_key,
                 child_target_offset,
                 child_length: tail_length,
-                padding: [0; 3],
+                padding: [0; 5],
             },
         }
     }
@@ -375,19 +364,17 @@ impl TryFrom<RawDeliveryCommand> for DeliveryCommand {
                 read_alignment: cmd.read_alignment,
             }),
             DELIVERY_CHILD_DATA_COMMAND => Ok(DeliveryCommand::ChildData {
-                parent_key: cmd.key,
                 parent_offset: cmd.target_offset,
                 offset: cmd.offset,
                 length: cmd.length,
-                child_key: cmd.child_key,
+                child_key: cmd.key,
                 child_target_offset: cmd.child_target_offset,
                 in_chunk_offset: cmd.read_alignment,
                 child_length: cmd.child_length,
             }),
             DELIVERY_CHILD_INLINE_TAIL_COMMAND => Ok(DeliveryCommand::ChildInlineTail {
-                parent_key: cmd.key,
                 parent_byte_offset: cmd.target_offset,
-                child_key: cmd.child_key,
+                child_key: cmd.key,
                 child_target_offset: cmd.child_target_offset,
                 tail_length: cmd.child_length,
             }),

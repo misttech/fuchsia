@@ -10,7 +10,6 @@ use mapping::{
     RawMappingCommand,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use vmo_fifo::SyncSender;
 
 /// Manages a driver-backed `MapperSession` for an EROFS volume.
@@ -18,7 +17,6 @@ pub struct VolumeMapper {
     session: fblock::MapperSessionSynchronousProxy,
     sender: Mutex<SyncSender<RawMappingCommand>>,
     vmos_by_nid: Mutex<HashMap<u64, zx::Vmo>>,
-    next_key: AtomicU64,
     file_offset: u64,
 }
 
@@ -35,7 +33,6 @@ impl VolumeMapper {
             session,
             sender: Mutex::new(sender),
             vmos_by_nid: Mutex::new(HashMap::new()),
-            next_key: AtomicU64::new(1),
             file_offset,
         })
     }
@@ -149,9 +146,14 @@ impl VolumeMapper {
         })?;
         let extent_count = encoded_extents.len() as u32;
         let allocation_size = extent_count as usize * 8;
-        let key = self.next_key.fetch_add(1, Ordering::Relaxed);
 
-        {
+        let (key, vmo) = self
+            .session
+            .create_vmo(size, fblock::CreateVmoOptions::empty(), zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::PEER_CLOSED)
+            .and_then(|r| r.map_err(zx::Status::err_from_raw))?;
+
+        let commit_res = (|| -> Result<zx::Vmo, zx::Status> {
             let mut sender = self.sender.lock();
             let mut payload = sender.reserve_payload(allocation_size)?;
             for (mut chunk, val) in
@@ -169,24 +171,12 @@ impl VolumeMapper {
                 encrypted: false,
             };
             payload.commit(cmd.into())?;
-        }
+            drop(sender);
+            vmo.replace_handle(read_only_rights)
+        })();
 
-        let res = self
-            .session
-            .create_vmo(
-                key,
-                size,
-                fblock::CreateVmoOptions::empty(),
-                zx::MonotonicInstant::INFINITE,
-            )
-            .map_err(|_| zx::Status::PEER_CLOSED)
-            .and_then(|r| r.map_err(zx::Status::err_from_raw));
-
-        match res {
-            Ok(vmo) => {
-                let vmo = vmo.replace_handle(read_only_rights)?;
-                Ok((vmo, Some(key)))
-            }
+        match commit_res {
+            Ok(vmo) => Ok((vmo, Some(key))),
             Err(status) => {
                 self.close_file(key);
                 Err(status)
@@ -344,17 +334,17 @@ mod tests {
                     let mut executor = fuchsia_async::LocalExecutor::default();
                     executor.run_singlethreaded(async move {
                         let mut stream = server_end.into_stream();
+                        let mut next_key = 1u64;
                         while let Ok(Some(req)) = stream.try_next().await {
                             match req {
                                 fblock::MapperSessionRequest::CreateVmo {
-                                    key,
-                                    size,
-                                    responder,
-                                    ..
+                                    size, responder, ..
                                 } => {
+                                    let key = next_key;
+                                    next_key += 1;
                                     created_vmos_clone.lock().push((key, size));
                                     let vmo = zx::Vmo::create(size).unwrap();
-                                    let _ = responder.send(Ok(vmo));
+                                    let _ = responder.send(Ok((key, vmo)));
                                 }
                                 fblock::MapperSessionRequest::CloseVmo { .. } => {}
                                 fblock::MapperSessionRequest::Close { responder } => {

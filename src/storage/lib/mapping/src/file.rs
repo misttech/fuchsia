@@ -321,7 +321,7 @@ impl File {
     }
 
     /// Services a page request for a child file (`self`, identified by `child_key`) whose extents
-    /// map to logical byte offsets in `parent_file` (`parent_key`).
+    /// map to logical byte offsets in `parent_file`.
     ///
     /// Expands `original_range` to `self.read_ahead_size()` and iterates over the overlapping
     /// child extents:
@@ -339,7 +339,6 @@ impl File {
         self: &Arc<Self>,
         child_key: u64,
         original_range: Range<u64>,
-        parent_key: u64,
         parent_file: &Arc<File>,
         service: &(impl BlockService + ?Sized),
         delivery_handler: &Arc<D>,
@@ -372,18 +371,13 @@ impl File {
             let slice_len = slice_end - slice_start;
             match extent.device_extent() {
                 crate::DeviceExtent::Sparse => {
-                    let _ = delivery_handler.deliver_child_sparse(
-                        parent_key,
-                        child_key,
-                        slice_start,
-                        slice_len,
-                    );
+                    let _ =
+                        delivery_handler.deliver_child_sparse(child_key, slice_start, slice_len);
                 }
                 crate::DeviceExtent::Block(dev_offset) => {
                     let parent_start = dev_offset + (slice_start - extent.logical_range().start);
                     let parent_byte_range = parent_start..(parent_start + slice_len);
                     let child_req = delivery_handler.get_child_page_request(
-                        parent_key,
                         child_key,
                         slice_start,
                         parent_byte_range,
@@ -395,7 +389,6 @@ impl File {
                     let tail_end_in_file = min(extent.logical_range().end, self.uncompressed_size);
                     let tail_length = tail_end_in_file.saturating_sub(slice_start) as u32;
                     delivery_handler.deliver_child_inline_tail(
-                        parent_key,
                         dev_offset,
                         child_key,
                         slice_start,
@@ -439,13 +432,12 @@ pub trait DeliveryHandler: Send + Sync + 'static {
 
     /// Produces a [`PageRequest`] to receive parent file data for a child file mapping.
     ///
-    /// `parent_byte_range` is the unaligned slice within `parent_key` that backs the child extent
-    /// starting at page-aligned `child_target_offset` in `child_key`. The returned [`PageRequest`]
-    /// will be prepared and committed with chunks aligned to the parent file's verification
-    /// alignment.
+    /// `parent_byte_range` is the unaligned slice within the parent file that backs the child
+    /// extent starting at page-aligned `child_target_offset` in `child_key`. The returned
+    /// [`PageRequest`] will be prepared and committed with chunks aligned to the parent file's
+    /// verification alignment.
     fn get_child_page_request(
         self: &Arc<Self>,
-        _parent_key: u64,
         _child_key: u64,
         _child_target_offset: u64,
         _parent_byte_range: Range<u64>,
@@ -455,10 +447,9 @@ pub trait DeliveryHandler: Send + Sync + 'static {
 
     /// Enqueues a header-only `ChildInlineTail` command instructing the downstream verifier to
     /// supply a single inline-tail page at `child_target_offset` in `child_key` by copying
-    /// `tail_length` bytes directly from `parent_byte_offset` in the verified `parent_key` VMO.
+    /// `tail_length` bytes directly from `parent_byte_offset` in the verified parent VMO.
     fn deliver_child_inline_tail(
         self: &Arc<Self>,
-        _parent_key: u64,
         _parent_byte_offset: u64,
         _child_key: u64,
         _child_target_offset: u64,
@@ -468,10 +459,9 @@ pub trait DeliveryHandler: Send + Sync + 'static {
     }
 
     /// Delivers a sparse (zero-filled) range of `child_length` bytes at `child_target_offset` in
-    /// `child_key` for a child file mapped over `parent_key`.
+    /// `child_key`.
     fn deliver_child_sparse(
         &self,
-        _parent_key: u64,
         _child_key: u64,
         _child_target_offset: u64,
         _child_length: u64,
@@ -592,10 +582,9 @@ pub struct Files<S: ?Sized, D: DeliveryHandler> {
     service: Arc<S>,
     delivery_handler: Arc<D>,
     port: zx::Port,
-    // When `Some((parent_key, parent_file))`, this registry belongs to a child mapper session
-    // whose files map logical offsets into `parent_file` (identified by `parent_key` in the
-    // shared `delivery_handler`).
-    parent: Option<(u64, Arc<File>)>,
+    // When `Some(parent_file)`, this registry belongs to a child mapper session whose files map
+    // logical offsets into `parent_file`.
+    parent: Option<Arc<File>>,
     map: Mutex<HashMap<u64, FileEntry<D::Request>>>,
     // Page requests queued while a file's metadata was still loading, paired with
     // `(key, file, req)` to be dispatched on `PagerThread` once metadata loading completes.
@@ -611,12 +600,12 @@ impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> Files<S, D> {
     }
 
     /// Creates a new file registry sharing an existing `Arc<D>` delivery handler, optionally
-    /// mapped as a child session over `(parent_key, parent_file)`.
+    /// mapped as a child session over `parent_file`.
     pub fn new_with_shared_handler(
         service: Arc<S>,
         delivery_handler: Arc<D>,
         port: zx::Port,
-        parent: Option<(u64, Arc<File>)>,
+        parent: Option<Arc<File>>,
     ) -> Self {
         Self {
             service,
@@ -686,11 +675,10 @@ impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> Files<S, D> {
     // Dispatches a page request for an already-loaded `file`. When `self.parent` is `Some`, calls
     // `file.read_child_range` directly without allocating a root `D::Request` first.
     fn dispatch_page_range(&self, key: u64, file: &Arc<File>, original_range: Range<u64>) {
-        if let Some((parent_key, parent_file)) = &self.parent {
+        if let Some(parent_file) = &self.parent {
             let _ = file.read_child_range(
                 key,
                 original_range,
-                *parent_key,
                 parent_file,
                 self.service.as_ref(),
                 &self.delivery_handler,
@@ -706,12 +694,11 @@ impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> Files<S, D> {
     // `file.read_range_with_recording` (for root sessions).
     fn dispatch_page_request(&self, key: u64, file: &Arc<File>, req: D::Request) {
         let original_range = req.range();
-        if let Some((parent_key, parent_file)) = &self.parent {
+        if let Some(parent_file) = &self.parent {
             drop(req);
             let _ = file.read_child_range(
                 key,
                 original_range,
-                *parent_key,
                 parent_file,
                 self.service.as_ref(),
                 &self.delivery_handler,
@@ -2990,14 +2977,12 @@ mod tests {
         #[derive(Debug, PartialEq)]
         enum RecordedEvent {
             InlineTail {
-                parent_key: u64,
                 parent_byte_offset: u64,
                 child_key: u64,
                 child_target_offset: u64,
                 tail_length: u32,
             },
             ChildPageRequest {
-                parent_key: u64,
                 child_key: u64,
                 child_target_offset: u64,
                 parent_byte_range: Range<u64>,
@@ -3014,13 +2999,11 @@ mod tests {
             }
             fn get_child_page_request(
                 self: &Arc<Self>,
-                parent_key: u64,
                 child_key: u64,
                 child_target_offset: u64,
                 parent_byte_range: Range<u64>,
             ) -> Self::Request {
                 self.events.lock().push(RecordedEvent::ChildPageRequest {
-                    parent_key,
                     child_key,
                     child_target_offset,
                     parent_byte_range: parent_byte_range.clone(),
@@ -3029,14 +3012,12 @@ mod tests {
             }
             fn deliver_child_inline_tail(
                 self: &Arc<Self>,
-                parent_key: u64,
                 parent_byte_offset: u64,
                 child_key: u64,
                 child_target_offset: u64,
                 tail_length: u32,
             ) {
                 self.events.lock().push(RecordedEvent::InlineTail {
-                    parent_key,
                     parent_byte_offset,
                     child_key,
                     child_target_offset,
@@ -3069,7 +3050,7 @@ mod tests {
 
         let handler = Arc::new(RecordingChildHandler { events: Mutex::new(Vec::new()) });
         let started_async =
-            child_file.read_child_range(10, 0..4096, 1, &parent_file, &service, &handler);
+            child_file.read_child_range(10, 0..4096, &parent_file, &service, &handler);
         assert!(started_async, "Expected Block extent to perform one aligned parent read");
         assert_eq!(service.read_count(), 1, "InlineTail must not perform any block I/O");
 
@@ -3078,13 +3059,11 @@ mod tests {
             &*events,
             &[
                 RecordedEvent::ChildPageRequest {
-                    parent_key: 1,
                     child_key: 10,
                     child_target_offset: 0,
                     parent_byte_range: 16384..20480,
                 },
                 RecordedEvent::InlineTail {
-                    parent_key: 1,
                     parent_byte_offset: 4128,
                     child_key: 10,
                     child_target_offset: 4096,

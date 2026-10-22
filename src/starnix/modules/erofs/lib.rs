@@ -635,6 +635,7 @@ mod tests {
                 let mut executor = fuchsia_async::LocalExecutor::default();
                 executor.run_singlethreaded(async move {
                     let mut stream = server_end.into_stream();
+                    let mut next_key = 1u64;
                     while let Ok(Some(req)) = stream.try_next().await {
                         match req {
                             fblock::MapperSessionRequest::CreateVmo { size, responder, .. } => {
@@ -643,13 +644,15 @@ mod tests {
                                     let _ = responder.send(Err(zx::Status::IO.into_raw()));
                                     continue;
                                 }
+                                let key = next_key;
+                                next_key += 1;
                                 let vmo = zx::Vmo::create(size).unwrap();
                                 if size == expected_file1.len() as u64 {
                                     vmo.write(&expected_file1, 0).unwrap();
                                 } else if size == expected_photosynthesis.len() as u64 {
                                     vmo.write(&expected_photosynthesis, 0).unwrap();
                                 }
-                                let _ = responder.send(Ok(vmo));
+                                let _ = responder.send(Ok((key, vmo)));
                             }
                             fblock::MapperSessionRequest::CloseVmo { .. } => {}
                             fblock::MapperSessionRequest::Close { responder } => {

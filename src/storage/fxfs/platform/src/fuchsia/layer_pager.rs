@@ -15,7 +15,7 @@ use mapping::{
     Extent, Extents, MAPPING_VMO_SIZE, MappingCommand, PENDING_COMMANDS_CAPACITY, RawMappingCommand,
 };
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use storage_device::buffer::{BufferFuture, MutableBufferRef};
 use storage_units::BlockSize;
 use vmo_fifo::AsyncSender;
@@ -167,7 +167,6 @@ pub struct LayerPagerImpl {
     mapper_session: fblock::MapperSessionProxy,
     sender: Arc<AsyncMutex<AsyncSender<RawMappingCommand>>>,
     scope: fasync::Scope,
-    next_key: AtomicU64,
 }
 
 impl LayerPagerImpl {
@@ -191,7 +190,6 @@ impl LayerPagerImpl {
             mapper_session,
             sender: Arc::new(AsyncMutex::new(sender)),
             scope: fasync::Scope::new_with_name("layer_pager"),
-            next_key: AtomicU64::new(1),
         })
     }
 
@@ -201,8 +199,6 @@ impl LayerPagerImpl {
         extents: &[FileExtent],
         raw_key: Option<&[u8]>,
     ) -> Result<(u64, zx::Vmo), Error> {
-        let key = self.next_key.fetch_add(1, Ordering::Relaxed);
-
         let mut mapping_extents = Vec::with_capacity(extents.len());
         let mut current_offset = 0u64;
         for ext in extents {
@@ -222,6 +218,14 @@ impl LayerPagerImpl {
         let encrypted = raw_key.is_some();
         let key_bytes_len = if encrypted { 32 } else { 0 };
         let allocation_size = (extent_count as usize * 8) + key_bytes_len;
+
+        let (key, vmo) = self
+            .mapper_session
+            .create_vmo(size, fblock::CreateVmoOptions::SUPPLY_ZEROES_ON_ERROR)
+            .await
+            .context("FIDL error calling MapperSession.CreateVmo")?
+            .map_err(zx::Status::err_from_raw)
+            .context("MapperSession.CreateVmo returned error")?;
 
         if allocation_size > 0 {
             let mut sender = self.sender.lock().await;
@@ -253,14 +257,6 @@ impl LayerPagerImpl {
             };
             payload.commit(command.into()).await?;
         }
-
-        let vmo = self
-            .mapper_session
-            .create_vmo(key, size, fblock::CreateVmoOptions::SUPPLY_ZEROES_ON_ERROR)
-            .await
-            .context("FIDL error calling MapperSession.CreateVmo")?
-            .map_err(zx::Status::err_from_raw)
-            .context("MapperSession.CreateVmo returned error")?;
 
         Ok((key, vmo))
     }
@@ -351,7 +347,7 @@ mod tests {
                 panic!("Expected CreateVmo");
             };
             let vmo = zx::Vmo::create(4096).unwrap();
-            responder.send(Ok(vmo)).unwrap();
+            responder.send(Ok((1, vmo))).unwrap();
 
             fasync::unblock(move || {
                 let mut receiver =
