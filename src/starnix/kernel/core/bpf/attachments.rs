@@ -24,9 +24,10 @@ use ebpf_api::{
 };
 use fidl_fuchsia_net_filter as fnet_filter;
 use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_rcu::RcuArc;
 use linux_uapi::{bpf_sockopt, uaddr};
 use starnix_logging::{log_error, log_warn, track_stub};
-use starnix_sync::{EbpfStateLock, LockDepRwLock};
+use starnix_sync::{EbpfStateLock, RcuLock};
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_uapi::auth::{CAP_NET_ADMIN, Capabilities};
 use starnix_uapi::errors::{Errno, ErrnoCode, is_error_return_value};
@@ -210,7 +211,7 @@ impl SockAddrProgram {
     }
 }
 
-type AttachedSockAddrProgramCell = LockDepRwLock<Option<SockAddrProgram>, EbpfStateLock>;
+type AttachedSockAddrProgramCell = RcuLock<RcuArc<SockAddrProgram>, EbpfStateLock>;
 
 // Wrapper for `bpf_sock` used to implement `ProgramArgument` trait.
 #[repr(C)]
@@ -304,7 +305,7 @@ impl SockProgram {
     }
 }
 
-type AttachedSockProgramCell = LockDepRwLock<Option<SockProgram>, EbpfStateLock>;
+type AttachedSockProgramCell = RcuLock<RcuArc<SockProgram>, EbpfStateLock>;
 
 mod internal {
     use super::BpfSock;
@@ -482,7 +483,7 @@ impl SockOptProgram {
     }
 }
 
-type AttachedSockOptProgramCell = LockDepRwLock<Option<SockOptProgram>, EbpfStateLock>;
+type AttachedSockOptProgramCell = RcuLock<RcuArc<SockOptProgram>, EbpfStateLock>;
 
 #[derive(Default)]
 pub struct CgroupEbpfProgramSet {
@@ -581,8 +582,7 @@ impl CgroupEbpfProgramSet {
             _ => return Ok(SockAddrProgramResult::Allow),
         };
 
-        let prog_guard = prog_cell.read();
-        let Some(prog) = prog_guard.as_ref() else {
+        let Some(prog) = prog_cell.upgrade() else {
             return Ok(SockAddrProgramResult::Allow);
         };
 
@@ -639,8 +639,7 @@ impl CgroupEbpfProgramSet {
             SockOp::Create => &self.sock_create,
             SockOp::Release => &self.sock_release,
         };
-        let prog_guard = prog_cell.read();
-        let Some(prog) = prog_guard.as_ref() else {
+        let Some(prog) = prog_cell.upgrade() else {
             return SockProgramResult::Allow;
         };
 
@@ -668,8 +667,7 @@ impl CgroupEbpfProgramSet {
         error: Option<Errno>,
         socket: &Socket,
     ) -> Result<(Vec<u8>, usize), Errno> {
-        let prog_guard = self.get_sockopt.read();
-        let Some(prog) = prog_guard.as_ref() else {
+        let Some(prog) = self.get_sockopt.upgrade() else {
             return error.map(|e| Err(e)).unwrap_or_else(|| Ok((value_buf, optlen)));
         };
 
@@ -728,8 +726,7 @@ impl CgroupEbpfProgramSet {
         value: SockOptValue,
         socket: &Socket,
     ) -> SetSockOptProgramResult {
-        let prog_guard = self.set_sockopt.read();
-        let Some(prog) = prog_guard.as_ref() else {
+        let Some(prog) = self.set_sockopt.upgrade() else {
             return SetSockOptProgramResult::Allow(value);
         };
 
@@ -970,8 +967,10 @@ impl EbpfAttachments {
                 check_root_cgroup_fd(current_task, target_fd)?;
 
                 let linked_program = SockAddrProgram(program.link(attach_type.get_program_type())?);
-                *self.root_cgroup.get_sock_addr_program(attach_type)?.write() =
-                    Some(linked_program);
+                self.root_cgroup
+                    .get_sock_addr_program(attach_type)?
+                    .lock()
+                    .update(Some(Arc::new(linked_program)));
 
                 Ok(SUCCESS)
             }
@@ -980,7 +979,10 @@ impl EbpfAttachments {
                 check_root_cgroup_fd(current_task, target_fd)?;
 
                 let linked_program = SockProgram(program.link(attach_type.get_program_type())?);
-                *self.root_cgroup.get_sock_program(attach_type)?.write() = Some(linked_program);
+                self.root_cgroup
+                    .get_sock_program(attach_type)?
+                    .lock()
+                    .update(Some(Arc::new(linked_program)));
 
                 Ok(SUCCESS)
             }
@@ -989,7 +991,10 @@ impl EbpfAttachments {
                 check_root_cgroup_fd(current_task, target_fd)?;
 
                 let linked_program = SockOptProgram(program.link(attach_type.get_program_type())?);
-                *self.root_cgroup.get_sock_opt_program(attach_type)?.write() = Some(linked_program);
+                self.root_cgroup
+                    .get_sock_opt_program(attach_type)?
+                    .lock()
+                    .update(Some(Arc::new(linked_program)));
 
                 Ok(SUCCESS)
             }
@@ -1017,12 +1022,12 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSockAddr) => {
                 check_root_cgroup_fd(current_task, target_fd)?;
 
-                let mut prog_guard = self.root_cgroup.get_sock_addr_program(attach_type)?.write();
-                if prog_guard.is_none() {
+                let prog_cell = self.root_cgroup.get_sock_addr_program(attach_type)?.lock();
+                if prog_cell.is_none() {
                     return error!(ENOENT);
                 }
 
-                *prog_guard = None;
+                prog_cell.update(None);
 
                 Ok(SUCCESS)
             }
@@ -1030,12 +1035,12 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSock) => {
                 check_root_cgroup_fd(current_task, target_fd)?;
 
-                let mut prog_guard = self.root_cgroup.get_sock_program(attach_type)?.write();
-                if prog_guard.is_none() {
+                let prog_cell = self.root_cgroup.get_sock_program(attach_type)?.lock();
+                if prog_cell.is_none() {
                     return error!(ENOENT);
                 }
 
-                *prog_guard = None;
+                prog_cell.update(None);
 
                 Ok(SUCCESS)
             }
@@ -1043,12 +1048,12 @@ impl EbpfAttachments {
             (AttachLocation::Kernel, ProgramType::CgroupSockopt) => {
                 check_root_cgroup_fd(current_task, target_fd)?;
 
-                let mut prog_guard = self.root_cgroup.get_sock_opt_program(attach_type)?.write();
-                if prog_guard.is_none() {
+                let prog_cell = self.root_cgroup.get_sock_opt_program(attach_type)?.lock();
+                if prog_cell.is_none() {
                     return error!(ENOENT);
                 }
 
-                *prog_guard = None;
+                prog_cell.update(None);
 
                 Ok(SUCCESS)
             }
@@ -1115,5 +1120,389 @@ impl EbpfAttachments {
                 }
             })?;
         Ok(SUCCESS)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bpf::program::{Program, ProgramInfo};
+    use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
+    use crate::testing::{PanickingFile, PanickingFsNode, spawn_kernel_and_run};
+    use crate::vfs::buffers::VecOutputBuffer;
+    use crate::vfs::{
+        CacheMode, FdFlags, FileObject, FileSystem, FileSystemOps, FileSystemOptions, FsStr,
+    };
+    use ebpf::{
+        EbpfInstruction, MapFlags, MapSchema, NullVerifierLogger, link_program, verify_program,
+    };
+    use linux_uapi::{
+        AF_INET, BPF_ALU64, BPF_EXIT, BPF_JMP, BPF_K, BPF_MOV, bpf_map_type_BPF_MAP_TYPE_ARRAY,
+        bpf_map_type_BPF_MAP_TYPE_RINGBUF, sockaddr_in,
+    };
+    use starnix_types::vfs::default_statfs;
+    use starnix_uapi::open_flags::OpenFlags;
+    use starnix_uapi::statfs;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use syncio::Zxio;
+    use zerocopy::IntoBytes as _;
+
+    const STRESS_WRITER_ITERATIONS: i32 = 50;
+    const STRESS_READER_THREADS: usize = 2;
+
+    struct TestCgroup2Fs;
+    impl FileSystemOps for TestCgroup2Fs {
+        fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
+            Ok(default_statfs(CGROUP2_SUPER_MAGIC))
+        }
+        fn name(&self) -> &'static FsStr {
+            "cgroup2".into()
+        }
+    }
+
+    fn create_root_cgroup_fd(current_task: &CurrentTask) -> FdNumber {
+        let fs = FileSystem::new(
+            current_task.kernel(),
+            CacheMode::Uncached,
+            TestCgroup2Fs,
+            FileSystemOptions::default(),
+        )
+        .expect("create cgroup2 filesystem");
+        let root_ino = fs.allocate_ino();
+        fs.create_root(root_ino, PanickingFsNode);
+        let root_node = fs.root().node.clone();
+        let file = FileObject::new_anonymous(
+            current_task,
+            Box::new(PanickingFile),
+            root_node,
+            OpenFlags::RDONLY,
+        );
+        current_task.add_file(file, FdFlags::empty()).expect("add root cgroup fd")
+    }
+
+    fn make_cgroup_program(
+        current_task: &CurrentTask,
+        program_type: ProgramType,
+        expected_attach_type: AttachType,
+        return_value: i32,
+    ) -> ProgramHandle {
+        let info =
+            ProgramInfo { program_type, expected_attach_type, log_level: Default::default() };
+        let code = vec![
+            EbpfInstruction::new((BPF_ALU64 | BPF_MOV | BPF_K) as u8, 0, 0, 0, return_value),
+            EbpfInstruction::new((BPF_JMP | BPF_EXIT) as u8, 0, 0, 0, 0),
+        ];
+        let mut logger = VecOutputBuffer::new(0);
+        Program::new(current_task, info, &mut logger, code).expect("create eBPF program")
+    }
+
+    #[::fuchsia::test]
+    async fn test_cgroup_ebpf_attach_detach_and_vmar_teardown() {
+        spawn_kernel_and_run(async |current_task| {
+            let ebpf_state = &current_task.kernel().ebpf_state;
+            let root_cgroup = ebpf_state.attachments.root_cgroup();
+
+            // Verify all 12 cgroup attachment slots start unattached.
+            assert!(root_cgroup.inet4_bind.is_none());
+            assert!(root_cgroup.inet6_bind.is_none());
+            assert!(root_cgroup.inet4_connect.is_none());
+            assert!(root_cgroup.inet6_connect.is_none());
+            assert!(root_cgroup.udp4_sendmsg.is_none());
+            assert!(root_cgroup.udp6_sendmsg.is_none());
+            assert!(root_cgroup.udp4_recvmsg.is_none());
+            assert!(root_cgroup.udp6_recvmsg.is_none());
+            assert!(root_cgroup.sock_create.is_none());
+            assert!(root_cgroup.sock_release.is_none());
+            assert!(root_cgroup.set_sockopt.is_none());
+            assert!(root_cgroup.get_sockopt.is_none());
+
+            let cgroup_fd = create_root_cgroup_fd(current_task);
+            let zxio = Zxio::create(zx::Event::create().into()).expect("create zxio");
+            let zxio_socket = ZxioBackedSocket::new_with_zxio(current_task, zxio);
+            let unix_socket = Socket::new(
+                current_task,
+                SocketDomain::Unix,
+                SocketType::Datagram,
+                SocketProtocol::default(),
+                true,
+            )
+            .expect("create socket");
+            let inet4_sockaddr = sockaddr_in { sin_family: AF_INET as u16, ..Default::default() };
+
+            // Unattached hooks take the lockless is_none() fast path.
+            assert_eq!(
+                root_cgroup.run_sock_prog(
+                    current_task,
+                    SockOp::Create,
+                    SocketDomain::Inet,
+                    SocketType::Stream,
+                    SocketProtocol::TCP,
+                    &zxio_socket,
+                ),
+                SockProgramResult::Allow
+            );
+            assert_eq!(
+                root_cgroup.run_sock_addr_prog(
+                    current_task,
+                    SockAddrOp::Bind,
+                    SocketDomain::Inet,
+                    SocketType::Stream,
+                    SocketProtocol::TCP,
+                    inet4_sockaddr.as_bytes(),
+                    &unix_socket,
+                ),
+                Ok(SockAddrProgramResult::Allow)
+            );
+            assert_eq!(
+                root_cgroup.run_getsockopt_prog(
+                    current_task,
+                    0,
+                    0,
+                    vec![1, 2, 3, 4],
+                    4,
+                    None,
+                    &unix_socket,
+                ),
+                Ok((vec![1, 2, 3, 4], 4))
+            );
+            assert!(matches!(
+                root_cgroup.run_setsockopt_prog(
+                    current_task,
+                    0,
+                    0,
+                    vec![1, 2, 3, 4].into(),
+                    &unix_socket,
+                ),
+                SetSockOptProgramResult::Allow(_)
+            ));
+
+            // Detaching an unattached slot returns ENOENT.
+            assert_eq!(
+                ebpf_state.attachments.detach_prog(
+                    current_task,
+                    AttachType::CgroupInetSockCreate,
+                    cgroup_fd,
+                ),
+                error!(ENOENT)
+            );
+
+            // Attach a program holding both a VMAR-backed ringbuf map (AllocatedVmar) and an
+            // array map (MapBuffer) to verify synchronous writer-thread drop on replacement.
+            let ringbuf_map = Map::new(
+                MapSchema {
+                    map_type: bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+                    key_size: 0,
+                    value_size: 0,
+                    max_entries: *PAGE_SIZE as u32,
+                    flags: MapFlags::empty(),
+                },
+                "test_ringbuf_vmar",
+            )
+            .expect("create ringbuf map with AllocatedVmar");
+            let array_map = Map::new(
+                MapSchema {
+                    map_type: bpf_map_type_BPF_MAP_TYPE_ARRAY,
+                    key_size: 4,
+                    value_size: 8,
+                    max_entries: 1,
+                    flags: MapFlags::empty(),
+                },
+                "test_array_map",
+            )
+            .expect("create array map");
+            let code = vec![
+                EbpfInstruction::new((BPF_ALU64 | BPF_MOV | BPF_K) as u8, 0, 0, 0, 0),
+                EbpfInstruction::new((BPF_JMP | BPF_EXIT) as u8, 0, 0, 0, 0),
+            ];
+            let calling_context = ProgramType::CgroupSock
+                .create_calling_context(
+                    AttachType::CgroupInetSockCreate,
+                    vec![ringbuf_map.schema, array_map.schema],
+                )
+                .expect("calling context");
+            let verified = verify_program(code, calling_context, &mut NullVerifierLogger)
+                .expect("verify program");
+            let linked =
+                link_program::<SockProgram>(&verified, vec![ringbuf_map, array_map]).expect("link");
+            root_cgroup
+                .get_sock_program(AttachType::CgroupInetSockCreate)
+                .expect("get sock_create slot")
+                .lock()
+                .update(Some(Arc::new(SockProgram(linked))));
+
+            assert_eq!(
+                root_cgroup.run_sock_prog(
+                    current_task,
+                    SockOp::Create,
+                    SocketDomain::Inet,
+                    SocketType::Stream,
+                    SocketProtocol::TCP,
+                    &zxio_socket,
+                ),
+                SockProgramResult::Block
+            );
+
+            // Replace the program via attach_prog; the old SockProgram (and its AllocatedVmar)
+            // drops synchronously on the writer thread.
+            let allow_prog = make_cgroup_program(
+                current_task,
+                ProgramType::CgroupSock,
+                AttachType::CgroupInetSockCreate,
+                1,
+            );
+            ebpf_state
+                .attachments
+                .attach_prog(current_task, AttachType::CgroupInetSockCreate, cgroup_fd, allow_prog)
+                .expect("attach allow program");
+            assert_eq!(
+                root_cgroup.run_sock_prog(
+                    current_task,
+                    SockOp::Create,
+                    SocketDomain::Inet,
+                    SocketType::Stream,
+                    SocketProtocol::TCP,
+                    &zxio_socket,
+                ),
+                SockProgramResult::Allow
+            );
+
+            ebpf_state
+                .attachments
+                .detach_prog(current_task, AttachType::CgroupInetSockCreate, cgroup_fd)
+                .expect("detach program");
+            assert!(root_cgroup.sock_create.is_none());
+            current_task.trigger_delayed_releaser();
+            fuchsia_rcu::rcu_run_callbacks();
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_concurrent_cgroup_ebpf_attach_detach_and_execution() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let cgroup_fd = create_root_cgroup_fd(current_task);
+            let unix_socket = Socket::new(
+                current_task,
+                SocketDomain::Unix,
+                SocketType::Datagram,
+                SocketProtocol::default(),
+                true,
+            )
+            .expect("create socket");
+            let done = Arc::new(AtomicBool::new(false));
+
+            let mut reader_results = Vec::new();
+            for _ in 0..STRESS_READER_THREADS {
+                let socket_clone = unix_socket.clone();
+                let done_clone = done.clone();
+                let (res_fn, req) = SpawnRequestBuilder::new()
+                    .with_sync_closure(move |task: &CurrentTask| {
+                        let zxio =
+                            Zxio::create(zx::Event::create().into()).expect("create reader zxio");
+                        let zxio_socket = ZxioBackedSocket::new_with_zxio(task, zxio);
+                        let inet4_sockaddr =
+                            sockaddr_in { sin_family: AF_INET as u16, ..Default::default() };
+                        let cgroup = task.kernel().ebpf_state.attachments.root_cgroup();
+                        while !done_clone.load(Ordering::Relaxed) {
+                            let sock_res = cgroup.run_sock_prog(
+                                task,
+                                SockOp::Create,
+                                SocketDomain::Inet,
+                                SocketType::Stream,
+                                SocketProtocol::TCP,
+                                &zxio_socket,
+                            );
+                            assert!(matches!(
+                                sock_res,
+                                SockProgramResult::Allow | SockProgramResult::Block
+                            ));
+
+                            let addr_res = cgroup
+                                .run_sock_addr_prog(
+                                    task,
+                                    SockAddrOp::Bind,
+                                    SocketDomain::Inet,
+                                    SocketType::Stream,
+                                    SocketProtocol::TCP,
+                                    inet4_sockaddr.as_bytes(),
+                                    &socket_clone,
+                                )
+                                .expect("run_sock_addr_prog");
+                            assert!(matches!(
+                                addr_res,
+                                SockAddrProgramResult::Allow | SockAddrProgramResult::Block
+                            ));
+                        }
+                    })
+                    .build_with_sync_result();
+                kernel.kthreads.spawner().spawn_from_request(req);
+                reader_results.push(res_fn);
+            }
+
+            for iteration in 0..STRESS_WRITER_ITERATIONS {
+                let sock_prog = make_cgroup_program(
+                    current_task,
+                    ProgramType::CgroupSock,
+                    AttachType::CgroupInetSockCreate,
+                    iteration % 2,
+                );
+                kernel
+                    .ebpf_state
+                    .attachments
+                    .attach_prog(
+                        current_task,
+                        AttachType::CgroupInetSockCreate,
+                        cgroup_fd,
+                        sock_prog,
+                    )
+                    .expect("attach sock_create");
+
+                let addr_prog = make_cgroup_program(
+                    current_task,
+                    ProgramType::CgroupSockAddr,
+                    AttachType::CgroupInet4Bind,
+                    iteration % 2,
+                );
+                kernel
+                    .ebpf_state
+                    .attachments
+                    .attach_prog(current_task, AttachType::CgroupInet4Bind, cgroup_fd, addr_prog)
+                    .expect("attach inet4_bind");
+
+                if iteration % 3 == 0 {
+                    kernel
+                        .ebpf_state
+                        .attachments
+                        .detach_prog(current_task, AttachType::CgroupInetSockCreate, cgroup_fd)
+                        .expect("detach sock_create");
+                    kernel
+                        .ebpf_state
+                        .attachments
+                        .detach_prog(current_task, AttachType::CgroupInet4Bind, cgroup_fd)
+                        .expect("detach inet4_bind");
+                }
+                current_task.trigger_delayed_releaser();
+                fuchsia_rcu::rcu_run_callbacks();
+            }
+
+            done.store(true, Ordering::Relaxed);
+            for res_fn in reader_results {
+                res_fn().expect("reader thread completed");
+            }
+            let _ = kernel.ebpf_state.attachments.detach_prog(
+                current_task,
+                AttachType::CgroupInetSockCreate,
+                cgroup_fd,
+            );
+            let _ = kernel.ebpf_state.attachments.detach_prog(
+                current_task,
+                AttachType::CgroupInet4Bind,
+                cgroup_fd,
+            );
+            current_task.trigger_delayed_releaser();
+            fuchsia_rcu::rcu_run_callbacks();
+        })
+        .await;
     }
 }
