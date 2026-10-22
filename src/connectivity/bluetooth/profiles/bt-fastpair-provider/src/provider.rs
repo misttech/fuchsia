@@ -218,12 +218,6 @@ impl Provider {
         // 2. Returns AES session key + decrypted request
         if let Some(key) = remote_public_key {
             debug!("Trying remote public key");
-            // The Public/Private key pairing flow is only accepted if the local Host is
-            // discoverable.
-            if !discoverable {
-                return Err(Error::internal("Active host is not discoverable"));
-            }
-
             let aes_key =
                 aes_from_anti_spoofing_and_public(&self.state.config.local_private_key, &key)?;
             let request =
@@ -231,6 +225,22 @@ impl Provider {
                     debug!("Key failed to decrypt message: {e:?}");
                     Error::NoAvailableKeys
                 })?;
+            if !self.host_watcher.is_valid_address(&request.received_provider_address) {
+                return Err(Error::internal(&format!(
+                    "Received address ({:?}) doesn't match any local",
+                    request.received_provider_address
+                )));
+            }
+            // The Public/Private key pairing flow is only accepted if
+            // 1. the local Host is discoverable
+            // 2. the request is a retroactive Account Key write.
+            if !discoverable
+                && !matches!(request.action, KeyBasedPairingAction::RetroactiveWrite { .. })
+            {
+                return Err(Error::internal(
+                    "Active host is not discoverable and request is not a retroactive write",
+                ));
+            }
             debug!("Found a valid key for pairing");
             return Ok((KeySource::AntiSpoofing(aes_key), request));
         }
@@ -244,6 +254,13 @@ impl Provider {
         for key in keys_to_try {
             match decrypt_key_based_pairing_request(&encrypted_request, &key) {
                 Ok(request) => {
+                    if !self.host_watcher.is_valid_address(&request.received_provider_address) {
+                        warn!(
+                            "Decrypted request address ({:?}) doesn't match any local",
+                            request.received_provider_address
+                        );
+                        continue;
+                    }
                     debug!("Found a valid key for pairing");
                     // Refresh the LRU position of the key that successfully decrypted the request
                     // as it will be used for subsequent steps of the pairing procedure.
@@ -299,37 +316,26 @@ impl Provider {
             KeySource::AntiSpoofing(key) | KeySource::AccountKey(key) => key,
         };
         match &request.action {
-            KeyBasedPairingAction::SeekerInitiatesPairing { received_provider_address } => {
-                if !self.host_watcher.is_valid_address(received_provider_address) {
-                    response(Err(gatt::Error::WriteRequestRejected));
-                    return Err(Error::internal(&format!(
-                        "Received address ({received_provider_address:?}) doesn't match any local"
-                    )));
-                }
+            KeyBasedPairingAction::SeekerInitiatesPairing => {
                 let _ = self.inspect_node.pairing_request_count.add(1);
             }
             KeyBasedPairingAction::ProviderInitiatesPairing { .. } => {
                 // TODO(https://fxbug.dev/42071496): Use `sys.Access/Pair` to pair to peer.
             }
-            KeyBasedPairingAction::RetroactiveWrite { seeker_address: _ } => {
-                // TODO(https://fxbug.dev/42066852): This can be improved by using a timeout after an
-                // OnPairingComplete signal is received. A retroactive write can only occur within
-                // some finite period of time.
-            }
-            KeyBasedPairingAction::PersonalizedNameWrite { received_provider_address } => {
+            KeyBasedPairingAction::RetroactiveWrite { .. } => {}
+            KeyBasedPairingAction::PersonalizedNameWrite => {
                 // Only a Seeker that has previously paired (and therefore holds an Account Key) is
                 // authorized to modify the personalized name.
                 if !is_account_key {
                     response(Err(gatt::Error::WriteRequestRejected));
                     return Err(Error::internal("Personalized name write requires an Account Key"));
                 }
-                if !self.host_watcher.is_valid_address(received_provider_address) {
-                    response(Err(gatt::Error::WriteRequestRejected));
-                    return Err(Error::internal(&format!(
-                        "Received address ({received_provider_address:?}) doesn't match any local"
-                    )));
-                }
             }
+        }
+
+        if let Err(e) = pairing.new_pairing_procedure(peer_id, key.clone(), pairing_type) {
+            response(Err(gatt::Error::WriteRequestRejected));
+            return Err(e);
         }
 
         // Notify the GATT service that the write request was successfully processed.
@@ -337,6 +343,7 @@ impl Provider {
 
         let encrypted_response = key_based_pairing_response(&key, local_public_address);
         if let Err(e) = self.gatt.notify_key_based_pairing(peer_id, encrypted_response) {
+            let _ = pairing.cancel_pairing_procedure(&peer_id);
             return Err(Error::internal(&format!("key-based pairing characteristic: {e:?}")));
         }
 
@@ -349,7 +356,7 @@ impl Provider {
             }
         }
 
-        pairing.new_pairing_procedure(peer_id, key, pairing_type)
+        Ok(())
     }
 
     fn handle_verify_passkey_request(
@@ -1202,16 +1209,19 @@ mod tests {
         // should be rejected.
 
         // Bytes 2-7 correspond to the address.
-        let mut request_with_invalid_address = key_based_pairing_request(0x00);
-        request_with_invalid_address[4] = 0xff;
-        gatt_write_results_in_expected_notification(
-            &gatt,
-            KEY_BASED_PAIRING_CHARACTERISTIC_HANDLE,
-            encrypt_message_include_public_key(&request_with_invalid_address),
-            Err(gatt::Error::WriteRequestRejected),
-            /* expect_item= */ false,
-        )
-        .await;
+        // Test both initial request and retroactive request with invalid provider address.
+        for flags in [0x00, 0x10] {
+            let mut request_with_invalid_address = key_based_pairing_request(flags);
+            request_with_invalid_address[4] = 0xff;
+            gatt_write_results_in_expected_notification(
+                &gatt,
+                KEY_BASED_PAIRING_CHARACTERISTIC_HANDLE,
+                encrypt_message_include_public_key(&request_with_invalid_address),
+                Err(gatt::Error::WriteRequestRejected),
+                /* expect_item= */ false,
+            )
+            .await;
+        }
     }
 
     #[fuchsia::test]
@@ -1445,14 +1455,14 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let setup_fut = setup_provider();
         let mut setup_fut = pin!(setup_fut);
-        let (mut provider, _le_peripheral, gatt, _host_watcher, _mock_pairing, _mock_upstream) =
+        let (mut provider, _le_peripheral, gatt, _host_watcher, mock_pairing, _mock_upstream) =
             exec.run_singlethreaded(&mut setup_fut);
 
         let key_file_path = provider.account_keys.path();
         // To avoid a bunch of unnecessary boilerplate involving the `host_watcher`, set the active
         // host with a known address.
         provider.host_watcher.set_active_host(
-            example_host(HostId(1), /* active= */ true, /* discoverable= */ true)
+            example_host(HostId(1), /* active= */ true, /* discoverable= */ false)
                 .try_into()
                 .unwrap(),
         );
@@ -1464,8 +1474,19 @@ mod tests {
         // Before starting the pairing procedure, there should be no saved Account Keys.
         expect_keys_at_path(key_file_path.clone(), vec![]);
 
-        // Initiating a Key-based pairing request should succeed. The buffer is encrypted by the key
-        // defined in the GFPS and contains flags indicating a retroactive write (0x10).
+        // First, the Seeker completes traditional (non-Fast Pair) pairing over BR/EDR.
+        // Its BR/EDR address matches bytes 8..14 of `key_based_pairing_request(0x10)`.
+        let seeker_address = Address::Public([0xcc, 0xcc, 0xbb, 0xbb, 0xaa, 0xaa]);
+        mock_pairing.complete_upstream_pairing(
+            PeerId(456),
+            seeker_address,
+            /* success= */ true,
+        );
+        let _ = exec.run_until_stalled(&mut server_fut).expect_pending("still active");
+
+        // Initiating a Key-based pairing request should succeed even if the host is no longer
+        // discoverable after bonding. The buffer is encrypted by the key defined in the GFPS and
+        // contains flags indicating a retroactive write (0x10).
         let write_fut = gatt_write_results_in_expected_notification(
             &gatt,
             KEY_BASED_PAIRING_CHARACTERISTIC_HANDLE,
@@ -1487,6 +1508,45 @@ mod tests {
         let (_, _server_fut) = run_while(&mut exec, server_fut, write_fut);
         // Account Key should be saved to persistent storage.
         expect_keys_at_path(key_file_path, vec![key]);
+    }
+
+    /// An unbonded peer that has not completed traditional non-Fast Pair pairing must not be able
+    /// to initiate a retroactive Account Key write.
+    #[fuchsia::test]
+    async fn retroactive_account_key_write_without_bond_is_rejected() {
+        let (mut provider, _le_peripheral, gatt, _host_watcher, _mock_pairing, _mock_upstream) =
+            setup_provider().await;
+
+        let key_file_path = provider.account_keys.path();
+        provider.host_watcher.set_active_host(
+            example_host(HostId(1), /* active= */ true, /* discoverable= */ true)
+                .try_into()
+                .unwrap(),
+        );
+        let (_sender, _provider_server) = server_task(provider);
+
+        // An unbonded peer attempts a retroactive write (flags = 0x10). It must be rejected.
+        gatt_write_results_in_expected_notification(
+            &gatt,
+            KEY_BASED_PAIRING_CHARACTERISTIC_HANDLE,
+            encrypt_message_include_public_key(&key_based_pairing_request(0x10)),
+            Err(gatt::Error::WriteRequestRejected),
+            /* expect_item= */ false,
+        )
+        .await;
+
+        // A subsequent write to the Account Key characteristic must also be rejected and no key
+        // saved.
+        let key = random_account_key();
+        gatt_write_results_in_expected_notification(
+            &gatt,
+            ACCOUNT_KEY_CHARACTERISTIC_HANDLE,
+            encrypt_message(key.as_bytes()),
+            Err(gatt::Error::WriteRequestRejected),
+            /* expect_item= */ false,
+        )
+        .await;
+        expect_keys_at_path(key_file_path, vec![]);
     }
 
     /// Makes a key-based pairing request with the notify personalized name flag set.

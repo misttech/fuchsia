@@ -14,7 +14,7 @@ use fidl_fuchsia_bluetooth_sys::{
     PairingDelegateRequest, PairingDelegateRequestStream, PairingMethod, PairingProxy,
 };
 use fuchsia_async::{self as fasync, DurationExt};
-use fuchsia_bluetooth::types::{Peer, PeerId};
+use fuchsia_bluetooth::types::{Address, Peer, PeerId};
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_inspect_derive::{AttachError, Inspect};
@@ -40,7 +40,7 @@ pub struct PairingArgs {
 pub enum PairingType {
     Initial,
     Subsequent,
-    Retroactive,
+    Retroactive { seeker_address: Address },
     PersonalizedNameWrite,
 }
 
@@ -48,12 +48,26 @@ impl PairingType {
     pub fn from_action(action: &KeyBasedPairingAction, discoverable: bool) -> Self {
         use KeyBasedPairingAction::*;
         match action {
-            SeekerInitiatesPairing { .. } | ProviderInitiatesPairing { .. } => {
+            SeekerInitiatesPairing | ProviderInitiatesPairing { .. } => {
                 discoverable.then_some(Self::Initial).unwrap_or(Self::Subsequent)
             }
-            PersonalizedNameWrite { .. } => Self::PersonalizedNameWrite,
-            RetroactiveWrite { .. } => Self::Retroactive,
+            PersonalizedNameWrite => Self::PersonalizedNameWrite,
+            RetroactiveWrite { seeker_address } => {
+                Self::Retroactive { seeker_address: *seeker_address }
+            }
         }
+    }
+}
+
+impl std::fmt::Display for PairingType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Initial => "Initial",
+            Self::Subsequent => "Subsequent",
+            Self::Retroactive { .. } => "Retroactive",
+            Self::PersonalizedNameWrite => "PersonalizedNameWrite",
+        };
+        write!(f, "{name}")
     }
 }
 
@@ -99,7 +113,7 @@ impl ProcedureState {
     fn initial(pairing_type: PairingType) -> Self {
         match pairing_type {
             PairingType::Initial | PairingType::Subsequent => Self::AwaitingPasskey,
-            PairingType::Retroactive => Self::AwaitingAccountKey,
+            PairingType::Retroactive { .. } => Self::AwaitingAccountKey,
             PairingType::PersonalizedNameWrite => Self::AwaitingPersonalizedName,
         }
     }
@@ -177,7 +191,7 @@ impl Procedure {
             .bredr_id
             .set(&self.bredr_id.map_or_else(|| "".to_string(), |id| format!("{id}")));
         self.inspect_node.state.set(&format!("{:?}", self.state));
-        self.inspect_node.inspect_node.record_string("type", format!("{:?}", self.pairing_type));
+        self.inspect_node.inspect_node.record_string("type", format!("{}", self.pairing_type));
     }
 
     /// Moves the procedure to the new pairing `state` and resets the deadline for the procedure.
@@ -454,6 +468,12 @@ pub struct PairingManager {
     /// Pairing requests waiting to be matched to a procedure via the Seeker's passkey. Each
     /// request is identified by the PeerId that made it.
     pending_requests: FutureMap<PeerId, PendingPairingRequest>,
+    /// Peers with an in-progress non-Fast Pair pairing request relayed to the upstream client.
+    /// Maps the peer's `PeerId` to its Bluetooth `Address` until `OnPairingComplete` is received.
+    upstream_pairing_peers: HashMap<PeerId, Address>,
+    /// Peers that recently completed non-Fast Pair pairing and are eligible to perform a single
+    /// retroactive Account Key write within `Self::DEFAULT_RETROACTIVE_WRITE_TIMEOUT_DURATION`.
+    retroactive_pairing_peers: FutureMap<Address, fasync::Timer>,
     /// If the PairingManager is finished - i.e either the upstream or downstream delegate
     /// connection has terminated.
     terminated: bool,
@@ -470,6 +490,13 @@ impl Inspect for &mut PairingManager {
 }
 
 impl PairingManager {
+    /// Default timeout duration for a retroactive account key write after non-Fast Pair pairing
+    /// completes. Per the GFPS specification, a Seeker may retroactively write an Account Key for
+    /// up to 1 minute after bonding completes.
+    /// See https://developers.google.com/nearby/fast-pair/specifications/extensions/retroactiveacctkey
+    const DEFAULT_RETROACTIVE_WRITE_TIMEOUT_DURATION: zx::MonotonicDuration =
+        zx::MonotonicDuration::from_seconds(60);
+
     pub fn new(
         pairing: PairingProxy,
         access: AccessProxy,
@@ -492,6 +519,8 @@ impl PairingManager {
             forget_tasks: FuturesUnordered::new(),
             procedures: FutureMap::new(),
             pending_requests: FutureMap::new(),
+            upstream_pairing_peers: HashMap::new(),
+            retroactive_pairing_peers: FutureMap::new(),
             terminated: false,
             inspect_node: PairingManagerInspect::default().with_metrics(metrics),
         };
@@ -537,6 +566,7 @@ impl PairingManager {
     fn close_delegate(&mut self) {
         // Pending pairing requests are associated with the current delegate and are rejected.
         self.clear_pending_requests();
+        self.upstream_pairing_peers.clear();
         if let Some(stream) = MaybeStream::take(&mut self.pairing_requests) {
             stream.control_handle().shutdown();
         }
@@ -617,8 +647,19 @@ impl PairingManager {
             return Err(Error::internal(&format!("Pairing with {le_id} already in progress")));
         }
 
-        if matches!(pairing_type, PairingType::Initial | PairingType::Subsequent) {
-            self.claim_delegate()?;
+        match pairing_type {
+            PairingType::Initial | PairingType::Subsequent => {
+                self.claim_delegate()?;
+            }
+            // Checks for recently connected non-fast pair peers
+            PairingType::Retroactive { seeker_address } => {
+                if self.retroactive_pairing_peers.remove(&seeker_address).is_none() {
+                    return Err(Error::internal(&format!(
+                        "Peer ({seeker_address}) is not eligible for retroactive pairing"
+                    )));
+                }
+            }
+            PairingType::PersonalizedNameWrite => {}
         }
 
         self.new_procedure(le_id, key, pairing_type);
@@ -939,6 +980,26 @@ impl PairingManager {
         debug!(request:?; "Received PairingDelegate request");
         if !self.owner.is_fast_pair() {
             debug!("Relaying PairingDelegate request to upstream");
+            match &request {
+                PairingDelegateRequest::OnPairingRequest { peer, .. } => {
+                    let peer = Peer::try_from(peer.clone())?;
+                    let _ = self.upstream_pairing_peers.insert(peer.id, peer.address);
+                }
+                PairingDelegateRequest::OnPairingComplete { id, success, .. } => {
+                    let id = (*id).into();
+                    if let Some(address) = self.upstream_pairing_peers.remove(&id) {
+                        if *success {
+                            let timer = fasync::Timer::new(
+                                Self::DEFAULT_RETROACTIVE_WRITE_TIMEOUT_DURATION.after_now(),
+                            );
+                            let _ = self.retroactive_pairing_peers.insert(address, timer);
+                        } else {
+                            let _ = self.retroactive_pairing_peers.remove(&address);
+                        }
+                    }
+                }
+                PairingDelegateRequest::OnRemoteKeypress { .. } => {}
+            }
             let relay_task =
                 Self::proxy_pairing_request(request, self.upstream_client.delegate.clone()).boxed();
             self.relay_tasks.push(relay_task);
@@ -988,9 +1049,19 @@ impl PairingManager {
             info!(id:%; "Pairing request wasn't matched with a Fast Pair procedure in time");
         }
     }
+
+    fn poll_retroactive_pairing_deadlines(&mut self, cx: &mut Context<'_>) {
+        if self.retroactive_pairing_peers.is_terminated() {
+            return;
+        }
+
+        while let Poll::Ready(Some(())) = self.retroactive_pairing_peers.poll_next_unpin(cx) {
+            trace!("Retroactive pairing window expired for peer");
+        }
+    }
 }
 
-/// The Stream implementation for `PairingManager` does 6 things:
+/// The Stream implementation for `PairingManager` does 7 things:
 ///   (1) Poll the connection to the upstream `sys.Pairing` client to check if it is open. Because
 ///       pairing functionality is determined by the client's existence, the `PairingManager` stream
 ///       will terminate if the client disconnects.
@@ -1005,6 +1076,8 @@ impl PairingManager {
 ///       longer valid.
 ///   (6) Poll the set of pending pairing requests. Requests that aren't matched to a procedure
 ///       within `Procedure::DEFAULT_PROCEDURE_TIMEOUT_DURATION` are rejected.
+///   (7) Poll the set of peers eligible for retroactive Account Key writes, evicting entries that
+///       exceed `PairingManager::DEFAULT_RETROACTIVE_WRITE_TIMEOUT_DURATION`.
 /// The Stream produces an item anytime Fast Pair pairing successfully completes with a remote peer.
 impl Stream for PairingManager {
     type Item = PeerId;
@@ -1061,6 +1134,8 @@ impl Stream for PairingManager {
         self.poll_procedure_deadlines(cx);
         // Check if any pending pairing requests have missed deadlines.
         self.poll_pending_request_deadlines(cx);
+        // Check if any retroactive pairing eligibility windows have expired.
+        self.poll_retroactive_pairing_deadlines(cx);
         Poll::Pending
     }
 }
@@ -1200,6 +1275,29 @@ pub(crate) mod tests {
             self.make_pairing_request_internal(id, PairingMethod::PasskeyComparison, passkey)
         }
 
+        pub fn make_pairing_request_with_address(
+            &self,
+            id: PeerId,
+            address: Address,
+            passkey: u32,
+        ) -> QueryResponseFut<(bool, u32)> {
+            let delegate = self.downstream_delegate_client.clone();
+            delegate.on_pairing_request(
+                &example_peer_with_address(id, address),
+                PairingMethod::PasskeyComparison,
+                passkey,
+            )
+        }
+
+        /// Simulates a non-Fast Pair pairing request and completion sent to the downstream
+        /// delegate while `PairingDelegateOwner::Upstream` is active.
+        pub fn complete_upstream_pairing(&self, id: PeerId, address: Address, success: bool) {
+            let _request_fut = self.make_pairing_request_with_address(id, address, 123456);
+            self.downstream_delegate_client
+                .on_pairing_complete(&id.into(), success)
+                .expect("fidl request");
+        }
+
         fn make_pairing_request_internal(
             &self,
             id: PeerId,
@@ -1313,10 +1411,19 @@ pub(crate) mod tests {
         assert_matches!(manager.next().now_or_never(), None);
     }
 
+    const EXAMPLE_PEER_ADDRESS: Address = Address::Public([1, 2, 3, 4, 5, 6]);
+
     pub(crate) fn example_peer(id: PeerId) -> fidl_fuchsia_bluetooth_sys::Peer {
+        example_peer_with_address(id, EXAMPLE_PEER_ADDRESS)
+    }
+
+    pub(crate) fn example_peer_with_address(
+        id: PeerId,
+        address: Address,
+    ) -> fidl_fuchsia_bluetooth_sys::Peer {
         let peer = Peer {
             id,
-            address: Address::Public([1, 2, 3, 4, 5, 6]),
+            address,
             technology: fidl_fuchsia_bluetooth_sys::TechnologyType::DualMode,
             connected: false,
             bonded: false,
@@ -2337,12 +2444,20 @@ pub(crate) mod tests {
     async fn retroactive_pairing_procedure() {
         let (mut manager, mut mock) = MockPairing::new_with_manager().await;
 
+        // First, the peer completes non-Fast Pair pairing via the upstream delegate.
+        let bredr_id = PeerId(456);
+        let seeker_address = EXAMPLE_PEER_ADDRESS;
+        mock.complete_upstream_pairing(bredr_id, seeker_address, /* success= */ true);
+        assert_matches!(manager.next().now_or_never(), None);
+
+        // The peer then initiates a retroactive pairing procedure over LE (potentially with a
+        // different PeerId).
         let le_id = PeerId(123);
         assert_matches!(
             manager.new_pairing_procedure(
                 le_id,
                 keys::tests::example_aes_key(),
-                PairingType::Retroactive
+                PairingType::Retroactive { seeker_address }
             ),
             Ok(_)
         );
@@ -2356,6 +2471,82 @@ pub(crate) mod tests {
         // When the peer writes an Account Key, the retroactive pairing flow is complete.
         assert_matches!(manager.account_key_write(le_id), Ok(_));
         assert_matches!(manager.complete_pairing_procedure(le_id), Ok(_));
+        assert_matches!(manager.key_for_procedure(&le_id), None);
+
+        // A second retroactive pairing procedure for the same bond is rejected because only one
+        // Account Key write is permitted per non-Fast Pair bond.
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Retroactive { seeker_address }
+            ),
+            Err(_)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn retroactive_pairing_without_upstream_bond_is_rejected() {
+        let (mut manager, mock) = MockPairing::new_with_manager().await;
+
+        // Starting a retroactive procedure without any prior upstream pairing fails.
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Retroactive { seeker_address: EXAMPLE_PEER_ADDRESS }
+            ),
+            Err(_)
+        );
+        assert_matches!(manager.key_for_procedure(&le_id), None);
+
+        // If upstream pairing fails (`success = false`), retroactive pairing is also rejected.
+        let bredr_id = PeerId(456);
+        mock.complete_upstream_pairing(bredr_id, EXAMPLE_PEER_ADDRESS, /* success= */ false);
+        assert_matches!(manager.next().now_or_never(), None);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Retroactive { seeker_address: EXAMPLE_PEER_ADDRESS }
+            ),
+            Err(_)
+        );
+        assert_matches!(manager.key_for_procedure(&le_id), None);
+    }
+
+    #[fuchsia::test]
+    fn retroactive_pairing_after_timeout_is_rejected() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(1_000_000_000));
+
+        let mut setup_fut = pin!(MockPairing::new_with_manager());
+        let (mut manager, mock) =
+            exec.run_until_stalled(&mut setup_fut).expect("can create pairing manager");
+
+        // Peer completes non-Fast Pair pairing via the upstream delegate.
+        let bredr_id = PeerId(456);
+        let seeker_address = EXAMPLE_PEER_ADDRESS;
+        mock.complete_upstream_pairing(bredr_id, seeker_address, /* success= */ true);
+        let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
+
+        // Advancing time past the 60-second retroactive write window expires eligibility.
+        exec.set_fake_time(fasync::MonotonicInstant::after(
+            PairingManager::DEFAULT_RETROACTIVE_WRITE_TIMEOUT_DURATION,
+        ));
+        assert!(exec.wake_expired_timers());
+        let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
+
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Retroactive { seeker_address }
+            ),
+            Err(_)
+        );
         assert_matches!(manager.key_for_procedure(&le_id), None);
     }
 
@@ -2506,6 +2697,12 @@ pub(crate) mod tests {
     async fn retroactive_pairing_success_does_not_forget_bond() {
         let (mut manager, mut mock) = MockPairing::new_with_manager().await;
 
+        // First, the peer completes non-Fast Pair pairing via the upstream delegate.
+        let le_id = PeerId(123);
+        let seeker_address = EXAMPLE_PEER_ADDRESS;
+        mock.complete_upstream_pairing(le_id, seeker_address, /* success= */ true);
+        assert_matches!(manager.next().now_or_never(), None);
+
         // An Initial procedure with another peer gives Fast Pair ownership of the Pairing Delegate.
         let other_id = PeerId(456);
         assert_matches!(
@@ -2519,12 +2716,11 @@ pub(crate) mod tests {
         mock.expect_set_pairing_delegate().await;
 
         // Retroactive procedures start after Classic/LE pairing has already completed.
-        let le_id = PeerId(123);
         assert_matches!(
             manager.new_pairing_procedure(
                 le_id,
                 keys::tests::example_aes_key(),
-                PairingType::Retroactive
+                PairingType::Retroactive { seeker_address }
             ),
             Ok(_)
         );

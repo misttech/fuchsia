@@ -93,16 +93,15 @@ bitfield! {
 /// characteristic.
 #[derive(Debug, PartialEq)]
 pub enum KeyBasedPairingAction {
-    /// Seeker has requested to start Fast Pair. It will initiate the pairing flow. The
-    /// `received_provider_address` can either be the Public or Random address.
-    SeekerInitiatesPairing { received_provider_address: [u8; 6] },
+    /// Seeker has requested to start Fast Pair. It will initiate the pairing flow.
+    SeekerInitiatesPairing,
     /// Seeker has requested to start Fast Pair. The Provider will initiate the pairing flow.
     ProviderInitiatesPairing { seeker_address: Address },
     /// Seeker has already paired to the Provider device and wants to retroactively save a Fast Pair
     /// Account Key for this Provider device.
     RetroactiveWrite { seeker_address: Address },
     /// Seeker wants to write a personalized name for this device.
-    PersonalizedNameWrite { received_provider_address: [u8; 6] },
+    PersonalizedNameWrite,
     // TODO(https://fxbug.dev/42182210): Add Device Action requests.
 }
 
@@ -110,6 +109,9 @@ pub enum KeyBasedPairingAction {
 #[derive(Debug, PartialEq)]
 pub struct KeyBasedPairingRequest {
     pub action: KeyBasedPairingAction,
+    /// The Provider's address as reported by the Seeker. Can be either the Public or Random
+    /// address.
+    pub received_provider_address: [u8; 6],
     pub notify_name: bool,
     _salt: Vec<u8>,
 }
@@ -122,16 +124,17 @@ pub fn decrypt_key_based_pairing_request(
 ) -> Result<KeyBasedPairingRequest, Error> {
     let request = key.decrypt(encrypted_request);
     let message_type = MessageType::try_from(request[0])?;
+    let mut received_provider_address = [0; 6];
+    received_provider_address.copy_from_slice(&request[2..8]);
+    // The received Provider address can be either the Public or Random address. It is
+    // received in Big Endian. All BT addresses saved in the Sapphire stack are in Little
+    // Endian.
+    received_provider_address.reverse();
+
     match message_type {
         MessageType::Pairing => {
             let flags = KeyBasedPairingFlags(request[1]);
             debug!(flags:?; "Key-based pairing request");
-            let mut received_provider_address = [0; 6];
-            received_provider_address.copy_from_slice(&request[2..8]);
-            // The received Provider address can be either the Public or Random address. It is
-            // received in Big Endian. All BT addresses saved in the Sapphire stack are in Little
-            // Endian.
-            received_provider_address.reverse();
             // Whether the Provider needs to notify the Seeker of the current device name.
             let notify_name = flags.notify_name();
 
@@ -149,6 +152,7 @@ pub fn decrypt_key_based_pairing_request(
                 };
                 return Ok(KeyBasedPairingRequest {
                     action,
+                    received_provider_address,
                     notify_name,
                     _salt: request[14..].to_vec(),
                 });
@@ -156,7 +160,8 @@ pub fn decrypt_key_based_pairing_request(
 
             // Otherwise, this is a standard request to start key-based pairing.
             return Ok(KeyBasedPairingRequest {
-                action: KeyBasedPairingAction::SeekerInitiatesPairing { received_provider_address },
+                action: KeyBasedPairingAction::SeekerInitiatesPairing,
+                received_provider_address,
                 notify_name,
                 _salt: request[8..].to_vec(),
             });
@@ -164,16 +169,12 @@ pub fn decrypt_key_based_pairing_request(
         MessageType::DeviceAction => {
             let flags = DeviceActionFlags(request[1]);
             debug!(flags:?; "Device Action request");
-            let mut received_provider_address = [0; 6];
-            received_provider_address.copy_from_slice(&request[2..8]);
-            received_provider_address.reverse();
             if flags.has_additional_data() {
                 // The only additional data flow defined in the spec is the personalized name write.
                 if request[10] == PERSONALIZED_NAME_DATA_ID {
                     return Ok(KeyBasedPairingRequest {
-                        action: KeyBasedPairingAction::PersonalizedNameWrite {
-                            received_provider_address,
-                        },
+                        action: KeyBasedPairingAction::PersonalizedNameWrite,
+                        received_provider_address,
                         notify_name: false,
                         _salt: request[11..].to_vec(),
                     });
@@ -564,7 +565,8 @@ pub(crate) mod tests {
         // Received provider address should be saved in Little Endian.
         let received_provider_address = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
         let expected_request = KeyBasedPairingRequest {
-            action: KeyBasedPairingAction::SeekerInitiatesPairing { received_provider_address },
+            action: KeyBasedPairingAction::SeekerInitiatesPairing,
+            received_provider_address,
             notify_name: false, // The Flags are empty so we don't expect to notify name.
             _salt: vec![0xaa, 0xaa, 0xbb, 0xbb, 0xcc, 0xcc, 0xdd, 0xdd],
         };
@@ -579,12 +581,14 @@ pub(crate) mod tests {
 
         let request = decrypt_key_based_pairing_request(&encrypted_request, &key)
             .expect("successful decryption");
+        let received_provider_address = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
         let expected_request = KeyBasedPairingRequest {
             action: KeyBasedPairingAction::RetroactiveWrite {
                 // Seeker address is the first 6 bytes of the salt in `KEY_BASED_PAIRING_REQUEST.
                 // Received in BE but stored as LE per Sapphire stack.
                 seeker_address: Address::Public([0xcc, 0xcc, 0xbb, 0xbb, 0xaa, 0xaa]),
             },
+            received_provider_address,
             notify_name: false,
             _salt: vec![0xdd, 0xdd],
         };
@@ -599,12 +603,14 @@ pub(crate) mod tests {
 
         let request = decrypt_key_based_pairing_request(&encrypted_request, &key)
             .expect("successful decryption");
+        let received_provider_address = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
         let expected_request = KeyBasedPairingRequest {
             action: KeyBasedPairingAction::ProviderInitiatesPairing {
                 // Seeker address is the first 6 bytes of the salt in `KEY_BASED_PAIRING_REQUEST.
                 // Received in BE but stored as LE per Sapphire stack.
                 seeker_address: Address::Public([0xcc, 0xcc, 0xbb, 0xbb, 0xaa, 0xaa]),
             },
+            received_provider_address,
             notify_name: true,
             _salt: vec![0xdd, 0xdd],
         };
@@ -620,9 +626,8 @@ pub(crate) mod tests {
             .expect("successful decryption");
         let expected_provider_address = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
         let expected_request = KeyBasedPairingRequest {
-            action: KeyBasedPairingAction::PersonalizedNameWrite {
-                received_provider_address: expected_provider_address,
-            },
+            action: KeyBasedPairingAction::PersonalizedNameWrite,
+            received_provider_address: expected_provider_address,
             notify_name: false,
             _salt: vec![0xbb, 0xcc, 0xcc, 0xdd, 0xdd],
         };
