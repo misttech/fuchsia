@@ -9,6 +9,7 @@ use crate::types::Celsius;
 use anyhow::{Error, Result};
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_hardware_trippoint as ftrippoint;
 use fidl_fuchsia_thermal as fthermal;
 use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
@@ -143,6 +144,82 @@ async fn run_sensor_proxy_server(
             }
             info!("Stopping proxy server for sensor {}", sensor_name);
         }
+        fthermal::SensorServer_::Trippoint(trippoint_server) => {
+            let mut stream = trippoint_server.into_stream();
+            let scope = fasync::Scope::new();
+            info!("Starting trippoint proxy server for sensor {}", sensor_name);
+            while let Ok(Some(req)) = stream.try_next().await {
+                match req {
+                    ftrippoint::TripPointRequest::GetTripPointDescriptors { responder } => {
+                        let res = match node.handle_message(&Message::GetTripPointDescriptors).await
+                        {
+                            Ok(MessageReturn::GetTripPointDescriptors(res)) => res,
+                            e => {
+                                warn!(
+                                    "Failed to get trip point descriptors from sensor {}: {:?}",
+                                    sensor_name, e
+                                );
+                                Err(zx::Status::INTERNAL.into_raw())
+                            }
+                        };
+                        if let Err(e) = responder.send(res.as_deref().map_err(|s| *s)) {
+                            warn!(
+                                "Failed to send trip point descriptors to client from sensor {}: {:?}",
+                                sensor_name, e
+                            );
+                        }
+                    }
+                    ftrippoint::TripPointRequest::SetTripPoints { descriptors, responder } => {
+                        let res =
+                            match node.handle_message(&Message::SetTripPoints(descriptors)).await {
+                                Ok(MessageReturn::SetTripPoints(res)) => res,
+                                e => {
+                                    warn!(
+                                        "Failed to set trip points on sensor {}: {:?}",
+                                        sensor_name, e
+                                    );
+                                    Err(zx::Status::INTERNAL.into_raw())
+                                }
+                            };
+                        if let Err(e) = responder.send(res) {
+                            warn!(
+                                "Failed to send set trip points response to client from sensor {}: {:?}",
+                                sensor_name, e
+                            );
+                        }
+                    }
+                    ftrippoint::TripPointRequest::WaitForAnyTripPoint { responder } => {
+                        let node = node.clone();
+                        let sensor_name = sensor_name.clone();
+                        scope.spawn_local(async move {
+                            let res = match node.handle_message(&Message::WaitForAnyTripPoint).await
+                            {
+                                Ok(MessageReturn::WaitForAnyTripPoint(res)) => res,
+                                e => {
+                                    warn!(
+                                        "Failed to wait for trip point on sensor {}: {:?}",
+                                        sensor_name, e
+                                    );
+                                    Err(zx::Status::INTERNAL.into_raw())
+                                }
+                            };
+                            if let Err(e) = responder.send(res.as_ref().map_err(|s| *s)) {
+                                warn!(
+                                    "Failed to send wait for trip point response to client from sensor {}: {:?}",
+                                    sensor_name, e
+                                );
+                            }
+                        });
+                    }
+                    ftrippoint::TripPointRequest::_UnknownMethod {
+                        method_type, ordinal, ..
+                    } => {
+                        warn!(method_type:?, ordinal; "Unknown TripPointRequest");
+                    }
+                }
+            }
+            info!("Stopping trippoint proxy server for sensor {}", sensor_name);
+        }
         _ => {
             unreachable!("Mismatch between server type and sensor proxy");
         }
@@ -255,7 +332,11 @@ impl ThermalSensorManager {
                                     continue;
                                 };
 
-                                inner_scope.spawn_local(run_sensor_proxy_server(node.clone(), name, server_end));
+                                inner_scope.spawn_local(run_sensor_proxy_server(
+                                    node.clone(),
+                                    name,
+                                    server_end,
+                                ));
                                 responder.send(Ok(()))?;
                             }
                             fthermal::SensorManagerRequest::_UnknownMethod {
@@ -403,6 +484,39 @@ mod tests {
                     MessageMatcher::Eq(Message::ReadTemperature),
                     Ok(MessageReturn::ReadTemperature(Celsius(override_temp.into()))),
                 ),
+                (
+                    MessageMatcher::Eq(Message::GetTripPointDescriptors),
+                    Ok(MessageReturn::GetTripPointDescriptors(Ok(vec![
+                        ftrippoint::TripPointDescriptor {
+                            index: 0,
+                            type_: ftrippoint::TripPointType::OneshotTempAbove,
+                            configuration: ftrippoint::TripPointValue::ClearedTripPoint(
+                                ftrippoint::ClearedTripPoint,
+                            ),
+                        },
+                    ]))),
+                ),
+                (
+                    MessageMatcher::Eq(Message::SetTripPoints(vec![
+                        ftrippoint::TripPointDescriptor {
+                            index: 0,
+                            type_: ftrippoint::TripPointType::OneshotTempAbove,
+                            configuration: ftrippoint::TripPointValue::OneshotTempAboveTripPoint(
+                                ftrippoint::OneshotTempAboveTripPoint {
+                                    critical_temperature_celsius: 70.0,
+                                },
+                            ),
+                        },
+                    ])),
+                    Ok(MessageReturn::SetTripPoints(Ok(()))),
+                ),
+                (
+                    MessageMatcher::Eq(Message::WaitForAnyTripPoint),
+                    Ok(MessageReturn::WaitForAnyTripPoint(Ok(ftrippoint::TripPointResult {
+                        measured_temperature_celsius: 75.0,
+                        index: 0,
+                    }))),
+                ),
             ],
         );
 
@@ -441,6 +555,33 @@ mod tests {
                 .unwrap()
                 .unwrap();
             assert_eq!(override_temp, sensor.get_temperature_celsius().await.unwrap().1);
+
+            let (trippoint, trippoint_server_end) = fidl::endpoints::create_proxy();
+            sensor_manager_proxy
+                .connect(fthermal::SensorManagerConnectRequest {
+                    name: Some(fake_sensor_name.to_string()),
+                    server_end: Some(fthermal::SensorServer_::Trippoint(trippoint_server_end)),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            let descriptors = trippoint.get_trip_point_descriptors().await.unwrap().unwrap();
+            assert_eq!(1, descriptors.len());
+            assert_eq!(ftrippoint::TripPointType::OneshotTempAbove, descriptors[0].type_);
+
+            let updated = vec![ftrippoint::TripPointDescriptor {
+                index: 0,
+                type_: ftrippoint::TripPointType::OneshotTempAbove,
+                configuration: ftrippoint::TripPointValue::OneshotTempAboveTripPoint(
+                    ftrippoint::OneshotTempAboveTripPoint { critical_temperature_celsius: 70.0 },
+                ),
+            }];
+            trippoint.set_trip_points(&updated).await.unwrap().unwrap();
+
+            let trip_result = trippoint.wait_for_any_trip_point().await.unwrap().unwrap();
+            assert_eq!(0, trip_result.index);
+            assert_eq!(75.0, trip_result.measured_temperature_celsius);
         }
 
         // Tasks and connections must be explicitly aborted and dropped before MockNodeMaker goes

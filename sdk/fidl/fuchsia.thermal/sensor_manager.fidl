@@ -4,16 +4,25 @@
 library fuchsia.thermal;
 
 using fuchsia.hardware.temperature;
+using fuchsia.hardware.trippoint;
 
 /// The server end for a thermal sensor connection.
 @available(added=HEAD)
 type SensorServer = flexible resource union {
+    /// Connects to the sensor's `fuchsia.hardware.temperature.Device` protocol.
     1: temperature server_end:fuchsia.hardware.temperature.Device;
+    /// Connects to the sensor's `fuchsia.hardware.trippoint.TripPoint` protocol.
+    ///
+    /// Trip point configuration (`SetTripPoints`, `GetTripPointDescriptors`, and
+    /// `WaitForAnyTripPoint`) is shared across all clients connected to the same sensor.
+    2: trippoint server_end:fuchsia.hardware.trippoint.TripPoint;
 };
 
 /// Information about a sensor.
 @available(added=HEAD)
 type SensorInfo = table {
+    /// Unique board-level sensor name/type identifier (for example, matched by client thermal
+    /// configurations and exposed as `thermal_zone<N>/type` in Starnix).
     1: name fuchsia.hardware.temperature.SensorName;
 };
 
@@ -86,7 +95,7 @@ open protocol SensorManager {
         /// Required.
         1: name fuchsia.hardware.temperature.SensorName;
         /// Required.
-        /// The value that is set MUST match the type of sensor.
+        /// Selects which protocol interface (`temperature` or `trippoint`) to connect on the sensor.
         2: server_end SensorServer;
     }) -> () error ConnectError;
 };

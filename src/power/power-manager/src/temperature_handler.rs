@@ -7,22 +7,25 @@ use crate::error::PowerManagerError;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use crate::types::{Celsius, Nanoseconds, Seconds};
-use crate::utils::get_temperature_driver_proxy;
+use crate::utils::get_temperature_driver_proxies;
 use crate::{log_if_err, ok_or_default_err};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
 use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_hardware_trippoint as ftrippoint;
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use futures::FutureExt as _;
 use log::*;
 use serde_derive::Deserialize;
 use serde_json as json;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::task::Poll;
 use zx;
 
 /// Node: TemperatureHandler
@@ -34,17 +37,27 @@ use zx;
 ///
 /// Handles Messages:
 ///     - ReadTemperature
+///     - GetSensorName
+///     - SetTemperatureOverride
+///     - ClearTemperatureOverride
+///     - GetTripPointDescriptors
+///     - SetTripPoints
+///     - WaitForAnyTripPoint
+///     - Debug
 ///
 /// Sends Messages: N/A
 ///
 /// FIDL dependencies:
 ///     - fuchsia.hardware.temperature: the node uses this protocol to identify and query the
 ///       temperature driver specified by `sensor_name` in the TemperatureHandler constructor
+///     - fuchsia.hardware.trippoint: the node optionally uses this protocol to configure and wait
+///       on hardware trip points for the temperature driver specified by `sensor_name`
 
 /// A builder for constructing the TemperatureHandler node
 pub struct TemperatureHandlerBuilder<'a> {
     sensor_name: Option<String>,
     driver_proxy: Option<ftemperature::DeviceProxy>,
+    trippoint_proxy: Option<ftrippoint::TripPointProxy>,
     cache_duration: Option<zx::MonotonicDuration>,
     inspect_root: Option<&'a inspect::Node>,
 }
@@ -55,6 +68,7 @@ impl<'a> TemperatureHandlerBuilder<'a> {
         Self {
             sensor_name: Some("therm-cpu-1".to_string()),
             driver_proxy: None,
+            trippoint_proxy: None,
             cache_duration: None,
             inspect_root: None,
         }
@@ -63,6 +77,12 @@ impl<'a> TemperatureHandlerBuilder<'a> {
     #[cfg(test)]
     pub fn driver_proxy(mut self, proxy: ftemperature::DeviceProxy) -> Self {
         self.driver_proxy = Some(proxy);
+        self
+    }
+
+    #[cfg(test)]
+    pub fn trippoint_proxy(mut self, proxy: ftrippoint::TripPointProxy) -> Self {
+        self.trippoint_proxy = Some(proxy);
         self
     }
 
@@ -94,6 +114,7 @@ impl<'a> TemperatureHandlerBuilder<'a> {
         Self {
             sensor_name: Some(data.config.sensor_name),
             driver_proxy: None,
+            trippoint_proxy: None,
             cache_duration: Some(zx::MonotonicDuration::from_millis(
                 data.config.cache_duration_ms as i64,
             )),
@@ -111,6 +132,8 @@ impl<'a> TemperatureHandlerBuilder<'a> {
             last_temperature: Celsius(f64::NAN),
             last_poll_time: fasync::MonotonicInstant::INFINITE_PAST,
             driver_proxy: self.driver_proxy,
+            trippoint_proxy: self.trippoint_proxy,
+            pending_wait_fut: None,
             temperature_override: None,
         };
 
@@ -238,6 +261,85 @@ impl TemperatureHandler {
         Ok(MessageReturn::ClearTemperatureOverride)
     }
 
+    fn map_trippoint_fidl_error(&self, method: &str, err: fidl::Error) -> i32 {
+        match err {
+            // `connect_to_trippoint()` is pipelined and always succeeds when opening the channel,
+            // so drivers that do not serve the `trippoint` service member close the channel with
+            // `PEER_CLOSED` on the first request.
+            fidl::Error::ClientChannelClosed { epitaph, .. } if epitaph.is_peer_closed() => {
+                zx::Status::NOT_SUPPORTED.into_raw()
+            }
+            fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::Explicit(Err(status)),
+                ..
+            } => status.into_raw(),
+            e => {
+                warn!("{}: {} IPC failed: {}", self.name(), method, e);
+                zx::Status::IO.into_raw()
+            }
+        }
+    }
+
+    async fn handle_get_trip_point_descriptors(&self) -> Result<MessageReturn, PowerManagerError> {
+        self.init_done.wait().await;
+
+        let Some(trippoint_proxy) = self.mutable_inner.borrow().trippoint_proxy.clone() else {
+            return Ok(MessageReturn::GetTripPointDescriptors(Err(
+                zx::Status::NOT_SUPPORTED.into_raw()
+            )));
+        };
+
+        let result = match trippoint_proxy.get_trip_point_descriptors().await {
+            Ok(res) => res,
+            Err(e) => Err(self.map_trippoint_fidl_error("get_trip_point_descriptors", e)),
+        };
+        Ok(MessageReturn::GetTripPointDescriptors(result))
+    }
+
+    async fn handle_set_trip_points(
+        &self,
+        descriptors: &[ftrippoint::TripPointDescriptor],
+    ) -> Result<MessageReturn, PowerManagerError> {
+        self.init_done.wait().await;
+
+        let Some(trippoint_proxy) = self.mutable_inner.borrow().trippoint_proxy.clone() else {
+            return Ok(MessageReturn::SetTripPoints(Err(zx::Status::NOT_SUPPORTED.into_raw())));
+        };
+
+        let result = match trippoint_proxy.set_trip_points(descriptors).await {
+            Ok(res) => res,
+            Err(e) => Err(self.map_trippoint_fidl_error("set_trip_points", e)),
+        };
+        Ok(MessageReturn::SetTripPoints(result))
+    }
+
+    async fn handle_wait_for_any_trip_point(&self) -> Result<MessageReturn, PowerManagerError> {
+        self.init_done.wait().await;
+
+        let result = std::future::poll_fn(|cx| {
+            let mut inner = self.mutable_inner.borrow_mut();
+            if inner.pending_wait_fut.is_none() {
+                let Some(trippoint_proxy) = inner.trippoint_proxy.as_ref() else {
+                    return Poll::Ready(Ok(Err(zx::Status::NOT_SUPPORTED.into_raw())));
+                };
+                inner.pending_wait_fut = Some(trippoint_proxy.wait_for_any_trip_point());
+            }
+            let fut = inner.pending_wait_fut.as_mut().unwrap();
+            let poll_res = fut.poll_unpin(cx);
+            if poll_res.is_ready() {
+                inner.pending_wait_fut = None;
+            }
+            poll_res
+        })
+        .await;
+
+        let result = match result {
+            Ok(res) => res,
+            Err(e) => Err(self.map_trippoint_fidl_error("wait_for_any_trip_point", e)),
+        };
+        Ok(MessageReturn::WaitForAnyTripPoint(result))
+    }
+
     async fn read_temperature(&self) -> Result<Celsius, Error> {
         fuchsia_trace::duration!(
             c"power_manager",
@@ -321,6 +423,14 @@ struct MutableInner {
     /// test).
     driver_proxy: Option<ftemperature::DeviceProxy>,
 
+    /// Optional proxy to the hardware trip point interface of the temperature driver.
+    trippoint_proxy: Option<ftrippoint::TripPointProxy>,
+
+    /// In-flight `WaitForAnyTripPoint` FIDL request future on `trippoint_proxy`, reused across
+    /// cancelled `handle_wait_for_any_trip_point` calls until the driver responds.
+    pending_wait_fut:
+        Option<fidl::client::QueryResponseFut<ftrippoint::TripPointWaitForAnyTripPointResult>>,
+
     /// Allow the debug service to set an override temperature. If set, `ReadTemperature` will
     /// always respond with this temperature.
     temperature_override: Option<Celsius>,
@@ -339,12 +449,22 @@ impl Node for TemperatureHandler {
         fuchsia_trace::duration!("power_manager", "TemperatureHandler::init");
 
         // Connect to the temperature driver. Typically this is None, but it may be set by tests.
-        let driver_proxy = match &self.mutable_inner.borrow().driver_proxy {
-            Some(p) => p.clone(),
-            None => get_temperature_driver_proxy(&self.sensor_name).await?,
+        let (mut driver_proxy, mut trippoint_proxy) = {
+            let mut inner = self.mutable_inner.borrow_mut();
+            (inner.driver_proxy.take(), inner.trippoint_proxy.take())
         };
+        if driver_proxy.is_none() {
+            let (driver, found_trippoint) =
+                get_temperature_driver_proxies(&self.sensor_name).await?;
+            driver_proxy = Some(driver);
+            trippoint_proxy = trippoint_proxy.or(found_trippoint);
+        }
 
-        self.mutable_inner.borrow_mut().driver_proxy = Some(driver_proxy);
+        {
+            let mut inner = self.mutable_inner.borrow_mut();
+            inner.driver_proxy = driver_proxy;
+            inner.trippoint_proxy = trippoint_proxy;
+        }
         self.init_done.signal();
 
         Ok(())
@@ -358,6 +478,9 @@ impl Node for TemperatureHandler {
                 self.handle_set_temperature_override(*temperature).await
             }
             Message::ClearTemperatureOverride => self.handle_clear_temperature_override().await,
+            Message::GetTripPointDescriptors => self.handle_get_trip_point_descriptors().await,
+            Message::SetTripPoints(descriptors) => self.handle_set_trip_points(descriptors).await,
+            Message::WaitForAnyTripPoint => self.handle_wait_for_any_trip_point().await,
             Message::Debug(command, args) => self.handle_debug_message(command, args),
             _ => Err(PowerManagerError::Unsupported),
         }
@@ -647,6 +770,171 @@ pub mod tests {
         assert_matches!(
             node.handle_message(&Message::ReadTemperature).await.unwrap(),
             MessageReturn::ReadTemperature(Celsius(t)) if t == 10.0
+        );
+    }
+
+    /// Tests that hardware trip point messages are forwarded to `trippoint_proxy` when present,
+    /// and return `ZX_ERR_NOT_SUPPORTED` when no `trippoint_proxy` is available.
+    #[fuchsia::test]
+    async fn test_trip_points() {
+        // Without a trippoint_proxy, trip point messages return NOT_SUPPORTED.
+        let node_no_trippoint = TemperatureHandlerBuilder::new()
+            .driver_proxy(fake_temperature_driver(|| Celsius(25.0)))
+            .build_and_init()
+            .await;
+        assert_matches!(
+            node_no_trippoint.handle_message(&Message::GetTripPointDescriptors).await.unwrap(),
+            MessageReturn::GetTripPointDescriptors(Err(s))
+                if s == zx::Status::NOT_SUPPORTED.into_raw()
+        );
+        assert_matches!(
+            node_no_trippoint.handle_message(&Message::SetTripPoints(vec![])).await.unwrap(),
+            MessageReturn::SetTripPoints(Err(s))
+                if s == zx::Status::NOT_SUPPORTED.into_raw()
+        );
+        assert_matches!(
+            node_no_trippoint.handle_message(&Message::WaitForAnyTripPoint).await.unwrap(),
+            MessageReturn::WaitForAnyTripPoint(Err(s))
+                if s == zx::Status::NOT_SUPPORTED.into_raw()
+        );
+
+        // With a trippoint_proxy, trip point messages are proxied to the driver.
+        let (trippoint_proxy, mut trippoint_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ftrippoint::TripPointMarker>();
+        let configured = Rc::new(RefCell::new(vec![ftrippoint::TripPointDescriptor {
+            index: 0,
+            type_: ftrippoint::TripPointType::OneshotTempAbove,
+            configuration: ftrippoint::TripPointValue::ClearedTripPoint(
+                ftrippoint::ClearedTripPoint,
+            ),
+        }]));
+        let configured_clone = configured.clone();
+        fasync::Task::local(async move {
+            while let Ok(Some(req)) = trippoint_stream.try_next().await {
+                match req {
+                    ftrippoint::TripPointRequest::GetTripPointDescriptors { responder } => {
+                        let _ = responder.send(Ok(&configured_clone.borrow()));
+                    }
+                    ftrippoint::TripPointRequest::SetTripPoints { descriptors, responder } => {
+                        *configured_clone.borrow_mut() = descriptors;
+                        let _ = responder.send(Ok(()));
+                    }
+                    ftrippoint::TripPointRequest::WaitForAnyTripPoint { responder } => {
+                        let _ = responder.send(Ok(&ftrippoint::TripPointResult {
+                            measured_temperature_celsius: 80.0,
+                            index: 0,
+                        }));
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        })
+        .detach();
+
+        let node = TemperatureHandlerBuilder::new()
+            .driver_proxy(fake_temperature_driver(|| Celsius(25.0)))
+            .trippoint_proxy(trippoint_proxy)
+            .build_and_init()
+            .await;
+
+        let new_descriptors = vec![ftrippoint::TripPointDescriptor {
+            index: 0,
+            type_: ftrippoint::TripPointType::OneshotTempAbove,
+            configuration: ftrippoint::TripPointValue::OneshotTempAboveTripPoint(
+                ftrippoint::OneshotTempAboveTripPoint { critical_temperature_celsius: 75.0 },
+            ),
+        }];
+        assert_matches!(
+            node.handle_message(&Message::SetTripPoints(new_descriptors.clone())).await.unwrap(),
+            MessageReturn::SetTripPoints(Ok(()))
+        );
+        assert_matches!(
+            node.handle_message(&Message::GetTripPointDescriptors).await.unwrap(),
+            MessageReturn::GetTripPointDescriptors(Ok(descs)) if descs == new_descriptors
+        );
+        assert_matches!(
+            node.handle_message(&Message::WaitForAnyTripPoint).await.unwrap(),
+            MessageReturn::WaitForAnyTripPoint(Ok(res))
+                if res.index == 0 && res.measured_temperature_celsius == 80.0
+        );
+    }
+
+    /// Tests that dropping an in-flight `handle_wait_for_any_trip_point` future (e.g. when a
+    /// client disconnects) and calling `WaitForAnyTripPoint` again reuses the existing in-flight
+    /// `QueryResponseFut` on `trippoint_proxy` instead of sending a duplicate request on the
+    /// driver channel.
+    #[fuchsia::test]
+    fn test_wait_for_any_trip_point_reuses_inflight_request_on_cancel() {
+        let mut executor = fasync::TestExecutor::new();
+        let (trippoint_proxy, mut trippoint_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ftrippoint::TripPointMarker>();
+
+        let node = executor
+            .run_until_stalled(&mut Box::pin(
+                TemperatureHandlerBuilder::new()
+                    .driver_proxy(fake_temperature_driver(|| Celsius(25.0)))
+                    .trippoint_proxy(trippoint_proxy)
+                    .build_and_init(),
+            ))
+            .unwrap();
+
+        // 1. Start the first `WaitForAnyTripPoint` call, poll it so the FIDL request is sent,
+        // and then drop the `handle_message` future (simulating client disconnect).
+        {
+            let mut wait_fut_1 = node.handle_message(&Message::WaitForAnyTripPoint);
+            assert!(executor.run_until_stalled(&mut wait_fut_1).is_pending());
+        }
+
+        // Verify the driver received the first request.
+        let responder_1 = match executor.run_until_stalled(&mut trippoint_stream.try_next()) {
+            Poll::Ready(Ok(Some(ftrippoint::TripPointRequest::WaitForAnyTripPoint {
+                responder,
+            }))) => responder,
+            other => panic!("Expected first WaitForAnyTripPoint request, got {:?}", other),
+        };
+
+        // 2. Start a second `WaitForAnyTripPoint` call while the first driver request is still
+        // in flight. It must reuse the stored `QueryResponseFut` without sending a second FIDL
+        // request on `trippoint_stream`, and concurrently reading temperature must not borrow-
+        // conflict with `mutable_inner`.
+        let mut wait_fut_2 = node.handle_message(&Message::WaitForAnyTripPoint);
+        assert!(executor.run_until_stalled(&mut wait_fut_2).is_pending());
+        assert!(executor.run_until_stalled(&mut trippoint_stream.try_next()).is_pending());
+
+        let mut read_temp_fut = node.handle_message(&Message::ReadTemperature);
+        assert_matches!(
+            executor.run_until_stalled(&mut read_temp_fut),
+            Poll::Ready(Ok(MessageReturn::ReadTemperature(Celsius(t)))) if t == 25.0
+        );
+
+        // 3. When the driver replies to the original `responder_1`, `wait_fut_2` receives the
+        // result and clears `pending_wait_fut`.
+        responder_1
+            .send(Ok(&ftrippoint::TripPointResult { measured_temperature_celsius: 82.5, index: 1 }))
+            .unwrap();
+        assert_matches!(
+            executor.run_until_stalled(&mut wait_fut_2),
+            Poll::Ready(Ok(MessageReturn::WaitForAnyTripPoint(Ok(res))))
+                if res.index == 1 && res.measured_temperature_celsius == 82.5
+        );
+        drop(wait_fut_2);
+
+        // 4. A subsequent `WaitForAnyTripPoint` call after completion sends a fresh FIDL request.
+        let mut wait_fut_3 = node.handle_message(&Message::WaitForAnyTripPoint);
+        assert!(executor.run_until_stalled(&mut wait_fut_3).is_pending());
+        let responder_2 = match executor.run_until_stalled(&mut trippoint_stream.try_next()) {
+            Poll::Ready(Ok(Some(ftrippoint::TripPointRequest::WaitForAnyTripPoint {
+                responder,
+            }))) => responder,
+            other => panic!("Expected second WaitForAnyTripPoint request, got {:?}", other),
+        };
+        responder_2
+            .send(Ok(&ftrippoint::TripPointResult { measured_temperature_celsius: 85.0, index: 0 }))
+            .unwrap();
+        assert_matches!(
+            executor.run_until_stalled(&mut wait_fut_3),
+            Poll::Ready(Ok(MessageReturn::WaitForAnyTripPoint(Ok(res))))
+                if res.index == 0 && res.measured_temperature_celsius == 85.0
         );
     }
 }

@@ -11,6 +11,7 @@ rustc_test("bin") {
   testonly = true
   edition = "2024"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",

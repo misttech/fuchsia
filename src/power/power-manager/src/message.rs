@@ -4,6 +4,7 @@
 
 use crate::platform_metrics::PlatformMetric;
 use crate::types::{Celsius, ThermalLoad};
+use fidl_fuchsia_hardware_trippoint as ftrippoint;
 
 /// Defines the message types and arguments to be used for inter-node communication
 #[derive(Debug, PartialEq)]
@@ -50,6 +51,15 @@ pub enum Message {
     /// Clears a previously set temperature override.
     ClearTemperatureOverride,
 
+    /// Gets the hardware trip point descriptors from the sensor driver.
+    GetTripPointDescriptors,
+
+    /// Configures hardware trip points on the sensor driver.
+    SetTripPoints(Vec<ftrippoint::TripPointDescriptor>),
+
+    /// Waits for any configured hardware trip point to be crossed on the sensor driver.
+    WaitForAnyTripPoint,
+
     /// Send a debug command.
     /// Arg0: node-specific command as a string
     /// Arg1: args required to execute the command
@@ -92,6 +102,15 @@ pub enum MessageReturn {
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     ClearTemperatureOverride,
+
+    /// Arg: hardware trip point descriptors or raw zx::Status error.
+    GetTripPointDescriptors(Result<Vec<ftrippoint::TripPointDescriptor>, i32>),
+
+    /// Arg: Ok(()) or raw zx::Status error from configuring hardware trip points.
+    SetTripPoints(Result<(), i32>),
+
+    /// Arg: hardware trip point result or raw zx::Status error.
+    WaitForAnyTripPoint(Result<ftrippoint::TripPointResult, i32>),
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     Debug,

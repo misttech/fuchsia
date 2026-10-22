@@ -13,6 +13,7 @@ rustc_binary("bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_rust",
+    "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",

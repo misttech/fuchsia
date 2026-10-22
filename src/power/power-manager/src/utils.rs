@@ -4,6 +4,7 @@
 
 use anyhow::Error;
 use fidl_fuchsia_hardware_temperature as ftemperature;
+use fidl_fuchsia_hardware_trippoint as ftrippoint;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client as fclient;
 use futures::future::FutureExt;
@@ -117,9 +118,9 @@ impl CobaltIntHistogram {
 
 const TEMPERATURE_DRIVER_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(60);
 
-pub async fn get_temperature_driver_proxy(
+pub async fn get_temperature_driver_proxies(
     sensor_name: &str,
-) -> Result<ftemperature::DeviceProxy, Error> {
+) -> Result<(ftemperature::DeviceProxy, Option<ftrippoint::TripPointProxy>), Error> {
     const TEMPERATURE_DRIVER_DIRS: [&str; 2] = ["/dev/class/temperature", "/dev/class/thermal"];
 
     // Search for the temperature driver across DevFS directories and FIDL service instances
@@ -134,7 +135,7 @@ pub async fn get_temperature_driver_proxy(
     let mut debug_messages = Vec::new();
     while let Some(result) = futures.next().await {
         match result {
-            Ok(proxy) => return Ok(proxy),
+            Ok(proxies) => return Ok(proxies),
             // It is ok that a driver directory or svc doesn't have the sensor or times out waiting
             // for `sensor_name` to show up. Cache the error.
             Err(err) => debug_messages.push(err),
@@ -154,7 +155,7 @@ pub async fn get_temperature_driver_proxy(
 async fn get_temperature_driver_proxy_from_dir(
     dir_path: &str,
     required_sensor_name: &str,
-) -> Result<ftemperature::DeviceProxy, Error> {
+) -> Result<(ftemperature::DeviceProxy, Option<ftrippoint::TripPointProxy>), Error> {
     let dir = fuchsia_fs::directory::open_in_namespace(dir_path, fuchsia_fs::PERM_READABLE)?;
 
     let mut watcher = fuchsia_fs::directory::Watcher::new(&dir).await.map_err(|e| {
@@ -193,7 +194,7 @@ async fn get_temperature_driver_proxy_from_dir(
                     );
 
                     if required_sensor_name == sensor_name {
-                        return Ok(proxy);
+                        return Ok((proxy, None));
                     }
                 }
             }
@@ -205,7 +206,7 @@ async fn get_temperature_driver_proxy_from_dir(
 
 async fn get_temperature_driver_proxy_from_svc(
     required_sensor_name: &str,
-) -> Result<ftemperature::DeviceProxy, Error> {
+) -> Result<(ftemperature::DeviceProxy, Option<ftrippoint::TripPointProxy>), Error> {
     let mut watcher = fclient::Service::open(ftemperature::ServiceMarker)?.watch().await?;
 
     loop {
@@ -230,7 +231,8 @@ async fn get_temperature_driver_proxy_from_svc(
             );
 
             if required_sensor_name == sensor_name {
-                return Ok(proxy);
+                let trippoint_proxy = instance.connect_to_trippoint().ok();
+                return Ok((proxy, trippoint_proxy));
             }
         } else {
             return Err(anyhow::anyhow!("Directory watcher returned None entry."));

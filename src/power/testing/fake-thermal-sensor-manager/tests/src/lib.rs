@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_hardware_trippoint as ftrippoint;
 use fidl_fuchsia_thermal as fthermal;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use log::*;
@@ -117,4 +118,95 @@ async fn setting_and_clearing_temperature_override_works() {
     let (status, temp_c) = sensor.get_temperature_celsius().await.unwrap();
     assert_eq!(zx::sys::ZX_OK, status);
     assert_eq!(25.0, temp_c);
+}
+
+#[fuchsia::test]
+async fn connect_trippoint_and_set_trip_points_works() {
+    let env = create_test_env().await;
+    let sensor_manager = env.connect_to_protocol::<fthermal::SensorManagerMarker>();
+    let (trippoint, server_end) = fidl::endpoints::create_proxy();
+
+    sensor_manager
+        .connect(fthermal::SensorManagerConnectRequest {
+            name: Some(SENSOR_NAME.to_string()),
+            server_end: Some(fthermal::SensorServer_::Trippoint(server_end)),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    let descriptors = trippoint.get_trip_point_descriptors().await.unwrap().unwrap();
+    assert_eq!(2, descriptors.len());
+    assert_eq!(ftrippoint::TripPointType::OneshotTempAbove, descriptors[0].type_);
+    assert_eq!(ftrippoint::TripPointType::OneshotTempBelow, descriptors[1].type_);
+
+    let updated = vec![
+        ftrippoint::TripPointDescriptor {
+            index: 0,
+            type_: ftrippoint::TripPointType::OneshotTempAbove,
+            configuration: ftrippoint::TripPointValue::OneshotTempAboveTripPoint(
+                ftrippoint::OneshotTempAboveTripPoint { critical_temperature_celsius: 65.0 },
+            ),
+        },
+        ftrippoint::TripPointDescriptor {
+            index: 1,
+            type_: ftrippoint::TripPointType::OneshotTempBelow,
+            configuration: ftrippoint::TripPointValue::OneshotTempBelowTripPoint(
+                ftrippoint::OneshotTempBelowTripPoint { critical_temperature_celsius: 60.0 },
+            ),
+        },
+    ];
+    trippoint.set_trip_points(&updated).await.unwrap().unwrap();
+
+    let descriptors = trippoint.get_trip_point_descriptors().await.unwrap().unwrap();
+    assert_eq!(updated, descriptors);
+
+    // Non-finite temperatures are rejected with ZX_ERR_INVALID_ARGS and temperatures at or below
+    // absolute zero are rejected with ZX_ERR_OUT_OF_RANGE without mutating the descriptors.
+    let invalid_inf = vec![ftrippoint::TripPointDescriptor {
+        index: 0,
+        type_: ftrippoint::TripPointType::OneshotTempAbove,
+        configuration: ftrippoint::TripPointValue::OneshotTempAboveTripPoint(
+            ftrippoint::OneshotTempAboveTripPoint { critical_temperature_celsius: f32::INFINITY },
+        ),
+    }];
+    assert_eq!(
+        Err(zx::Status::INVALID_ARGS.into_raw()),
+        trippoint.set_trip_points(&invalid_inf).await.unwrap()
+    );
+    let out_of_range = vec![ftrippoint::TripPointDescriptor {
+        index: 0,
+        type_: ftrippoint::TripPointType::OneshotTempAbove,
+        configuration: ftrippoint::TripPointValue::OneshotTempAboveTripPoint(
+            ftrippoint::OneshotTempAboveTripPoint { critical_temperature_celsius: -300.0 },
+        ),
+    }];
+    assert_eq!(
+        Err(zx::Status::OUT_OF_RANGE.into_raw()),
+        trippoint.set_trip_points(&out_of_range).await.unwrap()
+    );
+    assert_eq!(updated, trippoint.get_trip_point_descriptors().await.unwrap().unwrap());
+
+    // Clearing all active trip points while a WaitForAnyTripPoint call is pending wakes the
+    // waiter with ZX_ERR_BAD_STATE.
+    let wait_fut = trippoint.wait_for_any_trip_point();
+    let cleared = vec![
+        ftrippoint::TripPointDescriptor {
+            index: 0,
+            type_: ftrippoint::TripPointType::OneshotTempAbove,
+            configuration: ftrippoint::TripPointValue::ClearedTripPoint(
+                ftrippoint::ClearedTripPoint,
+            ),
+        },
+        ftrippoint::TripPointDescriptor {
+            index: 1,
+            type_: ftrippoint::TripPointType::OneshotTempBelow,
+            configuration: ftrippoint::TripPointValue::ClearedTripPoint(
+                ftrippoint::ClearedTripPoint,
+            ),
+        },
+    ];
+    trippoint.set_trip_points(&cleared).await.unwrap().unwrap();
+    assert_eq!(Err(zx::Status::BAD_STATE.into_raw()), wait_fut.await.unwrap());
 }

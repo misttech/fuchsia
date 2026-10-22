@@ -39,5 +39,8 @@ fidl("fuchsia.thermal") {
   enable_hlcpp = true
   stable = true
   visibility = [ "*" ]
-  public_deps = [ "//sdk/fidl/fuchsia.hardware.temperature" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.temperature",
+    "//sdk/fidl/fuchsia.hardware.trippoint",
+  ]
 }
