@@ -8,8 +8,7 @@ use anyhow::{Error, format_err};
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_mlme::DeviceInfo;
 use wlan_common::bss::BssDescription;
-use wlan_common::ie::rsn::rsne::{self, Rsne};
-use wlan_common::ie::wpa::WpaIe;
+use wlan_common::ie::rsn::rsne;
 use wlan_common::ie::{self};
 use wlan_common::security::wep::{self, WepKey};
 use wlan_common::security::{SecurityAuthenticator, wpa};
@@ -103,8 +102,10 @@ impl<'a, C> SecurityContext<'a, C> {
 struct OweAuthenticator;
 
 impl SecurityContext<'_, OweAuthenticator> {
-    /// Gets the authenticator and supplicant RSNEs for OWE from the associated BSS.
-    fn authenticator_supplicant_rsne(&self) -> Result<(Rsne, Rsne), Error> {
+    /// Gets the authenticator and supplicant protection for OWE from the associated BSS.
+    fn authenticator_supplicant_protection(
+        &self,
+    ) -> Result<(ProtectionInfo, ProtectionInfo), Error> {
         let a_rsne_ie = self
             .bss
             .rsne()
@@ -112,7 +113,7 @@ impl SecurityContext<'_, OweAuthenticator> {
         let (_, a_rsne) = rsne::from_bytes(a_rsne_ie)
             .map_err(|error| format_err!("Invalid RSNE IE {:02x?}: {:?}", a_rsne_ie, error))?;
         let s_rsne = a_rsne.derive_owe_s_rsne(self.security_support)?;
-        Ok((a_rsne, s_rsne))
+        Ok((ProtectionInfo::Rsne(a_rsne), ProtectionInfo::Rsne(s_rsne)))
     }
 
     fn authentication_config(&self) -> Result<auth::Config, Error> {
@@ -121,14 +122,16 @@ impl SecurityContext<'_, OweAuthenticator> {
 }
 
 impl SecurityContext<'_, wpa::Wpa1Credentials> {
-    /// Gets the authenticator and supplicant IEs for WPA1 from the associated BSS.
-    fn authenticator_supplicant_ie(&self) -> Result<(WpaIe, WpaIe), Error> {
+    /// Gets the authenticator and supplicant protection for WPA1 from the associated BSS.
+    fn authenticator_supplicant_protection(
+        &self,
+    ) -> Result<(ProtectionInfo, ProtectionInfo), Error> {
         let a_wpa_ie = self.bss.wpa_ie()?;
         if !crate::client::wpa::is_legacy_wpa_compatible(&a_wpa_ie) {
             return Err(format_err!("Legacy WPA requested but IE is incompatible: {:?}", a_wpa_ie));
         }
         let s_wpa_ie = crate::client::wpa::construct_s_wpa(&a_wpa_ie);
-        Ok((a_wpa_ie, s_wpa_ie))
+        Ok((ProtectionInfo::LegacyWpa(a_wpa_ie), ProtectionInfo::LegacyWpa(s_wpa_ie)))
     }
 
     /// Gets the PSK used to authenticate via WPA1.
@@ -138,8 +141,10 @@ impl SecurityContext<'_, wpa::Wpa1Credentials> {
 }
 
 impl SecurityContext<'_, wpa::Wpa2PersonalCredentials> {
-    /// Gets the authenticator and supplicant RSNEs for WPA2 Personal from the associated BSS.
-    fn authenticator_supplicant_rsne(&self) -> Result<(Rsne, Rsne), Error> {
+    /// Gets the authenticator and supplicant protection for WPA2 Personal from the associated BSS.
+    fn authenticator_supplicant_protection(
+        &self,
+    ) -> Result<(ProtectionInfo, ProtectionInfo), Error> {
         let a_rsne_ie = self
             .bss
             .rsne()
@@ -147,7 +152,7 @@ impl SecurityContext<'_, wpa::Wpa2PersonalCredentials> {
         let (_, a_rsne) = rsne::from_bytes(a_rsne_ie)
             .map_err(|error| format_err!("Invalid RSNE IE {:02x?}: {:?}", a_rsne_ie, error))?;
         let s_rsne = a_rsne.derive_wpa2_s_rsne(self.security_support)?;
-        Ok((a_rsne, s_rsne))
+        Ok((ProtectionInfo::Rsne(a_rsne), ProtectionInfo::Rsne(s_rsne)))
     }
 
     /// Gets the PSK used to authenticate via WPA2 Personal.
@@ -157,8 +162,10 @@ impl SecurityContext<'_, wpa::Wpa2PersonalCredentials> {
 }
 
 impl SecurityContext<'_, wpa::Wpa3PersonalCredentials> {
-    /// Gets the authenticator and supplicant RSNEs for WPA3 Personal from the associated BSS.
-    fn authenticator_supplicant_rsne(&self) -> Result<(Rsne, Rsne), Error> {
+    /// Gets the authenticator and supplicant protection for WPA3 Personal from the associated BSS.
+    fn authenticator_supplicant_protection(
+        &self,
+    ) -> Result<(ProtectionInfo, ProtectionInfo), Error> {
         let a_rsne_ie = self
             .bss
             .rsne()
@@ -166,7 +173,7 @@ impl SecurityContext<'_, wpa::Wpa3PersonalCredentials> {
         let (_, a_rsne) = rsne::from_bytes(a_rsne_ie)
             .map_err(|error| format_err!("Invalid RSNE IE {:02x?}: {:?}", a_rsne_ie, error))?;
         let s_rsne = a_rsne.derive_wpa3_s_rsne(self.security_support)?;
-        Ok((a_rsne, s_rsne))
+        Ok((ProtectionInfo::Rsne(a_rsne), ProtectionInfo::Rsne(s_rsne)))
     }
 
     /// Gets the SAE used to authenticate via WPA3 Personal.
@@ -268,15 +275,15 @@ impl<'a> TryFrom<SecurityContext<'a, OweAuthenticator>> for Protection {
                 if !context.config.owe_supported {
                     return Err(format_err!("OWE requested but client does not support OWE"));
                 }
-                let (a_rsne, s_rsne) = context.authenticator_supplicant_rsne()?;
-                let negotiated_protection = NegotiatedProtection::from_rsne(&s_rsne)?;
+                let (a_protection, s_protection) = context.authenticator_supplicant_protection()?;
+                let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
                 let supplicant = wlan_rsn::Supplicant::new_wpa_personal(
                     NonceReader::new(&sta_addr)?,
                     context.authentication_config()?,
                     sta_addr,
-                    ProtectionInfo::Rsne(s_rsne),
+                    s_protection,
                     context.bss.bssid.into(),
-                    ProtectionInfo::Rsne(a_rsne),
+                    a_protection,
                     false,
                 )
                 .map_err(|error| format_err!("Failed to create ESS-SA: {:?}", error))?;
@@ -311,15 +318,15 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa1Credentials>> for Protection {
             .has_wpa1_configured()
             .then(|| -> Result<_, Self::Error> {
                 let sta_addr = context.device.sta_addr.into();
-                let (a_wpa_ie, s_wpa_ie) = context.authenticator_supplicant_ie()?;
-                let negotiated_protection = NegotiatedProtection::from_legacy_wpa(&s_wpa_ie)?;
+                let (a_protection, s_protection) = context.authenticator_supplicant_protection()?;
+                let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
                 let supplicant = wlan_rsn::Supplicant::new_wpa_personal(
                     NonceReader::new(&sta_addr)?,
                     context.authentication_config(),
                     sta_addr,
-                    ProtectionInfo::LegacyWpa(s_wpa_ie),
+                    s_protection,
                     context.bss.bssid.into(),
-                    ProtectionInfo::LegacyWpa(a_wpa_ie),
+                    a_protection,
                     false,
                 )
                 .map_err(|error| format_err!("Failed to create ESS-SA: {:?}", error))?;
@@ -344,15 +351,15 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa2PersonalCredentials>> for Protecti
             .has_wpa2_personal_configured()
             .then(|| -> Result<_, Self::Error> {
                 let sta_addr = context.device.sta_addr.into();
-                let (a_rsne, s_rsne) = context.authenticator_supplicant_rsne()?;
-                let negotiated_protection = NegotiatedProtection::from_rsne(&s_rsne)?;
+                let (a_protection, s_protection) = context.authenticator_supplicant_protection()?;
+                let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
                 let supplicant = wlan_rsn::Supplicant::new_wpa_personal(
                     NonceReader::new(&sta_addr)?,
                     context.authentication_config(),
                     sta_addr,
-                    ProtectionInfo::Rsne(s_rsne),
+                    s_protection,
                     context.bss.bssid.into(),
-                    ProtectionInfo::Rsne(a_rsne),
+                    a_protection,
                     false,
                 )
                 .map_err(|error| format_err!("Failed to creat ESS-SA: {:?}", error))?;
@@ -380,8 +387,8 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa3PersonalCredentials>> for Protecti
                 if !context.config.wpa3_supported {
                     return Err(format_err!("WPA3 requested but client does not support WPA3"));
                 }
-                let (a_rsne, s_rsne) = context.authenticator_supplicant_rsne()?;
-                let negotiated_protection = NegotiatedProtection::from_rsne(&s_rsne)?;
+                let (a_protection, s_protection) = context.authenticator_supplicant_protection()?;
+                let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
                 let pmksa_caching_supported = context
                     .security_support
                     .sae
@@ -392,9 +399,9 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa3PersonalCredentials>> for Protecti
                     NonceReader::new(&sta_addr)?,
                     context.authentication_config()?,
                     sta_addr,
-                    ProtectionInfo::Rsne(s_rsne),
+                    s_protection,
                     context.bss.bssid.into(),
-                    ProtectionInfo::Rsne(a_rsne),
+                    a_protection,
                     pmksa_caching_supported,
                 )
                 .map_err(|error| format_err!("Failed to create ESS-SA: {:?}", error))?;
@@ -456,6 +463,7 @@ mod tests {
     use wlan_common::fake_bss_description;
     use wlan_common::ie::fake_ies::fake_wpa_ie;
     use wlan_common::ie::rsn::fake_rsnes::{fake_wpa2_s_rsne, fake_wpa3_s_rsne};
+    use wlan_common::ie::rsn::rsne::Rsne;
     use wlan_common::security::wep::{WEP40_KEY_BYTES, WEP104_KEY_BYTES};
     use wlan_common::security::wpa::credential::PSK_SIZE_BYTES;
     use wlan_common::test_utils::fake_features::{
@@ -746,7 +754,7 @@ mod tests {
             config: &config,
             bss: &bss,
         };
-        assert!(context.authenticator_supplicant_ie().is_ok());
+        assert!(context.authenticator_supplicant_protection().is_ok());
         assert!(matches!(context.authentication_config(), auth::Config::ComputedPsk(_)));
 
         let protection = Protection::try_from(context).unwrap();
@@ -769,7 +777,7 @@ mod tests {
             config: &config,
             bss: &bss,
         };
-        assert!(context.authenticator_supplicant_rsne().is_ok());
+        assert!(context.authenticator_supplicant_protection().is_ok());
         assert!(matches!(context.authentication_config(), auth::Config::ComputedPsk(_)));
 
         let protection = Protection::try_from(context).unwrap();
@@ -793,7 +801,7 @@ mod tests {
             config: &config,
             bss: &bss,
         };
-        assert!(context.authenticator_supplicant_rsne().is_ok());
+        assert!(context.authenticator_supplicant_protection().is_ok());
         assert!(matches!(context.authentication_config(), Ok(auth::Config::Sae { .. })));
 
         let protection = Protection::try_from(context).unwrap();
@@ -826,7 +834,7 @@ mod tests {
             config: &config,
             bss: &bss,
         };
-        assert!(context.authenticator_supplicant_rsne().is_ok());
+        assert!(context.authenticator_supplicant_protection().is_ok());
         let pwe_method = assert_matches!(
             context.authentication_config(),
             Ok(auth::Config::Sae { pwe_method, .. }) => pwe_method
@@ -857,7 +865,7 @@ mod tests {
             config: &config,
             bss: &bss,
         };
-        assert!(context.authenticator_supplicant_rsne().is_ok());
+        assert!(context.authenticator_supplicant_protection().is_ok());
         assert_matches!(context.authentication_config(), Ok(auth::Config::DriverSae { .. }));
 
         let protection = Protection::try_from(context).unwrap();
@@ -923,7 +931,7 @@ mod tests {
             config: &config,
             bss: &bss,
         };
-        assert!(context.authenticator_supplicant_rsne().is_ok());
+        assert!(context.authenticator_supplicant_protection().is_ok());
         assert!(matches!(context.authentication_config(), Ok(auth::Config::Owe)));
 
         let protection = Protection::try_from(context).unwrap();
