@@ -92,7 +92,9 @@ impl PrivacyController {
         user_data_sharing_consent: Option<bool>,
     ) -> Result<Option<PrivacyInfo>, PrivacyError> {
         let mut info = self.store.get::<PrivacyInfo>().await;
-        info.user_data_sharing_consent = user_data_sharing_consent;
+        if let Some(user_data_sharing_consent) = user_data_sharing_consent {
+            info.user_data_sharing_consent = Some(user_data_sharing_consent);
+        }
 
         self.store
             .write(&info)
@@ -110,4 +112,59 @@ impl StorageAccess for PrivacyController {
     type Storage = DeviceStorage;
     type Data = PrivacyInfo;
     const STORAGE_KEY: &'static str = PrivacyInfo::KEY;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::channel::mpsc;
+    use settings_test_common::storage::InMemoryStorageFactory;
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_privacy_storage() {
+        let factory = Rc::new(InMemoryStorageFactory::new());
+        let (tx, _) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(tx);
+
+        factory.initialize::<PrivacyController>().await.expect("can initialize privacy storage");
+
+        let privacy_controller =
+            PrivacyController::new(Rc::clone(&factory), setting_value_publisher).await;
+        let store = factory.get_store().await;
+
+        // Initial stored state has no consent value. Calling set(None) is a no-op.
+        let result = privacy_controller.set(None).await.expect("set successful");
+        assert_eq!(result, None);
+        assert_eq!(store.get::<PrivacyInfo>().await.user_data_sharing_consent, None);
+
+        // Set consent to Some(true).
+        let expected_true = PrivacyInfo { user_data_sharing_consent: Some(true) };
+        let result = privacy_controller
+            .set(Some(true))
+            .await
+            .expect("set successful")
+            .expect("privacy info changed");
+        assert_eq!(result, expected_true);
+        assert_eq!(store.get::<PrivacyInfo>().await, expected_true);
+
+        // Calling set(None) preserves Some(true).
+        let result = privacy_controller.set(None).await.expect("set successful");
+        assert_eq!(result, None);
+        assert_eq!(store.get::<PrivacyInfo>().await, expected_true);
+
+        // Set consent to Some(false).
+        let expected_false = PrivacyInfo { user_data_sharing_consent: Some(false) };
+        let result = privacy_controller
+            .set(Some(false))
+            .await
+            .expect("set successful")
+            .expect("privacy info changed");
+        assert_eq!(result, expected_false);
+        assert_eq!(store.get::<PrivacyInfo>().await, expected_false);
+
+        // Calling set(None) preserves Some(false).
+        let result = privacy_controller.set(None).await.expect("set successful");
+        assert_eq!(result, None);
+        assert_eq!(store.get::<PrivacyInfo>().await, expected_false);
+    }
 }

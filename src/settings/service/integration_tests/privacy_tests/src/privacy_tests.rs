@@ -33,6 +33,20 @@ async fn test_privacymarker() {
         // Ensure retrieved value matches set value
         let settings = proxy.watch().await.expect("watch completed");
         assert_eq!(settings.user_data_sharing_consent, changed_value.user_data_sharing_consent);
+
+        // Calling set with an empty PrivacySettings table is a no-op.
+        proxy
+            .set(&fidl_fuchsia_settings::PrivacySettings::default())
+            .await
+            .expect("set completed")
+            .expect("set successful");
+    }
+
+    {
+        let proxy = PrivacyTest::connect_to_privacymarker(&instance);
+        // Ensure retrieved value is unchanged after a no-op set.
+        let settings = proxy.watch().await.expect("watch completed");
+        assert_eq!(settings.user_data_sharing_consent, changed_value.user_data_sharing_consent);
     }
 
     let _ = instance.destroy().await;

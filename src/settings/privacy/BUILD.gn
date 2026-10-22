@@ -36,6 +36,11 @@ rustc_library("settings_privacy") {
     "//third_party/rust_crates:thiserror",
   ]
 
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/settings/test_common:settings_test_common",
+  ]
+
   sources = [
     "src/lib.rs",
     "src/privacy_controller.rs",

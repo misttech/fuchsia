@@ -27,6 +27,7 @@ rustc_library("settings_test_common") {
     "//src/settings/keyboard:*",
     "//src/settings/light:*",
     "//src/settings/media_buttons_agent:*",
+    "//src/settings/privacy:*",
     "//src/settings/service:*",
   ]
 
