@@ -380,6 +380,12 @@ CppRatio cpp_timer_get_ticks_to_time_ratio();
 CurrentTicksObservation cpp_timer_current_mono_and_boot_ticks();
 void cpp_timer_set_ticks_to_time_ratio(CppRatio ticks_to_time);
 void cpp_timer_set_initial_ticks(uint64_t ticks);
+// Returns false if the monotonic clock is paused. Otherwise, stores the result of
+// |timer_convert_mono_to_raw_ticks| in |out_raw_ticks| and returns true.
+bool cpp_timer_convert_mono_to_raw_ticks(zx_instant_mono_ticks_t mono_ticks,
+                                         zx_ticks_t* out_raw_ticks);
+zx_status_t cpp_platform_set_oneshot_timer(zx_ticks_t deadline);
+void cpp_platform_stop_timer();
 
 }  // extern "C"
 

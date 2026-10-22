@@ -243,6 +243,16 @@ impl From<InstantBoot> for InstantUnknown {
     }
 }
 
+impl core::ops::Sub<InstantUnknown> for InstantUnknown {
+    type Output = DurationUnknown;
+
+    /// Saturating difference between two instants, matching `zx_time_sub_time`.
+    #[inline]
+    fn sub(self, rhs: InstantUnknown) -> DurationUnknown {
+        DurationUnknown(self.0.saturating_sub(rhs.0))
+    }
+}
+
 /// Duration in nanoseconds on an unknown timeline.
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -284,6 +294,12 @@ unsafe extern "C" {
     fn cpp_timer_current_mono_and_boot_ticks() -> CurrentTicksObservation;
     fn cpp_timer_set_ticks_to_time_ratio(ticks_to_time: Ratio);
     fn cpp_timer_set_initial_ticks(ticks: u64);
+    fn cpp_timer_convert_mono_to_raw_ticks(
+        mono_ticks: InstantMonoTicks,
+        out_raw_ticks: *mut i64,
+    ) -> bool;
+    fn cpp_platform_set_oneshot_timer(deadline: i64) -> zx_types::zx_status_t;
+    fn cpp_platform_stop_timer();
 }
 
 unsafe extern "C" {
@@ -382,6 +398,35 @@ pub unsafe fn timer_set_ticks_to_time_ratio(ticks_to_time: Ratio) {
 pub unsafe fn timer_set_initial_ticks(ticks: u64) {
     // SAFETY: the caller upholds the single-CPU contract above.
     unsafe { cpp_timer_set_initial_ticks(ticks) }
+}
+
+/// Converts a ticks value on the monotonic timeline to a raw hardware ticks value.
+///
+/// Returns the raw ticks value if the monotonic clock is not paused, and `None` if it is.
+#[inline]
+pub fn timer_convert_mono_to_raw_ticks(mono_ticks: InstantMonoTicks) -> Option<i64> {
+    let mut raw_ticks: i64 = 0;
+    // SAFETY: `raw_ticks` is a valid, writable `i64`, and the function otherwise only reads the
+    // atomic monotonic ticks modifier.
+    let has_value = unsafe { cpp_timer_convert_mono_to_raw_ticks(mono_ticks, &raw mut raw_ticks) };
+    has_value.then_some(raw_ticks)
+}
+
+/// Sets the calling CPU's hardware oneshot timer, which is responsible for calling `timer_tick()`
+/// when it fires, to the raw ticks value `deadline`.
+#[inline]
+pub fn platform_set_oneshot_timer(deadline: i64) -> Result<(), zx_status::Status> {
+    // SAFETY: Calling this FFI function has no memory-safety preconditions; it only programs the
+    // calling CPU's platform timer.
+    zx_status::Status::ok(unsafe { cpp_platform_set_oneshot_timer(deadline) })
+}
+
+/// Clears the calling CPU's hardware oneshot timer.
+#[inline]
+pub fn platform_stop_timer() {
+    // SAFETY: Calling this FFI function has no memory-safety preconditions; it only stops the
+    // calling CPU's platform timer.
+    unsafe { cpp_platform_stop_timer() }
 }
 
 /// Platform timer tests.

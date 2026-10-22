@@ -60,4 +60,23 @@ FFI_ALWAYS_INLINE void cpp_timer_set_initial_ticks(uint64_t ticks) {
   timer_set_initial_ticks(ticks);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_timer_convert_mono_to_raw_ticks(zx_instant_mono_ticks_t mono_ticks,
+                                                           zx_ticks_t* out_raw_ticks) {
+  const ktl::optional<zx_ticks_t> raw_ticks = timer_convert_mono_to_raw_ticks(mono_ticks);
+  if (!raw_ticks.has_value()) {
+    return false;
+  }
+  *out_raw_ticks = raw_ticks.value();
+  return true;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_platform_set_oneshot_timer(zx_ticks_t deadline) {
+  return platform_set_oneshot_timer(deadline);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_platform_stop_timer() { platform_stop_timer(); }
+
 }  // extern "C"
