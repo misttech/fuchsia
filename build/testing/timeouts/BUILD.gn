@@ -39,7 +39,6 @@ group("per_test_timeout_allowlist") {
     # TODO(olivernewman): Trim down this list.
     "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
     "//src/connectivity/wlan/tests/wlancfg:beacon_loss_test",
-    "//src/connectivity/wlan/tests/wlancfg:security_type_test",
     "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
     "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
     "//src/firmware/paver/test:*",
