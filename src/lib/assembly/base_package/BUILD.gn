@@ -49,3 +49,30 @@ if (is_host) {
     ]
   }
 }
+if (is_host) {
+  rustc_test("base_package_test") {
+    sources = [
+      "src/base_package.rs",
+      "src/lib.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//src/lib/assembly/constants",
+             "//src/lib/assembly/package_list",
+             "//src/sys/pkg/lib/fuchsia-pkg",
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:camino",
+           ] +
+           [
+             "//src/lib/assembly/test_util",
+             "//src/lib/fuchsia-url",
+             "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+             "//src/sys/pkg/lib/fuchsia-hash",
+             "//third_party/rust_crates:tempfile",
+           ]
+    visibility = [
+      ":*",
+      "//src/lib/assembly:*",
+    ]
+  }
+}

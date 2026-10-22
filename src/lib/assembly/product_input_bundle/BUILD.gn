@@ -50,3 +50,24 @@ if (is_host) {
     ]
   }
 }
+if (is_host) {
+  rustc_test("product_input_bundle_test") {
+    sources = [
+      "src/lib.rs",
+      "src/product_input_bundle.rs",
+    ]
+    edition = "2024"
+    deps = [
+      "//src/lib/assembly/container",
+      "//src/lib/assembly/package_utils",
+      "//src/lib/assembly/release_info",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:camino",
+      "//third_party/rust_crates:serde",
+    ]
+    visibility = [
+      ":*",
+      "//src/lib/assembly:*",
+    ]
+  }
+}

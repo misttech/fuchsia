@@ -41,3 +41,17 @@ if (is_host) {
     deps = [ "//src/sys/pkg/lib/fuchsia-pkg" ]
   }
 }
+if (is_host) {
+  rustc_test("test_util_test") {
+    sources = [ "src/lib.rs" ]
+    edition = "2024"
+    deps = [ "//src/sys/pkg/lib/fuchsia-pkg" ] + [
+             "//third_party/rust_crates:serial_test",
+             "//third_party/rust_crates:tempfile",
+           ]
+    visibility = [
+      ":*",
+      "//src/lib/assembly:*",
+    ]
+  }
+}

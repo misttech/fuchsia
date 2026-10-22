@@ -54,3 +54,27 @@ if (is_host) {
     ]
   }
 }
+if (is_host) {
+  rustc_test("images_config_test") {
+    sources = [
+      "src/board_filesystem_config.rs",
+      "src/images_config.rs",
+      "src/lib.rs",
+      "src/product_filesystem_config.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//src/lib/assembly/container",
+             "//src/storage/fshost/config",
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:camino",
+             "//third_party/rust_crates:schemars",
+             "//third_party/rust_crates:serde",
+             "//third_party/rust_crates:serde_json5",
+           ] + [ "//third_party/rust_crates:serde_json" ]
+    visibility = [
+      ":*",
+      "//src/lib/assembly:*",
+    ]
+  }
+}
