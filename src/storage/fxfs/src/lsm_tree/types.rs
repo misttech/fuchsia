@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::drop_event::DropEvent;
-use crate::object_handle::ReadObjectHandle;
+use crate::object_handle::LayerObject;
 use crate::serialized_types::serialized_key::SerializeKey;
 use crate::serialized_types::{Version, Versioned, VersionedLatest};
 use anyhow::Error;
@@ -334,7 +334,7 @@ pub enum MaybeContainsKey {
 pub trait Layer<K, V>: Send + Sync {
     /// If the layer is persistent, returns the handle to its contents.  Returns None for in-memory
     /// layers.
-    fn handle(&self) -> Option<&dyn ReadObjectHandle> {
+    fn handle(&self) -> Option<&dyn LayerObject> {
         None
     }
 

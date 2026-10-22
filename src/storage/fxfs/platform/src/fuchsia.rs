@@ -18,6 +18,7 @@ pub mod pager;
 pub mod power;
 pub mod profile;
 mod remote_crypt;
+pub mod remote_volume;
 mod symlink;
 pub mod volume;
 pub mod volumes_directory;
@@ -29,3 +30,4 @@ mod inline_encryption;
 pub mod testing;
 
 pub use remote_crypt::RemoteCrypt;
+pub use remote_volume::FxRemoteVolume;

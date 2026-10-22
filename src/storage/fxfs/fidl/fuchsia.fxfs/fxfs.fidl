@@ -403,3 +403,42 @@ closed protocol VolumeInstaller {
         dst fuchsia.io.Name;
     }) -> () error zx.Status;
 };
+
+/// Information about a single persistent layer file exposed as a VMO.
+type LayerFile = resource struct {
+    /// Object ID of the layer file in Fxfs.
+    object_id uint64;
+    /// Read-only VMO handle to the persistent layer content.
+    vmo zx.Handle:VMO;
+};
+
+/// A stack of persistent layers representing the immutable base layers of the ObjectStore.
+type LayerSet = resource struct {
+    /// Ordered list of persistent layer files (from top to bottom / newest to oldest).
+    layers vector<LayerFile>:MAX;
+};
+
+/// Result payload returned upon successfully mounting a remote volume.
+type VolumeInfo = resource struct {
+    /// Store object ID for the volume.
+    store_object_id uint64;
+    /// Root directory object ID for the volume.
+    root_directory_object_id uint64;
+    /// Filesystem block size in bytes.
+    block_size uint64;
+};
+
+closed protocol RemoteVolume {
+    /// Opens a FIDL fuchsia.io.File connection to an object in the volume,
+    /// returning FileInfo (including the stream) for direct I/O.
+    strict OpenFile(resource struct {
+        object_id uint64;
+        file server_end:fuchsia.io.File;
+    }) -> (resource struct {
+        info fuchsia.io.FileInfo;
+    }) error zx.Status;
+
+    /// Shuts down the remote volume server and unmounts the volume in Fxfs
+    /// so that it can be safely remounted.
+    strict Close() -> () error zx.Status;
+};

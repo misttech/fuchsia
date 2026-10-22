@@ -159,6 +159,7 @@ if (is_fuchsia) {
       "//src/lib/fuchsia-fs",
       "//src/lib/fuchsia-runtime",
       "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+      "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
       "//src/storage/lib/block_client/rust",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:log",

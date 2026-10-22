@@ -44,6 +44,7 @@ rustc_library(
         "//src/lib/fuchsia-fs",
         "//src/lib/fuchsia-runtime",
         "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
         "//src/storage/lib/block_client/rust:block-client",  # @bazel2gn:path_overwrite://src/storage/lib/block_client/rust
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:log",

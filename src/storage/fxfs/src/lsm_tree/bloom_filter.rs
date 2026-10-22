@@ -87,12 +87,13 @@ impl<V: FuzzyHash> BloomFilterReader<V> {
     /// Creates a BloomFilterReader by reading the serialized contents from `buf`.
     /// `seed` and `num_hashes` must match the values passed into BloomFilterWriter.
     pub fn read(buf: PtrByteSlice<'_>, seed: u64, num_hashes: usize) -> Result<Self, Error> {
-        Ok(Self {
-            data: BitVec::from_bytes(&buf.to_vec()),
-            seed,
-            num_hashes,
-            _type: PhantomData::default(),
-        })
+        Ok(Self::from_bytes(&buf.to_vec(), seed, num_hashes))
+    }
+
+    /// Creates a BloomFilterReader from a byte slice.
+    /// `seed` and `num_hashes` must match the values passed into BloomFilterWriter.
+    pub fn from_bytes(bytes: &[u8], seed: u64, num_hashes: usize) -> Self {
+        Self { data: BitVec::from_bytes(bytes), seed, num_hashes, _type: PhantomData::default() }
     }
 
     /// Returns whether the bloom filter *might* contain the given value (or any part of it, for

@@ -656,6 +656,23 @@ impl ServingMultiVolumeFilesystem {
         ServingVolume::new(exposed_dir)
     }
 
+    /// Mounts an existing volume for remote in-process serving.
+    pub async fn mount_remote_volume(
+        &self,
+        volume: &str,
+        options: MountOptions,
+        volume_server_end: ServerEnd<fidl_fuchsia_fxfs::RemoteVolumeMarker>,
+    ) -> Result<(fidl_fuchsia_fxfs::VolumeInfo, fidl_fuchsia_fxfs::LayerSet, [u8; 16]), Error> {
+        let path = format!("volumes/{}", volume);
+        let (info, initial_layers, guid) = connect_to_named_protocol_at_dir_root::<
+            fidl_fuchsia_fs_startup::VolumeMarker,
+        >(self.exposed_dir(), &path)?
+        .mount_remote(options, volume_server_end)
+        .await?
+        .map_err(|e| anyhow!(zx::Status::err_from_raw(e)))?;
+        Ok((info, initial_layers, guid))
+    }
+
     /// Returns volume info for `volume`.
     pub async fn get_volume_info(
         &self,
@@ -1195,6 +1212,46 @@ mod tests {
         // fs.open_volume("foo", MountOptions{crypt: None, as_blob: false}).await
         //    .expect("Open volume failed");
         assert_eq!(fs.has_volume("foo").await.expect("has_volume"), true);
+    }
+
+    #[fuchsia::test]
+    async fn fxfs_mount_remote_volume() {
+        let block_size = 512;
+        let ramdisk = ramdisk(block_size).await;
+        let mut fxfs = new_fs(&ramdisk, Fxfs::default()).await;
+
+        fxfs.format().await.expect("failed to format fxfs");
+
+        let fs = fxfs.serve_multi_volume().await.expect("failed to serve fxfs");
+
+        let (_remote_proxy, remote_server_end) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_fxfs::RemoteVolumeMarker>();
+        let err = fs
+            .mount_remote_volume("nonexistent", MountOptions::default(), remote_server_end)
+            .await
+            .expect_err("mount_remote_volume on nonexistent volume should fail");
+        assert!(!err.to_string().is_empty());
+
+        {
+            let vol = fs
+                .create_volume("foo", CreateOptions::default(), MountOptions::default())
+                .await
+                .expect("Create volume failed");
+            vol.shutdown().await.expect("shutdown volume failed");
+        }
+
+        let (remote_proxy2, remote_server_end2) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_fxfs::RemoteVolumeMarker>();
+        let (info, initial_layers, _guid) = fs
+            .mount_remote_volume("foo", MountOptions::default(), remote_server_end2)
+            .await
+            .expect("mount_remote_volume on existing volume should succeed");
+        assert_ne!(info.root_directory_object_id, 0);
+        assert_eq!(info.block_size, 4096);
+        let _ = initial_layers;
+
+        let close_res = remote_proxy2.close().await.expect("close FIDL call failed");
+        assert!(close_res.is_ok());
     }
 
     #[fuchsia::test]

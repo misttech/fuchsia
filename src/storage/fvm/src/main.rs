@@ -1436,6 +1436,9 @@ impl Component {
                     };
                     responder.send(Ok(&response))?;
                 }
+                VolumeRequest::MountRemote { responder, .. } => {
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+                }
             }
         }
         Ok(())
@@ -4421,5 +4424,23 @@ mod tests {
             "Expected 'Bad allocation table size', got '{}'",
             err_msg
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_mount_remote_not_supported() {
+        let fixture = Fixture::new(0).await;
+        let volume_proxy = connect_to_named_protocol_at_dir_root::<VolumeMarker>(
+            &fixture.outgoing_dir,
+            "volumes/data",
+        )
+        .unwrap();
+
+        let (_remote_proxy, remote_server_end) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_fxfs::RemoteVolumeMarker>();
+        let res = volume_proxy
+            .mount_remote(MountOptions::default(), remote_server_end)
+            .await
+            .expect("mount_remote fidl error");
+        assert_eq!(res.unwrap_err(), zx::Status::NOT_SUPPORTED.into_raw());
     }
 }

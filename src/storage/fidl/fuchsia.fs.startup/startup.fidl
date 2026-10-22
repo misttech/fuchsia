@@ -140,6 +140,16 @@ closed protocol Volume {
         options MountOptions;
     }) -> () error zx.Status;
 
+    /// Mounts the volume for remote in-process serving.
+    strict MountRemote(resource struct {
+        options MountOptions;
+        volume server_end:fuchsia.fxfs.RemoteVolume;
+    }) -> (resource struct {
+        info fuchsia.fxfs.VolumeInfo;
+        initial_layers fuchsia.fxfs.LayerSet;
+        guid array<uint8, 16>;
+    }) error zx.Status;
+
     /// Check the volume for consistency.  If the volume is encrypted, `options.crypt` should
     /// provide all key access for the given volume.
     strict Check(resource struct {

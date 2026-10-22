@@ -72,6 +72,12 @@ impl MappedVmo {
             let _ = self.vmo.op_range(zx::VmoOp::DONT_NEED, 0, self.len as u64);
         }
     }
+
+    fn prefetch(&self, range: std::ops::Range<u64>) {
+        if range.end > range.start {
+            let _ = self.vmo.op_range(zx::VmoOp::PREFETCH, range.start, range.end - range.start);
+        }
+    }
 }
 
 impl Drop for MappedVmo {
@@ -139,11 +145,19 @@ impl LayerObject for PagedLayerObject {
         self.mapped.purge_cached_data();
     }
 
+    fn prefetch(&self, range: std::ops::Range<u64>) {
+        self.mapped.prefetch(range);
+    }
+
     async fn close(&self) {
         if !self.closed.swap(true, Ordering::Relaxed) {
             let mut sender = self.sender.lock().await;
             let _ = sender.push(MappingCommand::CloseBlob { key: self.key }.into()).await;
         }
+    }
+
+    fn get_vmo(&self) -> Option<&zx::Vmo> {
+        Some(&self.mapped.vmo)
     }
 }
 
@@ -159,6 +173,73 @@ impl Drop for PagedLayerObject {
                 let _ = sender.push(MappingCommand::CloseBlob { key }.into()).await;
             });
         }
+    }
+}
+
+/// A read-only `LayerObject` backed by a `zx::Vmo` mapped into the current process's address
+/// space. Used by remote volume clients to read layer files synchronously via
+/// `SyncPersistentLayer`.
+pub struct VmoLayerObject {
+    mapped: MappedVmo,
+    object_id: u64,
+    block_size: BlockSize,
+}
+
+impl VmoLayerObject {
+    pub fn new(vmo: zx::Vmo, object_id: u64, block_size: BlockSize) -> Result<Self, Error> {
+        let len = vmo.get_content_size().context("Failed to get VMO content size")? as usize;
+        let mapped = MappedVmo::new(vmo, len).context("Failed to map layer VMO")?;
+        Ok(Self { mapped, object_id, block_size })
+    }
+}
+
+impl ObjectHandle for VmoLayerObject {
+    fn object_id(&self) -> u64 {
+        self.object_id
+    }
+
+    fn block_size(&self) -> BlockSize {
+        self.block_size
+    }
+
+    fn allocate_buffer(&self, _size: usize) -> BufferFuture<'_> {
+        unreachable!("VmoLayerObject is slice-backed and does not allocate buffers")
+    }
+}
+
+#[async_trait]
+impl ReadObjectHandle for VmoLayerObject {
+    async fn read_aligned(&self, _offset: u64, _buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+        unreachable!("VmoLayerObject is slice-backed and does not support read_aligned")
+    }
+
+    fn get_size(&self) -> u64 {
+        self.mapped.len as u64
+    }
+}
+
+#[async_trait]
+impl LayerObject for VmoLayerObject {
+    fn as_slice(&self) -> Option<&[u8]> {
+        Some(self.mapped.as_slice())
+    }
+
+    fn has_io_error(&self) -> bool {
+        self.mapped.has_io_error()
+    }
+
+    fn purge_cached_data(&self) {
+        self.mapped.purge_cached_data();
+    }
+
+    fn prefetch(&self, range: std::ops::Range<u64>) {
+        self.mapped.prefetch(range);
+    }
+
+    async fn close(&self) {}
+
+    fn get_vmo(&self) -> Option<&zx::Vmo> {
+        Some(&self.mapped.vmo)
     }
 }
 

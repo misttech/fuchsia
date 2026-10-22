@@ -87,6 +87,7 @@ use std::io::{Read as _, Write as _};
 use std::marker::PhantomData;
 use std::ops::Bound;
 use std::sync::Arc;
+use storage_ptr_slice::PtrByteSlice;
 use storage_units::BlockSize;
 
 const PERSISTENT_LAYER_MAGIC: &[u8; 8] = b"FxfsLayr";
@@ -685,35 +686,23 @@ impl<'iter, K: Key, V: LayerValue> LayerIterator<K, V>
     }
 }
 
-async fn load_seek_table(
-    object_handle: &(impl ReadObjectHandle + 'static),
-    seek_table_offset: u64,
-    num_data_blocks: u64,
-    version: Version,
-) -> Result<Vec<u64>, Error> {
+fn seek_table_size(version: Version, num_data_blocks: u64) -> Result<usize, Error> {
     if num_data_blocks == 0 || version <= OLD_KEY_SERIALIZATION_VERSION {
         // Ignore the seek table on older versions because AllocatorKey::get_leading_u64()
         // changed from bytes to blocks.
-        return Ok(Vec::new());
+        return Ok(0);
     }
-
     let seek_table_size = (num_data_blocks as usize) * std::mem::size_of::<u64>();
     if seek_table_size > MAX_SEEK_TABLE_SIZE {
         return Err(anyhow!(FxfsError::NotSupported)).context("Seek table too large");
     }
-    let aligned_size =
-        object_handle.block_size().align_up(seek_table_size as u64).ok_or(FxfsError::TooBig)?
-            as usize;
-    let mut buffer = object_handle.allocate_buffer(aligned_size).await;
-    let bytes_read = object_handle
-        .read_aligned(seek_table_offset, buffer.as_mut())
-        .await
-        .context("Reading seek table blocks")?;
-    ensure!(bytes_read >= seek_table_size, "Short read");
+    Ok(seek_table_size)
+}
 
+fn parse_seek_table(bytes: PtrByteSlice<'_>, num_data_blocks: u64) -> Result<Vec<u64>, Error> {
     let mut seek_table = Vec::with_capacity(num_data_blocks as usize);
     let mut prev = 0;
-    for chunk in buffer.subslice(0..seek_table_size).as_ptr_slice().iter_as::<[u8; 8]>() {
+    for chunk in bytes.iter_as::<[u8; 8]>() {
         let next = u64::from_le_bytes(chunk);
         // Should be in strict ascending order, otherwise something's broken, or we've gone off
         // the end and we're reading zeroes.
@@ -727,23 +716,55 @@ async fn load_seek_table(
     Ok(seek_table)
 }
 
+async fn load_seek_table(
+    object_handle: &(impl ReadObjectHandle + 'static),
+    seek_table_offset: u64,
+    num_data_blocks: u64,
+    version: Version,
+) -> Result<Vec<u64>, Error> {
+    let seek_table_size = seek_table_size(version, num_data_blocks)?;
+    if seek_table_size == 0 {
+        return Ok(Vec::new());
+    }
+    let aligned_size =
+        object_handle.block_size().align_up(seek_table_size as u64).ok_or(FxfsError::TooBig)?
+            as usize;
+    let mut buffer = object_handle.allocate_buffer(aligned_size).await;
+    let bytes_read = object_handle
+        .read_aligned(seek_table_offset, buffer.as_mut())
+        .await
+        .context("Reading seek table blocks")?;
+    ensure!(bytes_read >= seek_table_size, "Short read");
+
+    parse_seek_table(buffer.subslice(0..seek_table_size).as_ptr_slice(), num_data_blocks)
+}
+
 const BLOOM_FILTER_READ_CHUNK_SIZE: usize = 1024 * 1024;
 
-async fn load_bloom_filter<K: FuzzyHash>(
-    handle: &(impl ReadObjectHandle + 'static),
-    bloom_filter_offset: u64,
-    layer_info: &LayerInfo,
-) -> Result<Option<BloomFilterReader<K>>, Error> {
-    if layer_info.bloom_filter_size_bytes == 0 {
-        return Ok(None);
+fn bloom_filter_size(version: Version, layer_info: &LayerInfo) -> Result<usize, Error> {
+    if version != LATEST_VERSION || layer_info.bloom_filter_size_bytes == 0 {
+        // Ignore the bloom filter for layer files in outdated versions.  We don't know whether
+        // keys have changed formats or not (and therefore have different hash values), so we
+        // must ignore the bloom filter and always query the layer.
+        return Ok(0);
     }
     if layer_info.bloom_filter_size_bytes > MAX_BLOOM_FILTER_SIZE {
         return Err(anyhow!(FxfsError::NotSupported)).context("Bloom filter too large");
     }
-    let aligned_size = handle
-        .block_size()
-        .align_up(layer_info.bloom_filter_size_bytes as u64)
-        .ok_or(FxfsError::TooBig)? as usize;
+    Ok(layer_info.bloom_filter_size_bytes)
+}
+
+async fn load_bloom_filter<K: FuzzyHash>(
+    handle: &(impl ReadObjectHandle + 'static),
+    bloom_filter_offset: u64,
+    version: Version,
+    layer_info: &LayerInfo,
+) -> Result<Option<BloomFilterReader<K>>, Error> {
+    let size = bloom_filter_size(version, layer_info)?;
+    if size == 0 {
+        return Ok(None);
+    }
+    let aligned_size = handle.block_size().align_up(size as u64).ok_or(FxfsError::TooBig)? as usize;
     let mut buffer = handle.allocate_buffer(aligned_size).await;
     let reads = FuturesUnordered::new();
     let mut offset = bloom_filter_offset;
@@ -757,7 +778,7 @@ async fn load_bloom_filter<K: FuzzyHash>(
     }
     reads.try_collect::<()>().await?;
     Ok(Some(BloomFilterReader::read(
-        buffer.subslice(0..layer_info.bloom_filter_size_bytes).as_ptr_slice(),
+        buffer.subslice(0..size).as_ptr_slice(),
         layer_info.bloom_filter_seed,
         layer_info.bloom_filter_num_hashes,
     )?))
@@ -809,13 +830,34 @@ impl<'a, K: Key> SearchKey<'a, K> {
 }
 
 impl<K: FuzzyHash> LayerData<K> {
-    async fn open(handle: &Arc<dyn LayerObject>) -> Result<Self, Error> {
-        let handle_block_size = handle.block_size();
-        let mut buffer = handle.allocate_buffer(handle_block_size.get() as usize).await;
-        handle.read_aligned(0, buffer.as_mut()).await.context("Failed to read first block")?;
-        let mut reader = buffer.as_ptr_slice();
-        let version = Version::deserialize_from(&mut reader)?;
+    fn new(
+        object_id: u64,
+        version: Version,
+        block_size: BlockSize,
+        layer_info: &LayerInfo,
+        seek_table: Vec<u64>,
+        bloom_filter: Option<BloomFilterReader<K>>,
+    ) -> Self {
+        let bloom_filter_stats = bloom_filter.as_ref().map(|b| b.stats());
+        Self {
+            object_id,
+            version,
+            block_size,
+            data_size: block_size * layer_info.num_data_blocks,
+            seek_table,
+            num_items: layer_info.num_items,
+            bloom_filter,
+            bloom_filter_stats,
+            close_event: Mutex::new(Some(Arc::new(DropEvent::new()))),
+        }
+    }
 
+    fn parse_header(
+        mut reader: PtrByteSlice<'_>,
+        handle_block_size: BlockSize,
+        total_size: u64,
+    ) -> Result<(Version, BlockSize, u64), Error> {
+        let version = Version::deserialize_from(&mut reader)?;
         ensure!(version <= LATEST_VERSION, FxfsError::InvalidVersion);
         let header = LayerHeader::deserialize_from_version(&mut reader, version)
             .context("Failed to deserialize header")?;
@@ -833,76 +875,166 @@ impl<K: FuzzyHash> LayerData<K> {
                 "{block_size} not a multiple of handle block size {handle_block_size}"
             ));
         }
-
-        if handle.get_size() < MINIMUM_LAYER_FILE_BLOCKS * block_size {
+        if total_size < MINIMUM_LAYER_FILE_BLOCKS * block_size {
             return Err(anyhow!(FxfsError::Inconsistent).context("Layer file too short"));
         }
+        let last_block_offset = total_size
+            .checked_sub(block_size.get())
+            .ok_or(FxfsError::Inconsistent)
+            .context("Layer file unexpectedly short")?;
+        Ok((version, block_size, last_block_offset))
+    }
 
+    fn parse_layer_info(
+        last_block: PtrByteSlice<'_>,
+        version: Version,
+        block_size: BlockSize,
+        total_size: u64,
+    ) -> Result<(LayerInfo, u64, u64), Error> {
         let bs = block_size.get() as usize;
-        let layer_info = {
-            let last_block_offset = handle
-                .get_size()
-                .checked_sub(block_size.get())
-                .ok_or(FxfsError::Inconsistent)
-                .context("Layer file unexpectedly short")?;
-            handle
-                .read_aligned(last_block_offset, buffer.subslice_mut(0..bs))
-                .await
-                .context("Failed to read layer info")?;
-            let layer_info_len =
-                u64::from_le_bytes(buffer.subslice(bs - 8..bs).as_ptr_slice().read().unwrap());
-            let layer_info_offset = bs
-                .checked_sub(std::mem::size_of::<u64>() + layer_info_len as usize)
-                .ok_or(FxfsError::Inconsistent)
-                .context("Invalid layer info length")?;
-            let mut reader = buffer.subslice(layer_info_offset..).as_ptr_slice();
-            LayerInfo::deserialize_from_version(&mut reader, version)
-                .context("Failed to deserialize LayerInfo")?
-        };
-        std::mem::drop(buffer);
+        let layer_info_len = u64::from_le_bytes(last_block.subslice(bs - 8..bs).read().unwrap());
+        let layer_info_offset = std::mem::size_of::<u64>()
+            .checked_add(layer_info_len as usize)
+            .and_then(|n| bs.checked_sub(n))
+            .ok_or(FxfsError::Inconsistent)
+            .context("Invalid layer info length")?;
+        let mut reader = last_block.subslice(layer_info_offset..bs);
+        let layer_info = LayerInfo::deserialize_from_version(&mut reader, version)
+            .context("Failed to deserialize LayerInfo")?;
         if layer_info.num_items == 0 && layer_info.num_data_blocks > 0 {
             return Err(anyhow!(FxfsError::Inconsistent))
                 .context("Invalid num_items/num_data_blocks");
         }
-        let total_blocks = handle.get_size() / block_size;
+        let total_blocks = total_size / block_size;
         let bloom_filter_blocks =
             block_size.align_up_to_blocks(layer_info.bloom_filter_size_bytes as u64);
-        if layer_info.num_data_blocks + bloom_filter_blocks
+        if layer_info.num_data_blocks.saturating_add(bloom_filter_blocks)
             > total_blocks - MINIMUM_LAYER_FILE_BLOCKS
         {
             return Err(anyhow!(FxfsError::Inconsistent)).context("Invalid number of blocks");
         }
-
         let bloom_filter_offset = block_size * (NUM_HEADER_BLOCKS + layer_info.num_data_blocks);
-        let bloom_filter = if version == LATEST_VERSION {
-            load_bloom_filter(handle, bloom_filter_offset, &layer_info)
-                .await
-                .context("Failed to load bloom filter")?
-        } else {
-            // Ignore the bloom filter for layer files in outdated versions.  We don't know whether
-            // keys have changed formats or not (and therefore have different hash values), so we
-            // must ignore the bloom filter and always query the layer.
-            None
-        };
-        let bloom_filter_stats = bloom_filter.as_ref().map(|b| b.stats());
-
         let seek_offset =
             block_size * (NUM_HEADER_BLOCKS + layer_info.num_data_blocks + bloom_filter_blocks);
+        Ok((layer_info, bloom_filter_offset, seek_offset))
+    }
+
+    async fn open(handle: &Arc<dyn LayerObject>) -> Result<Self, Error> {
+        let handle_block_size = handle.block_size();
+        let mut buffer = handle.allocate_buffer(handle_block_size.get() as usize).await;
+        handle.read_aligned(0, buffer.as_mut()).await.context("Failed to read first block")?;
+        let (version, block_size, last_block_offset) =
+            Self::parse_header(buffer.as_ptr_slice(), handle_block_size, handle.get_size())?;
+
+        let bs = block_size.get() as usize;
+        handle
+            .read_aligned(last_block_offset, buffer.subslice_mut(0..bs))
+            .await
+            .context("Failed to read layer info")?;
+        let (layer_info, bloom_filter_offset, seek_offset) = Self::parse_layer_info(
+            buffer.subslice(0..bs).as_ptr_slice(),
+            version,
+            block_size,
+            handle.get_size(),
+        )?;
+        std::mem::drop(buffer);
+
+        let bloom_filter = load_bloom_filter(handle, bloom_filter_offset, version, &layer_info)
+            .await
+            .context("Failed to load bloom filter")?;
         let seek_table = load_seek_table(handle, seek_offset, layer_info.num_data_blocks, version)
             .await
             .context("Failed to load seek table")?;
 
-        Ok(Self {
-            object_id: handle.object_id(),
+        Ok(Self::new(
+            handle.object_id(),
             version,
             block_size,
-            data_size: block_size * layer_info.num_data_blocks,
+            &layer_info,
             seek_table,
-            num_items: layer_info.num_items,
             bloom_filter,
-            bloom_filter_stats,
-            close_event: Mutex::new(Some(Arc::new(DropEvent::new()))),
-        })
+        ))
+    }
+
+    fn open_from_slice(handle: &Arc<dyn LayerObject>) -> Result<Self, Error> {
+        let slice = handle.as_slice().ok_or(FxfsError::InvalidArgs)?;
+        let io_or_corruption = |err: Error| -> Error {
+            if handle.has_io_error() { anyhow!(zx_status::Status::IO).context(err) } else { err }
+        };
+        let handle_block_size = handle.block_size();
+        let total_size = slice.len() as u64;
+        if total_size < handle_block_size.get() {
+            return Err(io_or_corruption(
+                anyhow!(FxfsError::Inconsistent).context("Layer file too short"),
+            ));
+        }
+        let (version, block_size, last_block_offset) = Self::parse_header(
+            slice[..handle_block_size.get() as usize].into(),
+            handle_block_size,
+            total_size,
+        )
+        .map_err(&io_or_corruption)?;
+
+        let bs = block_size.get() as usize;
+        let last_block = &slice[last_block_offset as usize..last_block_offset as usize + bs];
+        let (layer_info, bloom_filter_offset, seek_offset) =
+            Self::parse_layer_info(last_block.into(), version, block_size, total_size)
+                .map_err(&io_or_corruption)?;
+
+        let bf_size = bloom_filter_size(version, &layer_info)
+            .map_err(&io_or_corruption)
+            .context("Failed to load bloom filter")?;
+        let st_size = seek_table_size(version, layer_info.num_data_blocks)
+            .map_err(&io_or_corruption)
+            .context("Failed to load seek table")?;
+        if bf_size > 0 {
+            handle.prefetch(bloom_filter_offset..total_size);
+        } else if st_size > 0 {
+            handle.prefetch(seek_offset..total_size);
+        }
+
+        let bloom_filter = if bf_size > 0 {
+            let start = bloom_filter_offset as usize;
+            let end = start
+                .checked_add(bf_size)
+                .filter(|&end| end <= slice.len())
+                .ok_or_else(|| io_or_corruption(anyhow!(FxfsError::Inconsistent)))
+                .context("Bloom filter out of bounds")?;
+            Some(BloomFilterReader::from_bytes(
+                &slice[start..end],
+                layer_info.bloom_filter_seed,
+                layer_info.bloom_filter_num_hashes,
+            ))
+        } else {
+            None
+        };
+
+        let seek_table = if st_size > 0 {
+            let start = seek_offset as usize;
+            let end = start
+                .checked_add(st_size)
+                .filter(|&end| end <= slice.len())
+                .ok_or_else(|| io_or_corruption(anyhow!(FxfsError::Inconsistent)))
+                .context("Seek table out of bounds")?;
+            parse_seek_table(slice[start..end].into(), layer_info.num_data_blocks)
+                .map_err(&io_or_corruption)
+                .context("Failed to load seek table")?
+        } else {
+            Vec::new()
+        };
+
+        if handle.has_io_error() {
+            return Err(anyhow!(zx_status::Status::IO).context("I/O error while opening layer"));
+        }
+
+        Ok(Self::new(
+            handle.object_id(),
+            version,
+            block_size,
+            &layer_info,
+            seek_table,
+            bloom_filter,
+        ))
     }
 }
 
@@ -1073,9 +1205,8 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
 }
 
 impl<K: Key, V: LayerValue> SyncPersistentLayer<K, V> {
-    pub async fn open(handle: Arc<dyn LayerObject>) -> Result<Arc<Self>, Error> {
-        ensure!(handle.as_slice().is_some(), FxfsError::InvalidArgs);
-        let data = LayerData::open(&handle).await?;
+    pub fn open(handle: Arc<dyn LayerObject>) -> Result<Arc<Self>, Error> {
+        let data = LayerData::open_from_slice(&handle)?;
         ensure!(data.block_size <= page_size(), FxfsError::NotSupported);
         Ok(Arc::new(Self { object_handle: handle, data, _value_type: PhantomData }))
     }
@@ -1158,7 +1289,7 @@ pub async fn open_layers<K: Key, V: LayerValue>(
 
 #[async_trait]
 impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
-    fn handle(&self) -> Option<&dyn ReadObjectHandle> {
+    fn handle(&self) -> Option<&dyn LayerObject> {
         Some(self.object_handle.source())
     }
 
@@ -1237,7 +1368,7 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
 
 #[async_trait]
 impl<K: Key, V: LayerValue> Layer<K, V> for SyncPersistentLayer<K, V> {
-    fn handle(&self) -> Option<&dyn ReadObjectHandle> {
+    fn handle(&self) -> Option<&dyn LayerObject> {
         Some(&self.object_handle)
     }
 
@@ -1588,7 +1719,8 @@ impl std::ops::DerefMut for LayerWriterBufItemCount {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockSize, FxfsError, PersistentLayer, PersistentLayerWriter, SyncPersistentLayer,
+        BlockSize, FxfsError, LayerData, NUM_HEADER_BLOCKS, PersistentLayer, PersistentLayerWriter,
+        SyncPersistentLayer,
     };
     use crate::filesystem::MAX_BLOCK_SIZE;
     use crate::lsm_tree::LayerIterator;
@@ -2555,8 +2687,8 @@ mod tests {
             closed: AtomicBool::new(false),
         });
 
-        let layer =
-            PersistentLayer::<i32, i32>::open_layer(slice_obj.clone()).await.expect("open failed");
+        let layer: Arc<dyn Layer<i32, i32>> =
+            SyncPersistentLayer::<i32, i32>::open(slice_obj.clone()).expect("open failed");
         assert!(layer.has_bloom_filter());
         assert_eq!(layer.len(), ITEM_COUNT as usize);
 
@@ -2627,6 +2759,144 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_open_from_slice() {
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
+        const ITEM_COUNT: i32 = 500;
+
+        // 1. Handle without `as_slice()` returns `InvalidArgs`.
+        let non_slice_handle: Arc<dyn LayerObject> =
+            Arc::new(FakeObjectHandle::new(Arc::new(FakeObject::new())));
+        let err = LayerData::<i32>::open_from_slice(&non_slice_handle)
+            .err()
+            .expect("open_from_slice should fail without slice");
+        assert!(FxfsError::InvalidArgs.matches(&err));
+
+        // 2. Populated layer (with bloom filter and multiple data/seek table blocks) matches
+        //    `LayerData::open`.
+        let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
+        {
+            let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
+                Writer::new(&handle).await,
+                ITEM_COUNT as usize,
+                BLOCK_SIZE,
+            )
+            .await
+            .expect("writer new");
+            for i in 0..ITEM_COUNT {
+                writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
+            }
+            writer.complete().await.expect("flush failed");
+        }
+        let size = handle.get_size() as usize;
+        let mut buf = handle.allocate_buffer(size).await;
+        handle.read_aligned(0, buf.as_mut()).await.expect("read failed");
+        let valid_slice = buf.subslice(..).to_vec();
+        drop(buf);
+
+        let make_slice_obj = |slice: Vec<u8>, io_error: bool| -> Arc<dyn LayerObject> {
+            Arc::new(SliceLayerObject {
+                handle: FakeObjectHandle::new(Arc::new(FakeObject::new())),
+                slice,
+                io_error: AtomicBool::new(io_error),
+                purged: AtomicBool::new(false),
+                closed: AtomicBool::new(false),
+            })
+        };
+
+        let async_handle: Arc<dyn LayerObject> = Arc::new(handle);
+        let expected_data = LayerData::<i32>::open(&async_handle).await.expect("open failed");
+        let slice_data =
+            LayerData::<i32>::open_from_slice(&make_slice_obj(valid_slice.clone(), false))
+                .expect("open_from_slice failed");
+        assert_eq!(slice_data.version, expected_data.version);
+        assert_eq!(slice_data.block_size, expected_data.block_size);
+        assert_eq!(slice_data.data_size, expected_data.data_size);
+        assert_eq!(slice_data.seek_table, expected_data.seek_table);
+        assert_eq!(slice_data.num_items, expected_data.num_items);
+        assert!(slice_data.bloom_filter.is_some());
+        for k in [0, 1, 250, 251, 998, 999] {
+            assert_eq!(
+                slice_data.bloom_filter.as_ref().unwrap().maybe_contains(&k),
+                expected_data.bloom_filter.as_ref().unwrap().maybe_contains(&k)
+            );
+        }
+
+        // 3. Valid slice when `has_io_error()` is true fails with `zx_status::Status::IO`.
+        let err = LayerData::<i32>::open_from_slice(&make_slice_obj(valid_slice.clone(), true))
+            .err()
+            .expect("open_from_slice should fail on io_error");
+        assert_eq!(
+            err.root_cause().downcast_ref::<zx_status::Status>(),
+            Some(&zx_status::Status::IO)
+        );
+
+        // 4. Empty (0-item) layer without bloom filter or seek table succeeds.
+        let empty_handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
+        {
+            let writer = PersistentLayerWriter::<_, i32, i32>::new(
+                Writer::new(&empty_handle).await,
+                0,
+                BLOCK_SIZE,
+            )
+            .await
+            .expect("writer new");
+            writer.complete().await.expect("flush failed");
+        }
+        let empty_size = empty_handle.get_size() as usize;
+        let mut buf = empty_handle.allocate_buffer(empty_size).await;
+        empty_handle.read_aligned(0, buf.as_mut()).await.expect("read failed");
+        let empty_slice = buf.subslice(..).to_vec();
+        drop(buf);
+        let empty_data = LayerData::<i32>::open_from_slice(&make_slice_obj(empty_slice, false))
+            .expect("open_from_slice on empty layer failed");
+        assert_eq!(empty_data.num_items, 0);
+        assert!(empty_data.seek_table.is_empty());
+        assert!(empty_data.bloom_filter.is_none());
+
+        // 5. Corruption cases return `FxfsError::Inconsistent` when `has_io_error()` is false, and
+        //    `zx_status::Status::IO` when `has_io_error()` is true.
+        let bs = BLOCK_SIZE.get() as usize;
+
+        // 5a. Truncated slice (< block_size).
+        let truncated = vec![0u8; bs / 2];
+
+        // 5b. Invalid magic in header (after 4-byte Version prefix).
+        let mut bad_magic = valid_slice.clone();
+        bad_magic[4..12].fill(0);
+
+        // 5c. Invalid LayerInfo length in last block.
+        let mut bad_layer_info = valid_slice.clone();
+        let len = bad_layer_info.len();
+        bad_layer_info[len - 8..len].copy_from_slice(&u64::MAX.to_le_bytes());
+
+        // 5d. Out-of-order seek table entries.
+        let mut bad_seek_table = valid_slice.clone();
+        let num_data_blocks = (slice_data.data_size / BLOCK_SIZE) as usize;
+        assert!(num_data_blocks >= 2);
+        let bf_blocks = BLOCK_SIZE
+            .align_up_to_blocks(slice_data.bloom_filter_stats.as_ref().unwrap().size as u64)
+            as usize;
+        let seek_offset = (NUM_HEADER_BLOCKS as usize + num_data_blocks + bf_blocks) * bs;
+        bad_seek_table[seek_offset..seek_offset + 8].copy_from_slice(&100u64.to_le_bytes());
+        bad_seek_table[seek_offset + 8..seek_offset + 16].copy_from_slice(&50u64.to_le_bytes());
+
+        for corrupted in [truncated, bad_magic, bad_layer_info, bad_seek_table] {
+            let err = LayerData::<i32>::open_from_slice(&make_slice_obj(corrupted.clone(), false))
+                .err()
+                .expect("expected corruption error");
+            assert!(FxfsError::Inconsistent.matches(&err), "expected Inconsistent, got {err:?}");
+
+            let err = LayerData::<i32>::open_from_slice(&make_slice_obj(corrupted, true))
+                .err()
+                .expect("expected I/O error");
+            assert_eq!(
+                err.root_cause().downcast_ref::<zx_status::Status>(),
+                Some(&zx_status::Status::IO)
+            );
+        }
+    }
+
+    #[fuchsia::test]
     async fn test_layer_block_size_gt_4k_falls_back_to_async_persistent_layer() {
         const BLOCK_SIZE: BlockSize = BlockSize::SIZE_8KIB;
         let handle = FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
@@ -2658,7 +2928,7 @@ mod tests {
         });
 
         // SyncPersistentLayer::open must reject layers with block_size > 4KiB.
-        assert!(SyncPersistentLayer::<i32, i32>::open(slice_obj.clone()).await.is_err());
+        assert!(SyncPersistentLayer::<i32, i32>::open(slice_obj.clone()).is_err());
 
         // PersistentLayer::open_layer must fall back to async PersistentLayer and succeed.
         let layer = PersistentLayer::<i32, i32>::open_layer(slice_obj).await.expect("open_layer");

@@ -160,29 +160,24 @@ impl FxFile {
         })
     }
 
-    /// Creates a new connection on the given `scope`. May take a read lock on the object.
-    pub async fn create_connection_async(
-        this: OpenedNode<FxFile>,
-        scope: ExecutionScope,
-        flags: impl ProtocolsExt,
-        object_request: ObjectRequestRef<'_>,
-    ) -> Result<(), zx::Status> {
+    async fn prepare_connection(this: &OpenedNode<FxFile>, flags: &impl ProtocolsExt) {
         {
             let mut guard = this.pager().recorder();
             if let Some(recorder) = &mut (*guard) {
-                let _ = recorder.record_open(this.clone() as Arc<dyn FxNode>);
+                let _ = recorder.record_open((**this).clone() as Arc<dyn FxNode>);
             }
         }
         if let Some(rights) = flags.rights() {
             if rights.intersects(fio::Operations::READ_BYTES | fio::Operations::WRITE_BYTES) {
                 if let Some(fut) = this.handle.pre_fetch_keys() {
+                    let store = this.handle.owner().store();
+                    let fs = store.filesystem();
                     // Keep the object from being deleted until after the fetch is complete.
-                    let fs = this.handle.owner().store().filesystem();
                     let read_lock = fs
                         .clone()
                         .lock_manager()
                         .read_lock(lock_keys!(LockKey::object(
-                            this.handle.owner().store().store_object_id(),
+                            store.store_object_id(),
                             this.object_id()
                         )))
                         .await
@@ -194,8 +189,31 @@ impl FxFile {
                 }
             }
         }
+    }
+
+    /// Creates a new connection on the given `scope`. May take a read lock on the object.
+    pub async fn create_connection_async(
+        this: OpenedNode<FxFile>,
+        scope: ExecutionScope,
+        flags: impl ProtocolsExt,
+        object_request: ObjectRequestRef<'_>,
+    ) -> Result<(), zx::Status> {
+        Self::prepare_connection(&this, &flags).await;
         object_request
             .create_connection::<StreamIoConnection<_>, _>(scope, this.take(), flags)
+            .await
+    }
+
+    /// Creates a new connection on the given `scope` using an existing `zx::Stream`.
+    pub async fn create_connection_with_stream_async(
+        this: OpenedNode<FxFile>,
+        scope: ExecutionScope,
+        flags: impl ProtocolsExt,
+        object_request: ObjectRequestRef<'_>,
+        stream: zx::Stream,
+    ) -> Result<(), zx::Status> {
+        Self::prepare_connection(&this, &flags).await;
+        StreamIoConnection::create_with_stream(scope, this.take(), stream, flags, object_request)
             .await
     }
 
@@ -432,6 +450,12 @@ impl FxFile {
                 Err(v) => old.0 = v,
             }
         }
+    }
+}
+
+impl OpenedNode<FxFile> {
+    pub fn vmo(&self) -> &zx::Vmo {
+        self.0.vmo()
     }
 }
 

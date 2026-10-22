@@ -410,6 +410,20 @@ mod stream_io {
                 .await
         }
 
+        pub async fn create_with_stream(
+            scope: ExecutionScope,
+            file: Arc<T>,
+            stream: zx::Stream,
+            options: impl ToFileOptions,
+            object_request: ObjectRequestRef<'_>,
+        ) -> Result<(), Status> {
+            let file = OpenNode::new(file);
+            let options = options.to_file_options()?;
+            let stream = TempClonable::new(stream);
+            create_connection(scope, StreamIoConnection { file, stream }, options, object_request)
+                .await
+        }
+
         /// Similar to `create` but optimized for files whose implementation is synchronous and
         /// creating the connection is being done from a non-async context.
         pub fn create_sync(

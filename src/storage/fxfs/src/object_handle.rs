@@ -6,6 +6,7 @@ use crate::object_store::{DirType, PosixAttributes, Timestamp};
 use anyhow::Error;
 use async_trait::async_trait;
 use std::future::Future;
+use std::ops::Range;
 use std::sync::Arc;
 use storage_device::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use storage_units::BlockSize;
@@ -119,6 +120,12 @@ pub trait LayerObject: ReadObjectHandle {
         None
     }
 
+    /// Returns the underlying VMO backing this layer file if supported.
+    #[cfg(target_os = "fuchsia")]
+    fn get_vmo(&self) -> Option<&zx::Vmo> {
+        None
+    }
+
     /// Returns true if an underlying I/O error occurred while paging in data for this object.
     fn has_io_error(&self) -> bool {
         false
@@ -126,6 +133,9 @@ pub trait LayerObject: ReadObjectHandle {
 
     /// Requests that cached data (such as paged-in pages) for this object be purged.
     fn purge_cached_data(&self) {}
+
+    /// Prefetches the given byte range of the layer file into memory if supported.
+    fn prefetch(&self, _range: Range<u64>) {}
 
     /// Called when the layer is closed to release any external resources (such as pager
     /// registrations).
@@ -167,12 +177,21 @@ impl<T: LayerObject + ?Sized> LayerObject for Arc<T> {
         (**self).as_slice()
     }
 
+    #[cfg(target_os = "fuchsia")]
+    fn get_vmo(&self) -> Option<&zx::Vmo> {
+        (**self).get_vmo()
+    }
+
     fn has_io_error(&self) -> bool {
         (**self).has_io_error()
     }
 
     fn purge_cached_data(&self) {
         (**self).purge_cached_data()
+    }
+
+    fn prefetch(&self, range: Range<u64>) {
+        (**self).prefetch(range)
     }
 
     async fn close(&self) {
@@ -215,12 +234,21 @@ impl<T: LayerObject + ?Sized> LayerObject for Box<T> {
         (**self).as_slice()
     }
 
+    #[cfg(target_os = "fuchsia")]
+    fn get_vmo(&self) -> Option<&zx::Vmo> {
+        (**self).get_vmo()
+    }
+
     fn has_io_error(&self) -> bool {
         (**self).has_io_error()
     }
 
     fn purge_cached_data(&self) {
         (**self).purge_cached_data()
+    }
+
+    fn prefetch(&self, range: Range<u64>) {
+        (**self).prefetch(range)
     }
 
     async fn close(&self) {
