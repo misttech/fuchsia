@@ -25,7 +25,6 @@ use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_ndp as fnet_ndp;
 use fidl_fuchsia_net_neighbor as fnet_neighbor;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_power as fnet_power;
 use fidl_fuchsia_net_reachability as fnet_reachability;
 use fidl_fuchsia_net_root as fnet_root;
@@ -161,7 +160,7 @@ impl ManagementAgent {
                 fnet_masquerade::FactoryMarker::PROTOCOL_NAME,
                 fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
-                fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
+                fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
                 fnet_reachability::MonitorMarker::PROTOCOL_NAME,
             ],
@@ -171,7 +170,7 @@ impl ManagementAgent {
                 fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
                 fnet_virtualization::ControlMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
-                fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
+                fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
                 fnet_reachability::MonitorMarker::PROTOCOL_NAME,
             ],
@@ -793,12 +792,12 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     constants::fake_socket_proxy::COMPONENT_URL.to_string(),
                 )),
                 exposes: Some(vec![
-                    fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
+                    fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![
                     fnetemul::Capability::ChildDep(fnetemul::ChildDep {
                         is_weak: Some(true),
-                        ..protocol_dep::<fnp_socketproxy::NetworkRegistryMarker>(
+                        ..protocol_dep::<fnp_properties::NetworkRegistryMarker>(
                             constants::netcfg::COMPONENT_NAME,
                         )
                     }),
@@ -812,7 +811,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 )),
                 exposes: Some(vec![
                     fnp_properties::NetworksMarker::PROTOCOL_NAME.to_string(),
-                    fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
+                    fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 ..Default::default()
             },

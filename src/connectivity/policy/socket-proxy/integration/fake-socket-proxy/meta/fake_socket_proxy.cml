@@ -9,17 +9,17 @@
     },
     capabilities: [
         {
-            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
+            protocol: [ "fuchsia.net.policy.properties.NetworkRegistry" ],
         },
     ],
     use: [
         {
-            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
+            protocol: [ "fuchsia.net.policy.properties.NetworkRegistry" ],
         },
     ],
     expose: [
         {
-            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
+            protocol: [ "fuchsia.net.policy.properties.NetworkRegistry" ],
             from: "self",
         },
     ],

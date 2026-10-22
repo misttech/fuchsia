@@ -28,13 +28,6 @@
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
 fidl("fuchsia.net.policy.socketproxy") {
-  sources = [
-    "network_registry.fidl",
-    "socketproxy.fidl",
-  ]
+  sources = [ "socketproxy.fidl" ]
   visibility = [ "*" ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.net",
-    "//sdk/fidl/fuchsia.posix.socket",
-  ]
 }

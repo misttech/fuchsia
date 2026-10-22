@@ -16,7 +16,7 @@ use fidl_fuchsia_net_dhcp as net_dhcp;
 use fidl_fuchsia_net_dhcpv6 as net_dhcpv6;
 use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_name as net_name;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_root as fnet_root;
 use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
@@ -658,14 +658,14 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
         .expect("create netstack realm");
 
     let network_registry = realm
-        .connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
+        .connect_to_protocol::<fnp_properties::NetworkRegistryMarker>()
         .expect("while connecting to network registry");
 
     // Add a network and observe the DNS servers in the DNS update.
-    let mut network1 = fnp_socketproxy::Network {
+    let mut network1 = fnp_properties::Network {
         network_id: Some(NETWORK_ID1),
         info: Some(starnix_network_info(123, 456)),
-        dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+        dns_servers: Some(fnp_properties::NetworkDnsServers {
             v4: Some(vec![fidl_ip_v4!("192.0.2.1")]),
             v6: Some(vec![]),
             ..Default::default()
@@ -687,7 +687,7 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
     check_type.clone().evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &expect1).await;
 
     // Perform an update and confirm the updated DNS server appears in the DNS update.
-    network1.dns_servers = Some(fnp_socketproxy::NetworkDnsServers {
+    network1.dns_servers = Some(fnp_properties::NetworkDnsServers {
         v4: Some(vec![fidl_ip_v4!("192.0.2.2")]),
         v6: Some(vec![]),
         ..Default::default()
@@ -700,10 +700,10 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
     check_type.clone().evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &expect2).await;
 
     // Add a second network and observe the DNS servers in the DNS update.
-    let network2 = fnp_socketproxy::Network {
+    let network2 = fnp_properties::Network {
         network_id: Some(NETWORK_ID2),
         info: Some(starnix_network_info(456, 789)),
-        dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+        dns_servers: Some(fnp_properties::NetworkDnsServers {
             v4: Some(vec![]),
             v6: Some(vec![fidl_ip_v6!("2001:db8::2222")]),
             ..Default::default()
@@ -734,8 +734,8 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
     realm.shutdown().await.expect("failed to shutdown realm");
 }
 
-fn starnix_network_info(mark: u32, handle: u64) -> fnp_socketproxy::NetworkInfo {
-    fnp_socketproxy::NetworkInfo::Starnix(fnp_socketproxy::StarnixNetworkInfo {
+fn starnix_network_info(mark: u32, handle: u64) -> fnp_properties::NetworkInfo {
+    fnp_properties::NetworkInfo::Starnix(fnp_properties::StarnixNetworkInfo {
         mark: Some(mark),
         handle: Some(handle),
         ..Default::default()
@@ -767,16 +767,16 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
         )
         .expect("create netstack realm");
     let network_registry = realm
-        .connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
+        .connect_to_protocol::<fnp_properties::NetworkRegistryMarker>()
         .expect("while connecting to NetworkRegistry");
 
     // Add a Starnix network to the NetworkRegistry. Since there is no
     // default network, the network will be observed via the watcher without
     // setting it as the default.
-    let mut starnix_network = fnp_socketproxy::Network {
+    let mut starnix_network = fnp_properties::Network {
         network_id: Some(STARNIX_NETWORK_ID),
         info: Some(starnix_network_info(123, 456)),
-        dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+        dns_servers: Some(fnp_properties::NetworkDnsServers {
             v4: Some(vec![fidl_ip_v4!("192.0.2.1")]),
             v6: Some(vec![]),
             ..Default::default()
@@ -806,7 +806,7 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
     // Update the Starnix network's DNS servers and wait for the update. When we
     // observe this update, we observed there was not a Fuchsia NetworkRegistry
     // related DNS update.
-    starnix_network.dns_servers = Some(fnp_socketproxy::NetworkDnsServers {
+    starnix_network.dns_servers = Some(fnp_properties::NetworkDnsServers {
         v4: Some(vec![fidl_ip_v4!("192.0.2.2")]),
         v6: Some(vec![]),
         ..Default::default()

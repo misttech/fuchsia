@@ -81,7 +81,7 @@
             source_availability: "unknown",
         },
         {
-            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
+            protocol: [ "fuchsia.net.policy.properties.NetworkRegistry" ],
             from: "#network",
             to: "#starnix_runner",
             availability: "optional",

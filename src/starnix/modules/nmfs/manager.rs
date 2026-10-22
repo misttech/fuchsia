@@ -17,12 +17,12 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use thiserror::Error;
 
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
 
 /// Manager for communicating network properties.
 #[derive(Inspect)]
 pub(crate) struct NetworkManager {
-    network_registry: fnp_socketproxy::NetworkRegistrySynchronousProxy,
+    network_registry: fnp_properties::NetworkRegistrySynchronousProxy,
     #[inspect(forward)]
     inner: LockDepMutex<IValue<NetworkManagerInner>, NmfsNetworkManagerLock>,
 }
@@ -62,7 +62,7 @@ pub fn nmfs_init(kernel: &Kernel) -> Result<(), anyhow::Error> {
     );
 
     // Register the NetworkManager.
-    let network_registry = connect_to_protocol_sync::<fnp_socketproxy::NetworkRegistryMarker>()?;
+    let network_registry = connect_to_protocol_sync::<fnp_properties::NetworkRegistryMarker>()?;
     kernel
         .expando
         .get_or_init(|| NetworkManager::new_with_proxy(network_registry, &kernel.inspect_node));
@@ -75,7 +75,7 @@ pub fn nmfs_init(kernel: &Kernel) -> Result<(), anyhow::Error> {
 impl NetworkManager {
     // Create a NetworkManager with a NetworkRegistry protocol connection and `nmfs` inspect node.
     pub(crate) fn new_with_proxy(
-        proxy: fnp_socketproxy::NetworkRegistrySynchronousProxy,
+        proxy: fnp_properties::NetworkRegistrySynchronousProxy,
         node: &fuchsia_inspect::Node,
     ) -> Self {
         Self { network_registry: proxy, inner: Default::default() }
@@ -190,7 +190,7 @@ impl NetworkManager {
         }
 
         // Only log when there is an internal proxy error.
-        match self.fidl_add_network(&fnp_socketproxy::Network::from(&network)) {
+        match self.fidl_add_network(&fnp_properties::Network::from(&network)) {
             Ok(()) => {
                 log_info!("Successfully added network with id {} to netcfg", network.netid);
                 let mut inner_guard = self.lock();
@@ -229,7 +229,7 @@ impl NetworkManager {
         };
 
         // Only log when there is an internal proxy error.
-        match self.fidl_update_network(&fnp_socketproxy::Network::from(&network)) {
+        match self.fidl_update_network(&fnp_properties::Network::from(&network)) {
             Ok(()) => {
                 log_info!("Successfully updated network with id {} in netcfg", network.netid);
                 let mut inner_guard = self.lock();
@@ -296,7 +296,7 @@ impl NetworkManager {
     // Call `add` on `NetworkRegistry`.
     fn fidl_add_network(
         &self,
-        network: &fnp_socketproxy::Network,
+        network: &fnp_properties::Network,
     ) -> Result<(), NetworkManagerError> {
         Ok(self.network_registry.add(&network, zx::MonotonicInstant::INFINITE)??)
     }
@@ -304,7 +304,7 @@ impl NetworkManager {
     // Call `update` on `NetworkRegistry`.
     fn fidl_update_network(
         &self,
-        network: &fnp_socketproxy::Network,
+        network: &fnp_properties::Network,
     ) -> Result<(), NetworkManagerError> {
         Ok(self.network_registry.update(&network, zx::MonotonicInstant::INFINITE)??)
     }
@@ -320,37 +320,37 @@ impl NetworkManager {
 #[derive(Clone, Debug, Error)]
 pub(crate) enum NetworkManagerError {
     #[error("Error during netcfg Add: {0:?}")]
-    Add(fnp_socketproxy::NetworkRegistryAddError),
+    Add(fnp_properties::NetworkRegistryAddError),
     #[error("Error calling FIDL on netcfg: {0:?}")]
     Fidl(#[from] fidl::Error),
     #[error("Error during netcfg Remove: {0:?}")]
-    Remove(fnp_socketproxy::NetworkRegistryRemoveError),
+    Remove(fnp_properties::NetworkRegistryRemoveError),
     #[error("Error during netcfg SetDefault: {0:?}")]
-    SetDefault(fnp_socketproxy::NetworkRegistrySetDefaultError),
+    SetDefault(fnp_properties::NetworkRegistrySetDefaultError),
     #[error("Error during netcfg Update: {0:?}")]
-    Update(fnp_socketproxy::NetworkRegistryUpdateError),
+    Update(fnp_properties::NetworkRegistryUpdateError),
 }
 
-impl From<fnp_socketproxy::NetworkRegistryAddError> for NetworkManagerError {
-    fn from(error: fnp_socketproxy::NetworkRegistryAddError) -> Self {
+impl From<fnp_properties::NetworkRegistryAddError> for NetworkManagerError {
+    fn from(error: fnp_properties::NetworkRegistryAddError) -> Self {
         NetworkManagerError::Add(error)
     }
 }
 
-impl From<fnp_socketproxy::NetworkRegistryRemoveError> for NetworkManagerError {
-    fn from(error: fnp_socketproxy::NetworkRegistryRemoveError) -> Self {
+impl From<fnp_properties::NetworkRegistryRemoveError> for NetworkManagerError {
+    fn from(error: fnp_properties::NetworkRegistryRemoveError) -> Self {
         NetworkManagerError::Remove(error)
     }
 }
 
-impl From<fnp_socketproxy::NetworkRegistrySetDefaultError> for NetworkManagerError {
-    fn from(error: fnp_socketproxy::NetworkRegistrySetDefaultError) -> Self {
+impl From<fnp_properties::NetworkRegistrySetDefaultError> for NetworkManagerError {
+    fn from(error: fnp_properties::NetworkRegistrySetDefaultError) -> Self {
         NetworkManagerError::SetDefault(error)
     }
 }
 
-impl From<fnp_socketproxy::NetworkRegistryUpdateError> for NetworkManagerError {
-    fn from(error: fnp_socketproxy::NetworkRegistryUpdateError) -> Self {
+impl From<fnp_properties::NetworkRegistryUpdateError> for NetworkManagerError {
+    fn from(error: fnp_properties::NetworkRegistryUpdateError) -> Self {
         NetworkManagerError::Update(error)
     }
 }
@@ -402,7 +402,7 @@ mod tests {
         results: Vec<Result<(), NetworkManagerError>>,
     ) -> NetworkManager {
         let (proxy, mut stream) = fidl::endpoints::create_sync_proxy_and_stream::<
-            fnp_socketproxy::NetworkRegistryMarker,
+            fnp_properties::NetworkRegistryMarker,
         >();
         let manager = NetworkManager::new_with_proxy(proxy, inspect_node);
 
@@ -413,7 +413,7 @@ mod tests {
                     .next()
                     .expect("there should be an equivalent # of results and requests");
                 match item.expect("receive request") {
-                    fnp_socketproxy::NetworkRegistryRequest::SetDefault {
+                    fnp_properties::NetworkRegistryRequest::SetDefault {
                         network_id: _,
                         responder,
                     } => {
@@ -423,24 +423,21 @@ mod tests {
                         });
                         responder.send(res).expect("respond to SetDefault");
                     }
-                    fnp_socketproxy::NetworkRegistryRequest::Add { network: _, responder } => {
+                    fnp_properties::NetworkRegistryRequest::Add { network: _, responder } => {
                         let res = result.map_err(|e| match e {
                             NetworkManagerError::Add(err) => err,
                             _ => unreachable!("should have been Add error variant"),
                         });
                         responder.send(res).expect("respond to Add");
                     }
-                    fnp_socketproxy::NetworkRegistryRequest::Update { network: _, responder } => {
+                    fnp_properties::NetworkRegistryRequest::Update { network: _, responder } => {
                         let res = result.map_err(|e| match e {
                             NetworkManagerError::Update(err) => err,
                             _ => unreachable!("should have been Update error variant"),
                         });
                         responder.send(res).expect("respond to Update");
                     }
-                    fnp_socketproxy::NetworkRegistryRequest::Remove {
-                        network_id: _,
-                        responder,
-                    } => {
+                    fnp_properties::NetworkRegistryRequest::Remove { network_id: _, responder } => {
                         let res = result.map_err(|e| match e {
                             NetworkManagerError::Remove(err) => err,
                             _ => unreachable!("should have been Remove error variant"),
@@ -465,15 +462,15 @@ mod tests {
     #[test_case(
         vec![
             Ok(()),
-            Err(NetworkManagerError::SetDefault(fnp_socketproxy::NetworkRegistrySetDefaultError::NotFound)),
+            Err(NetworkManagerError::SetDefault(fnp_properties::NetworkRegistrySetDefaultError::NotFound)),
         ],
         SeenSentData { seen: 2, sent: 1 };
         "one_error"
     )]
     #[test_case(
         vec![
-            Err(NetworkManagerError::SetDefault(fnp_socketproxy::NetworkRegistrySetDefaultError::NotFound)),
-            Err(NetworkManagerError::SetDefault(fnp_socketproxy::NetworkRegistrySetDefaultError::NotFound)),
+            Err(NetworkManagerError::SetDefault(fnp_properties::NetworkRegistrySetDefaultError::NotFound)),
+            Err(NetworkManagerError::SetDefault(fnp_properties::NetworkRegistrySetDefaultError::NotFound)),
         ],
         SeenSentData { seen: 2, sent: 0 };
         "all_errors"
@@ -518,15 +515,15 @@ mod tests {
     #[test_case(
         vec![
             Ok(()),
-            Err(NetworkManagerError::Add(fnp_socketproxy::NetworkRegistryAddError::DuplicateNetworkId)),
+            Err(NetworkManagerError::Add(fnp_properties::NetworkRegistryAddError::DuplicateNetworkId)),
         ],
         SeenSentData { seen: 2, sent: 1 };
         "one_error"
     )]
     #[test_case(
         vec![
-            Err(NetworkManagerError::Add(fnp_socketproxy::NetworkRegistryAddError::MissingNetworkId)),
-            Err(NetworkManagerError::Add(fnp_socketproxy::NetworkRegistryAddError::MissingNetworkInfo)),
+            Err(NetworkManagerError::Add(fnp_properties::NetworkRegistryAddError::MissingNetworkId)),
+            Err(NetworkManagerError::Add(fnp_properties::NetworkRegistryAddError::MissingNetworkInfo)),
         ],
         SeenSentData { seen: 2, sent: 0 };
         "all_errors"
@@ -581,15 +578,15 @@ mod tests {
     #[test_case(
         vec![
             Ok(()),
-            Err(NetworkManagerError::Update(fnp_socketproxy::NetworkRegistryUpdateError::MissingNetworkId)),
+            Err(NetworkManagerError::Update(fnp_properties::NetworkRegistryUpdateError::MissingNetworkId)),
         ],
         SeenSentData { seen: 2, sent: 1 };
         "one_error"
     )]
     #[test_case(
         vec![
-            Err(NetworkManagerError::Update(fnp_socketproxy::NetworkRegistryUpdateError::NotFound)),
-            Err(NetworkManagerError::Update(fnp_socketproxy::NetworkRegistryUpdateError::MissingNetworkInfo)),
+            Err(NetworkManagerError::Update(fnp_properties::NetworkRegistryUpdateError::NotFound)),
+            Err(NetworkManagerError::Update(fnp_properties::NetworkRegistryUpdateError::MissingNetworkInfo)),
         ],
         SeenSentData { seen: 2, sent: 0 };
         "all_errors"
@@ -650,7 +647,7 @@ mod tests {
     #[test_case(vec![Ok(())], SeenSentData { seen: 1, sent: 1 }; "success")]
     #[test_case(
         vec![
-            Err(NetworkManagerError::Remove(fnp_socketproxy::NetworkRegistryRemoveError::NotFound)),
+            Err(NetworkManagerError::Remove(fnp_properties::NetworkRegistryRemoveError::NotFound)),
         ],
         SeenSentData { seen: 1, sent: 0 };
         "error"
@@ -711,24 +708,24 @@ mod tests {
         let results = vec![
             // Network added to Manager, but not added to netcfg.
             Err(NetworkManagerError::Add(
-                fnp_socketproxy::NetworkRegistryAddError::MissingNetworkId,
+                fnp_properties::NetworkRegistryAddError::MissingNetworkId,
             )),
             // Network added to Manager and to netcfg.
             Ok(()),
             // Network set as default in Manager, but not in netcfg.
             Err(NetworkManagerError::SetDefault(
-                fnp_socketproxy::NetworkRegistrySetDefaultError::NotFound,
+                fnp_properties::NetworkRegistrySetDefaultError::NotFound,
             )),
             // Network set as default in Manager and in netcfg.
             Ok(()),
             // Network updated in Manager, but not in netcfg.
-            Err(NetworkManagerError::Update(fnp_socketproxy::NetworkRegistryUpdateError::NotFound)),
+            Err(NetworkManagerError::Update(fnp_properties::NetworkRegistryUpdateError::NotFound)),
             // Network updated in Manager and in netcfg.
             Ok(()),
             // Unset the default network so the network is eligible to be removed.
             Ok(()),
             // Network removed from Manager, but not from netcfg.
-            Err(NetworkManagerError::Remove(fnp_socketproxy::NetworkRegistryRemoveError::NotFound)),
+            Err(NetworkManagerError::Remove(fnp_properties::NetworkRegistryRemoveError::NotFound)),
             // Network removed from Manager and from netcfg.
             Ok(()),
         ];

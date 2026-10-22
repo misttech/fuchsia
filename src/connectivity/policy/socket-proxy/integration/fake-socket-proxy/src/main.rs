@@ -5,34 +5,34 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
 use log::{debug, error};
 
 async fn handle_provider(
-    delegated_networks: Arc<fnp_socketproxy::NetworkRegistryProxy>,
-    rs: fnp_socketproxy::NetworkRegistryRequestStream,
+    delegated_networks: Arc<fnp_properties::NetworkRegistryProxy>,
+    rs: fnp_properties::NetworkRegistryRequestStream,
 ) -> Result<(), anyhow::Error> {
     rs.map(|r| r.context("fidl error"))
         .try_for_each(|req| {
             let delegated_networks = delegated_networks.clone();
             async move {
                 match req {
-                    fnp_socketproxy::NetworkRegistryRequest::SetDefault {
+                    fnp_properties::NetworkRegistryRequest::SetDefault {
                         network_id,
                         responder,
                     } => {
                         responder.send(delegated_networks.set_default(&network_id).await?)?;
                     }
-                    fnp_socketproxy::NetworkRegistryRequest::Add { network, responder } => {
+                    fnp_properties::NetworkRegistryRequest::Add { network, responder } => {
                         responder.send(delegated_networks.add(&network).await?)?;
                     }
-                    fnp_socketproxy::NetworkRegistryRequest::Update { network, responder } => {
+                    fnp_properties::NetworkRegistryRequest::Update { network, responder } => {
                         responder.send(delegated_networks.update(&network).await?)?;
                     }
-                    fnp_socketproxy::NetworkRegistryRequest::Remove { network_id, responder } => {
+                    fnp_properties::NetworkRegistryRequest::Remove { network_id, responder } => {
                         responder.send(delegated_networks.remove(network_id).await?)?;
                     }
                 }
@@ -43,7 +43,7 @@ async fn handle_provider(
 }
 
 enum IncomingServices {
-    NetworkRegistry(fnp_socketproxy::NetworkRegistryRequestStream),
+    NetworkRegistry(fnp_properties::NetworkRegistryRequestStream),
 }
 
 #[fuchsia::main]
@@ -52,7 +52,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut fs = ServiceFs::new_local();
     let delegated_networks = Arc::new(
-        connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
+        connect_to_protocol::<fnp_properties::NetworkRegistryMarker>()
             .expect("can't connect to NetworkRegistry"),
     );
     let _ = fs.dir("svc").add_fidl_service(IncomingServices::NetworkRegistry);

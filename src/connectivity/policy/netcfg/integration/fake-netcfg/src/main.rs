@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_net_policy_properties as fnp_properties;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_reachability as freachability;
 use fuchsia_component::server::ServiceFs;
 use futures::stream::StreamExt as _;
 use log::{debug, error};
 
 enum IncomingServices {
-    NetworkRegistry(fnp_socketproxy::NetworkRegistryRequestStream),
+    NetworkRegistry(fnp_properties::NetworkRegistryRequestStream),
     Networks(fnp_properties::NetworksRequestStream),
     Reachability(freachability::MonitorRequestStream),
 }

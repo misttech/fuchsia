@@ -44,7 +44,7 @@
     ],
     expose: [
         {
-            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
+            protocol: [ "fuchsia.net.policy.properties.NetworkRegistry" ],
             from: "#netcfg",
             availability: "optional",
         },

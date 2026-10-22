@@ -23,7 +23,6 @@ use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_reachability as freachability;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_inspect::Property as _;
@@ -253,9 +252,9 @@ struct NetworkProperties {
     // TODO(https://fxbug.dev/567965129): Remove the following optional fields for shared
     // Fuchsia/Starnix networks once all networks received from Starnix are required to
     // have these fields.
-    connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
+    connectivity_state: Option<fnp_properties::ConnectivityState>,
     name: Option<String>,
-    network_type: Option<fnp_socketproxy::NetworkType>,
+    network_type: Option<fnp_properties::NetworkType>,
 }
 
 impl NetworkProperties {
@@ -668,15 +667,15 @@ trait NetworkTypeInspectExt {
     fn as_str(&self) -> &'static str;
 }
 
-impl NetworkTypeInspectExt for fnp_socketproxy::NetworkType {
+impl NetworkTypeInspectExt for fnp_properties::NetworkType {
     fn as_str(&self) -> &'static str {
         match self {
-            fnp_socketproxy::NetworkType::Unknown => "Unknown",
-            fnp_socketproxy::NetworkType::Ethernet => "Ethernet",
-            fnp_socketproxy::NetworkType::Wifi => "Wifi",
-            fnp_socketproxy::NetworkType::Bluetooth => "Bluetooth",
-            fnp_socketproxy::NetworkType::Cellular => "Cellular",
-            fnp_socketproxy::NetworkType::__SourceBreaking { .. } => "Unknown",
+            fnp_properties::NetworkType::Unknown => "Unknown",
+            fnp_properties::NetworkType::Ethernet => "Ethernet",
+            fnp_properties::NetworkType::Wifi => "Wifi",
+            fnp_properties::NetworkType::Bluetooth => "Bluetooth",
+            fnp_properties::NetworkType::Cellular => "Cellular",
+            fnp_properties::NetworkType::__SourceBreaking { .. } => "Unknown",
         }
     }
 }
@@ -685,14 +684,14 @@ trait ConnectivityStateInspectExt {
     fn as_str(&self) -> &'static str;
 }
 
-impl ConnectivityStateInspectExt for fnp_socketproxy::ConnectivityState {
+impl ConnectivityStateInspectExt for fnp_properties::ConnectivityState {
     fn as_str(&self) -> &'static str {
         match self {
-            fnp_socketproxy::ConnectivityState::NoConnectivity => "NoConnectivity",
-            fnp_socketproxy::ConnectivityState::LocalConnectivity => "LocalConnectivity",
-            fnp_socketproxy::ConnectivityState::PartialConnectivity => "PartialConnectivity",
-            fnp_socketproxy::ConnectivityState::FullConnectivity => "FullConnectivity",
-            fnp_socketproxy::ConnectivityState::__SourceBreaking { .. } => "Unknown",
+            fnp_properties::ConnectivityState::NoConnectivity => "NoConnectivity",
+            fnp_properties::ConnectivityState::LocalConnectivity => "LocalConnectivity",
+            fnp_properties::ConnectivityState::PartialConnectivity => "PartialConnectivity",
+            fnp_properties::ConnectivityState::FullConnectivity => "FullConnectivity",
+            fnp_properties::ConnectivityState::__SourceBreaking { .. } => "Unknown",
         }
     }
 }
@@ -833,11 +832,11 @@ pub struct NetworkPropertiesChange {
     /// If present, contains the new DNS servers for this network.
     pub dns_servers: Option<Vec<fnet_name::DnsServer_>>,
     /// The new connectivity state of the network.
-    pub connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
+    pub connectivity_state: Option<fnp_properties::ConnectivityState>,
     /// The name of the network.
     pub name: Option<String>,
     /// The transport type of the network.
-    pub network_type: Option<fnp_socketproxy::NetworkType>,
+    pub network_type: Option<fnp_properties::NetworkType>,
 }
 
 #[derive(Debug, Clone)]
@@ -876,7 +875,7 @@ enum UpdateApplied {
         changed_marks: bool,
         changed_dns: bool,
         name: Option<String>,
-        network_type: Option<fnp_socketproxy::NetworkType>,
+        network_type: Option<fnp_properties::NetworkType>,
     },
 
     /// Network was removed, contains the NetworkId of the removed network.
@@ -902,7 +901,7 @@ impl NetworkRegistryUpdate {
     }
 }
 
-/// A validated copy of [`fnp_socketproxy::Network`] ensuring required fields
+/// A validated copy of [`fnp_properties::Network`] ensuring required fields
 /// are present for delegated (Starnix) networks.
 ///
 /// Netcfg discovers native Fuchsia networks internally from Netstack, so
@@ -912,9 +911,9 @@ struct ValidatedNetwork {
     network_id: NetworkId,
     marks: fnet::Marks,
     dns_servers: Vec<fnet_name::DnsServer_>,
-    connectivity: Option<fnp_socketproxy::ConnectivityState>,
+    connectivity: Option<fnp_properties::ConnectivityState>,
     name: Option<String>,
-    network_type: Option<fnp_socketproxy::NetworkType>,
+    network_type: Option<fnp_properties::NetworkType>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -923,7 +922,7 @@ enum NetworkValidationError {
     MissingNetworkInfo,
 }
 
-impl From<NetworkValidationError> for fnp_socketproxy::NetworkRegistryAddError {
+impl From<NetworkValidationError> for fnp_properties::NetworkRegistryAddError {
     fn from(error: NetworkValidationError) -> Self {
         match error {
             NetworkValidationError::MissingNetworkId => Self::MissingNetworkId,
@@ -932,7 +931,7 @@ impl From<NetworkValidationError> for fnp_socketproxy::NetworkRegistryAddError {
     }
 }
 
-impl From<NetworkValidationError> for fnp_socketproxy::NetworkRegistryUpdateError {
+impl From<NetworkValidationError> for fnp_properties::NetworkRegistryUpdateError {
     fn from(error: NetworkValidationError) -> Self {
         match error {
             NetworkValidationError::MissingNetworkId => Self::MissingNetworkId,
@@ -941,15 +940,15 @@ impl From<NetworkValidationError> for fnp_socketproxy::NetworkRegistryUpdateErro
     }
 }
 
-impl TryFrom<fnp_socketproxy::Network> for ValidatedNetwork {
+impl TryFrom<fnp_properties::Network> for ValidatedNetwork {
     type Error = NetworkValidationError;
 
-    fn try_from(network: fnp_socketproxy::Network) -> Result<Self, Self::Error> {
+    fn try_from(network: fnp_properties::Network) -> Result<Self, Self::Error> {
         let raw_network_id = network.network_id.ok_or(NetworkValidationError::MissingNetworkId)?;
         let network_id = InterfaceId::try_from(raw_network_id)
             .map(NetworkId::delegated)
             .map_err(|_| NetworkValidationError::MissingNetworkId)?;
-        let Some(fnp_socketproxy::NetworkInfo::Starnix(info)) = network.info else {
+        let Some(fnp_properties::NetworkInfo::Starnix(info)) = network.info else {
             return Err(NetworkValidationError::MissingNetworkInfo);
         };
 
@@ -992,7 +991,7 @@ pub enum NetworkRequestStream {
         connection_id: PropertyWatcherConnectionId,
         stream: fnp_properties::PropertyWatcherRequestStream,
     },
-    DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+    DelegatedNetworks(fnp_properties::NetworkRegistryRequestStream),
     Reachability(freachability::MonitorRequestStream),
 }
 
@@ -1007,8 +1006,8 @@ impl From<fnp_properties::NetworkTokenResolverRequestStream> for NetworkRequestS
     }
 }
 
-impl From<fnp_socketproxy::NetworkRegistryRequestStream> for NetworkRequestStream {
-    fn from(s: fnp_socketproxy::NetworkRegistryRequestStream) -> Self {
+impl From<fnp_properties::NetworkRegistryRequestStream> for NetworkRequestStream {
+    fn from(s: fnp_properties::NetworkRegistryRequestStream) -> Self {
         Self::DelegatedNetworks(s)
     }
 }
@@ -1047,7 +1046,7 @@ fn split_connection_item<Id, T>(item: StreamItem<(Id, T), Id>) -> (Id, Option<T>
 
 /// The single-client `NetworkRegistry` request stream, ending in an epitaph so the
 /// event loop observes when the client disconnects.
-type DelegatedNetworksStream = StreamWithEpitaph<fnp_socketproxy::NetworkRegistryRequestStream, ()>;
+type DelegatedNetworksStream = StreamWithEpitaph<fnp_properties::NetworkRegistryRequestStream, ()>;
 
 /// An internal wrapper enum for active FIDL request streams stored in
 /// [`NetpolNetworksService::streams`].
@@ -1132,10 +1131,10 @@ pub struct PropertyWatcherRequest {
     pub request: Option<Result<fnp_properties::PropertyWatcherRequest, fidl::Error>>,
 }
 
-/// A wrapper for [`fnp_socketproxy::NetworkRegistryRequest`], or `None` if the client
+/// A wrapper for [`fnp_properties::NetworkRegistryRequest`], or `None` if the client
 /// connection closed.
 pub struct DelegatedNetworksRequest {
-    pub request: Option<Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>>,
+    pub request: Option<Result<fnp_properties::NetworkRegistryRequest, fidl::Error>>,
 }
 
 /// A wrapper for [`freachability::MonitorRequest`] that includes the
@@ -1200,7 +1199,7 @@ struct OperationsMetrics {
 impl OperationsMetrics {
     fn record_set_default(
         &mut self,
-        result: &Result<(), fnp_socketproxy::NetworkRegistrySetDefaultError>,
+        result: &Result<(), fnp_properties::NetworkRegistrySetDefaultError>,
     ) {
         let mut delegated = self.delegated.as_mut();
         match result {
@@ -1209,7 +1208,7 @@ impl OperationsMetrics {
         }
     }
 
-    fn record_add(&mut self, result: &Result<(), fnp_socketproxy::NetworkRegistryAddError>) {
+    fn record_add(&mut self, result: &Result<(), fnp_properties::NetworkRegistryAddError>) {
         let mut delegated = self.delegated.as_mut();
         match result {
             Ok(()) => delegated.adds.successes += 1,
@@ -1217,7 +1216,7 @@ impl OperationsMetrics {
         }
     }
 
-    fn record_update(&mut self, result: &Result<(), fnp_socketproxy::NetworkRegistryUpdateError>) {
+    fn record_update(&mut self, result: &Result<(), fnp_properties::NetworkRegistryUpdateError>) {
         let mut delegated = self.delegated.as_mut();
         match result {
             Ok(()) => delegated.updates.successes += 1,
@@ -1225,7 +1224,7 @@ impl OperationsMetrics {
         }
     }
 
-    fn record_remove(&mut self, result: &Result<(), fnp_socketproxy::NetworkRegistryRemoveError>) {
+    fn record_remove(&mut self, result: &Result<(), fnp_properties::NetworkRegistryRemoveError>) {
         let mut delegated = self.delegated.as_mut();
         match result {
             Ok(()) => delegated.removes.successes += 1,
@@ -1245,8 +1244,8 @@ pub struct NetpolNetworksService {
     generations_by_connection: UpdateGenerations,
     // Networks connections
     networks_clients: HashMap<NetworksConnectionId, NetworksClient>,
-    // The active `fuchsia.net.policy.socketproxy.NetworkRegistry` client connection, if any.
-    delegated_networks_client: Option<fnp_socketproxy::NetworkRegistryControlHandle>,
+    // The active `fuchsia.net.policy.properties.NetworkRegistry` client connection, if any.
+    delegated_networks_client: Option<fnp_properties::NetworkRegistryControlHandle>,
     tokens: token_registry::TokenRegistry<NetworkTokenContents>,
     // NetworkProperty Watchers
     property_watchers: HashMap<PropertyWatcherConnectionId, Registration>,
@@ -1364,7 +1363,7 @@ impl NetpolNetworksService {
                 if self.delegated_networks_client.is_some() {
                     warn!(
                         "Only one connection to \
-                        fuchsia.net.policy.socketproxy/NetworkRegistry is allowed at a time"
+                        fuchsia.net.policy.properties/NetworkRegistry is allowed at a time"
                     );
                     stream.control_handle().shutdown_with_epitaph(zx::Status::ALREADY_EXISTS);
                 } else {
@@ -1672,9 +1671,9 @@ impl NetpolNetworksService {
     /// item from the stream belongs to a live client.
     pub async fn handle_delegated_networks_update(
         &mut self,
-        update: Option<Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>>,
+        update: Option<Result<fnp_properties::NetworkRegistryRequest, fidl::Error>>,
     ) -> DelegatedNetworkUpdateResult {
-        use fnp_socketproxy::{
+        use fnp_properties::{
             NetworkRegistryAddError, NetworkRegistryRemoveError, NetworkRegistryRequest,
             NetworkRegistrySetDefaultError, NetworkRegistryUpdateError,
         };
@@ -1901,7 +1900,7 @@ impl NetpolNetworksService {
     // Note: We prioritize IPv4 servers over IPv6 servers. This is impactful
     // when sending DNS servers through NetworkProperties or to dns-resolver.
     fn extract_dns_servers(
-        dns_servers: &Option<fnp_socketproxy::NetworkDnsServers>,
+        dns_servers: &Option<fnp_properties::NetworkDnsServers>,
         network_id: u64,
     ) -> Vec<fnet_name::DnsServer_> {
         let make_server = |address| fnet_name::DnsServer_ {
@@ -2083,7 +2082,7 @@ impl NetpolNetworksService {
                         name: props.name.clone(),
                         transport: props
                             .network_type
-                            .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
+                            .unwrap_or(fnp_properties::NetworkType::Unknown),
                         is_fuchsia_provisioned: network_id.is_fuchsia(),
                         connectivity_state: props.connectivity_state,
                     }));
@@ -2184,7 +2183,7 @@ impl NetpolNetworksService {
                                 name: props.name.clone(),
                                 transport: props
                                     .network_type
-                                    .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
+                                    .unwrap_or(fnp_properties::NetworkType::Unknown),
                                 is_fuchsia_provisioned: default_network.is_fuchsia(),
                                 connectivity_state: props.connectivity_state,
                             },
@@ -2236,7 +2235,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
-    use fnp_socketproxy::{
+    use fnp_properties::{
         NetworkInfo, NetworkRegistryAddError, NetworkRegistryMarker, NetworkRegistryRemoveError,
         NetworkRegistrySetDefaultError, NetworkRegistryUpdateError, StarnixNetworkInfo,
     };
@@ -2258,7 +2257,7 @@ mod tests {
     struct TestNetwork {
         id: NetworkId,
         name: &'static str,
-        network_type: fnp_socketproxy::NetworkType,
+        network_type: fnp_properties::NetworkType,
     }
 
     #[derive(Default)]
@@ -2283,7 +2282,7 @@ mod tests {
             added: bool,
             marks: Option<fnet::Marks>,
             dns_servers: Option<Vec<fnet_name::DnsServer_>>,
-            connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
+            connectivity_state: Option<fnp_properties::ConnectivityState>,
         ) -> NetworkPropertiesChange {
             NetworkPropertiesChange {
                 added,
@@ -2311,17 +2310,17 @@ mod tests {
     const DELEGATED_NET_1: TestNetwork = TestNetwork {
         id: DELEGATED_ID_1,
         name: NAME_1,
-        network_type: fnp_socketproxy::NetworkType::Ethernet,
+        network_type: fnp_properties::NetworkType::Ethernet,
     };
     const FUCHSIA_NET_1: TestNetwork = TestNetwork {
         id: FUCHSIA_ID_1,
         name: NAME_1,
-        network_type: fnp_socketproxy::NetworkType::Ethernet,
+        network_type: fnp_properties::NetworkType::Ethernet,
     };
     const FUCHSIA_NET_2: TestNetwork = TestNetwork {
         id: FUCHSIA_ID_2,
         name: NAME_2,
-        network_type: fnp_socketproxy::NetworkType::Wifi,
+        network_type: fnp_properties::NetworkType::Wifi,
     };
 
     fn test_marks() -> fnet::Marks {
@@ -2361,7 +2360,7 @@ mod tests {
             dns_servers: None,
             connectivity_state: None,
             name: Some(name.to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+            network_type: Some(fnp_properties::NetworkType::Ethernet),
         }
     }
 
@@ -2404,7 +2403,7 @@ mod tests {
             true,
             initial_marks.clone(),
             Some(dns1.clone()),
-            Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            Some(fnp_properties::ConnectivityState::FullConnectivity),
         );
         assert_eq!(
             networks.handle_changed_network(net.id, event),
@@ -2415,7 +2414,7 @@ mod tests {
             &NetworkProperties {
                 socket_marks: initial_marks.clone(),
                 dns_servers: dns1,
-                connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
                 name: Some(net.name.to_string()),
                 network_type: Some(net.network_type),
             }
@@ -2427,7 +2426,7 @@ mod tests {
             false,
             initial_marks.clone(),
             Some(dns2.clone()),
-            Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+            Some(fnp_properties::ConnectivityState::NoConnectivity),
         );
         assert_eq!(
             networks.handle_changed_network(net.id, event),
@@ -2438,7 +2437,7 @@ mod tests {
             &NetworkProperties {
                 socket_marks: initial_marks.clone(),
                 dns_servers: dns2.clone(),
-                connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+                connectivity_state: Some(fnp_properties::ConnectivityState::NoConnectivity),
                 name: Some(net.name.to_string()),
                 network_type: Some(net.network_type),
             }
@@ -2450,7 +2449,7 @@ mod tests {
             false,
             updated_marks.clone(),
             Some(dns2.clone()),
-            Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+            Some(fnp_properties::ConnectivityState::NoConnectivity),
         );
         assert_eq!(
             networks.handle_changed_network(net.id, event),
@@ -2465,7 +2464,7 @@ mod tests {
             &NetworkProperties {
                 socket_marks: updated_marks,
                 dns_servers: dns2,
-                connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+                connectivity_state: Some(fnp_properties::ConnectivityState::NoConnectivity),
                 name: Some(net.name.to_string()),
                 network_type: Some(net.network_type),
             }
@@ -3153,8 +3152,8 @@ mod tests {
 
     #[test_case(
         None,
-        Some(fnp_socketproxy::NetworkInfo::Starnix(
-            fnp_socketproxy::StarnixNetworkInfo {
+        Some(fnp_properties::NetworkInfo::Starnix(
+            fnp_properties::StarnixNetworkInfo {
                 mark: Some(123),
                 ..Default::default()
             }
@@ -3164,8 +3163,8 @@ mod tests {
     )]
     #[test_case(
         Some(0),
-        Some(fnp_socketproxy::NetworkInfo::Starnix(
-            fnp_socketproxy::StarnixNetworkInfo {
+        Some(fnp_properties::NetworkInfo::Starnix(
+            fnp_properties::StarnixNetworkInfo {
                 mark: Some(123),
                 ..Default::default()
             }
@@ -3181,14 +3180,14 @@ mod tests {
     )]
     #[test_case(
         Some(1),
-        Some(fnp_socketproxy::NetworkInfo::Fuchsia(Default::default())),
+        Some(fnp_properties::NetworkInfo::Fuchsia(Default::default())),
         Err(NetworkValidationError::MissingNetworkInfo);
         "fuchsia network_info"
     )]
     #[test_case(
         Some(1),
-        Some(fnp_socketproxy::NetworkInfo::Starnix(
-            fnp_socketproxy::StarnixNetworkInfo {
+        Some(fnp_properties::NetworkInfo::Starnix(
+            fnp_properties::StarnixNetworkInfo {
                 mark: Some(123),
                 ..Default::default()
             }
@@ -3198,16 +3197,16 @@ mod tests {
     )]
     fn test_validated_network_validation(
         network_id: Option<u32>,
-        info: Option<fnp_socketproxy::NetworkInfo>,
+        info: Option<fnp_properties::NetworkInfo>,
         expected: Result<NetworkId, NetworkValidationError>,
     ) {
-        let net = fnp_socketproxy::Network { network_id, info, ..Default::default() };
+        let net = fnp_properties::Network { network_id, info, ..Default::default() };
         let result = ValidatedNetwork::try_from(net).map(|v| v.network_id);
         assert_eq!(result, expected);
     }
 
-    fn starnix_network_payload(id: u32, mark: u32) -> fnp_socketproxy::Network {
-        fnp_socketproxy::Network {
+    fn starnix_network_payload(id: u32, mark: u32) -> fnp_properties::Network {
+        fnp_properties::Network {
             network_id: Some(id),
             info: Some(NetworkInfo::Starnix(StarnixNetworkInfo {
                 mark: Some(mark),
@@ -3327,15 +3326,15 @@ mod tests {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
         service.add_stream(stream);
 
-        let make_network = |id: u32, mark: u32| fnp_socketproxy::Network {
+        let make_network = |id: u32, mark: u32| fnp_properties::Network {
             network_id: Some(id),
             info: Some(NetworkInfo::Starnix(StarnixNetworkInfo {
                 mark: Some(mark),
                 ..Default::default()
             })),
             name: Some("wlan0".to_string()),
-            network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-            connectivity: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            network_type: Some(fnp_properties::NetworkType::Wifi),
+            connectivity: Some(fnp_properties::ConnectivityState::FullConnectivity),
             ..Default::default()
         };
 
@@ -3578,8 +3577,8 @@ mod tests {
                 NetworkUpdate::Properties(NetworkPropertiesChange {
                     added: true,
                     name: Some("wlan0".to_string()),
-                    network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    network_type: Some(fnp_properties::NetworkType::Wifi),
+                    connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
                     ..Default::default()
                 }),
             ))
@@ -3595,8 +3594,8 @@ mod tests {
                     added: true,
                     marks: Some(marks.clone()),
                     name: Some("eth0".to_string()),
-                    network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
+                    network_type: Some(fnp_properties::NetworkType::Ethernet),
+                    connectivity_state: Some(fnp_properties::ConnectivityState::LocalConnectivity),
                     ..Default::default()
                 }),
             ))
@@ -3642,8 +3641,8 @@ mod tests {
                     added: false,
                     marks: Some(marks),
                     name: Some("eth0_updated".to_string()),
-                    network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    network_type: Some(fnp_properties::NetworkType::Ethernet),
+                    connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
                     ..Default::default()
                 }),
             ))
@@ -3762,7 +3761,7 @@ mod tests {
                     true,
                     Some(test_marks()),
                     None,
-                    Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    Some(fnp_properties::ConnectivityState::FullConnectivity),
                 )),
             ))
             .await;
@@ -3941,7 +3940,7 @@ mod tests {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
         service.add_stream(stream);
 
-        // The raw id used by the `fnp_socketproxy::Network` as a `network_id`.
+        // The raw id used by the `fnp_properties::Network` as a `network_id`.
         const STARNIX_ID_1: u32 = 1;
         const STARNIX_ID_2: u32 = 2;
         const SOCKET_MARK_1: u32 = 100;
@@ -4129,8 +4128,8 @@ mod tests {
                 NetworkUpdate::Properties(NetworkPropertiesChange {
                     added: true,
                     name: Some("wlan0".to_string()),
-                    network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    network_type: Some(fnp_properties::NetworkType::Wifi),
+                    connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
                     ..Default::default()
                 }),
             ))
@@ -4154,8 +4153,8 @@ mod tests {
                     marks: Some(marks),
                     dns_servers: Some(vec![socketproxy_dns]),
                     name: Some("wlan0".to_string()),
-                    network_type: Some(fnp_socketproxy::NetworkType::Wifi),
-                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    network_type: Some(fnp_properties::NetworkType::Wifi),
+                    connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
                 }),
             ))
             .await;

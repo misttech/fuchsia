@@ -9,12 +9,7 @@ package(default_applicable_licenses = ["//:license"])
 fidl_library(
     name = "fuchsia.net.policy.socketproxy",
     srcs = [
-        "network_registry.fidl",
         "socketproxy.fidl",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//sdk/fidl/fuchsia.net",
-        "//sdk/fidl/fuchsia.posix.socket",
-    ],
 )

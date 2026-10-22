@@ -13,8 +13,8 @@
     capabilities: [
         {
             protocol: [
+                "fuchsia.net.policy.properties.NetworkRegistry",
                 "fuchsia.net.policy.properties.Networks",
-                "fuchsia.net.policy.socketproxy.NetworkRegistry",
                 "fuchsia.net.reachability.Monitor",
             ],
         },
@@ -22,8 +22,8 @@
     expose: [
         {
             protocol: [
+                "fuchsia.net.policy.properties.NetworkRegistry",
                 "fuchsia.net.policy.properties.Networks",
-                "fuchsia.net.policy.socketproxy.NetworkRegistry",
                 "fuchsia.net.reachability.Monitor",
             ],
             from: "self",

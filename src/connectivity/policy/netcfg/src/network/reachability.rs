@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_reachability as freachability;
 use log::{error, warn};
 
@@ -111,23 +111,23 @@ impl ReachabilityHandler {
         {
             // Internet reachability has been verified end to end, including DNS resolution
             // and HTTP/HTTPS fetches.
-            Some(fnp_socketproxy::ConnectivityState::FullConnectivity) => (true, true, true, true),
+            Some(fnp_properties::ConnectivityState::FullConnectivity) => (true, true, true, true),
             // The Internet is partially reachable. DNS resolution and at least one HTTP
             // probe succeeded, but HTTPS probes were unsuccessful. We conservatively report this
             // as a state with `http_active=false` since this probe did not provide strong evidence
             // that all HTTP requests will be servicable.
-            Some(fnp_socketproxy::ConnectivityState::PartialConnectivity) => {
+            Some(fnp_properties::ConnectivityState::PartialConnectivity) => {
                 (true, true, true, false)
             }
             // The Internet is not reachable and we have not verified upper layer connectivity.
             // LocalConnectivity implies that devices can be reached on the local network, but does
             // not confirm that there is a gateway present and accessible.
             Some(
-                fnp_socketproxy::ConnectivityState::LocalConnectivity
-                | fnp_socketproxy::ConnectivityState::NoConnectivity,
+                fnp_properties::ConnectivityState::LocalConnectivity
+                | fnp_properties::ConnectivityState::NoConnectivity,
             )
             | None => (false, false, false, false),
-            Some(fnp_socketproxy::ConnectivityState::__SourceBreaking { unknown_ordinal }) => {
+            Some(fnp_properties::ConnectivityState::__SourceBreaking { unknown_ordinal }) => {
                 unreachable!(
                     "New variants of ConnectivityState must be updated: {unknown_ordinal:?}"
                 )
@@ -298,7 +298,7 @@ mod tests {
 
         // Confirm that a `NoConnectivity` connectivity state produces a disconnected snapshot.
         let net_none = NetworkProperties {
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::NoConnectivity),
             ..Default::default()
         };
         assert_eq!(
@@ -308,7 +308,7 @@ mod tests {
 
         // Confirm that a `LocalConnectivity` connectivity state produces a disconnected snapshot.
         let net_local = NetworkProperties {
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::LocalConnectivity),
             ..Default::default()
         };
         assert_eq!(
@@ -319,7 +319,7 @@ mod tests {
         // Confirm that a `PartialConnectivity` connectivity state reports DNS as active but
         // HTTP as inactive.
         let net_limited = NetworkProperties {
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::PartialConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::PartialConnectivity),
             ..Default::default()
         };
         assert_eq!(
@@ -329,7 +329,7 @@ mod tests {
 
         // Confirm that a `FullConnectivity` connectivity state produces a validated snapshot.
         let net_full = NetworkProperties {
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
             ..Default::default()
         };
         assert_eq!(ReachabilityHandler::synthesize_snapshot(Some(&net_full)), validated_snapshot());

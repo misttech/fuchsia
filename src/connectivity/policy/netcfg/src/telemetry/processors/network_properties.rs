@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::telemetry::NetworkEventMetadata;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_inspect_contrib::nodes::LruCacheNode;
 use fuchsia_inspect_derive::Unit;
@@ -172,12 +172,12 @@ fn get_ordered_connectivity_states() -> [&'static str; 4] {
     ["NoConnectivity", "LocalConnectivity", "PartialConnectivity", "FullConnectivity"]
 }
 
-fn connectivity_state_to_bit_index(state: fnp_socketproxy::ConnectivityState) -> Option<u8> {
+fn connectivity_state_to_bit_index(state: fnp_properties::ConnectivityState) -> Option<u8> {
     match state {
-        fnp_socketproxy::ConnectivityState::NoConnectivity => Some(0),
-        fnp_socketproxy::ConnectivityState::LocalConnectivity => Some(1),
-        fnp_socketproxy::ConnectivityState::PartialConnectivity => Some(2),
-        fnp_socketproxy::ConnectivityState::FullConnectivity => Some(3),
+        fnp_properties::ConnectivityState::NoConnectivity => Some(0),
+        fnp_properties::ConnectivityState::LocalConnectivity => Some(1),
+        fnp_properties::ConnectivityState::PartialConnectivity => Some(2),
+        fnp_properties::ConnectivityState::FullConnectivity => Some(3),
         _ => None,
     }
 }
@@ -229,7 +229,7 @@ impl InspectMetadataNode {
 mod tests {
     use super::*;
     use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
-    use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+    use fidl_fuchsia_net_policy_properties as fnp_properties;
     use fuchsia_inspect::Inspector;
     use fuchsia_inspect::reader::DiagnosticsHierarchy;
     use futures::task::Poll;
@@ -282,7 +282,7 @@ mod tests {
         let eth_metadata = NetworkEventMetadata {
             id: 0,
             name: Some("eth0".to_string()),
-            transport: fnp_socketproxy::NetworkType::Ethernet,
+            transport: fnp_properties::NetworkType::Ethernet,
             is_fuchsia_provisioned: true,
             connectivity_state: None,
         };
@@ -290,7 +290,7 @@ mod tests {
         let wlan_metadata = NetworkEventMetadata {
             id: 1,
             name: Some("wlan0".to_string()),
-            transport: fnp_socketproxy::NetworkType::Wifi,
+            transport: fnp_properties::NetworkType::Wifi,
             is_fuchsia_provisioned: false,
             connectivity_state: None,
         };
@@ -341,17 +341,17 @@ mod tests {
         let eth_metadata = NetworkEventMetadata {
             id: 0,
             name: Some("eth0".to_string()),
-            transport: fnp_socketproxy::NetworkType::Ethernet,
+            transport: fnp_properties::NetworkType::Ethernet,
             is_fuchsia_provisioned: true,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
         };
 
         let wlan_metadata = NetworkEventMetadata {
             id: 1,
             name: Some("wlan0".to_string()),
-            transport: fnp_socketproxy::NetworkType::Wifi,
+            transport: fnp_properties::NetworkType::Wifi,
             is_fuchsia_provisioned: false,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::LocalConnectivity),
         };
 
         processor.log_network_changed(eth_metadata, &harness.mock_time_matrix_client);
@@ -386,9 +386,9 @@ mod tests {
         let eth_metadata = NetworkEventMetadata {
             id: 0,
             name: Some("eth0".to_string()),
-            transport: fnp_socketproxy::NetworkType::Ethernet,
+            transport: fnp_properties::NetworkType::Ethernet,
             is_fuchsia_provisioned: true,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
         };
 
         processor.log_network_changed(eth_metadata, &time_matrix_client);
@@ -510,9 +510,9 @@ mod tests {
             let metadata = NetworkEventMetadata {
                 id: i as u64,
                 name: Some(format!("eth{}", i)),
-                transport: fnp_socketproxy::NetworkType::Ethernet,
+                transport: fnp_properties::NetworkType::Ethernet,
                 is_fuchsia_provisioned: true,
-                connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                connectivity_state: Some(fnp_properties::ConnectivityState::FullConnectivity),
             };
             processor.log_network_changed(metadata, &time_matrix_client);
         }
@@ -535,9 +535,9 @@ mod tests {
         let metadata = NetworkEventMetadata {
             id: 16,
             name: Some("eth16".to_string()),
-            transport: fnp_socketproxy::NetworkType::Ethernet,
+            transport: fnp_properties::NetworkType::Ethernet,
             is_fuchsia_provisioned: true,
-            connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
+            connectivity_state: Some(fnp_properties::ConnectivityState::LocalConnectivity),
         };
         processor.log_network_changed(metadata, &time_matrix_client);
 

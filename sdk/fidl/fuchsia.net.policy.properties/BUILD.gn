@@ -28,10 +28,15 @@
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
 fidl("fuchsia.net.policy.properties") {
-  sources = [ "networks.fidl" ]
+  sources = [
+    "network_registry.fidl",
+    "networks.fidl",
+  ]
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.net",
+    "//sdk/fidl/fuchsia.net.interfaces",
     "//sdk/fidl/fuchsia.net.name",
+    "//sdk/fidl/fuchsia.posix.socket",
   ]
 }

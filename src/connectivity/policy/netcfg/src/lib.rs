@@ -44,7 +44,6 @@ use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_ndp as fnet_ndp;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_reachability as freachability;
 use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
@@ -304,15 +303,15 @@ impl From<DeviceClass> for InterfaceType {
     }
 }
 
-impl From<DeviceClass> for fnp_socketproxy::NetworkType {
+impl From<DeviceClass> for fnp_properties::NetworkType {
     fn from(device_class: DeviceClass) -> Self {
         match device_class {
-            DeviceClass::WlanClient | DeviceClass::WlanAp => fnp_socketproxy::NetworkType::Wifi,
+            DeviceClass::WlanClient | DeviceClass::WlanAp => fnp_properties::NetworkType::Wifi,
             DeviceClass::Ethernet
             | DeviceClass::Bridge
             | DeviceClass::Virtual
-            | DeviceClass::Lowpan => fnp_socketproxy::NetworkType::Ethernet,
-            DeviceClass::Ppp | DeviceClass::Blackhole => fnp_socketproxy::NetworkType::Unknown,
+            | DeviceClass::Lowpan => fnp_properties::NetworkType::Ethernet,
+            DeviceClass::Ppp | DeviceClass::Blackhole => fnp_properties::NetworkType::Unknown,
         }
     }
 }
@@ -916,7 +915,7 @@ enum RequestStream {
     Masquerade(fnet_masquerade::FactoryRequestStream),
     DnsServerWatcher(fnet_name::DnsServerWatcherRequestStream),
     NetworkAttributes(fnp_properties::NetworksRequestStream),
-    DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+    DelegatedNetworks(fnp_properties::NetworkRegistryRequestStream),
     NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
     Reachability(freachability::MonitorRequestStream),
 }

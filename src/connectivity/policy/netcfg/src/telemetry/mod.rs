@@ -6,7 +6,7 @@ pub mod processors;
 
 use crate::telemetry::processors::network_properties::NetworkPropertiesProcessor;
 use anyhow::Error;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::{Future, StreamExt};
@@ -18,9 +18,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct NetworkEventMetadata {
     pub id: u64,
     pub name: Option<String>,
-    pub transport: fnp_socketproxy::NetworkType,
+    pub transport: fnp_properties::NetworkType,
     pub is_fuchsia_provisioned: bool,
-    pub connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
+    pub connectivity_state: Option<fnp_properties::ConnectivityState>,
 }
 
 #[derive(Debug)]

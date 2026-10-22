@@ -31,7 +31,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
 use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_policy_socketproxy::{self as fnp_socketproxy, ProtoProperties};
+use fidl_fuchsia_net_policy_properties::{self as fnp_properties, ProtoProperties};
 
 const DEFAULT_NETWORK_FILE_NAME: &str = "default";
 
@@ -373,7 +373,7 @@ impl BytesFileOps for DefaultNetworkIdFile {
     }
 }
 
-impl From<&NetworkMessage> for fnp_socketproxy::Network {
+impl From<&NetworkMessage> for fnp_properties::Network {
     fn from(message: &NetworkMessage) -> Self {
         let (transports, capabilities, name, addrv4, addrv6, defaultv4, defaultv6) =
             match &message.versioned_properties {
@@ -399,14 +399,12 @@ impl From<&NetworkMessage> for fnp_socketproxy::Network {
 
         Self {
             network_id: Some(message.netid),
-            info: Some(fnp_socketproxy::NetworkInfo::Starnix(
-                fnp_socketproxy::StarnixNetworkInfo {
-                    mark: Some(message.mark),
-                    handle: Some(message.handle),
-                    ..Default::default()
-                },
-            )),
-            dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+            info: Some(fnp_properties::NetworkInfo::Starnix(fnp_properties::StarnixNetworkInfo {
+                mark: Some(message.mark),
+                handle: Some(message.handle),
+                ..Default::default()
+            })),
+            dns_servers: Some(fnp_properties::NetworkDnsServers {
                 v4: Some(
                     message
                         .dnsv4
@@ -459,22 +457,22 @@ fn proto_properties_from_v4_v6(v4: Option<bool>, v6: Option<bool>) -> ProtoPrope
 // present, Unknown is used as a fallback.
 fn consolidate_transport_types_to_network_type(
     value: &Vec<TransportType>,
-) -> fnp_socketproxy::NetworkType {
+) -> fnp_properties::NetworkType {
     value
         .iter()
         .filter_map(|tt| maybe_network_type_from_transport_type(*tt))
         .next()
-        .unwrap_or(fnp_socketproxy::NetworkType::Unknown)
+        .unwrap_or(fnp_properties::NetworkType::Unknown)
 }
 
 fn maybe_network_type_from_transport_type(
     value: TransportType,
-) -> Option<fnp_socketproxy::NetworkType> {
+) -> Option<fnp_properties::NetworkType> {
     match value {
-        TransportType::Ethernet => Some(fnp_socketproxy::NetworkType::Ethernet),
-        TransportType::Wifi => Some(fnp_socketproxy::NetworkType::Wifi),
-        TransportType::Bluetooth => Some(fnp_socketproxy::NetworkType::Bluetooth),
-        TransportType::Cellular => Some(fnp_socketproxy::NetworkType::Cellular),
+        TransportType::Ethernet => Some(fnp_properties::NetworkType::Ethernet),
+        TransportType::Wifi => Some(fnp_properties::NetworkType::Wifi),
+        TransportType::Bluetooth => Some(fnp_properties::NetworkType::Bluetooth),
+        TransportType::Cellular => Some(fnp_properties::NetworkType::Cellular),
         TransportType::Vpn | TransportType::WifiAware | TransportType::Lowpan => {
             log_warn!("Known NetworkType {value:?} is not currently supported");
             None
@@ -484,42 +482,38 @@ fn maybe_network_type_from_transport_type(
 
 // Currently, we only check for the following capabilities: NotMetered, NotCongested,
 // NotBandwidthConstrained. If we wish to have more knowledge of the offered capabilities,
-// we can consider adding fields to the fnp_socketproxy::NetworkRegistry FIDL API.
-fn convert_capabilities(value: &Vec<NetworkCapability>) -> Vec<fnp_socketproxy::NetworkCapability> {
+// we can consider adding fields to the fnp_properties::NetworkRegistry FIDL API.
+fn convert_capabilities(value: &Vec<NetworkCapability>) -> Vec<fnp_properties::NetworkCapability> {
     value
         .iter()
         .filter_map(|c| match c {
-            NetworkCapability::NotMetered => Some(fnp_socketproxy::NetworkCapability::UNMETERED),
-            NetworkCapability::NotCongested => {
-                Some(fnp_socketproxy::NetworkCapability::UNCONGESTED)
-            }
+            NetworkCapability::NotMetered => Some(fnp_properties::NetworkCapability::UNMETERED),
+            NetworkCapability::NotCongested => Some(fnp_properties::NetworkCapability::UNCONGESTED),
             NetworkCapability::NotBandwidthConstrained => {
-                Some(fnp_socketproxy::NetworkCapability::NOT_BANDWIDTH_CONSTRAINED)
+                Some(fnp_properties::NetworkCapability::NOT_BANDWIDTH_CONSTRAINED)
             }
             _ => None,
         })
         .collect::<Vec<_>>()
 }
 
-fn convert_connectivity_state(
-    value: &Vec<NetworkCapability>,
-) -> fnp_socketproxy::ConnectivityState {
+fn convert_connectivity_state(value: &Vec<NetworkCapability>) -> fnp_properties::ConnectivityState {
     // Validated and Internet capabilities indicate that the network has been
     // validated to have internet connectivity (HTTP and DNS).
     if value.contains(&NetworkCapability::Validated) && value.contains(&NetworkCapability::Internet)
     {
-        return fnp_socketproxy::ConnectivityState::FullConnectivity;
+        return fnp_properties::ConnectivityState::FullConnectivity;
     }
 
     if value.contains(&NetworkCapability::PartialConnectivity) {
-        return fnp_socketproxy::ConnectivityState::PartialConnectivity;
+        return fnp_properties::ConnectivityState::PartialConnectivity;
     }
 
     if value.contains(&NetworkCapability::LocalNetwork) {
-        return fnp_socketproxy::ConnectivityState::LocalConnectivity;
+        return fnp_properties::ConnectivityState::LocalConnectivity;
     }
 
-    return fnp_socketproxy::ConnectivityState::NoConnectivity;
+    return fnp_properties::ConnectivityState::NoConnectivity;
 }
 
 mod addr_list {
@@ -683,32 +677,32 @@ mod tests {
         assert_eq!(network, deserialized);
     }
 
-    #[test_case(vec![TransportType::Cellular], fnp_socketproxy::NetworkType::Cellular;
+    #[test_case(vec![TransportType::Cellular], fnp_properties::NetworkType::Cellular;
         "cellular")]
-    #[test_case(vec![TransportType::Wifi], fnp_socketproxy::NetworkType::Wifi;
+    #[test_case(vec![TransportType::Wifi], fnp_properties::NetworkType::Wifi;
         "wifi")]
-    #[test_case(vec![TransportType::Bluetooth], fnp_socketproxy::NetworkType::Bluetooth;
+    #[test_case(vec![TransportType::Bluetooth], fnp_properties::NetworkType::Bluetooth;
         "bluetooth")]
-    #[test_case(vec![TransportType::Ethernet], fnp_socketproxy::NetworkType::Ethernet;
+    #[test_case(vec![TransportType::Ethernet], fnp_properties::NetworkType::Ethernet;
         "ethernet")]
     #[test_case(
         vec![
             TransportType::Wifi,
             TransportType::Cellular
         ],
-        fnp_socketproxy::NetworkType::Wifi; "first_transport_prioritized")]
-    #[test_case(vec![], fnp_socketproxy::NetworkType::Unknown; "empty_fallback")]
+        fnp_properties::NetworkType::Wifi; "first_transport_prioritized")]
+    #[test_case(vec![], fnp_properties::NetworkType::Unknown; "empty_fallback")]
     #[test_case(
         vec![
             TransportType::Lowpan,
             TransportType::WifiAware,
             TransportType::Vpn
         ],
-        fnp_socketproxy::NetworkType::Unknown; "none_applicable")]
+        fnp_properties::NetworkType::Unknown; "none_applicable")]
     #[::fuchsia::test]
     fn test_consolidate_transport_types_to_network_type(
         transports: Vec<TransportType>,
-        expected: fnp_socketproxy::NetworkType,
+        expected: fnp_properties::NetworkType,
     ) {
         assert_eq!(consolidate_transport_types_to_network_type(&transports), expected);
     }
@@ -720,15 +714,15 @@ mod tests {
             NetworkCapability::NotBandwidthConstrained,
         ],
         vec![
-            fnp_socketproxy::NetworkCapability::UNMETERED,
-            fnp_socketproxy::NetworkCapability::UNCONGESTED,
-            fnp_socketproxy::NetworkCapability::NOT_BANDWIDTH_CONSTRAINED,
+            fnp_properties::NetworkCapability::UNMETERED,
+            fnp_properties::NetworkCapability::UNCONGESTED,
+            fnp_properties::NetworkCapability::NOT_BANDWIDTH_CONSTRAINED,
         ];
         "all_capabilities"
     )]
     #[test_case(
         vec![NetworkCapability::NotMetered],
-        vec![fnp_socketproxy::NetworkCapability::UNMETERED];
+        vec![fnp_properties::NetworkCapability::UNMETERED];
         "one_capability"
     )]
     #[test_case(
@@ -741,13 +735,13 @@ mod tests {
             NetworkCapability::NotMetered,
             NetworkCapability::Trusted, // This should be ignored.
         ],
-        vec![fnp_socketproxy::NetworkCapability::UNMETERED];
+        vec![fnp_properties::NetworkCapability::UNMETERED];
         "ignore_unrelated"
     )]
     #[::fuchsia::test]
     fn test_convert_capabilities(
         capabilities: Vec<NetworkCapability>,
-        expected: Vec<fnp_socketproxy::NetworkCapability>,
+        expected: Vec<fnp_properties::NetworkCapability>,
     ) {
         let mut result = convert_capabilities(&capabilities);
         result.sort();
@@ -761,7 +755,7 @@ mod tests {
             NetworkCapability::Validated,
             NetworkCapability::Internet,
         ],
-        fnp_socketproxy::ConnectivityState::FullConnectivity;
+        fnp_properties::ConnectivityState::FullConnectivity;
         "full_connectivity"
     )]
     #[test_case(
@@ -770,33 +764,33 @@ mod tests {
             NetworkCapability::Internet,
             NetworkCapability::LocalNetwork,
         ],
-        fnp_socketproxy::ConnectivityState::FullConnectivity;
+        fnp_properties::ConnectivityState::FullConnectivity;
         "full_connectivity_prioritized"
     )]
     #[test_case(
         vec![NetworkCapability::PartialConnectivity],
-        fnp_socketproxy::ConnectivityState::PartialConnectivity;
+        fnp_properties::ConnectivityState::PartialConnectivity;
         "partial_connectivity"
     )]
     #[test_case(
         vec![NetworkCapability::LocalNetwork],
-        fnp_socketproxy::ConnectivityState::LocalConnectivity;
+        fnp_properties::ConnectivityState::LocalConnectivity;
         "local_connectivity"
     )]
     #[test_case(
         vec![],
-        fnp_socketproxy::ConnectivityState::NoConnectivity;
+        fnp_properties::ConnectivityState::NoConnectivity;
         "no_connectivity"
     )]
     #[test_case(
         vec![NetworkCapability::Trusted], // This should be ignored.
-        fnp_socketproxy::ConnectivityState::NoConnectivity;
+        fnp_properties::ConnectivityState::NoConnectivity;
         "ignore_unrelated"
     )]
     #[::fuchsia::test]
     fn test_convert_connectivity_state(
         capabilities: Vec<NetworkCapability>,
-        expected: fnp_socketproxy::ConnectivityState,
+        expected: fnp_properties::ConnectivityState,
     ) {
         assert_eq!(convert_connectivity_state(&capabilities), expected);
     }
