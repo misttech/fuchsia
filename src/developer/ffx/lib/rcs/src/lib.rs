@@ -13,7 +13,7 @@ use fdomain_fuchsia_sys2::{
     ConfigOverrideMarker, ConfigOverrideProxy, LifecycleControllerMarker, LifecycleControllerProxy,
     RealmQueryMarker, RealmQueryProxy, RouteValidatorMarker, RouteValidatorProxy,
 };
-use fidl_fuchsia_developer_ffx as ffx;
+use fidl_fuchsia_developer_ffx_common as ffx;
 use futures::StreamExt;
 use std::time::{Duration, Instant};
 use timeout::timeout;

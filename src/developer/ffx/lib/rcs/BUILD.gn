@@ -53,7 +53,7 @@ if (is_host) {
       "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
       "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust_fdomain",
       "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
-      "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
+      "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust_common",
       "//src/developer/ffx/lib/timeout:lib",
       "//src/lib/fdomain/client",
       "//src/lib/fidl/rust/fidl",
