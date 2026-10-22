@@ -249,6 +249,33 @@ kernel_bindgen_crate("thread-lock-guard-bindings") {
   raw_lines = [ "#![no_std]" ]
 }
 
+kernel_bindgen_crate("thread-layout-bindings") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "//zircon/kernel/include/kernel/thread_layout.h" ]
+  non_rust_deps = [ ":kernel" ]
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  function_blocklist = [ ".*" ]
+  var_allowlist = [
+    "ThreadLayout_k.*",
+    "PreemptionStateLayout_k.*",
+    "TaskStateLayout_k.*",
+    "MemoryAllocationStateLayout_k.*",
+  ]
+  type_allowlist = [
+    "Thread.*Storage",
+    "PreemptionStateStorage",
+    "TaskStateStorage",
+    "MemoryAllocationStateStorage",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  expect_lints = [ "non_upper_case_globals" ]
+  raw_lines = [ "#![no_std]" ]
+}
+
 kernel_bindgen_crate("wait-queue-bindings") {
   visibility = [ "//zircon/kernel/*" ]
   headers = [ "//zircon/kernel/include/kernel/wait.h" ]
@@ -448,6 +475,7 @@ kernel_rust_mod("kernel-rs") {
     ":event-bindings",
     ":owned-wait-queue-bindings",
     ":percpu-bindings",
+    ":thread-layout-bindings",
     ":thread-lock-guard-bindings",
     ":wait-queue-bindings",
     "//sdk/rust/zx-status",

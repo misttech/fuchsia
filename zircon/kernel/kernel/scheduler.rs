@@ -21,7 +21,7 @@ use super::wait_queue::WaitQueueBase;
 use crate::counters::define_kcounter;
 use crate::kconcurrent::{
     Action, AllowFinalized, ChainLock, ChainLockGuard, ChainLockProof, ChainLockTransaction,
-    ChainLockTransactionToken, DONE, IRQ_SAVE_OPTION, NO_IRQ_SAVE_OPTION, OwnerGuard,
+    ChainLockTransactionToken, ChainLocked, DONE, IRQ_SAVE_OPTION, NO_IRQ_SAVE_OPTION, OwnerGuard,
     RecordBackoff, SavedState, TransactionResult, assert_transaction_active, clt_tag,
     single_chain_lock_guard,
 };
@@ -1471,6 +1471,47 @@ impl EffectiveProfile {
 
         diagnostic_value
     }
+
+    /// Recomputes `self` from `bp` and `ipv`.
+    /// This should only ever be called while holding the thread's lock.
+    pub fn recompute(&mut self, bp: &BaseProfile, ipv: &InheritedProfileValues) {
+        self.assert_dirty();
+        ipv.assert_consistency();
+
+        if bp.is_deadline() {
+            let bp_deadline = bp.deadline();
+            let total_util = ipv.uncapped_utilization + bp_deadline.utilization;
+            let new_util = core::cmp::min(total_util, K_THREAD_UTILIZATION_MAX);
+            let new_deadline = core::cmp::min(ipv.min_deadline, bp_deadline.deadline_ns);
+            let new_capacity = SchedDuration::from(new_util * new_deadline);
+
+            self.set_deadline(
+                SchedDeadlineParams {
+                    capacity_ns: new_capacity,
+                    deadline_ns: new_deadline,
+                    utilization: new_util,
+                },
+                bp.critical || ipv.critical_count > 0,
+            );
+        } else if ipv.uncapped_utilization > SchedUtilization::from_raw(0) {
+            let new_util = core::cmp::min(ipv.uncapped_utilization, K_THREAD_UTILIZATION_MAX);
+            let capacity = SchedDuration::from(new_util * ipv.min_deadline);
+            self.set_deadline(
+                SchedDeadlineParams {
+                    capacity_ns: capacity,
+                    deadline_ns: ipv.min_deadline,
+                    utilization: new_util,
+                },
+                ipv.critical_count > 0,
+            );
+        } else {
+            // Our thread is fair. We simply end up inheriting the total weight of the
+            // threads blocked behind us.
+            self.set_fair(bp.fair_weight() + ipv.total_weight);
+        }
+
+        self.clean();
+    }
 }
 
 /// Returns the weight or memoized packed deadline parameters of the effective profile.
@@ -1536,46 +1577,7 @@ impl SchedulerState {
     /// Recomputes the effective profile from `base_profile` and `inherited_profile_values`.
     /// This should only ever be called while holding the thread's lock.
     pub fn recompute_effective_profile(&mut self) {
-        self.effective_profile.assert_dirty();
-
-        let bp = &self.base_profile;
-        let ipv = &self.inherited_profile_values;
-
-        ipv.assert_consistency();
-
-        if bp.is_deadline() {
-            let bp_deadline = bp.deadline();
-            let total_util = ipv.uncapped_utilization + bp_deadline.utilization;
-            let new_util = core::cmp::min(total_util, K_THREAD_UTILIZATION_MAX);
-            let new_deadline = core::cmp::min(ipv.min_deadline, bp_deadline.deadline_ns);
-            let new_capacity = SchedDuration::from(new_util * new_deadline);
-
-            self.effective_profile.set_deadline(
-                SchedDeadlineParams {
-                    capacity_ns: new_capacity,
-                    deadline_ns: new_deadline,
-                    utilization: new_util,
-                },
-                bp.critical || ipv.critical_count > 0,
-            );
-        } else if ipv.uncapped_utilization > SchedUtilization::from_raw(0) {
-            let new_util = core::cmp::min(ipv.uncapped_utilization, K_THREAD_UTILIZATION_MAX);
-            let capacity = SchedDuration::from(new_util * ipv.min_deadline);
-            self.effective_profile.set_deadline(
-                SchedDeadlineParams {
-                    capacity_ns: capacity,
-                    deadline_ns: ipv.min_deadline,
-                    utilization: new_util,
-                },
-                ipv.critical_count > 0,
-            );
-        } else {
-            // Our thread is fair. We simply end up inheriting the total weight of the
-            // threads blocked behind us.
-            self.effective_profile.set_fair(bp.fair_weight() + ipv.total_weight);
-        }
-
-        self.effective_profile.clean();
+        self.effective_profile.recompute(&self.base_profile, &self.inherited_profile_values);
     }
 
     pub fn remaining_time_slice_ns(&self) -> SchedDuration {
@@ -2081,7 +2083,6 @@ unsafe extern "C" {
     );
     fn cpp_current_mono_time_and_boot_ticks(out: *mut SchedMonoTimeAndBootTicks);
 
-    fn cpp_thread_get_lock(thread: *mut Thread) -> *mut ChainLock;
     fn cpp_thread_preempts_pending_add(thread: *mut Thread, mask: CpuMask);
     fn cpp_thread_preempts_pending(thread: *const Thread) -> CpuMask;
     fn cpp_thread_preempts_pending_clear(thread: *mut Thread);
@@ -2187,7 +2188,6 @@ unsafe extern "C" {
         sched: *const Scheduler,
         cpu: CpuNum,
     ) -> SchedUtilization;
-    fn cpp_thread_canary_assert(thread: *const Thread);
     fn cpp_scheduler_power_level_control_update_normalized_utilization(
         sched: *mut Scheduler,
         delta: SchedUtilization,
@@ -2271,10 +2271,9 @@ unsafe extern "C" {
 /// `thread` must point to a valid `Thread`.
 #[inline(always)]
 unsafe fn thread_get_lock(thread: *const Thread) -> *const ChainLock {
-    // SAFETY: The caller guarantees `thread` is valid. `cpp_thread_get_lock` only
-    // computes the address of the lock embedded in the thread and does not
-    // mutate the thread, so the pointer may be used as a shared pointer.
-    unsafe { cpp_thread_get_lock(thread.cast_mut()) }
+    // SAFETY: The caller guarantees `thread` is valid; `Thread::lock_ptr` projects the lock field
+    // without forming a `&Thread`, and no guard or proof is formed from it here.
+    unsafe { (*Thread::lock_ptr(thread)).as_chain_lock() }
 }
 
 /// Reciprocal of the default fair period to minimize runtime divisions in fair
@@ -8662,7 +8661,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_block(current_thread: *mut Thread
     let mut trace = local_ktrace_begin_scope!(COMMON, "sched_block");
     debug_assert_eq!(current_thread, super::thread::current_get());
     // SAFETY: `current_thread` is valid and locked by the caller.
-    unsafe { cpp_thread_canary_assert(current_thread) };
+    unsafe { Thread::assert_canary_ptr(current_thread) };
     debug_assert!(
         unsafe { (*cpp_thread_get_scheduler_state(current_thread)).state } != ThreadState::Running
     );
@@ -8805,7 +8804,7 @@ pub unsafe fn unblock_common(
     unblock_type: UnblockType,
 ) -> RescheduleTargets {
     // SAFETY: `thread` is valid and its lock is held by the caller.
-    unsafe { cpp_thread_canary_assert(thread) };
+    unsafe { Thread::assert_canary_ptr(thread) };
     // SAFETY: `thread` is valid.
     let state_ptr = unsafe { cpp_thread_get_scheduler_state(thread) };
 

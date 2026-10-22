@@ -20,7 +20,7 @@ use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
 use core::cell::UnsafeCell;
 use core::convert::Infallible;
 use core::ffi::c_void;
-use core::marker::PhantomPinned;
+use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{align_of, offset_of, size_of};
 use core::ops::Deref;
 use core::pin::Pin;
@@ -167,15 +167,33 @@ impl fbl::WavlTreeContainable<Thread, BlockedThreadTreeTag> for Thread {
     type Rank = bool;
 
     fn get_node(&self) -> &fbl::WavlTreeNode<Thread, Self::Rank> {
-        unimplemented!("Thread is currently opaque in Rust")
+        &self.wait_queue_state.blocked_threads_tree_node
     }
 }
 
+// TODO(https://fxbug.dev/545331534): `WavlTreeKeyable::get_key` is a safe trait method, so it
+// cannot require a lock token or be marked `unsafe`. Consider either adding a lock-token or
+// `unsafe` variant to `fbl`, or reading `blocked_threads_tree_sort_key` with an atomic relaxed
+// load so arbitrary safe callers cannot trigger a data race.
+//
+// Safety invariant: `WavlTreeKeyable::get_key` on `Thread` must only be called while holding the
+// containing `WaitQueue`'s `ChainLock` (when the thread is in `WaitQueueCollection::threads`) or
+// the thread's own `ChainLock` (when the thread is not in any wait queue collection).
 impl fbl::WavlTreeKeyable<Key> for Thread {
     type Key<'a> = Key;
 
     fn get_key(&self) -> Self::Key<'_> {
-        unimplemented!("Thread is currently opaque in Rust")
+        // TODO: consider extending FBL to support a "MultiWAVLTree"
+        // implementation which would allow for nodes with identical keys, breaking
+        // ties (under the hood) using pointer value.  This way, we would not need to
+        // manifest our own pointer in GetKey or in our key type.
+        //
+        // SAFETY: By the safety invariant on this `impl`, the caller holds either the containing
+        // `WaitQueue`'s `ChainLock` or `self`'s `ChainLock`, which serializes all reads of
+        // `blocked_threads_tree_sort_key` with the writes made under the thread's lock before
+        // insertion.
+        let sort_key = unsafe { *self.wait_queue_state.blocked_threads_tree_sort_key.get() };
+        (sort_key, core::ptr::from_ref(self).addr())
     }
 }
 
@@ -183,28 +201,49 @@ impl fbl::WavlTreeKeyable<Key> for Thread {
 /// [`WaitQueueCollection`]'s [`BlockedThreadTree`].
 pub(crate) struct MinRelativeDeadlineTraits;
 
+// TODO(https://fxbug.dev/545331534): `WavlTreeAugmentedInvariantObserverTraits` methods are safe
+// trait methods, so they cannot require a lock token or be marked `unsafe`.
+//
+// Safety invariant: Every hook on `MinRelativeDeadlineTraits` must only be called from tree
+// operations on `WaitQueueCollection::threads` while holding the containing `WaitQueue`'s
+// `ChainLock` (or, for `get_node_value` and `get_subtree_value`, on an unqueued thread while
+// holding that thread's `ChainLock`).
 impl fbl::WavlTreeAugmentedInvariantObserverTraits for MinRelativeDeadlineTraits {
     type Target = Thread;
     type Value = DurationMono;
 
-    fn get_node_value(_node: &Self::Target) -> Self::Value {
-        unimplemented!("Thread is currently opaque in Rust")
+    fn get_node_value(node: &Self::Target) -> Self::Value {
+        // SAFETY: By the safety invariant on this `impl`, `node` is either blocked in the queue
+        // being operated on (whose lock is held) or its own thread lock is held; either excludes
+        // concurrent mutation of its scheduler state.
+        let scheduler_state = unsafe { node.scheduler_state_unchecked() };
+        if scheduler_state.effective_profile_is_deadline() {
+            return scheduler_state.effective_profile_deadline_ns();
+        }
+        DurationMono::INFINITE
     }
 
-    fn get_subtree_value(_node: &Self::Target) -> Self::Value {
-        unimplemented!("Thread is currently opaque in Rust")
+    fn get_subtree_value(node: &Self::Target) -> Self::Value {
+        // SAFETY: See the comment on this `impl`.
+        unsafe { *node.wait_queue_state.subtree_min_deadline.get() }
     }
 
     fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value {
         if a < b { a } else { b }
     }
 
-    fn set_subtree_value(_node: &mut Self::Target, _val: Self::Value) {
-        unimplemented!("Thread is currently opaque in Rust")
+    fn set_subtree_value(node: &mut Self::Target, val: Self::Value) {
+        *node.wait_queue_state.subtree_min_deadline.get_mut() = val;
     }
 
-    fn reset_subtree_value(_node: &mut Self::Target) {
-        unimplemented!("Thread is currently opaque in Rust")
+    fn reset_subtree_value(node: &mut Self::Target) {
+        // In a debug build, reset the subtree best as we leave the collection.
+        // This can help to find bugs by allowing us to assert that the value is zero/max
+        // during insertion, however it is not strictly needed in a production build
+        // and can be skipped.
+        if cfg!(debug_assertions) {
+            *node.wait_queue_state.subtree_min_deadline.get_mut() = DurationMono::INFINITE;
+        }
     }
 }
 
@@ -616,8 +655,10 @@ pub struct WaitQueueBase {
     // accessors on `WaitQueueBase`, `WaitQueue`, and `OwnedWaitQueue`.
     #[pin]
     pub(super) collection: KCell<WaitQueueCollection, WaitQueueLockClass>,
+    // Wrapped in `PhantomData` so `Thread`, which embeds a `WaitQueue` and is named in `extern`
+    // signatures, stays FFI-safe (`improper_ctypes` rejects a bare `PhantomPinned`).
     #[pin]
-    _pin: PhantomPinned,
+    _pin: PhantomData<PhantomPinned>,
 }
 
 // Compile-time layout assertions against the C++ WaitQueueBase type via bindgen.
@@ -908,8 +949,7 @@ impl ChainLockProof<'_, WaitQueueBase> {
         unsafe {
             self.collection_mut().remove(t);
         }
-        let state = t.scheduler_state_mut();
-        state.recompute_effective_profile();
+        t.recompute_effective_profile();
         // SAFETY: `self` proves the wait queue lock is held, and `t.owner()` was just removed from
         // `self.collection_mut()` (which resets its sort key and subtree min deadline), restoring
         // the set of threads in `collection` and its `OwnedWaitQueue`
@@ -937,7 +977,7 @@ impl WaitQueueBase {
             lock: ClassedChainLock::new(),
             magic: UnsafeCell::new(magic),
             collection <- KCell::pin_init(WaitQueueCollection::init()),
-            _pin: PhantomPinned,
+            _pin: PhantomData,
         })
     }
 

@@ -6,24 +6,35 @@
 
 pub use crate::backtrace::Backtrace;
 use crate::platform_rs::timer::{DurationMono, InstantMono};
+use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_char, c_void};
 use core::marker::{PhantomData, PhantomPinned};
+use core::mem::{align_of, offset_of, size_of};
 use core::pin::Pin;
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
+use fbl::{
+    DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode,
+    SinglyLinkedListContainable, SinglyLinkedListNode,
+};
+use ksync::KCell;
 use pin_init::{PinInit, pin_data, pinned_drop};
+use thread_layout_bindings as layout;
 use thread_lock_guard_bindings as lock_guard_bindings;
-use zr::{Opaque, OpaqueFacade};
+use zr::{Opaque, static_assert};
 use zx_status::Status;
-use zx_types::{zx_instant_mono_t, zx_status_t};
+use zx_types::{ZX_MAX_NAME_LEN, zx_instant_mono_t, zx_koid_t, zx_status_t};
 
-use crate::kconcurrent::{ChainLock, ChainLockTransactionToken};
+use crate::kconcurrent::ChainLock;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
+use crate::kernel::relaxed_atomic::{RelaxedAtomicI64, RelaxedAtomicU32, RelaxedAtomicU64};
 use crate::kernel::restricted_state::RestrictedState;
-use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile};
+use crate::kernel::scheduler;
+use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile, ThreadStateKind};
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
+use crate::kernel::wait_queue::{ThreadState, WaitQueue};
 use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
-use fbl::DoublyLinkedList;
 
 pub use crate::kconcurrent::CallsiteInfo as CltTag;
 use crate::kconcurrent::{ChainLockProof, ChainLocked, ClassedChainLock};
@@ -103,7 +114,6 @@ unsafe extern "C" {
     fn cpp_thread_get_stack_top(thread: *mut Thread) -> usize;
     fn cpp_thread_get_shadow_call_base(thread: *mut Thread) -> usize;
     fn cpp_thread_dump_current_stack();
-    fn cpp_thread_is_user_state_saved_locked(thread: *mut Thread) -> bool;
     fn cpp_thread_is_running(thread: *const Thread) -> bool;
     fn cpp_thread_name(thread: *const Thread) -> *const c_char;
     fn cpp_thread_process_pending_signals(frame: *mut c_void);
@@ -123,12 +133,9 @@ unsafe extern "C" {
     );
     fn cpp_thread_memory_stall_state(thread: *const Thread) -> ThreadStallState;
     fn cpp_thread_set_memory_stall_state(thread: *mut Thread, value: ThreadStallState);
-    fn cpp_thread_scheduler_state(thread: *const Thread) -> *const SchedulerState;
     fn cpp_thread_get_cpu_affinity(thread: *const Thread) -> cpu_mask_t;
     fn cpp_thread_set_cpu_affinity(thread: *mut Thread, affinity: cpu_mask_t) -> cpu_mask_t;
     fn cpp_thread_current_migrate_to_cpu(target_cpu: cpu_num_t);
-    fn cpp_thread_get_lock(thread: *mut Thread) -> *mut ChainLock;
-    fn cpp_thread_wait_queue_state_blocked_status_locked(thread: *const Thread) -> zx_status_t;
     fn cpp_thread_user_thread(thread: *mut Thread) -> *mut crate::object::ThreadDispatcher;
     fn cpp_thread_tid(thread: *const Thread) -> zx_types::zx_koid_t;
     fn cpp_thread_lock_flow_id(thread: *const Thread) -> u64;
@@ -138,26 +145,6 @@ unsafe extern "C" {
     fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
     fn cpp_thread_dump(thread: *const Thread, full: bool);
     fn cpp_thread_runtime(thread: *const Thread) -> DurationMono;
-    fn cpp_thread_canary_assert(thread: *const Thread);
-    fn cpp_thread_signals(thread: *const Thread) -> u32;
-    fn cpp_thread_check_kill_or_suspend_signal(thread: *const Thread) -> zx_status_t;
-    fn cpp_thread_state(thread: *const Thread) -> crate::kernel::scheduler_state::ThreadStateKind;
-    fn cpp_thread_set_blocked(thread: *mut Thread);
-    fn cpp_thread_set_blocked_read_lock(thread: *mut Thread);
-    fn cpp_thread_wait_queue_state(
-        thread: *const Thread,
-    ) -> *const crate::kernel::wait_queue::WaitQueueCollectionThreadState;
-    // `scheduler.rs` declares `cpp_thread_get_scheduler_state` returning
-    // `*mut crate::kernel::scheduler::SchedulerState` (a distinct type from
-    // `scheduler_state::SchedulerState`), so this declaration must match to satisfy
-    // `-D clashing-extern-declarations`.
-    fn cpp_thread_get_scheduler_state(
-        thread: *mut Thread,
-    ) -> *mut crate::kernel::scheduler::SchedulerState;
-    fn cpp_thread_owned_wait_queues(
-        thread: *mut Thread,
-    ) -> *mut DoublyLinkedList<*mut OwnedWaitQueue>;
-    fn cpp_thread_can_own_wait_queues(thread: *const Thread) -> bool;
     fn cpp_thread_dump_tid(tid: zx_types::zx_koid_t, full: bool);
     fn cpp_thread_dump_tid_during_panic(tid: zx_types::zx_koid_t, full: bool);
     fn cpp_thread_dump_all(match_owner: *const c_char, full: bool);
@@ -231,10 +218,9 @@ pub unsafe fn set_memory_stall_state(thread: *mut Thread, value: ThreadStallStat
 /// `scheduler_state_`.
 #[inline]
 pub unsafe fn scheduler_state<'a>(thread: *const Thread) -> &'a SchedulerState {
-    // SAFETY: The caller guarantees `thread` is a valid, live `Thread` and holds its lock for
-    // `'a`, and `cpp_thread_scheduler_state` returns a non-null pointer to its embedded
-    // `SchedulerState`.
-    unsafe { &*cpp_thread_scheduler_state(thread) }
+    // SAFETY: The caller guarantees `thread` is a valid, live `Thread` for `'a` and holds its lock
+    // for `'a`, which excludes concurrent mutation of `scheduler_state`.
+    unsafe { (*thread).scheduler_state_unchecked() }
 }
 
 pub const THREAD_SIGNAL_KILL: u32 = 1 << 0;
@@ -243,6 +229,12 @@ pub const THREAD_SIGNAL_POLICY_EXCEPTION: u32 = 1 << 2;
 pub const THREAD_SIGNAL_RESTRICTED_KICK: u32 = 1 << 3;
 pub const THREAD_SIGNAL_SAMPLE_STACK: u32 = 1 << 4;
 pub const THREAD_SIGNAL_CHECK_RSEQ: u32 = 1 << 5;
+
+/// `ZX_ERR_INTERNAL_INTR_KILLED`; `zx_status::Status` has no named constant for it.
+const ZX_ERR_INTERNAL_INTR_KILLED: Status =
+    Status::err_from_raw(zx_types::ZX_ERR_INTERNAL_INTR_KILLED);
+/// `ZX_ERR_INTERNAL_INTR_RETRY`, an alias of `ZX_ERR_INTERRUPTED_RETRY`.
+const ZX_ERR_INTERNAL_INTR_RETRY: Status = Status::INTERRUPTED_RETRY;
 
 // LINT.IfChange(FxtRef)
 /// Rust representation of the C++ `FxtRef` struct.
@@ -254,18 +246,472 @@ pub struct FxtRef {
 }
 // LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:FxtRef)
 
-/// An opaque type representing the C++ `Thread` class.
+/// Tag type for a [`Thread`]'s membership in the global migrate list (`migrate_list_node`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct MigrateListTag;
+
+/// Tag type for a [`Thread`]'s membership in the global thread list (`thread_list_node`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ThreadListTag;
+
+/// Tag type for a [`Thread`]'s membership in a temporary batch unblock list (`unblock_list_node`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct UnblockListTag;
+
+/// Tag type for a [`Thread`]'s membership in a save state list (`save_state_list_node`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SaveStateListTag;
+
+/// The global list of threads with migrate functions.
+pub type MigrateList = DoublyLinkedList<NonNull<Thread>, MigrateListTag>;
+/// The global thread list.
+pub type ThreadList = DoublyLinkedList<NonNull<Thread>, ThreadListTag>;
+/// A temporary batch unblock list.
+pub type UnblockList = DoublyLinkedList<NonNull<Thread>, UnblockListTag>;
+/// A save state list.
+pub type SaveStateList = fbl::SinglyLinkedList<NonNull<Thread>, SaveStateListTag>;
+/// The list of `OwnedWaitQueue`s a [`Thread`] owns.
+pub type OwnedWaitQueueList = DoublyLinkedList<NonNull<OwnedWaitQueue>>;
+
+// `Thread::owned_wait_queues_` is a `fbl::DoublyLinkedList<OwnedWaitQueue*>`, which consists of a
+// single head pointer.
+static_assert!(size_of::<OwnedWaitQueueList>() == size_of::<*mut c_void>());
+static_assert!(align_of::<OwnedWaitQueueList>() == align_of::<*mut c_void>());
+
+/// Per-thread preemption state.
+#[repr(C)]
+pub struct PreemptionState {
+    /// state_ contains three fields:
+    ///
+    ///  * a 15-bit preempt disable counter (bits 0-14)
+    ///  * a 15-bit eager resched disable counter (bits 15-29)
+    ///  * a 2-bit for TimesliceExtensionFlags (bits 30-31)
+    ///
+    /// This is a single field so that both counters and the flags can be compared
+    /// against zero with a single memory access and comparison.
+    ///
+    /// state_'s counts are modified by interrupt handlers, but the counts are
+    /// always restored to their original value before the interrupt handler
+    /// returns, so modifications are not visible to the interrupted thread.
+    state: RelaxedAtomicU32,
+
+    /// preempts_pending_ tracks pending reschedules to both local and remote CPUs
+    /// due to activity in the context of the current thread.
+    ///
+    /// This value can be changed asynchronously by an interrupt handler.
+    ///
+    /// preempts_pending_ should only be non-zero:
+    ///  * if PreemptDisableCount() or EagerReschedDisable() are non-zero, or
+    ///  * after PreemptDisableCount() or EagerReschedDisable() have been
+    ///    decremented, while preempts_pending_ is being checked.
+    preempts_pending: RelaxedAtomicU32,
+
+    /// The maximum duration of the thread's timeslice extension.
+    ///
+    /// This field is only valid when |state_|'s
+    /// |kTimeSliceExtensionFlags::Present| flag is set.
+    ///
+    /// This field may only be accessed by its owning thread or in an interrupt
+    /// context of the owning thread.  When reading this field, be sure to issue an
+    /// atomic_signal_fence (compiler barrier) with acquire semantics after
+    /// observing the Present flag.  Likewise, when writing this field, use an
+    /// atomic_signal_fence with release semantics prior to setting the Present
+    /// flag.  By using these fences, we ensure the flag and field value remain in
+    /// sync.
+    timeslice_extension: RelaxedAtomicI64,
+
+    /// The deadline at which the thread timeslice extension expires.
+    ///
+    /// This field is only valid when |kTimeSliceExtensionFlags::Active| flag is
+    /// set.
+    ///
+    /// This field may only be accessed by its owning thread or in an interrupt
+    /// context of the owning thread.  When reading this field, be sure to issue an
+    /// atomic_signal_fence (compiler barrier) with acquire semantics after
+    /// observing the Active flag.  Likewise, when writing this field, use an
+    /// atomic_signal_fence with release semantics prior to setting the Active
+    /// flag.  By using these fences, we ensure the flag and field value remain in
+    /// sync.
+    timeslice_extension_deadline: RelaxedAtomicI64,
+}
+
+impl PreemptionState {
+    /// Counters contained in state_ are limited to 15 bits.
+    pub const MAX_COUNT_VALUE: u32 = 0x7fff;
+    /// The preempt disable count is in the lowest 15 bits.
+    pub const PREEMPT_DISABLE_MASK: u32 = Self::MAX_COUNT_VALUE;
+    /// The eager resched disable count is in the next highest 15 bits.
+    pub const EAGER_RESCHED_DISABLE_SHIFT: u32 = 15;
+    /// Mask selecting the eager resched disable count.
+    pub const EAGER_RESCHED_DISABLE_MASK: u32 =
+        Self::MAX_COUNT_VALUE << Self::EAGER_RESCHED_DISABLE_SHIFT;
+    /// Finally, the timeslice extension flags are the highest 2 bits.
+    pub const TIMESLICE_EXTENSION_FLAGS_SHIFT: u32 = 30;
+    /// Mask selecting the timeslice extension flags.
+    pub const TIMESLICE_EXTENSION_FLAGS_MASK: u32 =
+        !(Self::PREEMPT_DISABLE_MASK | Self::EAGER_RESCHED_DISABLE_MASK);
+    /// Thread has a timeslice extension that may or may not be Active.
+    pub const TIMESLICE_EXTENSION_PRESENT: u32 = 0b01 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
+    /// Thread has an Active (in use) timeslice extension.
+    pub const TIMESLICE_EXTENSION_ACTIVE: u32 = 0b10 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
+}
+
+// Compile-time layout assertions against <kernel/thread_layout.h>.
+static_assert!(size_of::<PreemptionState>() == size_of::<layout::PreemptionStateStorage>());
+static_assert!(align_of::<PreemptionState>() == align_of::<layout::PreemptionStateStorage>());
+static_assert!(offset_of!(PreemptionState, state) == layout::PreemptionStateLayout_kStateOffset);
+static_assert!(
+    offset_of!(PreemptionState, preempts_pending)
+        == layout::PreemptionStateLayout_kPreemptsPendingOffset
+);
+static_assert!(
+    offset_of!(PreemptionState, timeslice_extension)
+        == layout::PreemptionStateLayout_kTimesliceExtensionOffset
+);
+static_assert!(
+    offset_of!(PreemptionState, timeslice_extension_deadline)
+        == layout::PreemptionStateLayout_kTimesliceExtensionDeadlineOffset
+);
+
+/// TaskState is responsible for running the task defined by
+/// |entry(arg)|, and reporting its value to any joining threads.
+///
+/// TODO: the detached state in Thread::flags_ probably belongs here.
+#[repr(C)]
+pub struct TaskState {
+    /// The Thread's entry point, and its argument.
+    entry: Option<extern "C" fn(*mut c_void) -> i32>,
+    arg: *mut c_void,
+
+    /// Storage for the return code.
+    ///
+    /// TODO: This is logically protected by our thread's lock.  What is a
+    /// good way to represent this with a static annotation?
+    retcode: UnsafeCell<i32>,
+
+    /// Other threads waiting to join this Thread.
+    retcode_wait_queue: WaitQueue,
+}
+
+// Compile-time layout assertions against <kernel/thread_layout.h>.
+static_assert!(size_of::<TaskState>() == size_of::<layout::TaskStateStorage>());
+static_assert!(align_of::<TaskState>() == align_of::<layout::TaskStateStorage>());
+static_assert!(offset_of!(TaskState, entry) == layout::TaskStateLayout_kEntryOffset);
+static_assert!(offset_of!(TaskState, arg) == layout::TaskStateLayout_kArgOffset);
+static_assert!(offset_of!(TaskState, retcode) == layout::TaskStateLayout_kRetcodeOffset);
+static_assert!(
+    offset_of!(TaskState, retcode_wait_queue) == layout::TaskStateLayout_kRetcodeWaitQueueOffset
+);
+
+/// Keeps track of whether a thread is allowed to allocate memory.
+///
+/// A thread's |MemoryAllocationState| should only be accessed by that thread itself or interrupt
+/// handlers running in the thread's context.
+#[repr(C)]
+pub struct MemoryAllocationState {
+    /// Notice that we aren't using atomic operations to access the field.  We don't need atomic
+    /// operations here as long as...
+    ///
+    /// 1. We use atomic_signal_fence to prevent compiler reordering.
+    ///
+    /// 2. We use volatile to ensure the compiler actually generates loads and stores for the value
+    ///    (so the interrupt handler can see what the thread see, and vice versa).
+    ///
+    /// 3. Upon completion, an interrupt handler that modified the field restores it to the value
+    ///    it held at the start of the interrupt.
+    // Accessed only by the owning thread and its interrupt handlers.
+    disable_count: UnsafeCell<u32>,
+}
+
+// Compile-time layout assertions against <kernel/thread_layout.h>.
+static_assert!(
+    size_of::<MemoryAllocationState>() == size_of::<layout::MemoryAllocationStateStorage>()
+);
+static_assert!(
+    align_of::<MemoryAllocationState>() == align_of::<layout::MemoryAllocationStateStorage>()
+);
+static_assert!(
+    offset_of!(MemoryAllocationState, disable_count)
+        == layout::MemoryAllocationStateLayout_kDisableCountOffset
+);
+
+/// A Zircon kernel thread.
+///
+/// Its layout is shared with `<kernel/thread.h>` and checked against `<kernel/thread_layout.h>`.
+/// Rust never constructs, moves, or drops a `Thread` by value, and only ever holds `&Thread` or
+/// raw pointers to one. Members Rust does not access directly are `zr::Opaque` storage of the
+/// corresponding size and alignment.
+///
+/// `KCell<_, ThreadLockClass>` marks members guarded by the thread's `ChainLock`; they are
+/// reached only through accessors on `ChainLockProof<'_, Thread>`. Comments on the remaining
+/// interior-mutable members state their synchronization rules.
 ///
 /// # Safety Invariant
 ///
-/// Any `&Thread` or `&mut Thread` reference must point to a valid, initialized
-/// C++ `Thread` instance.
-#[repr(C, align(8))]
+/// Any `&Thread` or `&mut Thread` reference must point to a valid, initialized `Thread`.
+// LINT.IfChange(ThreadLayout)
+#[repr(C)]
+#[derive(DoublyLinkedListContainable, SinglyLinkedListContainable)]
 pub struct Thread {
-    // Safety invariant: `_facade` is zero-sized and private so safe code cannot construct a
-    // `Thread` by value; any `&Thread` reference points to a live, initialized `Thread` instance,
-    // and `OpaqueFacade` marks `Thread` as `!Freeze` and `!Unpin` for FFI mutation.
-    _facade: OpaqueFacade,
+    // The `ChainLockable` base: the lock guarding the `KCell<_, ThreadLockClass>` members.
+    // `ClassedChainLock` is `repr(transparent)` over `ChainLock`, so a plain `ChainLock` sits at
+    // offset 0.
+    lock: ClassedChainLock<ThreadLockClass>,
+
+    canary: fbl::Canary<{ fbl::magic(b"thrd") }>,
+
+    // These fields are among the most active in the thread. They are grouped
+    // together near the front to improve cache locality.
+    //
+    // `scheduler_variable_lock_` (a zero-sized `fbl::NullLock`) has no storage and is omitted.
+    //
+    // Mutated by the owning thread (restricted-kick) and under the thread's lock by other threads.
+    flags: UnsafeCell<u32>,
+    signals: AtomicU32,
+    // Guard: split (see `scheduler::SchedulerState`). `state`, `base_profile`,
+    // `inherited_profile_values` and the `effective_profile` dirty flags are written under
+    // `get_lock()`; the queue-related members (`start_time`, `finish_time`, time slices,
+    // `activation_count`, the run-queue node, `subtree_invariants`) under the owning scheduler's
+    // `queue_lock_`; `curr_cpu`/`last_cpu` are read lock-free. Read through
+    // `ChainLockProof::<Thread>::scheduler_state`.
+    scheduler_state: Opaque<layout::ThreadSchedulerStateStorage>,
+    // Guard: `scheduler_variable_lock_` (a `fbl::NullLock`), i.e. the scheduler's own discipline.
+    scheduler_queue_state: Opaque<layout::ThreadSchedulerQueueStateStorage>,
+    // Guard: `get_lock()`; each member of `ThreadState` carries its own cell type.
+    pub(super) wait_queue_state: ThreadState,
+    owned_wait_queues: KCell<OwnedWaitQueueList, ThreadLockClass>,
+    task_state: TaskState,
+    preemption_state: PreemptionState,
+    memory_allocation_state: MemoryAllocationState,
+
+    /// Must only be accessed by "this" thread.
+    // Owned `RestrictedState` pointer; reached through `current_restricted_state`.
+    restricted_state: UnsafeCell<*mut c_void>,
+
+    /// state for runtime lock validation when in thread context
+    #[cfg(with_lock_dep)]
+    lock_state: Opaque<layout::ThreadLockStateStorage>,
+
+    /// The current address space this thread is associated with.
+    /// This can be null if this is a kernel thread.
+    /// See the comments near active_aspace() for more details.
+    aspace: AtomicPtr<VmAspace>,
+
+    // Guard: the owning thread (set and cleared around a ktrace test).
+    #[cfg(ktest)]
+    rust_ktrace_override: UnsafeCell<*mut c_void>,
+
+    /// Saved by SignalPolicyException() to store the type of policy error, and
+    /// passed to exception dispatch in ProcessPendingSignals().
+    extra_policy_exception_code: KCell<u32, ThreadLockClass>,
+    extra_policy_exception_data: KCell<u32, ThreadLockClass>,
+
+    /// Is this thread allowed to own wait queues?  Set to false by a thread as
+    /// it exits, but before it reaches the DEAD state.
+    can_own_wait_queues: KCell<bool, ThreadLockClass>,
+
+    /// Strong reference to user thread if one exists for this thread.
+    /// In the common case freeing Thread will also free ThreadDispatcher when this
+    /// reference is dropped.
+    // `RefPtr<ThreadDispatcher>` storage; set once during user-thread setup and read lock-free
+    // afterwards.
+    user_thread: UnsafeCell<*mut c_void>,
+
+    /// When user_thread_ is set, these values are copied from ThreadDispatcher and
+    /// its parent ProcessDispatcher. Kernel threads maintain an independent tid.
+    // Set once during user-thread setup and read lock-free afterwards.
+    tid: UnsafeCell<zx_koid_t>,
+    pid: UnsafeCell<zx_koid_t>,
+
+    /// Architecture-specific stuff.
+    arch: Opaque<layout::ThreadArchStorage>,
+
+    stack: Opaque<layout::ThreadStackStorage>,
+
+    /// This is used by dispatcher.cc:SafeDeleter.
+    // Guard: the owning thread.
+    recursive_object_deletion_list: UnsafeCell<*mut c_void>,
+
+    /// This always includes the trailing NUL.
+    // NUL-terminated name buffer; written by `set_name` and read lock-free.
+    name: UnsafeCell<[c_char; ZX_MAX_NAME_LEN]>,
+
+    /// Buffering for Debuglog output.
+    linebuffer: Opaque<layout::ThreadLinebufferStorage>,
+
+    /// The flow id allocated before blocking on the last lock.
+    lock_flow_id: RelaxedAtomicU64,
+
+    /// Indicates whether user register state (debug, vector, fp regs, etc.) has been saved to the
+    /// arch_thread_t as part of thread suspension / exception handling.
+    ///
+    /// When a user thread is suspended or generates an exception (synthetic or architectural) that
+    /// might be observed by another process, we save user register state to the thread's
+    /// arch_thread_t so that it may be accessed by a debugger.  Upon leaving a suspended or
+    /// exception state, we restore user register state.
+    user_state_saved: KCell<bool, ThreadLockClass>,
+
+    /// For threads with migration functions, indicates whether a migration is in progress. When
+    /// true, the migrate function has been called with Before but not yet with After.
+    ///
+    /// TODO: What to do about this?  Should it be protected by the
+    /// thread's lock?  Does the thread's lock need to be held exclusively when a
+    /// thread's migrate function is called?
+    migrate_pending: KCell<bool, ThreadLockClass>,
+
+    /// Provides a way to execute custom logic when a thread must be migrated between CPUs.
+    // Guard: `get_lock()`.
+    migrate_fn: Opaque<layout::ThreadMigrateFnStorage>,
+
+    /// Provides a way to execute custom logic when a thread is context switched to or away from.
+    context_switch_fn: Opaque<layout::ThreadContextSwitchFnStorage>,
+
+    /// An Accessor for the thread's restartable sequence structure, if any.
+    ///
+    /// This is used to detect when a thread is preempted or enters a waiting state
+    /// while in a restartable sequence.  When this happens, the restartable sequence
+    /// is interrupted, and the thread will restart the sequence when it resumes.
+    ///
+    /// Kernel threads do not use restartable sequences, so this will always be !IsValid() for
+    /// kernel threads.
+    ///
+    /// Must be accessed only by the current thread.
+    rseq_accessor: Opaque<layout::ThreadRseqAccessorStorage>,
+
+    /// The sampling session this thread is associated with.
+    sampling_session: RelaxedAtomicU64,
+
+    /// Used to track threads that have set `migrate_fn`. This is used to migrate
+    /// threads before a CPU is taken offline.
+    // Guard: `Thread::list_lock_`.
+    #[dll_node(tag = MigrateListTag)]
+    migrate_list_node: DoublyLinkedListNode<Thread>,
+
+    /// Node storage for existing on the global thread list.
+    // Guard: `Thread::list_lock_`.
+    #[dll_node(tag = ThreadListTag)]
+    thread_list_node: DoublyLinkedListNode<Thread>,
+
+    /// Node storage for existing on the temporary batch unblock list.
+    // Guard: `get_lock()`; the node's own `UnsafeCell`s stand in for a `KCell`, which the list
+    // traits cannot see through.
+    #[dll_node(tag = UnblockListTag)]
+    unblock_list_node: DoublyLinkedListNode<Thread>,
+
+    /// Node storage for existing on the save state list.
+    // Guard: `get_lock()`; as for `unblock_list_node`.
+    #[sll_node(tag = SaveStateListTag)]
+    save_state_list_node: SinglyLinkedListNode<Thread>,
+
+    /// State of the thread with respect to memory stalls.
+    ///
+    /// It can only be accessed by the thread's current CPU. Hence, preemption must
+    /// be disabled while accessing it.
+    // Guard: `preempt_disabled_token`; see `memory_stall_state` / `set_memory_stall_state` above.
+    memory_stall_state: UnsafeCell<ThreadStallState>,
+}
+// LINT.ThenChange(
+//   //zircon/kernel/include/kernel/thread.h:ThreadLayout,
+//   //zircon/kernel/include/kernel/thread_layout.h:ThreadLayout,
+// )
+
+// Compile-time layout assertions against <kernel/thread_layout.h>.
+static_assert!(size_of::<Thread>() == size_of::<layout::ThreadStorage>());
+static_assert!(align_of::<Thread>() == align_of::<layout::ThreadStorage>());
+static_assert!(offset_of!(Thread, lock) == 0);
+static_assert!(offset_of!(Thread, lock) == layout::ThreadLayout_kLockOffset);
+static_assert!(offset_of!(Thread, canary) == layout::ThreadLayout_kCanaryOffset);
+static_assert!(offset_of!(Thread, flags) == layout::ThreadLayout_kFlagsOffset);
+static_assert!(offset_of!(Thread, signals) == layout::ThreadLayout_kSignalsOffset);
+static_assert!(offset_of!(Thread, scheduler_state) == layout::ThreadLayout_kSchedulerStateOffset);
+static_assert!(
+    size_of::<scheduler::SchedulerState>() == size_of::<layout::ThreadSchedulerStateStorage>()
+);
+static_assert!(
+    align_of::<scheduler::SchedulerState>() == align_of::<layout::ThreadSchedulerStateStorage>()
+);
+static_assert!(
+    offset_of!(Thread, scheduler_queue_state) == layout::ThreadLayout_kSchedulerQueueStateOffset
+);
+static_assert!(offset_of!(Thread, wait_queue_state) == layout::ThreadLayout_kWaitQueueStateOffset);
+static_assert!(
+    offset_of!(Thread, owned_wait_queues) == layout::ThreadLayout_kOwnedWaitQueuesOffset
+);
+static_assert!(offset_of!(Thread, task_state) == layout::ThreadLayout_kTaskStateOffset);
+static_assert!(offset_of!(Thread, preemption_state) == layout::ThreadLayout_kPreemptionStateOffset);
+static_assert!(
+    offset_of!(Thread, memory_allocation_state)
+        == layout::ThreadLayout_kMemoryAllocationStateOffset
+);
+static_assert!(offset_of!(Thread, restricted_state) == layout::ThreadLayout_kRestrictedStateOffset);
+#[cfg(with_lock_dep)]
+static_assert!(offset_of!(Thread, lock_state) == layout::ThreadLayout_kLockStateOffset);
+static_assert!(offset_of!(Thread, aspace) == layout::ThreadLayout_kAspaceOffset);
+#[cfg(ktest)]
+static_assert!(
+    offset_of!(Thread, rust_ktrace_override) == layout::ThreadLayout_kRustKtraceOverrideOffset
+);
+static_assert!(
+    offset_of!(Thread, extra_policy_exception_code)
+        == layout::ThreadLayout_kExtraPolicyExceptionCodeOffset
+);
+static_assert!(
+    offset_of!(Thread, extra_policy_exception_data)
+        == layout::ThreadLayout_kExtraPolicyExceptionDataOffset
+);
+static_assert!(
+    offset_of!(Thread, can_own_wait_queues) == layout::ThreadLayout_kCanOwnWaitQueuesOffset
+);
+static_assert!(offset_of!(Thread, user_thread) == layout::ThreadLayout_kUserThreadOffset);
+static_assert!(offset_of!(Thread, tid) == layout::ThreadLayout_kTidOffset);
+static_assert!(offset_of!(Thread, pid) == layout::ThreadLayout_kPidOffset);
+static_assert!(offset_of!(Thread, arch) == layout::ThreadLayout_kArchOffset);
+static_assert!(offset_of!(Thread, stack) == layout::ThreadLayout_kStackOffset);
+static_assert!(
+    offset_of!(Thread, recursive_object_deletion_list)
+        == layout::ThreadLayout_kRecursiveObjectDeletionListOffset
+);
+static_assert!(offset_of!(Thread, name) == layout::ThreadLayout_kNameOffset);
+static_assert!(offset_of!(Thread, linebuffer) == layout::ThreadLayout_kLinebufferOffset);
+static_assert!(offset_of!(Thread, lock_flow_id) == layout::ThreadLayout_kLockFlowIdOffset);
+static_assert!(offset_of!(Thread, user_state_saved) == layout::ThreadLayout_kUserStateSavedOffset);
+static_assert!(offset_of!(Thread, migrate_pending) == layout::ThreadLayout_kMigratePendingOffset);
+static_assert!(offset_of!(Thread, migrate_fn) == layout::ThreadLayout_kMigrateFnOffset);
+static_assert!(
+    offset_of!(Thread, context_switch_fn) == layout::ThreadLayout_kContextSwitchFnOffset
+);
+static_assert!(offset_of!(Thread, rseq_accessor) == layout::ThreadLayout_kRseqAccessorOffset);
+static_assert!(offset_of!(Thread, sampling_session) == layout::ThreadLayout_kSamplingSessionOffset);
+static_assert!(
+    offset_of!(Thread, migrate_list_node) == layout::ThreadLayout_kMigrateListNodeOffset
+);
+static_assert!(offset_of!(Thread, thread_list_node) == layout::ThreadLayout_kThreadListNodeOffset);
+static_assert!(
+    offset_of!(Thread, unblock_list_node) == layout::ThreadLayout_kUnblockListNodeOffset
+);
+static_assert!(
+    offset_of!(Thread, save_state_list_node) == layout::ThreadLayout_kSaveStateListNodeOffset
+);
+static_assert!(
+    offset_of!(Thread, memory_stall_state) == layout::ThreadLayout_kMemoryStallStateOffset
+);
+
+// SAFETY: Every interior mutation Rust performs through `&Thread` is either on an atomic, on a
+// `KCell<_, ThreadLockClass>` reached through a `ChainLockProof<'_, Thread>` (which proves `lock`
+// is held), or on `wait_queue_state`'s tree bookkeeping from WAVL tree hooks that run under the
+// containing wait queue's lock. The remaining `UnsafeCell` and `Opaque` members are accessed only
+// under the synchronization rules on each field.
+unsafe impl Sync for Thread {}
+
+// SAFETY: `lock` guards every `KCell<_, ThreadLockClass>` member of `Thread` (including those of
+// `wait_queue_state`), and is a plain field so the same instance is returned every time.
+unsafe impl ChainLocked for Thread {
+    type Class = ThreadLockClass;
+
+    /// Returns the lock guarding this thread.
+    fn lock(&self) -> &ClassedChainLock<ThreadLockClass> {
+        &self.lock
+    }
 }
 
 /// Lock class for `Thread::list_lock_`.
@@ -279,36 +725,85 @@ impl ksync::LockClass for ThreadListLockClass {
 }
 
 impl Thread {
+    /// The sampling session value of a thread not associated with any session.
+    pub const INVALID_SAMPLING_SESSION: u64 = u64::MAX;
+
     /// Domain-specific conversion: returns raw pointer for [`Thread`].
     #[inline]
     pub fn as_raw(&self) -> *mut Self {
         core::ptr::from_ref(self).cast_mut()
     }
 
+    /// Raw place of the [`ClassedChainLock`] embedded in `this`, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
+    #[inline]
+    pub(super) unsafe fn lock_ptr(this: *const Self) -> *const ClassedChainLock<ThreadLockClass> {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `lock` field place without forming a reference to the whole `Thread`.
+        unsafe { &raw const (*this).lock }
+    }
+
     /// Asserts that `self`'s canary magic value is valid.
     #[inline]
     pub fn assert_canary(&self) {
-        // SAFETY: By `Thread`'s safety invariant, `self` points to a live, initialized `Thread`.
-        unsafe {
-            cpp_thread_canary_assert(self);
-        }
+        self.canary.assert();
+    }
+
+    /// Like [`Self::assert_canary`], for a raw pointer, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
+    #[inline]
+    pub(super) unsafe fn assert_canary_ptr(this: *const Self) {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `canary` field place without forming a reference to the whole `Thread`.
+        let canary = unsafe { &raw const (*this).canary };
+        // SAFETY: `canary` is the live `Thread`'s canary field (see above).
+        unsafe { (*canary).assert() };
     }
 
     /// Returns the current pending signals bitmask on this thread.
+    ///
+    /// Uses `Relaxed` ordering, matching C++ `Thread::signals()` (`ktl::memory_order_relaxed`).
+    /// Signal bitmask reads are polled opportunistically or re-checked under the thread's lock,
+    /// and do not synchronize other memory accesses.
     #[inline]
     pub fn signals(&self) -> u32 {
-        // SAFETY: By `Thread`'s safety invariant, `self` points to a live, initialized `Thread`,
-        // and `signals()` performs a relaxed atomic load.
-        unsafe { cpp_thread_signals(self) }
+        self.signals.load(Ordering::Relaxed)
     }
 
     /// Checks whether the kill or suspend signal has been raised. If kill has been raised, returns
-    /// `Err(Status::INTERNAL_INTR_KILLED)`. If suspend has been raised, returns
-    /// `Err(Status::INTERNAL_INTR_RETRY)`. Otherwise, returns `Ok(())`.
+    /// `Err(ZX_ERR_INTERNAL_INTR_KILLED)`. If suspend has been raised, returns
+    /// `Err(ZX_ERR_INTERNAL_INTR_RETRY)`. Otherwise, returns `Ok(())`.
     #[inline]
     pub fn check_kill_or_suspend_signal(&self) -> Result<(), Status> {
-        // SAFETY: By `Thread`'s safety invariant, `self` points to a live, initialized `Thread`.
-        Status::ok(unsafe { cpp_thread_check_kill_or_suspend_signal(self) })
+        let current_signals = self.signals();
+        if current_signals & THREAD_SIGNAL_KILL != 0 {
+            return Err(ZX_ERR_INTERNAL_INTR_KILLED);
+        }
+        if current_signals & THREAD_SIGNAL_SUSPEND != 0 {
+            return Err(ZX_ERR_INTERNAL_INTR_RETRY);
+        }
+        Ok(())
+    }
+
+    /// Returns the [`SchedulerState`] facade over this thread's `scheduler_state` member.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold this thread's lock for the lifetime of the returned reference, or
+    /// otherwise exclude concurrent mutation of `scheduler_state` (e.g. the WAVL tree hooks of a
+    /// wait queue, which run under that queue's lock on threads blocked in it).
+    #[inline]
+    pub(super) unsafe fn scheduler_state_unchecked(&self) -> &SchedulerState {
+        // SAFETY: `scheduler_state` is the storage of the thread's `SchedulerState`, which is
+        // live for as long as `self` is, and `SchedulerState` is a zero-sized facade over it. The
+        // caller excludes concurrent mutation.
+        unsafe { &*self.scheduler_state.get().cast::<SchedulerState>() }
     }
 
     /// Returns a reference to the global thread list spinlock (`Thread::get_list_lock()`).
@@ -385,122 +880,137 @@ pub fn reschedule() {
 
 /// Accessors and locked operations for a [`Thread`] guarded by its chain lock.
 impl<'p> ChainLockProof<'p, Thread> {
+    /// Returns a shared reference to this thread's [`SchedulerState`].
+    #[inline]
+    pub fn scheduler_state(&self) -> &SchedulerState {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards `scheduler_state`.
+        unsafe { self.owner().scheduler_state_unchecked() }
+    }
+
+    /// Raw pointer to the [`scheduler::SchedulerState`] storage of this thread.
+    ///
+    /// Never dereferenced into a reference to the whole `scheduler::SchedulerState`: some of its
+    /// fields (`start_time`, `finish_time`, `time_slice_*`, `activation_count`, and
+    /// `subtree_invariants`) are guarded by the owning scheduler's `queue_lock_` rather than by
+    /// the thread's lock, and `curr_cpu`/`last_cpu` are read lock-free. Use the field-projecting
+    /// accessors below to reach the fields guarded by the thread's lock.
+    #[inline]
+    fn scheduler_state_ptr(&self) -> *mut scheduler::SchedulerState {
+        self.owner().scheduler_state.get().cast::<scheduler::SchedulerState>()
+    }
+
+    /// Raw place of the `state` member of this thread's [`scheduler::SchedulerState`].
+    ///
+    /// Only the single field is projected: a reference covering the whole struct would also
+    /// cover members guarded by the scheduler's `queue_lock_` (`start_time`, `finish_time`,
+    /// `activation_count`, `subtree_invariants`, the run-queue node) and members read lock-free
+    /// (`curr_cpu`/`last_cpu`), none of which the thread lock alone may touch.
+    #[inline]
+    fn state_ptr(&self) -> *mut ThreadStateKind {
+        let p = self.scheduler_state_ptr();
+        // SAFETY: `p` points at the live storage of the thread's `scheduler::SchedulerState`;
+        // `&raw mut` projects the field place without forming a reference to the surrounding
+        // struct.
+        unsafe { &raw mut (*p).state }
+    }
+
     /// Returns the scheduling state of this thread.
     #[inline]
-    pub fn state(&self) -> crate::kernel::scheduler_state::ThreadStateKind {
-        // SAFETY: `self` proves `self.owner().lock()` is held.
-        unsafe { cpp_thread_state(self.owner()) }
+    pub fn state(&self) -> ThreadStateKind {
+        // SAFETY: `self` proves the thread lock is held, which is the only lock `state` is
+        // written under, and no reference to the surrounding struct is formed.
+        unsafe { *self.state_ptr() }
     }
 
     /// Sets the thread's state to `ThreadStateKind::Blocked`.
     #[inline]
     pub fn set_blocked(&mut self) {
-        // SAFETY: `self` proves `self.owner().lock()` is held exclusively.
-        unsafe {
-            cpp_thread_set_blocked(self.owner().as_raw());
-        }
+        // SAFETY: As in `state`; the unique borrow of `self` excludes other writers under the
+        // thread lock.
+        unsafe { *self.state_ptr() = ThreadStateKind::Blocked };
     }
 
     /// Sets the thread's state to `ThreadStateKind::BlockedReadLock`.
     #[inline]
     pub fn set_blocked_read_lock(&mut self) {
-        // SAFETY: `self` proves `self.owner().lock()` is held exclusively.
-        unsafe {
-            cpp_thread_set_blocked_read_lock(self.owner().as_raw());
-        }
+        // SAFETY: As in `set_blocked`.
+        unsafe { *self.state_ptr() = ThreadStateKind::BlockedReadLock };
     }
 
-    /// Returns a reference to this thread's
-    /// [`WaitQueueCollectionThreadState`](super::wait_queue::WaitQueueCollectionThreadState).
+    /// Sets the thread's scheduling state (for unit tests).
+    #[cfg(ktest)]
     #[inline]
-    pub fn wait_queue_state(
-        &self,
-    ) -> &'p crate::kernel::wait_queue::WaitQueueCollectionThreadState {
-        // SAFETY: `self` proves `self.owner().lock()` is held, and `cpp_thread_wait_queue_state`
-        // returns a valid pointer to `self.owner()`'s embedded `WaitQueueCollection::ThreadState`.
-        unsafe { &*cpp_thread_wait_queue_state(self.owner()) }
-    }
-
-    // TODO(adanis): `scheduler_state::SchedulerState` (the opaque facade returned by the free
-    // function `scheduler_state` and `ThreadLockGuard::scheduler_state`) and
-    // `scheduler::SchedulerState` (the full mirror returned by `scheduler_state_mut` below) are
-    // two Rust views of the same C++ `SchedulerState`, and should be merged into one.
-
-    /// Returns a raw pointer to this thread's
-    /// [`SchedulerState`](crate::kernel::scheduler::SchedulerState).
-    ///
-    /// Some of its fields (`start_time`, `finish_time`, `time_slice_*`, `activation_count` and
-    /// `subtree_invariants`) are guarded by the owning scheduler's `queue_lock_` rather than by
-    /// the thread's lock, and may be written by another CPU while the thread's lock is held. Use
-    /// the field-projecting accessors below to access the fields guarded by the thread's lock
-    /// without forming a reference to the whole struct.
-    #[inline]
-    fn scheduler_state_ptr(&self) -> *mut crate::kernel::scheduler::SchedulerState {
-        // SAFETY: `cpp_thread_get_scheduler_state` returns a valid pointer to `self.owner()`'s
-        // embedded `SchedulerState`, and only computes its address.
-        unsafe { cpp_thread_get_scheduler_state(self.owner().as_raw()) }
-    }
-
-    /// Returns a mutable reference to this thread's
-    /// [`SchedulerState`](crate::kernel::scheduler::SchedulerState).
-    ///
-    /// Prefer the field-projecting accessors (such as [`Self::inherited_profile_values_mut`]),
-    /// which do not cover the fields guarded by the owning scheduler's `queue_lock_`.
-    #[inline]
-    pub fn scheduler_state_mut(&mut self) -> &mut crate::kernel::scheduler::SchedulerState {
-        // SAFETY: `self` proves `self.owner().lock()` is held exclusively, and the unique borrow
-        // of `self` ensures no other reference to `scheduler_state_` is live.
-        unsafe { &mut *self.scheduler_state_ptr() }
+    pub(crate) fn set_state(&mut self, state: ThreadStateKind) {
+        // SAFETY: As in `set_blocked`.
+        unsafe { *self.state_ptr() = state };
     }
 
     /// Returns this thread's base profile.
     #[inline]
-    pub(crate) fn base_profile(&self) -> &crate::kernel::scheduler::BaseProfile {
+    pub(crate) fn base_profile(&self) -> &scheduler::BaseProfile {
+        let p = self.scheduler_state_ptr();
         // SAFETY: `self` proves `self.owner().lock()` is held, which guards `base_profile`, and
-        // the reference is formed from the field place (without an intermediate reference to the
-        // whole struct), so that it covers only that field.
-        unsafe { &(*self.scheduler_state_ptr()).base_profile }
+        // `&(*p).base_profile` projects only the field place without forming a reference to the
+        // whole `scheduler::SchedulerState`.
+        unsafe { &(*p).base_profile }
     }
 
     /// Returns this thread's base profile mutably.
     #[inline]
-    pub(crate) fn base_profile_mut(&mut self) -> &mut crate::kernel::scheduler::BaseProfile {
+    pub(crate) fn base_profile_mut(&mut self) -> &mut scheduler::BaseProfile {
+        let p = self.scheduler_state_ptr();
         // SAFETY: As in `base_profile`; the unique borrow of `self` ensures no other reference to
         // `base_profile` is live.
-        unsafe { &mut (*self.scheduler_state_ptr()).base_profile }
+        unsafe { &mut (*p).base_profile }
     }
 
     /// Returns this thread's inherited profile values.
     #[inline]
-    pub(crate) fn inherited_profile_values(
-        &self,
-    ) -> &crate::kernel::scheduler::InheritedProfileValues {
+    pub(crate) fn inherited_profile_values(&self) -> &scheduler::InheritedProfileValues {
+        let p = self.scheduler_state_ptr();
         // SAFETY: `self` proves `self.owner().lock()` is held, which guards
-        // `inherited_profile_values`, and the reference is projected from the raw pointer so that
-        // it covers only that field.
-        unsafe { &(*self.scheduler_state_ptr()).inherited_profile_values }
+        // `inherited_profile_values`, and `&(*p).inherited_profile_values` projects only that
+        // field.
+        unsafe { &(*p).inherited_profile_values }
     }
 
     /// Returns this thread's inherited profile values mutably.
     #[inline]
     pub(crate) fn inherited_profile_values_mut(
         &mut self,
-    ) -> &mut crate::kernel::scheduler::InheritedProfileValues {
+    ) -> &mut scheduler::InheritedProfileValues {
+        let p = self.scheduler_state_ptr();
         // SAFETY: As in `inherited_profile_values`; the unique borrow of `self` ensures no other
         // reference to `inherited_profile_values` is live.
-        unsafe { &mut (*self.scheduler_state_ptr()).inherited_profile_values }
+        unsafe { &mut (*p).inherited_profile_values }
     }
 
     /// Returns this thread's effective profile mutably (for example, to mark it dirty).
     #[inline]
-    pub(crate) fn effective_profile_mut(
-        &mut self,
-    ) -> &mut crate::kernel::scheduler::EffectiveProfile {
+    pub(crate) fn effective_profile_mut(&mut self) -> &mut scheduler::EffectiveProfile {
+        let p = self.scheduler_state_ptr();
         // SAFETY: `self` proves `self.owner().lock()` is held exclusively, which guards writes to
-        // `effective_profile`, the reference is projected from the raw pointer so that it covers
-        // only that field, and the unique borrow of `self` ensures no other reference to it is
-        // live.
-        unsafe { &mut (*self.scheduler_state_ptr()).effective_profile }
+        // `effective_profile`, `&mut (*p).effective_profile` projects only that field, and the
+        // unique borrow of `self` ensures no other reference to it is live.
+        unsafe { &mut (*p).effective_profile }
+    }
+
+    /// Recomputes this thread's effective profile from its `base_profile` and
+    /// `inherited_profile_values` without forming a reference to the whole
+    /// [`scheduler::SchedulerState`].
+    #[inline]
+    pub(crate) fn recompute_effective_profile(&mut self) {
+        let p = self.scheduler_state_ptr();
+        // SAFETY: `self` proves `self.owner().lock()` is held exclusively, which guards
+        // `base_profile`, `inherited_profile_values`, and `effective_profile`. Each field place is
+        // projected individually from the raw pointer without forming a reference to the
+        // surrounding `scheduler::SchedulerState`, and the three fields are disjoint.
+        unsafe {
+            let bp = &(*p).base_profile;
+            let ipv = &(*p).inherited_profile_values;
+            let ep = &mut (*p).effective_profile;
+            ep.recompute(bp, ipv);
+        }
     }
 
     /// Returns this thread's dynamic scheduling parameters, as
@@ -513,10 +1023,10 @@ impl<'p> ChainLockProof<'p, Thread> {
     pub(crate) fn dynamic_parameters(
         &self,
     ) -> (
-        crate::kernel::scheduler::SchedTime,
-        crate::kernel::scheduler::SchedTime,
-        crate::kernel::scheduler::SchedDuration,
-        crate::kernel::scheduler::SchedDuration,
+        scheduler::SchedTime,
+        scheduler::SchedTime,
+        scheduler::SchedDuration,
+        scheduler::SchedDuration,
     ) {
         let ss = self.scheduler_state_ptr();
         // SAFETY: `ss` points to `self.owner()`'s live `SchedulerState`. The fields are read by
@@ -527,51 +1037,102 @@ impl<'p> ChainLockProof<'p, Thread> {
         }
     }
 
-    /// Returns the list of [`OwnedWaitQueue`]s currently owned by this thread.
+    /// Returns a reference to this thread's [`ThreadState`].
     #[inline]
-    pub(crate) fn owned_wait_queues(&self) -> &DoublyLinkedList<*mut OwnedWaitQueue> {
-        // SAFETY: `self` proves `self.owner().lock()` is held, which guards
-        // `owned_wait_queues_`, and `cpp_thread_owned_wait_queues` returns a valid pointer to
-        // `self.owner()`'s embedded `fbl::DoublyLinkedList<OwnedWaitQueue*>`. The Rust
-        // `DoublyLinkedList<*mut OwnedWaitQueue>` has the same size and alignment (asserted in
-        // `owned_wait_queue.rs`), and the fbl crate guarantees C++ interop for the head pointer
-        // and sentinel encoding. The reference is tied to the borrow of `self`, so it cannot
-        // overlap with one returned by `owned_wait_queues_mut`.
-        unsafe { &*cpp_thread_owned_wait_queues(self.owner().as_raw()) }
+    pub fn wait_queue_state(&self) -> &'p ThreadState {
+        // `ThreadState`'s own members are `KCell`s and tree bookkeeping with their own protocols,
+        // so handing out the reference needs no lock proof beyond the thread outliving `'p`.
+        &self.owner().wait_queue_state
     }
 
-    /// Returns the list of [`OwnedWaitQueue`]s currently owned by this thread mutably.
-    #[inline]
-    pub(crate) fn owned_wait_queues_mut(
-        &mut self,
-    ) -> Pin<&mut DoublyLinkedList<*mut OwnedWaitQueue>> {
+    /// Returns the list of `OwnedWaitQueue`s this thread owns.
+    pub(crate) fn owned_wait_queues(&self) -> &OwnedWaitQueueList {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards
+        // `owned_wait_queues`.
+        unsafe { self.owner().owned_wait_queues.get(self.token()) }
+    }
+
+    /// Returns the list of `OwnedWaitQueue`s this thread owns mutably.
+    pub(crate) fn owned_wait_queues_mut(&mut self) -> Pin<&mut OwnedWaitQueueList> {
+        let (thread, token) = self.split_mut();
         // SAFETY: As in `owned_wait_queues`; the unique borrow of `self` ensures no other
-        // reference to `owned_wait_queues_` is live. The list is embedded in the `Thread`, so it
-        // is never moved, and it is only dropped by `~Thread` (which runs the C++ destructor).
-        unsafe { Pin::new_unchecked(&mut *cpp_thread_owned_wait_queues(self.owner().as_raw())) }
+        // reference to `owned_wait_queues` is live. `Pin::new_unchecked`: every `Thread` is pinned
+        // in memory for its whole life, so the embedded list never moves.
+        unsafe { Pin::new_unchecked(thread.owned_wait_queues.get_mut(token)) }
     }
 
-    /// Returns `true` if this thread is still allowed to become the owner of wait queues (it is
-    /// not exiting).
-    #[inline]
+    /// Returns the policy exception code saved by `SignalPolicyException()`.
+    pub(crate) fn extra_policy_exception_code(&self) -> u32 {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards
+        // `extra_policy_exception_code`.
+        *unsafe { self.owner().extra_policy_exception_code.get(self.token()) }
+    }
+
+    /// Returns the policy exception code mutably.
+    pub(crate) fn extra_policy_exception_code_mut(&mut self) -> &mut u32 {
+        let (thread, token) = self.split_mut();
+        // SAFETY: As in `extra_policy_exception_code`; the unique borrow of `self` ensures no
+        // other reference is live.
+        unsafe { thread.extra_policy_exception_code.get_mut(token) }
+    }
+
+    /// Returns the policy exception data saved by `SignalPolicyException()`.
+    pub(crate) fn extra_policy_exception_data(&self) -> u32 {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards
+        // `extra_policy_exception_data`.
+        *unsafe { self.owner().extra_policy_exception_data.get(self.token()) }
+    }
+
+    /// Returns the policy exception data mutably.
+    pub(crate) fn extra_policy_exception_data_mut(&mut self) -> &mut u32 {
+        let (thread, token) = self.split_mut();
+        // SAFETY: As in `extra_policy_exception_data`; the unique borrow of `self` ensures no
+        // other reference is live.
+        unsafe { thread.extra_policy_exception_data.get_mut(token) }
+    }
+
+    /// Returns whether this thread is allowed to own wait queues.
     pub(crate) fn can_own_wait_queues(&self) -> bool {
-        // SAFETY: `self` proves `self.owner().lock()` is held, which guards
-        // `can_own_wait_queues_`.
-        unsafe { cpp_thread_can_own_wait_queues(self.owner()) }
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards
+        // `can_own_wait_queues`.
+        *unsafe { self.owner().can_own_wait_queues.get(self.token()) }
     }
-}
 
-// SAFETY: `cpp_thread_get_lock` returns the thread's embedded `ChainLock`, which guards its
-// `KCell<_, ThreadLockClass>` fields and returns the same lock instance on every call.
-unsafe impl ChainLocked for Thread {
-    type Class = ThreadLockClass;
+    /// Returns whether this thread is allowed to own wait queues mutably.
+    pub(crate) fn can_own_wait_queues_mut(&mut self) -> &mut bool {
+        let (thread, token) = self.split_mut();
+        // SAFETY: As in `can_own_wait_queues`; the unique borrow of `self` ensures no other
+        // reference is live.
+        unsafe { thread.can_own_wait_queues.get_mut(token) }
+    }
 
-    fn lock(&self) -> &ClassedChainLock<ThreadLockClass> {
-        // SAFETY: Validity: by `Thread`'s safety invariant, `self` points to a live, initialized
-        // `Thread` for the lifetime of `&self`, and `cpp_thread_get_lock` returns a non-null
-        // pointer to its embedded `ChainLock`. Class binding (`from_chain_lock`): this lock guards
-        // the thread's `ThreadLockClass` fields.
-        unsafe { ClassedChainLock::from_chain_lock(&*cpp_thread_get_lock(self.as_raw())) }
+    /// Returns whether user register state has been saved to the thread's `arch_thread`.
+    pub(crate) fn user_state_saved(&self) -> bool {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards
+        // `user_state_saved`.
+        *unsafe { self.owner().user_state_saved.get(self.token()) }
+    }
+
+    /// Returns whether user register state has been saved mutably.
+    pub(crate) fn user_state_saved_mut(&mut self) -> &mut bool {
+        let (thread, token) = self.split_mut();
+        // SAFETY: As in `user_state_saved`; the unique borrow of `self` ensures no other
+        // reference is live.
+        unsafe { thread.user_state_saved.get_mut(token) }
+    }
+
+    /// Returns whether a migration is in progress for this thread.
+    pub(crate) fn migrate_pending(&self) -> bool {
+        // SAFETY: `self` proves `owner().lock()` is held, and that lock guards `migrate_pending`.
+        *unsafe { self.owner().migrate_pending.get(self.token()) }
+    }
+
+    /// Returns whether a migration is in progress mutably.
+    pub(crate) fn migrate_pending_mut(&mut self) -> &mut bool {
+        let (thread, token) = self.split_mut();
+        // SAFETY: As in `migrate_pending`; the unique borrow of `self` ensures no other reference
+        // is live.
+        unsafe { thread.migrate_pending.get_mut(token) }
     }
 }
 
@@ -778,39 +1339,19 @@ impl ThreadPtr {
 
     /// Returns a reference to this thread's [`ChainLock`].
     ///
-    /// The C++ `ChainLock` returned by `Thread::get_lock()` is layout-compatible with the Rust
-    /// [`ChainLock`] (the same pair of atomics, checked by `static_assert`s on both sides) and
-    /// implements the same locking protocol, so it can be acquired and released from either
-    /// language within the same `ChainLockTransaction`.
-    ///
     /// # Safety
     ///
-    /// The caller must ensure that `self` points to a valid `Thread` which remains alive for as
-    /// long as the returned reference is used.
+    /// - The caller must ensure that `self` points to a valid `Thread` which remains alive for as
+    ///   long as the returned reference is used.
+    /// - The caller must not use the returned [`ChainLock`] to release the lock or to create
+    ///   overlapping guards (`ChainLockGuard::adopt`/`unguard`) while any
+    ///   `ChainLockProof<'_, Thread>` for this thread is live (`ThreadLockGuard::proof`,
+    ///   `OwnerGuard::proof`, `single_chain_lock_guard_owned!`).
     #[inline]
     pub unsafe fn get_lock(&self) -> &ChainLock {
-        // SAFETY: `self` points to a valid `Thread` and its embedded `ChainLock` remains valid for
-        // as long as the caller guarantees the thread stays alive. The C++ `ChainLock` has the
-        // same size, alignment, and atomic fields as the Rust `ChainLock`, and is only accessed
-        // through atomics.
-        unsafe { &*cpp_thread_get_lock(self.as_raw()) }
-    }
-
-    /// Returns the `blocked_status_` from this thread's `wait_queue_state()`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `self` points to a valid `Thread` and that its chain lock is
-    /// held by the transaction identified by `token`.
-    #[inline]
-    pub unsafe fn wait_queue_state_blocked_status_locked(
-        self,
-        token: &ChainLockTransactionToken,
-    ) -> Result<(), Status> {
-        // SAFETY: `self` points to a valid `Thread` which outlives this call.
-        unsafe { self.get_lock() }.assert_held(token);
-        // SAFETY: `self` points to a valid `Thread` whose chain lock is held by the caller.
-        Status::ok(unsafe { cpp_thread_wait_queue_state_blocked_status_locked(self.as_ptr()) })
+        // SAFETY: `self` points to a valid `Thread` by the caller's guarantee.
+        // `as_chain_lock`'s requirements about overlapping guards are forwarded to the caller.
+        unsafe { self.as_ref().lock().as_chain_lock() }
     }
 
     /// Returns the associated `ThreadDispatcher` (`user_thread()`), or null if this is a
@@ -969,8 +1510,9 @@ impl ThreadLockGuard {
     /// Checks whether user state is saved for the locked thread, like C++
     /// `Thread::IsUserStateSavedLocked()`.
     pub fn is_user_state_saved_locked(&self) -> bool {
-        // SAFETY: the thread is a live C++ `Thread` whose lock this guard holds.
-        unsafe { cpp_thread_is_user_state_saved_locked(self.thread()) }
+        // SAFETY: `self.thread` is a live `Thread` (`lock`'s contract) whose lock `raw` acquired
+        // and holds until drop; the temporary proof does not escape this call.
+        unsafe { ChainLockProof::from_acquiring_guard(self.thread.as_ref()) }.user_state_saved()
     }
 
     /// Returns a reference to the [`SchedulerState`] of the locked thread.
@@ -1439,11 +1981,12 @@ pub unsafe fn get_shadow_call_base(thread: *mut Thread) -> usize {
 /// Returns `true` if `thread`'s user state has been saved.
 ///
 /// # Safety
-/// Caller must ensure `thread` points to a valid C++ `Thread` instance and that the caller holds
-/// `thread`'s lock.
-pub unsafe fn is_user_state_saved_locked(thread: *mut Thread) -> bool {
-    // SAFETY: Forwarded to C++ Thread::IsUserStateSavedLocked() with caller-verified pointer.
-    unsafe { cpp_thread_is_user_state_saved_locked(thread) }
+/// Caller must ensure `thread` points to a valid `Thread` instance and that the caller holds
+/// `thread`'s lock for the duration of this call, with no proof for it live.
+pub unsafe fn is_user_state_saved_locked(thread: *const Thread) -> bool {
+    // SAFETY: `thread` is a valid `Thread` whose lock the caller holds with no proof live
+    // (caller's contract); the temporary proof does not escape this call.
+    unsafe { ChainLockProof::assume_held_unchecked(&*thread) }.user_state_saved()
 }
 
 /// Checks whether `thread` is currently running.
@@ -1605,11 +2148,12 @@ pub unsafe fn migrate_to_cpu(target_cpu: cpu_num_t) {
 #[unittest::suite(name = "thread_rust")]
 mod tests {
     use super::{
-        AnnotatedAutoEagerReschedDisabler, DEFAULT_PRIORITY, LOW_PRIORITY,
-        ScopedMemoryAllocationDisabled, Thread, ThreadLockGuard, ThreadPtr,
-        cpp_thread_current_memory_allocation_state_disable,
+        AnnotatedAutoEagerReschedDisabler, ChainLocked, DEFAULT_PRIORITY, Interruptible,
+        LOW_PRIORITY, ScopedMemoryAllocationDisabled, Thread, ThreadLockGuard, ThreadPtr,
+        ThreadStateKind, cpp_thread_current_memory_allocation_state_disable,
         cpp_thread_current_memory_allocation_state_enable, create_with_priority, current_get,
-        current_memory_allocation_state_is_enabled, eager_resched_disable_count, sleep_relative,
+        current_memory_allocation_state_is_enabled, eager_resched_disable_count, layout,
+        sleep_relative,
     };
     use crate::arch_rs::curr_cpu_num;
     use crate::kconcurrent::{
@@ -1618,9 +2162,13 @@ mod tests {
     };
     use crate::kernel::mp::{INVALID_CPU, cpu_num_to_mask, get_online_mask};
     use crate::kernel::types::{cpu_mask_t, cpu_num_t, highest_cpu_set};
+    use crate::kernel::wait_queue::{
+        BlockedThreadTreeTag, MinRelativeDeadlineTraits, PRIMARY_KEY_ZERO,
+    };
     use crate::platform_rs::timer::{DurationMono, InstantMono};
     use core::ffi::c_void;
     use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+    use fbl::{WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable};
     use kprint::kprintln;
     use unittest::{
         assert_eq, assert_ne, assert_true, expect_eq, expect_false, expect_true, unwrap_ok,
@@ -1681,13 +2229,7 @@ mod tests {
                 IRQ_SAVE_OPTION,
                 lock,
                 clt_tag!("thread_rust_test"),
-                |guard| {
-                    // SAFETY: `current` is valid and its chain lock is held by `guard`'s
-                    // transaction.
-                    let _status =
-                        unsafe { current.wait_queue_state_blocked_status_locked(guard.token()) };
-                    lock.is_held(guard.token())
-                },
+                |guard| lock.is_held(guard.token()),
             );
             assert_true!(held);
             assert_true!(lock.is_unlocked());
@@ -1900,6 +2442,149 @@ mod tests {
             }
             expect_true!(current_memory_allocation_state_is_enabled());
         }
+    }
+
+    /// Verifies the `ChainLockProof<'_, Thread>` accessors on the (unblocked) running thread.
+    #[test]
+    fn thread_proof_guarded_fields() {
+        let current_ptr = current_get();
+        // SAFETY: `current_get()` returns a valid pointer to the running thread, which stays alive
+        // for the duration of this test.
+        let current: &Thread = unsafe { &*current_ptr };
+        // The lock is the `ChainLockable` base subobject, so it lives at the thread's address.
+        expect_eq!(core::ptr::from_ref(current.lock()).addr(), current_ptr.addr());
+        expect_true!(current.canary.valid());
+        current.assert_canary();
+        expect_true!(current.check_kill_or_suspend_signal().is_ok());
+
+        let mut running = false;
+        let mut state_transitions_match = false;
+        let mut not_blocked = false;
+        let mut interruptible = Interruptible::Yes;
+        let mut no_owned_wait_queues = false;
+        let mut can_own_wait_queues = false;
+        let mut user_state_saved = true;
+        let mut migrate_pending = true;
+        let mut policy_exception = (u32::MAX, u32::MAX);
+        let mut scheduler_state_matches = false;
+        let mut wait_queue_state_matches = false;
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("thread_proof_guarded_fields"),
+            |token| {
+                let mut guard = OwnerGuard::new(current, token);
+                ChainLockTransaction::finalize(token);
+                let mut proof = guard.proof();
+
+                let orig_state = proof.state();
+                running = orig_state == ThreadStateKind::Running;
+                proof.set_blocked();
+                let blocked_ok = proof.state() == ThreadStateKind::Blocked;
+                proof.set_blocked_read_lock();
+                let blocked_read_ok = proof.state() == ThreadStateKind::BlockedReadLock;
+                proof.set_state(orig_state);
+                state_transitions_match =
+                    blocked_ok && blocked_read_ok && proof.state() == orig_state;
+
+                // `ThreadState` members (wait_queue.rs accessors).
+                let wq_state = proof.wait_queue_state();
+                not_blocked = !wq_state.in_wait_queue()
+                    && wq_state.blocking_wait_queue(proof.token()).is_none();
+                // `blocked_status` keeps the last wake status until the next block, so only check
+                // that it reads back.
+                let _ = wq_state.blocked_status(proof.token());
+                interruptible = wq_state.interruptible(proof.token());
+
+                // `Thread` members.
+                no_owned_wait_queues = proof.owned_wait_queues().is_empty()
+                    && proof.owned_wait_queues_mut().is_empty();
+                can_own_wait_queues = proof.can_own_wait_queues();
+                user_state_saved = proof.user_state_saved();
+                migrate_pending = proof.migrate_pending();
+                policy_exception =
+                    (proof.extra_policy_exception_code(), proof.extra_policy_exception_data());
+
+                // Writing the current values back through the `_mut` accessors leaves the thread
+                // unchanged.
+                *proof.extra_policy_exception_code_mut() = policy_exception.0;
+                *proof.extra_policy_exception_data_mut() = policy_exception.1;
+                *proof.can_own_wait_queues_mut() = can_own_wait_queues;
+                *proof.user_state_saved_mut() = user_state_saved;
+                *proof.migrate_pending_mut() = migrate_pending;
+
+                // The proof's `SchedulerState` facade and `ThreadState` sit over the members at
+                // the offsets `<kernel/thread_layout.h>` declares.
+                scheduler_state_matches = core::ptr::from_ref(proof.scheduler_state()).addr()
+                    == current_ptr.addr() + layout::ThreadLayout_kSchedulerStateOffset;
+                wait_queue_state_matches = core::ptr::from_ref(proof.wait_queue_state()).addr()
+                    == current_ptr.addr() + layout::ThreadLayout_kWaitQueueStateOffset;
+                guard.release();
+                DONE
+            },
+        );
+        expect_true!(running);
+        expect_true!(state_transitions_match);
+        expect_true!(not_blocked);
+        expect_eq!(interruptible, Interruptible::No);
+        expect_true!(no_owned_wait_queues);
+        expect_true!(can_own_wait_queues);
+        expect_false!(user_state_saved);
+        expect_false!(migrate_pending);
+        expect_eq!(policy_exception.0, 0);
+        expect_eq!(policy_exception.1, 0);
+        expect_true!(scheduler_state_matches);
+        expect_true!(wait_queue_state_matches);
+        expect_true!(current.lock().is_unlocked());
+    }
+
+    /// Verifies WAVL tree traits and `MinRelativeDeadlineTraits` on an unqueued `Thread`.
+    #[test]
+    fn wavl_tree_traits_on_thread() {
+        let current_ptr = current_get();
+        // SAFETY: `current_get()` returns a valid pointer to the running thread, which stays alive
+        // for the duration of this test.
+        let current: &Thread = unsafe { &*current_ptr };
+
+        // The running test thread is not in any wait queue.
+        let node = <Thread as WavlTreeContainable<Thread, BlockedThreadTreeTag>>::get_node(current);
+        expect_false!(node.in_container());
+
+        let mut key: (InstantMono, usize) = (InstantMono::INFINITE, 0);
+        let mut node_deadline = DurationMono::ZERO;
+        let mut subtree_deadline = DurationMono::ZERO;
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("wavl_tree_traits_on_thread"),
+            |token| {
+                let mut guard = OwnerGuard::new(current, token);
+                ChainLockTransaction::finalize(token);
+                let _proof = guard.proof();
+                // The current thread is not in any wait queue and we hold its lock, which
+                // satisfies the synchronization preconditions of the WAVL tree trait hooks.
+                key = <Thread as WavlTreeKeyable<(InstantMono, usize)>>::get_key(current);
+                node_deadline = MinRelativeDeadlineTraits::get_node_value(current);
+                subtree_deadline = MinRelativeDeadlineTraits::get_subtree_value(current);
+                guard.release();
+                DONE
+            },
+        );
+        // `WaitQueueCollection::Remove` only resets the sort key in debug builds, so a thread
+        // that has blocked before may carry a stale key in release builds.
+        if cfg!(debug_assertions) {
+            expect_eq!(key.0.0, PRIMARY_KEY_ZERO.0);
+        }
+        expect_eq!(key.1, current_ptr.addr());
+        // The running test thread has a fair profile, so its relative deadline is `INFINITE`.
+        expect_eq!(node_deadline.0, DurationMono::INFINITE.0);
+        expect_eq!(subtree_deadline.0, DurationMono::INFINITE.0);
+        expect_eq!(
+            MinRelativeDeadlineTraits::combine_values(
+                DurationMono::from_millis(10),
+                DurationMono::INFINITE
+            )
+            .0,
+            DurationMono::from_millis(10).0
+        );
     }
 }
 

@@ -174,7 +174,6 @@ uint64_t cpp_scheduler_lookup_power_cost(const Scheduler* sched, cpu_num_t cpu,
                                          SchedProcessingRate rate);
 SchedUtilization cpp_scheduler_lookup_total_normalized_utilization(const Scheduler* sched,
                                                                    cpu_num_t cpu);
-void cpp_thread_canary_assert(const Thread* thread);
 void cpp_timer_queue_preempt_reset(cpu_num_t cpu, zx_instant_mono_t deadline);
 bool cpp_timer_queue_preempt_armed(cpu_num_t cpu);
 void cpp_thread_call_context_switch_fn_locked(Thread* thread);

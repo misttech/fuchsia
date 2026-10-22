@@ -7,6 +7,7 @@
 //! Types and structures for kernel scheduler state (`include/kernel/scheduler_state.h`).
 
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
+use crate::platform_rs::timer::DurationMono;
 use core::mem::{MaybeUninit, align_of, size_of};
 use object_constants_rs as object_constants;
 use wait_queue_bindings as bindings;
@@ -81,16 +82,41 @@ impl SchedulerState {
         unsafe { cpp_scheduler_state_hard_affinity(self) }
     }
 
-    /// Recomputes the effective profile of this scheduler state.
+    /// Raw place of the `effective_profile` field of this scheduler state without forming a
+    /// reference to the whole `crate::kernel::scheduler::SchedulerState`.
     #[inline]
-    pub fn recompute_effective_profile(&mut self) {
-        // SAFETY: `self` is a valid mutable `SchedulerState` reference (guarded by the owning
-        // `Thread`'s lock), which has the same address and layout as
-        // `crate::kernel::scheduler::SchedulerState`.
-        let state = unsafe {
-            &mut *core::ptr::from_mut(self).cast::<crate::kernel::scheduler::SchedulerState>()
-        };
-        state.recompute_effective_profile();
+    fn effective_profile_ptr(&self) -> *const crate::kernel::scheduler::EffectiveProfile {
+        let state = core::ptr::from_ref(self).cast::<crate::kernel::scheduler::SchedulerState>();
+        // SAFETY: `self` has the same address as the underlying `SchedulerState`, and `&raw const`
+        // projects the `effective_profile` field place without forming a reference to the whole
+        // struct.
+        unsafe { &raw const (*state).effective_profile }
+    }
+
+    /// Returns whether the effective profile is a deadline profile
+    /// (`effective_profile().IsDeadline()`).
+    #[inline]
+    pub fn effective_profile_is_deadline(&self) -> bool {
+        // SAFETY: By `SchedulerState`'s safety invariant, the caller excludes concurrent mutation
+        // of `effective_profile` (by holding the owning thread's lock or the wait queue lock of
+        // the queue the thread is blocked in), and only the `effective_profile` field is
+        // referenced.
+        unsafe { (*self.effective_profile_ptr()).is_deadline() }
+    }
+
+    /// Returns the relative deadline of the effective profile
+    /// (`effective_profile().deadline().deadline_ns`); only meaningful when
+    /// [`Self::effective_profile_is_deadline`] is `true`.
+    ///
+    /// # Panics
+    ///
+    /// Debug builds will panic (`debug_assert!`) if the effective profile is not a deadline
+    /// profile. Callers must check [`Self::effective_profile_is_deadline`] first.
+    #[inline]
+    pub fn effective_profile_deadline_ns(&self) -> DurationMono {
+        // SAFETY: As in `effective_profile_is_deadline`.
+        let deadline = unsafe { (*self.effective_profile_ptr()).deadline() };
+        DurationMono(deadline.deadline_ns.raw_value())
     }
 }
 

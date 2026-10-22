@@ -28,5 +28,4 @@ FFI_ALWAYS_INLINE cpu_num_t cpp_scheduler_state_last_cpu(const SchedulerState* s
 FFI_ALWAYS_INLINE cpu_mask_t cpp_scheduler_state_hard_affinity(const SchedulerState* state) {
   return state->hard_affinity();
 }
-
 }  // extern "C"

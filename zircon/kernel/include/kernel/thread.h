@@ -488,6 +488,9 @@ class PreemptionState {
   friend class PreemptDisableTestAccess;
   friend concurrent::CapabilityToken<PreemptionState>;
 
+  // <kernel/thread_layout.h> exposes member offsets to the Rust mirror of this class.
+  friend struct PreemptionStateLayout;
+
   // Implements the runtime assertion for concurrent::CapabilityToken<PreemptionState>::AssertHeld.
   static void AssertCapabilityHeld(concurrent::CapabilityToken<PreemptionState>::TagType);
 
@@ -632,6 +635,9 @@ class TaskState {
   // Dumping routines are allowed to see inside us.
   friend class ThreadDumper;
 
+  // <kernel/thread_layout.h> exposes member offsets to the Rust mirror of this class.
+  friend struct TaskStateLayout;
+
   // The Thread's entry point, and its argument.
   thread_start_routine entry_ = nullptr;
   void* arg_ = nullptr;
@@ -672,6 +678,9 @@ class MemoryAllocationState {
   }
 
  private:
+  // <kernel/thread_layout.h> exposes member offsets to the Rust mirror of this class.
+  friend struct MemoryAllocationStateLayout;
+
   // Notice that we aren't using atomic operations to access the field.  We don't need atomic
   // operations here as long as...
   //
@@ -704,12 +713,6 @@ enum class ThreadStallState {
   Progressing,
   Stalling,
 };
-
-// These forward declarations are needed so that Thread can friend them before they are defined.
-extern "C" {
-fbl::DoublyLinkedList<OwnedWaitQueue*>* cpp_thread_owned_wait_queues(Thread* thread);
-bool cpp_thread_can_own_wait_queues(const Thread* thread);
-}  // extern "C"
 
 struct Thread : public ChainLockable {
   // TODO(kulakowski) Are these needed?
@@ -1335,8 +1338,6 @@ struct Thread : public ChainLockable {
 
   // OwnedWaitQueues manipulate wait queue state.
   friend class OwnedWaitQueue;
-  friend fbl::DoublyLinkedList<OwnedWaitQueue*>* cpp_thread_owned_wait_queues(Thread* thread);
-  friend bool cpp_thread_can_own_wait_queues(const Thread* thread);
 
   // ScopedThreadExceptionContext is the only public way to call
   // SaveUserStateLocked and RestoreUserStateLocked.
@@ -1405,6 +1406,10 @@ struct Thread : public ChainLockable {
   // The global list of threads with migrate functions.
   static MigrateList migrate_list_ TA_GUARDED(list_lock_);
 
+  // <kernel/thread_layout.h> exposes member offsets to the Rust mirror of this class.
+  friend struct ThreadLayout;
+
+  // LINT.IfChange(ThreadLayout)
   Canary canary_;
 
   // These fields are among the most active in the thread. They are grouped
@@ -1531,6 +1536,10 @@ struct Thread : public ChainLockable {
   // be disabled while accessing it.
   ThreadStallState memory_stall_state_ TA_GUARDED(preempt_disabled_token) =
       ThreadStallState::IgnoredKernelOnly;
+  // LINT.ThenChange(
+  //   //zircon/kernel/kernel/thread.rs:ThreadLayout,
+  //   //zircon/kernel/include/kernel/thread_layout.h:ThreadLayout,
+  // )
 };
 
 // For the moment, the arch-specific current thread implementations need to come here, after the
@@ -1789,18 +1798,10 @@ class ScopedMemoryStall {
 extern "C" {
 cpu_mask_t cpp_thread_get_cpu_affinity(const Thread* thread);
 cpu_mask_t cpp_thread_set_cpu_affinity(Thread* thread, cpu_mask_t affinity);
-ChainLock* cpp_thread_get_lock(Thread* thread);
-zx_status_t cpp_thread_wait_queue_state_blocked_status_locked(const Thread* thread);
 ThreadDispatcher* cpp_thread_user_thread(Thread* thread);
 zx_koid_t cpp_thread_tid(const Thread* thread);
 uint64_t cpp_thread_lock_flow_id(const Thread* thread);
 uint64_t cpp_thread_take_next_lock_flow_id(Thread* thread);
-uint32_t cpp_thread_signals(const Thread* thread);
-zx_status_t cpp_thread_check_kill_or_suspend_signal(const Thread* thread);
-thread_state cpp_thread_state(const Thread* thread);
-void cpp_thread_set_blocked(Thread* thread);
-void cpp_thread_set_blocked_read_lock(Thread* thread);
-const WaitQueueCollection::ThreadState* cpp_thread_wait_queue_state(const Thread* thread);
 }
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_THREAD_H_

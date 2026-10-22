@@ -432,9 +432,6 @@ FFI_ALWAYS_INLINE size_t cpp_get_cpu_search_set_count(cpu_num_t cpu) {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_canary_assert(const Thread* thread) { thread->canary().Assert(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE size_t cpp_scheduler_get_power_domain_set_count(const Scheduler* sched)
     TA_NO_THREAD_SAFETY_ANALYSIS {
   return sched->power_state_.power_domain_set().count();
