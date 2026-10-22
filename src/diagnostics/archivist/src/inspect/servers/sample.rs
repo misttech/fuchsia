@@ -12,7 +12,6 @@ use diagnostics_hierarchy::{
     DiagnosticsHierarchy, SelectResult, filter_tree, select_from_hierarchy,
 };
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, ServerEnd};
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_diagnostics::{
     BatchIteratorMarker, BatchIteratorRequestStream, ConfigurationError, DataType, Format,
     RuntimeError, SampleDatum, SampleMarker, SampleParameters, SampleReady, SampleRequest,
@@ -20,10 +19,11 @@ use fidl_fuchsia_diagnostics::{
     Selector, SelectorArgument, StreamMode, StreamParameters, TreeNames,
 };
 use fuchsia_async::{Interval, Scope};
+use fuchsia_component::runtime::{Connector, ConnectorReceiver, Dictionary};
 use fuchsia_inspect::Node;
 use fuchsia_trace as ftrace;
 use futures::channel::oneshot;
-use futures::{StreamExt, TryStreamExt, select};
+use futures::{StreamExt, select};
 use log::{debug, warn};
 use moniker::ExtendedMoniker;
 use selectors::{FastError, SelectorExt, ValidateExt, parse_selector};
@@ -89,58 +89,23 @@ impl SampleServer {
         Self { scope, trace_id: ftrace::Id::new(), repo, minimum_sample_period }
     }
 
-    pub async fn install_and_serve(
-        self: &Arc<Self>,
-        accessors_dict_id: u64,
-        id_gen: &sandbox::CapabilityIdGenerator,
-        store: &mut fsandbox::CapabilityStoreProxy,
-    ) {
-        let (sample_receiver_client, sample_receiver_stream) =
-            fidl::endpoints::create_request_stream::<fsandbox::ReceiverMarker>();
-        let sample_connector_id = id_gen.next();
-        // Unwraps: I think these unwraps are safe in the sense that being unable to install
-        // accessors to this store at component startup is actually a big deal, and crashing
-        // is appropriate.
-        store.connector_create(sample_connector_id, sample_receiver_client).await.unwrap().unwrap();
+    pub async fn install_and_serve(self: &Arc<Self>, accessors_dict: &Dictionary) {
+        let (sample_connector, sample_receiver) = Connector::new().await;
         debug!("Added fuchsia.diagnostics.Sample to accessors dictionary.");
-
-        // Unwraps: I think these unwraps are safe in the sense that being unable to install
-        // accessors to this store at component startup is actually a big deal, and crashing
-        // is appropriate.
-        store
-            .dictionary_insert(
-                accessors_dict_id,
-                &fsandbox::DictionaryItem {
-                    key: SampleMarker::PROTOCOL_NAME.to_string(),
-                    value: sample_connector_id,
-                },
-            )
-            .await
-            .unwrap()
-            .unwrap();
-
-        self.spawn_receiver_request_handler(sample_receiver_stream);
+        accessors_dict.insert(SampleMarker::PROTOCOL_NAME, sample_connector).await;
+        self.spawn_receiver_request_handler(sample_receiver);
     }
 
     fn spawn_receiver_request_handler(
         self: &Arc<SampleServer>,
-        mut receiver_stream: fsandbox::ReceiverRequestStream,
+        mut receiver_stream: ConnectorReceiver,
     ) {
         let this = Arc::clone(self);
         self.scope.spawn(async move {
-            while let Some(request) = receiver_stream.try_next().await.unwrap() {
-                match request {
-                    fsandbox::ReceiverRequest::Receive { channel, control_handle: _ } => {
-                        let server_end = ServerEnd::<SampleMarker>::new(channel);
-                        let this_for_handler = Arc::clone(&this);
-                        this.scope.spawn(
-                            this_for_handler.sample_request_handler(server_end.into_stream()),
-                        );
-                    }
-                    fsandbox::ReceiverRequest::_UnknownMethod { method_type, ordinal, .. } => {
-                        warn!(method_type:?, ordinal; "Got unknown interaction on Receiver");
-                    }
-                }
+            while let Some(channel) = receiver_stream.next().await {
+                let server_end = ServerEnd::<SampleMarker>::new(channel);
+                let this_for_handler = Arc::clone(&this);
+                this.scope.spawn(this_for_handler.sample_request_handler(server_end.into_stream()));
             }
         });
     }

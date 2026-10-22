@@ -7,19 +7,18 @@ use crate::diagnostics::AccessorStats;
 use crate::error::Error;
 use crate::pipeline::StaticHierarchyAllowlist;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServerEnd};
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics_host as fdiagnostics_host;
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
+use fuchsia_component::runtime::{Connector, ConnectorReceiver, Dictionary};
 use fuchsia_fs::directory;
 use fuchsia_inspect as inspect;
 use fuchsia_sync::RwLock;
-use futures::TryStreamExt;
-use log::{debug, warn};
+use futures::StreamExt;
+use log::debug;
 use moniker::ExtendedMoniker;
 use std::borrow::Cow;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
@@ -29,17 +28,6 @@ struct PipelineParameters {
     has_config: bool,
     name: Cow<'static, str>,
     empty_behavior: configs::EmptyBehavior,
-}
-
-#[derive(Copy, Clone)]
-pub struct PipelinesDictionaryId(u64);
-
-impl Deref for PipelinesDictionaryId {
-    type Target = u64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
 }
 
 /// Overlay that mediates connections between servers and the central
@@ -206,14 +194,8 @@ impl PipelineManager {
         }
     }
 
-    pub async fn serve_pipelines(
-        &self,
-        accessor_server: Arc<ArchiveAccessorServer>,
-        id_gen: &sandbox::CapabilityIdGenerator,
-        capability_store: &mut fsandbox::CapabilityStoreProxy,
-    ) -> PipelinesDictionaryId {
-        let accessors_dict_id = id_gen.next();
-        capability_store.dictionary_create(accessors_dict_id).await.unwrap().unwrap();
+    pub async fn serve_pipelines(&self, accessor_server: Arc<ArchiveAccessorServer>) -> Dictionary {
+        let accessors_dict = Dictionary::new().await;
         debug!("Will serve {} pipelines", self.pipelines.len());
         for pipeline in &self.pipelines {
             debug!("Installing spawning receivers for {}", pipeline.name);
@@ -222,13 +204,7 @@ impl PipelineManager {
             self.scope.as_ref().unwrap().spawn(handle_receiver_requests::<
                 fdiagnostics::ArchiveAccessorMarker,
             >(
-                get_receiver_stream(
-                    pipeline.protocol_name(),
-                    accessors_dict_id,
-                    id_gen,
-                    capability_store,
-                )
-                .await,
+                get_receiver_stream(pipeline.protocol_name(), &accessors_dict).await,
                 Arc::clone(&accessor_server),
                 Arc::clone(&accessor_pipeline),
             ));
@@ -236,50 +212,28 @@ impl PipelineManager {
             self.scope.as_ref().unwrap().spawn(handle_receiver_requests::<
                 fdiagnostics_host::ArchiveAccessorMarker,
             >(
-                get_receiver_stream(
-                    pipeline.host_protocol_name(),
-                    accessors_dict_id,
-                    id_gen,
-                    capability_store,
-                )
-                .await,
+                get_receiver_stream(pipeline.host_protocol_name(), &accessors_dict).await,
                 Arc::clone(&accessor_server),
                 Arc::clone(&accessor_pipeline),
             ));
         }
 
-        PipelinesDictionaryId(accessors_dict_id)
+        accessors_dict
     }
 }
 
 async fn get_receiver_stream(
     protocol_name: Cow<'_, str>,
-    accessors_dict_id: u64,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    capability_store: &mut fsandbox::CapabilityStoreProxy,
-) -> fsandbox::ReceiverRequestStream {
-    let (accessor_receiver_client, receiver_stream) =
-        fidl::endpoints::create_request_stream::<fsandbox::ReceiverMarker>();
-    let connector_id = id_gen.next();
-    capability_store
-        .connector_create(connector_id, accessor_receiver_client)
-        .await
-        .unwrap()
-        .unwrap();
+    accessors_dict: &Dictionary,
+) -> ConnectorReceiver {
+    let (connector, receiver) = Connector::new().await;
     debug!("Added {protocol_name} to the accessors dictionary.");
-    capability_store
-        .dictionary_insert(
-            accessors_dict_id,
-            &fsandbox::DictionaryItem { key: protocol_name.into_owned(), value: connector_id },
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    receiver_stream
+    accessors_dict.insert(&protocol_name, connector).await;
+    receiver
 }
 
 async fn handle_receiver_requests<P>(
-    mut receiver_stream: fsandbox::ReceiverRequestStream,
+    mut receiver_stream: ConnectorReceiver,
     accessor_server: Arc<ArchiveAccessorServer>,
     pipeline: Arc<Pipeline>,
 ) where
@@ -288,19 +242,10 @@ async fn handle_receiver_requests<P>(
     <P::RequestStream as ArchiveAccessorTranslator>::InnerDataRequestChannel:
         ArchiveAccessorWriter + Send,
 {
-    while let Some(request) = receiver_stream.try_next().await.unwrap() {
-        match request {
-            fsandbox::ReceiverRequest::Receive { channel, control_handle: _ } => {
-                debug!("Handling receive request for: {} -> {}", pipeline.name, P::DEBUG_NAME);
-                let server_end = ServerEnd::<P>::new(channel);
-                accessor_server.spawn_server::<P::RequestStream>(
-                    Arc::clone(&pipeline),
-                    server_end.into_stream(),
-                );
-            }
-            fsandbox::ReceiverRequest::_UnknownMethod { method_type, ordinal, .. } => {
-                warn!(method_type:?, ordinal; "Got unknown interaction on Receiver");
-            }
-        }
+    while let Some(channel) = receiver_stream.next().await {
+        debug!("Handling receive request for: {} -> {}", pipeline.name, P::DEBUG_NAME);
+        let server_end = ServerEnd::<P>::new(channel);
+        accessor_server
+            .spawn_server::<P::RequestStream>(Arc::clone(&pipeline), server_end.into_stream());
     }
 }

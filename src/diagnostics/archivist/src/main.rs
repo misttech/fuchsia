@@ -16,11 +16,9 @@ use archivist_lib::logs::shared_buffer::create_ring_buffer;
 use diagnostics_log_encoding::encode::{
     Encoder, EncoderOpts, LogEvent, MutableBuffer, WriteEventParams,
 };
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_async as fasync;
 use fuchsia_async::SendExecutorBuilder;
-use fuchsia_component::client;
 use fuchsia_component::server::{MissingStartupHandle, ServiceFs};
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
@@ -82,10 +80,8 @@ async fn async_main(config: Config) -> Result<(), Error> {
 
     let mut fs = ServiceFs::new();
     fs.serve_connection(fidl::endpoints::ServerEnd::new(zx::Channel::from(startup_handle)))?;
-    let component_store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>()
-        .context("connect to factory")?;
     let lifecycle_requests = component_lifecycle::take_lifecycle_request_stream();
-    archivist.run(fs, is_embedded, component_store, lifecycle_requests).await?;
+    archivist.run(fs, is_embedded, lifecycle_requests).await?;
 
     Ok(())
 }
