@@ -2,19 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::{IOVecPtr, MemoryAccessorExt, PAGE_SIZE};
-use crate::signals::{SignalInfo, send_standard_signal};
+use crate::mm::{IOVecPtr, MemoryAccessorExt, PAGE_SIZE, TaskMemoryAccessor};
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use crate::vfs::pipe::{Pipe, PipeFileObject, PipeOperands};
 use crate::vfs::syscalls::OffsetPtr;
 use crate::vfs::{FdNumber, FileHandle};
 use starnix_logging::track_stub;
-use starnix_types::user_buffer::MAX_RW_COUNT;
+use starnix_types::user_buffer::{MAX_RW_COUNT, UserBuffer};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::resource_limits::Resource;
-use starnix_uapi::signals::SIGXFSZ;
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::{errno, error, off_t, uapi};
 use std::sync::Arc;
@@ -52,10 +49,6 @@ impl CopyOperand {
         }
         let maybe_offset = maybe_read_offset(current_task, user_offset)?;
         Ok(Self { file, user_offset, maybe_offset })
-    }
-
-    fn maybe_as_pipe(&self) -> Option<&PipeFileObject> {
-        Some(&*self.file.downcast_file::<PipeFileObject>()?)
     }
 
     fn maybe_write_result_offset(
@@ -176,7 +169,7 @@ pub fn splice(
     off_in: OffsetPtr,
     fd_out: FdNumber,
     off_out: OffsetPtr,
-    mut len: usize,
+    len: usize,
     flags: u32,
 ) -> Result<usize, Errno> {
     if len == 0 {
@@ -192,8 +185,24 @@ pub fn splice(
 
     let non_blocking = flags & uapi::SPLICE_F_NONBLOCK != 0;
 
-    let operand_in = CopyOperand::new(current_task, fd_in, off_in)?;
-    let operand_out = CopyOperand::new(current_task, fd_out, off_out)?;
+    let file_in = current_task.files().get(fd_in)?;
+    let file_out = current_task.files().get(fd_out)?;
+
+    let pipe_in = file_in.downcast_file::<PipeFileObject>();
+    let pipe_out = file_out.downcast_file::<PipeFileObject>();
+
+    if (pipe_in.is_some() && !off_in.is_null()) || (pipe_out.is_some() && !off_out.is_null()) {
+        return error!(ESPIPE);
+    }
+    let read_raw_offset = |off_ptr: OffsetPtr| -> Result<Option<off_t>, Errno> {
+        if off_ptr.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(current_task.read_multi_arch_object(off_ptr)?))
+        }
+    };
+    let raw_offset_out = read_raw_offset(off_out)?;
+    let raw_offset_in = read_raw_offset(off_in)?;
 
     // Validate endpoint open modes upfront so that pipe-to-pipe transfers and pipe endpoints in
     // asymmetric transfers reject descriptors not opened for the required direction with EBADF
@@ -201,78 +210,76 @@ pub fn splice(
     // TODO: https://fxbug.dev/572276669 - Pipe buffer operations in splice(), tee(), and
     // vmsplice() do not invoke LSM file_permission hooks on the pipe endpoints themselves; only
     // non-pipe endpoints check file_permission via their underlying read()/write() calls.
-    if !operand_in.file.can_read() || !operand_out.file.can_write() {
+    if !file_in.can_read() || !file_out.can_write() {
         return error!(EBADF);
     }
 
-    if operand_out.maybe_offset.is_some() && operand_out.file.offset.read() < 0 {
-        return error!(EINVAL);
-    }
-
-    // fd_out has the O_APPEND flag set. This is not supported by splice().
-    if operand_out.file.flags().contains(OpenFlags::APPEND) {
-        return error!(EINVAL);
-    }
-
-    // Enforce RLIMITs for the running process, if applicable.
-    if operand_out.file.node().is_reg() {
-        let fsize_limit = current_task.thread_group().get_rlimit(Resource::FSIZE);
-        if fsize_limit != uapi::RLIM_INFINITY as u64 {
-            let out_offset = match operand_out.maybe_offset {
-                Some(off) => off as u64,
-                None => operand_out.file.offset.read() as u64,
-            };
-
-            // Signal an error if the given offset directly exceeds the RLIMIT.
-            if out_offset >= fsize_limit {
-                send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
-                return error!(EFBIG);
+    let resolve_offset =
+        |file: &FileHandle, raw_offset: Option<off_t>| -> Result<Option<usize>, Errno> {
+            match raw_offset {
+                Some(offset) => {
+                    if !file.is_seekable() || offset < 0 {
+                        return error!(EINVAL);
+                    }
+                    Ok(Some(offset as usize))
+                }
+                None => {
+                    if file.offset.read() < 0 {
+                        return error!(EINVAL);
+                    }
+                    Ok(None)
+                }
             }
-
-            // Otherwise, ensure the buffer size conforms to the RLIMIT_FSIZE.
-            if out_offset + (len as u64) > fsize_limit {
-                send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
-                len = (fsize_limit - out_offset) as usize;
+        };
+    let write_updated_offset =
+        |off_ptr: OffsetPtr, maybe_offset: Option<usize>, spliced: usize| -> Result<(), Errno> {
+            if let Some(offset) = maybe_offset {
+                let updated_offset = offset
+                    .checked_add(spliced)
+                    .and_then(|v| off_t::try_from(v).ok())
+                    .ok_or_else(|| errno!(EINVAL))?;
+                current_task.write_multi_arch_object(off_ptr, updated_offset)?;
             }
-        }
-    }
+            Ok(())
+        };
 
-    let spliced = match (operand_in.maybe_as_pipe(), operand_out.maybe_as_pipe()) {
+    let spliced = match (pipe_in, pipe_out) {
         // Splice can only be used when one of the files is a pipe.
         (None, None) => return error!(EINVAL),
         // If both ends are pipes, use the symmetric `Pipe::splice` function.
         (Some(_), Some(_)) => {
-            let PipeOperands { mut read, mut write } = PipeFileObject::lock_pipes(
-                current_task,
-                &operand_in.file,
-                &operand_out.file,
-                len,
-                non_blocking,
-            )?;
+            let PipeOperands { mut read, mut write } =
+                PipeFileObject::lock_pipes(current_task, &file_in, &file_out, len, non_blocking)?;
             Pipe::splice(&mut read, &mut write, len)?
         }
         (None, Some(pipe_out)) => {
+            let maybe_offset_in = resolve_offset(&file_in, raw_offset_in)?;
             let spliced = pipe_out.splice_from(
                 current_task,
-                &operand_out.file,
-                &operand_in.file,
-                operand_in.maybe_offset,
+                &file_out,
+                &file_in,
+                maybe_offset_in,
                 len,
                 non_blocking,
             )?;
-            operand_in.maybe_write_result_offset(current_task, spliced)?;
+            write_updated_offset(off_in, maybe_offset_in, spliced)?;
             spliced
         }
         (Some(pipe_in), None) => {
+            let maybe_offset_out = resolve_offset(&file_out, raw_offset_out)?;
+            // fd_out has the O_APPEND flag set. This is not supported by splice().
+            if file_out.flags().contains(OpenFlags::APPEND) {
+                return error!(EINVAL);
+            }
             let spliced = pipe_in.splice_to(
                 current_task,
-                &operand_in.file,
-                &operand_out.file,
-                operand_out.maybe_offset,
+                &file_in,
+                &file_out,
+                maybe_offset_out,
                 len,
                 non_blocking,
             )?;
-            operand_out.maybe_write_result_offset(current_task, spliced)?;
+            write_updated_offset(off_out, maybe_offset_out, spliced)?;
             spliced
         }
     };
@@ -303,7 +310,14 @@ pub fn vmsplice(
         return error!(EBADF);
     }
 
-    let iovec = current_task.read_iovec(iovec_addr, iovec_count)?;
+    let mut iovec = current_task.read_iovec(iovec_addr, iovec_count)?;
+    let available = UserBuffer::cap_buffers_to_max_rw_count(
+        current_task.maximum_valid_address().ok_or_else(|| errno!(EINVAL))?,
+        &mut iovec,
+    )?;
+    if available == 0 {
+        return Ok(0);
+    }
     let pipe = file.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EBADF))?;
     let mut bytes_transferred = 0;
 

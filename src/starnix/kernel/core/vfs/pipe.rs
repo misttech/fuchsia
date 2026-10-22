@@ -28,7 +28,8 @@ use starnix_uapi::errors::{EPIPE, Errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::fs_type::FileSystemTypeFlags;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::signals::SIGPIPE;
+use starnix_uapi::resource_limits::Resource;
+use starnix_uapi::signals::{SIGPIPE, SIGXFSZ};
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
@@ -963,14 +964,43 @@ impl PipeFileObject {
         // If both ends are pipes, use `lock_pipes` and `Pipe::splice`.
         assert!(to.downcast_file::<PipeFileObject>().is_none());
 
+        let non_blocking = non_blocking || self_file.is_non_blocking() || to.is_non_blocking();
         let mut pipe = self.lock_pipe_for_reading(current_task, self_file, non_blocking)?;
-        let len = std::cmp::min(len, pipe.messages.len());
+        let mut len = std::cmp::min(len, pipe.messages.len());
+        if len == 0 {
+            return Ok(0);
+        }
+        let mut clamped_by_fsize = false;
+        if to.node().is_reg() {
+            let fsize_limit = current_task.thread_group().get_rlimit(Resource::FSIZE);
+            if fsize_limit != uapi::RLIM_INFINITY as u64 {
+                let out_offset = match maybe_offset {
+                    Some(off) => off as u64,
+                    None => to.offset.read().max(0) as u64,
+                };
+                if out_offset >= fsize_limit {
+                    std::mem::drop(pipe);
+                    send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
+                    return error!(EFBIG);
+                }
+                let allowed = usize::try_from(fsize_limit - out_offset).unwrap_or(usize::MAX);
+                if len > allowed {
+                    len = allowed;
+                    clamped_by_fsize = true;
+                }
+            }
+        }
         let mut buffer = SpliceInputBuffer { pipe: &mut pipe, len, available: len };
-        if let Some(offset) = maybe_offset {
+        let bytes_written = if let Some(offset) = maybe_offset {
             to.write_at(current_task, offset, &mut buffer)
         } else {
             to.write(current_task, &mut buffer)
+        }?;
+        std::mem::drop(pipe);
+        if bytes_written > 0 && clamped_by_fsize {
+            send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
         }
+        Ok(bytes_written)
     }
 
     /// Share the mappings backing the given input buffer into the pipe.
@@ -1085,7 +1115,9 @@ mod tests {
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::{anon_test_file, fill_page, map_memory, spawn_kernel_and_run};
     use crate::vfs::buffers::{UserBuffersInputBuffer, VecInputBuffer, VecOutputBuffer};
+    use crate::vfs::new_memfd;
     use smallvec::smallvec;
+    use starnix_uapi::seal_flags::SealFlags;
 
     struct StaticSourceFile {
         payload: &'static [u8],
@@ -1455,6 +1487,104 @@ mod tests {
                 epoll_ops.wait(&current_task, 1, zx::MonotonicInstant::ZERO).unwrap();
             assert_eq!(epoll_events.len(), 1);
             assert!(epoll_events[0].events().contains(FdEvents::POLLOUT));
+        })
+        .await;
+    }
+    #[::fuchsia::test]
+    async fn test_splice_to_rlimit_fsize_truncation_and_sigxfsz() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let reg_file = new_memfd(
+                &current_task,
+                b"rlimit_fsize".into(),
+                SealFlags::empty(),
+                OpenFlags::RDWR,
+            )
+            .unwrap();
+            assert!(reg_file.node().is_reg());
+            current_task
+                .thread_group()
+                .limits
+                .lock()
+                .set(Resource::FSIZE, uapi::rlimit { rlim_cur: 4, rlim_max: 4 });
+
+            let take_sigxfsz = |task: &CurrentTask| -> bool {
+                task.write().signals_mut().take_next_where(|sig| sig.signal == SIGXFSZ).is_some()
+            };
+
+            // Subtest 1: `off = 0 < limit = 4, len = 8` with 8 bytes in pipe truncates to 4 bytes,
+            // raises SIGXFSZ, and leaves the remaining 4 bytes in the pipe.
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let pipe_ops = pipe_out.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(
+                pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAABBBB")).unwrap(),
+                8
+            );
+            assert_eq!(
+                pipe_ops.splice_to(&current_task, &pipe_out, &reg_file, Some(0), 8, true).unwrap(),
+                4
+            );
+            assert!(take_sigxfsz(&current_task));
+            let mut rem = VecOutputBuffer::new(8);
+            assert_eq!(pipe_out.read(&current_task, &mut rem).unwrap(), 4);
+            assert_eq!(rem.data(), b"BBBB");
+
+            // Subtest 2: `off = 0 < limit = 4, len = 8` with 4 bytes in pipe writes 4 bytes
+            // without raising SIGXFSZ.
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAA")).unwrap(), 4);
+            assert_eq!(
+                pipe_ops.splice_to(&current_task, &pipe_out, &reg_file, Some(0), 8, true).unwrap(),
+                4
+            );
+            assert!(!take_sigxfsz(&current_task));
+
+            // Subtest 3: `off = 0 < limit = 4, len = 8` on an EOF pipe returns 0 without SIGXFSZ.
+            let (eof_out, eof_in) = new_pipe(&current_task).unwrap();
+            std::mem::drop(eof_in);
+            current_task.trigger_delayed_releaser();
+            let eof_ops = eof_out.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(
+                eof_ops.splice_to(&current_task, &eof_out, &reg_file, Some(0), 8, false).unwrap(),
+                0
+            );
+            assert!(!take_sigxfsz(&current_task));
+
+            // Subtest 4: `off = 0 < limit = 4, len = 8` on an empty non-blocking pipe returns
+            // EAGAIN without SIGXFSZ.
+            assert_eq!(
+                pipe_ops.splice_to(&current_task, &pipe_out, &reg_file, Some(0), 8, true),
+                error!(EAGAIN)
+            );
+            assert!(!take_sigxfsz(&current_task));
+
+            // Subtest 5: `off = 4 >= limit = 4, len = 4` on an EOF pipe returns 0 without SIGXFSZ.
+            assert_eq!(
+                eof_ops.splice_to(&current_task, &eof_out, &reg_file, Some(4), 4, false).unwrap(),
+                0
+            );
+            assert!(!take_sigxfsz(&current_task));
+
+            // Subtest 6: `off = 4 >= limit = 4, len = 4` on an empty non-blocking pipe returns
+            // EAGAIN without SIGXFSZ.
+            assert_eq!(
+                pipe_ops.splice_to(&current_task, &pipe_out, &reg_file, Some(4), 4, true),
+                error!(EAGAIN)
+            );
+            assert!(!take_sigxfsz(&current_task));
+
+            // Subtest 7: `off = 4 >= limit = 4, len = 4` with 4 bytes in pipe returns EFBIG,
+            // raises SIGXFSZ, and leaves all 4 bytes unconsumed in the pipe.
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAA")).unwrap(), 4);
+            assert_eq!(
+                pipe_ops.splice_to(&current_task, &pipe_out, &reg_file, Some(4), 4, true),
+                error!(EFBIG)
+            );
+            assert!(take_sigxfsz(&current_task));
+            let mut rem2 = VecOutputBuffer::new(8);
+            assert_eq!(pipe_out.read(&current_task, &mut rem2).unwrap(), 4);
+            assert_eq!(rem2.data(), b"AAAA");
         })
         .await;
     }

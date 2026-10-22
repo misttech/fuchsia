@@ -7,6 +7,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/poll.h>
+#include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -515,6 +517,120 @@ TEST(PipeTest, SubPipeBufReadAndPartialSpliceWakeBlockedWriter) {
     const char payload[] = "EFGH";
     EXPECT_THAT(write(pipe_a.WriteSide().get(), payload, 4), SyscallSucceedsWithValue(4));
     splicer.join();
+  }
+}
+
+TEST(PipeTest, SpliceValidationAndRlimitFsize) {
+  // 1. Non-null offset pointers on non-pipe non-seekable descriptors (such as sockets) must return
+  // EFAULT for unmapped pointers and EINVAL for valid pointers, rather than ESPIPE.
+  {
+    int sock_fds[2];
+    SAFE_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds));
+    fbl::unique_fd sock_rd(sock_fds[0]);
+    fbl::unique_fd sock_wr(sock_fds[1]);
+    test_helper::ScopedPipe pipe(O_NONBLOCK);
+
+    loff_t valid_offset = 0;
+    loff_t* bad_offset = reinterpret_cast<loff_t*>(0x1);
+
+    EXPECT_THAT(splice(sock_rd.get(), &valid_offset, pipe.WriteSide().get(), nullptr, 4, 0),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(splice(sock_rd.get(), bad_offset, pipe.WriteSide().get(), nullptr, 4, 0),
+                SyscallFailsWithErrno(EFAULT));
+    EXPECT_THAT(splice(pipe.ReadSide().get(), nullptr, sock_wr.get(), &valid_offset, 4, 0),
+                SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(splice(pipe.ReadSide().get(), nullptr, sock_wr.get(), bad_offset, 4, 0),
+                SyscallFailsWithErrno(EFAULT));
+  }
+
+  // 2. vmsplice must validate iovec user addresses and short-circuit zero-length requests before
+  // downcasting the target file descriptor to a pipe.
+  {
+    fbl::unique_fd dev_null(open("/dev/null", O_RDWR));
+    ASSERT_TRUE(dev_null.is_valid());
+
+    EXPECT_THAT(vmsplice(dev_null.get(), nullptr, 0, 0), SyscallSucceedsWithValue(0));
+
+    iovec empty_iov = {.iov_base = nullptr, .iov_len = 0};
+    EXPECT_THAT(vmsplice(dev_null.get(), &empty_iov, 1, 0), SyscallSucceedsWithValue(0));
+
+    iovec bad_iov = {.iov_base = reinterpret_cast<void*>(~0ull), .iov_len = 4096};
+    EXPECT_THAT(vmsplice(dev_null.get(), &bad_iov, 1, 0), SyscallFailsWithErrno(EFAULT));
+  }
+
+  // 3. splice from a pipe to a regular file under RLIMIT_FSIZE must check RLIMIT_FSIZE against
+  // actual bytes available in the pipe (after EOF/EAGAIN checks) rather than the requested length.
+  {
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([] {
+      static volatile sig_atomic_t sigxfsz_count = 0;
+      struct sigaction sa = {};
+      sa.sa_handler = [](int) { sigxfsz_count = sigxfsz_count + 1; };
+      SAFE_SYSCALL(sigaction(SIGXFSZ, &sa, nullptr));
+
+      test_helper::ScopedTempFD temp_file;
+      ASSERT_TRUE(temp_file.is_valid());
+
+      const rlimit rl = {.rlim_cur = 4, .rlim_max = 4};
+      SAFE_SYSCALL(setrlimit(RLIMIT_FSIZE, &rl));
+
+      // 3a. Requesting len = 8 (> RLIMIT_FSIZE) when the pipe only has 4 bytes must transfer 4
+      // bytes and not raise SIGXFSZ.
+      {
+        test_helper::ScopedPipe pipe(O_NONBLOCK);
+        ASSERT_EQ(write(pipe.WriteSide().get(), "AAAA", 4), 4);
+        loff_t off = 0;
+        sigxfsz_count = 0;
+        EXPECT_THAT(
+            splice(pipe.ReadSide().get(), nullptr, temp_file.fd(), &off, 8, SPLICE_F_NONBLOCK),
+            SyscallSucceedsWithValue(4));
+        EXPECT_EQ(off, 4);
+        EXPECT_EQ(sigxfsz_count, 0);
+      }
+
+      // 3b. Splicing from an empty non-blocking pipe or an EOF pipe when off >= RLIMIT_FSIZE must
+      // return EAGAIN or 0 without raising SIGXFSZ.
+      {
+        test_helper::ScopedPipe pipe(O_NONBLOCK);
+        loff_t off = 4;
+        sigxfsz_count = 0;
+        EXPECT_THAT(
+            splice(pipe.ReadSide().get(), nullptr, temp_file.fd(), &off, 4, SPLICE_F_NONBLOCK),
+            SyscallFailsWithErrno(EAGAIN));
+        EXPECT_EQ(sigxfsz_count, 0);
+
+        pipe.WriteSide().reset();
+        EXPECT_THAT(splice(pipe.ReadSide().get(), nullptr, temp_file.fd(), &off, 4, 0),
+                    SyscallSucceedsWithValue(0));
+        EXPECT_EQ(sigxfsz_count, 0);
+      }
+
+      // 3c. Splicing 8 bytes in the pipe at off = 0 with RLIMIT_FSIZE = 4 clamps the transfer to 4
+      // bytes, leaves the remaining 4 bytes in the pipe, and raises SIGXFSZ; splicing again at
+      // off = 4 fails with EFBIG, raises SIGXFSZ, and preserves the remaining 4 bytes in the pipe.
+      {
+        test_helper::ScopedPipe pipe(O_NONBLOCK);
+        ASSERT_EQ(write(pipe.WriteSide().get(), "AAAABBBB", 8), 8);
+        loff_t off = 0;
+        sigxfsz_count = 0;
+        EXPECT_THAT(
+            splice(pipe.ReadSide().get(), nullptr, temp_file.fd(), &off, 8, SPLICE_F_NONBLOCK),
+            SyscallSucceedsWithValue(4));
+        EXPECT_EQ(off, 4);
+        EXPECT_EQ(sigxfsz_count, 1);
+
+        sigxfsz_count = 0;
+        EXPECT_THAT(
+            splice(pipe.ReadSide().get(), nullptr, temp_file.fd(), &off, 4, SPLICE_F_NONBLOCK),
+            SyscallFailsWithErrno(EFBIG));
+        EXPECT_EQ(sigxfsz_count, 1);
+
+        char rem[4] = {};
+        ASSERT_EQ(read(pipe.ReadSide().get(), rem, sizeof(rem)), 4);
+        EXPECT_EQ(std::string(rem, 4), "BBBB");
+      }
+    });
+    ASSERT_TRUE(helper.WaitForChildren());
   }
 }
 
