@@ -260,16 +260,40 @@ FFI_ALWAYS_INLINE bool cpp_scheduler_power_state_request_transition(
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+// Posts |req| to the power domain controller of |sched|, temporarily releasing
+// queue_lock_ around the post (which may acquire other CPUs' queue locks).
+// Must be called with queue_lock_ held and interrupts disabled; queue_lock_ is
+// re-acquired before returning.
 FFI_ALWAYS_INLINE cpu_mask_t cpp_scheduler_power_state_post_update_request(
-    const Scheduler* sched,
+    Scheduler* sched,
     const power_management::PowerLevelUpdateRequest* req) TA_NO_THREAD_SAFETY_ANALYSIS {
-  const zx::result<cpu_mask_t> result = sched->power_state_.domain()->controller()->Post(*req);
-  if (result.is_ok()) {
-    return result.value();
+  // Latch a reference to the domain's controller while queue_lock_ is still
+  // held. power_state_ is guarded by queue_lock_, and a concurrent
+  // ExchangePowerDomainSet on another CPU could otherwise replace or clear the
+  // domain while the lock is dropped below. Only the controller is needed to
+  // post the request.
+  fbl::RefPtr<power_management::PowerLevelController> controller =
+      sched->power_state_.domain()->controller();
+  DEBUG_ASSERT(controller != nullptr);
+
+  cpu_mask_t cpus_to_reschedule_mask = 0;
+  sched->queue_lock_.lock().Release();
+  {
+    const zx::result<cpu_mask_t> result = controller->Post(*req);
+    if (result.is_ok()) {
+      cpus_to_reschedule_mask = result.value();
+    } else {
+      KERNEL_OOPS("Failed to set OPP: domain_id=%" PRIu32 " control_argument=%" PRIu64 ": %d\n",
+                  req->domain_id, req->control_argument, result.status_value());
+    }
+    // Drop the reference before re-acquiring queue_lock_: if this is the last
+    // reference, destruction may take the heap lock, which must not happen
+    // while holding a spinlock (queue_lock_ is a leaf lock). This also keeps
+    // the atomic refcount decrement out of the critical section.
+    controller.reset();
   }
-  KERNEL_OOPS("Failed to set OPP: domain_id=%" PRIu32 " control_argument=%" PRIu64 ": %d\n",
-              req->domain_id, req->control_argument, result.status_value());
-  return 0;
+  sched->queue_lock_.lock().Acquire(SOURCE_TAG);
+  return cpus_to_reschedule_mask;
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

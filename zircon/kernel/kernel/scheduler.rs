@@ -2159,7 +2159,7 @@ unsafe extern "C" {
         out_request: *mut PowerLevelUpdateRequest,
     ) -> bool;
     fn cpp_scheduler_power_state_post_update_request(
-        sched: *const Scheduler,
+        sched: *mut Scheduler,
         request: *const PowerLevelUpdateRequest,
     ) -> CpuMask;
     fn cpp_scheduler_power_state_update_active_power_level(
@@ -4596,15 +4596,15 @@ impl Scheduler {
             "control_argument" => request.control_argument,
         );
 
-        let sched_mut = self as *const Scheduler as *mut Scheduler;
-        // SAFETY: `queue_lock_` is currently held by the caller; we temporarily release
-        // it around `post_update_request` (which may acquire other CPUs' `queue_lock_`s)
-        // and immediately re-acquire it with interrupts remaining disabled.
+        // SAFETY: `queue_lock_` is held by the caller with interrupts disabled.
+        // `cpp_scheduler_power_state_post_update_request` latches the power domain
+        // under `queue_lock_`, releases the lock around the post (which may acquire
+        // other CPUs' `queue_lock_`s), and re-acquires it before returning.
         let cpus_to_reschedule_mask = unsafe {
-            cpp_scheduler_unlock_queue(sched_mut);
-            let mask = cpp_scheduler_power_state_post_update_request(self, &request);
-            cpp_scheduler_lock_queue(sched_mut);
-            mask
+            cpp_scheduler_power_state_post_update_request(
+                self as *const Scheduler as *mut Scheduler,
+                &request,
+            )
         };
 
         ktrace_rs::end_scope!(

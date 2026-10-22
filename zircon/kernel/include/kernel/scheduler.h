@@ -138,7 +138,7 @@ bool cpp_scheduler_power_state_request_transition(
     Scheduler* sched, cpu_num_t cpu, uint8_t power_level,
     power_management::PowerLevelUpdateRequest* out_req);
 cpu_mask_t cpp_scheduler_power_state_post_update_request(
-    const Scheduler* sched, const power_management::PowerLevelUpdateRequest* req);
+    Scheduler* sched, const power_management::PowerLevelUpdateRequest* req);
 zx_status_t cpp_scheduler_power_state_update_active_power_level(
     Scheduler* sched, uint8_t power_level, SchedProcessingRate* out_active_rate);
 SchedulerQueueState* cpp_thread_get_queue_state(Thread* thread);
@@ -947,7 +947,7 @@ class Scheduler {
       Scheduler* sched, cpu_num_t cpu, uint8_t power_level,
       power_management::PowerLevelUpdateRequest* out_req);
   friend cpu_mask_t cpp_scheduler_power_state_post_update_request(
-      const Scheduler* sched, const power_management::PowerLevelUpdateRequest* req);
+      Scheduler* sched, const power_management::PowerLevelUpdateRequest* req);
   friend zx_status_t cpp_scheduler_power_state_update_active_power_level(
       Scheduler* sched, uint8_t power_level, SchedProcessingRate* out_active_rate);
   friend size_t cpp_scheduler_get_power_domain_set_count(const Scheduler* sched);
