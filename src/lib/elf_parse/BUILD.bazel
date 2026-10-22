@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "elf_parse",
+    srcs = ["src/lib.rs"],
+    compile_data = [
+        "test-utils/elf_aarch64_file-header.bin",
+        "test-utils/elf_riscv64_file-header.bin",
+        "test-utils/elf_x86-64_file-header.bin",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:num-derive",
+    ],
+    visibility = [
+        "//src/bringup:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/lib/elf-search/rust:__pkg__",
+        "//src/lib/process_builder:__pkg__",
+        "//src/performance:__subpackages__",
+        "//src/starnix:__subpackages__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)

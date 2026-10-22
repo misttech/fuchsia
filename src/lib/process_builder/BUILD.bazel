@@ -1,0 +1,70 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "process_builder",
+    srcs = [
+        "src/elf_load.rs",
+        "src/lib.rs",
+        "src/process_args.rs",
+        "src/process_builder.rs",
+        "src/util.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/bringup:__subpackages__",
+        "//src/starnix/kernel/core:__pkg__",
+        "//src/sys:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_rust",
+        "//sdk/rust/zx",
+        "//src/lib/elf_parse",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+fidl_library(
+    name = "test-util-fidl",
+    testonly = True,
+    srcs = ["test-utils/test_util.test.fidl"],
+    # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+    excluded_checks = [
+        "string-bounds-not-specified",
+        "vector-bounds-not-specified",
+    ],
+    library_name = "test.processbuilder",
+)
+
+rustc_binary(
+    name = "test_util",
+    testonly = True,
+    srcs = ["test-utils/test_util.rs"],
+    crate_name = "process_builder_test_util",
+    crate_root = "test-utils/test_util.rs",
+    edition = "2024",
+    deps = [
+        ":test-util-fidl_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

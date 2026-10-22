@@ -1,0 +1,78 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//packages:resources.bzl", "resource")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "library_loader",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/developer/console:__pkg__",
+        "//src/devices/bin/driver_manager_rust:__pkg__",
+        "//src/sys/lib/elf_runner:__pkg__",
+        "//src/sys/lib/runner:__pkg__",
+        "//src/sys/lib/task-exceptions:__pkg__",
+        "//src/sys/process-resolver:__pkg__",
+        "//src/sys/runners/dso:__pkg__",
+        "//src/sys/test_runners:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "library_loader_test",
+    crate = ":library_loader",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+# These are some extra files that are included in the test package under
+# lib/config_test, for use in the config_test unit test. This is necessary
+# because the library loader must be able to load the files using
+# OPEN_RIGHT_EXECUTABLE/VMO_FLAG_EXEC, and the easiest way to provide a test
+# directory that supports that is a real pkgfs directory.
+# TODO(https://fxbug.dev/42061196): Replace this with a pseudo-directory backed by the Rust VFS.
+# @bazel2gn:skip
+resource(
+    name = "config_test_foo",
+    src = "config_test_files/foo",
+    dest = "lib/config_test/foo",
+    visibility = ["//src/sys/test_runners/lib_loader_cache:__pkg__"],
+)
+
+# @bazel2gn:skip
+resource(
+    name = "config_test_bar_baz",
+    src = "config_test_files/bar/baz",
+    dest = "lib/config_test/bar/baz",
+    visibility = ["//src/sys/test_runners/lib_loader_cache:__pkg__"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "library_loader_tests",
+    resources = [
+        ":config_test_bar_baz",
+        ":config_test_foo",
+    ],
+    unit_tests = [":library_loader_test"],
+)

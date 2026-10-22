@@ -21,5 +21,8 @@ cml_shard(
     name = "realm_builder.shard",
     includes = [":realm_builder_no_diagnostics.shard"],
     shard = "realm_builder.shard.cml",
-    visibility = ["//src/lib/fuchsia-rseq:__pkg__"],
+    visibility = [
+        "//src/lib/fuchsia-component-test:__pkg__",
+        "//src/lib/fuchsia-rseq:__pkg__",
+    ],
 )

@@ -1,0 +1,76 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "runner",
+    srcs = [
+        "src/component.rs",
+        "src/lib.rs",
+        "src/serde.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = [
+        "//examples/components/runner/colocated:__pkg__",
+        "//src/lib/fuchsia-component-test:__pkg__",
+        "//src/starnix/kernel/runner:__pkg__",
+        "//src/sys:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/rust/zx",
+        "//sdk/rust/zx-status",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/library_loader",
+        "//src/sys/lib/namespace",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "runner_lib_test",
+    crate = ":runner",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:paste",
+    ],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:test-case",
+        "//tools/lib/cml",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "runner_tests",
+    unit_tests = [":runner_lib_test"],
+)

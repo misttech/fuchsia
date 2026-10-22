@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "namespace",
+    srcs = [
+        "src/lib.rs",
+        "src/tree.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//sdk/lib/driver/component/rust:__pkg__",
+        "//src/devices/bin/driver-host:__pkg__",
+        "//src/sys/component_manager:__subpackages__",
+        "//src/sys/lib/elf_runner:__pkg__",
+        "//src/sys/lib/runner:__pkg__",
+        "//src/sys/runners/dso:__pkg__",
+        "//src/sys/test_runners:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/process_builder",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//src/sys/lib/cm_types",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "namespace_test",
+    crate = ":namespace",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "namespace-unittests",
+    unit_tests = [":namespace_test"],
+)

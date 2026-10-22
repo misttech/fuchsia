@@ -1,0 +1,110 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fuchsia-component-test-lib",
+    srcs = [
+        "src/error.rs",
+        "src/lib.rs",
+        "src/local_component_runner.rs",
+    ],
+    crate_name = "fuchsia_component_test",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/component-events",
+        "//src/sys/lib/runner",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+expect_includes(
+    name = "includes",
+    includes = ["//sdk/lib/sys/component:realm_builder.shard"],
+    visibility = ["//sdk/lib/sys/component/cpp/testing:__pkg__"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fuchsia-component-test-lib_test",
+    crate = ":fuchsia-component-test-lib",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "fuchsia-component-test-lib_test_packaged_bin",
+    testonly = True,
+    binary = ":fuchsia-component-test-lib_test",
+    binary_name = "fuchsia_component_test_lib_test",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "fuchsia_component_test_unittests_manifest",
+    testonly = True,
+    component_name = "fuchsia_component_test_unittests",
+    includes = [
+        "//sdk/lib/sys/component:realm_builder.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fuchsia_component_test_tests.cml",
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "fuchsia_component_test_unittests_component",
+    compiled_manifest = ":fuchsia_component_test_unittests_manifest",
+    component_name = "fuchsia_component_test_unittests",
+    deps = [":fuchsia-component-test-lib_test_packaged_bin"],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "fuchsia_component_test_unittests_package",
+    package_name = "fuchsia_component_test_unittests",
+    test_components = [":fuchsia_component_test_unittests_component"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "fuchsia_component_test_unittests",
+    package = ":fuchsia_component_test_unittests_package",
+)
