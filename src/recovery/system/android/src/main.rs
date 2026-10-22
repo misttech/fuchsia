@@ -132,12 +132,17 @@ impl RecoveryViewAssistant {
         let view_sender = ViewSender::new(app_sender, view_key);
         let font_face = recovery_ui::font::get_default_font_face().clone();
         let logo_file = load_rive(LOGO_IMAGE_PATH).ok();
-        let product = std::fs::read_to_string("/config/build-info/product").unwrap_or_default();
-        let board = std::fs::read_to_string("/config/build-info/board").unwrap_or_default();
-        let product_version =
-            std::fs::read_to_string("/config/build-info/product_version").unwrap_or_default();
-        let platform_version =
-            std::fs::read_to_string("/config/build-info/platform_version").unwrap_or_default();
+        let read_build_info = |name: &str| {
+            std::fs::read_to_string(format!("/config/build-info/{name}"))
+                .inspect_err(|e| log::warn!("Failed to read {name} from build-info: {e:?}"))
+                .unwrap_or_default()
+                .trim()
+                .to_owned()
+        };
+        let product = read_build_info("product");
+        let board = read_build_info("board");
+        let product_version = read_build_info("product_version");
+        let platform_version = read_build_info("platform_version");
         let build_info = format!("{product}/{board}:{product_version}/{platform_version}");
         let menu = Menu::new(menu::MAIN_MENU);
 
