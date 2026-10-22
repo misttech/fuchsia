@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fidl",
+    testonly = True,
+    srcs = [
+        "push_source_puppet.test.fidl",
+        "realm_factory.test.fidl",
+        "rtc_updates.test.fidl",
+    ],
+    library_name = "test.time.realm",
+    versioned = "fuchsia:HEAD",
+    visibility = [
+        "//src/sys/time/testing:__subpackages__",
+        "//src/sys/time/timekeeper_integration:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.rtc",
+        "//sdk/fidl/fuchsia.io",
+        "//sdk/fidl/fuchsia.metrics.test",
+        "//sdk/fidl/fuchsia.testing.harness",
+        "//sdk/fidl/fuchsia.time.external",
+    ],
+)
