@@ -34,6 +34,10 @@ pub enum InspectHandle {
         proxy: finspect::TreeProxy,
         name: Option<FlyStr>,
     },
+    // TODO(https://fxbug.dev/324494668): Directory-based Inspect handles were
+    // only used to bridge Netstack2's out/diagnostics directory. Remove this
+    // variant and the directory reading path now that Netstack2 is gone.
+    #[allow(dead_code)]
     Directory {
         proxy: fio::DirectoryProxy,
     },
@@ -96,6 +100,8 @@ impl InspectHandle {
         }
     }
 
+    // TODO(https://fxbug.dev/324494668): Remove along with `InspectHandle::Directory`.
+    #[allow(dead_code)]
     pub fn directory(proxy: fio::DirectoryProxy) -> Self {
         InspectHandle::Directory { proxy }
     }

@@ -8,8 +8,6 @@ use crate::error::Error;
 use crate::events::router::{ConsumerConfig, EventRouter, ProducerConfig};
 use crate::events::sources::EventSource;
 use crate::events::types::*;
-use crate::identity::ComponentIdentity;
-use crate::inspect::container::InspectHandle;
 use crate::inspect::repository::InspectRepository;
 use crate::inspect::servers::*;
 use crate::logs::debuglog::KernelDebugLog;
@@ -19,7 +17,6 @@ use crate::logs::servers::*;
 use crate::pipeline::PipelineManager;
 use archivist_config::Config;
 use fidl_fuchsia_component_runtime as fruntime;
-use fidl_fuchsia_io as fio;
 use fidl_fuchsia_process_lifecycle::LifecycleRequestStream;
 use fuchsia_async as fasync;
 use fuchsia_component::runtime::DictionaryRouterReceiver;
@@ -29,7 +26,6 @@ use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::unbounded;
 use futures::prelude::*;
 use log::{debug, error, info, warn};
-use moniker::ExtendedMoniker;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -196,19 +192,6 @@ impl Archivist {
             if let Err(e) = fdio::service_connect(&format!("/svc/{name}"), remote) {
                 error!("Couldn't connect to service {}: {:?}", name, e);
             }
-        }
-
-        // TODO(https://fxbug.dev/324494668): remove this when Netstack2 is gone.
-        if let Ok(dir) =
-            fuchsia_fs::directory::open_in_namespace("/netstack-diagnostics", fio::PERM_READABLE)
-        {
-            inspect_repo.add_inspect_handle(
-                Arc::new(ComponentIdentity::new(
-                    ExtendedMoniker::parse_str("core/network/netstack").unwrap(),
-                    "fuchsia-pkg://fuchsia.com/netstack#meta/netstack2.cm",
-                )),
-                InspectHandle::directory(dir),
-            );
         }
 
         Self {
