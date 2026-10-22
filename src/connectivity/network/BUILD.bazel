@@ -14,7 +14,6 @@ exports_files(
         "meta/common.shard.cml",
         "meta/network-with-virtualization.shard.cml",
         "meta/network-basic.shard.cml",
-        "meta/netstack3.shard.cml",
         "meta/socket-proxy-enabled.shard.cml",
         "meta/socket-proxy-disabled.shard.cml",
     ],

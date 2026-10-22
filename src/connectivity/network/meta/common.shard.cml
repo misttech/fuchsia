@@ -9,6 +9,11 @@
     ],
     children: [
         {
+            name: "netstack",
+            url: "fuchsia-pkg://fuchsia.com/netstack3#meta/netstack3.cm",
+            on_terminate: "reboot",
+        },
+        {
             name: "dhcpd",
             url: "fuchsia-pkg://fuchsia.com/dhcpv4-server#meta/dhcpv4_server.cm",
         },
@@ -35,6 +40,21 @@
         },
     ],
     offer: [
+        {
+            dictionary: "netstack3-config",
+            from: "parent",
+            to: "#netstack",
+            availability: "same_as_target",
+        },
+        {
+            config: [
+                "fuchsia.netstack3.DebugLogs",
+                "fuchsia.netstack3.OpaqueIids",
+            ],
+            from: "void",
+            to: "#netstack",
+            availability: "optional",
+        },
         {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
             from: "parent",

@@ -8,7 +8,7 @@
 // `fuchsia.netstack3.*` capabilities are routed via the `netstack3-config`
 // dictionary with `availability: "transitional"` so that new rollout flags can
 // be added here with default values without requiring changes to intermediate
-// realms (`core.root_shard.cml`, `core.cml`, `network/meta/netstack3.shard.cml`)
+// realms (`core.root_shard.cml`, `core.cml`, `network/meta/common.shard.cml`)
 // until they are exposed to Assembly.
 {
     use: [

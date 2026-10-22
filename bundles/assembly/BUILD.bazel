@@ -1498,10 +1498,7 @@ assembly_input_bundle(
             "components": [
                 {
                     "component_name": "network",
-                    "shards": [
-                        "//src/connectivity/network:meta/common.shard.cml",
-                        "//src/connectivity/network:meta/netstack3.shard.cml",
-                    ],
+                    "shards": ["//src/connectivity/network:meta/common.shard.cml"],
                 },
             ],
             "component_includes": [
