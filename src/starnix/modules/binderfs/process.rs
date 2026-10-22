@@ -480,6 +480,7 @@ impl BinderProcess {
             state.closed = true;
             for thread in self.thread_pool.lock().values() {
                 thread.command_queue_waiters.notify_all();
+                thread.command_queue_poll_waiters.notify_all();
             }
             self.process_waiters.notify_all();
         }
@@ -492,6 +493,7 @@ impl BinderProcess {
         for thread in self.thread_pool.lock().values() {
             thread.lock().request_kick = true;
             thread.command_queue_waiters.notify_all();
+            thread.command_queue_poll_waiters.notify_all();
         }
     }
 

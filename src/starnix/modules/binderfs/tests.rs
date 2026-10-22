@@ -38,7 +38,7 @@ pub mod tests {
         DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
         ProtectionFlags,
     };
-    use starnix_core::task::{CurrentTask, ExitStatus, Kernel, SimpleWaiter, Waiter};
+    use starnix_core::task::{CurrentTask, EventHandler, ExitStatus, Kernel, SimpleWaiter, Waiter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{
         Anon, FdFlags, FdNumber, FileHandle, FileObject, FileSystemOptions, VecOutputBuffer,
@@ -57,6 +57,7 @@ pub mod tests {
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::union::struct_with_union_into_bytes;
     use starnix_uapi::user_address::{UserAddress, UserRef};
+    use starnix_uapi::vfs::FdEvents;
     use starnix_uapi::{
         BINDER_BUFFER_FLAG_HAS_PARENT, BINDER_TYPE_BINDER, BINDER_TYPE_FD, BINDER_TYPE_FDA,
         BINDER_TYPE_HANDLE, BINDER_TYPE_PTR, BINDER_TYPE_WEAK_HANDLE, binder_buffer_object,
@@ -7694,6 +7695,46 @@ pub mod tests {
                 .filter(|q| matches!(q.command, Command::ReleaseRef(_)))
                 .count();
             assert_eq!(release_cmds_many, 12, "all 12 deduplicated objects must be released once");
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_poll_waiter_does_not_absorb_work_wakeup() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let receiver = BinderProcessFixture::new(current_task, &device);
+
+            // A looper thread polls the binder file, as a poll-based server does with epoll.
+            let poll_waiter = Waiter::new();
+            let _poll_wait_canceler = {
+                let mut thread_state = receiver.thread.lock();
+                thread_state.registration = RegistrationState::Main;
+                thread_state.command_queue.wait_async_fd_events(
+                    &poll_waiter,
+                    FdEvents::POLLIN,
+                    EventHandler::None,
+                )
+            };
+
+            // Polling is not waiting for work, so the thread must not be available.
+            assert!(!receiver.thread.lock().is_available());
+            assert!(receiver.proc.available_threads.is_empty());
+
+            // The thread then blocks in `handle_thread_read` while its poll registration is still
+            // in place, which makes it available.
+            let event = InterruptibleEvent::new();
+            let (mut reader_waiter, reader_guard) = SimpleWaiter::new(&event);
+            receiver.thread.lock().command_queue.wait_async_simple(&mut reader_waiter);
+            assert!(receiver.thread.lock().is_available());
+
+            // Work scheduled on the thread must wake the blocked reader, rather than being absorbed
+            // by the poll registration.
+            assert!(receiver.proc.enqueue_command(Command::DeadBinder(1).into()).is_some());
+            assert_eq!(reader_guard.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+
+            // The poller is notified of the new command as well.
+            assert_eq!(poll_waiter.wait_until(current_task, zx::MonotonicInstant::ZERO), Ok(()));
         })
         .await;
     }

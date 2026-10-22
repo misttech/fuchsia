@@ -68,7 +68,19 @@ impl From<Command> for QueuedCommand {
 #[derive(Default, Debug)]
 pub struct CommandQueueWithWaitQueue {
     pub commands: VecDeque<QueuedCommand>,
+    /// The owning thread, while it is blocked in `handle_thread_read` waiting for work.
+    ///
+    /// Only these waiters make the thread available for work (see
+    /// `BinderThreadState::is_available`), and they are woken one at a time.
     pub waiters: WaitQueue,
+    /// FD event waiters (poll, select, epoll) on the binder file for the owning thread.
+    ///
+    /// These are kept separate from `waiters` because a thread that polls the binder file is not
+    /// blocked waiting for work: it must not be considered available, and it must not consume a
+    /// wake-up meant for a thread blocked in `handle_thread_read`. A poll registration can also
+    /// stay in the queue after its handler has fired, e.g. when the registration's
+    /// process-level waiter fired first. All these waiters are notified on every new command.
+    pub poll_waiters: WaitQueue,
 }
 
 impl CommandQueueWithWaitQueue {
@@ -95,6 +107,7 @@ impl CommandQueueWithWaitQueue {
         crate::trace::on_command_enqueued(&command.command, command.trace_id);
         self.commands.push_back(command);
         self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
+        self.poll_waiters.notify_fd_events(FdEvents::POLLIN);
     }
 
     /// Puts a dequeued command back at the front of the queue, so that it is dequeued next.
@@ -119,21 +132,24 @@ impl CommandQueueWithWaitQueue {
         });
     }
 
+    /// Whether the owning thread is blocked waiting for work. FD event waiters are not counted.
     pub fn has_waiters(&self) -> bool {
         !self.waiters.is_empty()
     }
 
+    /// Registers the owning thread, blocking in `handle_thread_read`, as waiting for work.
     pub fn wait_async_simple(&self, waiter: &mut SimpleWaiter) {
         self.waiters.wait_async_simple(waiter);
     }
 
+    /// Registers an FD event waiter (poll, select, epoll) for new commands.
     pub fn wait_async_fd_events(
         &self,
         waiter: &Waiter,
         events: FdEvents,
         handler: EventHandler,
     ) -> WaitCanceler {
-        self.waiters.wait_async_fd_events(waiter, events, handler)
+        self.poll_waiters.wait_async_fd_events(waiter, events, handler)
     }
 }
 
@@ -217,6 +233,10 @@ pub struct BinderThread {
     /// this thread without acquiring the lock.
     pub command_queue_waiters: WaitQueue,
 
+    /// A reference to the FD event wait queue for the command queue. This allows other threads to
+    /// notify pollers of this thread without acquiring the lock.
+    pub command_queue_poll_waiters: WaitQueue,
+
     /// A shared queue of available threads for the `BinderProcess`.
     pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
 
@@ -230,6 +250,7 @@ impl BinderThread {
     pub fn new(binder_proc: &BinderProcess, tid: Pid, thread: Arc<zx::Thread>) -> OwnedRef<Self> {
         let inner_state = BinderThreadState::new(tid.clone(), binder_proc.identifier());
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
+        let command_queue_poll_waiters = inner_state.command_queue.poll_waiters.clone();
         let available_threads = binder_proc.available_threads.clone();
         let state = inner_state.into();
 
@@ -240,6 +261,7 @@ impl BinderThread {
             state,
             registration: AtomicU8::new(RegistrationState::Unregistered.to_u8()),
             command_queue_waiters,
+            command_queue_poll_waiters,
             available_threads,
             requeue_event: LockDepMutex::new(None),
         })
