@@ -45,13 +45,6 @@ class WaiterImpl : public WaiterInterface {
 
 void UsbMassStorageDevice::ExecuteCommandsAsync(uint8_t target, uint16_t lun,
                                                 std::span<scsi::ScsiRequest> batch) {
-  if (dead_) {
-    for (auto& req : batch) {
-      req.Complete(ZX_ERR_IO_NOT_PRESENT);
-    }
-    return;
-  }
-
   if (lun > max_lun_) {
     for (auto& req : batch) {
       req.Complete(ZX_ERR_OUT_OF_RANGE);
@@ -62,7 +55,7 @@ void UsbMassStorageDevice::ExecuteCommandsAsync(uint8_t target, uint16_t lun,
   bool fail_requests = false;
   {
     std::lock_guard<std::mutex> l(queue_lock_);
-    if (fail_new_requests_[lun]) {
+    if (dead_ || fail_new_requests_[lun]) {
       fail_requests = true;
     } else {
       for (auto& req : batch) {
@@ -71,6 +64,7 @@ void UsbMassStorageDevice::ExecuteCommandsAsync(uint8_t target, uint16_t lun,
             .lun = static_cast<uint8_t>(lun),
         });
       }
+      sync_completion_signal(&txn_completion_);
     }
   }
 
@@ -78,16 +72,17 @@ void UsbMassStorageDevice::ExecuteCommandsAsync(uint8_t target, uint16_t lun,
     for (auto& req : batch) {
       req.Complete(ZX_ERR_IO_NOT_PRESENT);
     }
-    return;
   }
-  sync_completion_signal(&txn_completion_);
 }
 
 void UsbMassStorageDevice::Stop(fdf::StopCompleter completer) {
-  dead_ = true;
+  {
+    std::lock_guard<std::mutex> l(queue_lock_);
+    dead_ = true;
+    sync_completion_signal(&txn_completion_);
+  }
   // wait for worker loop to finish before removing devices
   if (worker_dispatcher_.get()) {
-    sync_completion_signal(&txn_completion_);
     worker_dispatcher_.ShutdownAsync();
     worker_shutdown_completion_.Wait();
   }
@@ -603,7 +598,7 @@ zx_status_t UsbMassStorageDevice::DoTransaction(scsi::ScsiRequest& req, uint8_t 
 zx_status_t UsbMassStorageDevice::CheckLunsReady() {
   // If the device is marked as dead (e.g. disconnected or shutting down),
   // stop checking and return an appropriate error.
-  if (dead_) {
+  if (is_dead()) {
     return ZX_ERR_IO_NOT_PRESENT;
   }
   std::lock_guard<std::mutex> lock(luns_lock_);
@@ -625,7 +620,9 @@ zx_status_t UsbMassStorageDevice::CheckLunsReady() {
         continue;
       }
     } else if (status == ZX_ERR_IO_NOT_PRESENT) {
+      std::lock_guard<std::mutex> l(queue_lock_);
       dead_ = true;
+      sync_completion_signal(&txn_completion_);
       return status;
     } else {
       // LUN check failed, record the error but continue to ensure any
@@ -716,30 +713,35 @@ void UsbMassStorageDevice::WorkerLoop() {
   bool wait = true;
   while (1) {
     if (wait) {
-      waiter_->Wait(&txn_completion_, ZX_SEC(1));
-      sync_completion_reset(&txn_completion_);
+      zx_status_t status = waiter_->Wait(&txn_completion_, ZX_SEC(1));
       std::lock_guard<std::mutex> l(queue_lock_);
-      if (queued_txns_.empty() && !dead_) {
-        async::PostTask(dispatcher(), [&] {
-          // This must be done in the default dispatcher because it accesses
-          // fdf::DriverBase::outgoing().
-          zx_status_t status = CheckLunsReady();
-          if (status != ZX_OK) {
-            // keep going
-            fdf::error("Failed to periodically check whether LUNs are ready: {}",
-                       zx_status_get_string(status));
-          }
-        });
+      if (dead_) {
+        break;
+      }
+      sync_completion_reset(&txn_completion_);
+      if (queued_txns_.empty()) {
+        if (status == ZX_ERR_TIMED_OUT) {
+          async::PostTask(dispatcher(), [&] {
+            // This must be done in the default dispatcher because it accesses
+            // fdf::DriverBase::outgoing().
+            zx_status_t status = CheckLunsReady();
+            if (status != ZX_OK) {
+              // keep going
+              fdf::error("Failed to periodically check whether LUNs are ready: {}",
+                         zx_status_get_string(status));
+            }
+          });
+        }
         continue;
       }
     }
     std::lock_guard<std::mutex> lock(luns_lock_);
-    if (dead_) {
-      break;
-    }
     Transaction txn;
     {
       std::lock_guard<std::mutex> l(queue_lock_);
+      if (dead_) {
+        break;
+      }
       if (queued_txns_.empty()) {
         wait = true;
         continue;
@@ -827,7 +829,9 @@ zx::result<> UsbMassStorageDevice::Start(fdf::DriverContext context) {
     return zx::error(result.status());
   }
 
-  waiter_ = fbl::MakeRefCounted<WaiterImpl>();
+  if (!waiter_) {
+    waiter_ = fbl::MakeRefCounted<WaiterImpl>();
+  }
   zx_status_t status = Init();
   if (status != ZX_OK) {
     return zx::error(status);

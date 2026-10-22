@@ -88,7 +88,10 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
     std::lock_guard<std::mutex> l(queue_lock_);
     return queued_txns_.size();
   }
-  bool is_dead() const { return dead_.load(); }
+  bool is_dead() {
+    std::lock_guard<std::mutex> l(queue_lock_);
+    return dead_;
+  }
   zx_status_t CheckLunsReady();
   void set_on_pre_shutdown(fit::function<void(uint8_t lun)> on_pre_shutdown) {
     on_pre_shutdown_ = std::move(on_pre_shutdown);
@@ -99,6 +102,10 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
  protected:
   const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
   void set_waiter(fbl::RefPtr<WaiterInterface> waiter) { waiter_ = std::move(waiter); }
+  void SignalTxnCompletion() {
+    std::lock_guard<std::mutex> l(queue_lock_);
+    sync_completion_signal(&txn_completion_);
+  }
 
  private:
   zx_status_t Reset();
@@ -168,7 +175,7 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
 
   fbl::RefPtr<WaiterInterface> waiter_;
 
-  std::atomic_bool dead_ = false;
+  bool dead_ TA_GUARDED(queue_lock_) = false;
 
   // list of queued transactions
   std::deque<Transaction> queued_txns_ TA_GUARDED(queue_lock_);

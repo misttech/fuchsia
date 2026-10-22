@@ -73,15 +73,31 @@ struct Packet : fbl::DoublyLinkedListable<fbl::RefPtr<Packet>>, fbl::RefCounted<
 class FakeTimer : public ums::WaiterInterface {
  public:
   zx_status_t Wait(sync_completion_t* completion, zx_duration_t duration) override {
-    return timeout_handler_(completion, duration);
+    if (duration != ZX_TIME_INFINITE) {
+      entering_timed_wait_.Signal();
+    }
+    zx_status_t status = timeout_handler_(completion, duration);
+    if (duration != ZX_TIME_INFINITE && simulate_timeout_.exchange(false)) {
+      return ZX_ERR_TIMED_OUT;
+    }
+    return status;
   }
 
   void set_timeout_handler(fit::function<zx_status_t(sync_completion_t*, zx_duration_t)> handler) {
     timeout_handler_ = std::move(handler);
   }
 
+  void WaitUntilParked() {
+    entering_timed_wait_.Wait();
+    entering_timed_wait_.Reset();
+  }
+
+  void set_simulate_timeout(bool simulate_timeout) { simulate_timeout_.store(simulate_timeout); }
+
  private:
   fit::function<zx_status_t(sync_completion_t*, zx_duration_t)> timeout_handler_;
+  libsync::Completion entering_timed_wait_;
+  std::atomic<bool> simulate_timeout_ = false;
 };
 
 enum ErrorInjection {
@@ -601,16 +617,13 @@ class TestUsbMassStorageDevice : public ums::UsbMassStorageDevice {
       if (duration == 0) {
         has_zero_duration_ = true;
       }
-      if (duration == ZX_TIME_INFINITE) {
-        return sync_completion_wait(completion, duration);
-      }
-      return ZX_OK;
+      return sync_completion_wait(completion, ZX_TIME_INFINITE);
     });
     set_waiter(timer_);
   }
 
   void Stop(fdf::StopCompleter completer) override {
-    ASSERT_FALSE(has_zero_duration_);
+    EXPECT_FALSE(has_zero_duration_);
     std::thread unpause_thread;
     if (on_stop_) {
       unpause_thread = std::thread([this] {
@@ -627,7 +640,15 @@ class TestUsbMassStorageDevice : public ums::UsbMassStorageDevice {
   }
 
   void set_on_stop(fit::function<void()> on_stop) { on_stop_ = std::move(on_stop); }
-  FakeTimer& timer() { return *timer_; }
+
+  void WaitForWorkerParked() { timer_->WaitUntilParked(); }
+
+  void SignalWorker() { SignalTxnCompletion(); }
+
+  void TriggerWorkerTimeout() {
+    timer_->set_simulate_timeout(true);
+    SignalTxnCompletion();
+  }
 
  private:
   fbl::RefPtr<FakeTimer> timer_;
@@ -956,13 +977,6 @@ TEST_F(UmsTest, PendingTransactionsDrainedOnLunShutdown) {
   ASSERT_OK(client1_end);
   auto client1 = block_client::RemoteBlockDevice::Create(std::move(client1_end.value())).value();
 
-  // Prevent WorkerLoop from spinning and periodically invoking CheckLunsReady.
-  driver_test().RunInDriverContext([&](TestUsbMassStorageDevice& driver) {
-    driver.timer().set_timeout_handler([](sync_completion_t* completion, zx_duration_t duration) {
-      return sync_completion_wait(completion, ZX_TIME_INFINITE);
-    });
-  });
-
   libsync::Completion tur_started;
   std::atomic<bool> allow_tur_resume = false;
 
@@ -1013,8 +1027,12 @@ TEST_F(UmsTest, PendingTransactionsDrainedOnLunShutdown) {
   check_thread.join();
   client_thread.join();
 
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.context().on_cbw = nullptr; });
+
   EXPECT_STATUS(txn_status.load(), ZX_ERR_IO_NOT_PRESENT);
-  EXPECT_EQ(driver_->block_devs()[1], nullptr);
+  driver_test().RunInDriverContext(
+      [&](TestUsbMassStorageDevice& driver) { EXPECT_EQ(driver.block_devs()[1], nullptr); });
 }
 
 // Verifies that when a LUN becomes unready and begins teardown in CheckLunsReady,
@@ -1030,13 +1048,6 @@ TEST_F(UmsTest, NewRequestsFailDuringLunShutdown) {
       driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(dev_names[1].c_str());
   ASSERT_OK(client1_end);
   auto client1 = block_client::RemoteBlockDevice::Create(std::move(client1_end.value())).value();
-
-  // Prevent WorkerLoop from spinning and periodically invoking CheckLunsReady.
-  driver_test().RunInDriverContext([&](TestUsbMassStorageDevice& driver) {
-    driver.timer().set_timeout_handler([](sync_completion_t* completion, zx_duration_t duration) {
-      return sync_completion_wait(completion, ZX_TIME_INFINITE);
-    });
-  });
 
   libsync::Completion pre_shutdown_started;
   std::atomic<bool> allow_shutdown_resume = false;
@@ -1093,7 +1104,13 @@ TEST_F(UmsTest, NewRequestsFailDuringLunShutdown) {
 
   check_thread.join();
 
-  EXPECT_EQ(driver_->block_devs()[1], nullptr);
+  driver_test().RunInDriverContext(
+      [&](TestUsbMassStorageDevice& driver) { driver.set_on_pre_shutdown(nullptr); });
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.context().on_cbw = nullptr; });
+
+  driver_test().RunInDriverContext(
+      [&](TestUsbMassStorageDevice& driver) { EXPECT_EQ(driver.block_devs()[1], nullptr); });
 }
 
 TEST_F(UmsTest, GetMaxLunRoutesToCorrectInterface) {
@@ -1104,6 +1121,38 @@ TEST_F(UmsTest, GetMaxLunRoutesToCorrectInterface) {
   StartDriver();
   driver_test().RunInEnvironmentTypeContext(
       [&](Environment& env) { EXPECT_EQ(1u, env.context().last_get_max_lun_index); });
+}
+
+TEST_F(UmsTest, PeriodicLunCheckOnlyOnTimeout) {
+  StartDriver();
+
+  // Wait for WorkerLoop to enter its initial timed Wait().
+  driver_->WaitForWorkerParked();
+
+  std::atomic<uint32_t> tur_count = 0;
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    env.context().on_cbw = [&](const ums_cbw_t& cbw) {
+      if (static_cast<scsi::Opcode>(cbw.CBWCB[0]) == scsi::Opcode::TEST_UNIT_READY) {
+        tur_count.fetch_add(1);
+      }
+    };
+  });
+
+  // A plain signal with an empty queue should wake WorkerLoop with ZX_OK and not post
+  // CheckLunsReady().
+  driver_->SignalWorker();
+  driver_->WaitForWorkerParked();
+  driver_test().RunInDriverContext([](TestUsbMassStorageDevice&) {});
+  EXPECT_EQ(tur_count.load(), 0u);
+
+  // A timeout should wake WorkerLoop with ZX_ERR_TIMED_OUT and post CheckLunsReady().
+  driver_->TriggerWorkerTimeout();
+  driver_->WaitForWorkerParked();
+  driver_test().RunInDriverContext([](TestUsbMassStorageDevice&) {});
+  EXPECT_EQ(tur_count.load(), 2u);
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.context().on_cbw = nullptr; });
 }
 
 FUCHSIA_DRIVER_EXPORT2(TestUsbMassStorageDevice);
