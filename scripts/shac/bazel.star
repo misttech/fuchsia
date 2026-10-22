@@ -85,16 +85,35 @@ _ALL_BAZEL_FILES = [
 
 # LINT.ThenChange(//scripts/shac/bazel_lint/framework.py:file_kinds)
 
-def _make_bazel_lint_check(check_name, *, applies_to_globs, enforcement = "all"):
+_ENFORCEMENT_ALL = "all"
+_ENFORCEMENT_UNCHANGED_LINES_WARNING_ONLY = "unchanged_lines_warning_only"
+_VALID_ENFORCEMENT_MODES = (
+    _ENFORCEMENT_ALL,
+    _ENFORCEMENT_UNCHANGED_LINES_WARNING_ONLY,
+)
+
+def _make_bazel_lint_check(check_name, *, applies_to_globs, enforcement = _ENFORCEMENT_ALL):
     """Creates a shac check that runs a Python AST Bazel lint rule.
 
     Args:
       check_name: Name of the shac check.
       applies_to_globs: List of file globs to which this check applies.
-      enforcement: "all" (default) to enforce across whole affected files, or
-        "changed_lines" to report line-specific findings only on added or
-        modified lines. Starting with "changed_lines" may be prudent to
-        reduce risk when rolling out a new check.
+      enforcement: Controls how findings on unchanged lines and untouched files
+        are handled:
+        - "all" (default): Enforces the check across whole affected files,
+          reporting all findings at the level specified by the check.
+        - "unchanged_lines_warning_only": Reports findings on added or modified
+          lines (and file-level findings on modified files) at the level
+          specified by the check, while downgrading "error" findings on
+          unchanged lines (and in untouched files when `shac check --all` is
+          run) to "warning".
+          This is primarily intended for rolling out new checks to avoid errors
+          in CQ/CI caused by race conditions between check CLs and CLs that
+          violate the check but have already passed CQ. It should be temporary
+          unless there is a very specific reason, in which case that reason
+          should be noted above the use.
+          Findings are downgraded rather than dropped so that pre-existing
+          violations stay visible.
 
     Upstream third-party source files (!/third_party/**/src/**) and vendored
     upstream Bazel repositories (!/third_party/bazel_vendor/**) are excluded
@@ -102,6 +121,8 @@ def _make_bazel_lint_check(check_name, *, applies_to_globs, enforcement = "all")
     be subject to Fuchsia workspace conventions. This exception may need to be
     relaxed if we have to write BUILD.bazel files for third-party repositories.
     """
+    if enforcement not in _VALID_ENFORCEMENT_MODES:
+        fail("Unsupported enforcement mode: %s" % enforcement)
 
     def _impl(ctx):
         # Temporarily exclude repositories other than `fuchsia.git` to avoid
@@ -114,23 +135,6 @@ def _make_bazel_lint_check(check_name, *, applies_to_globs, enforcement = "all")
         files = list(affected.keys())
         if not files:
             return
-
-        if enforcement == "changed_lines":
-            # Record the 1-based line numbers of added or modified lines in
-            # each affected file so line-specific findings on unchanged lines
-            # can be filtered out below. All affected files (including those
-            # that only delete lines, where `meta.affected_lines()` is empty) are
-            # still checked so that file-level findings (`line == None`), such
-            # as a check requiring a file to define a specific target, are
-            # still reported when lines are deleted.
-            new_lines_by_file = {
-                path: {num: True for num, _ in meta.affected_lines()}
-                for path, meta in affected.items()
-            }
-        elif enforcement == "all":
-            new_lines_by_file = None
-        else:
-            fail("Unsupported enforcement mode: %s" % enforcement)
 
         fuchsia_dir = get_fuchsia_dir(ctx)
         python_bin = "%s/prebuilt/third_party/python3/%s/bin/python3" % (
@@ -178,41 +182,64 @@ def _make_bazel_lint_check(check_name, *, applies_to_globs, enforcement = "all")
                 len(findings),
             ))
 
+        if not findings:
+            return
+
+        # Cache of changed line numbers per file to avoid recalculating for
+        # multiple findings in the same file. Populated on demand as values
+        # are needed.
+        changed_lines_by_file = {}
+
         for finding in findings:
             filepath = finding["filepath"]
             line = finding.get("line")
             end_line = finding.get("end_line")
+            level = finding["level"]
 
-            # In "changed_lines" enforcement mode (`new_lines_by_file != None`),
-            # skip line-specific findings whose [line, end_line] span does not
-            # overlap any line added or modified in the file. File-level
-            # findings without a line number (`line == None`) are always
-            # emitted for any affected file, including files modified only by
-            # deletions (for example, deleting a required target).
-            if new_lines_by_file != None and line:
-                file_new_lines = new_lines_by_file.get(filepath, {})
-                span_end = end_line if end_line else line
-                touches_new_line = False
-                for ln in range(line, span_end + 1):
-                    if ln in file_new_lines:
-                        touches_new_line = True
-                        break
-                if not touches_new_line:
-                    continue
+            # In "unchanged_lines_warning_only" enforcement mode, downgrade
+            # "error" findings whose [line, end_line] span does not overlap
+            # any added or modified line in the file to "warning". File-level
+            # findings without a line number (`line == None`) apply at the
+            # check's level to any file modified in git (`meta.action != ""`,
+            # including files modified only by deletions), and are downgraded
+            # to "warning" on untouched files.
+            if enforcement == _ENFORCEMENT_UNCHANGED_LINES_WARNING_ONLY and level == "error":
+                if line:
+                    if filepath not in changed_lines_by_file:
+                        changed_lines_by_file[filepath] = set([
+                            num
+                            for num, _ in affected[filepath].affected_lines(changed_only = True)
+                        ])
+                    file_changed_lines = changed_lines_by_file[filepath]
+                    span_end = end_line if end_line else line
+                    touches_changed_line = any([
+                        ln in file_changed_lines
+                        for ln in range(line, span_end + 1)
+                    ])
+                else:
+                    # File-level finding (no line number).
+                    touches_changed_line = bool(affected[filepath].action)
+
+                if not touches_changed_line:
+                    level = "warning"
 
             kwargs = {
-                "level": finding["level"],
+                "level": level,
                 "filepath": filepath,
             }
             if line:
                 kwargs["line"] = line
-            if end_line:
-                kwargs["end_line"] = end_line
+                if end_line:
+                    kwargs["end_line"] = end_line
             if finding.get("col"):
                 kwargs["col"] = finding["col"]
-            if finding.get("end_col"):
-                kwargs["end_col"] = finding["end_col"]
-            ctx.emit.finding(message = finding["message"], **kwargs)
+                if finding.get("end_col"):
+                    kwargs["end_col"] = finding["end_col"]
+
+            ctx.emit.finding(
+                message = finding["message"],
+                **kwargs
+            )
 
     return shac.check(_impl, name = check_name, formatter = False)
 

@@ -6,11 +6,13 @@
 
 load(
     "//scripts/shac/bazel.star",
+    "_ALL_BAZEL_FILES",
     "_bazel_default_applicable_licenses",
     "_bazel_disallowed_workspace_root_package_labels",
     "_bazel_no_glob",
     "_bazel_no_recursive_glob",
     "_bazel_no_repo_rules_canonical_names",
+    "_make_bazel_lint_check",
 )
 load(
     "//scripts/shac/bazel_lint/checks/tests/checks_test.star",
@@ -244,9 +246,10 @@ def test_no_recursive_glob_stale_allowlist():
 # (such as file glob exclusions and allowlists).
 # They use a constant for the file contents and override the allowlist to ensure
 # the tests are actually testing the paths.
+_FRAMEWORK_TEST_CHECK_NAME = "bazel_disallowed_workspace_root_package_labels"
 _FRAMEWORK_TEST_CHECK = _bazel_disallowed_workspace_root_package_labels
 _FRAMEWORK_TEST_CHECK_ALLOWLIST = (
-    "scripts/shac/bazel_lint/allowlists/bazel_disallowed_workspace_root_package_labels.json"
+    "scripts/shac/bazel_lint/allowlists/%s.json" % _FRAMEWORK_TEST_CHECK_NAME
 )
 _FRAMEWORK_TEST_EMPTY_ALLOWLIST = testing.file(
     content = json.encode({"entries": []}),
@@ -344,5 +347,101 @@ def test_bazel_lint_framework_allowlist():
         },
     )
     asserts.eq(res.findings, ())
+
+def test_bazel_lint_framework_unchanged_lines_warning_only():
+    check = _make_bazel_lint_check(
+        _FRAMEWORK_TEST_CHECK_NAME,
+        applies_to_globs = _ALL_BAZEL_FILES,
+        enforcement = "unchanged_lines_warning_only",
+    )
+    res = testing.run(
+        check,
+        files = {
+            _FRAMEWORK_TEST_CHECK_ALLOWLIST: _FRAMEWORK_TEST_EMPTY_ALLOWLIST,
+            "deletion_only/BUILD.bazel": testing.file(
+                content = _FRAMEWORK_TEST_VIOLATION,
+                affected_lines = [],
+            ),
+            "partially_changed/BUILD.bazel": testing.file(
+                content = 'x = "//:foo/bar"\ny = "//:baz/qux"\n',
+                affected_lines = [(2, 'y = "//:baz/qux"')],
+            ),
+        },
+    )
+    asserts.eq(
+        [(f.filepath, f.level, f.line) for f in res.findings],
+        [
+            ("deletion_only/BUILD.bazel", "warning", 1),
+            ("partially_changed/BUILD.bazel", "warning", 1),
+            ("partially_changed/BUILD.bazel", "error", 2),
+        ],
+    )
+
+def test_bazel_lint_framework_unchanged_lines_warning_only_file_level_finding():
+    check = _make_bazel_lint_check(
+        _FRAMEWORK_TEST_CHECK_NAME,
+        applies_to_globs = _ALL_BAZEL_FILES,
+        enforcement = "unchanged_lines_warning_only",
+    )
+    res = testing.run(
+        check,
+        files = {
+            "deleted_lines/BUILD.bazel": testing.file(
+                content = 'package(default_applicable_licenses = ["//:license"])\n',
+                affected_lines = [],
+            ),
+            "untouched/BUILD.bazel": testing.file(
+                content = 'package(default_applicable_licenses = ["//:license"])\n',
+                affected = False,
+            ),
+        },
+        exec_mocks = [
+            testing.exec_mock(
+                cmd = [
+                    testing.any_args,
+                    "--check",
+                    _FRAMEWORK_TEST_CHECK_NAME,
+                    "--root",
+                    testing.root,
+                    "--json",
+                    "deleted_lines/BUILD.bazel",
+                ],
+                retcode = 42,
+                stdout = json.encode([
+                    {
+                        "filepath": "deleted_lines/BUILD.bazel",
+                        "level": "error",
+                        "message": "Missing required target.",
+                    },
+                    {
+                        "filepath": "deleted_lines/BUILD.bazel",
+                        "level": "error",
+                        "line": 1,
+                        "col": 1,
+                        "end_col": 10,
+                        "message": "Unchanged line finding should be downgraded to warning.",
+                    },
+                ]),
+            ),
+        ],
+    )
+    asserts.eq(
+        res.findings,
+        (
+            testing.finding(
+                level = "error",
+                message = "Missing required target.",
+                filepath = "deleted_lines/BUILD.bazel",
+            ),
+            testing.finding(
+                level = "warning",
+                message = "Unchanged line finding should be downgraded to warning.",
+                filepath = "deleted_lines/BUILD.bazel",
+                line = 1,
+                col = 1,
+                end_col = 10,
+            ),
+        ),
+    )
 
 test_bazel_lint_checks = _test_bazel_lint_checks

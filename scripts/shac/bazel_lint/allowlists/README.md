@@ -20,12 +20,14 @@ migration) or a finding is a false positive:
 2. File a tracking bug in the Build > Bazel component:
    <https://issues.fuchsia.dev/issues/new?component=1477645>.
 3. Add an entry referencing that bug to `<check_name>.json` in this directory.
-4. Verify that the check passes across the entire workspace and include this
-   command as a `Test:` footer in the commit message:
+4. Verify that the check passes across the entire workspace:
    ```sh
    fx host-tool shac check --only <check_name> --all
    ```
-5. Send the change to a member of [`/build/OWNERS`](/build/OWNERS) for review.
+5. Commit the change, including the following footers in the commit message:
+   * `Bug:` specifying the tracking bug filed above
+   * `Test:` specifying the command in the previous step
+6. Send the change to a member of [`/build/OWNERS`](/build/OWNERS) for review.
 
 Permanent by-design exemptions (for example, allowing `//visibility:public`
 inside `bazel_sdk/`) belong in `policy_exempt_globs` on the `BazelCheck`

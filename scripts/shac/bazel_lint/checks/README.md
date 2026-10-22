@@ -16,6 +16,7 @@ Each check is implemented as a small module in this directory that subclasses
    and `shac.register_check(...)` (in alphabetical order). Pass the file globs
    matching your check's `file_kinds` to `applies_to_globs` (e.g.
    `_make_bazel_lint_check("my_check", applies_to_globs = _BUILD_FILES)`).
+   Leave `enforcement` at its default (`"all"`) during development and verification.
 4. **Add tests and build targets** (kept in sync with
    [`__init__.py`](./__init__.py) via `LINT.IfChange`):
    * Add a Starlark check test file in
@@ -66,18 +67,44 @@ Each check is implemented as a small module in this directory that subclasses
      ```sh
      fx host-tool shac check --only <check_name> --all
      ```
-     A new check MUST pass cleanly across the entire workspace before landing so
-     that developers modifying an existing file do not encounter unrelated
-     failures. Any existing violations in the tree must either be fixed first or
-     added to [`allowlists/<check_name>.json`](../allowlists/README.md) with a
-     tracking bug.
+     A new check MUST have no findings for this check (errors, warnings or
+     notices) across the entire workspace before landing so that developers
+     modifying an existing file do not encounter unrelated failures. Any
+     existing violations in the tree must either be fixed first or added to
+     [`allowlists/<check_name>.json`](../allowlists/README.md) with a tracking
+     bug.
+6. **Configure rollout enforcement**:
+   Before uploading the CL, update the `_make_bazel_lint_check(...)` declaration
+   in [`//scripts/shac/bazel.star`](../../bazel.star) to set:
+   ```starlark
+   enforcement = "unchanged_lines_warning_only"
+   ```
+   This ensures that pre-existing `"error"` findings on unchanged lines and
+   untouched files are reported as `"warning"` rather than `"error"`, preventing
+   CQ/CI failures or closing the tree due to race conditions with in-flight CLs
+   that passed CQ before your check lands.
 
    When committing the new check, use the hermetic `fx test` and `--all`
-   commands above as `Test:` footers in the commit message:
+   commands from Step 5 as `Test:` footers in the commit message:
    ```
    Test: fx test --host @//scripts/shac/tests:bazel_test
    Test: fx host-tool shac check --only <check_name> --all
    ```
+7. **Promote to full enforcement after rollout**:
+   After landing a new or modified check, allow the period for which CQ results
+   can be reused (currently 24 hours) then:
+   * Sync your checkout (`jiri update`).
+   * Remove `enforcement = "unchanged_lines_warning_only"` from the check's
+     `_make_bazel_lint_check(...)` call in
+     [`//scripts/shac/bazel.star`](../../bazel.star) (restoring the default
+     `"all"`).
+   * Run the full-workspace check:
+     ```sh
+     fx host-tool shac check --all --only <check_name>
+     ```
+   * If new violations are found, fix them or update
+     [`allowlists/<check_name>.json`](../allowlists/README.md).
+   * Land the change. Multiple checks can be updated at once.
 
 ## `BazelCheck` Attributes {:#bazelcheck-attributes}
 
