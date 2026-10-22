@@ -85,6 +85,9 @@ pub(super) struct Ipv6ExtensionHeaderParsingContext {
 
     // Offset of the current `next_header` value relative to the start of the packet.
     pub(super) next_header_offset: usize,
+
+    // Whether a fragment header has been parsed.
+    pub(super) saw_fragment: bool,
 }
 
 impl Ipv6ExtensionHeaderParsingContext {
@@ -97,6 +100,7 @@ impl Ipv6ExtensionHeaderParsingContext {
             next_header,
             next_header_offset: NEXT_HEADER_OFFSET.into(),
             position: IPV6_FIXED_HDR_LEN,
+            saw_fragment: false,
         }
     }
 }
@@ -240,6 +244,7 @@ impl Ipv6ExtensionHeaderImpl {
         // Update context
         context.position += 6;
         context.headers_parsed += 1;
+        context.saw_fragment = true;
 
         Ok(ParsedRecord::Parsed(Ipv6ExtensionHeader::Fragment {
             // First unwrap is safe because we already know data is at least
@@ -293,19 +298,19 @@ impl RecordsImpl for Ipv6ExtensionHeaderImpl {
         context: &mut Self::Context,
     ) -> RecordParseResult<Self::Record<'a>, Self::Error> {
         let expected_hdr = context.next_header;
+        let next_header_type = Ipv6ExtHdrType::from(expected_hdr);
 
-        match Ipv6ExtHdrType::from(expected_hdr) {
-            Ipv6ExtHdrType::HopByHopOptions => {
-                if context.headers_parsed == 0 {
-                    Self::parse_hop_by_hop_options(data, context)
-                } else {
-                    // Hop-by-hop extension is allowed only immediately after the fixed header.
-                    Err(Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-                        pointer: context.next_header_offset as u32,
-                        must_send_icmp: false,
-                    })
-                }
-            }
+        check_hop_by_hop_position(next_header_type, context)?;
+
+        // Extension headers following the Fragment header are part of the
+        // Fragmentable Part of the packet, and are only parsed after
+        // reassembly.
+        if context.saw_fragment {
+            return Ok(ParsedRecord::Done);
+        }
+
+        match next_header_type {
+            Ipv6ExtHdrType::HopByHopOptions => Self::parse_hop_by_hop_options(data, context),
             Ipv6ExtHdrType::Routing => Self::parse_routing(data, context),
             Ipv6ExtHdrType::Fragment => Self::parse_fragment(data, context),
             Ipv6ExtHdrType::DestinationOptions => Self::parse_destination_options(data, context),
@@ -350,21 +355,24 @@ impl<'a> RecordsRawImpl<'a> for Ipv6ExtensionHeaderImpl {
         data: &mut BV,
         context: &mut Self::Context,
     ) -> Result<bool, Self::Error> {
-        let (next, skip) = match Ipv6ExtHdrType::from(context.next_header) {
+        let next_header_type = Ipv6ExtHdrType::from(context.next_header);
+
+        check_hop_by_hop_position(next_header_type, context)?;
+
+        // Extension headers following the Fragment header are part of the
+        // Fragmentable Part of the packet, and are only parsed after
+        // reassembly.
+        if context.saw_fragment {
+            return Ok(false);
+        }
+
+        let (next, skip) = match next_header_type {
             Ipv6ExtHdrType::HopByHopOptions => {
-                if context.headers_parsed == 0 {
-                    // take next header and header len, and skip the next 6
-                    // octets + the number of 64 bit words in header len.
-                    data.take_front(2)
-                        .map(|x| (x[0], (x[1] as usize) * 8 + 6))
-                        .ok_or(Ipv6ExtensionHeaderParsingError::BufferExhausted)?
-                } else {
-                    // Hop-by-hop extension is allowed only immediately after the fixed header.
-                    return Err(Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-                        pointer: context.next_header_offset as u32,
-                        must_send_icmp: false,
-                    });
-                }
+                // take next header and header len, and skip the next 6
+                // octets + the number of 64 bit words in header len.
+                data.take_front(2)
+                    .map(|x| (x[0], (x[1] as usize) * 8 + 6))
+                    .ok_or(Ipv6ExtensionHeaderParsingError::BufferExhausted)?
             }
 
             Ipv6ExtHdrType::Routing | Ipv6ExtHdrType::DestinationOptions => {
@@ -375,6 +383,7 @@ impl<'a> RecordsRawImpl<'a> for Ipv6ExtensionHeaderImpl {
                     .ok_or(Ipv6ExtensionHeaderParsingError::BufferExhausted)?
             }
             Ipv6ExtHdrType::Fragment => {
+                context.saw_fragment = true;
                 // take next header from first, then skip next 7
                 (
                     data.take_byte_front()
@@ -1075,6 +1084,39 @@ pub(super) fn is_valid_next_header_upper_layer(next_header: u8) -> bool {
     }
 }
 
+/// Make sure a Hop-by-Hop Options header only appears immediately after the
+/// fixed header.
+///
+/// Returns an error if `next_header_type` is Hop-by-Hop Options and it is not
+/// the first extension header (i.e. it does not immediately follow the fixed
+/// header).
+///
+/// Per RFC 8200 Section 4:
+///   If a node encounters a Next Header value of zero in any header other than
+///   an IPv6 header, it MUST treat that Next Header value as unrecognized and
+///   discard the packet, sending an ICMP Parameter Problem message to the
+///   source of the packet, with an ICMP Parameter Problem Code of 1
+///   ("unrecognized Next Header type encountered") and the ICMP Pointer field
+///   containing the offset of the unrecognized value within the original
+///   packet.
+///
+/// Note that this check also applies to the Fragment header's Next Header
+/// value. Otherwise, removing the Fragment header during reassembly would make
+/// a Hop-by-Hop Options header appear to immediately follow the fixed header.
+fn check_hop_by_hop_position(
+    next_header_type: Ipv6ExtHdrType,
+    context: &Ipv6ExtensionHeaderParsingContext,
+) -> Result<(), Ipv6ExtensionHeaderParsingError> {
+    if context.headers_parsed > 0 && next_header_type == Ipv6ExtHdrType::HopByHopOptions {
+        return Err(Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
+            pointer: context.next_header_offset as u32,
+            // TODO(https://fxbug.dev/566708474): Send ICMP error back to sender.
+            must_send_icmp: false,
+        });
+    }
+    Ok(())
+}
+
 /// Convert an `ExtensionHeaderOptionParsingError` to an
 /// `Ipv6ExtensionHeaderParsingError`.
 ///
@@ -1109,10 +1151,14 @@ fn ext_hdr_opt_err_to_ext_hdr_err(
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+    use net_declare::net_ip_v6;
     use packet::records::{AlignedRecordSequenceBuilder, RecordBuilder};
+    use packet::{InnerPacketBuilder, NestableSerializer, NoOpSerializationContext, Serializer};
+    use test_case::test_case;
 
     use crate::ip::Ipv4Proto;
-    use crate::ipv6::IPV6_FIXED_HDR_LEN;
+    use crate::ipv6::{IPV6_FIXED_HDR_LEN, Ipv6PacketBuilder, Ipv6PacketBuilderWithFragmentHeader};
 
     use super::*;
 
@@ -1741,37 +1787,87 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_fragment_ext_hdr_err() {
-        // Test parsing of just a single Fragment Extension Header with errors.
-
-        // Test invalid Next Header
+    // Test that extension header parsing stops after the Fragment Header,
+    // regardless of the Fragment Header's Next Header value (other than
+    // Hop-by-Hop Options, see `test_fragment_ext_hdr_with_hbh_next_hdr_err`),
+    // even if followed by bytes that resemble Destination Options which is
+    // a fragmentable option.
+    #[test_case(Ipv6ExtHdrType::DestinationOptions.into(); "valid extension header")]
+    #[test_case(255; "invalid next header")]
+    fn test_fragment_ext_hdr_stops_parsing(next_header: u8) {
         let context = Ipv6ExtensionHeaderParsingContext::new(Ipv6ExtHdrType::Fragment.into());
-        let frag_offset_res_m_flag: u16 = (5063 << 3) | 1;
-        let identification: u32 = 3266246449;
-        #[rustfmt::skip]
-        let buffer = [
-            255,                                   // Next Header (Invalid)
-            0,                                     // Reserved
-            (frag_offset_res_m_flag >> 8) as u8,   // Fragment Offset MSB
-            (frag_offset_res_m_flag & 0xFF) as u8, // Fragment Offset LS5bits w/ Res w/ M Flag
-            // Identification
-            (identification >> 24) as u8,
-            ((identification >> 16) & 0xFF) as u8,
-            ((identification >> 8) & 0xFF) as u8,
-            (identification & 0xFF) as u8,
-        ];
-        let error =
+        const FRAGMENT_OFFSET: u16 = 100;
+        const ID: u32 = 12345;
+        let frag_offset_res_m_flag: u16 = (FRAGMENT_OFFSET << 3) | 1;
+        let buffer: Vec<u8> = [
+            next_header, // Next Header
+            0,           // Reserved
+        ]
+        .into_iter()
+        .chain(frag_offset_res_m_flag.to_be_bytes())
+        .chain(ID.to_be_bytes())
+        // Simplest Destination Options header: Next Header = TCP, Hdr Ext Len = 0, 6 zero bytes
+        // padding.
+        .chain([IpProto::Tcp.into(), 0, 0, 0, 0, 0, 0, 0])
+        .collect();
+
+        let ext_hdrs =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
-                .expect_err("Parsed successfully when the next header was invalid");
-        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } =
-            error
-        {
-            assert_eq!(pointer, IPV6_FIXED_HDR_LEN as u32);
-            assert!(!must_send_icmp);
-        } else {
-            panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
-        }
+                .unwrap();
+        let ext_hdrs: Vec<Ipv6ExtensionHeader<'_>> = ext_hdrs.iter().collect();
+        assert_matches!(&ext_hdrs[..], [Ipv6ExtensionHeader::Fragment { fragment_data }] => {
+            assert_eq!(fragment_data.fragment_offset().into_raw(), FRAGMENT_OFFSET);
+            assert_eq!(fragment_data.m_flag(), true);
+            assert_eq!(fragment_data.identification(), ID);
+        });
+    }
+
+    #[test]
+    fn test_fragment_ext_hdr_with_hbh_next_hdr_err() {
+        // Per RFC 8200 Section 4:
+        //   If a node encounters a Next Header value of zero in any header
+        //   other than an IPv6 header, it MUST treat that Next Header value
+        //   as unrecognized and discard the packet, sending an ICMP
+        //   Parameter Problem message to the source of the packet, with an
+        //   ICMP Parameter Problem Code of 1 ("unrecognized Next Header type
+        //   encountered") and the ICMP Pointer field containing the offset
+        //   of the unrecognized value within the original packet.
+        const HOP_LIMIT: u8 = 64; // Default IPv6 hop limit (TTL)
+        const IDENTIFICATION: u32 = 51; // Arbitrary fragment identification
+
+        let builder = Ipv6PacketBuilder::new(
+            net_ip_v6!("2001:db8::1"),
+            net_ip_v6!("2001:db8::2"),
+            HOP_LIMIT,
+            Ipv6Proto::Other(Ipv6ExtHdrType::HopByHopOptions.into()),
+        );
+        let builder = Ipv6PacketBuilderWithFragmentHeader::new(
+            builder,
+            FragmentOffset::ZERO,
+            /* more_fragments */ false,
+            IDENTIFICATION,
+        );
+        // HopByHop options header (8 octets): Next Header = TCP, Hdr Ext Len = 0, 6 zero bytes.
+        let body: [u8; 8] = [IpProto::Tcp.into(), 0, 0, 0, 0, 0, 0, 0];
+        let buf = (&body[..])
+            .into_serializer()
+            .wrap_in(builder)
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap();
+
+        let context = Ipv6ExtensionHeaderParsingContext::new(Ipv6ExtHdrType::Fragment.into());
+        let error = Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(
+            &buf.as_ref()[IPV6_FIXED_HDR_LEN..],
+            context,
+        )
+        .expect_err("parsing should fail");
+        assert_eq!(
+            error,
+            Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
+                pointer: IPV6_FIXED_HDR_LEN as u32,
+                must_send_icmp: false,
+            }
+        );
     }
 
     #[test]

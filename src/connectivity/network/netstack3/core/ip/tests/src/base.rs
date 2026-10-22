@@ -679,6 +679,21 @@ fn ipv6_atomic_fragment_with_dest_opts(dest_opts_option: [u8; 6]) -> Buf<Vec<u8>
     wrap_body(builder, body)
 }
 
+/// An unrecognized Destination Options option with action = discard & send
+/// ICMP.
+///
+/// According to RFC 8200:
+///
+///   The Option Type identifiers are internally encoded such that their
+///   highest-order 2 bits specify the action that must be taken if the
+///   processing IPv6 node does not recognize the Option Type:
+///
+///      10 - discard the packet and, regardless of whether or not the
+///      packet's Destination Address was a multicast address, send an
+///      ICMP Parameter Problem, Code 2, message to the packet's
+///      Source Address, pointing to the unrecognized Option Type.
+const UNRECOGNIZED_DISCARD_SEND_ICMP_OPTION: [u8; 6] = [0b1000_0000, 4, 0, 0, 0, 0];
+
 // Test that an atomic fragment whose Fragmentable Part begins with an
 // extension header is processed as a fully reassembled packet and
 // dispatched to the upper layer.
@@ -706,31 +721,19 @@ fn test_ipv6_atomic_fragment_with_dest_opts_unrecognized_option() {
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(TEST_ADDRS_V6).build();
     let device: DeviceId<_> = device_ids[0].clone().into();
 
-    // Unrecognized option type with action = discard & send ICMP.
-    // According to RFC 8200:
-    //
-    //   The Option Type identifiers are internally encoded such that their
-    //   highest-order 2 bits specify the action that must be taken if the
-    //   processing IPv6 node does not recognize the Option Type:
-    //
-    //      10 - discard the packet and, regardless of whether or not the
-    //      packet's Destination Address was a multicast address, send an
-    //      ICMP Parameter Problem, Code 2, message to the packet's
-    //      Source Address, pointing to the unrecognized Option Type.
-    let unrecognized_option = [0b1000_0000, 4, 0, 0, 0, 0];
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device,
         Some(LocalFrameDestination::Individual { local: () }),
-        ipv6_atomic_fragment_with_dest_opts(unrecognized_option),
+        ipv6_atomic_fragment_with_dest_opts(UNRECOGNIZED_DISCARD_SEND_ICMP_OPTION),
     );
 
     let frames = ctx.bindings_ctx.take_ethernet_frames();
     let (_dev, frame) = assert_matches!(&frames[..], [frame] => frame);
-    // The option type is located after the IPv6 fixed header, the Fragment
-    // header and the Destination Options' Next Header and Hdr Ext Len fields.
     const DEST_OPTS_NEXT_HEADER_AND_HDR_EXT_LEN: usize = 2;
-    let option_type_offset =
-        IPV6_FIXED_HDR_LEN + IPV6_FRAGMENT_EXT_HDR_LEN + DEST_OPTS_NEXT_HEADER_AND_HDR_EXT_LEN;
+    // Note that the fragment header in the atomic fragment has been removed
+    // by the time the ICMP error is generated, so the offset does not
+    // include it.
+    let option_type_offset = IPV6_FIXED_HDR_LEN + DEST_OPTS_NEXT_HEADER_AND_HDR_EXT_LEN;
     verify_icmp_for_unrecognized_ext_hdr_option(
         Icmpv6ParameterProblemCode::UnrecognizedIpv6Option,
         u32::try_from(option_type_offset).unwrap(),
@@ -778,6 +781,83 @@ fn test_ipv6_reassembled_packet_with_fragment_header_dropped() {
     IpCounterExpectations::<Ipv6> {
         receive_ip_packet: 1,
         fragment_reassembly_error: 1,
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
+}
+
+// Test that the options in an extension header following the Fragment
+// header of a fragmented packet are processed after the packet is
+// reassembled.
+#[test]
+fn test_ipv6_fragmented_packet_with_dest_opts_unrecognized_option() {
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(TEST_ADDRS_V6).build();
+    let device: DeviceId<_> = device_ids[0].clone().into();
+    let frame_dst = LocalFrameDestination::Individual { local: () };
+
+    const FRAGMENT_ID: u32 = 5;
+    let fragment = |offset: u16, more_fragments: bool, body: Vec<u8>| {
+        let builder = Ipv6PacketBuilderWithFragmentHeader::new(
+            Ipv6PacketBuilder::new(
+                TEST_ADDRS_V6.remote_ip,
+                TEST_ADDRS_V6.local_ip,
+                64,
+                Ipv6Proto::Other(Ipv6ExtHdrType::DestinationOptions.into()),
+            ),
+            FragmentOffset::new(offset).unwrap(),
+            more_fragments,
+            FRAGMENT_ID,
+        );
+        wrap_body(builder, body)
+    };
+
+    // Fragment #0: an 8-byte Destination Options header (Next Header = No Next
+    // Header, Hdr Ext Len = 0, followed by the unrecognized option).
+    let body_0: Vec<u8> = [Ipv6Proto::NoNextHeader.into(), 0]
+        .into_iter()
+        .chain(UNRECOGNIZED_DISCARD_SEND_ICMP_OPTION)
+        .collect();
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(
+        &device,
+        Some(frame_dst),
+        fragment(0, /* more_fragments */ true, body_0),
+    );
+
+    // Extension headers following the Fragment header are not parsed until the
+    // packet is reassembled, so no ICMP error is sent yet.
+    assert_matches!(ctx.bindings_ctx.take_ethernet_frames()[..], []);
+    IpCounterExpectations::<Ipv6> {
+        receive_ip_packet: 1,
+        need_more_fragments: 1,
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
+
+    // Fragment #1: the last fragment, starting at offset 1 (8 bytes).
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(
+        &device,
+        Some(frame_dst),
+        fragment(1, /* more_fragments */ false, vec![0; 8]),
+    );
+
+    // The unrecognized option is detected when parsing the reassembled packet.
+    let frames = ctx.bindings_ctx.take_ethernet_frames();
+    let (_dev, frame) = assert_matches!(&frames[..], [frame] => frame);
+    const DEST_OPTS_NEXT_HEADER_AND_HDR_EXT_LEN: usize = 2;
+    // The reassembled packet does not include the Fragment header, so the
+    // offset does not include it.
+    let option_type_offset = IPV6_FIXED_HDR_LEN + DEST_OPTS_NEXT_HEADER_AND_HDR_EXT_LEN;
+    verify_icmp_for_unrecognized_ext_hdr_option(
+        Icmpv6ParameterProblemCode::UnrecognizedIpv6Option,
+        u32::try_from(option_type_offset).unwrap(),
+        &frame[..],
+    );
+    IpCounterExpectations::<Ipv6> {
+        receive_ip_packet: 2,
+        need_more_fragments: 1,
+        fragment_reassembly_error: 1,
+        parameter_problem: 1,
+        send_ip_packet: 1,
         ..Default::default()
     }
     .assert_counters(&ctx.core_ctx(), &device);
