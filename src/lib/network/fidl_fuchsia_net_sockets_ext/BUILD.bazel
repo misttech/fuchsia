@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl_fuchsia_net_sockets_ext",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/network/netlink:__pkg__",
+        "//src/connectivity/network/netstack3:__pkg__",
+        "//src/connectivity/network/tests/fidl/sockets:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers_rust",
+        "//sdk/fidl/fuchsia.net.sockets:fuchsia.net.sockets_rust",
+        "//sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_rust",
+        "//sdk/fidl/fuchsia.net.udp:fuchsia.net.udp_rust",
+        "//src/connectivity/lib/net-types",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/network/fidl_fuchsia_net_ext",
+        "//src/lib/network/fidl_fuchsia_net_matchers_ext",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "fidl_fuchsia_net_sockets_ext_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":fidl_fuchsia_net_sockets_ext",
+    edition = "2024",
+    deps = [
+        "//sdk/rust/zx-status",
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "fidl-fuchsia-net-sockets-ext-tests",
+    unit_tests = [":fidl_fuchsia_net_sockets_ext_test"],
+)
