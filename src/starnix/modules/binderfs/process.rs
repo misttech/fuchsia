@@ -159,13 +159,15 @@ pub struct FreezeStatus {
 pub struct ActiveTransaction {
     /// The transaction's request type.
     pub request_type: RequestType,
-    /// The state associated with the transaction. Not read, exists to be dropped along with the
-    /// [`ActiveTransaction`] object.
+    /// The state associated with the transaction.
+    ///
+    /// Invariant: `state.proc` always points to the receiving [`BinderProcess`] whose
+    /// `active_transactions` map owns this [`ActiveTransaction`].
     pub state: ReleaseGuard<TransactionState>,
 }
 
 impl Releasable for ActiveTransaction {
-    type Context<'a> = ();
+    type Context<'a> = &'a mut RefCountActions;
 
     fn release<'a>(self, context: Self::Context<'a>) {
         self.state.release(context);
@@ -176,7 +178,8 @@ impl Releasable for ActiveTransaction {
 /// state is dropped, decrementing temporary strong references to binder objects.
 #[derive(Debug)]
 pub struct TransactionState {
-    /// The process whose handle table `handles` belong to.
+    /// The process whose handle table `handles` belong to. When stored in
+    /// `BinderProcessState::active_transactions`, this always refers to that owning process.
     pub proc: WeakRef<BinderProcess>,
     /// The target process.
     pub key: Pid,
@@ -192,37 +195,45 @@ pub struct TransactionState {
     pub owned_fds: smallvec::SmallVec<[FdNumber; 2]>,
 }
 
-impl Releasable for TransactionState {
-    type Context<'a> = ();
-
-    fn release<'a>(self, _: Self::Context<'a>) {
-        log_trace!("Releasing binder TransactionState");
-        let mut drop_actions = RefCountActions::default();
-        // Release the owned objects unconditionally.
-        for guard in self.guards {
-            guard.release(&mut drop_actions);
-        }
-        if !self.handles.is_empty() {
-            if let Some(proc) = self.proc.upgrade() {
-                // Release handles only if the owning process is still alive.
-                let mut proc_state = proc.lock();
-                for handle in &self.handles {
-                    if let Err(error) =
-                        proc_state.handles.dec_strong(handle.object_index(), &mut drop_actions)
-                    {
-                        // Ignore the error because there is little we can do about it.
-                        // Panicking would be wrong, in case the client issued an extra strong decrement.
-                        log_warn!(
-                            "Error when dropping transaction state for process {}: {:?}",
-                            proc.key,
-                            error
-                        );
-                    }
-                }
+impl TransactionState {
+    /// Decrements temporary strong references for `self.handles` in `proc_state`, recording any
+    /// deferred refcount actions in `actions`.
+    fn release_handles(
+        &mut self,
+        proc_state: &mut BinderProcessGuard<'_>,
+        actions: &mut RefCountActions,
+    ) {
+        debug_assert!(WeakRef::ptr_eq(&self.proc, &proc_state.base.weak_self));
+        for handle in self.handles.drain(..) {
+            if let Err(error) = proc_state.handles.dec_strong(handle.object_index(), actions) {
+                // Ignore the error because there is little we can do about it.
+                // Panicking would be wrong, in case the client issued an extra strong decrement.
+                log_warn!(
+                    "Error when dropping transaction state for process {}: {:?}",
+                    proc_state.base.key,
+                    error
+                );
             }
         }
-        // Releasing action must be done without holding BinderProcess lock.
-        drop_actions.release(());
+    }
+}
+
+impl Releasable for TransactionState {
+    type Context<'a> = &'a mut RefCountActions;
+
+    fn release<'a>(mut self, drop_actions: Self::Context<'a>) {
+        log_trace!("Releasing binder TransactionState");
+        // Release the owned objects unconditionally.
+        for guard in self.guards.drain(..) {
+            guard.release(drop_actions);
+        }
+        if !self.handles.is_empty() {
+            if let Some(proc) = self.proc.upgrade().map(TempRef::into_static) {
+                // Release handles only if the owning process is still alive.
+                let mut proc_state = proc.lock();
+                self.release_handles(&mut proc_state, drop_actions);
+            }
+        }
 
         // Close the owned fd.
         if !self.owned_fds.is_empty() {
@@ -262,7 +273,9 @@ impl<'a> Releasable for TransientTransactionState<'a> {
         if !self.transient_fds.is_empty() {
             let _ = self.accessor.close_files(self.transient_fds.into_vec());
         }
-        self.state.release(());
+        let mut drop_actions = RefCountActions::default();
+        self.state.release(&mut drop_actions);
+        drop_actions.release(());
         self.drop_guard.disarm();
     }
 }
@@ -616,34 +629,47 @@ impl BinderProcess {
     /// driver can reclaim this buffer.
     pub fn handle_free_buffer(&self, buffer_ptr: UserAddress) -> Result<(), Errno> {
         log_trace!("BinderProcess id={} freeing buffer {:?}", self.identifier(), buffer_ptr);
-        // Drop the state associated with the now completed transaction.
-        let active_transaction = self.lock().active_transactions.remove(&buffer_ptr);
-        release_after!(active_transaction, (), {
-            // Check if this was a oneway transaction and schedule the next oneway if this is the case.
-            if let Some(ActiveTransaction {
-                request_type: RequestType::Oneway { object }, ..
-            }) = active_transaction.as_ref().map(|at| at.deref())
-            {
-                let mut object_state = object.lock();
-                assert!(
-                    object_state.handling_oneway_transaction,
-                    "freeing a oneway buffer implies that a oneway transaction was being handled"
-                );
-                if let Some((transaction, trace)) = object_state.oneway_transactions.pop_front() {
-                    // Drop the lock, as we've completed all mutations and don't want to hold this
-                    // lock while acquiring any others.
-                    drop(object_state);
-
-                    // Schedule the transaction
-                    self.enqueue_command(QueuedCommand::new(
-                        Command::OnewayTransaction(transaction),
-                        trace,
-                    ));
-                } else {
-                    // No more oneway transactions queued, mark the queue handling as done.
-                    object_state.handling_oneway_transaction = false;
+        // Drop the state associated with the now completed transaction, releasing any temporary
+        // strong handle references under the same process lock acquisition.
+        let mut drop_actions = RefCountActions::default();
+        release_after!(drop_actions, (), {
+            let active_transaction = {
+                let mut proc_state = self.lock();
+                let mut active_transaction = proc_state.active_transactions.remove(&buffer_ptr);
+                if let Some(active_transaction) = active_transaction.as_mut() {
+                    active_transaction.state.release_handles(&mut proc_state, &mut drop_actions);
                 }
-            }
+                active_transaction
+            };
+            release_after!(active_transaction, &mut drop_actions, {
+                // Check if this was a oneway transaction and schedule the next oneway if this is the case.
+                if let Some(ActiveTransaction {
+                    request_type: RequestType::Oneway { object },
+                    ..
+                }) = active_transaction.as_ref().map(|at| at.deref())
+                {
+                    let mut object_state = object.lock();
+                    assert!(
+                        object_state.handling_oneway_transaction,
+                        "freeing a oneway buffer implies that a oneway transaction was being handled"
+                    );
+                    if let Some((transaction, trace)) = object_state.oneway_transactions.pop_front()
+                    {
+                        // Drop the lock, as we've completed all mutations and don't want to hold this
+                        // lock while acquiring any others.
+                        drop(object_state);
+
+                        // Schedule the transaction
+                        self.enqueue_command(QueuedCommand::new(
+                            Command::OnewayTransaction(transaction),
+                            trace,
+                        ));
+                    } else {
+                        // No more oneway transactions queued, mark the queue handling as done.
+                        object_state.handling_oneway_transaction = false;
+                    }
+                }
+            });
         });
 
         // Reclaim the memory.
@@ -1037,9 +1063,11 @@ impl Releasable for BinderProcess {
         // when the threads are released below.
         generate_dead_replies(state.command_queue, identifier, None);
 
+        let mut drop_actions = RefCountActions::default();
         for transaction in state.active_transactions.into_values() {
-            transaction.release(());
+            transaction.release(&mut drop_actions);
         }
+        drop_actions.release(());
 
         state.handles.release(());
 

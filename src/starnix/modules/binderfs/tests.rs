@@ -3188,7 +3188,7 @@ pub mod tests {
             assert_eq!(receiver_fd.raw() as u32, unsafe {
                 transaction_data_fd_object.__bindgen_anon_1.fd
             });
-            transaction_state.release(());
+            transaction_state.release(&mut RefCountActions::default_released());
         })
         .await;
     }
@@ -3258,7 +3258,7 @@ pub mod tests {
             assert_eq!(receiver_fd.raw() as u32, unsafe {
                 transaction_data_fd_object.__bindgen_anon_1.fd
             });
-            transaction_state.release(());
+            transaction_state.release(&mut RefCountActions::default_released());
         })
         .await;
     }
@@ -3374,7 +3374,9 @@ pub mod tests {
 
             // Simulate a successful transaction by converting the transient state.
             let transaction_state = transaction_state.into_state();
-            transaction_state.release(());
+            let mut actions = RefCountActions::default();
+            transaction_state.release(&mut actions);
+            actions.release(());
 
             // Verify that a strong release command is sent to the sender process.
             assert_matches!(
@@ -7735,6 +7737,149 @@ pub mod tests {
 
             // The poller is notified of the new command as well.
             assert_eq!(poll_waiter.wait_until(current_task, zx::MonotonicInstant::ZERO), Ok(()));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn oneway_transactions_with_handles_free_buffer_releases_handles() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let sender = BinderProcessFixture::new_current(current_task, &device);
+            let receiver = BinderProcessFixture::new(current_task, &device);
+
+            // Register the target binder object on the receiver and give the sender a handle to it.
+            const TARGET_ADDR: UserAddress = UserAddress::const_from(0x01);
+            let (target_object, target_guard) =
+                register_binder_object(&receiver.proc, TARGET_ADDR, (TARGET_ADDR + 1u64).unwrap());
+            let target_handle = sender
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(target_guard, &mut RefCountActions::default_released());
+
+            // Map userspace memory in the sender containing a BINDER_TYPE_BINDER payload object.
+            const PAYLOAD_WEAK_ADDR: UserAddress = UserAddress::const_from(0x50);
+            const PAYLOAD_STRONG_ADDR: UserAddress = UserAddress::const_from(0x51);
+            let data_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let offsets_addr =
+                (data_addr + std::mem::size_of::<flat_binder_object>() as u64).unwrap();
+            let flat_obj_bytes = struct_with_union_into_bytes!(flat_binder_object {
+                hdr.type_: BINDER_TYPE_BINDER,
+                flags: 0,
+                cookie: PAYLOAD_STRONG_ADDR.ptr() as u64,
+                __bindgen_anon_1.binder: PAYLOAD_WEAK_ADDR.ptr() as u64,
+            });
+            current_task.write_memory(data_addr, &flat_obj_bytes).expect("write flat obj");
+            current_task
+                .write_memory(offsets_addr, &(0 as binder_uintptr_t).to_ne_bytes())
+                .expect("write offset");
+
+            // Send the first oneway transaction carrying the BINDER_TYPE_BINDER object.
+            const FIRST_CODE: u32 = 101;
+            let first_tx = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: FIRST_CODE,
+                    flags: transaction_flags_TF_ONE_WAY,
+                    target: binder_transaction_data__bindgen_ty_1 { handle: target_handle.into() },
+                    data_size: std::mem::size_of::<flat_binder_object>() as u64,
+                    offsets_size: std::mem::size_of::<binder_uintptr_t>() as u64,
+                    data: binder_transaction_data__bindgen_ty_2 {
+                        ptr: binder_transaction_data__bindgen_ty_2__bindgen_ty_1 {
+                            buffer: data_addr.ptr() as u64,
+                            offsets: offsets_addr.ptr() as u64,
+                        },
+                    },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_transaction(&sender.context(current_task), &mut Vec::new(), first_tx)
+                .expect("first oneway transaction with handle");
+
+            // Queue a second oneway transaction on the same target object.
+            const SECOND_CODE: u32 = 102;
+            let second_tx = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: SECOND_CODE,
+                    flags: transaction_flags_TF_ONE_WAY,
+                    target: binder_transaction_data__bindgen_ty_1 { handle: target_handle.into() },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_transaction(&sender.context(current_task), &mut Vec::new(), second_tx)
+                .expect("second oneway transaction queued");
+
+            // While the first transaction is active, the receiver's handle table holds a strong
+            // reference to the payload binder object at handle index 0.
+            let (_, guard) =
+                receiver.proc.lock().handles.get(0).expect(
+                    "receiver must hold strong ref on translated handle before BC_FREE_BUFFER",
+                );
+            guard.release(&mut RefCountActions::default_released());
+            assert_eq!(target_object.lock().oneway_transactions.len(), 1);
+
+            let first_buffer_addr = match receiver
+                .proc
+                .lock()
+                .command_queue
+                .pop_front()
+                .expect("first oneway queued")
+            {
+                QueuedCommand {
+                    command:
+                        Command::OnewayTransaction(TransactionData {
+                            code: FIRST_CODE,
+                            buffers: TransactionBuffers { data, .. },
+                            ..
+                        }),
+                    ..
+                } => data.address,
+                _ => panic!("unexpected command"),
+            };
+
+            // Freeing the first buffer must release the temporary strong handle reference AND
+            // advance the oneway queue to schedule the second transaction.
+            receiver
+                .proc
+                .handle_free_buffer(first_buffer_addr)
+                .expect("handle_free_buffer first transaction");
+
+            assert!(
+                receiver.proc.lock().handles.get(0).is_none(),
+                "temporary strong handle ref must be dropped after BC_FREE_BUFFER"
+            );
+            assert!(
+                target_object.lock().oneway_transactions.is_empty(),
+                "second oneway transaction must be dequeued from object"
+            );
+
+            let second_buffer_addr = match receiver
+                .proc
+                .lock()
+                .command_queue
+                .pop_front()
+                .expect("second oneway scheduled")
+            {
+                QueuedCommand {
+                    command:
+                        Command::OnewayTransaction(TransactionData {
+                            code: SECOND_CODE,
+                            buffers: TransactionBuffers { data, .. },
+                            ..
+                        }),
+                    ..
+                } => data.address,
+                _ => panic!("unexpected command"),
+            };
+            receiver
+                .proc
+                .handle_free_buffer(second_buffer_addr)
+                .expect("handle_free_buffer second transaction");
+            assert!(!target_object.lock().handling_oneway_transaction);
         })
         .await;
     }
