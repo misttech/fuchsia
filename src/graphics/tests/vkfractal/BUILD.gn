@@ -4,7 +4,6 @@
 
 import("//build/compiled_action.gni")
 import("//build/components.gni")
-import("//src/graphics/lib/magma/gnbuild/magma.gni")
 
 # Each variant compiles a shader to SPIR-V and emits a C header containing a
 # uint32_t array named <name>_spv. glslangValidator infers the stage from the
@@ -84,8 +83,11 @@ fuchsia_test_component("vkfractal-cmp") {
 fuchsia_test_package("vkfractal") {
   test_components = [ ":vkfractal-cmp" ]
   test_specs = {
-    # Real GPUs only: lavapipe and goldfish are too slow for this workload.
-    environments = magma_libvulkan_hardware_envs
+    # TODO(fxbug.dev/576685553): This test has highly irregular frame pacing
+    # which triggers latent bugs in the display stack on some hardware. The
+    # linked bug tracks re-enabling the test either after the bugs have been
+    # fixed, or with behavior that doesn't trigger the bugs.
+    build_only = true
 
     # Allow ERROR logs, as other Vulkan hardware tests do (e.g. vkloop). Vulkan
     # validation errors still fail the test: vkfractal counts them through its
