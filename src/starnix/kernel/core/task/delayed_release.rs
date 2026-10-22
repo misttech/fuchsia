@@ -5,13 +5,14 @@
 use crate::task::CurrentTask;
 use starnix_logging::log_warn;
 use starnix_types::ownership::Releasable;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ops::DerefMut;
 
 /// Register the container to be deferred released.
 pub fn register_delayed_release<T: for<'a> Releasable<Context<'a> = &'a CurrentTask> + 'static>(
     to_release: T,
 ) {
+    HAS_PENDING_RELEASERS.with(|flag| flag.set(true));
     RELEASERS.with(|cell| {
         let mut cell = cell.borrow_mut();
         let list = &mut cell.as_mut().expect("DelayedReleaser hasn't been finalized").releasables;
@@ -57,6 +58,9 @@ where
 }
 
 thread_local! {
+    /// Fast-path flag indicating whether `RELEASERS` is non-empty on the current thread.
+    static HAS_PENDING_RELEASERS: Cell<bool> = const { Cell::new(false) };
+
     /// Container of all `FileObject` that are not used anymore, but have not been closed yet.
     static RELEASERS: RefCell<Option<LocalReleasers>> =
         RefCell::new(Some(LocalReleasers::default()));
@@ -94,9 +98,24 @@ pub struct DelayedReleaser {}
 
 impl DelayedReleaser {
     /// Run all current delayed releases for the current thread.
+    #[inline]
     pub fn apply(&self, current_task: &CurrentTask) {
+        debug_assert!(
+            RELEASERS.with(|cell| cell.borrow().is_some()),
+            "DelayedReleaser has been finalized"
+        );
+        if !HAS_PENDING_RELEASERS.with(|flag| flag.replace(false)) {
+            return;
+        }
+        self.apply_slow(current_task);
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn apply_slow(&self, current_task: &CurrentTask) {
         let mut counter = 0u32;
         loop {
+            HAS_PENDING_RELEASERS.with(|flag| flag.set(false));
             let releasers = RELEASERS.with(|cell| {
                 std::mem::take(
                     cell.borrow_mut()
@@ -125,6 +144,7 @@ impl DelayedReleaser {
     /// register any new releasables on this thread after we have finalized the delayed
     /// releasables for the last time.
     pub fn finalize() {
+        HAS_PENDING_RELEASERS.with(|flag| flag.set(false));
         RELEASERS.with(|cell| {
             let list = cell.borrow_mut().take().expect("DelayedReleaser hasn't been finalized");
             assert!(list.is_empty());
@@ -149,6 +169,24 @@ mod tests {
             });
 
             assert!(!flag.load(Ordering::SeqCst));
+            DelayedReleaser::default().apply(current_task);
+            assert!(flag.load(Ordering::SeqCst));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_delayed_call_registered_during_apply() {
+        spawn_kernel_and_run(async move |current_task| {
+            let flag = Arc::new(AtomicBool::new(false));
+            let flag_clone = flag.clone();
+            register_delayed_call(move |_current_task| {
+                // Releasables registered while applying are drained by the same `apply()` call.
+                register_delayed_call(move |_current_task| {
+                    flag_clone.store(true, Ordering::SeqCst);
+                });
+            });
+
             DelayedReleaser::default().apply(current_task);
             assert!(flag.load(Ordering::SeqCst));
         })
