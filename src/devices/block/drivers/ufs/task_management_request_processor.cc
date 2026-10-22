@@ -44,19 +44,19 @@ uint32_t TaskManagementRequestProcessor::ProcessCompletionOfIoRequests() {
     return 0;
   }
 
-  uint32_t active_slots;
-  {
-    std::lock_guard<std::mutex> lock(slot_lock_);
-    active_slots = allocated_slots_mask_;
-  }
-
+  std::lock_guard<std::mutex> lock(slot_lock_);
+  uint32_t active_slots = 0;
+  ForEachAllocatedSlotLocked([&](uint8_t slot_num, RequestSlot &request_slot) {
+    if (request_slot.state == SlotState::kScheduled) {
+      active_slots |= (1u << slot_num);
+    }
+  });
   if (active_slots == 0) {
     return 0;
   }
 
   const uint32_t doorbell = ReadDoorBellRegister();
   uint32_t completion_count = 0;
-  std::lock_guard<std::mutex> lock(slot_lock_);
   while (active_slots != 0) {
     const uint8_t slot_num = static_cast<uint8_t>(std::countr_zero(active_slots));
     active_slots &= active_slots - 1;

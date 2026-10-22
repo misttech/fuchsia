@@ -538,13 +538,15 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
   if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
     return 0;
   }
-  const uint32_t doorbell = ReadDoorBellRegister();
   fit::callback<void(zx_status_t)> cb;
   zx_status_t status = ZX_OK;
   bool completed = false;
   {
     std::lock_guard<std::mutex> lock(slot_lock_);
-    completed = ProcessSlotCompletion(kAdminCommandSlotNumber, doorbell, cb, status);
+    if (slots_.GetSlot(kAdminCommandSlotNumber).state != SlotState::kScheduled) {
+      return 0;
+    }
+    completed = ProcessSlotCompletion(kAdminCommandSlotNumber, ReadDoorBellRegister(), cb, status);
   }
   if (cb) {
     cb(status);
@@ -561,17 +563,23 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
     return 0;
   }
 
-  uint32_t active_slots;
+  uint32_t active_slots = 0;
+  uint32_t doorbell = 0;
   {
     std::lock_guard<std::mutex> lock(slot_lock_);
-    active_slots = allocated_slots_mask_ & ~(1u << kAdminCommandSlotNumber);
+    ForEachAllocatedSlotLocked(
+        [&](uint8_t slot_num, RequestSlot &request_slot) {
+          if (request_slot.state == SlotState::kScheduled) {
+            active_slots |= (1u << slot_num);
+          }
+        },
+        /*excluded_mask=*/(1u << kAdminCommandSlotNumber));
+    if (active_slots == 0) {
+      return 0;
+    }
+    doorbell = ReadDoorBellRegister();
   }
 
-  if (active_slots == 0) {
-    return 0;
-  }
-
-  const uint32_t doorbell = ReadDoorBellRegister();
   uint32_t completion_count = 0;
   while (active_slots != 0) {
     const uint8_t slot_num = static_cast<uint8_t>(std::countr_zero(active_slots));
