@@ -16,7 +16,6 @@ from honeydew.device_classes import (
 )
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import ffx as ffx_transport
-from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.typing import custom_types
 
@@ -172,19 +171,13 @@ def _get_device_class(
     Returns:
         Device class type.
     """
-    query: str = (
-        str(device_info.ip_port) if device_info.ip_port else device_info.name
-    )
     ffx_obj: ffx_transport.FFX = ffx_transport.FFX(
-        args=ffx_types.FfxArgs(
-            query=query,
-            name=device_info.name,
-            config_data=ffx_config_data,
-            use_monitor_state=False,
-            device_ip_change=(
-                _NoOpDeviceIpChange() if device_info.ip_port else None
-            ),
-        )
+        target_name=device_info.name,
+        config_data=ffx_config_data,
+        target_ip_port=device_info.ip_port,
+        device_ip_change=(
+            _NoOpDeviceIpChange() if device_info.ip_port else None
+        ),
     )
     product_type: str = ffx_obj.get_target_product()
 

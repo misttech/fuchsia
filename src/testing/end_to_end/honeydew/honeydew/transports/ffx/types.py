@@ -8,32 +8,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from honeydew.affordances_capable import FuchsiaDeviceIpChange
-from honeydew.transports.ffx import config as ffx_config
 from honeydew.typing.custom_types import IpPort
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class FfxArgs:
-    """Dataclass that holds arguments for FFX transport initialization.
-
-    Args:
-        query: Fuchsia device name or (possibly unresolved) IP address.
-        config_data: Configuration associated with FFX.
-        name: Optional human-readable name of the target for logging purposes.
-        use_monitor_state: True to use ffx monitor for target status, False
-            otherwise. When True, the "name" arg is mandatory.
-        device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
-            IP changes.
-    """
-
-    query: str
-    config_data: ffx_config.FfxConfigData
-    name: str | None = None
-    use_monitor_state: bool = False
-    device_ip_change: FuchsiaDeviceIpChange | None = None
 
 
 # LINT.IfChange

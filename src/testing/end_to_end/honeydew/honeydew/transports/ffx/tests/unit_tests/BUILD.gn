@@ -22,6 +22,16 @@ if (is_host) {
     main_callable = "unittest.main"
     extra_args = [ "-v" ]
   }
+
+  python_host_test("ffx_with_monitor_test") {
+    main_source = "ffx_with_monitor_test.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//third_party/parameterized",
+    ]
+    main_callable = "unittest.main"
+    extra_args = [ "-v" ]
+  }
 }
 
 group("tests") {
@@ -29,5 +39,6 @@ group("tests") {
   public_deps = [
     ":ffx_config_test($host_toolchain)",
     ":ffx_test($host_toolchain)",
+    ":ffx_with_monitor_test($host_toolchain)",
   ]
 }

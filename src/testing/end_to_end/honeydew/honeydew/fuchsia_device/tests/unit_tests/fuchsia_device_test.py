@@ -50,7 +50,7 @@ from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.fastboot import fastboot
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
-from honeydew.transports.ffx import ffx
+from honeydew.transports.ffx import ffx, ffx_with_monitor
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
@@ -257,12 +257,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         with (
             mock.patch.object(
-                ffx.FFX,
-                "_check_running_monitor",
-                return_value=False,
-                autospec=True,
-            ),
-            mock.patch.object(
                 fc_transport.FuchsiaController,
                 "create_context",
                 autospec=True,
@@ -455,9 +449,50 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             self.fd_fc_obj.ffx,
             ffx.FFX,
         )
+        self.assertNotIsInstance(
+            self.fd_fc_obj.ffx,
+            ffx_with_monitor.FFXWithMonitor,
+        )
         self.assertEqual(
             self.fd_fc_obj.ffx.config.shared_data, "/tmp/shared_data"
         )
+
+    @mock.patch.object(
+        ffx_with_monitor.FFXWithMonitor,
+        "_check_running_monitor",
+        return_value=True,
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx_with_monitor.FFXWithMonitor,
+        "wait_for_rcs_connection",
+        autospec=True,
+    )
+    def test_ffx_transport_with_monitor(
+        self,
+        mock_wait_for_rcs_connection: mock.Mock,
+        mock_check_running_monitor: mock.Mock,
+    ) -> None:
+        """Test case to make sure fuchsia_device returns FFXWithMonitor when use_monitor_state is True."""
+        prev_config = self.fd_fc_obj._config
+        self.fd_fc_obj.__dict__.pop("ffx", None)
+        self.fd_fc_obj._config = {
+            "transports": {
+                "ffx": {
+                    "use_monitor_state": True,
+                }
+            }
+        }
+        try:
+            self.assertIsInstance(
+                self.fd_fc_obj.ffx,
+                ffx_with_monitor.FFXWithMonitor,
+            )
+            mock_check_running_monitor.assert_called_once()
+            mock_wait_for_rcs_connection.assert_called_once()
+        finally:
+            self.fd_fc_obj.__dict__.pop("ffx", None)
+            self.fd_fc_obj._config = prev_config
 
     def test_fuchsia_controller_transport(self) -> None:
         """Test case to make sure fuchsia_device supports fuchsia-controller

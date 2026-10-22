@@ -91,8 +91,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
 )
 from honeydew.transports.fastboot import fastboot
 from honeydew.transports.ffx import errors as ffx_errors
-from honeydew.transports.ffx import ffx
-from honeydew.transports.ffx import types as ffx_types
+from honeydew.transports.ffx import ffx, ffx_with_monitor
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
@@ -354,7 +353,7 @@ class FuchsiaDevice(
         """Returns the FFX transport object.
 
         Returns:
-            FFX transport interface implementation.
+            FFX or FFXWithMonitor transport instance.
 
         Raises:
             FfxCommandError: Failed to instantiate.
@@ -368,22 +367,20 @@ class FuchsiaDevice(
                 should_exist=False,
             )
             if config_use_monitor_state is not None:
-                use_monitor_state = config_use_monitor_state
-        query: str = (
-            str(self._device_info.ip_port)
-            if self._device_info.ip_port
-            else self.device_name
-        )
-        ffx_obj: ffx.FFX = ffx.FFX(
-            args=ffx_types.FfxArgs(
-                query=query,
-                name=self.device_name,
+                use_monitor_state = bool(config_use_monitor_state)
+        if use_monitor_state:
+            return ffx_with_monitor.FFXWithMonitor(
+                target_name=self.device_name,
                 config_data=self._ffx_config_data,
-                use_monitor_state=use_monitor_state,
+                target_ip_port=self._device_info.ip_port,
                 device_ip_change=self,
             )
+        return ffx.FFX(
+            target_name=self.device_name,
+            config_data=self._ffx_config_data,
+            target_ip_port=self._device_info.ip_port,
+            device_ip_change=self,
         )
-        return ffx_obj
 
     @properties.Transport
     def fuchsia_controller(

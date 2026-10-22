@@ -16,11 +16,9 @@ from honeydew import affordances_capable, errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
-from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.ffx.types import (
     DeviceData,
     MachineFormat,
-    MonitorTargetInfo,
     TargetInfoData,
 )
 from honeydew.typing import custom_types
@@ -223,10 +221,8 @@ class FfxTests(unittest.TestCase):
             ) as mock_ffx_check_connection,
         ):
             self.ffx_obj_wo_ip = ffx.FFX(
-                ffx_types.FfxArgs(
-                    query=_INPUT_ARGS["target_query"],
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                )
+                target_name=_INPUT_ARGS["target_query"],
+                config_data=_INPUT_ARGS["ffx_config_data"],
             )
         mock_ffx_check_connection.assert_called()
 
@@ -243,123 +239,43 @@ class FfxTests(unittest.TestCase):
             ) as mock_ffx_check_connection,
         ):
             self.ffx_obj_with_ip = ffx.FFX(
-                ffx_types.FfxArgs(
-                    query=str(_INPUT_ARGS["target_addr"]),
-                    name=_INPUT_ARGS["target_query"],
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                    device_ip_change=self.device_ip_change,
-                )
+                target_name=_INPUT_ARGS["target_query"],
+                config_data=_INPUT_ARGS["ffx_config_data"],
+                target_ip_port=_INPUT_ARGS["target_addr"],
+                device_ip_change=self.device_ip_change,
             )
         mock_ffx_check_connection.assert_called()
+        self.device_ip_change.register_for_on_device_ip_change.assert_called_once()
 
-        mock_ffx_check_connection.reset_mock()
-
-        with (
-            mock.patch.object(
-                ffx.FFX,
-                "check_connection",
-                autospec=True,
-            ) as mock_ffx_check_connection,
-            mock.patch.object(
-                ffx.FFX,
-                "_check_running_monitor",
-                return_value=True,
-                autospec=True,
-            ) as mock_ffx_check_running_monitor,
-        ):
-            self.ffx_obj_with_ip_and_monitor = ffx.FFX(
-                ffx_types.FfxArgs(
-                    query=str(_INPUT_ARGS["target_addr"]),
-                    name=_INPUT_ARGS["target_query"],
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                    use_monitor_state=True,
-                    device_ip_change=self.device_ip_change,
-                )
-            )
-        mock_ffx_check_connection.assert_called()
-        mock_ffx_check_running_monitor.assert_called()
-
-    def test_ffx_args_dataclass_defaults(self) -> None:
-        """Test case for ffx_types.FfxArgs default values."""
-        args = ffx_types.FfxArgs(
-            query=_INPUT_ARGS["target_query"],
-            config_data=_INPUT_ARGS["ffx_config_data"],
+    def test_ffx_init_with_target_ip_port(self) -> None:
+        """Test case for ffx.FFX() when called with target_ip_port."""
+        target_ip_port = custom_types.IpPort(
+            ipaddress.ip_address("127.0.0.1"), None
         )
-        self.assertEqual(args.query, _INPUT_ARGS["target_query"])
-        self.assertEqual(args.config_data, _INPUT_ARGS["ffx_config_data"])
-        self.assertIsNone(args.name)
-        self.assertFalse(args.use_monitor_state)
-        self.assertIsNone(args.device_ip_change)
-
-    def test_ffx_init_with_ip_as_target_query(self) -> None:
-        """Test case for ffx.FFX() when called with query=<ip>."""
         with mock.patch.object(
             ffx.FFX,
             "check_connection",
             autospec=True,
         ):
             ffx_obj = ffx.FFX(
-                ffx_types.FfxArgs(
-                    query="127.0.0.1",
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                    device_ip_change=self.device_ip_change,
-                )
+                target_name=_INPUT_ARGS["target_query"],
+                config_data=_INPUT_ARGS["ffx_config_data"],
+                target_ip_port=target_ip_port,
+                device_ip_change=self.device_ip_change,
             )
-        self.assertEqual(ffx_obj._query, "127.0.0.1")
-        self.assertEqual(
-            ffx_obj._target_addr,
-            custom_types.IpPort(ipaddress.ip_address("127.0.0.1"), None),
-        )
+        self.assertEqual(ffx_obj._target_addr, target_ip_port)
 
-    def test_ffx_init_with_ip_as_target_query_raises_when_no_device_ip_change(
+    def test_ffx_init_with_target_ip_port_raises_when_no_device_ip_change(
         self,
     ) -> None:
-        """Test case for ffx.FFX() when called with IP and no device_ip_change."""
+        """Test case for ffx.FFX() when called with target_ip_port and no device_ip_change."""
         with self.assertRaises(ValueError):
             ffx.FFX(
-                ffx_types.FfxArgs(
-                    query="127.0.0.1",
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                )
-            )
-
-    def test_ffx_init_monitor_not_running_raises(self) -> None:
-        """Test case for ffx.FFX() when use_monitor_state=True and no monitor is running."""
-        with (
-            mock.patch.object(
-                ffx.FFX,
-                "_check_running_monitor",
-                return_value=False,
-                autospec=True,
-            ),
-            self.assertRaises(ffx_errors.FfxMonitorNotSupportedError),
-        ):
-            ffx.FFX(
-                ffx_types.FfxArgs(
-                    query=_INPUT_ARGS["target_query"],
-                    name=_INPUT_ARGS["target_query"],
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                    use_monitor_state=True,
-                )
-            )
-
-    def test_ffx_init_monitor_without_name_raises(self) -> None:
-        """Test case for ffx.FFX() when use_monitor_state=True and name is None."""
-        with (
-            mock.patch.object(
-                ffx.FFX,
-                "_check_running_monitor",
-                return_value=True,
-                autospec=True,
-            ),
-            self.assertRaises(ffx_errors.FfxMonitorRequiresNameError),
-        ):
-            ffx.FFX(
-                ffx_types.FfxArgs(
-                    query=_INPUT_ARGS["target_query"],
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                    use_monitor_state=True,
-                )
+                target_name=_INPUT_ARGS["target_query"],
+                config_data=_INPUT_ARGS["ffx_config_data"],
+                target_ip_port=custom_types.IpPort(
+                    ipaddress.ip_address("127.0.0.1"), None
+                ),
             )
 
     @mock.patch.object(
@@ -569,36 +485,6 @@ class FfxTests(unittest.TestCase):
 
     @mock.patch.object(
         ffx.FFX,
-        "_get_target_status",
-        return_value=MonitorTargetInfo(**_FFX_TARGET_INFO),
-        autospec=True,
-    )
-    def test_get_target_board_with_monitor(
-        self, mock_get_target_status: mock.Mock
-    ) -> None:
-        """Verify ffx.get_target_board returns board value of fuchsia device
-        when monitor is used."""
-        result: str = self.ffx_obj_with_ip_and_monitor.get_target_board()
-        self.assertEqual(result, "x64")
-        mock_get_target_status.assert_called()
-
-    @mock.patch.object(
-        ffx.FFX,
-        "_get_target_status",
-        return_value=MonitorTargetInfo(rcs_state="N"),
-        autospec=True,
-    )
-    def test_get_target_board_with_monitor_rcs_disconnected(
-        self, mock_get_target_status: mock.Mock
-    ) -> None:
-        """Verify ffx.get_target_board raises DeviceNotConnectedError when
-        rcs_state is not Y."""
-        with self.assertRaises(errors.DeviceNotConnectedError):
-            self.ffx_obj_with_ip_and_monitor.get_target_board()
-        mock_get_target_status.assert_called()
-
-    @mock.patch.object(
-        ffx.FFX,
         "get_target_info_from_target_show",
         return_value=_MOCK_ARGS["ffx_target_show_object"],
         autospec=True,
@@ -614,36 +500,6 @@ class FfxTests(unittest.TestCase):
         self.assertEqual(result, expected)
 
         mock_get_target_info_from_target_show.assert_called()
-
-    @mock.patch.object(
-        ffx.FFX,
-        "_get_target_status",
-        return_value=MonitorTargetInfo(**_FFX_TARGET_INFO),
-        autospec=True,
-    )
-    def test_get_target_product_with_monitor(
-        self, mock_get_target_status: mock.Mock
-    ) -> None:
-        """Verify ffx.get_target_product returns product value of fuchsia
-        device when monitor is used."""
-        result: str = self.ffx_obj_with_ip_and_monitor.get_target_product()
-        self.assertEqual(result, "workstation_eng")
-        mock_get_target_status.assert_called()
-
-    @mock.patch.object(
-        ffx.FFX,
-        "_get_target_status",
-        return_value=MonitorTargetInfo(rcs_state="N"),
-        autospec=True,
-    )
-    def test_get_target_product_with_monitor_rcs_disconnected(
-        self, mock_get_target_status: mock.Mock
-    ) -> None:
-        """Verify ffx.get_target_product raises DeviceNotConnectedError when
-        rcs_state is not Y."""
-        with self.assertRaises(errors.DeviceNotConnectedError):
-            self.ffx_obj_with_ip_and_monitor.get_target_product()
-        mock_get_target_status.assert_called()
 
     @mock.patch.object(
         host_shell,
@@ -770,12 +626,10 @@ class FfxTests(unittest.TestCase):
             autospec=True,
         ):
             ffx_obj = ffx.FFX(
-                ffx_types.FfxArgs(
-                    query=str(_INPUT_ARGS["target_addr"]),
-                    name=_INPUT_ARGS["target_query"],
-                    config_data=config_data,
-                    device_ip_change=self.device_ip_change,
-                )
+                target_name=_INPUT_ARGS["target_query"],
+                config_data=config_data,
+                target_ip_port=_INPUT_ARGS["target_addr"],
+                device_ip_change=self.device_ip_change,
             )
 
         expected_config = {
@@ -1004,33 +858,6 @@ class FfxTests(unittest.TestCase):
             include_target=False,
             log_status_on_failure=False,
         )
-
-    @mock.patch.object(
-        ffx.FFX,
-        "_get_target_status",
-        return_value=MonitorTargetInfo(**_FFX_TARGET_INFO),
-        autospec=True,
-    )
-    def test_wait_for_rcs_connection_use_monitor(
-        self, get_target_status: mock.Mock
-    ) -> None:
-        """Test case for ffx.wait_for_rcs_connection()"""
-        self.ffx_obj_with_ip_and_monitor.wait_for_rcs_connection()
-        get_target_status.assert_called()
-
-    @mock.patch.object(
-        host_shell, "run", return_value='{"targets": []}', autospec=True
-    )
-    def test_get_target_status_includes_shared_data(
-        self, mock_host_run: mock.Mock
-    ) -> None:
-        """Verify _get_target_status includes shared_data in its command."""
-        self.ffx_obj_with_ip_and_monitor._get_target_status()
-        mock_host_run.assert_called()
-        cmd = mock_host_run.call_args[1]["cmd"]
-        self.assertIn("-c", cmd)
-        config_dict = json.loads(cmd[cmd.index("-c") + 1])
-        self.assertEqual(config_dict.get("shared_data"), _SHARED_DATA)
 
     @mock.patch.object(ffx.FFX, "run", return_value="", autospec=True)
     def test_wait_for_rcs_disconnection(self, mock_ffx_run: mock.Mock) -> None:
