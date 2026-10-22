@@ -12,6 +12,8 @@ toc:
   path: /docs/development/tools/ffx/getting-started.md
 - title: "FDomain overview"
   path: /docs/development/tools/ffx/fdomain.md
+- title: "UART Transport"
+  path: /docs/development/tools/ffx/uart.md
 - title: "Developing for ffx"
   section:
   - include: /docs/development/tools/ffx/development/_toc.yaml

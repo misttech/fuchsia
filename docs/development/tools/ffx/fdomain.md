@@ -57,6 +57,33 @@ This is achieved through conditional compilation (for example,
 and used both on-device and driven remotely** via FDomain, without being tied to
 a specific transport implementation.
 
+## Transports {:#transports}
+
+FDomain can run over different transport mechanisms depending on the environment
+and connectivity requirements.
+
+### Network Transport (SSH) {:#network-transport}
+
+By default, FDomain connects to the target over a TCP/IP network by tunneling
+traffic through an **SSH session**.
+The host-side FFX client establishes an SSH connection to the target, tunnels
+FIDL requests over the connection, and communicates with the Remote Control
+Service (RCS). This transport is fast and supports all developer workflows,
+including high-bandwidth package serving.
+
+### USB Transport (VSOCK) {:#usb-transport}
+
+FDomain can also run over a **USB connection** using the **USB VSOCK protocol** (using `usb:` addresses).
+This transport provides a reliable, high-bandwidth connection without requiring network configuration. The host-side FFX client communicates directly with the target's VSOCK daemon over the USB link. Since USB devices support active bus enumeration, FFX automatically discovers and connects to them without manual subtool intervention.
+
+### UART Transport (Serial) {:#uart-transport}
+
+FDomain can also run over a **physical serial port (UART)**,
+allowing you to interact with and debug devices with no network connectivity.
+
+For detailed setup instructions, discovery workflows, implementation details,
+and commands for the UART transport, see [UART Transport](uart.md).
+
 <!-- Reference links -->
 
 [fdomain]: https://fuchsia.dev/reference/fidl/fuchsia.fdomain
