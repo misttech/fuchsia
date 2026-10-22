@@ -15782,7 +15782,7 @@ rustc_library("parking_lot_core-v0_9_12") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":smallvec-v1_15_2" ]
   if (false) {
-    deps += [ ":redox_syscall-v0_5_17" ]
+    deps += [ ":redox_syscall-v0_5_18" ]
   }
   if (true) {
     deps += [ ":libc-v0_2_190" ]
@@ -15800,7 +15800,7 @@ rustc_library("parking_lot_core-v0_9_12") {
   ]
 
   aliased_deps = {
-    syscall = ":redox_syscall-v0_5_17.actual"
+    syscall = ":redox_syscall-v0_5_18.actual"
   }
   visibility = [ ":*" ]
 
@@ -23062,17 +23062,17 @@ rustc_library("synstructure-v0_14_0") {
   applicable_licenses = [ ":synstructure-v0_14_0.license" ]
 }
 
-license("redox_syscall-v0_5_17.license") {
+license("redox_syscall-v0_5_18.license") {
   public_package_name = "syscall"
   license_files =
-      [ "//third_party/rust_crates/vendor/redox_syscall-0.5.17/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/redox_syscall-0.5.18/LICENSE" ]
 }
 
-rustc_library("redox_syscall-v0_5_17") {
+rustc_library("redox_syscall-v0_5_18") {
   crate_name = "syscall"
   source_root =
-      "//third_party/rust_crates/vendor/redox_syscall-0.5.17/src/lib.rs"
-  output_name = "syscall-5ce20fe280ae2ab0"
+      "//third_party/rust_crates/vendor/redox_syscall-0.5.18/src/lib.rs"
+  output_name = "syscall-2fde43d7418c54d3"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -23085,15 +23085,15 @@ rustc_library("redox_syscall-v0_5_17") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5ce20fe280ae2ab0",
-    "-Cextra-filename=-5ce20fe280ae2ab0",
+    "-Cmetadata=2fde43d7418c54d3",
+    "-Cextra-filename=-2fde43d7418c54d3",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"userspace\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":redox_syscall-v0_5_17.license" ]
+  applicable_licenses = [ ":redox_syscall-v0_5_18.license" ]
 }
 
 license("tagptr-v0_2_0.license") {

@@ -4,40 +4,39 @@ use core::{
     slice,
 };
 
-use super::error::{Error, Result};
-
 pub const PAGE_SIZE: usize = 4096;
+/// Size of the metadata region used to transfer information from the kernel to the bootstrapper.
+pub const KERNEL_METADATA_SIZE: usize = 4 * PAGE_SIZE;
 
 #[cfg(feature = "userspace")]
 macro_rules! syscall {
     ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, )?)?)?)?)?);)+) => {
         $(
-            pub unsafe fn $name($a: usize, $($b: usize, $($c: usize, $($d: usize, $($e: usize, $($f: usize)?)?)?)?)?) -> Result<usize> {
-                let ret: usize;
-
+            pub unsafe fn $name(mut $a: usize, $($b: usize, $($c: usize, $($d: usize, $($e: usize, $($f: usize)?)?)?)?)?) -> crate::error::Result<usize> {
                 core::arch::asm!(
-                    "svc 0",
-                    in("x8") $a,
+                    "syscall",
+                    inout("rax") $a,
                     $(
-                        in("x0") $b,
+                        in("rdi") $b,
                         $(
-                            in("x1") $c,
+                            in("rsi") $c,
                             $(
-                                in("x2") $d,
+                                in("rdx") $d,
                                 $(
-                                    in("x3") $e,
+                                    in("r10") $e,
                                     $(
-                                        in("x4") $f,
+                                        in("r8") $f,
                                     )?
                                 )?
                             )?
                         )?
                     )?
-                    lateout("x0") ret,
+                    out("rcx") _,
+                    out("r11") _,
                     options(nostack),
                 );
 
-                Error::demux(ret)
+                crate::error::Error::demux($a)
             }
         )+
     };
@@ -56,68 +55,56 @@ syscall! {
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct IntRegisters {
-    pub x30: usize,
-    pub x29: usize,
-    pub x28: usize,
-    pub x27: usize,
-    pub x26: usize,
-    pub x25: usize,
-    pub x24: usize,
-    pub x23: usize,
-    pub x22: usize,
-    pub x21: usize,
-    pub x20: usize,
-    pub x19: usize,
-    pub x18: usize,
-    pub x17: usize,
-    pub x16: usize,
-    pub x15: usize,
-    pub x14: usize,
-    pub x13: usize,
-    pub x12: usize,
-    pub x11: usize,
-    pub x10: usize,
-    pub x9: usize,
-    pub x8: usize,
-    pub x7: usize,
-    pub x6: usize,
-    pub x5: usize,
-    pub x4: usize,
-    pub x3: usize,
-    pub x2: usize,
-    pub x1: usize,
-    pub x0: usize,
+    pub r15: usize,
+    pub r14: usize,
+    pub r13: usize,
+    pub r12: usize,
+    pub rbp: usize,
+    pub rbx: usize,
+    pub r11: usize,
+    pub r10: usize,
+    pub r9: usize,
+    pub r8: usize,
+    pub rax: usize,
+    pub rcx: usize,
+    pub rdx: usize,
+    pub rsi: usize,
+    pub rdi: usize,
+    pub rip: usize,
+    pub cs: usize,
+    pub rflags: usize,
+    pub rsp: usize,
+    pub ss: usize,
 }
 
 impl Deref for IntRegisters {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        unsafe {
-            slice::from_raw_parts(
-                self as *const IntRegisters as *const u8,
-                mem::size_of::<IntRegisters>(),
-            )
-        }
+        unsafe { slice::from_raw_parts(self as *const Self as *const u8, mem::size_of::<Self>()) }
     }
 }
 
 impl DerefMut for IntRegisters {
     fn deref_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            slice::from_raw_parts_mut(
-                self as *mut IntRegisters as *mut u8,
-                mem::size_of::<IntRegisters>(),
-            )
-        }
+        unsafe { slice::from_raw_parts_mut(self as *mut Self as *mut u8, mem::size_of::<Self>()) }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C, packed)]
 pub struct FloatRegisters {
-    pub fp_simd_regs: [u128; 32],
-    pub fpsr: u32,
-    pub fpcr: u32,
+    pub fcw: u16,
+    pub fsw: u16,
+    pub ftw: u8,
+    pub _reserved: u8,
+    pub fop: u16,
+    pub fip: u64,
+    pub fdp: u64,
+    pub mxcsr: u32,
+    pub mxcsr_mask: u32,
+    pub st_space: [u128; 8],
+    pub xmm_space: [u128; 16],
+    // TODO: YMM/ZMM
 }
 
 impl Deref for FloatRegisters {
@@ -142,12 +129,12 @@ impl DerefMut for FloatRegisters {
         }
     }
 }
-
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C, packed)]
 pub struct EnvRegisters {
-    pub tpidr_el0: usize,
-    pub tpidrro_el0: usize,
+    pub fsbase: u64,
+    pub gsbase: u64,
+    // TODO: PKRU?
 }
 impl Deref for EnvRegisters {
     type Target = [u8];
@@ -171,11 +158,13 @@ impl DerefMut for EnvRegisters {
         }
     }
 }
+
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C, packed)]
 pub struct Exception {
     pub kind: usize,
-    // TODO
+    pub code: usize,
+    pub address: usize,
 }
 impl Deref for Exception {
     type Target = [u8];
