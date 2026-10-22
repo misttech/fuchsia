@@ -74,7 +74,7 @@ provided that uses `kalloc::alloc` and `kalloc::dealloc`.
 `kalloc` is designed to work in two different environments:
 
 1.  **In the Kernel**: When compiled for the Zircon kernel (`is_kernel` is
-    true), it directly invokes the kernel's C `malloc` and `free` functions via
+    true), it directly invokes the kernel's C `malloc` and `sized_free` functions via
     FFI.
 2.  **In Userspace/Tests**: When compiled for userspace or unit tests, it falls
     back to using the standard Rust allocator, allowing tests to run on the

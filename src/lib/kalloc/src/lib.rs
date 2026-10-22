@@ -90,7 +90,7 @@ pub unsafe fn alloc(layout: Layout) -> Option<NonNull<u8>> {
     NonNull::new(ptr)
 }
 
-/// Fallible deallocation using kernel free.
+/// Fallible deallocation using kernel sized_free.
 ///
 /// # Safety
 ///
@@ -100,9 +100,9 @@ pub unsafe fn alloc(layout: Layout) -> Option<NonNull<u8>> {
 pub unsafe fn dealloc(ptr: *mut u8, layout: Layout) {
     debug_assert!(layout.size() > 0);
     unsafe extern "C" {
-        fn free(ptr: *mut core::ffi::c_void);
+        fn sized_free(ptr: *mut core::ffi::c_void, size: usize);
     }
-    unsafe { free(ptr as *mut core::ffi::c_void) }
+    unsafe { sized_free(ptr as *mut core::ffi::c_void, layout.size()) }
 }
 
 /// Fallible reallocation using kernel realloc.
