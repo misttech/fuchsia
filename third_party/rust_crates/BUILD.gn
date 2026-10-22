@@ -3036,7 +3036,7 @@ rustc_library("aes-v0_9_1") {
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":cpubits-v0_1_1" ]
   if (current_cpu == "arm64" || current_cpu == "x64" || false) {
-    deps += [ ":cpufeatures-v0_3_0" ]
+    deps += [ ":cpufeatures-v0_3_1" ]
   }
 
   rustenv = []
@@ -5907,7 +5907,7 @@ rustc_library("chacha20-v0_10_2") {
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":rand_core-v0_10_1" ]
   if (current_cpu == "x64" || false) {
-    deps += [ ":cpufeatures-v0_3_0" ]
+    deps += [ ":cpufeatures-v0_3_1" ]
   }
 
   rustenv = []
@@ -6657,18 +6657,18 @@ rustc_library("cpufeatures-v0_2_17") {
   applicable_licenses = [ ":cpufeatures-v0_2_17.license" ]
 }
 
-license("cpufeatures-v0_3_0.license") {
+license("cpufeatures-v0_3_1.license") {
   public_package_name = "cpufeatures"
   license_files = [
-    "//third_party/rust_crates/vendor/cpufeatures-0.3.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/cpufeatures-0.3.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/cpufeatures-0.3.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cpufeatures-0.3.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("cpufeatures-v0_3_0") {
+rustc_library("cpufeatures-v0_3_1") {
   crate_name = "cpufeatures"
-  source_root = "//third_party/rust_crates/vendor/cpufeatures-0.3.0/src/lib.rs"
-  output_name = "cpufeatures-75f0333cf96fab93"
+  source_root = "//third_party/rust_crates/vendor/cpufeatures-0.3.1/src/lib.rs"
+  output_name = "cpufeatures-c31d8e14f9651d40"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -6692,13 +6692,13 @@ rustc_library("cpufeatures-v0_3_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=75f0333cf96fab93",
-    "-Cextra-filename=-75f0333cf96fab93",
+    "-Cmetadata=c31d8e14f9651d40",
+    "-Cextra-filename=-c31d8e14f9651d40",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":cpufeatures-v0_3_0.license" ]
+  applicable_licenses = [ ":cpufeatures-v0_3_1.license" ]
 }
 
 license("crc-v3_4_0.license") {
@@ -16876,7 +16876,7 @@ rustc_library("polyval-v0_7_3") {
   deps += [ ":cpubits-v0_1_1" ]
   deps += [ ":universal-hash-v0_6_1" ]
   if (current_cpu == "arm64" || false || current_cpu == "x64") {
-    deps += [ ":cpufeatures-v0_3_0" ]
+    deps += [ ":cpufeatures-v0_3_1" ]
   }
 
   rustenv = []
@@ -21783,7 +21783,7 @@ rustc_library("sha1-v0_11_0") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":digest-v0_11_3" ]
   if (current_cpu == "arm64" || false || current_cpu == "x64") {
-    deps += [ ":cpufeatures-v0_3_0" ]
+    deps += [ ":cpufeatures-v0_3_1" ]
   }
 
   rustenv = []
@@ -21862,7 +21862,7 @@ rustc_library("sha2-v0_11_0") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":digest-v0_11_3" ]
   if (current_cpu == "arm64" || current_cpu == "x64" || false) {
-    deps += [ ":cpufeatures-v0_3_0" ]
+    deps += [ ":cpufeatures-v0_3_1" ]
   }
 
   rustenv = []
