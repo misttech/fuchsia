@@ -95,6 +95,7 @@ CONVERTIBLE_BAZEL_RULES = {
     "py_binary",
     "fidl_library",
     "zither_fidl_library",
+    "fuchsia_structured_config_rust_lib",
 }
 
 # Plain GN `shared_library()` is intentionally excluded: `build/tools/bazel2gn/constants.go`
@@ -120,6 +121,7 @@ CONVERTIBLE_GN_TEMPLATES = {
     "sdk_static_library",
     "sdk_shared_library",
     "zx_library",
+    "fuchsia_structured_config_rust_lib",
 }
 
 # A hand-written GN test above the sentinel either duplicates the GN copy bazel2gn generates
@@ -487,7 +489,9 @@ GN_ONLY_ATTR_RE = re.compile(
     r"(?<![\w.])(?:exclude_toolchain_tags\s*\+?=|configs\s*-=|disable_syslog_backend\s*=)"
 )
 GN_BLOCKED_CONSTRUCT_RE = re.compile(
-    r"\b(?:loadable_module|fuchsia_structured_config_[a-z0-9_]+)\s*\("
+    # bazel2gn translates fuchsia_structured_config_rust_lib (//build/tools/bazel2gn/constants.go),
+    # so only the other structured config templates are GN-only.
+    r"\b(?:loadable_module|fuchsia_structured_config_(?!rust_lib\b)[a-z0-9_]+)\s*\("
     r"|\(\$[a-zA-Z0-9_]*toolchain\)"
 )
 

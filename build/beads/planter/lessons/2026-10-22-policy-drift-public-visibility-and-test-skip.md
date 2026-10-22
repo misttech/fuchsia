@@ -5,7 +5,9 @@
 - **Date:** 2026-10-22
 - **Supersedes:** `2026-09-24-three-tier-visibility-scoping-for-globally-used.md`
   (public tier), `2026-10-16-dual-build-host-test-bazel2gn-skip-parity.md`, and
-  the test-skip rule of `2026-09-30-all-tests-move-to-bazel-explicit-manifests.md`
+  the test-skip rule of `2026-09-30-all-tests-move-to-bazel-explicit-manifests.md`,
+  remediation item 1 of `2026-10-15-test-support-visibility-scoping.md`, and the
+  public-visibility advice in `2026-09-23-visibility-scoping-and-rdeps-semantics.md`
 - **Changed:** `checks/manifest.json`, `checks/visibility_audit.sh`,
   `prompts/reviewers/dual_build_sentinel.md`,
   `prompts/reviewers/target_parity.md`, `tools/manifest.json`

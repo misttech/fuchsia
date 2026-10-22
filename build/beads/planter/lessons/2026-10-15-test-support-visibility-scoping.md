@@ -3,6 +3,18 @@
 - **Learned from:** reviewer friction and machinery conflict on task `pkg-hyper-test-support`
 - **Date:** 2026-10-15
 - **Changed:** `checks/visibility_audit.sh`, `tools/find_rdeps.sh`
+- **Superseded by:** `2026-10-17-test-entry-point-private-visibility.md` and
+  `2026-10-22-policy-drift-public-visibility-and-test-skip.md` (remediation item 1 only)
+
+## Status: partly superseded
+
+Remediation item 1 below is outdated. Test entry points (`fx_test`,
+`fx_unittest_package`, `wrap_host_*`, host tests) are not exempt from the ban
+on `"//visibility:public"`
+(docs/development/languages/bazel/style/common.md#do-not-use-public-visibility):
+omit `visibility` on them, or list only the package whose `test_suite()`
+aggregates them. Item 2, allowing `["//:__subpackages__"]` and top-level
+subtrees for shared test-support libraries, still applies.
 
 ## Root cause
 
