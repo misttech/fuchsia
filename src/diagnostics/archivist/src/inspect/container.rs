@@ -10,15 +10,13 @@ use diagnostics_data::{self as schema, InspectHandleName};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_inspect as finspect;
-use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
 use fuchsia_async as fasync;
-use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_inspect::UintProperty;
 use fuchsia_inspect::reader::snapshot::{Snapshot, SnapshotTree};
 use fuchsia_trace as ftrace;
+use futures::Stream;
 use futures::channel::oneshot;
-use futures::{FutureExt, Stream};
 use selectors::SelectorExt;
 use std::collections::HashMap;
 use std::future::Future;
@@ -26,20 +24,11 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 use zx::{self as zx, AsHandleRef};
 
-const DIRECTORY_READ_TIMED_OUT: &str = "Reading Inspect handles from a directory timed out";
-
 #[derive(Debug)]
 pub enum InspectHandle {
     Tree {
         proxy: finspect::TreeProxy,
         name: Option<FlyStr>,
-    },
-    // TODO(https://fxbug.dev/324494668): Directory-based Inspect handles were
-    // only used to bridge Netstack2's out/diagnostics directory. Remove this
-    // variant and the directory reading path now that Netstack2 is gone.
-    #[allow(dead_code)]
-    Directory {
-        proxy: fio::DirectoryProxy,
     },
     Escrow {
         vmo: Arc<zx::Vmo>,
@@ -52,7 +41,6 @@ pub enum InspectHandle {
 impl InspectHandle {
     fn is_closed(&self) -> bool {
         match self {
-            Self::Directory { proxy } => proxy.as_channel().is_closed(),
             Self::Tree { proxy, .. } => proxy.as_channel().is_closed(),
             Self::Escrow { .. } => false,
         }
@@ -61,7 +49,6 @@ impl InspectHandle {
     async fn on_closed(&self) -> Result<zx::Signals, zx::Status> {
         match self {
             Self::Tree { proxy, .. } => proxy.on_closed().await,
-            Self::Directory { proxy, .. } => proxy.on_closed().await,
             Self::Escrow { token, .. } => {
                 fasync::OnSignals::new(&token.token, fidl::Signals::OBJECT_PEER_CLOSED).await
             }
@@ -70,9 +57,6 @@ impl InspectHandle {
 
     pub fn koid(&self) -> zx::Koid {
         match self {
-            Self::Directory { proxy } => {
-                proxy.as_channel().as_handle_ref().koid().expect("DirectoryProxy has koid")
-            }
             Self::Tree { proxy, .. } => {
                 proxy.as_channel().as_handle_ref().koid().expect("TreeProxy has koid")
             }
@@ -99,12 +83,6 @@ impl InspectHandle {
             related_koid,
         }
     }
-
-    // TODO(https://fxbug.dev/324494668): Remove along with `InspectHandle::Directory`.
-    #[allow(dead_code)]
-    pub fn directory(proxy: fio::DirectoryProxy) -> Self {
-        InspectHandle::Directory { proxy }
-    }
 }
 
 struct StoredInspectHandle {
@@ -129,29 +107,26 @@ impl InspectArtifactsContainer {
 
     /// Push a new handle into the container.
     ///
-    /// Returns `None` if the handle is a DirectoryProxy and there is already one tracked,
-    /// as only single handles are supported in the DirectoryProxy case.
+    /// Returns a future that completes, after calling `on_closed`, once the handle's peer is
+    /// closed or the handle is removed from the container.
     pub fn push_handle<T: FnOnce(zx::Koid)>(
         &mut self,
         handle: InspectHandle,
         on_closed: T,
-    ) -> Option<impl Future<Output = ()> + use<T>> {
-        if !self.inspect_handles.is_empty() && matches!(handle, InspectHandle::Directory { .. }) {
-            return None;
-        }
+    ) -> impl Future<Output = ()> + use<T> {
         let (control_snd, control_rcv) = oneshot::channel();
         let handle = Arc::new(handle);
         let stored = StoredInspectHandle { _control: control_snd, handle: Arc::clone(&handle) };
         let koid = handle.koid();
         self.inspect_handles.insert(koid, stored);
-        Some(async move {
+        async move {
             if !handle.is_closed() {
                 let closed_fut = handle.on_closed();
                 futures::pin_mut!(closed_fut);
                 let _ = futures::future::select(closed_fut, control_rcv).await;
             }
             on_closed(koid);
-        })
+        }
     }
 
     /// Generate an `UnpopulatedInspectDataContainer` from the proxies managed by `self`.
@@ -207,20 +182,14 @@ impl InspectArtifactsContainer {
         let Some(ref mut selectors) = dynamic_selectors else {
             return true;
         };
-        match handle {
-            InspectHandle::Tree { name, .. } | InspectHandle::Escrow { name, .. } => {
-                selectors.any(|s| {
-                    let name = match name.as_ref() {
-                        Some(fly) => fly.as_str(),
-                        None => finspect::DEFAULT_TREE_NAME,
-                    };
-                    selectors::match_tree_name_against_selector(name, s)
-                })
-            }
-            InspectHandle::Directory { .. } => selectors.any(|s| {
-                matches!(s.tree_names.as_ref(), None | Some(fdiagnostics::TreeNames::All(_)))
-            }),
-        }
+        let (InspectHandle::Tree { name, .. } | InspectHandle::Escrow { name, .. }) = handle;
+        selectors.any(|s| {
+            let name = match name.as_ref() {
+                Some(fly) => fly.as_str(),
+                None => finspect::DEFAULT_TREE_NAME,
+            };
+            selectors::match_tree_name_against_selector(name, s)
+        })
     }
 }
 
@@ -311,16 +280,6 @@ impl SnapshotData {
                     escrowed,
                 ),
             },
-            InspectData::File(contents) => match Snapshot::try_from(contents) {
-                Ok(snapshot) => {
-                    SnapshotData::successful(ReadSnapshot::Single(snapshot), name, false)
-                }
-                Err(e) => SnapshotData::failed(
-                    schema::InspectError { message: format!("{e:?}") },
-                    name,
-                    false,
-                ),
-            },
         }
     }
 
@@ -372,7 +331,6 @@ pub struct PopulatedInspectDataContainer {
 enum Status {
     Begin,
     Pending(collector::InspectHandleDeque),
-    DirectoryFailed,
 }
 
 struct State {
@@ -402,18 +360,6 @@ impl State {
         }
     }
 
-    fn into_directory_failed(self, start_time: zx::MonotonicInstant) -> Self {
-        Self {
-            unpopulated: self.unpopulated,
-            status: Status::DirectoryFailed,
-            batch_timeout: self.batch_timeout,
-            global_stats: self.global_stats,
-            elapsed_time: self.elapsed_time + (zx::MonotonicInstant::get() - start_time),
-            trace_guard: self.trace_guard,
-            trace_id: self.trace_id,
-        }
-    }
-
     fn add_elapsed_time(&mut self, start_time: zx::MonotonicInstant) {
         self.elapsed_time += zx::MonotonicInstant::get() - start_time
     }
@@ -426,16 +372,8 @@ impl State {
         loop {
             match &mut self.status {
                 Status::Begin => {
-                    match collector::populate_data_map(&self.unpopulated.inspect_handles)
-                        .map(Some)
-                        // This timeout is protecting against unresponsive directories only.
-                        // It does not handle timeouts for the reading/snapshotting process.
-                        .on_timeout(timeout.after_now(), || None)
-                        .await
-                    {
-                        Some(data_map) => self = self.into_pending(data_map, start_time),
-                        None => self = self.into_directory_failed(start_time),
-                    }
+                    let data_map = collector::populate_data_map(&self.unpopulated.inspect_handles);
+                    self = self.into_pending(data_map, start_time);
                 }
                 Status::Pending(pending) => match pending.pop_front() {
                     None => {
@@ -464,20 +402,6 @@ impl State {
                         return Some((result, self));
                     }
                 },
-                Status::DirectoryFailed => {
-                    self.global_stats.add_timeout();
-                    let result = PopulatedInspectDataContainer {
-                        identity: Arc::clone(&self.unpopulated.identity),
-                        component_allowlist: self.unpopulated.component_allowlist.clone(),
-                        snapshot: SnapshotData::failed(
-                            schema::InspectError { message: DIRECTORY_READ_TIMED_OUT.to_string() },
-                            None,
-                            false,
-                        ),
-                    };
-
-                    return Some((result, self.into_pending(Default::default(), start_time)));
-                }
             }
         }
     }
@@ -489,8 +413,7 @@ impl State {
 #[derive(Debug)]
 pub struct UnpopulatedInspectDataContainer {
     pub identity: Arc<ComponentIdentity>,
-    /// Proxies configured for container. It is an invariant that if any value is an
-    /// InspectHandle::Directory, then there is exactly one value.
+    /// Proxies configured for container.
     pub inspect_handles: Vec<Weak<InspectHandle>>,
     /// Optional hierarchy matcher. If unset, the reader is running
     /// in all-access mode, meaning no matching or filtering is required.
@@ -539,167 +462,10 @@ impl UnpopulatedInspectDataContainer {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fuchsia_inspect::Node;
-    use std::pin::pin;
-
-    use futures::StreamExt;
     use std::sync::LazyLock;
-
-    static EMPTY_IDENTITY: LazyLock<Arc<ComponentIdentity>> =
-        LazyLock::new(|| Arc::new(ComponentIdentity::unknown()));
 
     static O_K_IDENTITY: LazyLock<Arc<ComponentIdentity>> =
         LazyLock::new(|| Arc::new(ComponentIdentity::from(vec!["o", "k"])));
-
-    #[fuchsia::test]
-    async fn population_times_out() {
-        // Simulate a directory that hangs indefinitely in any request so that we consistently
-        // trigger the 0 timeout.
-        let (directory, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fio::DirectoryMarker>();
-        fasync::Task::spawn(async move {
-            while stream.next().await.is_some() {
-                fasync::Timer::new(fasync::MonotonicInstant::after(
-                    zx::MonotonicDuration::from_seconds(100000),
-                ))
-                .await;
-            }
-        })
-        .detach();
-
-        let handle = Arc::new(InspectHandle::directory(directory));
-        let container = UnpopulatedInspectDataContainer {
-            identity: EMPTY_IDENTITY.clone(),
-            inspect_handles: vec![Arc::downgrade(&handle)],
-            component_allowlist: ComponentAllowlist::new_disabled(),
-        };
-        let mut stream = pin!(container.populate(
-            0,
-            Arc::new(GlobalConnectionStats::new(Node::default())),
-            ftrace::Id::new(),
-        ));
-        let res = stream.next().await.unwrap();
-        assert_eq!(res.snapshot.name, None);
-        assert_eq!(
-            res.snapshot.errors,
-            vec![schema::InspectError { message: DIRECTORY_READ_TIMED_OUT.to_string() }]
-        );
-    }
-
-    #[fuchsia::test]
-    async fn no_inspect_files_do_not_give_an_error_response() {
-        let directory = Arc::new(InspectHandle::directory(
-            fuchsia_fs::directory::open_in_namespace("/tmp", fio::PERM_READABLE).unwrap(),
-        ));
-        let container = UnpopulatedInspectDataContainer {
-            identity: EMPTY_IDENTITY.clone(),
-            inspect_handles: vec![Arc::downgrade(&directory)],
-            component_allowlist: ComponentAllowlist::new_disabled(),
-        };
-        let mut stream = pin!(container.populate(
-            1000000,
-            Arc::new(GlobalConnectionStats::new(Node::default())),
-            ftrace::Id::new(),
-        ));
-        assert!(stream.next().await.is_none());
-    }
-
-    #[fuchsia::test]
-    fn only_one_directory_proxy_is_populated() {
-        let _executor = fuchsia_async::LocalExecutor::default();
-        let (directory, _) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let mut container = InspectArtifactsContainer::default();
-        let _rx = container.push_handle(InspectHandle::directory(directory), |_| {});
-        let (directory2, _) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        assert!(container.push_handle(InspectHandle::directory(directory2), |_| {}).is_none());
-    }
-
-    fn inspect_artifacts_container_with_one_dir() -> InspectArtifactsContainer {
-        let (directory, _) = fidl::endpoints::create_proxy_and_stream::<fio::DirectoryMarker>();
-        let handle = InspectHandle::directory(directory);
-        let mut container = InspectArtifactsContainer::default();
-        container.push_handle(handle, |_| {});
-        container
-    }
-
-    #[fuchsia::test]
-    fn prefilter_on_names_for_directories() {
-        let _executor = fuchsia_async::LocalExecutor::default();
-        let all_selector = fdiagnostics::Selector {
-            tree_names: Some(fdiagnostics::TreeNames::All(fdiagnostics::All {})),
-            component_selector: Some(fdiagnostics::ComponentSelector {
-                moniker_segments: Some(vec![
-                    fdiagnostics::StringSelector::ExactMatch("o".to_string()),
-                    fdiagnostics::StringSelector::ExactMatch("k".to_string()),
-                ]),
-                ..Default::default()
-            }),
-            tree_selector: Some(fdiagnostics::TreeSelector::SubtreeSelector(
-                fdiagnostics::SubtreeSelector {
-                    node_path: vec![fdiagnostics::StringSelector::ExactMatch("root".to_string())],
-                },
-            )),
-            ..Default::default()
-        };
-        let selectors = Some(vec![all_selector]);
-
-        let iac = inspect_artifacts_container_with_one_dir();
-        let container = iac
-            .create_unpopulated(&O_K_IDENTITY, ComponentAllowlist::new_disabled(), &selectors)
-            .unwrap();
-
-        assert_eq!(1, container.inspect_handles.len());
-
-        let selector_with_wrong_tree_name = fdiagnostics::Selector {
-            tree_names: Some(fdiagnostics::TreeNames::Some(vec!["a".to_string()])),
-            component_selector: Some(fdiagnostics::ComponentSelector {
-                moniker_segments: Some(vec![
-                    fdiagnostics::StringSelector::ExactMatch("o".to_string()),
-                    fdiagnostics::StringSelector::ExactMatch("k".to_string()),
-                ]),
-                ..Default::default()
-            }),
-            tree_selector: Some(fdiagnostics::TreeSelector::SubtreeSelector(
-                fdiagnostics::SubtreeSelector {
-                    node_path: vec![fdiagnostics::StringSelector::ExactMatch("root".to_string())],
-                },
-            )),
-            ..Default::default()
-        };
-        let selectors = Some(vec![selector_with_wrong_tree_name]);
-
-        let iac = inspect_artifacts_container_with_one_dir();
-        let container = iac
-            .create_unpopulated(&O_K_IDENTITY, ComponentAllowlist::new_disabled(), &selectors)
-            .unwrap();
-
-        assert_eq!(0, container.inspect_handles.len());
-
-        let selector_with_no_tree_names = fdiagnostics::Selector {
-            tree_names: None,
-            component_selector: Some(fdiagnostics::ComponentSelector {
-                moniker_segments: Some(vec![
-                    fdiagnostics::StringSelector::ExactMatch("o".to_string()),
-                    fdiagnostics::StringSelector::ExactMatch("k".to_string()),
-                ]),
-                ..Default::default()
-            }),
-            tree_selector: Some(fdiagnostics::TreeSelector::SubtreeSelector(
-                fdiagnostics::SubtreeSelector {
-                    node_path: vec![fdiagnostics::StringSelector::ExactMatch("root".to_string())],
-                },
-            )),
-            ..Default::default()
-        };
-
-        let selectors = Some(vec![selector_with_no_tree_names]);
-
-        let iac = inspect_artifacts_container_with_one_dir();
-        let container = iac
-            .create_unpopulated(&O_K_IDENTITY, ComponentAllowlist::new_disabled(), &selectors)
-            .unwrap();
-        assert_eq!(1, container.inspect_handles.len());
-    }
 
     fn inspect_artifacts_container_with_n_trees<'a>(
         tree_names: impl IntoIterator<Item = &'a str>,
@@ -708,7 +474,7 @@ mod test {
         for name in tree_names {
             let (proxy, _) = fidl::endpoints::create_proxy::<finspect::TreeMarker>();
             let handle = InspectHandle::tree(proxy, Some(name));
-            container.push_handle(handle, |_| {});
+            let _on_closed = container.push_handle(handle, |_| {});
         }
         container
     }

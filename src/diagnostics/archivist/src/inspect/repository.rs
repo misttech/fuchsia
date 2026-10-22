@@ -52,11 +52,9 @@ impl InspectRepository {
         proxy_handle: InspectHandle,
         remove_associated: Option<zx::Koid>,
     ) {
-        // insert_inspect_artifact_container returns None when we were already tracking the
-        // directory for this component. If that's the case we can return early.
         let weak_clone = Arc::downgrade(self);
         let identity_clone = Arc::clone(&identity);
-        let Some(cleanup_task) = guard.insert_inspect_artifact_container(
+        let cleanup_task = guard.insert_inspect_artifact_container(
             Arc::clone(&identity),
             proxy_handle,
             remove_associated,
@@ -65,10 +63,7 @@ impl InspectRepository {
                     this.on_handle_closed(koid, identity_clone);
                 }
             },
-        ) else {
-            // If we got None, it means that this was already tracked and there's nothing to do.
-            return;
-        };
+        );
 
         self.scope.spawn(cleanup_task);
 
@@ -210,7 +205,7 @@ impl InspectRepositoryInner {
         proxy_handle: InspectHandle,
         remove_associated: Option<zx::Koid>,
         on_closed: T,
-    ) -> Option<impl Future<Output = ()> + use<T>> {
+    ) -> impl Future<Output = ()> + use<T> {
         let mut diag_repo_entry_opt = self.diagnostics_containers.get_mut(&identity);
         match diag_repo_entry_opt {
             None => {
