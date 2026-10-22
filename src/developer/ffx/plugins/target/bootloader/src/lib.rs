@@ -160,7 +160,7 @@ Reboot the Target to the bootloader and re-run this command."
                 )
                 .await
                 .map_err(|e| anyhow::Error::from(e))?;
-                Box::pin(bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer)).await
+                bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
             }
             _ => {
                 ffx_bail!("This is unsupported")
@@ -466,7 +466,7 @@ pub async fn bootloader_impl(
 
     let (client, server) = mpsc::channel(1);
     try_join!(
-        from_manifest(ctx, client, cmd, &mut fastboot_proxy).map_err(anyhow::Error::from),
+        Box::pin(from_manifest(ctx, client, cmd, &mut fastboot_proxy)).map_err(anyhow::Error::from),
         handle_events(writer, server)
     )
     .map_err(fho::Error::from)?;
