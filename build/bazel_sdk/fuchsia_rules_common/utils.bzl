@@ -153,41 +153,17 @@ def get_runfiles_shared_lib_binary_info(runfiles, shared_lib_dest = "lib", exclu
     Returns:
       A list of FuchsiaUnstrippedBinaryInfo objects for the shared libraries.
     """
+    unstripped_binaries = []
 
     # default_runfiles.files is a depset, so sort for deterministic ordering.
-    shared_libs = [
-        f
-        for f in sorted(runfiles.files.to_list(), key = lambda x: x.path)
-        if f.basename not in exclude_libs and (f.basename.endswith(".so") or ".so." in f.basename)
-    ]
-
-    # Bazel rules that link shared libraries via `cc_common.create_library_to_link`
-    # (such as `rust_dylib_library` in `@rules_rust` and `cc_shared_library` in
-    # `@rules_cc`) place both the actual shared library artifact and its
-    # `_solib_<cpu>/...` symlink into `default_runfiles.files`. Both `File`
-    # objects share the same `basename`, `owner`, and configuration `root`, and
-    # point to the same underlying binary. Skip `_solib_` symlinks when the
-    # original artifact from the same target and configuration is already
-    # present in `runfiles`, while preserving distinct entries when different
-    # targets or configurations produce libraries with the same basename so
-    # package conflict checks still fail loudly.
-    def is_solib_symlink(path):
-        return path.startswith("_solib_") or "/_solib_" in path
-
-    non_solib_keys = set([
-        (f.basename, f.owner, f.root.path)
-        for f in shared_libs
-        if not is_solib_symlink(f.short_path)
-    ])
-
-    unstripped_binaries = []
-    for f in shared_libs:
-        if is_solib_symlink(f.short_path) and (f.basename, f.owner, f.root.path) in non_solib_keys:
+    for f in sorted(runfiles.files.to_list(), key = lambda x: x.path):
+        if f.basename in exclude_libs:
             continue
-        unstripped_binaries.append(
-            make_fuchsia_unstripped_binary_info(
-                dest = shared_lib_dest + "/" + f.basename,
-                unstripped_file = f,
-            ),
-        )
+        if f.basename.endswith(".so") or ".so." in f.basename:
+            unstripped_binaries.append(
+                make_fuchsia_unstripped_binary_info(
+                    dest = shared_lib_dest + "/" + f.basename,
+                    unstripped_file = f,
+                ),
+            )
     return unstripped_binaries

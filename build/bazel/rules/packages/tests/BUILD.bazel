@@ -21,7 +21,7 @@ load(
 )
 load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
 load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
-load("//build/bazel/rules/rust:defs.bzl", "rustc_dylib", "rustc_test")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_test")
 load(
     "//build/bazel/rules/testing:defs.bzl",
     "analysis_failure_test",
@@ -427,7 +427,6 @@ filegroup(
         ":example_gtest_unittest_package",
         ":example_multi_component_test",
         ":example_multi_unittest_package",
-        ":example_rust_dylib_unittest_package",
         ":example_rust_unittest_package",
         ":example_test",
         ":example_test_with_subpackage",
@@ -509,28 +508,6 @@ verify_fx_test_unstripped_binaries(
         "libfdio.so",
     ],
     test = ":example_rust_unittest_package",
-)
-
-rustc_dylib(
-    name = "example_rust_dylib",
-    srcs = ["example_test.rs"],
-    edition = "2024",
-    tags = ["manual"],
-)
-
-rustc_test(
-    name = "example_rust_dylib_dep_test_bin",
-    srcs = ["example_test.rs"],
-    edition = "2024",
-    rustc_flags = ["-Aunused-crate-dependencies"],
-    tags = ["manual"],
-    deps = [":example_rust_dylib"],
-)
-
-fx_unittest_package(
-    name = "example_rust_dylib_unittest_package",
-    package_name = "fx-rust-dylib-unittest-package-example",
-    unit_tests = [":example_rust_dylib_dep_test_bin"],
 )
 
 fx_cc_binary(

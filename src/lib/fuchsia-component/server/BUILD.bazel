@@ -2,11 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
-load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
+# NOTE: `fuchsia-component-server-unittests` remains in BUILD.gn and
+# `with_unit_tests` / `test_deps` are synced via bazel2gn because `server`
+# depends on `//src/storage/lib/vfs/rust:vfs` (`rustc_dylib("vfs_dylib")`).
+# `@rules_rust` puts both `src/storage/lib/vfs/rust/libvfs-<hash>.so` and its
+# `_solib_*` symlink into `default_runfiles`, causing `fx_packaged_binary` +
+# `fx_package` to fail with:
+# "Multiple files are being installed into the package at lib/libvfs-<hash>.so".
 rustc_library(
     name = "server",
     srcs = [
@@ -44,9 +50,4 @@ rustc_library(
         "//third_party/rust_crates/vendor:pin-project",
         "//third_party/rust_crates/vendor:thiserror",
     ],
-)
-
-fx_unittest_package(
-    name = "fuchsia-component-server-unittests",
-    unit_tests = [":server_test"],
 )
