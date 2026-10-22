@@ -259,6 +259,12 @@ fi
 #   //src/developer/ffx/scripts/ffx,
 # )
 
+# If `fx` is run in a plain OSS fuchsia.git clone without a Jiri checkout,
+# synchronize local dependencies via `fx sync`.
+if [[ -e "${fuchsia_dir}/.git" ]] && [[ ! -e "${fuchsia_dir}/.jiri_root" || -d "${fuchsia_dir}/.fxsync" ]] && [[ -x "${fuchsia_dir}/tools/devshell/sync" ]]; then
+  "${fuchsia_dir}/tools/devshell/sync" || exit $?
+fi
+
 # This line allows commands to find other scripts even if they have not
 # run `source scripts/fx-env.sh`
 export PATH="${script_dir}:$PATH"

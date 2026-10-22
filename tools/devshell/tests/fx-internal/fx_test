@@ -6,7 +6,9 @@
 ### Test the common fx execution flows, namely fx help and fx <subcommand>
 BT_FILE_DEPS=(
   "scripts/fx"
+  "scripts/fx-env.sh"
   "scripts/fx-help.awk"
+  "tools/devshell/sync"
   "tools/devshell/vendor"
   "tools/devshell/lib/fx-cmd-locator.sh"
   "tools/devshell/lib/fx-optional-features.sh"
@@ -445,6 +447,70 @@ EOF
   log_contents="$(cat "${log_file}")"
   [[ "${log_contents}" != *"not-a-prebuilt"* ]]
   BT_EXPECT_GOOD_STATUS $?
+}
+
+TEST_fx-stub-integration-bootstrap() {
+  local subcommand="mycommand1"
+  _create_subcommand "${subcommand}" "tools/devshell" "PATH=\${PATH}"
+
+  rm -rf "${BT_TEMP_DIR}/.jiri_root"
+  mkdir -p "${BT_TEMP_DIR}/.git" "${BT_TEMP_DIR}/manifests"
+  touch "${BT_TEMP_DIR}/manifests/platform"
+
+  local curl_mock
+  curl_mock="$(btf::make_mock_binary curl)"
+  cat >"${curl_mock}.mock_side_effects" <<EOF
+cat <<'EOS' | base64
+mkdir -p "\$1/.jiri_root/bin"
+cat >"\$1/.jiri_root/bin/jiri" <<'EOJ'
+#!/bin/bash
+echo "\$@" >> "${BT_TEMP_DIR}/jiri_calls.txt"
+if [[ "\$1" == "update" ]]; then
+  mkdir -p "${BT_TEMP_DIR}/.jiri_root/update_history"
+  touch "${BT_TEMP_DIR}/.jiri_root/update_history/latest"
+fi
+EOJ
+chmod +x "\$1/.jiri_root/bin/jiri"
+EOS
+EOF
+  btf::add_binary_to_path "${curl_mock}"
+
+  local git_mock
+  git_mock="$(btf::make_mock_binary git)"
+  cat >"${git_mock}.mock_side_effects" <<'EOF'
+if [[ "$*" == *"HEAD:manifests"* ]]; then
+  printf "%s\ncobalt_rev_123\ncobalt_config_rev_456\n" "${MOCK_MANIFEST_TREE:-manifests_tree_1}"
+elif [[ "$*" == *"HEAD:third_party/cobalt_config"* ]]; then
+  echo "cobalt_config_rev_456"
+elif [[ "$*" == *"HEAD:third_party/cobalt"* ]]; then
+  echo "cobalt_rev_123"
+elif [[ "$*" == *"rev-parse HEAD"* ]]; then
+  echo "${MOCK_HEAD_REV:-head_rev_789}"
+fi
+EOF
+  btf::add_binary_to_path "${git_mock}"
+
+  # First invocation: runs fx sync before executing the subcommand.
+  local out
+  out="$(_FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" "${subcommand}" 2>&1)"
+  BT_EXPECT_GOOD_STATUS $?
+  BT_EXPECT_FILE_EXISTS "${BT_TEMP_DIR}/integration/MILESTONE"
+  BT_EXPECT_FILE_EXISTS "${BT_TEMP_DIR}/.jiri_manifest"
+  BT_EXPECT_FILE_EXISTS "${BT_TEMP_DIR}/.fxsync/manifest_state"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/jiri_calls.txt" "project-config -no-update=true"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/jiri_calls.txt" "update"
+
+  # Second invocation (same manifest state): does not re-run jiri update.
+  rm -f "${BT_TEMP_DIR}/jiri_calls.txt"
+  out="$(_FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" "${subcommand}" 2>&1)"
+  BT_EXPECT_GOOD_STATUS $?
+  BT_EXPECT_FILE_DOES_NOT_EXIST "${BT_TEMP_DIR}/jiri_calls.txt"
+
+  # Third invocation (new commit with changed manifests tree): re-syncs jiri to new HEAD.
+  out="$(MOCK_MANIFEST_TREE=manifests_tree_2 MOCK_HEAD_REV=head_rev_new _FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" "${subcommand}" 2>&1)"
+  BT_EXPECT_GOOD_STATUS $?
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/.git/jiri/metadata.v2" "head_rev_new"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${BT_TEMP_DIR}/jiri_calls.txt" "update"
 }
 
 BT_RUN_TESTS "$@"
