@@ -15,6 +15,10 @@
     },
     use: [
         {
+            protocol: "fuchsia.component.runtime.Capabilities",
+            from: "framework",
+        },
+        {
             storage: "tmp",
             path: "/tmp",
         },

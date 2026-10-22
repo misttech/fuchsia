@@ -1,0 +1,18 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [ "syslog/client.shard.cml" ],
+    program: {
+        runner: "elf",
+        binary: "bin/fake_governor",
+    },
+    use: [
+        // Provided by battery-manager through CreateChildArgs.additional_inputs, mirroring how
+        // production governors (e.g. MSC) receive it.
+        {
+            protocol: "fuchsia.hardware.power.charger.Controller",
+            availability: "optional",
+        },
+    ],
+}

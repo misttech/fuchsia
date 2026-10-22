@@ -11,6 +11,9 @@
     program: {
         binary: "bin/battery_manager_integration_test",
     },
+    use: [
+        { protocol: "fuchsia.diagnostics.ArchiveAccessor" },
+    ],
     offer: [
         {
             storage: "data",

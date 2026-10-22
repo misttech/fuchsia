@@ -4,6 +4,7 @@
 {
     include: [
         "//src/lib/fake-clock/lib/client.shard.cml",
+        "//src/power/battery-manager/meta/governors.shard.cml",
         "inspect/client.shard.cml",
 
         // Enable system logging
@@ -22,6 +23,15 @@
         },
     ],
     use: [
+        // Unlike the production manifest, `config` is optional here: most integration tests do
+        // not route it and rely on the `/pkg/config/test_config.json` fallback instead.
+        {
+            directory: "config",
+            rights: [ "r*" ],
+            path: "/config",
+            availability: "optional",
+        },
+
         // TODO(b/379929394): Storage is temporarily double-mounted in order to
         // soft-transition both away from /data and the fstab mounting methodology.
         {

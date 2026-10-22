@@ -2,7 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod fake_governor_votes;
+
 use anyhow::Result;
+use diagnostics_assertions::{TreeAssertion, tree_assertion};
+use diagnostics_reader::ArchiveReader;
+use fake_governor_votes::{FAKE_GOVERNOR_CHARGE_CURRENT_LIMIT_UA, FAKE_GOVERNOR_OPERATING_MODE};
 use fidl::endpoints::ServiceMarker as _;
 use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_driver_test as fdt;
@@ -16,7 +21,8 @@ use fidl_test_hardwarepowercontrol as ftest_battery;
 use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::{
-    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
+    Capability, ChildOptions, DEFAULT_COLLECTION_NAME, DirectoryContents, LocalComponentHandles,
+    RealmBuilder, RealmInstance, Ref, Route,
 };
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use fuchsia_sync::Mutex;
@@ -41,12 +47,28 @@ enum FidlRouteMode {
 }
 
 const BATTERY_MANAGER_URL: &str = "#meta/battery_manager_fake_time.cm";
+const BATTERY_MANAGER_CHILD_NAME: &str = "battery_manager";
 const FAKE_CLOCK_URL: &str = "#meta/fake_clock.cm";
 const DEFAULT_CHARGER_MAX_CURRENT_UA: u32 = 3_000_000;
 const DEFAULT_CHARGER_MAX_VOLTAGE_UV: u32 = 4_400_000;
 const REFRESHED_CHARGING_CURRENT_UA: i32 = 1_500_000;
 const REFRESHED_DISCHARGING_CURRENT_UA: i32 = -400_000;
 const STARTUP_WITH_CHARGER_LEASE_EVENT_COUNT: usize = 5;
+
+/// Directory capability battery-manager reads `CONFIG_FILE_NAME` from (as `/config`).
+const CONFIG_DIRECTORY: &str = "config";
+const CONFIG_FILE_NAME: &str = "config.json";
+/// Config bundled in the test package, used by battery-manager when `/config` is not routed.
+const PKG_TEST_CONFIG_PATH: &str = "/pkg/config/test_config.json";
+const CONFIG_KEY_GOVERNOR_URLS: &str = "governor_urls";
+
+const FAKE_GOVERNOR_URL: &str = "#meta/fake_governor.cm";
+/// Child (and arbiter voter) name battery-manager derives from `FAKE_GOVERNOR_URL`.
+const FAKE_GOVERNOR_NAME: &str = "fake_governor";
+
+const INSPECT_POLL_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(100);
+/// Polls between logs of the latest Inspect mismatch, so that a hung test shows why.
+const INSPECT_POLLS_PER_LOG: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LeaseEvent {
@@ -370,6 +392,17 @@ async fn setup_realm_with_charger(
     suspend_enabled: bool,
     fake_charger: Option<FakeCharger>,
 ) -> Result<(RealmInstance, mpsc::Receiver<LeaseEvent>)> {
+    setup_realm_with_config(mode, suspend_enabled, fake_charger, None).await
+}
+
+/// Builds the test realm. If `config_json` is set, it is served to battery-manager as
+/// `/config/config.json`, overriding the package's `test_config.json`.
+async fn setup_realm_with_config(
+    mode: FidlRouteMode,
+    suspend_enabled: bool,
+    fake_charger: Option<FakeCharger>,
+    config_json: Option<String>,
+) -> Result<(RealmInstance, mpsc::Receiver<LeaseEvent>)> {
     let builder = RealmBuilder::new().await?;
     builder.driver_test_realm_setup().await?;
 
@@ -401,8 +434,19 @@ async fn setup_realm_with_charger(
     }
     builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
 
-    let battery_manager =
-        builder.add_child("battery_manager", BATTERY_MANAGER_URL, ChildOptions::new()).await?;
+    let battery_manager = builder
+        .add_child(BATTERY_MANAGER_CHILD_NAME, BATTERY_MANAGER_URL, ChildOptions::new())
+        .await?;
+
+    if let Some(config_json) = config_json {
+        builder
+            .read_only_directory(
+                CONFIG_DIRECTORY,
+                vec![&battery_manager],
+                DirectoryContents::new().add_file(CONFIG_FILE_NAME, config_json),
+            )
+            .await?;
+    }
 
     let fake_clock = builder.add_child("fake_clock", FAKE_CLOCK_URL, ChildOptions::new()).await?;
 
@@ -1945,4 +1989,97 @@ async fn test_unplug_when_rounded_to_100_holds_full_for_ssoc_delta() -> Result<(
     )
     .await?;
     Ok(())
+}
+
+/// Returns the config to route to battery-manager as `/config/config.json`: the package's
+/// `test_config.json` (what battery-manager reads when `/config` is not routed) with
+/// `governor_urls` replaced by the fake governor.
+fn fake_governor_config_json() -> Result<String> {
+    let mut config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(PKG_TEST_CONFIG_PATH)?)?;
+    config
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("{PKG_TEST_CONFIG_PATH} is not a JSON object"))?
+        .insert(CONFIG_KEY_GOVERNOR_URLS.to_string(), serde_json::json!([FAKE_GOVERNOR_URL]));
+    Ok(serde_json::to_string(&config)?)
+}
+
+/// Polls the Inspect hierarchy of the component at `moniker` until it matches `assertion`.
+///
+/// There is no timeout: if it never matches, the test hangs until the test runner times it out,
+/// with the latest mismatch in the logs.
+async fn wait_for_inspect_match(moniker: &str, assertion: &TreeAssertion) -> Result<()> {
+    let mut reader = ArchiveReader::inspect();
+    reader.select_all_for_component(moniker.to_string()).with_minimum_schema_count(1);
+    let mut polls = 0;
+    loop {
+        let payload = reader.snapshot().await?.into_iter().next().and_then(|data| data.payload);
+        let mismatch = match payload {
+            Some(payload) => match assertion.run(&payload) {
+                Ok(()) => return Ok(()),
+                Err(e) => format!("{e:?}; last observed: {payload:#?}"),
+            },
+            None => "no Inspect data".to_string(),
+        };
+        polls += 1;
+        if polls % INSPECT_POLLS_PER_LOG == 0 {
+            log::info!("Inspect for {moniker} does not match yet: {mismatch}");
+        }
+        fasync::Timer::new(fasync::MonotonicInstant::after(INSPECT_POLL_INTERVAL)).await;
+    }
+}
+
+/// Verifies that battery-manager launches a configured governor into `#governors`, hands it a
+/// charger `Controller` through `CreateChildArgs.additional_inputs`, and that the arbiter
+/// attributes the governor's votes to its child name. No charger driver is routed, so the arbiter
+/// only caches the votes.
+#[fuchsia::test]
+async fn test_governor_votes_attributed_by_name() -> Result<()> {
+    let (realm, _lease_events) = setup_realm_with_config(
+        FidlRouteMode::NewOnly,
+        false,
+        None,
+        Some(fake_governor_config_json()?),
+    )
+    .await?;
+
+    // Connecting starts battery-manager, which then launches its configured governors.
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let _ = battery_mgr.get_battery_info().await?;
+
+    let moniker = format!(
+        "{DEFAULT_COLLECTION_NAME}:{}/{BATTERY_MANAGER_CHILD_NAME}",
+        realm.root.child_name()
+    );
+    let expected_limit = u64::from(FAKE_GOVERNOR_CHARGE_CURRENT_LIMIT_UA);
+    let expected_mode = format!("{FAKE_GOVERNOR_OPERATING_MODE:?}");
+    let assertion = tree_assertion!(root: contains {
+        governors: {
+            var FAKE_GOVERNOR_NAME: {
+                url: FAKE_GOVERNOR_URL,
+                running: true,
+                restarts: 0u64,
+            },
+        },
+        charge_limit_arbiter: {
+            elections: contains {
+                charge_current_limit_ua: {
+                    result: expected_limit,
+                    overridden: false,
+                    votes: {
+                        var FAKE_GOVERNOR_NAME: expected_limit,
+                    },
+                },
+                operating_mode: {
+                    result: expected_mode.clone(),
+                    overridden: false,
+                    votes: {
+                        var FAKE_GOVERNOR_NAME: expected_mode,
+                    },
+                },
+            },
+        },
+    });
+    wait_for_inspect_match(&moniker, &assertion).await
 }

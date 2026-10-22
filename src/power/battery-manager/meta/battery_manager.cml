@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
+        "//src/power/battery-manager/meta/governors.shard.cml",
         "inspect/client.shard.cml",
 
         // Enable system logging
@@ -67,11 +68,10 @@
     ],
     expose: [
         {
-            protocol: "fuchsia.power.battery.BatteryManager",
-            from: "self",
-        },
-        {
-            protocol: "fuchsia.power.battery.test.BatterySimulator",
+            protocol: [
+                "fuchsia.power.battery.BatteryManager",
+                "fuchsia.power.battery.test.BatterySimulator",
+            ],
             from: "self",
         },
     ],

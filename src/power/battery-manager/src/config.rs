@@ -47,6 +47,11 @@ pub(crate) struct BatteryManagerConfig {
     #[serde(default)]
     pub chg_cc_limits_ua: Option<Vec<Vec<i32>>>,
 
+    /// Constant Voltage (CV) tier thresholds in microvolts (uV)
+    /// defining charging voltage tiers (e.g. `[4200000, 4250000, 4300000, 4350000, 4480000]`).
+    #[serde(default)]
+    pub chg_cv_limits_uv: Option<Vec<u32>>,
+
     /// State of Charge (SOC) offset distance subtracted from the real SOC threshold to
     /// splice the discharge curve when unplugged while full (SSOC = Smoothed/Spoofed SOC).
     #[serde(default)]
@@ -61,6 +66,11 @@ pub(crate) struct BatteryManagerConfig {
     /// to enforce the maximum rate of SOC change.
     #[serde(default)]
     pub rl_max_time_s: Option<f32>,
+
+    /// Dynamic charge governor component URLs to instantiate in the `#governors` collection
+    /// (e.g. `["fuchsia-pkg://fuchsia.com/msc#meta/msc.cm"]`).
+    #[serde(default)]
+    pub governor_urls: Vec<String>,
 }
 
 impl BatteryManagerConfig {
@@ -89,9 +99,12 @@ impl BatteryManagerConfig {
                 vec![500_000, 500_000, 200_000],
                 vec![400_000, 400_000, 200_000],
             ]),
+            chg_cv_limits_uv: Some(vec![4_200_000, 4_350_000, 4_480_000]),
             ssoc_delta: Some(2.0),
             rl_max_delta_soc: Some(2.0),
             rl_max_time_s: Some(15.0),
+            // Governors are opt-in per product configuration.
+            governor_urls: Vec::new(),
         }
     }
 }
@@ -145,7 +158,7 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
     }
 
     if let Some(delta) = config.ssoc_delta {
-        if delta < 0.0 || delta >= 100.0 {
+        if !delta.is_finite() || delta < 0.0 || delta >= 100.0 {
             let err = anyhow::format_err!(
                 "Invalid battery manager config at '{path}': ssoc_delta ({delta}) \
                 must be in range [0.0, 100.0).",
@@ -156,7 +169,7 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
     }
 
     if let Some(max_delta) = config.rl_max_delta_soc {
-        if max_delta <= 0.0 {
+        if !max_delta.is_finite() || max_delta <= 0.0 {
             let err = anyhow::format_err!(
                 "Invalid battery manager config at '{path}': rl_max_delta_soc ({max_delta}) \
                 must be positive.",
@@ -167,7 +180,7 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
     }
 
     if let Some(max_time) = config.rl_max_time_s {
-        if max_time <= 0.0 {
+        if !max_time.is_finite() || max_time <= 0.0 {
             let err = anyhow::format_err!(
                 "Invalid battery manager config at '{path}': rl_max_time_s ({max_time}) \
                 must be positive.",
@@ -196,6 +209,27 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
         let tier_thresholds = config.ttf_tier_thresholds.as_ref().unwrap();
         let cc_matrix = config.chg_cc_limits_ua.as_ref().unwrap();
 
+        if temp_limits.len() < 2 || temp_limits.windows(2).any(|w| w[0] >= w[1]) {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': \
+                ttf_charge_temp_limits must have at least 2 strictly increasing entries.",
+            );
+            error!("{err}");
+            return Err(err);
+        }
+
+        if tier_thresholds.is_empty()
+            || tier_thresholds.iter().any(|t| !t.is_finite() || *t < 0.0 || *t > 100.0)
+            || tier_thresholds.windows(2).any(|w| w[0] >= w[1])
+        {
+            let err = anyhow::format_err!(
+                "Invalid battery manager config at '{path}': \
+                ttf_tier_thresholds must be non-empty, in [0.0, 100.0], and strictly increasing.",
+            );
+            error!("{err}");
+            return Err(err);
+        }
+
         let expected_rows = temp_limits.len().saturating_sub(1);
         if cc_matrix.len() != expected_rows {
             let err = anyhow::format_err!(
@@ -209,9 +243,6 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
             return Err(err);
         }
 
-        // TODO(https://fxbug.dev/540034557): When chg_cv_limits_uv is added, validate that
-        // chg_cc_limits_ua column count exactly matches chg_cv_limits_uv.len().
-        // For now, TTF estimation only requires num_cols >= tier_thresholds.len().
         let expected_min_cols = tier_thresholds.len();
         let num_cols = cc_matrix.first().map(|r| r.len()).unwrap_or(0);
         if num_cols < expected_min_cols {
@@ -224,6 +255,27 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
             return Err(err);
         }
 
+        if let Some(ref cv_limits) = config.chg_cv_limits_uv {
+            if num_cols != cv_limits.len() {
+                let err = anyhow::format_err!(
+                    "Invalid battery manager config at '{path}': \
+                    chg_cc_limits_ua column count ({num_cols}) must match \
+                    chg_cv_limits_uv count ({}).",
+                    cv_limits.len()
+                );
+                error!("{err}");
+                return Err(err);
+            }
+            if cv_limits.contains(&0) || cv_limits.windows(2).any(|w| w[0] >= w[1]) {
+                let err = anyhow::format_err!(
+                    "Invalid battery manager config at '{path}': \
+                    chg_cv_limits_uv must be positive and strictly increasing.",
+                );
+                error!("{err}");
+                return Err(err);
+            }
+        }
+
         for (i, row) in cc_matrix.iter().enumerate() {
             if row.len() != num_cols {
                 let err = anyhow::format_err!(
@@ -231,6 +283,14 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
                     chg_cc_limits_ua row {i} length ({}) must match \
                     row 0 length ({num_cols}).",
                     row.len()
+                );
+                error!("{err}");
+                return Err(err);
+            }
+            if row.iter().any(|&cc| cc < 0) {
+                let err = anyhow::format_err!(
+                    "Invalid battery manager config at '{path}': \
+                    chg_cc_limits_ua row {i} contains negative current limit.",
                 );
                 error!("{err}");
                 return Err(err);
@@ -296,6 +356,8 @@ fn parse_battery_manager_config(contents: &str, path: &str) -> Result<BatteryMan
 #[cfg(test)]
 mod tests {
     use super::*;
+    use diagnostics_assertions::assert_data_tree;
+    use fuchsia_inspect::Inspector;
 
     #[test]
     fn test_parse_battery_manager_config_valid() {
@@ -343,6 +405,55 @@ mod tests {
         let json = r#"{}"#;
         let config = parse_battery_manager_config(json, "test_path").unwrap();
         assert_eq!(config.shutdown_offset_percent, 0.0);
+        assert!(config.governor_urls.is_empty());
+    }
+
+    /// Verifies that `governor_urls` is parsed from the JSON configuration.
+    #[fuchsia::test]
+    fn test_parse_battery_manager_config_governor_urls() {
+        let json = r#"{
+            "governor_urls": [
+                "fuchsia-pkg://fuchsia.com/msc#meta/msc.cm",
+                "fuchsia-pkg://fuchsia.com/other_gov#meta/other_gov.cm"
+            ]
+        }"#;
+        let config = parse_battery_manager_config(json, "test_path").unwrap();
+        assert_eq!(
+            config.governor_urls,
+            vec![
+                "fuchsia-pkg://fuchsia.com/msc#meta/msc.cm".to_string(),
+                "fuchsia-pkg://fuchsia.com/other_gov#meta/other_gov.cm".to_string(),
+            ]
+        );
+    }
+
+    /// Verifies that `chg_cv_limits_uv` is accepted when its length matches the column count of
+    /// `chg_cc_limits_ua`, and rejected otherwise.
+    #[fuchsia::test]
+    fn test_parse_battery_manager_config_chg_cv_limits() {
+        let json = r#"{
+            "ttf_charge_temp_limits": [0, 10000, 20000],
+            "ttf_tier_thresholds": [0.0, 84.0],
+            "chg_cv_limits_uv": [4200000, 4350000],
+            "chg_cc_limits_ua": [
+                [200000, 100000],
+                [200000, 100000]
+            ]
+        }"#;
+        let config = parse_battery_manager_config(json, "test_path").unwrap();
+        assert_eq!(config.chg_cv_limits_uv, Some(vec![4200000, 4350000]));
+
+        let json_mismatch = r#"{
+            "ttf_charge_temp_limits": [0, 10000, 20000],
+            "ttf_tier_thresholds": [0.0, 84.0],
+            "chg_cv_limits_uv": [4200000, 4350000, 4480000],
+            "chg_cc_limits_ua": [
+                [200000, 100000],
+                [200000, 100000]
+            ]
+        }"#;
+        let err = parse_battery_manager_config(json_mismatch, "test_path").unwrap_err();
+        assert!(err.to_string().contains("chg_cv_limits_uv count"));
     }
 
     #[test]
@@ -490,9 +601,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_record_inspect() {
-        use diagnostics_assertions::assert_data_tree;
-        use fuchsia_inspect::Inspector;
-
         let inspector = Inspector::default();
         let config = BatteryManagerConfig::default_for_test();
         inspector.root().record_child("battery_manager_config", |node| {
@@ -505,5 +613,96 @@ mod tests {
                 config: expected_json,
             }
         });
+    }
+
+    const TEST_PATH: &str = "test_path";
+    const VALID_TEMP_LIMITS: &str = "[0, 10000, 20000]";
+    const VALID_TIER_THRESHOLDS: &str = "[0.0, 84.0]";
+    const VALID_CC_LIMITS: &str = "[[200000, 100000], [200000, 100000]]";
+    const VALID_CV_LIMITS: &str = "[4200000, 4350000]";
+    const TEMP_LIMITS_ERR: &str = "ttf_charge_temp_limits must have at least 2 strictly increasing";
+    const TIER_THRESHOLDS_ERR: &str = "ttf_tier_thresholds must be non-empty";
+    const CV_LIMITS_ERR: &str = "chg_cv_limits_uv must be positive and strictly increasing";
+
+    /// Builds a TTF config around the 2x2 [`VALID_CC_LIMITS`] matrix.
+    fn ttf_config_json(temp_limits: &str, tier_thresholds: &str, cv_limits: &str) -> String {
+        format!(
+            r#"{{
+                "ttf_charge_temp_limits": {temp_limits},
+                "ttf_tier_thresholds": {tier_thresholds},
+                "chg_cc_limits_ua": {VALID_CC_LIMITS},
+                "chg_cv_limits_uv": {cv_limits}
+            }}"#
+        )
+    }
+
+    fn assert_rejected(json: &str, expected_err: &str) {
+        let err = parse_battery_manager_config(json, TEST_PATH).unwrap_err();
+        assert!(err.to_string().contains(expected_err), "unexpected error for {json}: {err}");
+    }
+
+    /// Verifies that the baseline 2x2 TTF config helper produces a valid configuration.
+    #[fuchsia::test]
+    fn test_ttf_config_json_baseline_is_valid() {
+        let json = ttf_config_json(VALID_TEMP_LIMITS, VALID_TIER_THRESHOLDS, VALID_CV_LIMITS);
+        assert!(parse_battery_manager_config(&json, TEST_PATH).is_ok());
+    }
+
+    /// Verifies that `ttf_charge_temp_limits` rejects fewer than 2 entries or non-increasing
+    /// values.
+    #[fuchsia::test]
+    fn test_parse_battery_manager_config_temp_limits_not_strictly_increasing() {
+        for temp_limits in ["[0]", "[0, 10000, 10000]", "[20000, 10000, 0]"] {
+            assert_rejected(
+                &ttf_config_json(temp_limits, VALID_TIER_THRESHOLDS, VALID_CV_LIMITS),
+                TEMP_LIMITS_ERR,
+            );
+        }
+    }
+
+    /// Verifies that `ttf_tier_thresholds` rejects empty, out-of-range, or non-increasing values.
+    #[fuchsia::test]
+    fn test_parse_battery_manager_config_invalid_tier_thresholds() {
+        for tier_thresholds in ["[]", "[-1.0, 84.0]", "[0.0, 100.5]", "[84.0, 84.0]", "[84.0, 0.0]"]
+        {
+            assert_rejected(
+                &ttf_config_json(VALID_TEMP_LIMITS, tier_thresholds, VALID_CV_LIMITS),
+                TIER_THRESHOLDS_ERR,
+            );
+        }
+    }
+
+    /// Verifies that `chg_cv_limits_uv` rejects a zero voltage limit.
+    #[fuchsia::test]
+    fn test_parse_battery_manager_config_cv_limits_contains_zero() {
+        assert_rejected(
+            &ttf_config_json(VALID_TEMP_LIMITS, VALID_TIER_THRESHOLDS, "[0, 4350000]"),
+            CV_LIMITS_ERR,
+        );
+    }
+
+    /// Verifies that `chg_cv_limits_uv` rejects non-increasing voltage limits.
+    #[fuchsia::test]
+    fn test_parse_battery_manager_config_cv_limits_not_increasing() {
+        for cv_limits in ["[4350000, 4200000]", "[4200000, 4200000]"] {
+            assert_rejected(
+                &ttf_config_json(VALID_TEMP_LIMITS, VALID_TIER_THRESHOLDS, cv_limits),
+                CV_LIMITS_ERR,
+            );
+        }
+    }
+
+    /// Verifies that `chg_cc_limits_ua` rejects rows containing negative current limits.
+    #[fuchsia::test]
+    fn test_parse_battery_manager_config_cc_limits_negative_rejected() {
+        let json = format!(
+            r#"{{
+                "ttf_charge_temp_limits": {VALID_TEMP_LIMITS},
+                "ttf_tier_thresholds": {VALID_TIER_THRESHOLDS},
+                "chg_cc_limits_ua": [[200000, -1], [200000, 100000]],
+                "chg_cv_limits_uv": {VALID_CV_LIMITS}
+            }}"#
+        );
+        assert_rejected(&json, "contains negative current limit");
     }
 }

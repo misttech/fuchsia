@@ -2,21 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#[cfg(test)]
 mod arbiter;
 mod battery_info_recorders;
 mod battery_manager;
 mod battery_simulator;
 mod config;
+mod governor_supervisor;
 mod polisher;
 
+use crate::arbiter::ChargeLimitArbiter;
 use crate::battery_info_recorders::RecorderConfig;
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver, DriverUpdate};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
 pub(crate) use crate::config::BatteryManagerConfig;
 use crate::config::read_battery_manager_config;
+use crate::governor_supervisor::spawn_configured_governors;
 use anyhow::Error;
 use battery_manager_config::Config;
+use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_hardware_power_battery as fbattery;
 use fidl_fuchsia_hardware_power_charger as fcharger;
 use fidl_fuchsia_power_battery as fpower;
@@ -25,7 +28,7 @@ use fidl_fuchsia_power_system as fsystem;
 use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_inspect::{self as inspect};
+use fuchsia_inspect as inspect;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use inspect_runtime::PublishOptions;
@@ -43,6 +46,42 @@ enum IncomingService {
 }
 
 const CURR_BOOT_BATTERY_HISTORY_FILE: &str = "/data/history.txt";
+// Paths to search for configuration: /config/config.json from BootFS (in production),
+// falling back to /pkg/config/test_config.json (in integration tests).
+const BOOTFS_CONFIG_PATH: &str = "/config/config.json";
+const PKG_CONFIG_PATH: &str = "/pkg/config/test_config.json";
+/// Initial delay before watching a battery driver again after its watch ended, or a charger whose
+/// `Charger.Watch` failed while its `Controller` is still open.
+const DRIVER_WATCH_RETRY_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
+/// Cap on the retry and restart delays, which double after each failure.
+const MAX_RETRY_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(60);
+const INSPECTOR_NODE_CHARGE_LIMIT_ARBITER: &str = "charge_limit_arbiter";
+
+/// Capped exponential backoff between attempts of a task that is retried forever. An attempt
+/// that ran for at least [`MAX_RETRY_DELAY`] counts as healthy and resets the delay.
+pub(crate) struct Backoff {
+    initial: zx::MonotonicDuration,
+    next: zx::MonotonicDuration,
+    attempt_start: fasync::MonotonicInstant,
+}
+
+impl Backoff {
+    pub(crate) fn new(initial: zx::MonotonicDuration) -> Self {
+        Self { initial, next: initial, attempt_start: fasync::MonotonicInstant::now() }
+    }
+
+    /// Sleeps for the current backoff duration and doubles the delay (up to [`MAX_RETRY_DELAY`])
+    /// for the next call, resetting first if the previous attempt ran for at least
+    /// [`MAX_RETRY_DELAY`].
+    pub(crate) async fn wait(&mut self) {
+        if fasync::MonotonicInstant::now() - self.attempt_start >= MAX_RETRY_DELAY {
+            self.next = self.initial;
+        }
+        fasync::Timer::new(fasync::MonotonicInstant::after(self.next)).await;
+        self.next = std::cmp::min(self.next * 2, MAX_RETRY_DELAY);
+        self.attempt_start = fasync::MonotonicInstant::now();
+    }
+}
 
 async fn get_battery_info_source() -> Result<BatteryInfoSource, Error> {
     info!("Looking for battery info service (new or old)...");
@@ -125,11 +164,6 @@ fn remove_battery_history() {
     let _ = std::fs::remove_file(CURR_BOOT_BATTERY_HISTORY_FILE);
 }
 
-// Paths to search for configuration: /config/config.json from BootFS (in production),
-// falling back to /pkg/config/test_config.json (in integration tests).
-const BOOTFS_CONFIG_PATH: &str = "/config/config.json";
-const PKG_CONFIG_PATH: &str = "/pkg/config/test_config.json";
-
 fn load_battery_manager_config_from_path(path: &str) -> Result<BatteryManagerConfig, Error> {
     info!("Loading battery manager config from {path}");
     read_battery_manager_config(path)
@@ -146,26 +180,41 @@ fn load_battery_manager_config() -> Result<BatteryManagerConfig, Error> {
     }
 }
 
+/// Watches the battery driver, and connects to it again whenever the watch ends, after a delay
+/// that doubles from [`DRIVER_WATCH_RETRY_DELAY`] up to [`MAX_RETRY_DELAY`]. While no battery
+/// service instance is available, waits for one to appear.
 async fn start_watching_battery_service(
     battery_manager: Arc<BatteryManager>,
     sag: Option<fsystem::ActivityGovernorProxy>,
     updates: mpsc::UnboundedSender<DriverUpdate>,
 ) {
-    let source = match get_battery_info_source().await {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Error getting battery info source: {e:?}");
-            return;
-        }
-    };
+    let mut backoff = Backoff::new(DRIVER_WATCH_RETRY_DELAY);
+    loop {
+        let source = match get_battery_info_source().await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Error getting battery info source: {e:?}");
+                return;
+            }
+        };
 
-    if let Err(e) = battery_manager.start_watching_battery_info(source, sag, updates).await {
-        error!("Error when watching battery info: {e:?}");
+        match battery_manager
+            .start_watching_battery_info(source, sag.clone(), updates.clone())
+            .await
+        {
+            Ok(()) => warn!("Battery info watch ended; reconnecting"),
+            Err(e) => error!("Error when watching battery info, reconnecting: {e:?}"),
+        }
+        backoff.wait().await;
     }
 }
 
+/// Watches `fuchsia.hardware.power.charger.Service` instances, connects the arbiter to each
+/// instance's `Controller`, and retries `Charger.Watch` with exponential backoff as long as the
+/// `Controller` channel stays open.
 async fn start_watching_charger_service(
     battery_manager: Arc<BatteryManager>,
+    arbiter: Arc<ChargeLimitArbiter>,
     sag: Option<fsystem::ActivityGovernorProxy>,
     updates: mpsc::UnboundedSender<DriverUpdate>,
 ) {
@@ -188,20 +237,43 @@ async fn start_watching_charger_service(
     let mut stream = stream.fuse();
     while let Some(instance_res) = stream.next().await {
         match instance_res {
-            Ok(instance) => match instance.connect_to_charger() {
-                Ok(proxy) => {
-                    info!("Connected to fuchsia.hardware.power.charger service");
-                    if let Err(e) = battery_manager
-                        .start_watching_charger_info(proxy, sag.clone(), updates.clone())
-                        .await
-                    {
-                        // Not retried here: charger telemetry stays stale until the service
-                        // publishes a new instance.
-                        warn!("Charger watcher stream ended, telemetry stopped: {:?}", e);
+            Ok(instance) => {
+                let controller = match instance.connect_to_controller() {
+                    Ok(controller) => {
+                        info!("Connected to fuchsia.hardware.power.charger Controller");
+                        arbiter.set_driver_controller(Some(controller.clone())).await;
+                        Some(controller)
                     }
+                    Err(e) => {
+                        warn!("Failed to connect to charger Controller: {:?}", e);
+                        None
+                    }
+                };
+                // The votes stay bound for as long as the driver keeps the Controller open, so a
+                // telemetry failure is retried rather than relaxing every vote.
+                let mut backoff = Backoff::new(DRIVER_WATCH_RETRY_DELAY);
+                loop {
+                    match instance.connect_to_charger() {
+                        Ok(proxy) => {
+                            info!("Connected to fuchsia.hardware.power.charger service");
+                            if let Err(e) = battery_manager
+                                .start_watching_charger_info(proxy, sag.clone(), updates.clone())
+                                .await
+                            {
+                                warn!("Charger watcher stream ended: {:?}", e);
+                            }
+                        }
+                        Err(e) => warn!("Failed to connect to charger instance: {:?}", e),
+                    }
+                    if controller.as_ref().is_none_or(|c| c.is_closed()) {
+                        break;
+                    }
+                    backoff.wait().await;
                 }
-                Err(e) => warn!("Failed to connect to charger instance: {:?}", e),
-            },
+                if controller.is_some() {
+                    arbiter.set_driver_controller(None).await;
+                }
+            }
             Err(e) => warn!("Charger service watch error: {:?}", e),
         }
     }
@@ -231,7 +303,7 @@ async fn main() -> Result<(), Error> {
     let recorder_config = RecorderConfig::default();
     let battery_manager = Arc::new(BatteryManager::new_with_battery_manager_config(
         recorder_config,
-        battery_manager_config,
+        battery_manager_config.clone(),
     ));
 
     let sag = if config.suspend_enabled {
@@ -247,6 +319,20 @@ async fn main() -> Result<(), Error> {
     // they publish events here and a single consumer applies them in order.
     let (update_tx, update_rx) = mpsc::unbounded();
 
+    let arbiter = Arc::new(ChargeLimitArbiter::new());
+    let arbiter_for_inspect = Arc::downgrade(&arbiter);
+    inspector.root().record_lazy_child(INSPECTOR_NODE_CHARGE_LIMIT_ARBITER, move || {
+        let arbiter = arbiter_for_inspect.clone();
+        async move {
+            let inspector = inspect::Inspector::default();
+            if let Some(arbiter) = arbiter.upgrade() {
+                arbiter.record_inspect(inspector.root()).await;
+            }
+            Ok(inspector)
+        }
+        .boxed()
+    });
+
     let battery_manager_for_updates = battery_manager.clone();
     let sag_updates = sag.clone();
     let _update_task = fasync::Task::local(async move {
@@ -259,6 +345,7 @@ async fn main() -> Result<(), Error> {
     ));
     let _charger_task = fasync::Task::local(start_watching_charger_service(
         battery_manager.clone(),
+        arbiter.clone(),
         sag,
         update_tx,
     ));
@@ -274,6 +361,12 @@ async fn main() -> Result<(), Error> {
         .add_fidl_service(IncomingService::BatterySimulator);
 
     fs.take_and_serve_directory_handle()?;
+
+    let _governor_scope = spawn_configured_governors(
+        &battery_manager_config.governor_urls,
+        &arbiter,
+        inspector.root(),
+    );
 
     fs.for_each_concurrent(None, |request| {
         let battery_manager = battery_manager.clone();
@@ -342,4 +435,57 @@ async fn main() -> Result<(), Error> {
 
     info!("stopping battery_manager");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::pin::pin;
+    use std::task::Poll;
+
+    /// Verifies that `Backoff` doubles the wait duration up to `MAX_RETRY_DELAY` across rapid
+    /// failures, and resets to the initial delay after an attempt runs for at least
+    /// `MAX_RETRY_DELAY`.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_backoff_doubles_caps_and_resets_after_healthy_run() {
+        let initial = zx::MonotonicDuration::from_seconds(20);
+        let mut backoff = Backoff::new(initial);
+
+        // First rapid failure waits `initial` (20s), then doubles to 40s.
+        {
+            let mut fut = pin!(backoff.wait());
+            assert_eq!(fasync::TestExecutor::poll_until_stalled(&mut fut).await, Poll::Pending);
+            fasync::TestExecutor::advance_to(
+                fasync::MonotonicInstant::now() + zx::MonotonicDuration::from_seconds(20),
+            )
+            .await;
+            assert_eq!(fasync::TestExecutor::poll_until_stalled(&mut fut).await, Poll::Ready(()));
+        }
+
+        // Second rapid failure waits 40s, then caps at `MAX_RETRY_DELAY` (60s).
+        {
+            let mut fut = pin!(backoff.wait());
+            assert_eq!(fasync::TestExecutor::poll_until_stalled(&mut fut).await, Poll::Pending);
+            fasync::TestExecutor::advance_to(
+                fasync::MonotonicInstant::now() + zx::MonotonicDuration::from_seconds(39),
+            )
+            .await;
+            assert_eq!(fasync::TestExecutor::poll_until_stalled(&mut fut).await, Poll::Pending);
+            fasync::TestExecutor::advance_to(
+                fasync::MonotonicInstant::now() + zx::MonotonicDuration::from_seconds(1),
+            )
+            .await;
+            assert_eq!(fasync::TestExecutor::poll_until_stalled(&mut fut).await, Poll::Ready(()));
+        }
+
+        // Simulate an attempt that ran healthily for `MAX_RETRY_DELAY` (60s) before failing;
+        // `wait()` should reset to `initial` (20s).
+        fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + MAX_RETRY_DELAY).await;
+        {
+            let mut fut = pin!(backoff.wait());
+            assert_eq!(fasync::TestExecutor::poll_until_stalled(&mut fut).await, Poll::Pending);
+            fasync::TestExecutor::advance_to(fasync::MonotonicInstant::now() + initial).await;
+            assert_eq!(fasync::TestExecutor::poll_until_stalled(&mut fut).await, Poll::Ready(()));
+        }
+    }
 }

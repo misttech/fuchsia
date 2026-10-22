@@ -1,0 +1,42 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Runs the charge governors listed in the config's `governor_urls` in `#governors`.
+{
+    collections: [
+        {
+            name: "governors",
+            durability: "transient",
+        },
+    ],
+    use: [
+        {
+            protocol: [
+                "fuchsia.component.Realm",
+                "fuchsia.component.runtime.Capabilities",
+            ],
+            from: "framework",
+        },
+    ],
+    offer: [
+        // Each governor receives its own fuchsia.hardware.power.charger.Controller connector
+        // through CreateChildArgs.additional_inputs, so that the arbiter can attribute votes to the
+        // governor that cast them. Governors are not offered the battery or charger driver services:
+        // battery-manager is the only client of the drivers.
+        {
+            directory: "config",
+            from: "parent",
+            to: "#governors",
+            availability: "optional",
+        },
+        {
+            protocol: [
+                "fuchsia.inspect.InspectSink",
+                "fuchsia.logger.LogSink",
+            ],
+            from: "parent",
+            to: "#governors",
+        },
+    ],
+}

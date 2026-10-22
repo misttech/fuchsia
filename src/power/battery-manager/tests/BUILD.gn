@@ -3,12 +3,16 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("battery_manager_integration_test") {
   edition = "2024"
   source_root = "src/integration_test.rs"
-  sources = [ "src/integration_test.rs" ]
+  sources = [
+    "src/fake_governor_votes.rs",
+    "src/integration_test.rs",
+  ]
   deps = [
     "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
@@ -20,6 +24,8 @@ rustc_test("battery_manager_integration_test") {
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//sdk/rust/zx",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_rust",
+    "//src/lib/diagnostics/reader/rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fake-clock/fidl:fidl_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
@@ -33,8 +39,34 @@ rustc_test("battery_manager_integration_test") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:test-case",
   ]
+}
+
+rustc_binary("fake_governor_bin") {
+  testonly = true
+  edition = "2024"
+  output_name = "fake_governor"
+  source_root = "src/fake_governor.rs"
+  sources = [
+    "src/fake_governor.rs",
+    "src/fake_governor_votes.rs",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.power.charger:fuchsia.hardware.power.charger_rust",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_component("fake_governor") {
+  testonly = true
+  component_name = "fake_governor"
+  manifest = "meta/fake_governor.cml"
+  deps = [ ":fake_governor_bin" ]
 }
 
 fuchsia_test_component("battery_manager_integration_test_component") {
@@ -57,6 +89,7 @@ fuchsia_test_package("battery-manager-integration-tests") {
     }
   }
   deps = [
+    ":fake_governor",
     ":test_config",
     "//src/devices/bus/drivers/platform:platform-bus",
     "//src/lib/fake-clock/svc",
