@@ -6,6 +6,7 @@ import("//build/config/clang/clang.gni")
 import("//build/config/compiler_config.gni")
 import("//build/config/sysroot.gni")
 
+# LINT.IfChange(compiler)
 config("compiler") {
   configs = [
     ":sysroot",
@@ -23,6 +24,9 @@ config("compiler") {
   ]
 }
 
+# LINT.ThenChange(//build/config/linux/BUILD.bazel:compiler)
+
+# LINT.IfChange(default_pie)
 config("default-pie") {
   if (!toolchain_variant.is_pic_default) {
     # Rust links are always PIE on Linux.  C/C++ static library code that is
@@ -43,7 +47,9 @@ config("default-pie") {
   }
 }
 
-# LINT.IfChange(implicit-host-libs)
+# LINT.ThenChange(//build/config/linux/BUILD.bazel:default_pie)
+
+# LINT.IfChange(implicit_host_libs)
 compiler_config("implicit-host-libs") {
   ldflags = [
     # Use static C++ standard library.
@@ -61,8 +67,9 @@ compiler_config("implicit-host-libs") {
   }
 }
 
-# LINT.ThenChange(//build/config/linux/BUILD.bazel:implicit-host-libs)
+# LINT.ThenChange(//build/config/linux/BUILD.bazel:implicit_host_libs)
 
+# LINT.IfChange(sysroot)
 config("sysroot") {
   cflags = [ "--sysroot=" + rebase_path(sysroot, root_build_dir) ]
   ldflags = cflags
@@ -74,6 +81,9 @@ config("sysroot") {
   }
 }
 
+# LINT.ThenChange(//build/config/linux/BUILD.bazel:sysroot)
+
+# LINT.IfChange(target)
 config("target") {
   cflags = [ "--target=$current_target_tuple" ]
   asmflags = cflags
@@ -85,8 +95,11 @@ config("target") {
   }
 }
 
+# LINT.ThenChange(//build/config/linux/BUILD.bazel:target)
+
 # These flags are enabled by default in Fuchsia's Clang toolchain, but we set
 # them explicitly to support other Clang toolchains and Clang-based tools.
+# LINT.IfChange(clang_defaults)
 config("clang_defaults") {
   cflags_cc = [
     # Use libc++ as the C++ standard library.
@@ -125,3 +138,4 @@ config("clang_defaults") {
     ldflags += [ "-Wl,--image-base=0x200000" ]
   }
 }
+# LINT.ThenChange(//build/config/linux/BUILD.bazel:clang_defaults)
