@@ -687,14 +687,16 @@ for rel_path in sorted(candidate_files):
             or rel_path.startswith("testing/")
             or "/testing/" in rel_path
         )
-        allow_broad_test_vis = is_testonly or is_test_support_pkg or is_test_rule
-
         target_rdeps = per_target_rdeps.get(target_name, true_rdeps)
+        distinct_areas = get_distinct_areas(target_rdeps, pkg_path)
+        # Shared test-support targets may use broad visibility only when they are reused across
+        # >= 2 areas, the same rule find_rdeps.sh uses to recommend ["//:__subpackages__"].
+        allow_broad_test_vis = (is_testonly or is_test_support_pkg or is_test_rule) and len(distinct_areas) >= 2
+
         narrow_vis = recommend_narrow_visibility(target_rdeps, pkg_path)
         area_rollup_vis = recommend_area_rollup_visibility(target_rdeps, pkg_path)
         rec_target_vis = recommend_visibility(target_rdeps, pkg_path, is_test_support=allow_broad_test_vis)
         is_globally_used = is_globally_used_target(target_rdeps, pkg_path)
-        distinct_areas = get_distinct_areas(target_rdeps, pkg_path)
 
         if vis_kw is None:
             if not has_pkg_default_vis and len(target_rdeps) > 0 and target_name not in preexisting_no_vis_targets:
