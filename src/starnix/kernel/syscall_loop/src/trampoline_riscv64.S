@@ -4,22 +4,15 @@
 
 #include <starnix_asm_utils/asm.h>
 
-FUNCTION(breakpoint_for_module_changes)
-  ebreak
-  ret
-END_FUNCTION(breakpoint_for_module_changes)
-
-
 //      fn restricted_enter_loop(
 //  a0    options: u32,
-//  a1    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
-//  a2    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
-//  a3    restricted_state: *mut zx::sys::zx_restricted_exception_t,
-//  a4    extended_pstate_ptr: *mut ExtendedPstatePointer,
+//  a1    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
+//  a2    restricted_state: *mut zx::sys::zx_restricted_exception_t,
+//  a3    extended_pstate_ptr: *mut ExtendedPstatePointer,
 //  a0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Make space for all 12 callee saved registers, return address, thread pointer, shadow call
-  // stack pointer, and 5 parameters on the stack. Since the stack must remain aligned to 16
+  // stack pointer, and 4 parameters on the stack. Since the stack must remain aligned to 16
   // byte boundaries an additional 8 bytes are allocated and not used.
   addi sp, sp, -(20 * 8)
 
@@ -49,20 +42,17 @@ FUNCTION(restricted_enter_loop)
   // Save original options
   sd  a0, 15*8(sp)
 
-  // Save restricted exit callback
+  // Save restricted exit callback context
   sd  a1, 16*8(sp)
 
-  // Save restricted exit callback context
+  // Save address of restricted state mappings
   sd  a2, 17*8(sp)
 
-  // Save address of restricted state mappings
+  // Save address of extended processor state mapping
   sd  a3, 18*8(sp)
 
-  // Save address of extended processor state mapping
-  sd  a4, 19*8(sp)
-
   // Restore extended processor state
-  mv a0, a4
+  mv a0, a3
   call restore_extended_pstate
 
 .restricted_enter_loop_top:
@@ -128,7 +118,7 @@ FUNCTION(restricted_return_loop)
   ld gp, 14*8(sp)
 
   // Save extended processor state
-  ld a0, 19*8(sp)
+  ld a0, 18*8(sp)
   call save_extended_pstate
 
   // TODO: emit CFI directives
@@ -140,12 +130,11 @@ FUNCTION(restricted_return_loop)
   // a2      extended_pstate_ptr: *mut ExtendedPstatePointer,
   // a0    ) -> bool
 
-  // Load callback function and context pointers
-  ld t0, 16*8(sp)
-  ld a0, 17*8(sp)
+  // Load callback context pointer
+  ld a0, 16*8(sp)
   mv a1, s1
-  ld a2, 19*8(sp)
-  jalr t0
+  ld a2, 18*8(sp)
+  call restricted_exit_callback_c
 
   // TODO: restore CFI directives
 
@@ -153,7 +142,7 @@ FUNCTION(restricted_return_loop)
   beqz a0, .restricted_enter_loop_ret
 
   // Restore extended processor state
-  ld a0, 19*8(sp)
+  ld a0, 18*8(sp)
   call restore_extended_pstate
 
   // Go back to the top

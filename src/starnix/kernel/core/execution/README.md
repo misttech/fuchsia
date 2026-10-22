@@ -102,9 +102,8 @@ a system call or exception.
 The execution flow structure is as follows:
 
 - Starnix sets up the initial restricted mode state
-- Starnix calls an assembly routine restricted_enter_loop providing a callback and context
-  - restricted_enter_loop stores all callee-saved registers and the callback + context on the normal
-  mode stack
+- Starnix calls an assembly routine restricted_enter_loop providing a context
+  - restricted_enter_loop stores all callee-saved registers and the context on the normal mode stack
   - restricted_enter_loop calls zx_restricted_enter to switch to restricted mode
     - If this fails, restricted_enter_loop unwinds and returns the error from Zircon
     - Zircon switches the thread's architectural state to the restricted mode copy and
@@ -115,8 +114,9 @@ The execution flow structure is as follows:
   - Zircon jumps to restricted_return_loop with the stored context in a register
   - restricted_return_loop stores the address of the restricted mode register state in a register
     and emits CFI directives telling unwinders that the logical stack continues into restricted mode
-  - restricted_return_loop invokes callback providing the restricted mode exit value
-    - restricted_enter_callback in Starnix interprets the restricted mode exit and decides whether
+  - restricted_return_loop directly calls restricted_exit_callback_c in Starnix, providing the
+    context and the restricted mode exit reason
+    - restricted_exit_callback_c interprets the restricted mode exit and decides whether
     to update the restricted mode state and re-enter restricted mode or exit
   - restricted_return_loop reads the bool from the callback and either jumps back to the middle of
     restricted_enter_loop to re-enter restricted mode or to the epilogue of restricted_enter_loop to

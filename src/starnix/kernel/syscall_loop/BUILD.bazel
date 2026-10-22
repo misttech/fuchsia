@@ -14,5 +14,19 @@ fx_cc_library(
         "@platforms//cpu:x86_64": ["src/trampoline_x64.S"],
     }),
     implementation_deps = ["//src/starnix/lib/asm_utils"],
+    visibility = ["//visibility:private"],
+)
+
+# Kept separate from `restricted_trampoline` so that targets which only need the breakpoint (such
+# as the starnix_core unit tests) don't link the trampolines, which call into
+# `restricted_exit_callback_c` in this crate.
+fx_cc_library(
+    name = "module_changes_breakpoint",
+    srcs = select({
+        "@platforms//cpu:arm64": ["src/breakpoint_arm64.S"],
+        "@platforms//cpu:riscv64": ["src/breakpoint_riscv64.S"],
+        "@platforms//cpu:x86_64": ["src/breakpoint_x64.S"],
+    }),
+    implementation_deps = ["//src/starnix/lib/asm_utils"],
     visibility = ["//src/starnix/kernel/core:__pkg__"],
 )

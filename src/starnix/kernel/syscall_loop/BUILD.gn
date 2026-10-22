@@ -22,6 +22,7 @@ rustc_library("starnix_syscall_loop") {
   ]
 
   deps = [
+    ":module_changes_breakpoint",
     ":restricted_trampoline",
     "//sdk/rust/zx",
     "//src/lib/debug/rust",
@@ -87,6 +88,17 @@ static_library("restricted_trampoline") {
     sources = [ "src/trampoline_riscv64.S" ]
   } else if (current_cpu == "x64") {
     sources = [ "src/trampoline_x64.S" ]
+  }
+  deps = [ "//src/starnix/lib/asm_utils" ]
+  visibility = [ ":*" ]
+}
+static_library("module_changes_breakpoint") {
+  if (current_cpu == "arm64") {
+    sources = [ "src/breakpoint_arm64.S" ]
+  } else if (current_cpu == "riscv64") {
+    sources = [ "src/breakpoint_riscv64.S" ]
+  } else if (current_cpu == "x64") {
+    sources = [ "src/breakpoint_x64.S" ]
   }
   deps = [ "//src/starnix/lib/asm_utils" ]
   visibility = [

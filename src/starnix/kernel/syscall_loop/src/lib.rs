@@ -48,20 +48,13 @@ pub fn enter(current_task: &mut CurrentTask) -> ExitStatus {
     }
 }
 
-type RestrictedExitCallback = extern "C" fn(
-    *mut RestrictedEnterContext<'_>,
-    zx::sys::zx_restricted_reason_t,
-    *mut ExtendedPstatePointer,
-) -> bool;
-
 unsafe extern "C" {
-    /// Enters restricted mode in a loop, invoking `restricted_exit_callback` on each restricted
+    /// Enters restricted mode in a loop, invoking `restricted_exit_callback_c` on each restricted
     /// exit until the callback returns `false` or `zx_restricted_enter` fails.
     ///
     /// # Safety
     ///
-    /// * `options` and `restricted_exit_callback` must be a valid `zx_restricted_enter` FFI
-    ///   configuration.
+    /// * `options` must be a valid `zx_restricted_enter` options value.
     /// * `restricted_exit_callback_context` must point to a valid [`RestrictedEnterContext`] that
     ///   is exclusively accessed by the current thread and outlives this call.
     /// * `restricted_state` must point to the current thread's bound and mapped
@@ -74,7 +67,6 @@ unsafe extern "C" {
     #[allow(improper_ctypes)]
     fn restricted_enter_loop(
         options: u32,
-        restricted_exit_callback: RestrictedExitCallback,
         restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
         restricted_state: *mut zx::sys::zx_restricted_state_t,
         extended_pstate_ptr_ptr: *mut ExtendedPstatePointer,
@@ -137,8 +129,7 @@ fn run_task(
         let mut extended_pstate_ptr =
             restricted_enter_context.current_task.thread_state.extended_pstate.as_ptr();
         // SAFETY:
-        // * `RESTRICTED_ENTER_OPTIONS` and `restricted_exit_callback_c` form a valid
-        //   `zx_restricted_enter` FFI configuration.
+        // * `RESTRICTED_ENTER_OPTIONS` is a valid `zx_restricted_enter` options value.
         // * `restricted_enter_context` is exclusively accessed by the current thread, outlives the
         //   call, and is passed as a raw pointer to avoid asserting an intermediate `&mut` borrow.
         // * `restricted_state_ptr` points to the current thread's bound and mapped
@@ -148,7 +139,6 @@ fn run_task(
         let restricted_enter_status = zx::Status::ok(unsafe {
             restricted_enter_loop(
                 RESTRICTED_ENTER_OPTIONS,
-                restricted_exit_callback_c,
                 &raw mut restricted_enter_context,
                 restricted_state_ptr,
                 &raw mut extended_pstate_ptr,
@@ -188,7 +178,18 @@ fn run_task(
     restricted_enter_context.exit_status
 }
 
-extern "C" fn restricted_exit_callback_c(
+/// Entry point invoked from the architecture-specific `restricted_return_loop` assembly
+/// trampoline upon each exit from restricted mode.
+///
+/// # Safety
+///
+/// * `context` must point to the valid [`RestrictedEnterContext`] passed to
+///   `restricted_enter_loop` on the current thread.
+/// * `extended_pstate_ptr_ptr` must point to the valid [`ExtendedPstatePointer`] passed to
+///   `restricted_enter_loop` on the current thread.
+#[allow(private_interfaces)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn restricted_exit_callback_c(
     context: *mut RestrictedEnterContext<'_>,
     reason_code: zx::sys::zx_restricted_reason_t,
     extended_pstate_ptr_ptr: *mut ExtendedPstatePointer,
@@ -267,9 +268,7 @@ fn process_restricted_exit(
 
     match reason_code {
         zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
-            if let Some(new_error_context) = execute_syscall(current_task) {
-                *error_context = Some(new_error_context);
-            }
+            execute_syscall(current_task, error_context);
         }
         zx::sys::ZX_RESTRICTED_REASON_EXCEPTION => {
             if !current_task.is_exitted() {
@@ -331,16 +330,24 @@ pub struct ErrorContext {
 
 /// Executes the syscall for `current_task`.
 ///
-/// Returns an `ErrorContext` if the system call returned an error.
+/// Stores an `ErrorContext` in `error_context` if the system call returned an error, and leaves it
+/// unchanged otherwise, so that the most recent failure is preserved across successful syscalls.
+///
+/// `error_context` is an out-parameter rather than an `Option<ErrorContext>` return value because
+/// of that preservation requirement: a returned `None` must not overwrite the previous
+/// `ErrorContext`, so the return value cannot be constructed directly in `*error_context`. It would
+/// instead go through a separate hidden return slot that is written on every syscall and copied
+/// into `*error_context` on error. With the out-parameter, the common `Ok` path does not touch
+/// `error_context` at all.
 #[inline(never)] // Inlining this function breaks the CFI directives used to unwind into user code.
-pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
+pub fn execute_syscall(current_task: &mut CurrentTask, error_context: &mut Option<ErrorContext>) {
     current_task.thread_state.registers.save_registers_for_restart();
 
     current_task.ptrace().on_syscall_enter();
     // A tracee killed (e.g., via `SIGKILL` or `PTRACE_KILL`) while stopped in `PTRACE_SYSCALL`
     // entry is marked `EXITED` and woken from `on_syscall_enter` without executing the syscall.
     if current_task.is_exitted() {
-        return None;
+        return;
     }
 
     let syscall_decl = SyscallDecl::from_number(
@@ -369,11 +376,11 @@ pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
 
     current_task.trigger_delayed_releaser();
 
-    let return_value = match result {
+    let is_error = match result {
         Ok(return_value) => {
             log_syscall!(current_task, "-> {:#x}", return_value.value());
             current_task.thread_state.registers.set_return_register(return_value.value());
-            None
+            false
         }
         Err(errno) => {
             log_syscall!(current_task, "!-> {errno}");
@@ -381,13 +388,12 @@ pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
                 current_task.thread_state.restart_code = Some(errno.code);
             }
             current_task.thread_state.registers.set_return_register(errno.return_value());
-            Some(ErrorContext { error: errno, syscall })
+            *error_context = Some(ErrorContext { error: errno, syscall });
+            true
         }
     };
 
-    current_task.ptrace().on_syscall_exit(return_value.is_some());
-
-    return_value
+    current_task.ptrace().on_syscall_exit(is_error);
 }
 
 /// Finishes `current_task` updates after a restricted mode exit such as a syscall, exception, or kick.
@@ -513,7 +519,7 @@ mod tests {
         //   invoked back-to-back in a single assembly block so compiler-generated code cannot
         //   clobber volatile SIMD/SVE registers between `restricted_enter_loop` and
         //   `save_extended_pstate`.
-        // * `x20`..`x25` are callee-saved in AAPCS64 and preserved across all three calls.
+        // * `x20`..`x24` are callee-saved in AAPCS64 and preserved across all three calls.
         // * All caller-saved registers (`clobber_abi("C")`) and callee-saved SIMD registers
         //   (`v8`..`v15`) are declared clobbered, and `fpcr`/`fpsr` are reset to zero before
         //   returning.
@@ -522,13 +528,12 @@ mod tests {
                 "mov x0, x20",
                 "bl {restore_fn}",
                 "mov w0, #-1",
-                "mov x1, x21",
-                "mov x2, xzr",
+                "mov x1, xzr",
+                "mov x2, x21",
                 "mov x3, x22",
-                "mov x4, x23",
                 "bl {enter_loop_fn}",
-                "mov w25, w0",
-                "mov x0, x24",
+                "mov w24, w0",
+                "mov x0, x23",
                 "bl {save_fn}",
                 "msr fpcr, xzr",
                 "msr fpsr, xzr",
@@ -536,11 +541,10 @@ mod tests {
                 enter_loop_fn = sym restricted_enter_loop,
                 save_fn = sym save_extended_pstate,
                 in("x20") seed_pstate_ptr,
-                in("x21") restricted_exit_callback_c as *const (),
-                in("x22") restricted_state,
-                in("x23") in_pstate_ptr,
-                in("x24") out_pstate_ptr,
-                out("w25") status,
+                in("x21") restricted_state,
+                in("x22") in_pstate_ptr,
+                in("x23") out_pstate_ptr,
+                out("w24") status,
                 clobber_abi("C"),
                 out("v8") _, out("v9") _, out("v10") _, out("v11") _,
                 out("v12") _, out("v13") _, out("v14") _, out("v15") _,

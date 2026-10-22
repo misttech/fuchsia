@@ -4,17 +4,11 @@
 
 #include <starnix_asm_utils/asm.h>
 
-FUNCTION(breakpoint_for_module_changes)
-  brk #0
-  ret
-END_FUNCTION(breakpoint_for_module_changes)
-
 //       fn restricted_enter_loop(
 //  x0    options: u32,
-//  x1    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
-//  x2    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
-//  x3    restricted_state: *mut zx::sys::zx_restricted_exception_t,
-//  x4    extended_pstate_ptr: *mut ExtendedPstatePointer,
+//  x1    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
+//  x2    restricted_state: *mut zx::sys::zx_restricted_exception_t,
+//  x3    extended_pstate_ptr: *mut ExtendedPstatePointer,
 //  x0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // This function:
@@ -34,11 +28,11 @@ FUNCTION(restricted_enter_loop)
   // Save shadow call stack pointer and original options
   stp x0, x18, [sp, #-16]!   // Will be at [sp], #32
 
-  // Save restricted exit callback function and context
-  stp x1,  x2, [sp, #-16]!   // Will be at [sp], #16
+  // Save restricted exit callback context
+  str x1, [sp, #-16]!        // Will be at [sp], #16
 
   // Save address of restricted state and extended processor state mappings
-  stp x3,  x4, [sp, #-16]!   // Will be at [sp], #0
+  stp x2,  x3, [sp, #-16]!   // Will be at [sp], #0
 
 .restricted_enter_loop_top:
   // Restore extended processor state based on target CPSR mode.
@@ -182,8 +176,8 @@ FUNCTION(restricted_return_loop)
   // x2      extended_pstate_ptr: *mut ExtendedPstatePointer,
   // x0    ) -> bool
 
-  // Load callback context and function pointers stack
-  ldp x3, x0, [sp, #16]
+  // Load callback context pointer from stack
+  ldr x0, [sp, #16]
 
   // Restore reason code that we saved in x19 earlier.
   mov x1, x19
@@ -191,8 +185,8 @@ FUNCTION(restricted_return_loop)
   // Restore the extended pstate pointer
   ldr x2, [sp, #8]
 
-  // Call the callback
-  blr x3
+  // Call the callback directly to avoid indirect branch predictor overhead
+  bl restricted_exit_callback_c
 
   // Restore CFI state after callback
   .cfi_restore_state
@@ -290,8 +284,8 @@ FUNCTION(restricted_return_loop_aarch32)
   // x2      extended_pstate_ptr: *mut ExtendedPstatePointer,
   // x0    ) -> bool
 
-  // Load callback context and function pointers stack
-  ldp x3, x0, [sp, #16]
+  // Load callback context pointer from stack
+  ldr x0, [sp, #16]
 
   // Restore reason code that we saved in x19 earlier.
   mov x1, x19
@@ -299,8 +293,8 @@ FUNCTION(restricted_return_loop_aarch32)
   // Load the extended pstate pointer
   ldr x2, [sp, #8]
 
-  // Call the callback.
-  blr x3
+  // Call the callback directly to avoid indirect branch predictor overhead.
+  bl restricted_exit_callback_c
 
   // Restore CFI state after callback
   .cfi_restore_state

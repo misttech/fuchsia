@@ -441,7 +441,7 @@ rustc_test("starnix_core_test") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-fs",
     "//src/lib/test_util",
-    "//src/starnix/kernel/syscall_loop:restricted_trampoline",
+    "//src/starnix/kernel/syscall_loop:module_changes_breakpoint",
     "//src/storage/ext4/tests:test_img",
     "//src/storage/fxfs/platform:fxfs-testing",
     "//src/storage/lib/block_server/vmo_backed",

@@ -4,18 +4,11 @@
 
 #include <starnix_asm_utils/asm.h>
 
-FUNCTION(breakpoint_for_module_changes)
-  int3
-  ret
-END_FUNCTION(breakpoint_for_module_changes)
-
-
 //       fn restricted_enter_loop(
 // %rdi    options: u32,
-// %rsi    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
-// %rdx    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
-// %rcx    restricted_state: *mut zx::sys::zx_restricted_exception_t,
-// %r8     extended_pstate_ptr: *mut ExtendedPstatePointer,
+// %rsi    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
+// %rdx    restricted_state: *mut zx::sys::zx_restricted_exception_t,
+// %rcx    extended_pstate_ptr: *mut ExtendedPstatePointer,
 // %rax  ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Save callee saved registers on the stack.
@@ -27,25 +20,22 @@ FUNCTION(restricted_enter_loop)
   push  %r15
   push  %rsp
 
-  sub $(8*6), %rsp // Space for 5 temporaries + 1 for alignment
+  sub $(8*4), %rsp // Space for 4 temporaries (16-byte aligned)
 
   // Save original options
-  mov %rdi, 32(%rsp)
-
-  // Save address of callback function
-  mov %rsi, 24(%rsp)
+  mov %rdi, 24(%rsp)
 
   // Save address of callback function context
-  mov %rdx, 16(%rsp)
+  mov %rsi, 16(%rsp)
 
   // Save address of restricted state mapping
-  mov %rcx, 8(%rsp)
+  mov %rdx, 8(%rsp)
 
   // Save address of the extended processor state object
-  mov %r8, (%rsp)
+  mov %rcx, (%rsp)
 
   // Restore the extended processor state.
-  mov %r8, %rdi
+  mov %rcx, %rdi
   call restore_extended_pstate
 
 .restricted_enter_loop_top:
@@ -56,7 +46,7 @@ FUNCTION(restricted_enter_loop)
   // %rax ) -> zx_status_t
 
   // Restore zx_restricted_enter parameters from stack
-  mov 32(%rsp), %rdi
+  mov 24(%rsp), %rdi
 
   // Move address of restricted_return_loop into rsi
   leaq restricted_return_loop(%rip), %rsi
@@ -72,7 +62,7 @@ FUNCTION(restricted_enter_loop)
 
 .restricted_enter_loop_ret:
   // Pop temporaries
-  add $(8*6), %rsp
+  add $(8*4), %rsp
   // Pop callee saved registers
   pop  %rsp
   pop  %r15
@@ -102,9 +92,6 @@ FUNCTION(restricted_return_loop)
   // Save the extended processor state.
   mov 0(%rsp), %rdi
   call save_extended_pstate
-
-  // Load callback function pointer from stack
-  mov 24(%rsp), %rcx
 
   // Load callback function context pointer from stack
   mov 16(%rsp), %rdi
@@ -154,7 +141,7 @@ FUNCTION(restricted_return_loop)
   mov 0(%rsp), %rdx
 
   // Invoke callback
-  callq *%rcx
+  callq restricted_exit_callback_c
 
   // Restore CFI state
   .cfi_restore_state
