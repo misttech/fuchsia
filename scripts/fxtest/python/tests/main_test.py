@@ -1508,7 +1508,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             nonlocal serve_abort_signal
             if "serve" in args:
                 serve_abort_signal = kwargs.get("abort_signal")
-            elif "deregister" in args:
+            elif "deregister" in args and serve_abort_signal is not None:
                 raise RuntimeError("Deregistration failed")
 
         command_mock = self._mock_run_command(0, async_handler=command_handler)
@@ -4271,82 +4271,6 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             res = await app._post_build_checklist(tests, event.Id(1))
             self.assertFalse(res)
 
-    def test_is_fuchsia_repo_registered(self) -> None:
-        """_is_fuchsia_repo_registered correctly identifies repository registration."""
-        # JSON with aliases containing fuchsia.com
-        data_aliases = json.dumps(
-            {"ok": {"data": [{"name": "devhost", "aliases": ["fuchsia.com"]}]}}
-        )
-        self.assertTrue(main._is_fuchsia_repo_registered(data_aliases))
-
-        # JSON with name equal to fuchsia.com
-        data_name = json.dumps(
-            {"ok": {"data": [{"name": "fuchsia.com", "aliases": []}]}}
-        )
-        self.assertTrue(main._is_fuchsia_repo_registered(data_name))
-
-        # JSON with name equal to fuchsia-pkg://fuchsia.com
-        data_pkg = json.dumps(
-            {
-                "ok": {
-                    "data": [
-                        {"name": "fuchsia-pkg://fuchsia.com", "aliases": []}
-                    ]
-                }
-            }
-        )
-        self.assertTrue(main._is_fuchsia_repo_registered(data_pkg))
-
-        # JSON empty data
-        self.assertFalse(
-            main._is_fuchsia_repo_registered(json.dumps({"ok": {"data": []}}))
-        )
-
-        # Invalid JSON raises JSONDecodeError
-        with self.assertRaises(json.JSONDecodeError):
-            main._is_fuchsia_repo_registered("not json")
-
-        # Filtering by a specific repo_name
-        data_multiple = json.dumps(
-            {
-                "ok": {
-                    "data": [
-                        {"name": "stale-repo", "aliases": ["fuchsia.com"]},
-                        {"name": "fxtest-abc123", "aliases": ["fuchsia.com"]},
-                    ]
-                }
-            }
-        )
-        self.assertTrue(
-            main._is_fuchsia_repo_registered(
-                data_multiple, repo_name="fxtest-abc123"
-            )
-        )
-        self.assertFalse(
-            main._is_fuchsia_repo_registered(
-                data_multiple, repo_name="fxtest-other"
-            )
-        )
-
-        # Filtering by repo_name when target presents fuchsia-pkg:// prefix
-        data_pkg_repo = json.dumps(
-            {
-                "ok": {
-                    "data": [
-                        {
-                            "name": "fuchsia-pkg://fxtest-abc123",
-                            "aliases": ["fuchsia.com"],
-                        }
-                    ]
-                }
-            }
-        )
-        self.assertTrue(
-            main._is_fuchsia_repo_registered(
-                data_pkg_repo, repo_name="fxtest-abc123"
-            )
-        )
-
     async def test_wait_for_repository_registration_checks_expected_repo_name(
         self,
     ) -> None:
@@ -4446,7 +4370,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             mock.patch("execution.run_command", side_effect=fake_run_command),
             mock.patch("asyncio.sleep", new_callable=mock.AsyncMock),
         ):
-            task, cancel_event = app._start_package_server()
+            task, cancel_event = await app._start_package_server()
             self.assertTrue(await app._wait_for_repository_registration())
             cancel_event.set()
             await task
@@ -4767,7 +4691,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         app._do_build = mock.AsyncMock(return_value=True)
         app._list_runtime_deps = mock.MagicMock()
         app._test_selections = mock.AsyncMock(return_value=mock.MagicMock())
-        app._start_package_server = mock.Mock()
+        app._start_package_server = mock.AsyncMock()
         app._teardown_resources = mock.AsyncMock()
 
         # If it blocks on asyncio.sleep(3600), wait_for will raise TimeoutError

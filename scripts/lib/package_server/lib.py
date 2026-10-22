@@ -4,17 +4,98 @@
 
 import asyncio
 import hashlib
+import json
 import os
 import shlex
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Literal
+from typing import AsyncGenerator, Callable, Literal, Protocol
 
 import build_dir
+from async_utils.command import AsyncCommand, AsyncCommandError, CommandOutput
 from ffx_cmd import FfxCmd
 from fx_cmd import FxCmd
 
 _DEFAULT_SERVER_STARTUP_TIMEOUT = 30
 _CHECK_SERVER_POLLING_INTERVAL = 0.2
+_DEFAULT_PROBE_TIMEOUT = 15.0
+_DEFAULT_DEREGISTER_TIMEOUT = 5.0
+_DEFAULT_SERVER_STOP_TIMEOUT = 10.0
+_DEFAULT_ABORT_GRACE_PERIOD = 5.0
+
+
+class CommandRunner(Protocol):
+    """Callable that executes an `fx` subcommand asynchronously.
+
+    Args:
+        *args (str): Subcommand and arguments to pass to `fx`.
+        timeout (float | None): Optional timeout in seconds before terminating
+            the command.
+        abort_signal (asyncio.Event | None): Optional event that, when set,
+            requests graceful termination of the running command.
+        quiet_mode (bool): Whether to suppress command lifecycle output in
+            interactive status displays.
+
+    Returns:
+        CommandOutput | None: Completed command output, or None if the command
+            could not be started.
+    """
+
+    async def __call__(
+        self,
+        *args: str,
+        timeout: float | None = None,
+        abort_signal: asyncio.Event | None = None,
+        quiet_mode: bool = False,
+    ) -> CommandOutput | None:
+        ...
+
+
+def _default_command_runner(
+    build_directory: str | os.PathLike[str] | None = None,
+) -> CommandRunner:
+    """Creates a `CommandRunner` backed by `FxCmd` and `AsyncCommand`."""
+    resolved_build_dir = (
+        os.fspath(build_directory) if build_directory is not None else None
+    )
+
+    async def run_fx(
+        *args: str,
+        timeout: float | None = None,
+        abort_signal: asyncio.Event | None = None,
+        quiet_mode: bool = False,
+    ) -> CommandOutput | None:
+        del quiet_mode
+        started: AsyncCommand | None = None
+        abort_task: asyncio.Task[None] | None = None
+        try:
+            fx_cmd = FxCmd(
+                build_directory=resolved_build_dir,
+                timeout=timeout,
+            )
+            started = await fx_cmd.start(*args)
+
+            if abort_signal is not None:
+
+                async def handle_abort() -> None:
+                    await abort_signal.wait()
+                    started.terminate()
+                    await asyncio.sleep(_DEFAULT_ABORT_GRACE_PERIOD)
+                    started.kill()
+
+                abort_task = asyncio.create_task(handle_abort())
+
+            return await started.run_to_completion()
+        except asyncio.CancelledError:
+            if started is not None:
+                started.kill()
+            raise
+        except AsyncCommandError:
+            return None
+        finally:
+            if abort_task is not None:
+                abort_task.cancel()
+
+    return run_fx
 
 
 class PackageServingException(Exception):
@@ -30,16 +111,321 @@ class PackageServingCLIException(SystemExit, PackageServingException):
     """
 
 
-async def is_running() -> bool:
+async def is_running(
+    *,
+    timeout: float | None = None,
+    run_command: CommandRunner | None = None,
+) -> bool:
     """
     Checks whether a package server is currently running.
+
+    Args:
+        timeout (float | None): Subprocess timeout in seconds.
+        run_command (CommandRunner | None): Optional runner for `fx`
+            subcommands.
 
     Returns:
         bool: Whether a package server is currently running.
     """
-    cmd = await FxCmd().start("is-package-server-running")
-    result = await cmd.run_to_completion()
-    return result.return_code == 0
+    runner = run_command or _default_command_runner()
+    result = await runner("is-package-server-running", timeout=timeout)
+    return result is not None and result.return_code == 0
+
+
+def is_fuchsia_repo_registered(
+    output: str, repo_name: str | None = None
+) -> bool:
+    """
+    Checks whether a `fuchsia.com` repository is present in `ffx` JSON output.
+
+    Args:
+        output (str): JSON stdout from `ffx --machine json target repository list`.
+        repo_name (str | None): Optional repository name to require when
+            matching `fuchsia.com` registrations.
+
+    Returns:
+        bool: True if a matching `fuchsia.com` repository entry is present.
+
+    Raises:
+        json.JSONDecodeError: If `output` is not valid JSON.
+    """
+    parsed = json.loads(output)
+    # Expected format from ffx --machine json: {"ok": {"data": [...]}}
+    entries = []
+    if isinstance(parsed, dict) and "ok" in parsed:
+        data = parsed["ok"].get("data", [])
+        if isinstance(data, list):
+            entries = data
+    elif isinstance(parsed, list):
+        entries = parsed
+    for entry in entries:
+        if isinstance(entry, dict):
+            name = entry.get("name", "").removeprefix("fuchsia-pkg://")
+            if repo_name is not None and name != repo_name:
+                continue
+            aliases = entry.get("aliases", [])
+            if name == "fuchsia.com" or "fuchsia.com" in aliases:
+                return True
+    return False
+
+
+async def is_fuchsia_repo_registered_on_device(
+    *,
+    repo_name: str | None = None,
+    timeout: float = _DEFAULT_PROBE_TIMEOUT,
+    run_command: CommandRunner | None = None,
+) -> bool:
+    """
+    Checks whether a `fuchsia.com` repository is registered on the target device.
+
+    Args:
+        repo_name (str | None): Optional repository name to require when
+            matching `fuchsia.com` registrations.
+        timeout (float): Subprocess timeout in seconds.
+        run_command (CommandRunner | None): Optional runner for `fx`
+            subcommands.
+
+    Returns:
+        bool: True if a matching `fuchsia.com` repository is registered on the
+            target device.
+    """
+    runner = run_command or _default_command_runner()
+    repo_output = await runner(
+        "ffx",
+        "--machine",
+        "json",
+        "target",
+        "repository",
+        "list",
+        timeout=timeout,
+        quiet_mode=True,
+    )
+    if repo_output is None or repo_output.return_code != 0:
+        return False
+    try:
+        return is_fuchsia_repo_registered(
+            repo_output.stdout, repo_name=repo_name
+        )
+    except json.JSONDecodeError:
+        return False
+
+
+async def is_connected_to_device(
+    *,
+    repo_name: str | None = None,
+    timeout: float = _DEFAULT_PROBE_TIMEOUT,
+    run_command: CommandRunner | None = None,
+) -> bool:
+    """
+    Checks whether a package server is running and registered on the target device.
+
+    Args:
+        repo_name (str | None): Optional repository name to require when
+            matching `fuchsia.com` registrations on the target.
+        timeout (float): Subprocess timeout in seconds.
+        run_command (CommandRunner | None): Optional runner for `fx`
+            subcommands.
+
+    Returns:
+        bool: True only if a host package server is running and registered on
+            the target device.
+    """
+    if not await is_running(
+        timeout=timeout,
+        run_command=run_command,
+    ):
+        return False
+    return await is_fuchsia_repo_registered_on_device(
+        repo_name=repo_name,
+        timeout=timeout,
+        run_command=run_command,
+    )
+
+
+async def wait_for_registration(
+    *,
+    repo_name: str | None = None,
+    retries: int = 30,
+    interval: float = 1.0,
+    timeout: float = _DEFAULT_PROBE_TIMEOUT,
+    run_command: CommandRunner | None = None,
+) -> bool:
+    """
+    Polls until a `fuchsia.com` repository is registered on the target device.
+
+    Args:
+        repo_name (str | None): Optional repository name to require when
+            matching `fuchsia.com` registrations. Filtering by an expected
+            ephemeral repository name prevents unrelated stale registrations
+            from causing the wait to return early.
+        retries (int): Maximum number of polling attempts.
+        interval (float): Delay in seconds between polling attempts.
+        timeout (float): Per-probe subprocess timeout in seconds.
+        run_command (CommandRunner | None): Optional runner for `fx`
+            subcommands.
+
+    Returns:
+        bool: True if the repository is registered within `retries` attempts.
+    """
+    runner = run_command or _default_command_runner()
+    for _ in range(retries):
+        if await is_fuchsia_repo_registered_on_device(
+            repo_name=repo_name,
+            timeout=timeout,
+            run_command=runner,
+        ):
+            return True
+        await asyncio.sleep(interval)
+    return False
+
+
+async def deregister(
+    name: str,
+    *,
+    timeout: float = _DEFAULT_DEREGISTER_TIMEOUT,
+    run_command: CommandRunner | None = None,
+) -> CommandOutput | None:
+    """
+    Deregisters a package repository from the target device.
+
+    Args:
+        name (str): Repository name to deregister from the target.
+        timeout (float): Subprocess timeout in seconds.
+        run_command (CommandRunner | None): Optional runner for `fx`
+            subcommands.
+
+    Returns:
+        CommandOutput | None: Subprocess output, or None if execution failed.
+    """
+    runner = run_command or _default_command_runner()
+    return await runner(
+        "ffx",
+        "target",
+        "repository",
+        "deregister",
+        "-r",
+        name,
+        timeout=timeout,
+        quiet_mode=True,
+    )
+
+
+async def serve(
+    *,
+    name: str | None = None,
+    prefix: str = "tmp",
+    build_directory: str | os.PathLike[str] | None = None,
+    run_command: CommandRunner | None = None,
+    on_warning: Callable[[str], None] | None = None,
+) -> tuple[asyncio.Task[None], asyncio.Event]:
+    """
+    Starts a managed background package server and returns its control handles.
+
+    Deregisters any stale target registration for the repository name before
+    starting the server, and when the returned event is set, deregisters the
+    repository from the target before terminating the server process group.
+
+    Args:
+        name (str | None): Explicit repository name, or None to derive a
+            deterministic ephemeral name using `prefix` and `build_directory`.
+        prefix (str): Tool-specific prefix when deriving an ephemeral repository
+            name.
+        build_directory (str | PathLike[str] | None): Build directory whose
+            package repository is being served, or None for the active build
+            directory.
+        run_command (CommandRunner | None): Optional runner for `fx`
+            subcommands.
+        on_warning (Callable[[str], None] | None): Optional callback invoked
+            with a human-readable warning message if teardown deregistration or
+            server shutdown fails.
+
+    Returns:
+        tuple[Task[None], Event]: Background lifecycle task and the event that
+            triggers graceful deregistration and server shutdown when set.
+
+    Raises:
+        build_dir.GetBuildDirectoryError: If `build_directory` is None (when
+            deriving `name` or using the default command runner) and no active
+            build directory can be determined.
+    """
+    cancel_event = asyncio.Event()
+    repo_name = name or ephemeral_repository_name(prefix, build_directory)
+    runner = run_command or _default_command_runner(
+        build_directory=build_directory
+    )
+
+    # Deregister any stale registration left on the device by an interrupted
+    # prior run so `wait_for_registration` waits for the newly started server
+    # instance to register its port.
+    await deregister(repo_name, run_command=runner)
+
+    started_event = asyncio.Event()
+    repo_deregistered_event = asyncio.Event()
+
+    # Aborting the `fx serve` task stops the repository server but does not
+    # remove the corresponding repository config or rewrite rule from the
+    # device. The repository config is explicitly deregistered from the device
+    # (which also removes the rewrite rule) before cancelling the server task to
+    # avoid the pkg-resolver's AutoClient logging that the server has gone away.
+    async def impl() -> None:
+        serve_task: asyncio.Task[CommandOutput | None] | None = None
+        try:
+            serve_task = asyncio.create_task(
+                runner(
+                    "serve",
+                    "-l",
+                    "0",
+                    "--name",
+                    repo_name,
+                    abort_signal=repo_deregistered_event,
+                    quiet_mode=True,
+                )
+            )
+            started_event.set()
+            await cancel_event.wait()
+        finally:
+            try:
+                deregister_output = await deregister(
+                    repo_name,
+                    run_command=runner,
+                )
+                if (
+                    deregister_output is None
+                    or deregister_output.return_code != 0
+                ):
+                    raise RuntimeError(
+                        f"exit code {deregister_output.return_code if deregister_output is not None else -1}"
+                    )
+            except Exception as e:
+                if on_warning is not None:
+                    on_warning(
+                        f"Failed to deregister temporary package repository {repo_name}: {e}"
+                    )
+            finally:
+                repo_deregistered_event.set()
+                if serve_task is not None:
+                    try:
+                        await asyncio.wait_for(
+                            serve_task, timeout=_DEFAULT_SERVER_STOP_TIMEOUT
+                        )
+                    except TimeoutError:
+                        if on_warning is not None:
+                            on_warning(
+                                f"Timed out waiting for temporary package server ({repo_name}) to stop."
+                            )
+                        serve_task.cancel()
+
+    task = asyncio.create_task(impl())
+    try:
+        await started_event.wait()
+    except BaseException:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        raise
+    return (task, cancel_event)
 
 
 async def wait_for_package_server(
@@ -248,23 +634,6 @@ async def stop(name: str | None = None) -> None:
         "server",
         "stop",
         *([name] if name else []),
-    )
-    await process.run_to_completion()
-
-
-async def deregister(name: str) -> None:
-    """
-    Deregisters a package repository from the target device.
-
-    Args:
-        name (str): Repository name to deregister from the target.
-    """
-    process = await FfxCmd().start(
-        "target",
-        "repository",
-        "deregister",
-        "-r",
-        name,
     )
     await process.run_to_completion()
 

@@ -13,6 +13,7 @@ python_library("package_server") {
     "lib.py",
   ]
   deps = [
+    "//scripts/lib/async_utils",
     "//scripts/lib/build_dir",
     "//scripts/lib/ffx_cmd",
     "//scripts/lib/fx_cmd",

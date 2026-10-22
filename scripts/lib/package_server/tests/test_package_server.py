@@ -3,13 +3,16 @@
 # found in the LICENSE file.
 
 import asyncio
+import json
 import os
 import tempfile
+import typing
 import unittest
 import unittest.mock as mock
 from pathlib import Path
 
 import package_server
+from async_utils.command import AsyncCommandError, CommandOutput
 
 
 class TestPackageServer(unittest.IsolatedAsyncioTestCase):
@@ -281,21 +284,26 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         )
         cmd_mock.run_to_completion.assert_called()
 
-    @mock.patch("package_server.lib.FfxCmd")
-    async def test_deregister(self, mock_ffx_cmd: mock.Mock) -> None:
+    @mock.patch("package_server.lib.FxCmd")
+    async def test_deregister(self, mock_fx_cmd: mock.Mock) -> None:
         cmd_mock = mock.Mock()
-        cmd_mock.run_to_completion = mock.AsyncMock()
-        mock_ffx_cmd.return_value.start = mock.AsyncMock(return_value=cmd_mock)
+        output = CommandOutput("", "", 0, 0.1, None)
+        cmd_mock.run_to_completion = mock.AsyncMock(return_value=output)
+        mock_fx_cmd.return_value.start = mock.AsyncMock(return_value=cmd_mock)
 
-        await package_server.deregister("my-repo")
-        mock_ffx_cmd.return_value.start.assert_called_once_with(
+        self.assertEqual(
+            await package_server.deregister(name="my-repo"),
+            output,
+        )
+        mock_fx_cmd.assert_called_once_with(build_directory=None, timeout=5.0)
+        mock_fx_cmd.return_value.start.assert_called_once_with(
+            "ffx",
             "target",
             "repository",
             "deregister",
             "-r",
             "my-repo",
         )
-        cmd_mock.run_to_completion.assert_called_once()
 
     @mock.patch("package_server.lib.is_running")
     async def test_run_and_stop_on_exit_already_running(
@@ -359,3 +367,336 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(package_server.PackageServingCLIException):
             async with package_server.run_and_stop_on_exit():
                 pass
+
+    def test_is_fuchsia_repo_registered(self) -> None:
+        data_aliases = json.dumps(
+            {"ok": {"data": [{"name": "devhost", "aliases": ["fuchsia.com"]}]}}
+        )
+        self.assertTrue(package_server.is_fuchsia_repo_registered(data_aliases))
+
+        data_name = json.dumps(
+            {"ok": {"data": [{"name": "fuchsia.com", "aliases": []}]}}
+        )
+        self.assertTrue(package_server.is_fuchsia_repo_registered(data_name))
+
+        data_pkg = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {"name": "fuchsia-pkg://fuchsia.com", "aliases": []}
+                    ]
+                }
+            }
+        )
+        self.assertTrue(package_server.is_fuchsia_repo_registered(data_pkg))
+
+        self.assertFalse(
+            package_server.is_fuchsia_repo_registered(
+                json.dumps({"ok": {"data": []}})
+            )
+        )
+
+        with self.assertRaises(json.JSONDecodeError):
+            package_server.is_fuchsia_repo_registered("not json")
+
+        data_multiple = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {"name": "stale-repo", "aliases": ["fuchsia.com"]},
+                        {"name": "fxtest-abc123", "aliases": ["fuchsia.com"]},
+                    ]
+                }
+            }
+        )
+        self.assertTrue(
+            package_server.is_fuchsia_repo_registered(
+                data_multiple, repo_name="fxtest-abc123"
+            )
+        )
+        self.assertFalse(
+            package_server.is_fuchsia_repo_registered(
+                data_multiple, repo_name="fxtest-other"
+            )
+        )
+
+        data_pkg_repo = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {
+                            "name": "fuchsia-pkg://fxtest-abc123",
+                            "aliases": ["fuchsia.com"],
+                        }
+                    ]
+                }
+            }
+        )
+        self.assertTrue(
+            package_server.is_fuchsia_repo_registered(
+                data_pkg_repo, repo_name="fxtest-abc123"
+            )
+        )
+
+    async def test_is_connected_to_device(self) -> None:
+        runner = mock.AsyncMock(
+            side_effect=[
+                CommandOutput("ok", "", 0, 0.1, None),
+                CommandOutput(
+                    json.dumps(
+                        {
+                            "ok": {
+                                "data": [
+                                    {
+                                        "name": "devhost",
+                                        "aliases": ["fuchsia.com"],
+                                    }
+                                ]
+                            }
+                        }
+                    ),
+                    "",
+                    0,
+                    0.1,
+                    None,
+                ),
+            ]
+        )
+        self.assertTrue(
+            await package_server.is_connected_to_device(run_command=runner)
+        )
+        self.assertEqual(runner.call_count, 2)
+
+        runner_not_running = mock.AsyncMock(
+            return_value=CommandOutput("", "", 1, 0.1, None)
+        )
+        self.assertFalse(
+            await package_server.is_connected_to_device(
+                run_command=runner_not_running
+            )
+        )
+        self.assertEqual(runner_not_running.call_count, 1)
+
+        runner_bad_json = mock.AsyncMock(
+            side_effect=[
+                CommandOutput("ok", "", 0, 0.1, None),
+                CommandOutput("not json", "", 0, 0.1, None),
+            ]
+        )
+        self.assertFalse(
+            await package_server.is_connected_to_device(
+                run_command=runner_bad_json
+            )
+        )
+        self.assertEqual(runner_bad_json.call_count, 2)
+
+    async def test_wait_for_registration(self) -> None:
+        stale_output = json.dumps(
+            {
+                "ok": {
+                    "data": [{"name": "stale-repo", "aliases": ["fuchsia.com"]}]
+                }
+            }
+        )
+        registered_output = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {"name": "stale-repo", "aliases": ["fuchsia.com"]},
+                        {"name": "fxtest-1234", "aliases": ["fuchsia.com"]},
+                    ]
+                }
+            }
+        )
+        runner = mock.AsyncMock(
+            side_effect=[
+                CommandOutput(stale_output, "", 0, 0.1, None),
+                CommandOutput(registered_output, "", 0, 0.1, None),
+            ]
+        )
+        with mock.patch("asyncio.sleep", new_callable=mock.AsyncMock):
+            self.assertTrue(
+                await package_server.wait_for_registration(
+                    repo_name="fxtest-1234", run_command=runner
+                )
+            )
+        self.assertEqual(runner.call_count, 2)
+
+        runner_exhausted = mock.AsyncMock(
+            return_value=CommandOutput(stale_output, "", 0, 0.1, None)
+        )
+        with mock.patch("asyncio.sleep", new_callable=mock.AsyncMock):
+            self.assertFalse(
+                await package_server.wait_for_registration(
+                    repo_name="fxtest-1234",
+                    retries=3,
+                    run_command=runner_exhausted,
+                )
+            )
+        self.assertEqual(runner_exhausted.call_count, 3)
+
+    async def test_serve_lifecycle_and_warnings(self) -> None:
+        events: list[str] = []
+        warnings: list[str] = []
+        serve_abort_signal: asyncio.Event | None = None
+        deregister_calls = 0
+
+        async def fake_runner(
+            *args: str, **kwargs: typing.Any
+        ) -> CommandOutput | None:
+            nonlocal serve_abort_signal, deregister_calls
+            if "deregister" in args:
+                deregister_calls += 1
+                events.append(f"deregister_{deregister_calls}")
+                # Fail on teardown deregistration to exercise warning callback.
+                rc = 0 if deregister_calls == 1 else 1
+                return CommandOutput("", "", rc, 0.1, None)
+            if "serve" in args:
+                events.append("serve")
+                serve_abort_signal = kwargs.get("abort_signal")
+                if serve_abort_signal is not None:
+                    await serve_abort_signal.wait()
+                return CommandOutput("", "", 0, 0.1, None)
+            return CommandOutput("", "", 0, 0.1, None)
+
+        task, cancel_event = await package_server.serve(
+            name="fxtest-1234",
+            run_command=fake_runner,
+            on_warning=warnings.append,
+        )
+        cancel_event.set()
+        await task
+
+        self.assertEqual(events, ["deregister_1", "serve", "deregister_2"])
+        self.assertIsNotNone(serve_abort_signal)
+        assert serve_abort_signal is not None
+        self.assertTrue(serve_abort_signal.is_set())
+        self.assertEqual(len(warnings), 1)
+        self.assertIn(
+            "Failed to deregister temporary package repository fxtest-1234",
+            warnings[0],
+        )
+
+    @mock.patch("package_server.lib.FxCmd")
+    async def test_serve_forwards_build_directory_to_default_runner(
+        self, mock_fx_cmd: mock.Mock
+    ) -> None:
+        cmd_mock = mock.Mock()
+        cmd_mock.terminate = mock.Mock()
+        cmd_mock.kill = mock.Mock()
+        cmd_mock.run_to_completion = mock.AsyncMock(
+            return_value=CommandOutput("", "", 0, 0.1, None)
+        )
+        mock_fx_cmd.return_value.start = mock.AsyncMock(return_value=cmd_mock)
+
+        task, cancel_event = await package_server.serve(
+            prefix="fxtest",
+            build_directory=Path("/custom/out/dir"),
+        )
+        cancel_event.set()
+        await task
+
+        for call in mock_fx_cmd.call_args_list:
+            self.assertEqual(
+                call.kwargs.get("build_directory"), "/custom/out/dir"
+            )
+
+    async def test_serve_stop_timeout_emits_warning(self) -> None:
+        warnings: list[str] = []
+        serve_cancelled = False
+
+        async def hanging_runner(
+            *args: str, **kwargs: typing.Any
+        ) -> CommandOutput | None:
+            nonlocal serve_cancelled
+            if "serve" in args:
+                try:
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    serve_cancelled = True
+                    raise
+            return CommandOutput("", "", 0, 0.1, None)
+
+        with mock.patch(
+            "package_server.lib._DEFAULT_SERVER_STOP_TIMEOUT", 0.01
+        ):
+            task, cancel_event = await package_server.serve(
+                name="fxtest-1234",
+                run_command=hanging_runner,
+                on_warning=warnings.append,
+            )
+            cancel_event.set()
+            await task
+
+        self.assertTrue(serve_cancelled)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn(
+            "Timed out waiting for temporary package server (fxtest-1234) to stop.",
+            warnings[0],
+        )
+
+    @mock.patch("package_server.lib.FxCmd")
+    async def test_default_command_runner_abort_signal_terminates_and_kills(
+        self, mock_fx_cmd: mock.Mock
+    ) -> None:
+        runner_done = asyncio.Event()
+        cmd_mock = mock.Mock()
+
+        async def wait_until_killed() -> CommandOutput:
+            await runner_done.wait()
+            return CommandOutput("", "", -9, 0.1, None)
+
+        cmd_mock.terminate = mock.Mock()
+        cmd_mock.kill = mock.Mock(side_effect=runner_done.set)
+        cmd_mock.run_to_completion = mock.AsyncMock(
+            side_effect=wait_until_killed
+        )
+        mock_fx_cmd.return_value.start = mock.AsyncMock(return_value=cmd_mock)
+
+        abort_signal = asyncio.Event()
+        runner = package_server.lib._default_command_runner()
+        with mock.patch("package_server.lib._DEFAULT_ABORT_GRACE_PERIOD", 0.01):
+            run_task = asyncio.create_task(
+                runner("serve", "-l", "0", abort_signal=abort_signal)
+            )
+            await asyncio.sleep(0)
+            abort_signal.set()
+            await run_task
+
+        mock_fx_cmd.return_value.start.assert_called_once_with(
+            "serve", "-l", "0"
+        )
+        cmd_mock.terminate.assert_called_once()
+        cmd_mock.kill.assert_called_once()
+
+    @mock.patch("package_server.lib.FxCmd")
+    async def test_default_command_runner_cancellation_kills_process(
+        self, mock_fx_cmd: mock.Mock
+    ) -> None:
+        async def never_finishes() -> CommandOutput:
+            await asyncio.Future()
+            return CommandOutput("", "", 0, 0.1, None)
+
+        cmd_mock = mock.Mock()
+        cmd_mock.kill = mock.Mock()
+        cmd_mock.run_to_completion = mock.AsyncMock(side_effect=never_finishes)
+        mock_fx_cmd.return_value.start = mock.AsyncMock(return_value=cmd_mock)
+
+        runner = package_server.lib._default_command_runner()
+        run_task = asyncio.create_task(runner("serve", "-l", "0"))
+        await asyncio.sleep(0)
+        run_task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await run_task
+
+        cmd_mock.kill.assert_called_once()
+
+    @mock.patch("package_server.lib.FxCmd")
+    async def test_default_command_runner_handles_async_command_error(
+        self, mock_fx_cmd: mock.Mock
+    ) -> None:
+        mock_fx_cmd.return_value.start = mock.AsyncMock(
+            side_effect=AsyncCommandError("failed")
+        )
+        runner = package_server.lib._default_command_runner()
+        self.assertIsNone(await runner("is-package-server-running"))
