@@ -30,6 +30,9 @@ impl Gap for u32 {
 }
 
 /// A location inside the btree.
+///
+/// Unused entries in `indices[depth as usize..]` are kept zeroed so that `PartialEq` can compare
+/// all 8 bytes of the cursor at once instead of looping over `0..depth`.
 #[derive(Debug, Default, Clone, Copy)]
 struct Cursor {
     /// The number of valid indices in the `indices` array.
@@ -80,7 +83,7 @@ impl Cursor {
             None
         } else {
             self.depth -= 1;
-            Some(self.indices[self.depth as usize] as usize)
+            Some(std::mem::take(&mut self.indices[self.depth as usize]) as usize)
         }
     }
 
@@ -92,7 +95,7 @@ impl Cursor {
             None
         } else {
             self.depth -= 1;
-            let index = self.indices[0] as usize;
+            let index = std::mem::take(&mut self.indices[0]) as usize;
             self.indices.rotate_left(1);
             Some(index)
         }
@@ -104,6 +107,7 @@ impl Cursor {
     ///
     /// Assumes the cursor is non-empty.
     fn back(&self) -> usize {
+        debug_assert!(self.depth > 0);
         self.indices[0] as usize
     }
 
@@ -113,6 +117,7 @@ impl Cursor {
     ///
     /// Assumes the cursor is non-empty.
     fn increment_back(&mut self) {
+        debug_assert!(self.depth > 0);
         self.indices[0] += 1;
     }
 
@@ -122,21 +127,31 @@ impl Cursor {
     ///
     /// Assumes the cursor is non-empty.
     fn decrement_back(&mut self) {
+        debug_assert!(self.depth > 0);
         self.indices[0] -= 1;
     }
 }
 
 impl PartialEq for Cursor {
     fn eq(&self, other: &Self) -> bool {
-        if self.depth != other.depth {
-            return false;
-        }
-        for i in 0..self.depth {
-            if self.indices[i as usize] != other.indices[i as usize] {
-                return false;
-            }
-        }
-        true
+        // This equality check is quite hot, and Rustc/llvm is unable to compile the default
+        // derived `self.depth == other.depth && self.indices == other.indices` into a single 8
+        // byte compare, so we give it a bit of help by explicitly munging the bytes.
+        debug_assert!(
+            self.indices[self.depth as usize..].iter().all(|&i| i == 0),
+            "unused cursor entries must be zero: {self:?}"
+        );
+        debug_assert!(
+            other.indices[other.depth as usize..].iter().all(|&i| i == 0),
+            "unused cursor entries must be zero: {other:?}"
+        );
+        // Because unused entries are zeroed, comparing all 8 bytes (`depth` followed by
+        // `indices`) is equivalent to comparing `depth` and `indices[0..depth]`, and compiles to
+        // a single 8-byte compare.
+        let [a0, a1, a2, a3, a4, a5, a6] = self.indices;
+        let [b0, b1, b2, b3, b4, b5, b6] = other.indices;
+        u64::from_ne_bytes([self.depth, a0, a1, a2, a3, a4, a5, a6])
+            == u64::from_ne_bytes([other.depth, b0, b1, b2, b3, b4, b5, b6])
     }
 }
 
@@ -323,7 +338,7 @@ where
     /// Find the given key in this node.
     ///
     /// Updates `cursor` to point to the position indicated by `position`.
-    fn find(&self, key: &K, position: CursorPosition, cursor: &mut Cursor) {
+    fn find(&self, key: &K, position: CursorPosition, cursor: &mut Cursor) -> &Self {
         let index = binary_search(key, &self.keys);
         match position {
             CursorPosition::Left => {
@@ -333,12 +348,13 @@ where
                 if let Some(range) = self.keys.get(index) {
                     if *key > range.start {
                         cursor.push(index + 1);
-                        return;
+                        return self;
                     }
                 }
                 cursor.push(index);
             }
         }
+        self
     }
 
     /// Compute the maximum gap for this node.
@@ -718,13 +734,14 @@ where
     /// Find the given key in this node.
     ///
     /// Updates `cursor` to point to the position indicated by `position`.
-    fn find(&self, key: &K, position: CursorPosition, cursor: &mut Cursor) {
+    fn find(&self, key: &K, position: CursorPosition, cursor: &mut Cursor) -> &NodeLeaf<K, V> {
         let index = self.get_child_index(&key);
-        match &self.children {
+        let leaf = match &self.children {
             ChildList::Leaf(children) => children[index].find(key, position, cursor),
             ChildList::Internal(children) => children[index].find(key, position, cursor),
-        }
+        };
         cursor.push(index);
+        leaf
     }
 
     /// Compute the maximum gap for this node.
@@ -1219,7 +1236,7 @@ where
     /// Find the given key in this node.
     ///
     /// Updates `cursor` to point to the position indicated by `position`.
-    fn find(&self, key: &K, position: CursorPosition, cursor: &mut Cursor) {
+    fn find(&self, key: &K, position: CursorPosition, cursor: &mut Cursor) -> &NodeLeaf<K, V> {
         match self {
             Node::Internal(node) => node.find(key, position, cursor),
             Node::Leaf(node) => node.find(key, position, cursor),
@@ -1270,10 +1287,10 @@ where
 #[derive(Clone, Debug)]
 enum NodeRef<'a, K: Ord + Copy + Gap, V: Clone> {
     /// An internal node.
-    Internal(&'a Arc<NodeInternal<K, V>>),
+    Internal(&'a NodeInternal<K, V>),
 
     /// A leaf node.
-    Leaf(&'a Arc<NodeLeaf<K, V>>),
+    Leaf(&'a NodeLeaf<K, V>),
 }
 
 impl<'a, K, V> NodeRef<'a, K, V>
@@ -1306,6 +1323,13 @@ pub struct Iter<'a, K: Ord + Copy + Gap, V: Clone> {
 
     /// The root node of the tree.
     root: &'a Node<K, V>,
+
+    /// The leaf node currently pointed to by `forward`, cached to avoid descending from `root` on
+    /// every `next()` call within the same leaf.
+    ///
+    /// Invariant: if `forward_leaf` is `Some(leaf)`, `root.get_containing_node(forward)` is
+    /// `NodeRef::Leaf(leaf)`.
+    forward_leaf: Option<&'a NodeLeaf<K, V>>,
 }
 
 impl<'a, K, V> Iter<'a, K, V>
@@ -1330,15 +1354,21 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_done() {
-            match self.root.get_containing_node(self.forward) {
+            let node = match self.forward_leaf {
+                Some(leaf) => NodeRef::Leaf(leaf),
+                None => self.root.get_containing_node(self.forward),
+            };
+            match node {
                 NodeRef::Leaf(leaf) => {
                     let index = self.forward.back();
                     if index < leaf.keys.len() {
                         let key = &leaf.keys[index];
                         let value = &leaf.values[index];
                         self.forward.increment_back();
+                        self.forward_leaf = Some(leaf);
                         return Some((key, value));
                     } else {
+                        self.forward_leaf = None;
                         self.forward.pop_back();
                         self.forward.increment_back();
                     }
@@ -1347,6 +1377,9 @@ where
                     let index = self.forward.back();
                     if index < internal.children.len() {
                         self.forward.push_back(0);
+                        if let ChildList::Leaf(children) = &internal.children {
+                            self.forward_leaf = Some(&children[index]);
+                        }
                     } else {
                         self.forward.pop_back();
                         self.forward.increment_back();
@@ -1716,23 +1749,25 @@ where
 
     /// Iterate through the keys and values stored in the map.
     pub fn iter(&self) -> Iter<'_, K, V> {
-        Iter {
-            forward: Cursor::with_index(0),
-            backward: Cursor::with_index(self.node.len()),
-            root: &self.node,
-        }
+        self.range(..)
     }
 
-    /// Create the cursor stack for the start bound of the given range.
-    fn find_start_bound(&self, bounds: &impl RangeBounds<K>) -> Cursor {
+    /// Create the cursor stack and initial leaf for the start bound of the given range.
+    fn find_start_bound(&self, bounds: &impl RangeBounds<K>) -> (Cursor, Option<&NodeLeaf<K, V>>) {
         let key = match bounds.start_bound() {
             Bound::Included(key) => key,
             Bound::Excluded(key) => key,
             Bound::Unbounded => {
-                return Cursor::with_index(0);
+                let leaf = match &self.node {
+                    Node::Leaf(leaf) => Some(leaf.as_ref()),
+                    Node::Internal(_) => None,
+                };
+                return (Cursor::with_index(0), leaf);
             }
         };
-        self.find(key, CursorPosition::Left)
+        let mut cursor = Cursor::default();
+        let leaf = self.node.find(key, CursorPosition::Left, &mut cursor);
+        (cursor, Some(leaf))
     }
 
     /// Create the cursor stack for the end bound of the given range.
@@ -1749,9 +1784,9 @@ where
 
     /// Iterate through the keys and values stored in the given range in the map.
     pub fn range(&self, bounds: impl RangeBounds<K>) -> Iter<'_, K, V> {
-        let forward = self.find_start_bound(&bounds);
+        let (forward, forward_leaf) = self.find_start_bound(&bounds);
         let backward = self.find_end_bound(&bounds);
-        Iter { forward, backward, root: &self.node }
+        Iter { forward, backward, root: &self.node, forward_leaf }
     }
 
     /// Find the first range in the map that starts at or after the given key.
@@ -2821,5 +2856,97 @@ mod test {
         assert_eq!(map.get(15), Some((&(10..60), &1)));
         assert_eq!(map.get(45), Some((&(10..60), &1)));
         assert_eq!(map.get(55), Some((&(10..60), &1)));
+    }
+
+    #[::fuchsia::test]
+    fn test_cursor_equality_invariants() {
+        let mut a = Cursor::default();
+        let mut b = Cursor::default();
+        assert_eq!(a, b);
+
+        a.push(3);
+        a.push(7);
+        a.push(11);
+        assert_eq!(a.pop(), Some(11));
+
+        b.push(7);
+        b.push_back(3);
+        assert_eq!(a, b);
+
+        a.push_back(9);
+        assert_eq!(a.pop_back(), Some(9));
+        assert_eq!(a, b);
+
+        a.increment_back();
+        a.decrement_back();
+        assert_eq!(a, b);
+    }
+
+    #[::fuchsia::test]
+    fn test_iter_cached_leaf_and_double_ended() {
+        let mut map = RangeMap::<u32, i32>::default();
+        let num_entries = 200u32;
+        let mut inserted = Vec::new();
+        for i in 0..num_entries {
+            let start = i * 10 + 2;
+            let end = start + 5;
+            let _ = map.insert(start..end, i as i32);
+            inserted.push((start..end, i as i32));
+        }
+
+        // Full forward and backward iteration across multiple internal/leaf levels.
+        let forward: Vec<_> = map.iter().map(|(r, v)| (r.clone(), *v)).collect();
+        let mut backward: Vec<_> = map.iter().rev().map(|(r, v)| (r.clone(), *v)).collect();
+        backward.reverse();
+        assert_eq!(forward, inserted);
+        assert_eq!(backward, inserted);
+
+        // Interleaved next() and next_back() until the cursors meet.
+        let mut iter = map.iter();
+        let mut from_front = Vec::new();
+        let mut from_back = Vec::new();
+        let mut step = 0;
+        loop {
+            let next_item = if step % 3 != 2 { iter.next() } else { iter.next_back() };
+            let Some((r, v)) = next_item else { break };
+            if step % 3 != 2 {
+                from_front.push((r.clone(), *v));
+            } else {
+                from_back.push((r.clone(), *v));
+            }
+            step += 1;
+        }
+        from_back.reverse();
+        from_front.extend(from_back);
+        assert_eq!(from_front, inserted);
+
+        // Range queries whose bounds fall in gaps (including leaf-boundary gaps), inside ranges,
+        // and exactly on range boundaries. Entry `i` is `[10 * i + 2, 10 * i + 7)`, so offset 0 is
+        // in the gap before it, 2 is its exact start, 4 is inside it, and 7 is its exact end.
+        let offsets = [0u32, 2, 4, 7];
+        for start_idx in [0u32, 1, 5, 6, 11, 12, 13, 50, 99, 150, 199] {
+            for len in [0u32, 1, 2, 6, 12, 13, 25] {
+                let end_idx = (start_idx + len).min(num_entries);
+                for start_offset in offsets {
+                    for end_offset in offsets {
+                        let query_start = start_idx * 10 + start_offset;
+                        let query_end = end_idx * 10 + end_offset;
+                        if query_end < query_start {
+                            continue;
+                        }
+                        let expected: Vec<_> = inserted
+                            .iter()
+                            .filter(|(r, _)| r.end > query_start && r.start < query_end)
+                            .cloned()
+                            .collect();
+                        let actual: Vec<_> = map
+                            .range(query_start..query_end)
+                            .map(|(r, v)| (r.clone(), *v))
+                            .collect();
+                        assert_eq!(actual, expected, "range({query_start}..{query_end})");
+                    }
+                }
+            }
+        }
     }
 }
