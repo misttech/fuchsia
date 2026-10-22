@@ -44,8 +44,8 @@ use starnix_uapi::signals::{
 };
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SA_NOCLDWAIT, SI_TKILL, SI_USER, SIG_IGN, errno,
-    error, itimerval, pid_t, rlimit, tid_t,
+    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SA_NOCLDWAIT, SI_USER, SIG_IGN, errno, error,
+    itimerval, pid_t, rlimit, tid_t,
 };
 use std::collections::HashSet;
 use std::fmt;
@@ -1947,13 +1947,14 @@ impl ThreadGroup {
         Ok(())
     }
 
-    /// Attempts to send an unchecked signal to this thread group, with info read from
-    /// `siginfo_ref`.
+    /// Attempts to send an unchecked signal to this thread group, with the given `siginfo`.
     ///
     /// - `current_task`: The task that is sending the signal.
     /// - `unchecked_signal`: The signal that is to be sent. Unchecked, since `0` is a sentinel value
     /// where rights are to be checked but no signal is actually sent.
-    /// - `siginfo_ref`: The siginfo that will be enqueued.
+    /// - `siginfo`: The siginfo that will be enqueued. The caller is responsible for reading it
+    ///   from userspace and for rejecting `si_code` values that userspace may not send to this
+    ///   thread group.
     /// - `options`: Options for how to convert the siginfo into a signal info.
     ///
     /// # Returns
@@ -1964,16 +1965,9 @@ impl ThreadGroup {
         &self,
         current_task: &CurrentTask,
         unchecked_signal: UncheckedSignal,
-        siginfo_ref: UserAddress,
+        siginfo: UncheckedSignalInfo,
         options: IntoSignalInfoOptions,
     ) -> Result<(), Errno> {
-        let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, siginfo_ref)?;
-        if self.leader.id != current_task.get_pid()
-            && (siginfo.code() >= 0 || siginfo.code() == SI_TKILL)
-        {
-            return error!(EPERM);
-        }
-
         if matches!(options, IntoSignalInfoOptions::CheckSigno)
             && siginfo.signo() as u64 != unchecked_signal.raw()
         {
@@ -2718,7 +2712,7 @@ mod test {
     use crate::testing::*;
     use starnix_syscalls::SUCCESS;
     use starnix_uapi::user_address::UserRef;
-    use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
+    use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, SI_TKILL};
 
     #[::fuchsia::test]
     async fn test_setsid() {

@@ -14,9 +14,9 @@ use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal
 use starnix_uapi::union::struct_with_union_into_bytes;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress};
 use starnix_uapi::{
-    SI_KERNEL, SI_MAX_SIZE, SIG_IGN, SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, SIGEV_THREAD_ID,
-    c_int, c_uint, errno, error, sigaction_t, sigaltstack, sigevent, sigval_t, tid_t, uaddr, uapi,
-    uid_t,
+    SI_KERNEL, SI_MAX_SIZE, SI_TKILL, SIG_IGN, SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD,
+    SIGEV_THREAD_ID, c_int, c_uint, errno, error, sigaction_t, sigaltstack, sigevent, sigval_t,
+    tid_t, uaddr, uapi, uid_t,
 };
 use static_assertions::const_assert;
 use std::cmp::Ordering;
@@ -426,6 +426,18 @@ impl UncheckedSignalInfo {
 
     pub fn code(&self) -> i32 {
         self.header.code
+    }
+
+    /// Rejects a `siginfo_t` payload that impersonates the kernel when sent to another task or
+    /// process.
+    ///
+    /// Only the kernel generates `si_code >= 0` (e.g. `SI_USER` from `kill(2)`) or `SI_TKILL`
+    /// (`tgkill(2)`), so userspace may queue such a payload only to itself.
+    pub fn check_code(&self) -> Result<(), Errno> {
+        if self.code() >= 0 || self.code() == SI_TKILL {
+            return error!(EPERM);
+        }
+        Ok(())
     }
 
     /// Converts this unchecked signal info into a `SignalInfo` with the given signal.

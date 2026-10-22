@@ -1292,9 +1292,6 @@
                 // TODO(https://fxbug.dev/353534690) deflake
                 "AllInetTests/RawPacketTest.SendFrom*/*",
 
-                // TODO(https://fxbug.dev/354049980) deflake
-                "RtSignalTest.InvalidCodes",
-
                 // TODO(https://fxbug.dev/358451956) deflake
                 "ChrootTest.ProcMountsMountinfoNoEscape",
 
