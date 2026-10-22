@@ -17,7 +17,6 @@ use core::cmp::Ordering;
 use core::mem::offset_of;
 use core::slice;
 
-use bindings;
 use zr::static_assert;
 
 /// Helper macro for defining the [`Type`] enum to assume the discriminants from C++ bindgen.
@@ -228,7 +227,7 @@ impl Range {
     /// If `addr + size > u64::MAX`, the size is reduced so there is no overflow.
     pub const fn new(addr: u64, size: u64, ty: Type) -> Self {
         let end = addr.saturating_add(size);
-        Self { addr: addr, size: end - addr, ty }
+        Self { addr, size: end - addr, ty }
     }
 
     /// Sanitize a mutable slice of [`zbi::MemRange`] in-place and view it as `&mut [Range]`.
@@ -364,7 +363,7 @@ where
     F: Fn(Type) -> Option<Type>,
 {
     fn new(ranges: I, f: F) -> Self {
-        Self { ranges: ranges, f: f, pending: None }
+        Self { ranges, f, pending: None }
     }
 }
 
@@ -391,7 +390,7 @@ where
             return self.next();
         };
 
-        let cur = Range { addr: cur.addr, size: cur.size, ty: ty };
+        let cur = Range { addr: cur.addr, size: cur.size, ty };
 
         let Some(prev) = self.pending.take() else {
             // This is the first call to `next()`.
@@ -405,7 +404,7 @@ where
         }
 
         self.pending = Some(cur);
-        return Some(prev);
+        Some(prev)
     }
 }
 
