@@ -621,6 +621,9 @@
                 "ProcPidFile.SubprocessZombie",
                 "ProcPidFile.SubprocessExited",
 
+                // TODO(https://fxbug.dev/576397884): Emit FDSize in /proc/[pid]/status.
+                "ProcPidStatusTest.InvalidCloseDoesNotGrowFDTable",
+
                 // TODO(https://fxbug.dev/572923325): Report PF_EXITING in /proc/[pid]/stat flags for zombie tasks.
                 "ProcPidStatTest.ZombieIsExiting",
 
@@ -878,6 +881,7 @@
                 "NetlinkRouteTest.LinkMulticastGroupNamespaced",
                 "NetlinkRouteTest.LinkedToNetns",
                 "NetlinkRouteTest.VethAddShortPeerIfInfoMsg",
+                "NetlinkRouteTest.VethOperStateUpWhenBothEndsUp",
                 "NetlinkRouteTest.DeleteRouteRemovesFirstMatchOnly",
                 "NetlinkRouteTest.NewRouteFamilyMismatch",
                 "NetlinkRouteTest.NewRouteUnsupportedFamily",
