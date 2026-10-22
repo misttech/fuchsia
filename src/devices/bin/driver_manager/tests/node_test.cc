@@ -373,6 +373,9 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
 
   void Stop(StopCompleter::Sync& completer) override {
     stop_callback_();
+    if (hang_on_health_check_) {
+      return;
+    }
     node_.reset();
     binding_.Close(ZX_OK);
   }
@@ -383,6 +386,12 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
       // through the binding and the detached completer is dropped without a reply.
       [[maybe_unused]] auto async_completer = completer.ToAsync();
       binding_.Close(*close_on_health_check_);
+      return;
+    }
+    if (hang_on_health_check_) {
+      // Simulates a wedged driver host: the request is parked and never answered unless the test
+      // calls ReplyToPendingHealthCheck.
+      pending_health_check_.emplace(completer.ToAsync());
       return;
     }
     if (health_check_callback_) {
@@ -400,6 +409,21 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
   // replying, as the driver host would on a crash.
   void SetCloseOnHealthCheck(zx_status_t epitaph) { close_on_health_check_ = epitaph; }
 
+  // Makes HealthCheck requests hang (never reply) until ReplyToPendingHealthCheck is called, as
+  // a wedged driver host would.
+  void SetHangOnHealthCheck(bool hang) { hang_on_health_check_ = hang; }
+
+  bool has_pending_health_check() const { return pending_health_check_.has_value(); }
+
+  // Answers the parked HealthCheck with |result|.
+  void ReplyToPendingHealthCheck(fit::result<fuchsia_driver_framework::HealthCheckError,
+                                             fuchsia_driver_framework::HealthCheckResponse>
+                                     result) {
+    ASSERT_TRUE(pending_health_check_.has_value());
+    pending_health_check_->Reply(std::move(result));
+    pending_health_check_.reset();
+  }
+
   zx::result<> SendHealthAlert(const fuchsia_driver_framework::HealthAlert& alert) {
     fidl::Arena arena;
     return zx::make_result(
@@ -412,6 +436,8 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
   StopCallback stop_callback_;
   HealthCheckCallback health_check_callback_;
   std::optional<zx_status_t> close_on_health_check_;
+  bool hang_on_health_check_ = false;
+  std::optional<HealthCheckCompleter::Async> pending_health_check_;
 };
 
 class Dfv2NodeTest : public DriverManagerTestBase {
@@ -1900,6 +1926,166 @@ TEST_F(Dfv2NodeTest, RunHealthCheckDriverHostCrashWhileInFlight) {
   EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, node->last_health_check()->status);
   EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
   EXPECT_EQ("DRIVER_HOST_PEER_CLOSED", node->last_health_check()->conditions[0].reason_code());
+}
+
+TEST_F(Dfv2NodeTest, HealthCheckBackstopDeadlineMirrorsDriverHost) {
+  using driver_manager::Node;
+  // The backstop is the driver host's per-level deadline (250ms / 2s / 2min) plus slack, so a
+  // check that the host times out itself normally reports the host's TIMEOUT, not the backstop.
+  EXPECT_EQ(zx::msec(250) + Node::kHealthCheckBackstopSlack,
+            Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest::kPing));
+  EXPECT_EQ(zx::sec(2) + Node::kHealthCheckBackstopSlack,
+            Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest::kFast));
+  EXPECT_EQ(zx::sec(120) + Node::kHealthCheckBackstopSlack,
+            Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest::kDeep));
+  // Unknown levels get the longest deadline.
+  EXPECT_EQ(zx::sec(120) + Node::kHealthCheckBackstopSlack,
+            Node::HealthCheckBackstopDeadline(
+                static_cast<fuchsia_driver_framework::HealthCheckRequest>(0xffff)));
+}
+
+TEST_F(Dfv2NodeTest, RunHealthCheckBackstopTimesOutWedgedDriverHost) {
+  using driver_manager::Node;
+  auto node = CreateNode("test-hc-wedged");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-wedged");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+  // The driver host process is wedged: it receives the request but never answers it.
+  fake_driver.SetHangOnHealthCheck(true);
+
+  auto fast_req = fuchsia_driver_framework::HealthCheckRequest::kFast;
+  int calls = 0;
+  std::optional<fit::result<fuchsia_driver_framework::HealthCheckError,
+                            fuchsia_driver_framework::HealthCheckResponse>>
+      outcome;
+  node->RunHealthCheck(fast_req, [&calls, &outcome](auto result) {
+    ++calls;
+    outcome = std::move(result);
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(fake_driver.has_pending_health_check());
+  EXPECT_EQ(0, calls);
+  EXPECT_FALSE(node->last_health_check().has_value());
+
+  // Nothing happens until the backstop deadline for the level has elapsed.
+  RunLoopFor(Node::HealthCheckBackstopDeadline(fast_req) - zx::msec(1));
+  EXPECT_EQ(0, calls);
+  EXPECT_FALSE(node->last_health_check().has_value());
+
+  RunLoopFor(zx::msec(1));
+  ASSERT_EQ(1, calls);
+  ASSERT_TRUE(outcome->is_error());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, outcome->error_value());
+
+  // The timeout is cached like any other failure, with a synthetic condition naming the host.
+  ASSERT_TRUE(node->last_health_check().has_value());
+  const auto& rec = node->last_health_check().value();
+  EXPECT_FALSE(rec.status.has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, rec.error);
+  EXPECT_EQ(fast_req, rec.level);
+  EXPECT_EQ(Now(), rec.timestamp);
+  ASSERT_EQ(1u, rec.conditions.size());
+  EXPECT_EQ("DRIVER_HOST_TIMEOUT", rec.conditions[0].reason_code());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, rec.conditions[0].status());
+
+  // The host wakes up and answers the stale request. The reply is dropped: the callback is not
+  // invoked a second time and the cached TIMEOUT record stands.
+  fake_driver.ReplyToPendingHealthCheck(fit::ok(fuchsia_driver_framework::HealthCheckResponse{{
+      .conditions = {{{{
+          .status = fuchsia_driver_framework::HealthStatus::kDegraded,
+          .reason_code = "LATE_REPLY",
+      }}}},
+  }}));
+  RunLoopUntilIdle();
+  EXPECT_EQ(1, calls);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, node->last_health_check()->error);
+  EXPECT_EQ("DRIVER_HOST_TIMEOUT", node->last_health_check()->conditions[0].reason_code());
+
+  // A check the host answers in time completes with the host's result, and the backstop that was
+  // armed for it is a no-op when it later fires.
+  fake_driver.SetHangOnHealthCheck(false);
+  int ping_calls = 0;
+  node->RunHealthCheck(fuchsia_driver_framework::HealthCheckRequest::kPing,
+                       [&ping_calls](auto result) {
+                         ++ping_calls;
+                         EXPECT_TRUE(result.is_ok());
+                       });
+  RunLoopUntilIdle();
+  EXPECT_EQ(1, ping_calls);
+  RunLoopFor(
+      Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest::kDeep));
+  EXPECT_EQ(1, ping_calls);
+  EXPECT_EQ(1, calls);
+}
+
+TEST_F(Dfv2NodeTest, RunHealthCheckBackstopIsNoOpAfterDriverHostCrash) {
+  using driver_manager::Node;
+  auto node = CreateNode("test-hc-wedged-crash");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-wedged-crash");
+  auto fake_driver = std::make_unique<FakeDriver>(dispatcher(), std::move(driver_server_end),
+                                                  std::move(node_client_end));
+  fake_driver->SetHangOnHealthCheck(true);
+
+  auto ping_req = fuchsia_driver_framework::HealthCheckRequest::kPing;
+  int calls = 0;
+  node->RunHealthCheck(ping_req, [&calls](auto result) {
+    ++calls;
+    ASSERT_TRUE(result.is_error());
+    EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kInternalError, result.error_value());
+  });
+  RunLoopUntilIdle();
+  EXPECT_EQ(0, calls);
+
+  // The wedged host dies before the backstop fires: the channel closure completes the check, and
+  // the backstop that fires afterwards must neither complete it again nor overwrite the record.
+  fake_driver.reset();
+  RunLoopUntilIdle();
+  EXPECT_EQ(1, calls);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ("DRIVER_HOST_PEER_CLOSED", node->last_health_check()->conditions[0].reason_code());
+
+  RunLoopFor(Node::HealthCheckBackstopDeadline(ping_req));
+  EXPECT_EQ(1, calls);
+  EXPECT_EQ("DRIVER_HOST_PEER_CLOSED", node->last_health_check()->conditions[0].reason_code());
+}
+
+TEST_F(Dfv2NodeTest, RunHealthCheckBackstopWhileShuttingDownReturnsInvalidState) {
+  using driver_manager::Node;
+  auto node = CreateNode("test-hc-wedged-stopping");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-wedged-stopping");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+  fake_driver.SetHangOnHealthCheck(true);
+
+  auto ping_req = fuchsia_driver_framework::HealthCheckRequest::kPing;
+  int calls = 0;
+  std::optional<fit::result<fuchsia_driver_framework::HealthCheckError,
+                            fuchsia_driver_framework::HealthCheckResponse>>
+      outcome;
+  node->RunHealthCheck(ping_req, [&calls, &outcome](auto result) {
+    ++calls;
+    outcome = std::move(result);
+  });
+  RunLoopUntilIdle();
+  EXPECT_EQ(0, calls);
+
+  // Begin removing the node while the driver host is wedged (so Stop() does not close the channel
+  // immediately). When the backstop fires on a node that is no longer running, it completes with
+  // kInvalidState and does not cache a spurious DRIVER_HOST_TIMEOUT record.
+  node->Remove(driver_manager::RemovalSet::kAll, nullptr);
+  RunLoopUntilIdle();
+  ASSERT_FALSE(node->is_running());
+
+  RunLoopFor(Node::HealthCheckBackstopDeadline(ping_req));
+  ASSERT_EQ(1, calls);
+  ASSERT_TRUE(outcome->is_error());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kInvalidState, outcome->error_value());
+  EXPECT_FALSE(node->last_health_check().has_value());
 }
 
 // A clean ZX_OK close while a check is in flight is deliberately not tested: the C++ FIDL client

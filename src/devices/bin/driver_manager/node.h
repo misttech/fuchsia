@@ -648,13 +648,32 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // health alerts. Enforced per probe target, not per reporter.
   static constexpr zx::duration kNeighborAlertCooldown = zx::sec(5);
 
+  // Per-level deadlines that driver_host applies to a HealthCheck before it answers TIMEOUT
+  // itself. These mirror the constants in //src/devices/bin/driver-host/src/driver.rs and the
+  // deadlines documented on fuchsia.driver.framework/HealthCheckRequest; keep them in sync.
+  static constexpr zx::duration kPingHealthCheckDeadline = zx::msec(250);
+  static constexpr zx::duration kFastHealthCheckDeadline = zx::sec(2);
+  static constexpr zx::duration kDeepHealthCheckDeadline = zx::sec(120);
+  // Extra time driver_manager grants beyond the per-level deadline before it gives up on the
+  // driver host. It covers the round trip and the host's own timer firing, so that a check that
+  // the host answers TIMEOUT normally reports the host's answer, not the backstop.
+  static constexpr zx::duration kHealthCheckBackstopSlack = zx::sec(1);
+
+  // Returns the per-level deadline plus kHealthCheckBackstopSlack, i.e. how long RunHealthCheck
+  // waits for the driver host before completing the check with TIMEOUT itself. Levels unknown to
+  // driver_manager get the DEEP deadline, the longest one.
+  static zx::duration HealthCheckBackstopDeadline(
+      fuchsia_driver_framework::HealthCheckRequest level);
+
   // Forwards |request| to this node's driver if, and only if, it is running. A node that is
   // unbound, still binding, stopped or whose driver host is gone is not forwarded to; |cb| is
   // invoked synchronously with INVALID_STATE instead, and nothing is cached.
   //
-  // TODO(https://fxbug.dev/576273182): driver_host applies the per-level deadline to the driver's
-  // dispatcher, but there is no backstop deadline here, so if the driver host process itself is
-  // wedged the check only completes when the host's channel closes.
+  // driver_host applies the per-level deadline to the driver's dispatcher, but if the driver host
+  // process itself is wedged its reply never comes. RunHealthCheck therefore also arms a backstop
+  // timer (HealthCheckBackstopDeadline) on driver_manager's dispatcher: when it fires first, |cb|
+  // is completed with TIMEOUT and a synthetic DRIVER_HOST_TIMEOUT condition is cached; a reply
+  // that arrives after that is ignored. |cb| is invoked exactly once either way.
   void RunHealthCheck(
       fuchsia_driver_framework::HealthCheckRequest request,
       fit::callback<void(fit::result<fuchsia_driver_framework::HealthCheckError,

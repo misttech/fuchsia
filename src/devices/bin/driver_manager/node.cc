@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.component/cpp/common_types_format.h>
 #include <fidl/fuchsia.driver.framework/cpp/common_types_format.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/async/cpp/time.h>
 #include <lib/component/incoming/cpp/directory_watcher.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
@@ -3247,21 +3248,95 @@ Devnode::Target Node::CreateDevfsPassthrough(
       });
 }
 
+zx::duration Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest level) {
+  switch (level) {
+    case fuchsia_driver_framework::HealthCheckRequest::kPing:
+      return kPingHealthCheckDeadline + kHealthCheckBackstopSlack;
+    case fuchsia_driver_framework::HealthCheckRequest::kFast:
+      return kFastHealthCheckDeadline + kHealthCheckBackstopSlack;
+    case fuchsia_driver_framework::HealthCheckRequest::kDeep:
+    default:
+      return kDeepHealthCheckDeadline + kHealthCheckBackstopSlack;
+  }
+}
+
+namespace {
+
+// The completer of an in-flight RunHealthCheck, shared between the driver host's reply and the
+// backstop timer. Whichever runs first takes |cb|; the other finds it empty and does nothing. Both
+// run on driver_manager's dispatcher, so no locking is needed. The reply closure owns the state
+// (ThenExactlyOnce guarantees it runs, if only with kUnbind); the timer only holds a weak
+// reference, so a timer that fires after the reply is a no-op and never touches freed memory.
+struct PendingHealthCheck {
+  fit::callback<void(fit::result<fuchsia_driver_framework::HealthCheckError,
+                                 fuchsia_driver_framework::HealthCheckResponse>)>
+      cb;
+};
+
+}  // namespace
+
 void Node::RunHealthCheck(
     fuchsia_driver_framework::HealthCheckRequest request,
     fit::callback<void(fit::result<fuchsia_driver_framework::HealthCheckError,
                                    fuchsia_driver_framework::HealthCheckResponse>)>
         cb) {
   auto* driver_component = std::get_if<DriverComponent>(&state_);
-  if (!driver_component || driver_component->state != DriverState::kRunning ||
-      !driver_component->driver.is_valid()) {
+  if (!is_running() || !driver_component || !driver_component->driver.is_valid()) {
     cb(fit::error(fuchsia_driver_framework::HealthCheckError::kInvalidState));
     return;
   }
 
+  auto pending = std::make_shared<PendingHealthCheck>(PendingHealthCheck{.cb = std::move(cb)});
+
+  // Backstop for a wedged driver host: driver_host enforces the per-level deadline on the driver's
+  // dispatcher, but if the host process itself is stuck its reply never arrives and the check
+  // would only complete when the host's channel closes.
+  zx_status_t status = async::PostDelayedTask(
+      dispatcher_,
+      [weak_self = weak_from_this(), weak_pending = std::weak_ptr<PendingHealthCheck>(pending),
+       level = request] {
+        auto pending = weak_pending.lock();
+        if (!pending || !pending->cb) {
+          // The driver host already replied.
+          return;
+        }
+        auto cb = std::move(pending->cb);
+        auto self = weak_self.lock();
+        if (!self || !self->is_running()) {
+          cb(fit::error(fuchsia_driver_framework::HealthCheckError::kInvalidState));
+          return;
+        }
+        fdf_log::warn("Node '{}': driver host did not answer {} HealthCheck within {} ms",
+                      self->name(), level, HealthCheckBackstopDeadline(level).to_msecs());
+        self->MaybeStoreHealthCheckRecord(HealthCheckRecord{
+            .error = fuchsia_driver_framework::HealthCheckError::kTimeout,
+            .level = level,
+            .timestamp = async::Now(self->dispatcher_),
+            .conditions = {HealthCheckRecord::SyntheticCondition(
+                "DRIVER_HOST_TIMEOUT",
+                "Driver host did not respond to HealthCheck within the backstop deadline")},
+        });
+        cb(fit::error(fuchsia_driver_framework::HealthCheckError::kTimeout));
+      },
+      HealthCheckBackstopDeadline(request));
+  if (status != ZX_OK) {
+    // Without a backstop a wedged host would hang the caller indefinitely, and a dispatcher that
+    // cannot take a task is shutting down anyway, so fail the check rather than forward it.
+    fdf_log::warn("Node '{}': failed to arm HealthCheck backstop: {}", name(),
+                  zx_status_get_string(status));
+    pending->cb(fit::error(fuchsia_driver_framework::HealthCheckError::kInternalError));
+    return;
+  }
+
   driver_component->driver->HealthCheck(request).ThenExactlyOnce(
-      [weak_self = weak_from_this(), level = request, cb = std::move(cb)](
+      [weak_self = weak_from_this(), level = request, pending = std::move(pending)](
           fidl::WireUnownedResult<fuchsia_driver_host::Driver::HealthCheck>& result) mutable {
+        if (!pending->cb) {
+          // The backstop already completed this check with TIMEOUT. The late reply is dropped,
+          // including its contents: the record cached for the timeout stands.
+          return;
+        }
+        auto cb = std::move(pending->cb);
         auto self = weak_self.lock();
         if (!result.ok()) {
           if (self && result.reason() != fidl::Reason::kUnbind) {
