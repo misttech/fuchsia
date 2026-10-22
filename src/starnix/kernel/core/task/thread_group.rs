@@ -53,6 +53,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use zx::{Koid, Status};
 
+const INIT_PID: pid_t = 1;
+
 #[derive(Debug)]
 pub struct ZirconProcess {
     process: zx::Process,
@@ -690,6 +692,30 @@ impl ThreadGroup {
 
     pub fn load_stopped(&self) -> StopState {
         self.stop_state.load(Ordering::Relaxed)
+    }
+
+    /// Returns `true` if this [`ThreadGroup`] is the `init` process (PID 1).
+    fn is_init(&self) -> bool {
+        // TODO(https://fxbug.dev/519607444): Support per-PID-namespace `init` tasks once
+        // `CLONE_NEWPID` is implemented.
+        self.leader.id == INIT_PID
+    }
+
+    /// Returns `true` if `signal_info` should be ignored because this [`ThreadGroup`] is `init`
+    /// (PID 1).
+    pub(crate) fn ignores_signal(&self, signal_info: &SignalInfo) -> bool {
+        // From <https://man7.org/linux/man-pages/man2/kill.2.html>:
+        //
+        //   The only signals that can be sent to process ID 1, the init
+        //   process, are those for which init has explicitly installed
+        //   signal handlers.
+        //
+        // Because `SIGKILL` and `SIGSTOP` cannot have signal handlers
+        // installed, `init` ignores them unless forced by the kernel.
+        // TODO(https://fxbug.dev/573154732): Also ignore other unhandled
+        // default-fatal / default-stop signals sent to `init` once unit tests
+        // that run as PID 1 install handlers or use child tasks.
+        signal_info.signal.is_unblockable() && self.is_init() && !signal_info.force
     }
 
     /// Causes the thread group to exit.
@@ -2138,7 +2164,7 @@ impl ThreadGroup {
 
         if !exited {
             log_debug!(tg:% = tg_name; "sending SIGKILL");
-            this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::kernel(SIGKILL)));
+            this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::forced(SIGKILL)));
         }
 
         log_debug!(tg:% = tg_name; "waiting for exit");
@@ -2614,6 +2640,18 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     /// Sends the signal `signal_info` to this thread group.
     #[allow(unused_mut, reason = "needed for some but not all macro outputs")]
     pub fn send_signal(mut self, signal_info: SignalInfo) {
+        let ignores_signal = self.base.ignores_signal(&signal_info);
+        if ignores_signal
+            && (signal_info.signal == SIGKILL
+                || !self
+                    .tasks
+                    .iter()
+                    .filter_map(|info| info.tid.get_task().ok())
+                    .any(|task| task.is_running() && task.read().is_ptraced()))
+        {
+            return;
+        }
+
         // TODO(https://fxbug.dev/573607334): Immediately transition the thread group to Exiting
         // for other unblocked default-fatal signals (DeliveryAction::Terminate when not ptraced).
         if signal_info.signal == SIGKILL {
@@ -2679,9 +2717,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             let is_masked = task_state.is_signal_masked(signal_info.signal);
             let was_masked = task_state.is_signal_masked_by_saved_mask(signal_info.signal);
 
-            let is_queued = action != DeliveryAction::Ignore
-                || is_masked
-                || was_masked
+            let is_queued = (!ignores_signal
+                && (action != DeliveryAction::Ignore || is_masked || was_masked))
                 || task_state.is_ptraced();
 
             if is_queued {
@@ -2707,12 +2744,16 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ptrace::ptrace_traceme;
-    use crate::signals::send_signal;
+    use crate::ptrace::{PtraceAttachType, ptrace_attach, ptrace_dispatch, ptrace_traceme};
+    use crate::signals::{dequeue_signal, send_signal};
     use crate::testing::*;
     use starnix_syscalls::SUCCESS;
-    use starnix_uapi::user_address::UserRef;
-    use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, SI_TKILL};
+    use starnix_uapi::signals::SIGSTOP;
+    use starnix_uapi::user_address::{UserAddress, UserRef};
+    use starnix_uapi::{
+        CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, PTRACE_CONT, PTRACE_KILL, PTRACE_O_EXITKILL,
+        SI_TKILL,
+    };
 
     #[::fuchsia::test]
     async fn test_setsid() {
@@ -2774,6 +2815,139 @@ mod test {
                 current_task.thread_group().read().zombie_children[0].state.exit_status,
                 ExitStatus::Exit(42)
             );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_unblockable_signals_to_init_ignored() {
+        spawn_kernel_and_run(async |current_task| {
+            assert!(current_task.thread_group().is_init());
+
+            for signal in [SIGKILL, SIGSTOP] {
+                // Process-directed SIGKILL and SIGSTOP from userspace to init (PID 1) are ignored.
+                assert_eq!(
+                    current_task.thread_group().send_signal_unchecked(current_task, signal.into()),
+                    Ok(())
+                );
+                assert!(current_task.thread_group().read().is_running());
+                assert!(!current_task.is_exitted());
+                assert_eq!(current_task.read().queued_signal_count(signal), 0);
+
+                // Task-directed SIGKILL and SIGSTOP from userspace to init (PID 1) are also
+                // ignored.
+                let user_signal_info = SignalInfo::with_sender(
+                    signal,
+                    SI_TKILL,
+                    SignalDetail::Kill {
+                        pid: current_task.pid.clone(),
+                        uid: current_task.current_creds().uid,
+                    },
+                    Some(current_task.weak_self.clone()),
+                );
+                assert_eq!(send_signal(current_task, user_signal_info), Ok(()));
+                assert!(current_task.thread_group().read().is_running());
+                assert!(!current_task.is_exitted());
+                assert_eq!(current_task.read().queued_signal_count(signal), 0);
+            }
+
+            // Ptrace operations (`PTRACE_KILL`, `PTRACE_CONT` with `SIGKILL` or `SIGSTOP`, and
+            // `PTRACE_O_EXITKILL` on tracer exit) send unforced signals and must not terminate or
+            // stop `init`.
+            let mut tracer = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                ptrace_attach(
+                    &mut tracer,
+                    &current_task.tid,
+                    PtraceAttachType::Seize,
+                    UserAddress::from(PTRACE_O_EXITKILL as u64),
+                ),
+                Ok(SUCCESS)
+            );
+
+            for signal in [SIGKILL, SIGSTOP] {
+                // Place `init` into a ptrace stop so `PTRACE_KILL` and `PTRACE_CONT` are accepted.
+                current_task.write().set_stopped(
+                    StopState::SignalDeliveryStopping,
+                    Some(SignalInfo::kernel(SIGSTOP)),
+                    None,
+                    None,
+                );
+                current_task.write().set_stopped(
+                    StopState::SignalDeliveryStopped,
+                    None,
+                    None,
+                    None,
+                );
+
+                if signal == SIGKILL {
+                    assert_eq!(
+                        ptrace_dispatch(
+                            &mut tracer,
+                            PTRACE_KILL,
+                            &current_task.tid,
+                            UserAddress::NULL,
+                            UserAddress::NULL,
+                        ),
+                        Ok(SUCCESS)
+                    );
+                    assert!(current_task.thread_group().read().is_running());
+                    assert!(!current_task.is_exitted());
+                }
+
+                // `PTRACE_KILL` does not wake the tracee; resume via `PTRACE_CONT` with `signal`
+                // and verify `init` ignores it while waking from the ptrace stop.
+                assert_eq!(
+                    ptrace_dispatch(
+                        &mut tracer,
+                        PTRACE_CONT,
+                        &current_task.tid,
+                        UserAddress::NULL,
+                        UserAddress::from(signal.number() as u64),
+                    ),
+                    Ok(SUCCESS)
+                );
+                assert!(current_task.thread_group().read().is_running());
+                assert!(!current_task.is_exitted());
+                assert_eq!(current_task.load_stopped(), StopState::Waking);
+                assert_eq!(current_task.read().queued_signal_count(signal), 0);
+            }
+
+            // When `init` is ptraced, `SIGSTOP` is still queued so the tracer can observe
+            // signal-delivery-stop, and is ignored if delivered after detach.
+            current_task.write().set_stopped(StopState::Awake, None, None, None);
+            current_task.thread_group().set_stopped(StopState::Awake, None, false);
+            assert_eq!(
+                current_task.thread_group().send_signal_unchecked(current_task, SIGSTOP.into()),
+                Ok(())
+            );
+            assert!(current_task.thread_group().has_signal_queued(SIGSTOP));
+            dequeue_signal(current_task);
+            assert_eq!(current_task.load_stopped(), StopState::SignalDeliveryStopping);
+            current_task.write().set_stopped(StopState::Awake, None, None, None);
+
+            assert_eq!(send_signal(current_task, SignalInfo::kernel(SIGSTOP)), Ok(()));
+            assert_eq!(current_task.read().queued_signal_count(SIGSTOP), 1);
+
+            // Dropping the tracer triggers `detach_ptracees` with `PTRACE_O_EXITKILL`, which must
+            // also not terminate `init`.
+            std::mem::drop(tracer);
+            assert!(current_task.thread_group().read().is_running());
+            assert!(!current_task.is_exitted());
+            assert_eq!(current_task.read().queued_signal_count(SIGKILL), 0);
+
+            // Dequeuing the `SIGSTOP` that was queued while ptraced now goes through
+            // `deliver_signal`, which ignores it for `init`.
+            dequeue_signal(current_task);
+            assert_eq!(current_task.read().queued_signal_count(SIGSTOP), 0);
+            assert_eq!(current_task.thread_group().load_stopped(), StopState::Awake);
+            assert!(current_task.thread_group().read().is_running());
+            assert!(!current_task.is_exitted());
+
+            // Forced kernel SIGKILL (such as during container shutdown) is honored by `init`.
+            current_task.thread_group().write().send_signal(SignalInfo::forced(SIGKILL));
+            assert!(!current_task.thread_group().read().is_running());
+            assert!(current_task.is_exitted());
         })
         .await;
     }

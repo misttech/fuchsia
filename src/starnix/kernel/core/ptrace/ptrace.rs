@@ -644,24 +644,33 @@ fn ptrace_cont(
 
     let signal_mask = state.signal_mask();
     if let Some(ptrace) = &mut state.ptrace {
-        if data != 0 {
-            if let Some(last_signal) = &mut ptrace.last_signal {
-                // If the tracer resumes the tracee with the same signal number (or one already
-                // updated via `PTRACE_SETSIGINFO`), preserve `last_signal`'s `siginfo_t` details
-                // and `force` state; otherwise replace `last_signal` with the newly injected
-                // signal so details and `force` from the stopping signal do not leak.
-                if let Some(si) = &siginfo {
-                    if last_signal.signal == si.signal {
-                        siginfo = Some(last_signal.clone());
+        if let Some(si) = &mut siginfo {
+            // If the tracer resumes the tracee with the same signal number (or one already
+            // updated via `PTRACE_SETSIGINFO`), preserve `last_signal`'s `siginfo_t` details
+            // and `force` state; otherwise replace `last_signal` with the newly injected
+            // signal so details and `force` from the stopping signal do not leak.
+            // Note: Suppressing unforced `SIGSTOP` / `SIGKILL` here when resuming `init` (PID 1)
+            // differs from Linux, where signals injected via `PTRACE_CONT` / `PTRACE_DETACH`
+            // bypass send-time filtering and only catchable signals are filtered at delivery time.
+            match &mut ptrace.last_signal {
+                Some(last_signal) if last_signal.signal == si.signal => {
+                    if tracee.thread_group().ignores_signal(last_signal) {
+                        siginfo = None;
                     } else {
+                        *si = last_signal.clone();
+                    }
+                }
+                last_signal => {
+                    if tracee.thread_group().ignores_signal(si) {
+                        siginfo = None;
+                    } else if let Some(last_signal) = last_signal {
                         *last_signal = si.clone();
                     }
                 }
             }
-            new_state = if siginfo
-                .as_ref()
-                .is_some_and(|si| !signal_mask.has_signal(si.signal) || si.force)
-            {
+        }
+        if let Some(si) = &siginfo {
+            new_state = if !signal_mask.has_signal(si.signal) || si.force {
                 PtraceStatus::Continuing
             } else {
                 PtraceStatus::Default
@@ -1102,8 +1111,7 @@ pub(super) fn ptrace_attach_from_state(
         // Ptrace-emitted SIGTRAP signal cannot be blocked.
         SignalInfo::forced(SIGTRAP)
     } else {
-        // Note, SIGSTOP can never be blocked, but we use `forced` anyway to be consistent.
-        SignalInfo::forced(SIGSTOP)
+        SignalInfo::kernel(SIGSTOP)
     };
     send_signal_first(tracee_task, state, signal);
 

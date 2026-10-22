@@ -363,7 +363,7 @@ async fn serve_component_controller(
                 }
                 Ok(ComponentControllerRequest::Kill { .. }) => {
                     if let Some(task) = task.upgrade() {
-                        signals::send_standard_signal(&task, signals::SignalInfo::kernel(SIGKILL));
+                        signals::send_standard_signal(&task, signals::SignalInfo::forced(SIGKILL));
                         log_info!("Sent SIGKILL to program {}", task.command());
                         controller_handle.shutdown_with_epitaph(zx::Status::err_from_raw(
                             fcomponent::Error::InstanceDied.into_primitive() as i32,

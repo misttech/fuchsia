@@ -580,7 +580,7 @@ impl SeccompState {
             && syscall.decl.number as u32 != __NR_read
             && syscall.decl.number as u32 != __NR_write
         {
-            send_standard_signal(task, SignalInfo::kernel(SIGKILL));
+            send_standard_signal(task, SignalInfo::forced(SIGKILL));
             return Some(Err(errno_from_code!(0)));
         }
         None
