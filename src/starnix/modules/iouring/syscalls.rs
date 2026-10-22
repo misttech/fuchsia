@@ -204,8 +204,8 @@ pub fn sys_io_uring_register(
             return Ok(SUCCESS);
         }
         IORING_REGISTER_PERSONALITY => {
-            // TODO(https://fxbug.dev/505326006) If registering personality is implemented,
-            // then implement the uring_override_creds security hook.
+            // Implement the `uring_override_creds` security hook (https://fxbug.dev/505326006) if
+            // Starnix supports `IORING_REGISTER_PERSONALITY` (https://fxbug.dev/297431387).
             track_stub!(
                 TODO("https://fxbug.dev/297431387"),
                 "io_uring_register unknown op",

@@ -845,29 +845,33 @@
             ]
         },
         {
-            "name": "IoUringTest.IoUringSqpollDenied",
-            "audit_expectations": [
-                "avc:  denied  { sqpoll } for scontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tcontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tclass=io_uring permissive=0"
-            ]
-        },
-        {
-            "name": "IoUringTest/IoUringCmdTest.Cmd/Allowed",
+            "name": "IoUringTest/IoUringPermissionTest.Cmd/Allowed",
             "audit_expectations": []
         },
         {
-            "name": "IoUringTest/IoUringCmdTest.Cmd/Denied",
+            "name": "IoUringTest/IoUringPermissionTest.Cmd/Denied",
             "audit_expectations": [
                 "avc: denied { cmd } scontext=test_u:test_r:io_uring_test_no_cmd_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=io_uring permissive=0"
             ]
         },
         {
-            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
+            "name": "IoUringTest/IoUringPermissionTest.OverrideCreds/Allowed",
             "audit_expectations": []
         },
         {
-            "name": "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
+            "name": "IoUringTest/IoUringPermissionTest.OverrideCreds/Denied",
             "audit_expectations": [
                 "avc:  denied  { override_creds } for scontext=test_u:test_r:io_uring_test_no_override_t:s0 tcontext=test_u:test_r:io_uring_test_no_override_t:s0 tclass=io_uring permissive=0"
+            ]
+        },
+        {
+            "name": "IoUringTest/IoUringPermissionTest.Sqpoll/Allowed",
+            "audit_expectations": []
+        },
+        {
+            "name": "IoUringTest/IoUringPermissionTest.Sqpoll/Denied",
+            "audit_expectations": [
+                "avc:  denied  { sqpoll } for scontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tcontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tclass=io_uring permissive=0"
             ]
         },
         {

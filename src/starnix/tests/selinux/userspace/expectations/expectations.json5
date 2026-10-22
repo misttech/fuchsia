@@ -17,26 +17,10 @@
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/Context",
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/RootContext",
 
-                // TODO: https://fxbug.dev/505317859 - Implement the security_uring_cmd hook once
-                // the IORING_OP_URING_CMD flag is supported by Fuchsia.
-                "IoUringTest/IoUringCmdTest.Cmd/Allowed",
-                "IoUringTest/IoUringCmdTest.Cmd/Denied",
-
-                // TODO: https://fxbug.dev/505326006 - Implement the uring_override_creds hook once
-                // the IORING_REGISTER_PERSONALITY flag is supported in io_uring_register by
-                // Fuchsia.
-                "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
-                "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
-
                 // TODO: https://fxbug.dev/532921178 - io_uring memory accounting is not implemented
                 // in Starnix.
                 "IoUringTest.IoUringSetupMemlockLimitCumulative",
                 "IoUringTest.IoUringSetupMemlockLimit",
-
-                // TODO: https://fxbug.dev/505317859 - Implement the uring_sqpoll hook once
-                // the IORING_SETUP_SQPOLL flag is supported by Fuchsia.
-                "IoUringTest.IoUringSqpollAllowed",
-                "IoUringTest.IoUringSqpollDenied",
 
                 // TODO: https://fxbug.dev/334094811 - Reject SELinux mount options before a
                 // policy is loaded.

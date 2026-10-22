@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <linux/io_uring.h>
 
+#include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/io_uring_helper.h"
@@ -29,87 +30,96 @@ using io_uring_helper::io_uring_enter;
 using io_uring_helper::io_uring_register;
 using io_uring_helper::io_uring_setup;
 
-TEST(IoUringTest, IoUringSqpollDenied) {
-  auto enforce = ScopedEnforcement::SetEnforcing();
-  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:io_uring_test_no_sqpoll_t:s0", [] {
-    struct io_uring_params params = {};
-    params.flags = IORING_SETUP_SQPOLL;
-    fbl::unique_fd ring_fd(io_uring_setup(2, &params));
-    EXPECT_FALSE(ring_fd.is_valid());
-    EXPECT_EQ(errno, EACCES);
-  }));
+std::string TestSecurityContext(const char* permission, bool allowed) {
+  return MakeTestSecurityContext(
+      fxl::StringPrintf("io_uring_test_%s_%s_t", allowed ? "yes" : "no", permission));
 }
 
-TEST(IoUringTest, IoUringSqpollAllowed) {
+fbl::unique_fd CreateIoUringSqpoll() {
+  struct io_uring_params params = {};
+  params.flags = IORING_SETUP_SQPOLL;
+  return fbl::unique_fd(io_uring_setup(2, &params));
+}
+
+// Submits a single SQE and waits for its completion, returning the CQE result or errno.
+fit::result<int, int32_t> ExecuteSqe(io_uring_helper::IoUring& ring,
+                                     fit::function<void(io_uring_helper::Sqe*)> fill_request) {
+  ring.SubmitSqe(std::move(fill_request));
+
+  if (io_uring_enter(ring.fd(), 1, 1, IORING_ENTER_GETEVENTS, nullptr) < 0) {
+    return fit::error(errno);
+  }
+
+  uint32_t head = ring.cq_head_ptr()->load(std::memory_order_acquire);
+  EXPECT_EQ(ring.cq_tail_ptr()->load(std::memory_order_acquire) - head, 1U);
+
+  io_uring_cqe* cqe = &ring.cqes()[head & (ring.params().cq_entries - 1)];
+  ring.cq_head_ptr()->store(head + 1, std::memory_order_release);
+  if (cqe->res < 0) {
+    return fit::error(-cqe->res);
+  }
+  return fit::ok(cqe->res);
+}
+
+fit::result<int, int32_t> ExecuteUringCmd(int fd) {
+  auto io_uring_res = io_uring_helper::IoUring::Create(2);
+  if (io_uring_res.is_error()) {
+    return io_uring_res.take_error();
+  }
+  return ExecuteSqe(*io_uring_res.value(), [fd](io_uring_helper::Sqe* sqe) {
+    sqe->opcode = IORING_OP_URING_CMD;
+    sqe->fd = fd;
+  });
+}
+
+class IoUringPermissionTest : public testing::TestWithParam<bool> {};
+
+TEST_P(IoUringPermissionTest, Sqpoll) {
+  if (test_helper::IsStarnix()) {
+    // Implement the `uring_sqpoll` hook (https://fxbug.dev/505317859) and remove this skip, once
+    // Starnix supports `IORING_SETUP_SQPOLL` (https://fxbug.dev/297431387).
+    ASSERT_THAT(CreateIoUringSqpoll().get(), SyscallFailsWithErrno(EINVAL));
+    GTEST_SKIP() << "IORING_SETUP_SQPOLL is not supported in Starnix";
+  }
+
   auto enforce = ScopedEnforcement::SetEnforcing();
-  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:io_uring_test_yes_sqpoll_t:s0", [] {
-    struct io_uring_params params = {};
-    params.flags = IORING_SETUP_SQPOLL;
+  const bool allowed = GetParam();
+
+  ASSERT_TRUE(RunSubprocessAs(TestSecurityContext("sqpoll", allowed), [allowed] {
     // TODO(https://fxbug.dev/515346567): The "io_uring { setup }" permission
     // will be needed once this test starts running on GKI based on Linux 6.18.
-    fbl::unique_fd ring_fd(io_uring_setup(2, &params));
-    EXPECT_TRUE(ring_fd.is_valid()) << strerror(errno);
+    if (allowed) {
+      EXPECT_THAT(CreateIoUringSqpoll().get(), SyscallSucceeds());
+    } else {
+      EXPECT_THAT(CreateIoUringSqpoll().get(), SyscallFailsWithErrno(EACCES));
+    }
   }));
 }
 
-struct IoUringTestParam {
-  std::string security_context;
-  bool allowed;
-};
-
-class IoUringCmdTest : public testing::TestWithParam<IoUringTestParam> {};
-
-TEST_P(IoUringCmdTest, Cmd) {
-  auto enforce = ScopedEnforcement::SetEnforcing();
-  const auto param = GetParam();
-
+TEST_P(IoUringPermissionTest, Cmd) {
   // Sockets file descriptors are one of the few types of file
   // descriptors that supports IORING_OP_URING_CMD.
   auto fd = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0));
   ASSERT_TRUE(fd) << strerror(errno);
 
-  ASSERT_TRUE(RunSubprocessAs(param.security_context, [fd = std::move(fd), param] {
-    auto io_uring_res = io_uring_helper::IoUring::Create(2);
-    ASSERT_THAT(io_uring_res, SyscallResultIsOk());
-    auto ring = std::move(io_uring_res.value());
-    const auto& params = ring->params();
+  if (test_helper::IsStarnix()) {
+    // Implement the `uring_cmd` hook (https://fxbug.dev/505326826) and remove this skip, once
+    // Starnix supports `IORING_OP_URING_CMD` (https://fxbug.dev/297431387).
+    ASSERT_THAT(ExecuteUringCmd(fd.get()), SyscallResultIsErrno(EOPNOTSUPP));
+    GTEST_SKIP() << "IORING_OP_URING_CMD is not supported in Starnix";
+  }
 
-    ring->SubmitSqe([fd = fd.get()](io_uring_helper::Sqe* sqe) {
-      sqe->opcode = IORING_OP_URING_CMD;
-      sqe->fd = fd;
-      sqe->user_data = 123;
-    });
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  const bool allowed = GetParam();
 
-    ASSERT_EQ(io_uring_enter(ring->fd(), 1, 1, IORING_ENTER_GETEVENTS, nullptr), 1);
-
-    uint32_t head = ring->cq_head_ptr()->load(std::memory_order_acquire);
-    ASSERT_EQ(ring->cq_tail_ptr()->load(std::memory_order_acquire) - head, 1U);
-
-    io_uring_cqe* cqe = &ring->cqes()[head & (params.cq_entries - 1)];
-    EXPECT_EQ(cqe->user_data, 123U);
-    if (param.allowed) {
-      EXPECT_EQ(cqe->res, 0);
+  ASSERT_TRUE(RunSubprocessAs(TestSecurityContext("cmd", allowed), [fd = std::move(fd), allowed] {
+    if (allowed) {
+      EXPECT_THAT(ExecuteUringCmd(fd.get()), SyscallResultIsOk(0));
     } else {
-      EXPECT_EQ(cqe->res, -EACCES);
+      EXPECT_THAT(ExecuteUringCmd(fd.get()), SyscallResultIsErrno(EACCES));
     }
   }));
 }
-
-INSTANTIATE_TEST_SUITE_P(IoUringTest, IoUringCmdTest,
-                         ::testing::Values(
-                             IoUringTestParam{
-                                 .security_context = "test_u:test_r:io_uring_test_no_cmd_t:s0",
-                                 .allowed = false,
-                             },
-                             IoUringTestParam{
-                                 .security_context = "test_u:test_r:io_uring_test_yes_cmd_t:s0",
-                                 .allowed = true,
-                             }),
-                         [](const testing::TestParamInfo<IoUringTestParam>& info) {
-                           return info.param.allowed ? "Allowed" : "Denied";
-                         });
-
-class IoUringOverrideCredsTest : public testing::TestWithParam<IoUringTestParam> {};
 
 // Tests that submitting an io_uring request with a registered credential personality
 // requires the `override_creds` permission on the `io_uring` class.
@@ -119,16 +129,26 @@ class IoUringOverrideCredsTest : public testing::TestWithParam<IoUringTestParam>
 // 2. Submits a NOP request using that registered personality.
 // 3. Verifies that the request succeeds if the security context has the `override_creds`
 //    permission, or fails with EACCES if it does not.
-TEST_P(IoUringOverrideCredsTest, OverrideCreds) {
-  auto enforce = ScopedEnforcement::SetEnforcing();
-  const auto param = GetParam();
+TEST_P(IoUringPermissionTest, OverrideCreds) {
+  if (test_helper::IsStarnix()) {
+    // Implement the `uring_override_creds` hook (https://fxbug.dev/505326006) and remove this
+    // skip, once Starnix supports `IORING_REGISTER_PERSONALITY` (https://fxbug.dev/297431387).
+    auto io_uring_res = io_uring_helper::IoUring::Create(2);
+    ASSERT_THAT(io_uring_res, SyscallResultIsOk());
+    auto ring = std::move(io_uring_res.value());
+    ASSERT_THAT(io_uring_register(ring->fd(), IORING_REGISTER_PERSONALITY, nullptr, 0),
+                SyscallFailsWithErrno(EINVAL));
+    GTEST_SKIP() << "IORING_REGISTER_PERSONALITY is not supported in Starnix";
+  }
 
-  ASSERT_TRUE(RunSubprocessAs(param.security_context, [&] {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  const bool allowed = GetParam();
+
+  ASSERT_TRUE(RunSubprocessAs(TestSecurityContext("override", allowed), [&] {
     // Create the ring
     auto io_uring_res = io_uring_helper::IoUring::Create(2);
     ASSERT_THAT(io_uring_res, SyscallResultIsOk());
     auto ring = std::move(io_uring_res.value());
-    const auto& params = ring->params();
 
     // Register the current thread's credentials.
     const int personality_id =
@@ -136,41 +156,22 @@ TEST_P(IoUringOverrideCredsTest, OverrideCreds) {
     ASSERT_GT(personality_id, 0) << strerror(errno);
 
     // Submit a NOP request with the registered personality.
-    ring->SubmitSqe([personality_id](io_uring_helper::Sqe* sqe) {
+    auto res = ExecuteSqe(*ring, [personality_id](io_uring_helper::Sqe* sqe) {
       sqe->opcode = IORING_OP_NOP;
       sqe->personality = static_cast<uint16_t>(personality_id);
-      sqe->user_data = 123;
     });
-
-    ASSERT_EQ(io_uring_enter(ring->fd(), 1, 1, IORING_ENTER_GETEVENTS, nullptr), 1);
-
-    uint32_t head = ring->cq_head_ptr()->load(std::memory_order_acquire);
-    ASSERT_EQ(ring->cq_tail_ptr()->load(std::memory_order_acquire) - head, 1U);
-
-    io_uring_cqe* cqe = &ring->cqes()[head & (params.cq_entries - 1)];
-    EXPECT_EQ(cqe->user_data, 123U);
-    if (param.allowed) {
-      EXPECT_EQ(cqe->res, 0);
+    if (allowed) {
+      EXPECT_THAT(res, SyscallResultIsOk(0));
     } else {
-      EXPECT_EQ(cqe->res, -EACCES);
+      EXPECT_THAT(res, SyscallResultIsErrno(EACCES));
     }
   }));
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    IoUringTest, IoUringOverrideCredsTest,
-    ::testing::Values(
-        IoUringTestParam{
-            .security_context = "test_u:test_r:io_uring_test_no_override_t:s0",
-            .allowed = false,
-        },
-        IoUringTestParam{
-            .security_context = "test_u:test_r:io_uring_test_yes_override_t:s0",
-            .allowed = true,
-        }),
-    [](const testing::TestParamInfo<IoUringTestParam>& info) {
-      return info.param.allowed ? "Allowed" : "Denied";
-    });
+INSTANTIATE_TEST_SUITE_P(IoUringTest, IoUringPermissionTest, ::testing::Bool(),
+                         [](const testing::TestParamInfo<bool>& info) {
+                           return info.param ? "Allowed" : "Denied";
+                         });
 
 // Tests that io_uring_setup doesn't check RLIMIT_MEMLOCK when CAP_IPC_LOCK is present.
 TEST(IoUringTest, IoUringSetupMemlockLimit) {

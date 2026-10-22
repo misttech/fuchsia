@@ -33,20 +33,12 @@ use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::{
     IORING_FEAT_SINGLE_MMAP, IORING_OFF_CQ_RING, IORING_OFF_SQ_RING, IORING_OFF_SQES, errno, error,
-    io_cqring_offsets, io_sqring_offsets, io_uring_cqe, io_uring_op, io_uring_op_IORING_OP_ACCEPT,
-    io_uring_op_IORING_OP_ASYNC_CANCEL, io_uring_op_IORING_OP_CLOSE, io_uring_op_IORING_OP_CONNECT,
-    io_uring_op_IORING_OP_EPOLL_CTL, io_uring_op_IORING_OP_FADVISE,
-    io_uring_op_IORING_OP_FALLOCATE, io_uring_op_IORING_OP_FILES_UPDATE,
-    io_uring_op_IORING_OP_FSYNC, io_uring_op_IORING_OP_LINK_TIMEOUT, io_uring_op_IORING_OP_MADVISE,
-    io_uring_op_IORING_OP_NOP, io_uring_op_IORING_OP_OPENAT, io_uring_op_IORING_OP_OPENAT2,
-    io_uring_op_IORING_OP_POLL_ADD, io_uring_op_IORING_OP_POLL_REMOVE, io_uring_op_IORING_OP_READ,
-    io_uring_op_IORING_OP_READ_FIXED, io_uring_op_IORING_OP_READV, io_uring_op_IORING_OP_RECV,
-    io_uring_op_IORING_OP_RECVMSG, io_uring_op_IORING_OP_SEND, io_uring_op_IORING_OP_SENDMSG,
-    io_uring_op_IORING_OP_STATX, io_uring_op_IORING_OP_SYNC_FILE_RANGE,
-    io_uring_op_IORING_OP_TIMEOUT, io_uring_op_IORING_OP_TIMEOUT_REMOVE,
-    io_uring_op_IORING_OP_WRITE, io_uring_op_IORING_OP_WRITE_FIXED, io_uring_op_IORING_OP_WRITEV,
-    io_uring_params, io_uring_sqe, io_uring_sqe_flags_bit_IOSQE_ASYNC_BIT,
-    io_uring_sqe_flags_bit_IOSQE_BUFFER_SELECT_BIT,
+    io_cqring_offsets, io_sqring_offsets, io_uring_cqe, io_uring_op, io_uring_op_IORING_OP_LAST,
+    io_uring_op_IORING_OP_NOP, io_uring_op_IORING_OP_READ, io_uring_op_IORING_OP_READ_FIXED,
+    io_uring_op_IORING_OP_READV, io_uring_op_IORING_OP_RECV, io_uring_op_IORING_OP_RECVMSG,
+    io_uring_op_IORING_OP_SEND, io_uring_op_IORING_OP_SENDMSG, io_uring_op_IORING_OP_WRITE,
+    io_uring_op_IORING_OP_WRITE_FIXED, io_uring_op_IORING_OP_WRITEV, io_uring_params, io_uring_sqe,
+    io_uring_sqe_flags_bit_IOSQE_ASYNC_BIT, io_uring_sqe_flags_bit_IOSQE_BUFFER_SELECT_BIT,
     io_uring_sqe_flags_bit_IOSQE_CQE_SKIP_SUCCESS_BIT, io_uring_sqe_flags_bit_IOSQE_FIXED_FILE_BIT,
     io_uring_sqe_flags_bit_IOSQE_IO_DRAIN_BIT, io_uring_sqe_flags_bit_IOSQE_IO_HARDLINK_BIT,
     io_uring_sqe_flags_bit_IOSQE_IO_LINK_BIT, off_t, socklen_t, uapi,
@@ -412,22 +404,7 @@ impl IoUringMetadata {
 
 #[repr(u32)]
 enum Op {
-    Accept = io_uring_op_IORING_OP_ACCEPT,
-    AsyncCancel = io_uring_op_IORING_OP_ASYNC_CANCEL,
-    Close = io_uring_op_IORING_OP_CLOSE,
-    Connect = io_uring_op_IORING_OP_CONNECT,
-    EpollCtl = io_uring_op_IORING_OP_EPOLL_CTL,
-    FAdvise = io_uring_op_IORING_OP_FADVISE,
-    FAllocate = io_uring_op_IORING_OP_FALLOCATE,
-    FilesUpdate = io_uring_op_IORING_OP_FILES_UPDATE,
-    FSync = io_uring_op_IORING_OP_FSYNC,
-    LinkTimeout = io_uring_op_IORING_OP_LINK_TIMEOUT,
-    MAdvise = io_uring_op_IORING_OP_MADVISE,
     NOP = io_uring_op_IORING_OP_NOP,
-    OpenAt = io_uring_op_IORING_OP_OPENAT,
-    OpenAt2 = io_uring_op_IORING_OP_OPENAT2,
-    PollAdd = io_uring_op_IORING_OP_POLL_ADD,
-    PollRemove = io_uring_op_IORING_OP_POLL_REMOVE,
     Read = io_uring_op_IORING_OP_READ,
     ReadV = io_uring_op_IORING_OP_READV,
     ReadFixed = io_uring_op_IORING_OP_READ_FIXED,
@@ -435,10 +412,6 @@ enum Op {
     RecvMsg = io_uring_op_IORING_OP_RECVMSG,
     Send = io_uring_op_IORING_OP_SEND,
     SendMsg = io_uring_op_IORING_OP_SENDMSG,
-    StatX = io_uring_op_IORING_OP_STATX,
-    SyncFileRange = io_uring_op_IORING_OP_SYNC_FILE_RANGE,
-    Timeout = io_uring_op_IORING_OP_TIMEOUT,
-    TimeoutRemove = io_uring_op_IORING_OP_TIMEOUT_REMOVE,
     Write = io_uring_op_IORING_OP_WRITE,
     WriteV = io_uring_op_IORING_OP_WRITEV,
     WriteFixed = io_uring_op_IORING_OP_WRITE_FIXED,
@@ -447,22 +420,7 @@ enum Op {
 impl Op {
     fn from_code(opcode: io_uring_op) -> Result<Op, Errno> {
         match opcode {
-            io_uring_op_IORING_OP_ACCEPT => Ok(Self::Accept),
-            io_uring_op_IORING_OP_ASYNC_CANCEL => Ok(Self::AsyncCancel),
-            io_uring_op_IORING_OP_CLOSE => Ok(Self::Close),
-            io_uring_op_IORING_OP_CONNECT => Ok(Self::Connect),
-            io_uring_op_IORING_OP_EPOLL_CTL => Ok(Self::EpollCtl),
-            io_uring_op_IORING_OP_FADVISE => Ok(Self::FAdvise),
-            io_uring_op_IORING_OP_FALLOCATE => Ok(Self::FAllocate),
-            io_uring_op_IORING_OP_FILES_UPDATE => Ok(Self::FilesUpdate),
-            io_uring_op_IORING_OP_FSYNC => Ok(Self::FSync),
-            io_uring_op_IORING_OP_LINK_TIMEOUT => Ok(Self::LinkTimeout),
-            io_uring_op_IORING_OP_MADVISE => Ok(Self::MAdvise),
             io_uring_op_IORING_OP_NOP => Ok(Self::NOP),
-            io_uring_op_IORING_OP_OPENAT => Ok(Self::OpenAt),
-            io_uring_op_IORING_OP_OPENAT2 => Ok(Self::OpenAt2),
-            io_uring_op_IORING_OP_POLL_ADD => Ok(Self::PollAdd),
-            io_uring_op_IORING_OP_POLL_REMOVE => Ok(Self::PollRemove),
             io_uring_op_IORING_OP_READ => Ok(Self::Read),
             io_uring_op_IORING_OP_READV => Ok(Self::ReadV),
             io_uring_op_IORING_OP_READ_FIXED => Ok(Self::ReadFixed),
@@ -470,13 +428,17 @@ impl Op {
             io_uring_op_IORING_OP_RECVMSG => Ok(Self::RecvMsg),
             io_uring_op_IORING_OP_SEND => Ok(Self::Send),
             io_uring_op_IORING_OP_SENDMSG => Ok(Self::SendMsg),
-            io_uring_op_IORING_OP_STATX => Ok(Self::StatX),
-            io_uring_op_IORING_OP_SYNC_FILE_RANGE => Ok(Self::SyncFileRange),
-            io_uring_op_IORING_OP_TIMEOUT => Ok(Self::Timeout),
-            io_uring_op_IORING_OP_TIMEOUT_REMOVE => Ok(Self::TimeoutRemove),
             io_uring_op_IORING_OP_WRITE => Ok(Self::Write),
             io_uring_op_IORING_OP_WRITEV => Ok(Self::WriteV),
             io_uring_op_IORING_OP_WRITE_FIXED => Ok(Self::WriteFixed),
+            0..io_uring_op_IORING_OP_LAST => {
+                track_stub!(
+                    TODO("https://fxbug.dev/297431387"),
+                    "io_uring_enter unimplemented op",
+                    opcode
+                );
+                error!(EOPNOTSUPP)
+            }
             _ => error!(EINVAL),
         }
     }
@@ -1068,25 +1030,6 @@ impl IoUringFileObject {
                 )
                 .map(Into::into)
             }
-            Op::FSync
-            | Op::PollAdd
-            | Op::PollRemove
-            | Op::SyncFileRange
-            | Op::Timeout
-            | Op::TimeoutRemove
-            | Op::Accept
-            | Op::AsyncCancel
-            | Op::LinkTimeout
-            | Op::Connect
-            | Op::FAllocate
-            | Op::OpenAt
-            | Op::Close
-            | Op::FilesUpdate
-            | Op::StatX
-            | Op::FAdvise
-            | Op::MAdvise
-            | Op::OpenAt2
-            | Op::EpollCtl => error!(EOPNOTSUPP),
         }
     }
 
@@ -1211,8 +1154,11 @@ mod tests {
 
     #[::fuchsia::test]
     fn test_uring_cmd_not_supported() {
-        // TODO(https://fxbug.dev/505326826): If the uring_cmd operation is supported,
-        // add the necessary security checks.
-        assert!(Op::from_code(starnix_uapi::io_uring_op_IORING_OP_URING_CMD).is_err());
+        // Implement the `uring_cmd` security hook (https://fxbug.dev/505326826) if Starnix
+        // supports `IORING_OP_URING_CMD` (https://fxbug.dev/297431387).
+        assert_eq!(
+            Op::from_code(starnix_uapi::io_uring_op_IORING_OP_URING_CMD).err(),
+            Some(errno!(EOPNOTSUPP))
+        );
     }
 }
