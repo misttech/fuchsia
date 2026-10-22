@@ -43,7 +43,9 @@ instructions that contradict the style guide:
    They are skipped only when the target under test is Bazel-only, bazel2gn
    can't translate the test, or dual-testing costs more than the risk it
    covers. The in-tree prompts, `migration_sanity.sh` and `cq_reachability.sh`
-   already followed this decision and are unchanged.
+   already followed the default. How the dual-testing cost exception is
+   proposed and reviewed is covered in
+   `2026-10-22-dual-testing-cost-exception-needs-reviewer-attention.md`.
 
 `HOST_OS_CONSTRAINTS` from `//build/bazel/platforms:constraints.bzl` (not
 `HOST_CONSTRAINTS` from `@platforms//host:constraints.bzl`) was already the

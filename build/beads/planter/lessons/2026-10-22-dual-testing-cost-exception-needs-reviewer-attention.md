@@ -36,6 +36,17 @@ finding instead of rejecting the change, so a human makes the call. The marker
 deliberately avoids the `@bazel2gn:` prefix so bazel2gn and the directive
 parsers don't treat it as a directive.
 
+Two limits keep the exception honest:
+
+- A test skip justified by any other comment that did not exist at
+  `$PLANTER_CHANGE_BASE` is also reported as INFO
+  `test_skip_needs_reviewer_attention`. Only comments that code owners wrote
+  before the change are still accepted silently.
+- The exception never applies to tests of `sdk_*()` libraries other than
+  `sdk_source_set()` (Bazel `idk_cc_shared_library`, `idk_cc_static_library`).
+  Those stay dual-tested, so `migration_sanity.sh` reports the marker on them
+  as the error `sdk_library_test_skip` and the reviewer seats reject it.
+
 ## Why not a one-off fix
 
 Without a shared marker, every seat and check guesses whether a comment

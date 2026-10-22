@@ -99,7 +99,8 @@ Every test moves to Bazel: C++ and Rust device tests, and host tests. A Bazel te
 - **Tests of a dual-build library run in both build systems** (docs/development/build/bazel_concepts/tests.md,
   "Testing libraries in both build systems"). Define the test in Bazel and let bazel2gn
   generate the GN copy: do NOT put `# @bazel2gn:skip` on test rules or on the `with_unit_tests`,
-  `with_host_unit_tests` and `test_deps` attributes. bazel2gn translates `rustc_test` (including
+  `with_host_unit_tests` and `test_deps` attributes, except under the conditions in
+  "`# @bazel2gn:skip` rules for tests" below. bazel2gn translates `rustc_test` (including
   `crate = ":<lib>"`), `fx_cc_binary(testonly = True)`, `go_test`, `host_go_test`,
   `host_rustc_test`, `fx_unittest_package` (without `resources`, as GN package `<package_name>-gn`;
   the component keeps its name) and those `rustc_*` attributes; `wrap_host_rust_test`,
@@ -129,13 +130,17 @@ Every test moves to Bazel: C++ and Rust device tests, and host tests. A Bazel te
      or conflicting `rustc_env` on both the test and `crate = ":<lib>"`.
   5. **Dual-testing cost outweighs the risk** (needs a human to confirm): you MAY propose this only
      when the cost criteria in docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems
-     apply (1:1 translation of the library, no frequently changing GN-only deps, slow or
-     resource-heavy test). Put the comment
+     apply (the generated GN library is a 1:1 translation of the Bazel one, it is not an IDK/SDK
+     library compiled in several GN configurations, it has no frequently changing GN-only deps, and
+     the test is slow or resource-heavy or the library's remaining GN users are actively being
+     migrated). Never use it for tests of `sdk_*()` libraries other than `sdk_source_set()` (in
+     BUILD.bazel: `idk_cc_shared_library`, `idk_cc_static_library`); those stay dual-tested.
+     Put the comment
      `# Needs reviewer attention (bazel2gn skip): <why the cost outweighs the risk>` directly above
      `# @bazel2gn:skip`, and add a `Needs reviewer attention: <target>: <reason>` line to the commit
      message body and `summary`. Checks report it as INFO; never treat that INFO as something to fix.
-  Apart from condition 5, agents must not add `# @bazel2gn:skip` to a translatable test on their
-  own (preserve any pre-existing `# @bazel2gn:skip` annotations added by human code owners). When
+  Never add `# @bazel2gn:skip` to a translatable test for any other reason (preserve any
+  pre-existing `# @bazel2gn:skip` annotations added by human code owners). When
   the library's last GN user migrates, delete the GN library and its GN test copies.
 - **Default to `fx_unittest_package` (or `fx_unittest_component`) for unit tests without a custom manifest.**
   For a `fuchsia_unittest_package` (or `fuchsia_unittest_component`) that had no custom `.cml`
