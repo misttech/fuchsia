@@ -1092,23 +1092,7 @@ group("fshost_common") {
 
 group("fshost_eng") {
   testonly = true
-  deps = [ ":fshost_eng.bootfs_files_package.bazel_input" ]
-}
-
-fuchsia_package("fshost_eng.bootfs_files_package") {
-  testonly = true
-  deps = [
-    "//src/devices/block/bin/biotime:bootfs",
-    "//src/devices/block/bin/gpt:bootfs",
-    "//src/devices/block/bin/iochk:bootfs",
-    "//src/devices/block/bin/iotime:bootfs",
-    "//src/devices/block/bin/lsblk:bootfs",
-  ]
-}
-
-export_fuchsia_package_to_bazel("fshost_eng.bootfs_files_package.bazel_input") {
-  testonly = true
-  package = ":fshost_eng.bootfs_files_package"
+  deps = [ "//bundles/assembly/bazel_inputs/src/devices/block/bin:block_tools" ]
 }
 
 group("fshost_non_eng") {

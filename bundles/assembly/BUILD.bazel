@@ -3251,7 +3251,22 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
-    bootfs_files_package = "//bundles/assembly/bazel_inputs:fshost_eng.bootfs_files_package",
+    bootfs_packages = [
+        "//bundles/assembly/bazel_inputs/src/devices/block/bin:block_tools",
+    ],
+    shell_commands = [
+        {
+            "bootfs_package": True,
+            "package": "block_tools",
+            "components": [
+                "biotime",
+                "gpt",
+                "iochk",
+                "iotime",
+                "lsblk",
+            ],
+        },
+    ],
     compiled_packages = [
         {
             "bootfs_package": True,

@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/bootfs_files_for_assembly.gni")
-
 executable("iotime") {
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "//src/devices/block/bin:*",
+  ]
   testonly = true
   sources = [ "iotime.cc" ]
   deps = [
@@ -20,9 +21,4 @@ executable("iotime") {
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
   ]
-}
-
-bootfs_files_for_assembly("bootfs") {
-  testonly = true
-  deps = [ ":iotime" ]
 }

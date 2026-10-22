@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/components.gni")
+
 group("tests") {
   testonly = true
 
@@ -9,5 +11,16 @@ group("tests") {
     "biotime:tests",
     "sdio:tests",
     "ufsutil:tests",
+  ]
+}
+
+fuchsia_package("block_tools") {
+  testonly = true
+  deps = [
+    "biotime",
+    "gpt",
+    "iochk",
+    "iotime",
+    "lsblk",
   ]
 }

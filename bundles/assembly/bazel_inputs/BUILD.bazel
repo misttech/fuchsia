@@ -75,11 +75,6 @@ prebuilt_package(
 )
 
 prebuilt_package(
-    name = "fshost_eng.bootfs_files_package",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs:fshost_eng.bootfs_files_package",
-)
-
-prebuilt_package(
     name = "common_standard.bootfs_files_package",
     archive = "@gn_targets//bundles/assembly/bazel_inputs:common_standard.bootfs_files_package",
 )

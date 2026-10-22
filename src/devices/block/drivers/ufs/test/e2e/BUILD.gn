@@ -53,6 +53,13 @@ if (current_toolchain == default_toolchain) {
     board_config = default_board_for_emulator
     platform = {
       build_type = "eng"
+      feature_set_level = "bootstrap"
+      storage = {
+        filesystems = {
+          image_mode = "no_image"
+        }
+      }
     }
+    bootfs_files_labels = [ "//src/devices/block/bin/lsblk" ]
   }
 }
