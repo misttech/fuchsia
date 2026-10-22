@@ -60,8 +60,6 @@ compiler_config("standalone") {
     ]
   }
 
-  c_family_flags = [ "-ffreestanding" ]
-
   configs = [
     "//build/config:no_exceptions",
     ":debug-only-unwind-tables",
