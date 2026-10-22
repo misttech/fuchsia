@@ -378,16 +378,13 @@ pub(in crate::security) fn file_mprotect(
         // copy-on-write (e.g. by text relocations) is made executable. From the SELinux Notebook,
         // "execmod: Make executable a file mapping that has been modified by copy-on-write. (Text
         // relocation)".
-        if let MappingNameRef::File(file) = mapping.name()
+        if mapping.has_cow_modifications()
+            && let MappingNameRef::File(file) = mapping.name()
             && let Some(node) = NonPrivateFsNode::new(file.node())
         {
             let FsNodeSidAndClass { sid: object_sid, class } =
                 fs_node_effective_sid_and_class(node);
-            if let FsNodeClass::File(file_class) = class
-                && !mapping_options.contains(MappingOptions::SHARED)
-                // If this can't be determined, check `execmod` (like `fork()` assumes modifications).
-                && mapping.has_cow_modifications().unwrap_or(true)
-            {
+            if let FsNodeClass::File(file_class) = class {
                 let subject_sid = current_task_state(current_task).current_sid;
                 let file_object = file.file();
                 let fs = node.fs();

@@ -726,28 +726,10 @@ fn effective_prot_flags(
     }
 }
 
-/// Returns whether writes to `mapping` must be blocked while `MemoryManagerState::protect()`
-/// checks whether it can be made executable with `prot_flags`, and changes its protection.
-///
-/// This is the case when making executable a writable private file mapping that is mapped in the
-/// user VMAR, since the check may depend on the pages modified through the mapping (see
-/// `security::file_mprotect()`).
-fn must_block_writes_during_execmod_check(mapping: &Mapping, prot_flags: ProtectionFlags) -> bool {
-    prot_flags.contains(ProtectionFlags::EXEC)
-        && !mapping.can_exec()
-        && mapping.vmar_flags().contains(MappingFlags::WRITE)
-        && mapping.mapping_mode() == MappingMode::Eager
-        && mapping.is_private_file()
-}
-
-/// The memory of the target of `MemoryManager::snapshot_of()` for the private memory of the
-/// source with a given koid.
+/// Target memory of `MemoryManager::snapshot_of()` for the private memory of the source with a
+/// given koid.
+#[derive(Default)]
 struct ForkedMemory {
-    /// Whether the memory of the source holds pages modified via copy-on-write. Snapshotting the
-    /// memory makes these pages shared between the source and the target, so this is recorded in
-    /// the mappings of both. See `Mapping::has_cow_modifications`.
-    cow_modified: bool,
-
     /// The memory of the target, by rights of the handle. Mappings of the same memory may use
     /// handles with different rights, e.g. an ELF file mapped read-only for its `.rodata`
     /// section, and read-execute for its `.text` section.
@@ -1560,7 +1542,7 @@ impl MemoryManagerState {
                     final_length,
                     original_mapping.flags(),
                     false,
-                    original_mapping.is_known_cow_modified(),
+                    original_mapping.has_cow_modifications(),
                     original_mapping.name().to_owned(),
                     original_mapping.mapping_mode(),
                     released_mappings,
@@ -1724,7 +1706,7 @@ impl MemoryManagerState {
                     dst_length,
                     src_mapping.flags(),
                     false,
-                    src_mapping.is_known_cow_modified(),
+                    src_mapping.has_cow_modifications(),
                     src_mapping.name().to_owned(),
                     src_mapping.mapping_mode(),
                     released_mappings,
@@ -1944,34 +1926,6 @@ impl MemoryManagerState {
                 return error!(EACCES);
             }
 
-            // Zircon resolves write faults on a writable mapping without taking the memory
-            // manager's lock, so another thread could modify a page of the range after
-            // `security::file_mprotect()` checked it, but before the range becomes executable.
-            // Remove write access from the range while its protection is checked and changed, if
-            // the check depends on the pages modified through the mapping. Write faults on the
-            // range wait for the memory manager's lock, and are then either retried or reported
-            // according to the protection of the mapping at that time. If the change fails, the
-            // guard restores the original protection of the range.
-            let writes_blocked_guard =
-                if must_block_writes_during_execmod_check(mapping, prot_flags) {
-                    let old_access_flags = mapping.vmar_flags().access_flags();
-                    let length = intersection.end - intersection.start;
-                    mapping_context.protect_vmar_range(
-                        intersection.start,
-                        length,
-                        old_access_flags - ProtectionFlags::WRITE,
-                    )?;
-                    Some(scopeguard::guard(intersection.start, move |start| {
-                        if let Err(e) =
-                            mapping_context.protect_vmar_range(start, length, old_access_flags)
-                        {
-                            log_error!("Failed to restore the protection of {start:?}: {e:?}");
-                        }
-                    }))
-                } else {
-                    None
-                };
-
             security::file_mprotect(current_task, &intersection, mapping, prot_flags)?;
 
             if mapping.flags().contains(MappingFlags::UFFD) {
@@ -2037,11 +1991,6 @@ impl MemoryManagerState {
                 }
             }
 
-            // The range now has its new protection, which must be kept.
-            if let Some(guard) = writes_blocked_guard {
-                scopeguard::ScopeGuard::into_inner(guard);
-            }
-
             cursor = intersection.end;
         }
 
@@ -2101,7 +2050,7 @@ impl MemoryManagerState {
 
         let mut promoted_mapping = None;
         for (run_range, mut run_mapping) in run {
-            let cow_modified = run_mapping.is_known_cow_modified();
+            let cow_modified = run_mapping.has_cow_modifications();
             let memory_offset = run_mapping.address_to_offset(run_range.start);
             let flags = run_mapping.flags().difference(MappingFlags::LAZY_PRIVATE_FILE);
             run_mapping.set_backing_internal(MappingBacking::Memory(Box::new(
@@ -3862,9 +3811,10 @@ impl MemoryManager {
                                 log_warn!("Error extending growsdown mapping: {e}");
                             }
                         }
-                        // The transfer may have failed because the protection of the mapping was
-                        // being changed (see `must_block_writes_during_execmod_check()`). Retry once
-                        // if the mapping allows the access.
+                        // The transfer may have failed because of a race between updating the
+                        // mapping's VMAR permissions (e.g. when another thread concurrently
+                        // enables write access on a private file mapping or unregisters uffd) and
+                        // the usercopy fault. Retry once if the mapping allows the access.
                         if retried_fault_addr != Some(fault_addr)
                             && self.mapping_allows_access(fault_addr, is_write)
                         {
@@ -4347,7 +4297,7 @@ impl MappingContext {
             /* populate = */ false,
         )?;
         let mut backing = MappingBackingMemory::new(range.start, memory, memory_offset);
-        if mapping.is_known_cow_modified() {
+        if mapping.has_cow_modifications() {
             backing.set_cow_modified();
         }
         mapping.set_backing_internal(MappingBacking::Memory(Box::new(backing)));
@@ -4730,7 +4680,7 @@ impl MemoryManager {
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
         {
-            let (mut state, mut target_state) = ordered_write_lock(&source_mm.state, &target.state);
+            let (state, mut target_state) = ordered_write_lock(&source_mm.state, &target.state);
             debug_assert_eq!(
                 source_mm.mapping_context.user_vmar_info,
                 target.mapping_context.user_vmar_info
@@ -4738,7 +4688,6 @@ impl MemoryManager {
 
             // The target's memory for the source's private memory, by koid of the source's memory.
             let mut clone_cache = HashMap::<zx::Koid, ForkedMemory>::with_capacity(64);
-            let mut cow_modified_source_ranges = Vec::new();
 
             for (range, mapping) in state.mappings.iter() {
                 if mapping.flags().contains(MappingFlags::DONTFORK) {
@@ -4753,7 +4702,6 @@ impl MemoryManager {
                         fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "memory_backing_clone");
                         let memory_offset = backing.address_to_offset(range.start);
 
-                        let mut cow_modified = mapping.is_known_cow_modified();
                         let target_memory = if mapping.flags().contains(MappingFlags::SHARED)
                             || mapping.name().is_vvar()
                         {
@@ -4767,29 +4715,15 @@ impl MemoryManager {
                             if mapping.flags().contains(MappingFlags::WRITE) {
                                 rights |= zx::Rights::WRITE;
                             }
-                            let forked_memory =
-                                clone_cache.entry(memory_obj.get_koid()).or_insert_with(|| {
-                                    // Check the memory before it is snapshotted, after which the
-                                    // pages it holds are no longer attributed to it alone. If the
-                                    // check fails, assume that the memory holds modified pages, so
-                                    // that `execmod` is still checked.
-                                    ForkedMemory {
-                                        cow_modified: mapping
-                                            .has_cow_modifications()
-                                            .unwrap_or(true),
-                                        clones: SmallVec::new(),
-                                    }
-                                });
-                            if forked_memory.cow_modified && !cow_modified {
-                                cow_modified = true;
-                                cow_modified_source_ranges.push(range.clone());
-                            }
-                            forked_memory.get_or_clone(memory_obj, rights, options)?
+                            clone_cache
+                                .entry(memory_obj.get_koid())
+                                .or_default()
+                                .get_or_clone(memory_obj, rights, options)?
                         };
 
                         let mut target_backing =
                             MappingBackingMemory::new(range.start, target_memory, memory_offset);
-                        if cow_modified {
+                        if mapping.has_cow_modifications() {
                             target_backing.set_cow_modified();
                         }
                         let mapping = Mapping::with_name(
@@ -4829,23 +4763,6 @@ impl MemoryManager {
             }
 
             target_state.forkable_state = state.forkable_state.clone();
-
-            for range in cow_modified_source_ranges {
-                let updated = state.mappings.update_exact(&range, |mapping| {
-                    // `set_cow_modified()` adds `WRITE` to `mapping.vmar_flags()`, so update the
-                    // source's user VMAR to grant write access before marking the mapping modified.
-                    if mapping.mapping_mode() == MappingMode::Eager && mapping.can_write() {
-                        source_mm.mapping_context.protect_vmar_range(
-                            range.start,
-                            range.end - range.start,
-                            mapping.flags().access_flags(),
-                        )?;
-                    }
-                    mapping.set_cow_modified();
-                    Ok(())
-                })?;
-                debug_assert!(updated);
-            }
         }
 
         target.dumpable.store(source_mm.dumpable.load());
@@ -5428,13 +5345,10 @@ impl MemoryManager {
                             }
                         }
                     } else {
-                        // The access may have been denied while the protection of the mapping was
-                        // being changed, e.g. while writes are blocked during an `execmod` check
-                        // (see `must_block_writes_during_execmod_check()`), or because of a race
-                        // between updating the mapping's VMAR permissions (when enabling write
-                        // access on a private file mapping or unregistering uffd) and the page
-                        // fault. Retry the access if Starnix's own information about the mapping
-                        // allows it.
+                        // The access may have been denied because of a race between updating
+                        // the mapping's VMAR permissions (e.g. when enabling write access on a
+                        // private file mapping or unregistering uffd) and the page fault. Retry
+                        // the access if Starnix's own information about the mapping allows it.
                         if !(is_write && mapping.is_private_file()) {
                             track_stub!(
                                 TODO("https://fxbug.dev/435171399"),
@@ -8147,13 +8061,16 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let mm = current_task.mm().unwrap();
             let page_size = *PAGE_SIZE as usize;
-            let is_known_cow_modified = |addr: UserAddress| {
+            let has_cow_modifications = |addr: UserAddress| {
                 let state = mm.state.read();
                 let (_, mapping) = state.mappings.get(addr).expect("mapping");
-                mapping.is_known_cow_modified()
+                mapping.has_cow_modifications()
             };
 
-            // Map one page of private memory, leaving room for growing it in place.
+            // Map one page of a private file, leaving room for growing it in place.
+            let file =
+                new_memfd(&current_task, b"test_memfd".into(), SealFlags::empty(), OpenFlags::RDWR)
+                    .unwrap();
             let vmo = zx::Vmo::create(4 * page_size as u64).expect("create VMO");
             let addr = mm
                 .map_memory(
@@ -8163,11 +8080,11 @@ mod tests {
                     3 * page_size,
                     ProtectionFlags::READ | ProtectionFlags::WRITE,
                     MappingOptions::empty(),
-                    MappingName::None,
+                    MappingName::File(file.to_mapping(None).expect("to_mapping")),
                 )
                 .expect("map failed");
             mm.unmap((addr + page_size).unwrap(), 2 * page_size).expect("unmap failed");
-            assert!(!is_known_cow_modified(addr));
+            assert!(!has_cow_modifications(addr));
 
             // Record that the memory of the mapping holds pages modified via copy-on-write.
             {
@@ -8177,7 +8094,7 @@ mod tests {
                 mapping.set_cow_modified();
                 let _released = state.mappings.insert(range, mapping);
             }
-            assert!(is_known_cow_modified(addr));
+            assert!(has_cow_modifications(addr));
 
             // Grow the mapping in place.
             let grown_addr = mm
@@ -8191,7 +8108,7 @@ mod tests {
                 )
                 .expect("remap in place failed");
             assert_eq!(grown_addr, addr);
-            assert!(is_known_cow_modified(addr));
+            assert!(has_cow_modifications(addr));
 
             // Find a free range, then move and grow the mapping into it.
             let dst_addr = map_memory(&current_task, UserAddress::default(), 3 * page_size as u64);
@@ -8207,7 +8124,7 @@ mod tests {
                 )
                 .expect("remap move failed");
             assert_eq!(moved_addr, dst_addr);
-            assert!(is_known_cow_modified(dst_addr));
+            assert!(has_cow_modifications(dst_addr));
         })
         .await;
     }

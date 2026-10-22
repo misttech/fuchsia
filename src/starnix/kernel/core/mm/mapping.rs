@@ -224,48 +224,17 @@ impl Mapping {
     /// Returns whether this is a private file mapping with pages that were modified via
     /// copy-on-write, and are therefore no longer shared with the mapped file.
     ///
-    /// Writable private file mappings created by `default_mmap()` are backed by a copy-on-write
-    /// child of the file's memory, created for each `mmap()` call. Copy-on-write modifications are
-    /// tracked at the granularity of the backing `MemoryObject` (and synchronized across all
-    /// mappings sharing that backing memory when write access is enabled), rather than per-page.
-    /// Read-only ones (`MappingFlags::LAZY_PRIVATE_FILE`) are backed by the file's memory until
-    /// they are written, so they have no modified pages.
-    ///
-    /// Zircon only reports the number of pages that a memory object holds, not which ones, so the
-    /// whole memory object is considered.
-    ///
-    /// TODO(https://fxbug.dev/409256444): For files whose memory isn't pager-backed (e.g. tmpfs),
-    /// this also reports pages that the file stopped sharing because the file was modified.
-    ///
-    /// # Errors
-    ///
-    /// Fails if the information about the memory object can't be retrieved (e.g. if its handle
-    /// lacks `Rights::INSPECT`), in which case whether it holds modified pages is unknown.
-    pub fn has_cow_modifications(&self) -> Result<bool, Errno> {
-        if !self.is_private_file() {
-            return Ok(false);
-        }
-        let MappingBacking::Memory(backing) = &self.backing else {
-            return Ok(false);
-        };
-        if backing.is_cow_modified() {
-            return Ok(true);
-        }
-        if self.flags.contains(MappingFlags::LAZY_PRIVATE_FILE) {
-            return Ok(false);
-        }
-        let memory = backing.memory();
-        // Memory-mapped clocks have no VMO to query.
-        if memory.is_clock() {
-            return Ok(false);
-        }
-        let info = memory.info()?;
-        Ok(info.flags.contains(zx::VmoInfoFlags::IS_COW_CLONE) && info.populated_private_bytes > 0)
+    /// Copy-on-write modifications are tracked at the granularity of the backing `MemoryObject`
+    /// (and synchronized across all mappings sharing that backing memory when write access is
+    /// enabled), rather than per-page.
+    pub fn has_cow_modifications(&self) -> bool {
+        self.is_private_file() && self.is_known_cow_modified()
     }
 
     /// Records that the memory of this mapping holds pages modified via copy-on-write. See
     /// `Mapping::has_cow_modifications`.
     pub fn set_cow_modified(&mut self) {
+        debug_assert!(self.is_private_file());
         if let MappingBacking::Memory(backing) = &mut self.backing {
             backing.set_cow_modified();
         }
@@ -273,7 +242,7 @@ impl Mapping {
 
     /// Returns whether the memory of this mapping is already known to hold pages modified via
     /// copy-on-write.
-    pub fn is_known_cow_modified(&self) -> bool {
+    fn is_known_cow_modified(&self) -> bool {
         matches!(&self.backing, MappingBacking::Memory(backing) if backing.is_cow_modified())
     }
 

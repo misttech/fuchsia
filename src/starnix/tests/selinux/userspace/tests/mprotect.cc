@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <barrier>
 #include <string>
 #include <thread>
 
@@ -599,12 +600,11 @@ TEST(ExecModTest, SecondMappingIsNotCowModified) {
   }));
 }
 
-// While a writable private file mapping is made executable, writes to it are temporarily blocked,
-// so that none can land between the `execmod` check and the protection change. This race itself
-// can't be tested deterministically. Instead, this checks that a thread that keeps writing to the
-// mapping is unaffected by the blocking: its write faults are retried rather than reported as
-// SIGSEGV, and write access is restored after the attempt is denied. The mapping was written
-// before the attempt, so the denial itself is deterministic.
+// Writable private file mappings are initially mapped read-only in the VMAR until the first write
+// fault enables write access and records the modification. This checks that concurrent writer
+// threads racing on the initial write fault and continuing to write to the mapping do not fault
+// while another thread attempts to make the mapping executable, and that the `mprotect` attempt is
+// denied with `EACCES` once the mapping has been written.
 TEST(MProtectTest, ExecmodWithConcurrentWrites) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:mprotect_execmod_no_test_t:s0", [&] {
@@ -620,34 +620,41 @@ TEST(MProtectTest, ExecmodWithConcurrentWrites) {
     ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
     volatile char *page = static_cast<volatile char *>(mapping->mapping());
 
-    // Keep writing to the mapping from another thread.
+    // Keep writing to the mapping from two concurrent threads so they also race on the initial
+    // write fault.
+    std::barrier start_barrier(2);
     std::atomic<bool> stop = false;
-    std::atomic<uint64_t> writes = 0;
-    std::thread writer([&] {
+    std::atomic<uint64_t> writes1 = 0;
+    std::atomic<uint64_t> writes2 = 0;
+    auto write_loop = [&](size_t index, std::atomic<uint64_t> &writes) {
+      start_barrier.arrive_and_wait();
       while (!stop) {
-        page[1] = 'j';
+        page[index] = 'j';
         writes.fetch_add(1);
       }
-    });
-    auto stop_writer = fit::defer([&] {
+    };
+    std::thread writer1(write_loop, /* index = */ 1, std::ref(writes1));
+    std::thread writer2(write_loop, /* index = */ 2, std::ref(writes2));
+    auto stop_writers = fit::defer([&] {
       stop = true;
-      writer.join();
+      writer1.join();
+      writer2.join();
     });
-    // Returns whether at least `count` writes were made within 10 seconds.
-    auto wait_for_writes = [&](uint64_t count) {
-      for (int i = 0; i < 10000 && writes < count; i++) {
+    // Returns whether both threads reached their target write counts within 10 seconds.
+    auto wait_for_writes = [&](uint64_t count1, uint64_t count2) {
+      for (int i = 0; i < 10000 && (writes1 < count1 || writes2 < count2); i++) {
         usleep(/*usec=*/1000);
       }
-      return writes >= count;
+      return writes1 >= count1 && writes2 >= count2;
     };
-    ASSERT_TRUE(wait_for_writes(/*count=*/1));
+    ASSERT_TRUE(wait_for_writes(/*count1=*/1, /*count2=*/1));
 
     // The mapping was modified, so making it executable requires `execmod`.
     EXPECT_THAT(mprotect(mapping->mapping(), pagesize, PROT_READ | PROT_EXEC),
                 SyscallFailsWithErrno(EACCES));
 
-    // The mapping is still writable.
-    EXPECT_TRUE(wait_for_writes(/*count=*/writes + 1));
+    // The mapping is still writable by both threads.
+    EXPECT_TRUE(wait_for_writes(/*count1=*/writes1 + 1, /*count2=*/writes2 + 1));
   }));
 }
 
