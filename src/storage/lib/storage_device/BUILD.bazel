@@ -30,6 +30,7 @@ rustc_library(
     visibility = [
         "//src/devices/block/drivers/cqhci:__pkg__",
         "//src/starnix/kernel/core:__pkg__",
+        "//src/starnix/modules/overlayfs:__pkg__",
         "//src/storage/crypt/starnix:__pkg__",
         "//src/storage/f2fs_reader:__subpackages__",
         "//src/storage/fshost/integration:__pkg__",

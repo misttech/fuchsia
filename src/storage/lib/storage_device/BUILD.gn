@@ -122,6 +122,7 @@ rustc_library("storage_device") {
     ":*",
     "//src/devices/block/drivers/cqhci:*",
     "//src/starnix/kernel/core:*",
+    "//src/starnix/modules/overlayfs:*",
     "//src/storage/crypt/starnix:*",
     "//src/storage/f2fs_reader/*",
     "//src/storage/fshost/integration:*",

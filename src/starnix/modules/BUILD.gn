@@ -25,6 +25,7 @@ group("tests") {
     "nanohub:tests",
     "nmfs:tests",
     "odpm:tests",
+    "overlayfs:tests",
     "perfetto_consumer:tests",
     "power_residency:tests",
     "procfs:tests",

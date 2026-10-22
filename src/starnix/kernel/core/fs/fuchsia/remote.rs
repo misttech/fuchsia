@@ -50,7 +50,7 @@ use starnix_uapi::{
     __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, mode, off_t, statfs,
 };
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
 use sync_io_client::{RemoteDirectory, RemoteIo, SyncIo, SyncIoDirectory};
 use syncio::zxio::{
@@ -1740,12 +1740,14 @@ fn get_or_init_remote_memory(
 }
 
 struct RemoteFileObject<I> {
+    was_written: AtomicBool,
+
     _phantom: std::marker::PhantomData<fn() -> I>,
 }
 
 impl<I> Default for RemoteFileObject<I> {
     fn default() -> Self {
-        Self { _phantom: std::marker::PhantomData }
+        Self { was_written: AtomicBool::new(false), _phantom: std::marker::PhantomData }
     }
 }
 
@@ -1838,6 +1840,15 @@ impl<T: SyncIo> RemoteIoExt for T {
 impl<I: SyncIo> FileOps for RemoteFileObject<I> {
     fileops_impl_seekable!();
 
+    fn flush(&self, file: &FileObject, _current_task: &CurrentTask) {
+        if self.was_written.swap(false, Ordering::Relaxed)
+            && let Some(node) = file.node().downcast_ops::<RemoteNode<RemoteIo>>()
+            && let Ok(proxy) = node.node.io.clone_proxy()
+        {
+            let _ = proxy.close(zx::MonotonicInstant::INFINITE);
+        }
+    }
+
     fn read(
         &self,
         file: &FileObject,
@@ -1863,6 +1874,7 @@ impl<I: SyncIo> FileOps for RemoteFileObject<I> {
             // truncated, then the size might not be accurate, but we track that separately and
             // `get_size` will fetch the file size from the remote end in that case.
             if written > 0 {
+                self.was_written.store(true, Ordering::Relaxed);
                 file.node().update_info(|info| {
                     if offset + written > info.size {
                         info.size = offset + written;
@@ -5105,6 +5117,53 @@ mod test {
         })
         .await;
 
+        fixture.close().await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_close_flushes_written_file() {
+        use crate::vfs::FdFlags;
+
+        let commits = Arc::new(AtomicUsize::new(0));
+        let commits_clone = commits.clone();
+        let (mut hooks, fs_hooks) = fxfs_testing::Hooks::new();
+        hooks.set_pre_commit(move |_transaction| {
+            commits_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(16384, 512)),
+            TestFixtureOptions { hooks: Some(fs_hooks), ..Default::default() },
+        )
+        .await;
+        let (server, client) = zx::Channel::create();
+        fixture.root().clone(server.into()).expect("clone failed");
+
+        spawn_kernel_and_run(async move |current_task| {
+            let fs = RemoteFs::new_fs(
+                current_task.kernel(),
+                client,
+                FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("new_fs failed");
+            let ns = Namespace::new(fs);
+            let file = ns
+                .root()
+                .create_node(&current_task, "file".into(), mode!(IFREG, 0o666), DeviceId::NONE)
+                .expect("create_node failed")
+                .open(&current_task, OpenFlags::RDWR)
+                .expect("open failed");
+            file.write(&current_task, &mut VecInputBuffer::new(b"hello")).expect("write failed");
+            let fd = current_task.add_file(file, FdFlags::empty()).expect("add_file failed");
+
+            // close(2), without fsync, should make Fxfs flush (commit) the file's data.
+            let commits_before_close = commits.load(Ordering::SeqCst);
+            current_task.files().close(fd).expect("close failed");
+            current_task.trigger_delayed_releaser();
+            assert!(commits.load(Ordering::SeqCst) > commits_before_close);
+        })
+        .await;
         fixture.close().await;
     }
 
