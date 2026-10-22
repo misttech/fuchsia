@@ -10,17 +10,18 @@ use crate::nanohub_gpio_stub::register_gpio_chip_device;
 use crate::socket_tunnel_file::register_socket_tunnel_device;
 use fidl_fuchsia_hardware_google_nanohub as fnanohub;
 use fidl_fuchsia_hardware_serial as fserial;
+use fuchsia_async::TimeoutExt as _;
 use futures::TryStreamExt;
-use starnix_core::device::service_watcher::watch_fidl_service;
-use starnix_core::fs::sysfs::build_device_directory;
+use starnix_core::device::service_watcher::ServiceWatcher;
 use starnix_core::task::Kernel;
 use starnix_logging::{log_error, log_info, log_warn};
 use starnix_modules_serial::SerialDevice;
 use starnix_uapi::auth::FsCred;
 
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
+const GET_IDENTIFIER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
 pub fn nanohub_device_init(kernel: &Arc<Kernel>) {
     register_gpio_chip_device(kernel, "gpiochipwake0");
@@ -52,52 +53,75 @@ pub fn nanohub_device_init(kernel: &Arc<Kernel>) {
         "register_serial_device",
     );
 
-    watch_fidl_service(
+    register_datachannel_devices(kernel);
+}
+
+fn register_datachannel_devices(kernel: &Kernel) {
+    ServiceWatcher::register_with_probe(
         kernel,
         fnanohub::StarnixDataChannelServiceMarker,
-        "register_datachannel_devices",
-        register_datachannel_device,
+        probe_datachannel_device,
+        |current_task, (data_channel_service_proxy, name), scope| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+            let device_class = registry.objects.get_or_create_class("nanohub".into());
+            match registry.register_dyn_device(
+                kernel,
+                name.as_bytes().into(),
+                device_class,
+                DataChannelDevice::new(
+                    data_channel_service_proxy,
+                    kernel.suspend_resume_manager.clone(),
+                ),
+            ) {
+                Ok(device) => {
+                    scope.add_scoped_device(device);
+                }
+                Err(e) => log_warn!("Failed to register datachannel device: {:?}", e),
+            }
+        },
     );
 }
 
-async fn register_datachannel_device(
-    weak_kernel: &Weak<Kernel>,
-    data_channel_service_proxy: fnanohub::StarnixDataChannelServiceProxy,
-) {
-    let name = match async {
-        let device_proxy = data_channel_service_proxy.connect_to_waitable()?;
-        let id = device_proxy.get_identifier().await?;
-        Ok::<Option<String>, fidl::Error>(id.name)
-    }
-    .await
-    {
-        Ok(Some(name)) => name,
-        Ok(None) => {
-            log_error!("Data channel device has no name, skipping registration");
-            return;
-        }
+fn is_valid_datachannel_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
+}
+
+async fn probe_datachannel_device(
+    data_channel_service_proxy: Arc<fnanohub::StarnixDataChannelServiceProxy>,
+) -> Option<(Arc<fnanohub::StarnixDataChannelServiceProxy>, String)> {
+    // Connect to `waitable` only for the duration of `GetIdentifier`; keeping an unbound
+    // `waitable` connection open reserves a pooled endpoint in the nanohub driver.
+    let device_proxy = match data_channel_service_proxy.connect_to_waitable() {
+        Ok(proxy) => proxy,
         Err(e) => {
-            log_error!("Failed to get device info: {:?}", e);
-            return;
+            log_error!("Failed to connect to waitable data channel: {:?}", e);
+            return None;
         }
     };
-
-    let Some(kernel) = weak_kernel.upgrade() else {
-        return;
-    };
-
-    let registry = &kernel.device_registry;
-
-    let device_class = registry.objects.get_or_create_class("nanohub".into());
-
-    if let Err(e) = registry.register_dyn_device_with_dir(
-        &kernel,
-        name.as_bytes().into(),
-        device_class,
-        build_device_directory,
-        DataChannelDevice::new(data_channel_service_proxy, kernel.suspend_resume_manager.clone()),
-    ) {
-        log_warn!("Failed to register datachannel device: {:?}", e);
+    match async { Some(device_proxy.get_identifier().await) }
+        .on_timeout(GET_IDENTIFIER_TIMEOUT, || None)
+        .await
+    {
+        Some(Ok(fnanohub::UnboundWaitableDataChannelGetIdentifierResponse {
+            name: Some(name),
+            ..
+        })) if is_valid_datachannel_name(&name) => Some((data_channel_service_proxy, name)),
+        Some(Ok(id)) => {
+            log_error!(
+                "Data channel device returned missing or invalid name {:?}, skipping registration",
+                id.name
+            );
+            None
+        }
+        Some(Err(e)) => {
+            log_error!("Failed to get device info: {:?}", e);
+            None
+        }
+        None => {
+            log_error!("Timed out getting data channel device identifier");
+            None
+        }
     }
 }
 
@@ -191,6 +215,24 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
                 log_error!("Serial driver stream ended with error: {:}", e);
                 break;
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_datachannel_name;
+
+    #[::fuchsia::test]
+    fn validates_datachannel_identifier_names() {
+        assert!(is_valid_datachannel_name("nanohub_ch0"));
+        assert!(is_valid_datachannel_name("test_endpoint1"));
+
+        for invalid_name in ["", ".", "..", "bad/name", "bad\0name"] {
+            assert!(
+                !is_valid_datachannel_name(invalid_name),
+                "expected {invalid_name:?} to be rejected"
+            );
         }
     }
 }

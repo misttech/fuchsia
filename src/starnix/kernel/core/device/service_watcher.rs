@@ -663,41 +663,6 @@ impl MemberOpener for SyncServiceInstanceOpener {
     }
 }
 
-/// Opens `marker` in the process's `/svc` namespace and watches for service instances on the
-/// kernel's main async executor.
-pub fn watch_fidl_service<S, F>(kernel: &Kernel, marker: S, task_name: &'static str, on_instance: F)
-where
-    S: ServiceMarker + Send + 'static,
-    F: AsyncFn(&Weak<Kernel>, S::Proxy) + Send + 'static,
-{
-    let weak_kernel = kernel.weak_self.clone();
-    kernel.kthreads.spawn_future(
-        move || async move {
-            let result = async {
-                let service =
-                    fclient::Service::open(marker).context("failed to open service directory")?;
-                let weak_kernel = &weak_kernel;
-                let on_instance = &on_instance;
-                service
-                    .watch()
-                    .await
-                    .with_context(|| format!("failed to watch {} service", S::SERVICE_NAME))?
-                    .take_while(|_| std::future::ready(weak_kernel.strong_count() > 0))
-                    .try_for_each_concurrent(/* limit = */ None, |instance| async move {
-                        on_instance(weak_kernel, instance).await;
-                        Ok(())
-                    })
-                    .await
-            }
-            .await;
-            if let Err(e) = result {
-                log_info!("{}: service unavailable: {e:#}", S::SERVICE_NAME);
-            }
-        },
-        task_name,
-    );
-}
-
 /// Connects `service_dir` to the per-[`Kernel`] [`ServiceWatcher`] for `S` on the kernel's main
 /// async executor while suppressing the default `/svc/<S::SERVICE_NAME>` lookup.
 #[cfg(test)]

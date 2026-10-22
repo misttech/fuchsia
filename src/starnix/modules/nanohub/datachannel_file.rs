@@ -22,17 +22,17 @@ use std::sync::Arc;
 use zx::{Rights, WaitResult};
 
 #[derive(Clone)]
-pub struct DataChannelDevice {
+pub(super) struct DataChannelDevice {
     suspend_manager: SuspendResumeManagerHandle,
     service_proxy: Arc<fnanohub::StarnixDataChannelServiceProxy>,
 }
 
 impl DataChannelDevice {
     pub fn new(
-        service_proxy: fnanohub::StarnixDataChannelServiceProxy,
+        service_proxy: Arc<fnanohub::StarnixDataChannelServiceProxy>,
         suspend_manager: SuspendResumeManagerHandle,
     ) -> Self {
-        DataChannelDevice { suspend_manager, service_proxy: Arc::new(service_proxy) }
+        DataChannelDevice { suspend_manager, service_proxy }
     }
 }
 
@@ -49,11 +49,11 @@ impl DeviceOps for DataChannelDevice {
             .connect_to_waitable_sync()
             .map_err(|_| errno!(EIO, "Failed to get unbound data channel device"))?;
 
-        Ok(Box::new(DataChannelFile::new(Arc::new(unbound_proxy), self.suspend_manager.clone())?))
+        Ok(Box::new(DataChannelFile::new(unbound_proxy, self.suspend_manager.clone())?))
     }
 }
 
-pub struct DataChannelFile {
+struct DataChannelFile {
     suspend_manager: SuspendResumeManagerHandle,
     waitable_client: Arc<fnanohub::WaitableDataChannelSynchronousProxy>,
     // Event used to determine when data is available to read or write.
@@ -61,8 +61,8 @@ pub struct DataChannelFile {
 }
 
 impl DataChannelFile {
-    pub fn new(
-        unbound_waitable_client: Arc<fnanohub::UnboundWaitableDataChannelSynchronousProxy>,
+    fn new(
+        unbound_waitable_client: fnanohub::UnboundWaitableDataChannelSynchronousProxy,
         suspend_manager: SuspendResumeManagerHandle,
     ) -> Result<Self, Errno> {
         let event = zx::Event::create();
