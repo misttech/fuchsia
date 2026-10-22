@@ -55,6 +55,10 @@ group("tests") {
     ":packet-formats-test-package",
     "benchmarks:tests",
   ]
+  deps = [
+    ":packet-formats-test",
+    ":packet-formats_test($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -136,4 +140,60 @@ rustc_library("packet-formats") {
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]
+}
+rustc_test("packet-formats_test") {
+  sources = [
+    "src/arp.rs",
+    "src/error.rs",
+    "src/ethernet.rs",
+    "src/gmp.rs",
+    "src/icmp/common.rs",
+    "src/icmp/icmpv4.rs",
+    "src/icmp/icmpv6.rs",
+    "src/icmp/macros.rs",
+    "src/icmp/mld.rs",
+    "src/icmp/mod.rs",
+    "src/icmp/ndp.rs",
+    "src/icmp/testdata.rs",
+    "src/igmp/messages.rs",
+    "src/igmp/mod.rs",
+    "src/igmp/testdata.rs",
+    "src/igmp/types.rs",
+    "src/ip.rs",
+    "src/ipv4.rs",
+    "src/ipv6/ext_hdrs.rs",
+    "src/ipv6/mod.rs",
+    "src/lib.rs",
+    "src/macros.rs",
+    "src/tcp.rs",
+    "src/testdata.rs",
+    "src/testutil.rs",
+    "src/udp.rs",
+    "src/utils.rs",
+  ]
+  edition = "2024"
+  proc_macro_deps = [ "//third_party/rust_crates:derivative" ] +
+                    [ "//src/connectivity/lib/ip-test-macro" ]
+  deps = [
+           "//src/connectivity/lib/internet-checksum",
+           "//src/connectivity/lib/net-types",
+           "//src/connectivity/network/lib/explicit",
+           "//src/lib/network/packet",
+           "//third_party/rust_crates:byteorder",
+           "//third_party/rust_crates:either",
+           "//third_party/rust_crates:log",
+           "//third_party/rust_crates:thiserror",
+           "//third_party/rust_crates:zerocopy",
+         ] +
+         [
+           "//src/connectivity/lib/net-declare",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:test-case",
+         ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
+}
+fuchsia_unittest_package("packet-formats-test") {
+  package_name = "packet-formats-test-gn"
+  component_name = "packet-formats-test"
+  deps = [ ":packet-formats_test" ]
 }

@@ -4,14 +4,17 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("oneshot-sync-tests") {
+bazel_test_suite("bazel_tests") {
   host_tests =
       [ "//src/connectivity/network/lib/oneshot-sync:oneshot-sync-tests" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":oneshot-sync-tests" ]
+  deps = [
+    ":bazel_tests",
+    ":oneshot-sync-tests($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -51,4 +54,21 @@ rustc_library("oneshot-sync") {
     ":*",
     "//src/connectivity/network/netlink:*",
   ]
+}
+if (is_host) {
+  rustc_test("oneshot-sync-tests") {
+    sources = [ "src/lib.rs" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    edition = "2024"
+    features = [
+      "-asan",
+      "-lsan",
+    ]
+    rustflags = [
+      "--cfg=loom",
+      "--check-cfg=cfg(loom)",
+      "--check-cfg=cfg(test)",
+    ]
+    deps = [ "//third_party/rust_crates:loom" ]
+  }
 }

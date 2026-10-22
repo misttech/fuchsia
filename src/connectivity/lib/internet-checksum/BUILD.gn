@@ -14,6 +14,10 @@ bazel_test_suite("internet-checksum-tests") {
 group("tests") {
   testonly = true
   public_deps = [ ":internet-checksum-tests" ]
+  deps = [
+    ":internet-checksum-test",
+    ":internet-checksum_test($host_toolchain)",
+  ]
 }
 
 group("benchmarks") {
@@ -65,4 +69,22 @@ rustc_library("internet-checksum") {
     "//src/connectivity/lib/*",
     "//src/connectivity/network/netstack3/core/device:*",
   ]
+}
+rustc_test("internet-checksum_test") {
+  sources = [ "src/lib.rs" ]
+  edition = "2024"
+  configs += [
+    ":check_cfg_flags",
+    "//build/config/rust/lints:deny_unused_results",
+    "//src/connectivity/network:performance_critical_rust_crate",
+  ]
+  deps = [
+    "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:rand_xorshift",
+  ]
+}
+fuchsia_unittest_package("internet-checksum-test") {
+  package_name = "internet-checksum-test-gn"
+  component_name = "internet-checksum-test"
+  deps = [ ":internet-checksum_test" ]
 }

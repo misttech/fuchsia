@@ -4,14 +4,17 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("ip-test-macro_test") {
+bazel_test_suite("bazel_tests") {
   host_tests =
       [ "//src/connectivity/lib/ip-test-macro:ip-test-macro_host_test" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":ip-test-macro_test" ]
+  deps = [
+    ":bazel_tests",
+    ":ip-test-macro_test($host_toolchain)",
+  ]
   public_deps = [ "test:tests" ]
 }
 
@@ -55,4 +58,17 @@ rustc_macro("ip-test-macro") {
     "//third_party/rust_crates:quote",
     "//third_party/rust_crates:syn",
   ]
+}
+if (is_host) {
+  rustc_test("ip-test-macro_test") {
+    sources = [ "src/lib.rs" ]
+    edition = "2024"
+    deps = [
+             "//third_party/rust_crates:proc-macro2",
+             "//third_party/rust_crates:quote",
+             "//third_party/rust_crates:syn",
+           ] + [ "//third_party/rust_crates:assert_matches" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    configs += [ "//build/config/rust:proc_macro_test" ]
+  }
 }

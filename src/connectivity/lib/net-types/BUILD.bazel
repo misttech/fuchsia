@@ -36,6 +36,8 @@ rustc_library(
     deps = ["//third_party/rust_crates/vendor:zerocopy"],
 )
 
+# The net-types-nostd target is only used in tests, which run in Bazel.
+# @bazel2gn:skip
 rustc_library(
     name = "net-types-nostd",
     srcs = [
@@ -65,8 +67,6 @@ rustc_proc_macro(
     ],
 )
 
-# TODO(https://fxbug.dev/574121341): Run this test in GN too.
-# @bazel2gn:skip
 rustc_test(
     name = "net-types_test",
     build_flags = [
@@ -77,7 +77,7 @@ rustc_test(
     deps = ["//third_party/rust_crates/vendor:test-case"],
 )
 
-# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# The net-types-nostd target is only used in tests, which run in Bazel.
 # @bazel2gn:skip
 rustc_test(
     name = "net-types-nostd_test",
@@ -86,25 +86,22 @@ rustc_test(
     deps = ["//third_party/rust_crates/vendor:test-case"],
 )
 
-# @bazel2gn:skip
 wrap_host_rust_test(
     name = "net-types_host_test",
     binary_name = "net-types_test",
 )
 
-# @bazel2gn:skip
 wrap_host_rust_test(
     name = "net-types-nostd_host_test",
     binary_name = "net-types-nostd_test",
 )
 
-# TODO(https://fxbug.dev/574121341): Run this test in GN too.
-# @bazel2gn:skip
 fx_unittest_package(
     name = "net-types-test-package",
     package_name = "net-types-test",
     unit_tests = [
         ":net-types_test",
+        # @bazel2gn:skip
         ":net-types-nostd_test",
     ],
 )

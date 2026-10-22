@@ -21,7 +21,6 @@ rustc_library(
     visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "lock-order_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -30,14 +29,12 @@ rustc_test(
     visibility = ["//visibility:private"],
 )
 
-# @bazel2gn:skip
 wrap_host_rust_test(
     name = "lock-order_host_test",
     binary_name = "lock-order_test",
     visibility = ["//visibility:public"],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "lock-order-test-package",
     package_name = "lock-order-test",

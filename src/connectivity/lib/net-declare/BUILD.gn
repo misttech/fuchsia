@@ -4,7 +4,7 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("net-declare-tests") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/connectivity/lib/net-declare:net-declare-tests" ]
   host_tests = [
     "//src/connectivity/lib/net-declare:net-declare-macros_host_test",
@@ -14,7 +14,12 @@ bazel_test_suite("net-declare-tests") {
 
 group("tests") {
   testonly = true
-  deps = [ ":net-declare-tests" ]
+  deps = [
+    ":bazel_tests",
+    ":net-declare-macros_test($host_toolchain)",
+    ":net-declare-tests",
+    ":net-declare_test($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -55,6 +60,22 @@ rustc_macro("net-declare-macros") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+if (is_host) {
+  rustc_test("net-declare-macros_test") {
+    sources = [ "src/macros.rs" ]
+    source_root = "src/macros.rs"
+    edition = "2024"
+    deps = [
+             "//src/connectivity/lib/net-types",
+             "//third_party/rust_crates:proc-macro2",
+             "//third_party/rust_crates:quote",
+             "//third_party/rust_crates:syn",
+             "//third_party/rust_crates:thiserror",
+           ] + [ "//third_party/rust_crates:assert_matches" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    configs += [ "//build/config/rust:proc_macro_test" ]
+  }
+}
 rustc_library("net-declare") {
   sources = [ "src/lib.rs" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
@@ -62,4 +83,17 @@ rustc_library("net-declare") {
   proc_macro_deps = [ ":net-declare-macros" ]
   visibility = [ "*" ]
   deps = [ "//sdk/fidl/fuchsia.net:fuchsia.net_rust_common" ]
+}
+rustc_test("net-declare_test") {
+  sources = [ "src/lib.rs" ]
+  edition = "2024"
+  proc_macro_deps = [ ":net-declare-macros" ]
+  deps = [ "//sdk/fidl/fuchsia.net:fuchsia.net_rust_common" ] +
+         [ "//src/connectivity/lib/net-types" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
+}
+fuchsia_unittest_package("net-declare-tests") {
+  package_name = "net-declare-tests-gn"
+  component_name = "net-declare-tests"
+  deps = [ ":net-declare_test" ]
 }

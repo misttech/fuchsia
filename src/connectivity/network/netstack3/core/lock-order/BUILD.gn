@@ -13,7 +13,11 @@ bazel_test_suite("lock-order-tests") {
 
 group("tests") {
   testonly = true
-  public_deps = [ ":lock-order-tests" ]
+  public_deps = [
+    ":lock-order-test-package",
+    ":lock-order-tests",
+    ":lock-order_test($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -54,4 +58,21 @@ rustc_library("lock-order") {
     ":*",
     "//src/connectivity/network/netstack3/core/*",
   ]
+}
+rustc_test("lock-order_test") {
+  sources = [
+    "src/lib.rs",
+    "src/lock.rs",
+    "src/relation.rs",
+    "src/wrap.rs",
+  ]
+  edition = "2024"
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  visibility = [ ":*" ]
+}
+fuchsia_unittest_package("lock-order-test-package") {
+  package_name = "lock-order-test-gn"
+  component_name = "lock-order-test"
+  deps = [ ":lock-order_test" ]
+  visibility = [ "*" ]
 }

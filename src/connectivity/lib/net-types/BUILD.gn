@@ -4,7 +4,7 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("net-types-test-package") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/connectivity/lib/net-types:net-types-test-package" ]
   host_tests = [
     "//src/connectivity/lib/net-types:net-types-nostd_host_test",
@@ -14,16 +14,11 @@ bazel_test_suite("net-types-test-package") {
 
 group("tests") {
   testonly = true
-  public_deps = [ ":net-types-test-package" ]
+  public_deps = [ ":bazel_tests" ]
 
-  # Make sure that all features are at least compiled even if they're not used
-  # by any other Fuchsia code. Even though the `public_deps` above will cause
-  # the test target to be built (with `--cfg test` passed during compilation),
-  # they will not cause the non-test target to be built. We depend on those here
-  # to ensure that they're built as well.
   deps = [
-    ":net-types",
-    ":net-types-nostd",
+    ":net-types-test-package",
+    ":net-types_test($host_toolchain)",
   ]
 }
 
@@ -76,17 +71,6 @@ rustc_library("net-types") {
   ]
   deps = [ "//third_party/rust_crates:zerocopy" ]
 }
-rustc_library("net-types-nostd") {
-  sources = [
-    "src/ethernet.rs",
-    "src/ip.rs",
-    "src/lib.rs",
-  ]
-  configs += [ "//build/config/rust/lints:deny_unused_results" ]
-  edition = "2024"
-  proc_macro_deps = [ ":net-types-macros" ]
-  deps = [ "//third_party/rust_crates:zerocopy" ]
-}
 rustc_macro("net-types-macros") {
   sources = [ "src/macros.rs" ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
@@ -98,4 +82,24 @@ rustc_macro("net-types-macros") {
     "//third_party/rust_crates:quote",
     "//third_party/rust_crates:syn",
   ]
+}
+rustc_test("net-types_test") {
+  sources = [
+    "src/ethernet.rs",
+    "src/ip.rs",
+    "src/lib.rs",
+  ]
+  edition = "2024"
+  proc_macro_deps = [ ":net-types-macros" ]
+  deps = [ "//third_party/rust_crates:zerocopy" ] +
+         [ "//third_party/rust_crates:test-case" ]
+  configs += [
+    "//build/config/rust/lints:deny_unused_results",
+    "//src/connectivity/network:performance_critical_rust_crate",
+  ]
+}
+fuchsia_unittest_package("net-types-test-package") {
+  package_name = "net-types-test-gn"
+  component_name = "net-types-test"
+  deps = [ ":net-types_test" ]
 }
