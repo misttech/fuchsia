@@ -41,7 +41,7 @@ ash = { version = "0.38.0", features = ["linked"], default-features = false }
 assert_matches = "1.5.0"
 async-channel = "2.5.0"
 async-lock = "3.4.2"
-async-ringbuf = "0.3.8"
+async-ringbuf = "0.3.9"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
 base64 = "0.22.1"
@@ -595,7 +595,7 @@ rustflags = []
 [gn.package.async-trait."0.1.92"]
 rustflags = []
 
-[gn.package.async-ringbuf."0.3.8"]
+[gn.package.async-ringbuf."0.3.9"]
 configs = [
   "//third_party/rust_crates/configs/release:optimize_speed",
   "//third_party/rust_crates/configs/balanced:optimize_moderate"
@@ -1105,7 +1105,7 @@ env_vars = [
   "RING_CORE_PREFIX=ring_core_0_17_14_",
 ]
 
-[gn.package.ringbuf."0.5.1"]
+[gn.package.ringbuf."0.5.2"]
 configs = [
   "//third_party/rust_crates/configs/release:optimize_speed",
   "//third_party/rust_crates/configs/balanced:optimize_moderate"

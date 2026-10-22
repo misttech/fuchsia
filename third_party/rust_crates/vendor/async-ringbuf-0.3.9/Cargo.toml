@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "async-ringbuf"
-version = "0.3.8"
+version = "0.3.9"
 authors = ["Alexey Gerasev <alexey.gerasev@gmail.com>"]
 build = false
 autolib = false
@@ -86,7 +86,7 @@ optional = true
 default-features = false
 
 [dependencies.ringbuf]
-version = "0.5.1"
+version = "0.5.2"
 default-features = false
 
 [dev-dependencies.futures]
