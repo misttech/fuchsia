@@ -10,13 +10,7 @@ load(
     "wrap_rust_macro_args_with_build_flags",
 )
 load("@rules_rust//rust:defs.bzl", "rust_dylib_library")
-load(
-    "//build/bazel/rules/rust:common.bzl",
-    "with_fuchsia_rust_link_exec_properties",
-    "with_fuchsia_rust_stdlib_link_deps",
-    "with_fuchsia_rust_tags",
-    "with_fuchsia_rustc_flags",
-)
+load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rust_stdlib_link_deps", "with_fuchsia_rust_tags", "with_fuchsia_rustc_flags")
 load("//build/bazel/rules/rust:generate_unit_tests.bzl", "generate_unit_tests")
 
 def _rustc_dylib_impl(
@@ -65,7 +59,6 @@ def _rustc_dylib_impl(
         link_std_dylib = False,
         visibility = visibility,
         **(library_kwargs | {
-            "exec_properties": with_fuchsia_rust_link_exec_properties(library_kwargs.get("exec_properties")),
             "link_deps": with_fuchsia_rust_stdlib_link_deps(library_kwargs.get("link_deps")),
         })
     )

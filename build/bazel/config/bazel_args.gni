@@ -63,23 +63,10 @@ _optimize_to_opt = [
   "size_thinlto_clang",
 ]
 
-_optimize_with_lto = [
-  "moderate_lto",
-  "moderate_thinlto",
-  "size_lto",
-  "size_thinlto",
-  "speed_lto",
-  "speed_thinlto",
-
-  # TODO(https://fxbug.dev/517626589): remove this when default is changed
-  "size_thinlto_clang",
-]
-
 # LINT.ThenChange(
 #   //build/bazel/config/select/optimize/BUILD.bazel:valid_optimize_values,
 #   //build/bazel/config/variables/BUILD.bazel:valid_optimize_values,
 #   //build/config/compilation_modes.gni:valid_optimize_values,
-#   //build/config/lto/BUILD.bazel:valid_optimize_values,
 # )
 
 _is_compilation_mode_dbg =
@@ -94,24 +81,6 @@ _is_compilation_mode_opt =
 # toolchain_variant.tags holds the active variant tags (equivalent to
 # fuchsia_toolchain_tags on Fuchsia and host_toolchain_tags on host).
 _tags = toolchain_variant.tags
-
-_has_instrumented = _tags + [ "instrumented" ] - [ "instrumented" ] != _tags
-_has_lto = _tags + [ "lto" ] - [ "lto" ] != _tags ||
-           (!_has_instrumented && _optimize_with_lto + [ optimize ] -
-                                  [ optimize ] != _optimize_with_lto)
-
-# When LTO or ThinLTO is enabled for the current GN toolchain, register
-# `:linux_x64_large_cpp_link` before the default `:linux_x64` host execution
-# platform so CppLink actions (in the "cpp_link" exec_group) run on the large
-# RBE worker pool. When LTO is not enabled for this toolchain, explicitly pass
-# an empty `--extra_execution_platforms=` so platform transitions (such as
-# `cfg = "exec"` host tool transitions) reset the execution platform back to
-# the default `:linux_x64`. See //build/config/lto/README.md for details.
-if (_has_lto) {
-  _build_args += [ "--extra_execution_platforms=//build/bazel/platforms:linux_x64_large_cpp_link" ]
-} else {
-  _build_args += [ "--extra_execution_platforms=" ]
-}
 
 _has_asan = _tags + [ "asan" ] - [ "asan" ] != _tags
 _has_hwasan = _tags + [ "hwasan" ] - [ "hwasan" ] != _tags

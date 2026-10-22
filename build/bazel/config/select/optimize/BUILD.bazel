@@ -139,5 +139,4 @@ config_setting(
 #   //build/bazel/config/bazel_args.gni:valid_optimize_values,
 #   //build/bazel/config/variables/BUILD.bazel:valid_optimize_values,
 #   //build/config/compilation_modes.gni:valid_optimize_values,
-#   //build/config/lto/BUILD.bazel:valid_optimize_values,
 # )

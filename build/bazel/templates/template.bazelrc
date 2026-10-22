@@ -171,10 +171,6 @@ common --experimental_propagate_custom_flag=EXECUTOR
 # https://github.com/bazelbuild/bazel/issues/26228.
 common --experimental_platform_in_output_dir=True
 
-# Ensure host tools built via `cfg = "exec"` from targets using
-# `:linux_x64_large_cpp_link` share the `linux_x64` output directory prefix.
-common --experimental_override_name_platform_in_output_dir=//build/bazel/platforms:linux_x64_large_cpp_link=linux_x64
-
 # Enable dynamic linking of C++ stdlib for drivers in-tree.
 common --@rules_fuchsia//fuchsia/flags:dynamic_cpp_standard_library_for_drivers=True
 

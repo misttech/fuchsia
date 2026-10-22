@@ -8,7 +8,6 @@ load("@rules_rust//rust:rust_test.bzl", "rust_test")
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "define_and_wrap_host_rust_test")
 load(
     "//build/bazel/rules/rust:common.bzl",
-    "with_fuchsia_rust_link_exec_properties",
     "with_fuchsia_rust_stdlib_link_deps",
     "with_fuchsia_rust_test_aspect_hints",
 )
@@ -314,7 +313,6 @@ def generate_unit_tests(
     # Rust standard library. Parent rustc_xxx() macros only add these to the
     # parent target if it is linked too, so they are never added twice.
     kwargs["link_deps"] = with_fuchsia_rust_stdlib_link_deps(kwargs.get("link_deps"))
-    kwargs["exec_properties"] = with_fuchsia_rust_link_exec_properties(kwargs.get("exec_properties"))
 
     # rules_rust's `rust_test()` requires using either `crate` or source attributes
     # (`srcs`, `crate_root`), but not both. Since `crate = ":<name>"` is passed below,
