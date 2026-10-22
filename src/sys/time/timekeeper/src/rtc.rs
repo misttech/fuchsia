@@ -13,7 +13,7 @@ use fidl_fuchsia_hardware_rtc as frtc;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_component::client::Service;
 use fuchsia_runtime::{UtcDuration, UtcInstant};
-use futures::{StreamExt, TryFutureExt, select};
+use futures::{Future, StreamExt, TryFutureExt, select};
 use log::{debug, error, warn};
 use std::cell::RefCell;
 use std::pin::pin;
@@ -76,9 +76,10 @@ fn get_service() -> Result<Service<frtc::ServiceMarker>> {
 /// reasonably advance while the device is in low power states. This makes
 /// this particular RTC implementation unusable if an operational boot clock
 /// is not available.
-pub struct ReadOnlyRtcImpl<F, C>
+pub struct ReadOnlyRtcImpl<F, Fut, C>
 where
-    F: Fn(&State) -> Result<()>,
+    F: Fn(State) -> Fut,
+    Fut: Future<Output = Result<()>>,
     C: Fn() -> zx::BootInstant,
 {
     state: Rc<RefCell<State>>,
@@ -96,32 +97,34 @@ pub fn new_read_only_rtc(
     state: Rc<RefCell<State>>,
     proxy: Option<ffhh::DeviceProxy>,
     rtc_initialization_policy: RtcInitializationPolicy,
-) -> ReadOnlyRtcImpl<impl Fn(&State) -> Result<()>, impl Fn() -> zx::BootInstant> {
-    let func = |s: &State| State::write(s);
+) -> impl Rtc {
+    let func = |s: State| async move { State::write(&s).await };
     let now_fn = || fasync::BootInstant::now().into();
     new_read_only_rtc_with_dependencies(state, proxy, func, now_fn, rtc_initialization_policy)
 }
 
 // A factory method with an option to inject state. Intended to be called
 // directly in tests, and its non-test counterpart above.
-fn new_read_only_rtc_with_dependencies<F, C>(
+fn new_read_only_rtc_with_dependencies<F, Fut, C>(
     state: Rc<RefCell<State>>,
     proxy: Option<ffhh::DeviceProxy>,
     writer_fn: F,
     clock_fn: C,
     rtc_initialization_policy: RtcInitializationPolicy,
-) -> ReadOnlyRtcImpl<F, C>
+) -> ReadOnlyRtcImpl<F, Fut, C>
 where
-    F: Fn(&State) -> Result<()>,
+    F: Fn(State) -> Fut,
+    Fut: Future<Output = Result<()>>,
     C: Fn() -> zx::BootInstant,
 {
     ReadOnlyRtcImpl { state, proxy, writer_fn, clock_fn, rtc_initialization_policy }
 }
 
 #[async_trait(?Send)]
-impl<F, C> Rtc for ReadOnlyRtcImpl<F, C>
+impl<F, Fut, C> Rtc for ReadOnlyRtcImpl<F, Fut, C>
 where
-    F: Fn(&State) -> Result<()>,
+    F: Fn(State) -> Fut,
+    Fut: Future<Output = Result<()>>,
     C: Fn() -> zx::BootInstant,
 {
     /// Returns a linear approximation of the UtcInstant based on a valid reading
@@ -198,13 +201,18 @@ where
     /// and a reference UTC instant.
     async fn set(&self, value: UtcInstant) -> Result<()> {
         let boot_now = self.now().await;
-        self.state.borrow_mut().set_rtc_reference(boot_now.into(), value);
-        (self.writer_fn)(&self.state.borrow())
+        let state = {
+            let mut state_mut = self.state.borrow_mut();
+            state_mut.set_rtc_reference(boot_now.into(), value);
+            state_mut.clone()
+        };
+        (self.writer_fn)(state).await
     }
 }
-impl<F, C> ReadOnlyRtcImpl<F, C>
+impl<F, Fut, C> ReadOnlyRtcImpl<F, Fut, C>
 where
-    F: Fn(&State) -> Result<()>,
+    F: Fn(State) -> Fut,
+    Fut: Future<Output = Result<()>>,
     C: Fn() -> zx::BootInstant,
 {
     const CLOCK_ID: u64 = 1;
@@ -672,7 +680,10 @@ mod test {
                 state,
                 /* proxy= */ None,
                 // Fake persistent state is stored in a tempfile.
-                |s| State::write_internal(&p_clone, s),
+                move |s| {
+                    let p_clone = p_clone.clone();
+                    async move { State::write_internal(&p_clone, &s).await }
+                },
                 // Fake "now".
                 || fake_boot_now.borrow().clone(),
                 RtcInitializationPolicy::Default,
@@ -701,11 +712,16 @@ mod test {
             // Now try reading the contents of the persisted file, and verify that
             // we're reading what we persisted. But forward time a bit too.
             let p_clone = p.clone();
-            let state = Rc::new(RefCell::new(State::read_and_update_internal(p_clone).unwrap()));
+            let state =
+                Rc::new(RefCell::new(State::read_and_update_internal(p_clone).await.unwrap()));
+            let p_writer = p.clone();
             let rtc = new_read_only_rtc_with_dependencies(
                 state,
                 /* proxy= */ None,
-                |s| State::write_internal(&p, s),
+                move |s| {
+                    let p_writer = p_writer.clone();
+                    async move { State::write_internal(&p_writer, &s).await }
+                },
                 || fake_boot_now.borrow().clone(),
                 RtcInitializationPolicy::Default,
             );
@@ -725,11 +741,16 @@ mod test {
         {
             // Now try with ApplyMaybeStale.
             let p_clone = p.clone();
-            let state = Rc::new(RefCell::new(State::read_and_update_internal(p_clone).unwrap()));
+            let state =
+                Rc::new(RefCell::new(State::read_and_update_internal(p_clone).await.unwrap()));
+            let p_writer = p.clone();
             let rtc = new_read_only_rtc_with_dependencies(
                 state,
                 /* proxy= */ None,
-                |s| State::write_internal(&p, s),
+                move |s| {
+                    let p_writer = p_writer.clone();
+                    async move { State::write_internal(&p_writer, &s).await }
+                },
                 || fake_boot_now.borrow().clone(),
                 RtcInitializationPolicy::ApplyMaybeStale,
             );
@@ -769,7 +790,10 @@ mod test {
         let rtc = new_read_only_rtc_with_dependencies(
             state,
             Some(proxy),
-            |s| State::write_internal(&p, s),
+            move |s| {
+                let p = p.clone();
+                async move { State::write_internal(&p, &s).await }
+            },
             // Fake "now".
             || fake_boot_now.borrow().clone(),
             RtcInitializationPolicy::Default,
@@ -825,7 +849,10 @@ mod test {
         let rtc = new_read_only_rtc_with_dependencies(
             state,
             Some(proxy),
-            |s| State::write_internal(&p, s),
+            move |s| {
+                let p = p.clone();
+                async move { State::write_internal(&p, &s).await }
+            },
             || zx::BootInstant::ZERO,
             RtcInitializationPolicy::ApplyMaybeStale,
         );
@@ -872,5 +899,38 @@ mod test {
             rtc.get().await.unwrap(),
             RtcReading::Valid(utc_reference + UtcDuration::from_seconds(10))
         );
+    }
+
+    #[fuchsia::test]
+    fn rtc_read_only_write_timeout() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
+
+        // Bind a directory in the local namespace whose server channel is held open without
+        // servicing requests so that persistent state writes stall until timed out.
+        let (dir_client, _dir_server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_io::DirectoryMarker>();
+        let ns = fdio::Namespace::installed().expect("installed namespace");
+        ns.bind("/stalled_rtc_dir", dir_client).expect("bind stalled dir");
+
+        let state = Rc::new(RefCell::new(State::new(true)));
+        let rtc = new_read_only_rtc_with_dependencies(
+            state,
+            /* proxy= */ None,
+            |s| async move { State::write_internal("/stalled_rtc_dir/state.json", &s).await },
+            || zx::BootInstant::from_nanos(100),
+            RtcInitializationPolicy::Default,
+        );
+
+        let mut set_fut = pin!(rtc.set(UtcInstant::from_nanos(42000)));
+        assert!(executor.run_until_stalled(&mut set_fut).is_pending());
+
+        // Advance fake monotonic time past the 5-second persistent state I/O timeout.
+        executor
+            .set_fake_time(fasync::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(6)));
+        let res = executor.run_until_stalled(&mut set_fut);
+        assert_matches!(res, std::task::Poll::Ready(Err(_)));
+
+        let _ = ns.unbind("/stalled_rtc_dir");
     }
 }

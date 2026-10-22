@@ -5,15 +5,19 @@
 //! Testing-only code for persistent Timekeeper behavior changes around
 //! real-time clock (RTC) handling.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_runtime::UtcTimeline;
+use futures::TryFutureExt;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::Path;
 
 /// The path to the internal production persistent state file.
 const PERSISTENT_STATE_PATH: &'static str = "/data/persistent_state.json";
+
+/// Maximum time to wait for a persistent state file read or write operation.
+const PERSISTENT_STATE_IO_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
 /// How many reboots should the setting persist for?
 const REBOOT_COUNT: u8 = 1;
@@ -96,62 +100,134 @@ impl State {
     }
 
     /// Reads the persistent state, updating the testing-only components.
-    pub fn read_and_update() -> Result<Self> {
-        Self::read_and_update_internal(PERSISTENT_STATE_PATH)
+    pub async fn read_and_update() -> Result<Self> {
+        Self::read_and_update_internal(PERSISTENT_STATE_PATH).await
     }
 
-    pub fn read_and_update_internal<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub async fn read_and_update_internal<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        let maybe_state_str: String = fs::read_to_string(path).map_err(|e| {
-            debug!("while reading: {:?}", e);
-            e
-        })?;
+        let path_str = path.to_str().ok_or_else(|| anyhow!("non-utf8 path: {path:?}"))?;
+        let maybe_state_str: String = fuchsia_fs::file::read_in_namespace_to_string(path_str)
+            .map_err(|e| {
+                debug!("while reading: {e:?}");
+                anyhow::Error::from(e)
+            })
+            .on_timeout(fasync::MonotonicInstant::after(PERSISTENT_STATE_IO_TIMEOUT), || {
+                debug!("timed out reading persistent state from {path:?}");
+                Err(anyhow!("timed out reading persistent state from {path:?}"))
+            })
+            .await?;
         let state: State = serde_json::from_str(&maybe_state_str).map_err(|e| {
-            debug!("while deserializing: {:?}", e);
+            debug!("while deserializing: {e:?}");
             e
         })?;
         // TODO(b/478927688): Convert to `debug!` once fix is confirmed.
         log::info!("read persistent RTC state: {state:?}");
         let mut next = state.clone();
         next.spend_one_reboot_count();
-        Self::write_internal(path, &next)?;
+        Self::write_internal(path, &next).await?;
         Ok(state)
     }
 
     /// Write the persistent state to mutable persistent storage.
-    pub fn write(state: &Self) -> Result<()> {
-        Self::write_internal(PERSISTENT_STATE_PATH, state)
+    pub async fn write(state: &Self) -> Result<()> {
+        Self::write_internal(PERSISTENT_STATE_PATH, state).await
     }
 
-    pub fn write_internal<P: AsRef<Path>>(path: P, state: &Self) -> Result<()> {
+    pub async fn write_internal<P: AsRef<Path>>(path: P, state: &Self) -> Result<()> {
         let path = path.as_ref();
+        let path_str = path.to_str().ok_or_else(|| anyhow!("non-utf8 path: {path:?}"))?;
         // TODO(b/478927688): Convert to `debug!` once fix is confirmed.
-        log::info!("writing persistent RTC state: {:?} to {:?}", state, path);
+        log::info!("writing persistent RTC state: {state:?} to {path:?}");
         let state_str = serde_json::to_string(state).map_err(|e| {
-            error!("while serializing state: {:?}", e);
+            error!("while serializing state: {e:?}");
             e
         })?;
-        fs::write(path, state_str).map_err(|e| {
-            error!("while writing persistent state: {:?}: {:?}", path, e);
-            e.into()
-        })
+        fuchsia_fs::file::write_in_namespace(path_str, state_str)
+            .map_err(|e| {
+                error!("while writing persistent state: {path:?}: {e:?}");
+                anyhow::Error::from(e)
+            })
+            .on_timeout(fasync::MonotonicInstant::after(PERSISTENT_STATE_IO_TIMEOUT), || {
+                error!("timed out writing persistent state: {path:?}");
+                Err(anyhow!("timed out writing persistent state: {path:?}"))
+            })
+            .await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_io as fio;
+    use std::pin::pin;
 
-    #[test]
-    fn test_roundtrip() {
+    #[fuchsia::test]
+    async fn test_roundtrip() {
         let d = tempfile::TempDir::new().expect("tempdir created");
         let p = d.path().join("file.json");
         let s = State::new(false);
-        State::write_internal(&p, &s).unwrap();
+        State::write_internal(&p, &s).await.unwrap();
 
         // First time around, we may not update the RTC.
-        assert!(!State::read_and_update_internal(&p).unwrap().may_update_rtc());
+        assert!(!State::read_and_update_internal(&p).await.unwrap().may_update_rtc());
         // Second time around, we may.
-        assert!(State::read_and_update_internal(&p).unwrap().may_update_rtc());
+        assert!(State::read_and_update_internal(&p).await.unwrap().may_update_rtc());
+    }
+
+    #[fuchsia::test]
+    fn test_read_and_write_timeout() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
+
+        // Bind a directory in the local namespace whose server channel is held open without
+        // servicing requests so that file operations stall indefinitely until timed out.
+        let (dir_client, _dir_server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+        let ns = fdio::Namespace::installed().expect("installed namespace");
+        ns.bind("/stalled_persistence_dir", dir_client).expect("bind stalled dir");
+
+        let path = "/stalled_persistence_dir/state.json";
+        let state = State::new(true);
+
+        // 1. Verify write_internal times out after PERSISTENT_STATE_IO_TIMEOUT.
+        {
+            let mut write_fut = pin!(State::write_internal(path, &state));
+            assert!(executor.run_until_stalled(&mut write_fut).is_pending());
+
+            executor.set_fake_time(fasync::MonotonicInstant::after(
+                PERSISTENT_STATE_IO_TIMEOUT - zx::MonotonicDuration::from_millis(1),
+            ));
+            assert!(executor.run_until_stalled(&mut write_fut).is_pending());
+
+            executor.set_fake_time(fasync::MonotonicInstant::after(
+                zx::MonotonicDuration::from_millis(2),
+            ));
+            let res = executor.run_until_stalled(&mut write_fut);
+            match res {
+                std::task::Poll::Ready(Err(err)) => {
+                    assert!(err.to_string().contains("timed out"), "unexpected error: {err:?}");
+                }
+                other => panic!("expected Ready(Err), got {other:?}"),
+            }
+        }
+
+        // 2. Verify read_and_update_internal times out after PERSISTENT_STATE_IO_TIMEOUT.
+        {
+            let mut read_fut = pin!(State::read_and_update_internal(path));
+            assert!(executor.run_until_stalled(&mut read_fut).is_pending());
+
+            executor.set_fake_time(fasync::MonotonicInstant::after(
+                PERSISTENT_STATE_IO_TIMEOUT + zx::MonotonicDuration::from_millis(1),
+            ));
+            let res = executor.run_until_stalled(&mut read_fut);
+            match res {
+                std::task::Poll::Ready(Err(err)) => {
+                    assert!(err.to_string().contains("timed out"), "unexpected error: {err:?}");
+                }
+                other => panic!("expected Ready(Err), got {other:?}"),
+            }
+        }
+
+        let _ = ns.unbind("/stalled_persistence_dir");
     }
 }

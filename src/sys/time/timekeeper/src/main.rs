@@ -346,6 +346,7 @@ async fn main() -> Result<()> {
 
     let persistent_state = Rc::new(RefCell::new(
         time_persistence::State::read_and_update()
+            .await
             .map_err(|e| {
                 persistence_health
                     .borrow_mut()

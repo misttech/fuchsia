@@ -35,20 +35,23 @@ impl Server {
         Server { health_node, persistent_state }
     }
 
-    fn set_may_update_rtc<F, E>(&self, value: bool, update_fn: F) -> Result<()>
+    async fn set_may_update_rtc<F, E>(&self, value: bool, update_fn: F) -> Result<()>
     where
         // All this to allow using `responder`s of two different types...
         F: FnOnce() -> Result<(), E>,
         E: 'static + std::error::Error + Send + Sync,
     {
         let health = self.health_node.clone();
-        self.persistent_state.borrow_mut().set_may_update_rtc(value);
-        {
-            update_fn()?;
-            State::write(&self.persistent_state.borrow())
-        }
-        .map(|_| health.borrow_mut().set_ok())
-        .map_err(|e| {
+        let state = {
+            let mut state_mut = self.persistent_state.borrow_mut();
+            state_mut.set_may_update_rtc(value);
+            state_mut.clone()
+        };
+        let res = match update_fn() {
+            Ok(()) => State::write(&state).await,
+            Err(e) => Err(e.into()),
+        };
+        res.map(|_| health.borrow_mut().set_ok()).map_err(|e| {
             health
                 .borrow_mut()
                 .set_unhealthy(&format!("at runtime: {:?}; use #DEBUG logs for details", e));
@@ -66,11 +69,11 @@ impl Server {
             match request {
                 Ok(fftt::RtcRequest::PersistentEnable { responder, .. }) => {
                     debug!("received: fuchsia.time.test/Rtc.PersistentEnable");
-                    self.set_may_update_rtc(true, || responder.send(Ok(())))?;
+                    self.set_may_update_rtc(true, || responder.send(Ok(()))).await?;
                 }
                 Ok(fftt::RtcRequest::PersistentDisable { responder, .. }) => {
                     debug!("received: fuchsia.time.test/Rtc.PersistentDisable");
-                    self.set_may_update_rtc(false, || responder.send(Ok(())))?;
+                    self.set_may_update_rtc(false, || responder.send(Ok(()))).await?;
                 }
                 Err(e) => {
                     error!("FIDL error: {:?}", e);
