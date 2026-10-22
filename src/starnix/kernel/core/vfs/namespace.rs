@@ -73,6 +73,25 @@ impl Namespace {
         self.root_mount.root()
     }
 
+    /// Consumes a bootstrap `Namespace`, panicking if any references to the namespace, its root
+    /// mount, or its underlying filesystem remain, or if any entries were created in its root.
+    pub(super) fn destroy_bootstrap(self: Arc<Self>) {
+        let ns = Arc::into_inner(self).expect("bootstrap namespace still referenced");
+        let root_mount =
+            Arc::into_inner(ns.root_mount).expect("bootstrap root mount still referenced");
+        assert_eq!(root_mount.active_clients(), 0);
+        assert_eq!(root_mount.relations.submounts_len(), 0);
+        assert_eq!(Arc::strong_count(&root_mount.fs), 1, "bootstrap filesystem still referenced");
+        // Both `root_mount.root` and `root_mount.fs.root` hold a strong reference to the root
+        // `DirEntry`. Any child `DirEntry` created under the root would also hold a parent
+        // reference, increasing the strong count above 2.
+        assert_eq!(
+            Arc::strong_count(&root_mount.root),
+            2,
+            "bootstrap root directory must not have children or external references"
+        );
+    }
+
     pub fn kernel(&self) -> Arc<Kernel> {
         self.root_mount.kernel()
     }

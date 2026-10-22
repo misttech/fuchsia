@@ -48,13 +48,13 @@ use starnix_core::task::{
     CurrentTask, ExitStatus, Kernel, OomWatermarksMb, RoleOverrides, SchedulerManager,
     parse_cmdline,
 };
-use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, WhatToMount};
+use starnix_core::vfs::{FileSystemOptions, LookupContext, Namespace, WhatToMount};
 use starnix_logging::{
     CATEGORY_STARNIX, NAME_CREATE_CONTAINER, log_debug, log_error, log_info, log_warn,
 };
 use starnix_modules::{
-    LayeredFsBuilder, LayeredFsMounts, OverlayStack, init_common_devices,
-    register_common_file_systems, register_common_syscalls,
+    LayeredFsBuilder, OverlayStack, init_common_devices, register_common_file_systems,
+    register_common_syscalls,
 };
 
 use starnix_task_command::TaskCommand;
@@ -853,24 +853,21 @@ async fn create_container(
         device_tree,
     )
     .with_source_context(|| format!("creating Kernel: {}", start_info.program.name))?;
-    let (fs_context, feature_mounts) =
-        create_fs_context(&kernel, &features, start_info, &pkg_dir_proxy)
-            .source_context("creating FsContext")?;
     let init_pid = kernel.pids.lock().allocate_pid().source_context("allocating init pid")?;
     let init_tid = init_pid.id;
     // Lots of software assumes that the pid for the init process is 1.
     debug_assert_eq!(init_tid, 1);
 
-    let system_task =
-        create_system_task(&kernel, fs_context).source_context("create system task")?;
+    let system_task = create_system_task(&kernel).source_context("create system task")?;
     // The system task gives pid 2. This value is less critical than giving
     // pid 1 to init, but this value matches what is supposed to happen.
     debug_assert_eq!(system_task.tid.id, 2);
 
-    feature_mounts(&system_task).source_context("mounting feature filesystems")?;
-
     kernel.kthreads.init(system_task).source_context("initializing kthreads")?;
     let system_task = kernel.kthreads.system_task();
+
+    init_fs_context(&system_task, &features, start_info, &pkg_dir_proxy)
+        .source_context("initializing FsContext")?;
 
     kernel.syslog.init(&kernel).source_context("initializing syslog")?;
 
@@ -988,12 +985,13 @@ async fn create_container(
     })
 }
 
-fn create_fs_context(
-    kernel: &Kernel,
+fn init_fs_context(
+    system_task: &CurrentTask,
     features: &Features,
     start_info: &ContainerStartInfo,
     pkg_dir_proxy: &fio::DirectorySynchronousProxy,
-) -> Result<(Arc<FsContext>, LayeredFsMounts), Error> {
+) -> Result<(), Error> {
+    let kernel = system_task.kernel();
     // The mounts are applied in the order listed. Mounting will fail if the designated mount
     // point doesn't exist in a previous mount. The root must be first so other mounts can be
     // applied on top of it.
@@ -1062,7 +1060,12 @@ fn create_fs_context(
         root_fs = OverlayStack::wrap_fs_in_writable_layer(kernel, root_fs)?;
     }
 
-    Ok((FsContext::new(Namespace::new_with_flags(root_fs, root.flags)), feature_mounts))
+    system_task
+        .fs()
+        .replace_bootstrap_namespace(system_task, Namespace::new_with_flags(root_fs, root.flags));
+    feature_mounts(system_task).source_context("mounting feature filesystems")?;
+
+    Ok(())
 }
 
 pub(crate) fn parse_rlimits(rlimits: &[String]) -> Result<Vec<(Resource, u64)>, Error> {

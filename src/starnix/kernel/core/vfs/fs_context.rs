@@ -154,6 +154,25 @@ impl FsContext {
         Ok(())
     }
 
+    /// Replaces the bootstrap `Namespace` backing this `FsContext`, resetting both `root` and
+    /// `cwd` to the root of `new_ns`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the outgoing bootstrap `Namespace`, its root mount, or its underlying filesystem
+    /// still have any other references or created entries.
+    pub fn replace_bootstrap_namespace(&self, current_task: &CurrentTask, new_ns: Arc<Namespace>) {
+        let mut state = self.state.write();
+        let root = new_ns.root();
+        let old_root = std::mem::replace(&mut state.root, root.clone().into_active());
+        let old_cwd = std::mem::replace(&mut state.cwd, root.into_active());
+        let old_ns = std::mem::replace(&mut state.namespace, new_ns);
+        drop(state);
+        drop((old_root, old_cwd));
+        old_ns.destroy_bootstrap();
+        current_task.trigger_delayed_releaser();
+    }
+
     pub fn unshare_namespace(&self) {
         let mut state = self.state.write();
         let kernel = state.namespace.kernel();

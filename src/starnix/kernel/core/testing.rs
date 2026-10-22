@@ -20,8 +20,8 @@ use crate::task::{
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     Anon, CacheMode, DirEntry, FdNumber, FileHandle, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsContext, FsNode, FsNodeFlags,
-    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use fidl_fuchsia_io as fio;
@@ -198,8 +198,7 @@ where
     FS: FnOnce(&Kernel) -> FileSystemHandle,
 {
     let kernel = create_test_kernel(security_server, features, scheduler);
-    let fs = create_test_fs_context(&kernel, fs_factory);
-    let init_task = create_test_init_task(&kernel, fs);
+    let init_task = create_test_init_task(&kernel, fs_factory);
     fasync::unblock(move || {
         let (sender, receiver) = mpsc::sync_channel(1);
         let error = execute_task_with_prerun_result(
@@ -239,13 +238,6 @@ fn create_test_kernel(
     .expect("failed to create kernel")
 }
 
-fn create_test_fs_context(
-    kernel: &Kernel,
-    create_fs: impl FnOnce(&Kernel) -> FileSystemHandle,
-) -> Arc<FsContext> {
-    FsContext::new(Namespace::new(create_fs(kernel)))
-}
-
 /// Initializes a 64-bit address-space for the specified `task`.
 fn create_test_mm(task: &Task) -> Result<Arc<MemoryManager>, Errno> {
     let arch_width = ArchWidth::Arch64;
@@ -257,24 +249,29 @@ fn create_test_mm(task: &Task) -> Result<Arc<MemoryManager>, Errno> {
     Ok(mm)
 }
 
-fn create_test_init_task(kernel: &Kernel, fs: Arc<FsContext>) -> TaskBuilder {
+fn create_test_init_task(
+    kernel: &Arc<Kernel>,
+    create_fs: impl FnOnce(&Kernel) -> FileSystemHandle,
+) -> TaskBuilder {
     let init_pid = kernel.pids.lock().allocate_pid().expect("allocating init pid");
     assert_eq!(init_pid.id, 1);
+
+    let system_task = create_system_task(kernel).expect("create system task");
+    kernel.kthreads.init(system_task).expect("failed to initialize kthreads");
+
+    let system_task = kernel.kthreads.system_task();
+    system_task.fs().replace_bootstrap_namespace(system_task, Namespace::new(create_fs(kernel)));
+
     let init_task = create_init_process(
-        &kernel.weak_self.upgrade().unwrap(),
+        kernel,
         init_pid,
         TaskCommand::new(b"test-task"),
-        fs.fork(),
+        system_task.fs().fork(),
         &[],
     )
     .expect("failed to create first task");
     create_test_mm(&init_task).expect("failed to create MM");
 
-    let system_task =
-        create_system_task(&kernel.weak_self.upgrade().unwrap(), fs).expect("create system task");
-    kernel.kthreads.init(system_task).expect("failed to initialize kthreads");
-
-    let system_task = kernel.kthreads.system_task();
     kernel.hrtimer_manager.init(&system_task).expect("init hrtimer manager worker thread");
 
     // Take the lock on thread group and task in the correct order to ensure any wrong ordering

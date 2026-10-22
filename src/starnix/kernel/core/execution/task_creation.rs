@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fs::tmpfs::TmpFs;
 use crate::mm::MemoryManager;
 use crate::security;
 use crate::signals::SignalActions;
@@ -9,7 +10,7 @@ use crate::task::{
     CurrentTask, Kernel, Pid, PidTableGuard, RobustListHeadPtr, SeccompFilterContainer,
     SeccompState, Task, TaskBuilder, ThreadGroup, ThreadGroupParent, ThreadGroupWriteGuard,
 };
-use crate::vfs::{FsContext, SharedFdTable};
+use crate::vfs::{FsContext, Namespace, SharedFdTable};
 use starnix_sync::allow_subclass;
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -146,8 +147,8 @@ fn create_shared(
 /// `init` means that `init` is responsible for waiting on the process when it dies and thereby
 /// cleaning up its zombie.
 ///
-/// If you just need a kernel task, and not an entire userspace process, consider using
-/// `create_system_task` instead. Even better, consider using the `kthreads` threadpool.
+/// If you just need a kernel task, and not an entire userspace process, consider using the
+/// `kthreads` threadpool instead.
 ///
 /// If `seclabel` is set, or the container specified a `default_seclabel`, then it will be
 /// resolved against the `kernel`'s active security policy, and applied to the new task.
@@ -222,8 +223,8 @@ pub fn create_init_child_process(
 /// tasks cannot be created by userspace directly.
 ///
 /// This function should only be called as part of booting a kernel instance. To create a
-/// process after the kernel has already booted, consider `create_init_child_process`
-/// or `create_system_task`.
+/// process after the kernel has already booted, consider `create_init_child_process`, or use
+/// `kthreads` for kernel background work.
 ///
 /// The process created by this function should always have pid 1. We require the caller to
 /// pass the `pid` as an argument to clarify that it's the callers responsibility to determine
@@ -260,18 +261,21 @@ pub fn create_init_process(
     Ok(builder)
 }
 
-/// Create a task that runs inside the kernel.
+/// Creates the `kthreadd` system task that runs inside the kernel.
 ///
 /// There is no underlying Zircon process to host the task. Instead, the work done by this task
-/// is performed by a thread in the original Starnix process, possible as part of a thread
+/// is performed by a thread in the original Starnix process, possibly as part of a thread
 /// pool.
 ///
-/// This function is the preferred way to create a context for doing background work inside the
-/// kernel.
+/// The task is initialized with a temporary bootstrap `"rootfs"` [`TmpFs`] intended to be
+/// replaced with the container's root filesystem via [`FsContext::replace_bootstrap_namespace`]
+/// during kernel boot.
 ///
-/// Rather than calling this function directly, consider using `kthreads`, which provides both
-/// a system task and a threadpool on which the task can do work.
-pub fn create_system_task(kernel: &Arc<Kernel>, fs: Arc<FsContext>) -> Result<CurrentTask, Errno> {
+/// This function should only be called during kernel initialization to set up `kthreads`. To do
+/// background work inside the kernel after boot, use `kthreads`, which provides both the system
+/// task and a threadpool on which it can do work.
+pub fn create_system_task(kernel: &Arc<Kernel>) -> Result<CurrentTask, Errno> {
+    let fs = FsContext::new(Namespace::new(TmpFs::new_fs_with_name(kernel, "rootfs".into())));
     let builder = create_task(
         kernel,
         TaskCommand::new(b"kthreadd"),
