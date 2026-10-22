@@ -95,15 +95,13 @@ group("factory_with_sw_codecs") {
 group("sw_codecs") {
   deps = [
     ":codec_runner_sw_aac_comp",
+
+    # TODO(https://fxbug.dev/568150653): Remove once Chromium's
+    # platform_video_codecs.shard.test-cml switches to codec_factory_for_test
+    # and rolls into Fuchsia.
+    ":codec_runner_sw_ffmpeg_comp",
     ":codec_runner_sw_sbc_comp",
   ]
-
-  # TODO(https://fxbug.dev/568150653): Remove once Chromium's
-  # platform_video_codecs.shard.test-cml switches to codec_factory_for_test and
-  # rolls into Fuchsia.
-  if (target_cpu == "x64") {
-    deps += [ ":codec_runner_sw_ffmpeg_comp" ]
-  }
 }
 
 fuchsia_component("codec_runner_sw_sbc_comp") {
