@@ -5,7 +5,7 @@
 mod helpers;
 
 use crate::helpers::run_test;
-use fidl_fuchsia_test_manager::{CaseStatus, SuiteStatus};
+use fidl_fuchsia_test_manager::{SuiteResult, TestCaseResult};
 use test_manager_test_lib::{GroupRunEventByTestCase as _, RunEvent};
 
 #[fuchsia::test]
@@ -21,11 +21,11 @@ async fn launch_and_run_hugetest() {
         expected_events.extend(vec![
             RunEvent::case_found(&s),
             RunEvent::case_started(&s),
-            RunEvent::case_stopped(&s, CaseStatus::Passed),
+            RunEvent::case_stopped(&s, TestCaseResult::Passed),
             RunEvent::case_finished(s),
         ])
     }
-    expected_events.push(RunEvent::suite_stopped(SuiteStatus::Passed));
+    expected_events.push(RunEvent::suite_stopped(SuiteResult::Finished));
     let expected_events = expected_events.into_iter().group_by_test_case_unordered();
     assert_eq!(expected_events, events);
 }

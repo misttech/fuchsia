@@ -5,7 +5,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use fidl_fuchsia_test_manager::{CaseStatus, RunSuiteOptions};
+use fidl_fuchsia_test_manager::{RunSuiteOptions, TestCaseResult};
 use fuchsia_async;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
@@ -72,7 +72,7 @@ async fn run_example_sharded_test() {
         .into_iter()
         .filter_map(|event| match event {
             RunEvent::CaseStopped { name, status } => {
-                assert_eq!(status, CaseStatus::Passed, "case {name} failed");
+                assert_eq!(status, TestCaseResult::Passed, "case {name} failed");
                 Some(name)
             }
             _ => None,
@@ -114,7 +114,7 @@ async fn run_example_sharded_test_with_expectations() {
         .into_iter()
         .filter_map(|event| match event {
             RunEvent::CaseStopped { name, status } => {
-                assert_eq!(status, CaseStatus::Passed, "case {name} failed");
+                assert_eq!(status, TestCaseResult::Passed, "case {name} failed");
                 Some(name)
             }
             _ => None,
@@ -154,7 +154,7 @@ async fn run_example_sharded_test_with_shard_part_regex() {
         for event in events {
             match event {
                 RunEvent::CaseStopped { name, status } => {
-                    assert_eq!(status, CaseStatus::Passed, "case {name} failed");
+                    assert_eq!(status, TestCaseResult::Passed, "case {name} failed");
                     let (section, _case) =
                         name.split_once("::").expect("should match format section_*::case_*");
                     match section_to_shard.entry(section.to_string()) {

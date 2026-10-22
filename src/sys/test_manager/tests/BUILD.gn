@@ -58,7 +58,6 @@ rustc_test("test_manager_specified_realm_bin") {
     "//src/lib/diagnostics/selectors",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/sys/test_manager:test_lib",
     "//third_party/rust_crates:anyhow",

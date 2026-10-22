@@ -50,7 +50,7 @@ impl RunEvent {
 pub(crate) enum SuiteEventPayload {
     CaseFound(String, u32),
     CaseStarted(u32),
-    CaseStopped(u32, CaseStatus),
+    CaseStopped(u32, TestCaseResult),
     CaseFinished(u32),
     CaseStdout(u32, zx::Socket),
     CaseStderr(u32, zx::Socket),
@@ -58,7 +58,7 @@ pub(crate) enum SuiteEventPayload {
     SuiteSyslog(ftest_manager::Syslog),
     SuiteStderr(zx::Socket),
     SuiteStarted,
-    SuiteStopped(SuiteStatus),
+    SuiteStopped(SuiteResult),
     DebugData(ClientEnd<DebugDataIteratorMarker>),
 }
 
@@ -89,7 +89,7 @@ impl Into<FidlSuiteEvent> for SuiteEvents {
                 timestamp: Some(self.timestamp),
                 payload: Some(FidlSuiteEventPayload::CaseStopped(ftest_manager::CaseStopped {
                     identifier,
-                    status,
+                    status: to_case_status(status),
                 })),
                 ..Default::default()
             },
@@ -145,7 +145,7 @@ impl Into<FidlSuiteEvent> for SuiteEvents {
             SuiteEventPayload::SuiteStopped(status) => FidlSuiteEvent {
                 timestamp: Some(self.timestamp),
                 payload: Some(FidlSuiteEventPayload::SuiteStopped(ftest_manager::SuiteStopped {
-                    status,
+                    status: to_suite_status(status),
                 })),
                 ..Default::default()
             },
@@ -160,26 +160,26 @@ impl Into<FidlSuiteEvent> for SuiteEvents {
     }
 }
 
-fn to_case_result(status: CaseStatus) -> TestCaseResult {
+fn to_case_status(status: TestCaseResult) -> CaseStatus {
     match status {
-        CaseStatus::Passed => TestCaseResult::Passed,
-        CaseStatus::Failed => TestCaseResult::Failed,
-        CaseStatus::TimedOut => TestCaseResult::TimedOut,
-        CaseStatus::Skipped => TestCaseResult::Skipped,
-        CaseStatus::Error => TestCaseResult::Error,
-        _ => TestCaseResult::Error,
+        TestCaseResult::Passed => CaseStatus::Passed,
+        TestCaseResult::Failed => CaseStatus::Failed,
+        TestCaseResult::TimedOut => CaseStatus::TimedOut,
+        TestCaseResult::Skipped => CaseStatus::Skipped,
+        TestCaseResult::Error => CaseStatus::Error,
+        _ => CaseStatus::Error,
     }
 }
 
-fn to_suite_result(status: SuiteStatus) -> SuiteResult {
+fn to_suite_status(status: SuiteResult) -> SuiteStatus {
     match status {
-        SuiteStatus::Passed => SuiteResult::Finished,
-        SuiteStatus::Failed => SuiteResult::Failed,
-        SuiteStatus::DidNotFinish => SuiteResult::DidNotFinish,
-        SuiteStatus::TimedOut => SuiteResult::TimedOut,
-        SuiteStatus::Stopped => SuiteResult::Stopped,
-        SuiteStatus::InternalError => SuiteResult::InternalError,
-        _ => SuiteResult::InternalError,
+        SuiteResult::Finished => SuiteStatus::Passed,
+        SuiteResult::Failed => SuiteStatus::Failed,
+        SuiteResult::DidNotFinish => SuiteStatus::DidNotFinish,
+        SuiteResult::TimedOut => SuiteStatus::TimedOut,
+        SuiteResult::Stopped => SuiteStatus::Stopped,
+        SuiteResult::InternalError => SuiteStatus::InternalError,
+        _ => SuiteStatus::InternalError,
     }
 }
 
@@ -219,7 +219,7 @@ impl Into<FidlEvent> for SuiteEvents {
                 details: Some(FidlEventDetails::TestCaseStopped(
                     ftest_manager::TestCaseStoppedEventDetails {
                         test_case_id: Some(identifier),
-                        result: Some(to_case_result(status)),
+                        result: Some(status),
                         ..Default::default()
                     },
                 )),
@@ -291,7 +291,7 @@ impl Into<FidlEvent> for SuiteEvents {
                 timestamp: Some(self.timestamp),
                 details: Some(FidlEventDetails::SuiteStopped(
                     ftest_manager::SuiteStoppedEventDetails {
-                        result: Some(to_suite_result(status)),
+                        result: Some(status),
                         ..Default::default()
                     },
                 )),
@@ -326,7 +326,7 @@ impl SuiteEvents {
         }
     }
 
-    pub fn case_stopped(identifier: u32, status: CaseStatus) -> Self {
+    pub fn case_stopped(identifier: u32, status: TestCaseResult) -> Self {
         Self {
             timestamp: zx::MonotonicInstant::get().into_nanos(),
             payload: SuiteEventPayload::CaseStopped(identifier, status),
@@ -382,7 +382,7 @@ impl SuiteEvents {
         }
     }
 
-    pub fn suite_stopped(status: SuiteStatus) -> Self {
+    pub fn suite_stopped(status: SuiteResult) -> Self {
         Self {
             timestamp: zx::MonotonicInstant::get().into_nanos(),
             payload: SuiteEventPayload::SuiteStopped(status),
@@ -436,7 +436,7 @@ mod tests {
             Some(FidlSuiteEventPayload::CaseStarted(ftest_manager::CaseStarted { identifier: 2 }))
         );
 
-        let event = SuiteEvents::case_stopped(2, CaseStatus::Failed).into_suite_run_event();
+        let event = SuiteEvents::case_stopped(2, TestCaseResult::Failed).into_suite_run_event();
         assert_matches!(event.timestamp, Some(_));
         assert_eq!(
             event.payload,
@@ -477,7 +477,7 @@ mod tests {
             }))
         );
 
-        let event = SuiteEvents::suite_stopped(SuiteStatus::Failed).into_suite_run_event();
+        let event = SuiteEvents::suite_stopped(SuiteResult::Failed).into_suite_run_event();
         assert_matches!(event.timestamp, Some(_));
         assert_eq!(
             event.payload,
@@ -519,7 +519,7 @@ mod tests {
             }))
         );
 
-        let event = SuiteEvents::suite_stopped(SuiteStatus::Failed).into_event();
+        let event = SuiteEvents::suite_stopped(SuiteResult::Failed).into_event();
         assert_matches!(event.timestamp, Some(_));
         assert_eq!(
             event.details,
@@ -578,7 +578,7 @@ mod tests {
             ))
         );
 
-        let event = SuiteEvents::case_stopped(2, CaseStatus::Failed).into_event();
+        let event = SuiteEvents::case_stopped(2, TestCaseResult::Failed).into_event();
         assert_matches!(event.timestamp, Some(_));
         assert_eq!(
             event.details,
@@ -627,7 +627,7 @@ mod tests {
             ))
         );
 
-        let event = SuiteEvents::suite_stopped(SuiteStatus::Failed).into_event();
+        let event = SuiteEvents::suite_stopped(SuiteResult::Failed).into_event();
         assert_matches!(event.timestamp, Some(_));
         assert_eq!(
             event.details,

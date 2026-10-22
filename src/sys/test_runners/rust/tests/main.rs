@@ -5,7 +5,7 @@
 mod helpers;
 
 use crate::helpers::run_test;
-use fidl_fuchsia_test_manager::{CaseStatus, SuiteStatus};
+use fidl_fuchsia_test_manager::{SuiteResult, TestCaseResult};
 use pretty_assertions::assert_eq;
 use test_manager_test_lib::{GroupRunEventByTestCase as _, RunEvent};
 
@@ -21,9 +21,9 @@ async fn launch_and_test_echo_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("echo_integration_test"),
         RunEvent::case_started("echo_integration_test"),
-        RunEvent::case_stopped("echo_integration_test", CaseStatus::Passed),
+        RunEvent::case_stopped("echo_integration_test", TestCaseResult::Passed),
         RunEvent::case_finished("echo_integration_test"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -34,7 +34,7 @@ async fn launch_and_test_file_with_no_test() {
     let (events, _logs) = run_test(test_url, false, Some(10), vec![]).await.unwrap();
 
     let expected_events =
-        vec![RunEvent::suite_started(), RunEvent::suite_stopped(SuiteStatus::Passed)];
+        vec![RunEvent::suite_started(), RunEvent::suite_stopped(SuiteResult::Finished)];
     assert_eq!(expected_events, events);
 }
 async fn launch_and_run_sample_test_internal(parallel: u16) {
@@ -48,22 +48,22 @@ async fn launch_and_run_sample_test_internal(parallel: u16) {
         RunEvent::suite_started(),
         RunEvent::case_found("my_tests::failing_test"),
         RunEvent::case_started("my_tests::failing_test"),
-        RunEvent::case_stopped("my_tests::failing_test", CaseStatus::Failed),
+        RunEvent::case_stopped("my_tests::failing_test", TestCaseResult::Failed),
         RunEvent::case_finished("my_tests::failing_test"),
         RunEvent::case_found("my_tests::sample_test_one"),
         RunEvent::case_started("my_tests::sample_test_one"),
         RunEvent::case_stdout("my_tests::sample_test_one", "My only job is not to panic!()"),
-        RunEvent::case_stopped("my_tests::sample_test_one", CaseStatus::Passed),
+        RunEvent::case_stopped("my_tests::sample_test_one", TestCaseResult::Passed),
         RunEvent::case_finished("my_tests::sample_test_one"),
         RunEvent::case_found("my_tests::sample_test_two"),
         RunEvent::case_started("my_tests::sample_test_two"),
         RunEvent::case_stdout("my_tests::sample_test_two", "My only job is not to panic!()"),
-        RunEvent::case_stopped("my_tests::sample_test_two", CaseStatus::Passed),
+        RunEvent::case_stopped("my_tests::sample_test_two", TestCaseResult::Passed),
         RunEvent::case_finished("my_tests::sample_test_two"),
         RunEvent::case_found("my_tests::passing_test"),
         RunEvent::case_started("my_tests::passing_test"),
         RunEvent::case_stdout("my_tests::passing_test", "My only job is not to panic!()"),
-        RunEvent::case_stopped("my_tests::passing_test", CaseStatus::Passed),
+        RunEvent::case_stopped("my_tests::passing_test", TestCaseResult::Passed),
         RunEvent::case_finished("my_tests::passing_test"),
         RunEvent::case_found("my_tests::passing_test_with_zero_exit"),
         RunEvent::case_started("my_tests::passing_test_with_zero_exit"),
@@ -71,25 +71,25 @@ async fn launch_and_run_sample_test_internal(parallel: u16) {
             "my_tests::passing_test_with_zero_exit",
             "My only job is not to panic!()",
         ),
-        RunEvent::case_stopped("my_tests::passing_test_with_zero_exit", CaseStatus::Passed),
+        RunEvent::case_stopped("my_tests::passing_test_with_zero_exit", TestCaseResult::Passed),
         RunEvent::case_finished("my_tests::passing_test_with_zero_exit"),
         RunEvent::case_found("my_tests::ignored_failing_test"),
         RunEvent::case_started("my_tests::ignored_failing_test"),
-        RunEvent::case_stopped("my_tests::ignored_failing_test", CaseStatus::Skipped),
+        RunEvent::case_stopped("my_tests::ignored_failing_test", TestCaseResult::Skipped),
         RunEvent::case_finished("my_tests::ignored_failing_test"),
         RunEvent::case_found("my_tests::ignored_passing_test"),
         RunEvent::case_started("my_tests::ignored_passing_test"),
-        RunEvent::case_stopped("my_tests::ignored_passing_test", CaseStatus::Skipped),
+        RunEvent::case_stopped("my_tests::ignored_passing_test", TestCaseResult::Skipped),
         RunEvent::case_finished("my_tests::ignored_passing_test"),
         RunEvent::case_found("my_tests::test_custom_arguments"),
         RunEvent::case_started("my_tests::test_custom_arguments"),
-        RunEvent::case_stopped("my_tests::test_custom_arguments", CaseStatus::Passed),
+        RunEvent::case_stopped("my_tests::test_custom_arguments", TestCaseResult::Passed),
         RunEvent::case_finished("my_tests::test_custom_arguments"),
         RunEvent::case_found("my_tests::test_environ"),
         RunEvent::case_started("my_tests::test_environ"),
-        RunEvent::case_stopped("my_tests::test_environ", CaseStatus::Passed),
+        RunEvent::case_stopped("my_tests::test_environ", TestCaseResult::Passed),
         RunEvent::case_finished("my_tests::test_environ"),
-        RunEvent::suite_stopped(SuiteStatus::Failed),
+        RunEvent::suite_stopped(SuiteResult::Failed),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -184,7 +184,7 @@ async fn launch_and_run_sample_test_include_disabled() {
             .non_artifact_events
             .get(events_ignored_failing_test.non_artifact_events.len() - 2)
             .unwrap(),
-        &RunEvent::case_stopped("my_tests::ignored_failing_test", CaseStatus::Failed),
+        &RunEvent::case_stopped("my_tests::ignored_failing_test", TestCaseResult::Failed),
     );
 
     assert!(events_ignored_failing_test.stderr_events.len() > 1, "Expected > 1 log messages");
@@ -197,7 +197,7 @@ async fn launch_and_run_sample_test_include_disabled() {
             RunEvent::case_found("my_tests::ignored_passing_test"),
             RunEvent::case_started("my_tests::ignored_passing_test"),
             RunEvent::case_stdout("my_tests::ignored_passing_test", "Everybody ignores me"),
-            RunEvent::case_stopped("my_tests::ignored_passing_test", CaseStatus::Passed),
+            RunEvent::case_stopped("my_tests::ignored_passing_test", TestCaseResult::Passed),
             RunEvent::case_finished("my_tests::ignored_passing_test"),
         ]
         .into_iter()
@@ -218,11 +218,11 @@ async fn test_parallel_execution() {
         expected_events.extend(vec![
             RunEvent::case_found(&s),
             RunEvent::case_started(&s),
-            RunEvent::case_stopped(&s, CaseStatus::Passed),
+            RunEvent::case_stopped(&s, TestCaseResult::Passed),
             RunEvent::case_finished(&s),
         ])
     }
-    expected_events.push(RunEvent::suite_stopped(SuiteStatus::Passed));
+    expected_events.push(RunEvent::suite_stopped(SuiteResult::Finished));
     let expected_events = expected_events.into_iter().group_by_test_case_unordered();
     assert_eq!(expected_events, events);
 }

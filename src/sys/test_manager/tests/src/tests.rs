@@ -5,7 +5,7 @@
 use anyhow::{Context, Error};
 use fidl::endpoints;
 use fidl_fuchsia_test_manager as ftest_manager;
-use ftest_manager::{CaseStatus, RunOptions, RunSuiteOptions, SuiteStatus};
+use ftest_manager::{RunOptions, RunSuiteOptions, SuiteResult, TestCaseResult};
 use fuchsia_async as fasync;
 use fuchsia_component::client;
 use futures::channel::mpsc;
@@ -228,7 +228,7 @@ async fn calling_stop_should_stop_test() {
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(events, vec![RunEvent::suite_stopped(SuiteStatus::Stopped)]);
+    assert_eq!(events, vec![RunEvent::suite_stopped(SuiteResult::Stopped)]);
 }
 
 #[fuchsia::test]
@@ -241,9 +241,9 @@ async fn launch_and_test_subpackaged_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("EchoIntegrationTest.TestEcho"),
         RunEvent::case_started("EchoIntegrationTest.TestEcho"),
-        RunEvent::case_stopped("EchoIntegrationTest.TestEcho", CaseStatus::Passed),
+        RunEvent::case_stopped("EchoIntegrationTest.TestEcho", TestCaseResult::Passed),
         RunEvent::case_finished("EchoIntegrationTest.TestEcho"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());
@@ -257,9 +257,9 @@ async fn launch_and_test_subpackaged_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("echo_integration_test"),
         RunEvent::case_started("echo_integration_test"),
-        RunEvent::case_stopped("echo_integration_test", CaseStatus::Passed),
+        RunEvent::case_stopped("echo_integration_test", TestCaseResult::Passed),
         RunEvent::case_finished("echo_integration_test"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());
@@ -275,9 +275,9 @@ async fn launch_and_test_echo_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("EchoTest"),
         RunEvent::case_started("EchoTest"),
-        RunEvent::case_stopped("EchoTest", CaseStatus::Passed),
+        RunEvent::case_stopped("EchoTest", TestCaseResult::Passed),
         RunEvent::case_finished("EchoTest"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());
@@ -301,10 +301,10 @@ async fn launch_and_test_no_on_finished() {
         for i in 1..=3 {
             expected_events.push(RunEvent::case_stdout(case, format!("log{} for {}", i, case)));
         }
-        expected_events.push(RunEvent::case_stopped(case, CaseStatus::Passed));
+        expected_events.push(RunEvent::case_stopped(case, TestCaseResult::Passed));
         expected_events.push(RunEvent::case_finished(case));
     }
-    expected_events.push(RunEvent::suite_stopped(SuiteStatus::DidNotFinish));
+    expected_events.push(RunEvent::suite_stopped(SuiteResult::DidNotFinish));
     let expected_events = expected_events.into_iter().group_by_test_case_unordered();
 
     assert_eq!(&expected_events, &events);
@@ -337,9 +337,9 @@ async fn launch_and_test_isolated_data() {
         RunEvent::suite_started(),
         RunEvent::case_found("test_data_storage"),
         RunEvent::case_started("test_data_storage"),
-        RunEvent::case_stopped("test_data_storage", CaseStatus::Passed),
+        RunEvent::case_stopped("test_data_storage", TestCaseResult::Passed),
         RunEvent::case_finished("test_data_storage"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(&expected_events, &events);
@@ -358,17 +358,17 @@ async fn positive_filter_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("SampleTest2.SimplePass"),
         RunEvent::case_started("SampleTest2.SimplePass"),
-        RunEvent::case_stopped("SampleTest2.SimplePass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleTest2.SimplePass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleTest2.SimplePass"),
         RunEvent::case_found("SampleFixture.Test1"),
         RunEvent::case_started("SampleFixture.Test1"),
-        RunEvent::case_stopped("SampleFixture.Test1", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test1", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test1"),
         RunEvent::case_found("SampleFixture.Test2"),
         RunEvent::case_started("SampleFixture.Test2"),
-        RunEvent::case_stopped("SampleFixture.Test2", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test2", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test2"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -394,17 +394,17 @@ async fn negative_filter_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("SampleTest2.SimplePass"),
         RunEvent::case_started("SampleTest2.SimplePass"),
-        RunEvent::case_stopped("SampleTest2.SimplePass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleTest2.SimplePass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleTest2.SimplePass"),
         RunEvent::case_found("SampleFixture.Test1"),
         RunEvent::case_started("SampleFixture.Test1"),
-        RunEvent::case_stopped("SampleFixture.Test1", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test1", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test1"),
         RunEvent::case_found("SampleFixture.Test2"),
         RunEvent::case_started("SampleFixture.Test2"),
-        RunEvent::case_stopped("SampleFixture.Test2", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test2", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test2"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -426,13 +426,13 @@ async fn positive_and_negative_filter_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("SampleTest2.SimplePass"),
         RunEvent::case_started("SampleTest2.SimplePass"),
-        RunEvent::case_stopped("SampleTest2.SimplePass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleTest2.SimplePass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleTest2.SimplePass"),
         RunEvent::case_found("SampleFixture.Test2"),
         RunEvent::case_started("SampleFixture.Test2"),
-        RunEvent::case_stopped("SampleFixture.Test2", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test2", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test2"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -563,7 +563,7 @@ async fn collect_isolated_logs_from_generated_component_manifest() {
     );
 }
 
-fn get_stdmsgs_and_status(events: &Vec<RunEvent>) -> (Vec<String>, Option<SuiteStatus>) {
+fn get_stdmsgs_and_status(events: &Vec<RunEvent>) -> (Vec<String>, Option<SuiteResult>) {
     let mut stdmsgs = vec![];
     let mut s = None;
     for e in events {
@@ -592,7 +592,7 @@ async fn collect_isolated_logs_using_batch() {
     let (events, logs) = run_single_test(test_url, options).await.unwrap();
 
     let (stdmsgs, status) = get_stdmsgs_and_status(&events);
-    assert_eq!(status, Some(SuiteStatus::Passed), "{logs:#?}\n{stdmsgs:#?}");
+    assert_eq!(status, Some(SuiteResult::Finished), "{logs:#?}\n{stdmsgs:#?}");
     assert_eq!(
         logs.iter().map(|attributed| attributed.log.as_ref()).collect::<Vec<&str>>(),
         vec!["Started diagnostics publisher", "Finishing through Stop"],
@@ -609,7 +609,7 @@ async fn collect_isolated_logs_using_host_socket() {
     };
     let (events, logs) = run_single_test(test_url, options).await.unwrap();
     let (stdmsgs, status) = get_stdmsgs_and_status(&events);
-    assert_eq!(status, Some(SuiteStatus::Passed), "{logs:#?}\n{stdmsgs:#?}");
+    assert_eq!(status, Some(SuiteResult::Finished), "{logs:#?}\n{stdmsgs:#?}");
     assert_eq!(
         logs.iter().map(|attributed| attributed.log.as_ref()).collect::<Vec<&str>>(),
         vec!["Started diagnostics publisher", "Finishing through Stop"],
@@ -671,9 +671,9 @@ async fn custom_artifact_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("use_artifact"),
         RunEvent::case_started("use_artifact"),
-        RunEvent::case_stopped("use_artifact", CaseStatus::Passed),
+        RunEvent::case_stopped("use_artifact", TestCaseResult::Passed),
         RunEvent::case_finished("use_artifact"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
         RunEvent::suite_custom(".", "artifact.txt", "Hello, world!"),
     ]
     .into_iter()
@@ -704,9 +704,9 @@ async fn debug_data_test(compressed: bool) {
         RunEvent::suite_started(),
         RunEvent::case_found("publish_debug_data"),
         RunEvent::case_started("publish_debug_data"),
-        RunEvent::case_stopped("publish_debug_data", CaseStatus::Passed),
+        RunEvent::case_stopped("publish_debug_data", TestCaseResult::Passed),
         RunEvent::case_finished("publish_debug_data"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(
@@ -859,9 +859,9 @@ async fn custom_artifact_realm_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("use_artifact"),
         RunEvent::case_started("use_artifact"),
-        RunEvent::case_stopped("use_artifact", CaseStatus::Passed),
+        RunEvent::case_stopped("use_artifact", TestCaseResult::Passed),
         RunEvent::case_finished("use_artifact"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
         RunEvent::suite_custom("test_driver", "artifact.txt", "Hello, world!"),
     ]
     .into_iter()
@@ -944,7 +944,7 @@ async fn capability_access_test() {
         "fuchsia-pkg://fuchsia.com/test_manager_test#meta/nonhermetic_capability_test.cm";
     let (events, _) = run_single_test(test_url, default_run_option()).await.unwrap();
 
-    let failed_suite = RunEvent::suite_stopped(SuiteStatus::Failed);
+    let failed_suite = RunEvent::suite_stopped(SuiteResult::Failed);
 
     assert!(events.contains(&failed_suite));
 }
@@ -961,9 +961,9 @@ async fn launch_chromium_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("noop_test"),
         RunEvent::case_started("noop_test"),
-        RunEvent::case_stopped("noop_test", CaseStatus::Passed),
+        RunEvent::case_stopped("noop_test", TestCaseResult::Passed),
         RunEvent::case_finished("noop_test"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());
@@ -984,7 +984,7 @@ async fn calling_kill_should_kill_test_for_suite() {
 
     let controller = suite_run_instance.controller();
     let task = fasync::Task::spawn(async move {
-        suite_run_instance.collect_events_with_watch(sender, false, false).await
+        suite_run_instance.collect_events_with_watch(sender, false, true).await
     });
     // let the test start
     let _initial_event = recv.next().await.unwrap();
@@ -1026,7 +1026,7 @@ async fn calling_stop_should_stop_test_for_suite() {
 
     let controller = suite_run_instance.controller();
     let task = fasync::Task::spawn(async move {
-        suite_run_instance.collect_events_with_watch(sender, false, false).await
+        suite_run_instance.collect_events_with_watch(sender, false, true).await
     });
     // let the test start
     let _initial_event = recv.next().await.unwrap();
@@ -1046,7 +1046,7 @@ async fn calling_stop_should_stop_test_for_suite() {
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(events, vec![RunEvent::suite_stopped(SuiteStatus::Stopped)]);
+    assert_eq!(events, vec![RunEvent::suite_stopped(SuiteResult::Stopped)]);
 }
 
 #[fuchsia::test]
@@ -1060,9 +1060,9 @@ async fn launch_and_test_subpackaged_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("EchoIntegrationTest.TestEcho"),
         RunEvent::case_started("EchoIntegrationTest.TestEcho"),
-        RunEvent::case_stopped("EchoIntegrationTest.TestEcho", CaseStatus::Passed),
+        RunEvent::case_stopped("EchoIntegrationTest.TestEcho", TestCaseResult::Passed),
         RunEvent::case_finished("EchoIntegrationTest.TestEcho"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());
@@ -1077,9 +1077,9 @@ async fn launch_and_test_subpackaged_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("echo_integration_test"),
         RunEvent::case_started("echo_integration_test"),
-        RunEvent::case_stopped("echo_integration_test", CaseStatus::Passed),
+        RunEvent::case_stopped("echo_integration_test", TestCaseResult::Passed),
         RunEvent::case_finished("echo_integration_test"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());
@@ -1096,9 +1096,9 @@ async fn launch_and_test_echo_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("EchoTest"),
         RunEvent::case_started("EchoTest"),
-        RunEvent::case_stopped("EchoTest", CaseStatus::Passed),
+        RunEvent::case_stopped("EchoTest", TestCaseResult::Passed),
         RunEvent::case_finished("EchoTest"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());
@@ -1124,10 +1124,10 @@ async fn launch_and_test_no_on_finished_for_suite() {
         for i in 1..=3 {
             expected_events.push(RunEvent::case_stdout(case, format!("log{} for {}", i, case)));
         }
-        expected_events.push(RunEvent::case_stopped(case, CaseStatus::Passed));
+        expected_events.push(RunEvent::case_stopped(case, TestCaseResult::Passed));
         expected_events.push(RunEvent::case_finished(case));
     }
-    expected_events.push(RunEvent::suite_stopped(SuiteStatus::DidNotFinish));
+    expected_events.push(RunEvent::suite_stopped(SuiteResult::DidNotFinish));
     let expected_events = expected_events.into_iter().group_by_test_case_unordered();
 
     assert_eq!(&expected_events, &events);
@@ -1162,9 +1162,9 @@ async fn launch_and_test_isolated_data_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("test_data_storage"),
         RunEvent::case_started("test_data_storage"),
-        RunEvent::case_stopped("test_data_storage", CaseStatus::Passed),
+        RunEvent::case_stopped("test_data_storage", TestCaseResult::Passed),
         RunEvent::case_finished("test_data_storage"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(&expected_events, &events.into_iter().filter(not_debug_data).collect::<Vec<_>>());
@@ -1183,17 +1183,17 @@ async fn positive_filter_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("SampleTest2.SimplePass"),
         RunEvent::case_started("SampleTest2.SimplePass"),
-        RunEvent::case_stopped("SampleTest2.SimplePass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleTest2.SimplePass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleTest2.SimplePass"),
         RunEvent::case_found("SampleFixture.Test1"),
         RunEvent::case_started("SampleFixture.Test1"),
-        RunEvent::case_stopped("SampleFixture.Test1", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test1", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test1"),
         RunEvent::case_found("SampleFixture.Test2"),
         RunEvent::case_started("SampleFixture.Test2"),
-        RunEvent::case_stopped("SampleFixture.Test2", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test2", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test2"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -1219,17 +1219,17 @@ async fn negative_filter_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("SampleTest2.SimplePass"),
         RunEvent::case_started("SampleTest2.SimplePass"),
-        RunEvent::case_stopped("SampleTest2.SimplePass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleTest2.SimplePass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleTest2.SimplePass"),
         RunEvent::case_found("SampleFixture.Test1"),
         RunEvent::case_started("SampleFixture.Test1"),
-        RunEvent::case_stopped("SampleFixture.Test1", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test1", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test1"),
         RunEvent::case_found("SampleFixture.Test2"),
         RunEvent::case_started("SampleFixture.Test2"),
-        RunEvent::case_stopped("SampleFixture.Test2", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test2", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test2"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -1251,13 +1251,13 @@ async fn positive_and_negative_filter_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("SampleTest2.SimplePass"),
         RunEvent::case_started("SampleTest2.SimplePass"),
-        RunEvent::case_stopped("SampleTest2.SimplePass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleTest2.SimplePass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleTest2.SimplePass"),
         RunEvent::case_found("SampleFixture.Test2"),
         RunEvent::case_started("SampleFixture.Test2"),
-        RunEvent::case_stopped("SampleFixture.Test2", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleFixture.Test2", TestCaseResult::Passed),
         RunEvent::case_finished("SampleFixture.Test2"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -1295,7 +1295,7 @@ async fn no_suite_service_test_for_suite() {
         .unwrap();
     let (sender, _recv) = mpsc::channel(1024);
     let err = suite_run_instance
-        .collect_events(sender)
+        .collect_events_with_watch(sender, false, true)
         .await
         .expect_err("this should return instance not found error");
     let err = err.downcast::<test_manager_test_lib::SuiteLaunchError>().unwrap();
@@ -1315,7 +1315,7 @@ async fn test_not_resolved_for_suite() {
         .unwrap();
     let (sender, _recv) = mpsc::channel(1024);
     let err = suite_run_instance
-        .collect_events(sender)
+        .collect_events_with_watch(sender, false, true)
         .await
         .expect_err("this should return instance not found error");
     let err = err.downcast::<test_manager_test_lib::SuiteLaunchError>().unwrap();
@@ -1473,9 +1473,9 @@ async fn custom_artifact_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("use_artifact"),
         RunEvent::case_started("use_artifact"),
-        RunEvent::case_stopped("use_artifact", CaseStatus::Passed),
+        RunEvent::case_stopped("use_artifact", TestCaseResult::Passed),
         RunEvent::case_finished("use_artifact"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
         RunEvent::suite_custom(".", "artifact.txt", "Hello, world!"),
     ]
     .into_iter()
@@ -1485,7 +1485,6 @@ async fn custom_artifact_test_for_suite() {
 }
 
 #[test_case(true; "compressed debug_data")]
-#[test_case(false; "uncompressed debug_data")]
 #[fuchsia::test]
 async fn debug_data_test_for_suite(compressed: bool) {
     let test_url = "fuchsia-pkg://fuchsia.com/test_manager_test#meta/debug_data_write_test.cm";
@@ -1503,9 +1502,9 @@ async fn debug_data_test_for_suite(compressed: bool) {
         RunEvent::suite_started(),
         RunEvent::case_found("publish_debug_data"),
         RunEvent::case_started("publish_debug_data"),
-        RunEvent::case_stopped("publish_debug_data", CaseStatus::Passed),
+        RunEvent::case_stopped("publish_debug_data", TestCaseResult::Passed),
         RunEvent::case_finished("publish_debug_data"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     // Split `suite_events` into `DebugData` events and others.
@@ -1560,7 +1559,6 @@ async fn early_boot_profile_test_for_suite() {
 }
 
 #[test_case(true; "compressed debug_data")]
-#[test_case(false; "uncompressed debug_data")]
 #[fuchsia::test]
 async fn debug_data_isolated_test_for_suite(compressed: bool) {
     let test_url = "fuchsia-pkg://fuchsia.com/test_manager_test#meta/debug_data_write_test.cm";
@@ -1610,9 +1608,9 @@ async fn custom_artifact_realm_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("use_artifact"),
         RunEvent::case_started("use_artifact"),
-        RunEvent::case_stopped("use_artifact", CaseStatus::Passed),
+        RunEvent::case_stopped("use_artifact", TestCaseResult::Passed),
         RunEvent::case_finished("use_artifact"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
         RunEvent::suite_custom("test_driver", "artifact.txt", "Hello, world!"),
     ]
     .into_iter()
@@ -1702,7 +1700,7 @@ async fn capability_access_test_for_suite() {
     let (events, _) =
         run_single_test_for_suite(test_url, default_run_suite_options()).await.unwrap();
 
-    let failed_suite = RunEvent::suite_stopped(SuiteStatus::Failed);
+    let failed_suite = RunEvent::suite_stopped(SuiteResult::Failed);
 
     assert!(events.contains(&failed_suite));
 }
@@ -1720,9 +1718,9 @@ async fn launch_chromium_test_for_suite() {
         RunEvent::suite_started(),
         RunEvent::case_found("noop_test"),
         RunEvent::case_started("noop_test"),
-        RunEvent::case_stopped("noop_test", CaseStatus::Passed),
+        RunEvent::case_stopped("noop_test", TestCaseResult::Passed),
         RunEvent::case_finished("noop_test"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(logs, Vec::new());

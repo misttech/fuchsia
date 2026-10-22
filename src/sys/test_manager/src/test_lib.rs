@@ -5,10 +5,12 @@
 //! This crate provides helper functions for testing architecture tests.
 
 use anyhow::{Context as _, Error, bail};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_test_manager::{
-    self as ftest_manager, SuiteControllerProxy, SuiteEvent as FidlSuiteEvent,
+    self as ftest_manager, EventDetailsUnknown, SuiteControllerProxy, SuiteEvent as FidlSuiteEvent,
     SuiteEventPayload as FidlSuiteEventPayload, SuiteEventPayloadUnknown,
 };
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use linked_hash_map::LinkedHashMap;
@@ -18,7 +20,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use test_diagnostics::zstd_compress::Decoder;
 use test_diagnostics::{LogStream, collect_and_send_string_output, collect_string_from_socket};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub fn default_run_option() -> ftest_manager::RunOptions {
     ftest_manager::RunOptions {
@@ -437,7 +438,7 @@ impl SuiteEvent {
     pub fn case_stopped(
         timestamp: Option<i64>,
         name: String,
-        status: ftest_manager::CaseStatus,
+        status: ftest_manager::TestCaseResult,
     ) -> Self {
         SuiteEvent {
             timestamp,
@@ -452,7 +453,7 @@ impl SuiteEvent {
         }
     }
 
-    pub fn suite_stopped(timestamp: Option<i64>, status: ftest_manager::SuiteStatus) -> Self {
+    pub fn suite_stopped(timestamp: Option<i64>, status: ftest_manager::SuiteResult) -> Self {
         SuiteEvent {
             timestamp,
             payload: SuiteEventPayload::RunEvent(RunEvent::suite_stopped(status)),
@@ -510,11 +511,11 @@ pub enum RunEvent {
     CaseStarted { name: String },
     CaseStdout { name: String, stdout_message: String },
     CaseStderr { name: String, stderr_message: String },
-    CaseStopped { name: String, status: ftest_manager::CaseStatus },
+    CaseStopped { name: String, status: ftest_manager::TestCaseResult },
     CaseFinished { name: String },
     SuiteStarted,
     SuiteCustom { component: String, filename: String, contents: String },
-    SuiteStopped { status: ftest_manager::SuiteStatus },
+    SuiteStopped { status: ftest_manager::SuiteResult },
     DebugData { filename: String, socket: fidl::Socket },
 }
 
@@ -549,7 +550,7 @@ impl RunEvent {
         Self::CaseStderr { name: name.into(), stderr_message: stderr_message.into() }
     }
 
-    pub fn case_stopped<S>(name: S, status: ftest_manager::CaseStatus) -> Self
+    pub fn case_stopped<S>(name: S, status: ftest_manager::TestCaseResult) -> Self
     where
         S: Into<String>,
     {
@@ -580,7 +581,7 @@ impl RunEvent {
         }
     }
 
-    pub fn suite_stopped(status: ftest_manager::SuiteStatus) -> Self {
+    pub fn suite_stopped(status: ftest_manager::SuiteResult) -> Self {
         Self::SuiteStopped { status }
     }
 
@@ -756,7 +757,8 @@ impl FidlSuiteEventProcessor {
                         ))?;
                     }
                 }
-                SuiteEvent::case_stopped(timestamp, test_case_name, cs.status).into()
+                SuiteEvent::case_stopped(timestamp, test_case_name, to_case_result(cs.status))
+                    .into()
             }
             FidlSuiteEventPayload::CaseFinished(cf) => {
                 let test_case_name = self.get_test_case_name(cf.identifier);
@@ -894,7 +896,7 @@ impl FidlSuiteEventProcessor {
             FidlSuiteEventPayload::SuiteStopped(stopped) => SuiteEvent {
                 timestamp,
                 payload: SuiteEventPayload::RunEvent(RunEvent::SuiteStopped {
-                    status: stopped.status,
+                    status: to_suite_result(stopped.status),
                 }),
             }
             .into(),
@@ -947,7 +949,7 @@ impl FidlSuiteEventProcessor {
                 SuiteEvent::case_stopped(
                     timestamp,
                     test_case_name,
-                    to_case_status(cs.result.expect("result must be specified, please file bug.")),
+                    cs.result.expect("result must be specified, please file bug."),
                 )
                 .into()
             }
@@ -1137,13 +1139,11 @@ impl FidlSuiteEventProcessor {
             ftest_manager::EventDetails::SuiteStopped(stopped) => SuiteEvent {
                 timestamp,
                 payload: SuiteEventPayload::RunEvent(RunEvent::SuiteStopped {
-                    status: to_suite_status(
-                        stopped.result.expect("result must be specified, please file bug."),
-                    ),
+                    status: stopped.result.expect("result must be specified, please file bug."),
                 }),
             }
             .into(),
-            SuiteEventPayloadUnknown!() => panic!("Unrecognized SuiteEvent"),
+            EventDetailsUnknown!() => panic!("Unrecognized EventDetails"),
         };
         if let Some(item) = e {
             sender.send(item).await.context("Cannot send event")?;
@@ -1267,25 +1267,25 @@ impl SuiteRunInstance {
     }
 }
 
-fn to_case_status(outcome: ftest_manager::TestCaseResult) -> ftest_manager::CaseStatus {
+fn to_case_result(outcome: ftest_manager::CaseStatus) -> ftest_manager::TestCaseResult {
     match outcome {
-        ftest_manager::TestCaseResult::Passed => ftest_manager::CaseStatus::Passed,
-        ftest_manager::TestCaseResult::Failed => ftest_manager::CaseStatus::Failed,
-        ftest_manager::TestCaseResult::TimedOut => ftest_manager::CaseStatus::TimedOut,
-        ftest_manager::TestCaseResult::Skipped => ftest_manager::CaseStatus::Skipped,
-        ftest_manager::TestCaseResult::Error => ftest_manager::CaseStatus::Error,
-        _ => ftest_manager::CaseStatus::Error,
+        ftest_manager::CaseStatus::Passed => ftest_manager::TestCaseResult::Passed,
+        ftest_manager::CaseStatus::Failed => ftest_manager::TestCaseResult::Failed,
+        ftest_manager::CaseStatus::TimedOut => ftest_manager::TestCaseResult::TimedOut,
+        ftest_manager::CaseStatus::Skipped => ftest_manager::TestCaseResult::Skipped,
+        ftest_manager::CaseStatus::Error => ftest_manager::TestCaseResult::Error,
+        _ => ftest_manager::TestCaseResult::Error,
     }
 }
 
-fn to_suite_status(outcome: ftest_manager::SuiteResult) -> ftest_manager::SuiteStatus {
+fn to_suite_result(outcome: ftest_manager::SuiteStatus) -> ftest_manager::SuiteResult {
     match outcome {
-        ftest_manager::SuiteResult::Finished => ftest_manager::SuiteStatus::Passed,
-        ftest_manager::SuiteResult::Failed => ftest_manager::SuiteStatus::Failed,
-        ftest_manager::SuiteResult::DidNotFinish => ftest_manager::SuiteStatus::DidNotFinish,
-        ftest_manager::SuiteResult::TimedOut => ftest_manager::SuiteStatus::TimedOut,
-        ftest_manager::SuiteResult::Stopped => ftest_manager::SuiteStatus::Stopped,
-        ftest_manager::SuiteResult::InternalError => ftest_manager::SuiteStatus::InternalError,
-        _ => ftest_manager::SuiteStatus::InternalError,
+        ftest_manager::SuiteStatus::Passed => ftest_manager::SuiteResult::Finished,
+        ftest_manager::SuiteStatus::Failed => ftest_manager::SuiteResult::Failed,
+        ftest_manager::SuiteStatus::DidNotFinish => ftest_manager::SuiteResult::DidNotFinish,
+        ftest_manager::SuiteStatus::TimedOut => ftest_manager::SuiteResult::TimedOut,
+        ftest_manager::SuiteStatus::Stopped => ftest_manager::SuiteResult::Stopped,
+        ftest_manager::SuiteStatus::InternalError => ftest_manager::SuiteResult::InternalError,
+        _ => ftest_manager::SuiteResult::InternalError,
     }
 }

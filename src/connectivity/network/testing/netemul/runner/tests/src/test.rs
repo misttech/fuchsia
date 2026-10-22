@@ -40,7 +40,7 @@ where
 
 fn test_suite_sequence(
     contents: impl IntoIterator<Item = RunEvent>,
-    status: ftest_manager::SuiteStatus,
+    status: ftest_manager::SuiteResult,
 ) -> Vec<RunEvent> {
     std::iter::once(RunEvent::suite_started())
         .chain(contents)
@@ -48,7 +48,7 @@ fn test_suite_sequence(
         .collect()
 }
 
-fn test_case_sequence(name: &str, status: ftest_manager::CaseStatus) -> Vec<RunEvent> {
+fn test_case_sequence(name: &str, status: ftest_manager::TestCaseResult) -> Vec<RunEvent> {
     vec![
         RunEvent::case_found(name),
         RunEvent::case_started(name),
@@ -60,18 +60,18 @@ fn test_case_sequence(name: &str, status: ftest_manager::CaseStatus) -> Vec<RunE
 #[test_case(
     "rust-test",
     [
-        test_suite_sequence(vec![], ftest_manager::SuiteStatus::Failed),
-        test_case_sequence("pass", ftest_manager::CaseStatus::Passed),
-        test_case_sequence("fail", ftest_manager::CaseStatus::Failed),
+        test_suite_sequence(vec![], ftest_manager::SuiteResult::Failed),
+        test_case_sequence("pass", ftest_manager::TestCaseResult::Passed),
+        test_case_sequence("fail", ftest_manager::TestCaseResult::Failed),
     ];
     "rust"
 )]
 #[test_case(
     "gtest-test",
     [
-        test_suite_sequence(vec![], ftest_manager::SuiteStatus::Failed),
-        test_case_sequence("Gtest.Pass", ftest_manager::CaseStatus::Passed),
-        test_case_sequence("Gtest.Fail", ftest_manager::CaseStatus::Failed),
+        test_suite_sequence(vec![], ftest_manager::SuiteResult::Failed),
+        test_case_sequence("Gtest.Pass", ftest_manager::TestCaseResult::Passed),
+        test_case_sequence("Gtest.Fail", ftest_manager::TestCaseResult::Failed),
         vec![RunEvent::case_stdout("Gtest.Pass", "passing test stdout")],
         vec![RunEvent::case_stdout("Gtest.Fail", "failing test stdout")],
     ];
@@ -81,8 +81,8 @@ fn test_case_sequence(name: &str, status: ftest_manager::CaseStatus) -> Vec<RunE
     "elf-test",
     [
         test_suite_sequence(
-            test_case_sequence("main", ftest_manager::CaseStatus::Passed),
-            ftest_manager::SuiteStatus::Passed,
+            test_case_sequence("main", ftest_manager::TestCaseResult::Passed),
+            ftest_manager::SuiteResult::Finished,
         ),
         vec![RunEvent::case_stdout("main", "stdout msg")],
     ];

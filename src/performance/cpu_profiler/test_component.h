@@ -41,7 +41,7 @@ class TestComponent : public fidl::AsyncEventHandler<fuchsia_test_manager::Suite
   zx::result<> Destroy() override;
 
  private:
-  void OnSuiteEvent(std::vector<fuchsia_test_manager::SuiteEvent>);
+  void OnSuiteEvent(std::vector<fuchsia_test_manager::Event>);
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_test_manager::SuiteController> metadata) override;
 

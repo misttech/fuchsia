@@ -6,7 +6,7 @@ mod helpers;
 
 use crate::helpers::{assert_events_eq, run_test};
 use fidl_fuchsia_test_manager as ftest_manager;
-use ftest_manager::{CaseStatus, SuiteStatus};
+use ftest_manager::{SuiteResult, TestCaseResult};
 use maplit::hashset;
 use pretty_assertions::assert_eq;
 use test_manager_test_lib::{GroupRunEventByTestCase, RunEvent};
@@ -45,9 +45,9 @@ async fn launch_and_run_test_with_custom_args() {
         RunEvent::suite_started(),
         RunEvent::case_found("TestArg.TestArg"),
         RunEvent::case_started("TestArg.TestArg"),
-        RunEvent::case_stopped("TestArg.TestArg", CaseStatus::Passed),
+        RunEvent::case_stopped("TestArg.TestArg", TestCaseResult::Passed),
         RunEvent::case_finished("TestArg.TestArg"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -61,9 +61,9 @@ async fn launch_and_run_test_with_environ() {
         RunEvent::suite_started(),
         RunEvent::case_found("TestEnviron.TestEnviron"),
         RunEvent::case_started("TestEnviron.TestEnviron"),
-        RunEvent::case_stopped("TestEnviron.TestEnviron", CaseStatus::Passed),
+        RunEvent::case_stopped("TestEnviron.TestEnviron", TestCaseResult::Passed),
         RunEvent::case_finished("TestEnviron.TestEnviron"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -95,7 +95,7 @@ async fn launch_and_run_sample_test_include_disabled() {
     let expected_pass_events = vec![
         RunEvent::case_found("SampleDisabled.DISABLED_TestPass"),
         RunEvent::case_started("SampleDisabled.DISABLED_TestPass"),
-        RunEvent::case_stopped("SampleDisabled.DISABLED_TestPass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleDisabled.DISABLED_TestPass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleDisabled.DISABLED_TestPass"),
     ]
     .into_iter()
@@ -103,7 +103,7 @@ async fn launch_and_run_sample_test_include_disabled() {
     let mut expected_fail_events = hashset![
         RunEvent::case_found("SampleDisabled.DISABLED_TestFail"),
         RunEvent::case_started("SampleDisabled.DISABLED_TestFail"),
-        RunEvent::case_stopped("SampleDisabled.DISABLED_TestFail", CaseStatus::Failed),
+        RunEvent::case_stopped("SampleDisabled.DISABLED_TestFail", TestCaseResult::Failed),
         RunEvent::case_finished("SampleDisabled.DISABLED_TestFail"),
     ];
     let expected_skip_events = vec![
@@ -117,7 +117,7 @@ async fn launch_and_run_sample_test_include_disabled() {
         RunEvent::case_stdout("SampleDisabled.DynamicSkip", ""),
         // gtest does not force run test skipped with `GTEST_SKIP()`
         // https://github.com/google/googletest/issues/3831
-        RunEvent::case_stopped("SampleDisabled.DynamicSkip", CaseStatus::Skipped),
+        RunEvent::case_stopped("SampleDisabled.DynamicSkip", TestCaseResult::Skipped),
         RunEvent::case_finished("SampleDisabled.DynamicSkip"),
     ]
     .into_iter()
@@ -147,7 +147,7 @@ async fn launch_and_run_empty_test() {
     let (events, _logs) = run_test(test_url, default_options()).await.unwrap();
 
     let expected_events =
-        vec![RunEvent::suite_started(), RunEvent::suite_stopped(SuiteStatus::Passed)];
+        vec![RunEvent::suite_started(), RunEvent::suite_stopped(SuiteResult::Finished)];
 
     assert_eq!(expected_events, events);
 }
@@ -161,9 +161,9 @@ async fn launch_and_test_echo_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("EchoTest.TestEcho"),
         RunEvent::case_started("EchoTest.TestEcho"),
-        RunEvent::case_stopped("EchoTest.TestEcho", CaseStatus::Passed),
+        RunEvent::case_stopped("EchoTest.TestEcho", TestCaseResult::Passed),
         RunEvent::case_finished("EchoTest.TestEcho"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -183,11 +183,11 @@ async fn test_parallel_execution() {
         expected_events.extend(vec![
             RunEvent::case_found(&s),
             RunEvent::case_started(&s),
-            RunEvent::case_stopped(&s, CaseStatus::Passed),
+            RunEvent::case_stopped(&s, TestCaseResult::Passed),
             RunEvent::case_finished(&s),
         ])
     }
-    expected_events.push(RunEvent::suite_stopped(SuiteStatus::Passed));
+    expected_events.push(RunEvent::suite_stopped(SuiteResult::Finished));
     let expected_events = expected_events.into_iter().group_by_test_case_unordered();
     assert_events_eq(&expected_events, &events);
 }
@@ -206,7 +206,7 @@ async fn launch_and_test_zxtest_success() {
         vec![
             RunEvent::case_found("BasicTest.Basic"),
             RunEvent::case_started("BasicTest.Basic"),
-            RunEvent::case_stopped("BasicTest.Basic", CaseStatus::Passed),
+            RunEvent::case_stopped("BasicTest.Basic", TestCaseResult::Passed),
             RunEvent::case_finished("BasicTest.Basic"),
         ]
     );
@@ -215,7 +215,7 @@ async fn launch_and_test_zxtest_success() {
         vec![
             RunEvent::case_found("BasicTest.Basic2"),
             RunEvent::case_started("BasicTest.Basic2"),
-            RunEvent::case_stopped("BasicTest.Basic2", CaseStatus::Passed),
+            RunEvent::case_stopped("BasicTest.Basic2", TestCaseResult::Passed),
             RunEvent::case_finished("BasicTest.Basic2"),
         ]
     );
@@ -224,7 +224,7 @@ async fn launch_and_test_zxtest_success() {
         vec![
             RunEvent::case_found("BasicTest.SkipMe"),
             RunEvent::case_started("BasicTest.SkipMe"),
-            RunEvent::case_stopped("BasicTest.SkipMe", CaseStatus::Skipped),
+            RunEvent::case_stopped("BasicTest.SkipMe", TestCaseResult::Skipped),
             RunEvent::case_finished("BasicTest.SkipMe"),
         ]
     );
@@ -241,9 +241,9 @@ async fn launch_and_test_zxtest_failure() {
         RunEvent::suite_started(),
         RunEvent::case_found("BasicTest.BasicFailure"),
         RunEvent::case_started("BasicTest.BasicFailure"),
-        RunEvent::case_stopped("BasicTest.BasicFailure", CaseStatus::Failed),
+        RunEvent::case_stopped("BasicTest.BasicFailure", TestCaseResult::Failed),
         RunEvent::case_finished("BasicTest.BasicFailure"),
-        RunEvent::suite_stopped(SuiteStatus::Failed),
+        RunEvent::suite_stopped(SuiteResult::Failed),
     ];
 
     // zxtest prints to stdout and on failure to stderr, strip for comparison
@@ -272,9 +272,9 @@ async fn launch_and_test_gtest_setup_failure() {
         RunEvent::suite_started(),
         RunEvent::case_found("SetupFailingTest.Test"),
         RunEvent::case_started("SetupFailingTest.Test"),
-        RunEvent::case_stopped("SetupFailingTest.Test", CaseStatus::Failed),
+        RunEvent::case_stopped("SetupFailingTest.Test", TestCaseResult::Failed),
         RunEvent::case_finished("SetupFailingTest.Test"),
-        RunEvent::suite_stopped(SuiteStatus::Failed),
+        RunEvent::suite_stopped(SuiteResult::Failed),
     ];
 
     // gtest output is very detailed here, but we only want to test non-output events.
@@ -306,7 +306,7 @@ async fn launch_and_test_zxtest_setup_failure() {
         vec![
             RunEvent::case_found("SetupFailingTest.Test"),
             RunEvent::case_started("SetupFailingTest.Test"),
-            RunEvent::case_stopped("SetupFailingTest.Test", CaseStatus::Failed),
+            RunEvent::case_stopped("SetupFailingTest.Test", TestCaseResult::Failed),
             RunEvent::case_finished("SetupFailingTest.Test"),
         ]
     );
@@ -319,7 +319,7 @@ async fn launch_and_test_zxtest_setup_failure() {
         vec![
             RunEvent::case_found("SetupFailingTestSuite.Test"),
             RunEvent::case_started("SetupFailingTestSuite.Test"),
-            RunEvent::case_stopped("SetupFailingTestSuite.Test", CaseStatus::Failed),
+            RunEvent::case_stopped("SetupFailingTestSuite.Test", TestCaseResult::Failed),
             RunEvent::case_finished("SetupFailingTestSuite.Test"),
         ]
     );
@@ -340,7 +340,7 @@ async fn launch_and_test_zxtest_env_setup_failure() {
         vec![
             RunEvent::case_found("SomeSuite.SomeTest"),
             RunEvent::case_started("SomeSuite.SomeTest"),
-            RunEvent::case_stopped("SomeSuite.SomeTest", CaseStatus::Failed),
+            RunEvent::case_stopped("SomeSuite.SomeTest", TestCaseResult::Failed),
             RunEvent::case_finished("SomeSuite.SomeTest"),
         ]
     );

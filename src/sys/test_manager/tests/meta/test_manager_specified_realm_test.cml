@@ -19,16 +19,16 @@
     ],
     use: [
         {
-            protocol: "fuchsia.test.manager.RunBuilder",
+            protocol: "fuchsia.test.manager.SuiteRunner",
+            from: "#test_manager",
+        },
+        {
+            protocol: "fuchsia.test.manager.TestCaseEnumerator",
             from: "#test_manager",
         },
         {
             protocol: "fuchsia.component.Realm",
             from: "#test_realm",
-        },
-        {
-            protocol: "fuchsia.test.manager.Query",
-            from: "#test_manager",
         },
     ],
     offer: [

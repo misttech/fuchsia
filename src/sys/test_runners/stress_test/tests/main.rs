@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error};
-use fidl_fuchsia_test_manager::{CaseStatus, RunSuiteOptions, SuiteStatus};
+use fidl_fuchsia_test_manager::{RunSuiteOptions, SuiteResult, TestCaseResult};
 use pretty_assertions::assert_eq;
 use test_manager_test_lib::RunEvent;
 
@@ -28,9 +28,9 @@ async fn always_fail() {
         RunEvent::suite_started(),
         RunEvent::case_found("stress_test"),
         RunEvent::case_started("stress_test"),
-        RunEvent::case_stopped("stress_test", CaseStatus::Failed),
+        RunEvent::case_stopped("stress_test", TestCaseResult::Failed),
         RunEvent::case_finished("stress_test"),
-        RunEvent::suite_stopped(SuiteStatus::Failed),
+        RunEvent::suite_stopped(SuiteResult::Failed),
         RunEvent::case_stderr(
             "stress_test",
             "[instance_1]: This action is expected to fail immediately",
@@ -50,9 +50,9 @@ async fn always_pass() {
         RunEvent::suite_started(),
         RunEvent::case_found("stress_test"),
         RunEvent::case_started("stress_test"),
-        RunEvent::case_stopped("stress_test", CaseStatus::Passed),
+        RunEvent::case_stopped("stress_test", TestCaseResult::Passed),
         RunEvent::case_finished("stress_test"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -68,9 +68,9 @@ async fn timeout() {
         RunEvent::suite_started(),
         RunEvent::case_found("stress_test"),
         RunEvent::case_started("stress_test"),
-        RunEvent::case_stopped("stress_test", CaseStatus::Failed),
+        RunEvent::case_stopped("stress_test", TestCaseResult::Failed),
         RunEvent::case_finished("stress_test"),
-        RunEvent::suite_stopped(SuiteStatus::Failed),
+        RunEvent::suite_stopped(SuiteResult::Failed),
         RunEvent::case_stderr("stress_test", "[instance_1]: Action `takes_too_long` timed out"),
     ];
     assert_eq!(expected_events, events);
@@ -87,9 +87,9 @@ async fn echo() {
         RunEvent::suite_started(),
         RunEvent::case_found("stress_test"),
         RunEvent::case_started("stress_test"),
-        RunEvent::case_stopped("stress_test", CaseStatus::Passed),
+        RunEvent::case_stopped("stress_test", TestCaseResult::Passed),
         RunEvent::case_finished("stress_test"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }

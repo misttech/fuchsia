@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_test_manager as ftest_manager;
-use ftest_manager::{CaseStatus, SuiteStatus};
+use ftest_manager::{SuiteResult, TestCaseResult};
 use fuchsia_component::client;
 use futures::prelude::*;
 use pretty_assertions::assert_eq;
 use test_manager_test_lib::{
-    collect_string_from_socket_helper, collect_suite_events, default_run_option,
-    GroupRunEventByTestCase, RunEvent, TestBuilder, TestRunEventPayload,
+    GroupRunEventByTestCase, RunEvent, SuiteRunner, collect_string_from_socket_helper,
+    collect_suite_events_with_watch, default_run_suite_options,
 };
 
 async fn debug_data_stress_test(
@@ -21,28 +21,25 @@ async fn debug_data_stress_test(
     const TEST_URL: &str =
         "fuchsia-pkg://fuchsia.com/test_manager_stress_test#meta/debug_data_spam_test.cm";
 
-    let builder = TestBuilder::new(
-        client::connect_to_protocol::<ftest_manager::RunBuilderMarker>()
-            .expect("cannot connect to run builder proxy"),
+    let runner = SuiteRunner::new(
+        client::connect_to_protocol::<ftest_manager::SuiteRunnerMarker>()
+            .expect("cannot connect to suite runner proxy"),
     );
-    let mut options = default_run_option();
-    options.case_filters_to_run = Some(vec![case_name.into()]);
+    let mut options = default_run_suite_options();
+    options.test_case_filters = Some(vec![case_name.into()]);
     let suite_instance =
-        builder.add_suite(TEST_URL, options).await.expect("Cannot create suite instance");
-    let (run_events_result, suite_events_result) = futures::future::join(
-        builder.run_with_option(compressed),
-        collect_suite_events(suite_instance),
-    )
-    .await;
-
-    let suite_events = suite_events_result.unwrap().0;
+        runner.start_suite_run(TEST_URL, options).expect("Cannot create suite instance");
+    let (suite_events, _) =
+        collect_suite_events_with_watch(suite_instance, false, compressed).await.unwrap();
+    let (debug_data_events, suite_events): (Vec<_>, Vec<_>) =
+        suite_events.into_iter().partition(|e| matches!(e, RunEvent::DebugData { .. }));
     let expected_events = vec![
         RunEvent::suite_started(),
         RunEvent::case_found(case_name),
         RunEvent::case_started(case_name),
-        RunEvent::case_stopped(case_name, CaseStatus::Passed),
+        RunEvent::case_stopped(case_name, TestCaseResult::Passed),
         RunEvent::case_finished(case_name),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
 
     assert_eq!(
@@ -50,10 +47,12 @@ async fn debug_data_stress_test(
         expected_events.into_iter().group_by_test_case_unordered(),
     );
 
-    let test_run_events = stream::iter(run_events_result.unwrap());
+    let test_run_events = stream::iter(debug_data_events);
     let num_vmos = test_run_events
         .then(|run_event| async move {
-            let TestRunEventPayload::DebugData { filename, socket } = run_event.payload;
+            let RunEvent::DebugData { filename, socket } = run_event else {
+                unreachable!();
+            };
             let content = collect_string_from_socket_helper(socket, compressed)
                 .await
                 .unwrap_or_else(|e| panic!("cannot read socket for {}: {:?}", &filename, e));
@@ -79,22 +78,4 @@ async fn debug_data_stress_test_few_large_vmos() {
     const VMO_SIZE: usize = 1024 * 1024 * 400;
     const CASE_NAME: &'static str = "few_large_vmos";
     debug_data_stress_test(CASE_NAME, NUM_EXPECTED_VMOS, VMO_SIZE, true).await;
-}
-
-// Not using test-case crate as this would be deleted once the old API is deleted
-#[fuchsia::test]
-async fn debug_data_stress_test_many_vmos_uncompressed() {
-    const NUM_EXPECTED_VMOS: usize = 3250;
-    const VMO_SIZE: usize = 4096;
-    const CASE_NAME: &'static str = "many_small_vmos";
-    debug_data_stress_test(CASE_NAME, NUM_EXPECTED_VMOS, VMO_SIZE, false).await;
-}
-
-// Not using test-case crate as this would be deleted once the old API is deleted
-#[fuchsia::test]
-async fn debug_data_stress_test_few_large_vmos_uncompressed() {
-    const NUM_EXPECTED_VMOS: usize = 2;
-    const VMO_SIZE: usize = 1024 * 1024 * 400;
-    const CASE_NAME: &'static str = "few_large_vmos";
-    debug_data_stress_test(CASE_NAME, NUM_EXPECTED_VMOS, VMO_SIZE, false).await;
 }

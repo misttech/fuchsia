@@ -130,12 +130,13 @@ impl<T: RunSuiteFn + std::marker::Sync + std::marker::Send> Scheduler for Parall
 mod tests {
     use super::*;
     use crate::debug_data_processor::{DebugDataDirectory, DebugDataProcessor};
-    use crate::{facet, AboveRootCapabilitiesForTest};
+    use crate::{AboveRootCapabilitiesForTest, facet};
     use async_trait::async_trait;
     use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_test_manager::{RunOptions, SuiteControllerMarker};
+    use fidl_fuchsia_component_resolution as fresolution;
+    use fidl_fuchsia_pkg as fpkg;
+    use fidl_fuchsia_test_manager::{RunSuiteOptions, SuiteControllerMarker};
     use std::sync::{Arc, Mutex};
-    use {fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_pkg as fpkg};
 
     async fn create_fake_suite(test_url: String) -> Suite {
         let (_controller_proxy, controller_stream) =
@@ -150,15 +151,7 @@ mod tests {
         Suite {
             realm: None,
             test_url,
-            options: RunOptions {
-                parallel: None,
-                arguments: None,
-                run_disabled_tests: Some(false),
-                timeout: None,
-                case_filters_to_run: None,
-                log_iterator: None,
-                ..Default::default()
-            },
+            options: RunSuiteOptions { run_disabled_tests: Some(false), ..Default::default() },
             controller: controller_stream,
             resolver: resolver_proxy,
             pkg_resolver: pkg_resolver_proxy,
@@ -209,20 +202,14 @@ mod tests {
 
         parallel_executor.execute(suite_vec, diagnostics, &mut stop_recv, sender).await;
 
-        assert!(suite_runner
-            .test_vec
-            .lock()
-            .expect("expected locked")
-            .contains(&"suite_1".to_string()));
-        assert!(suite_runner
-            .test_vec
-            .lock()
-            .expect("expected locked")
-            .contains(&"suite_2".to_string()));
-        assert!(suite_runner
-            .test_vec
-            .lock()
-            .expect("expected locked")
-            .contains(&"suite_3".to_string()));
+        assert!(
+            suite_runner.test_vec.lock().expect("expected locked").contains(&"suite_1".to_string())
+        );
+        assert!(
+            suite_runner.test_vec.lock().expect("expected locked").contains(&"suite_2".to_string())
+        );
+        assert!(
+            suite_runner.test_vec.lock().expect("expected locked").contains(&"suite_3".to_string())
+        );
     }
 }

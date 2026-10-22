@@ -5,7 +5,7 @@
 use anyhow::{Context as _, Error};
 use fidl_fuchsia_test_manager as ftest_manager;
 use fidl_fuchsia_test_manager::RunSuiteOptions;
-use ftest_manager::{CaseStatus, SuiteStatus};
+use ftest_manager::{SuiteResult, TestCaseResult};
 use maplit::hashset;
 use pretty_assertions::assert_eq;
 use std::collections::{HashMap, HashSet};
@@ -88,9 +88,9 @@ async fn launch_and_run_test_with_custom_args() {
         RunEvent::suite_started(),
         RunEvent::case_found("TestArg.TestArg"),
         RunEvent::case_started("TestArg.TestArg"),
-        RunEvent::case_stopped("TestArg.TestArg", CaseStatus::Passed),
+        RunEvent::case_stopped("TestArg.TestArg", TestCaseResult::Passed),
         RunEvent::case_finished("TestArg.TestArg"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -104,9 +104,9 @@ async fn launch_and_run_test_with_environ() {
         RunEvent::suite_started(),
         RunEvent::case_found("TestEnviron.TestEnviron"),
         RunEvent::case_started("TestEnviron.TestEnviron"),
-        RunEvent::case_stopped("TestEnviron.TestEnviron", CaseStatus::Passed),
+        RunEvent::case_stopped("TestEnviron.TestEnviron", TestCaseResult::Passed),
         RunEvent::case_finished("TestEnviron.TestEnviron"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -123,7 +123,7 @@ async fn launch_and_run_sample_test_include_disabled() {
     let expected_pass_events = vec![
         RunEvent::case_found("SampleDisabled.DISABLED_TestPass"),
         RunEvent::case_started("SampleDisabled.DISABLED_TestPass"),
-        RunEvent::case_stopped("SampleDisabled.DISABLED_TestPass", CaseStatus::Passed),
+        RunEvent::case_stopped("SampleDisabled.DISABLED_TestPass", TestCaseResult::Passed),
         RunEvent::case_finished("SampleDisabled.DISABLED_TestPass"),
     ]
     .into_iter()
@@ -131,7 +131,7 @@ async fn launch_and_run_sample_test_include_disabled() {
     let mut expected_fail_events = hashset![
         RunEvent::case_found("SampleDisabled.DISABLED_TestFail"),
         RunEvent::case_started("SampleDisabled.DISABLED_TestFail"),
-        RunEvent::case_stopped("SampleDisabled.DISABLED_TestFail", CaseStatus::Failed),
+        RunEvent::case_stopped("SampleDisabled.DISABLED_TestFail", TestCaseResult::Failed),
         RunEvent::case_finished("SampleDisabled.DISABLED_TestFail"),
     ];
     let expected_skip_events = vec![
@@ -145,7 +145,7 @@ async fn launch_and_run_sample_test_include_disabled() {
         RunEvent::case_stdout("SampleDisabled.DynamicSkip", ""),
         // gunit does not force run test skipped with `GTEST_SKIP()`
         // https://github.com/google/googletest/issues/3831
-        RunEvent::case_stopped("SampleDisabled.DynamicSkip", CaseStatus::Skipped),
+        RunEvent::case_stopped("SampleDisabled.DynamicSkip", TestCaseResult::Skipped),
         RunEvent::case_finished("SampleDisabled.DynamicSkip"),
     ]
     .into_iter()
@@ -175,7 +175,7 @@ async fn launch_and_run_empty_test() {
     let (events, _logs) = run_test(test_url, default_options()).await.unwrap();
 
     let expected_events =
-        vec![RunEvent::suite_started(), RunEvent::suite_stopped(SuiteStatus::Passed)];
+        vec![RunEvent::suite_started(), RunEvent::suite_stopped(SuiteResult::Finished)];
 
     assert_eq!(expected_events, events);
 }

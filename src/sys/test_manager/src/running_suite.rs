@@ -30,7 +30,7 @@ use fidl_fuchsia_test as ftest;
 use fidl_fuchsia_test_manager as ftest_manager;
 use fidl_fuchsia_tracing_provider as ftracing_provider;
 use ftest::Invocation;
-use ftest_manager::{CaseStatus, LaunchError, SuiteStatus};
+use ftest_manager::{LaunchError, SuiteResult, TestCaseResult};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_component_test::error::Error as RealmBuilderError;
@@ -183,14 +183,14 @@ impl RunningSuite {
     pub(crate) async fn run_tests(
         &mut self,
         test_url: &str,
-        mut options: ftest_manager::RunOptions,
+        mut options: ftest_manager::RunSuiteOptions,
         mut sender: mpsc::Sender<Result<SuiteEvents, LaunchError>>,
         mut stop_recv: oneshot::Receiver<()>,
     ) {
         debug!("running test suite {}", test_url);
 
-        let (log_iterator, syslog) = match options.log_iterator {
-            Some(ftest_manager::LogsIteratorOption::SocketBatchIterator) => {
+        let (log_iterator, syslog) = match options.logs_iterator_type {
+            Some(ftest_manager::LogsIteratorType::Socket) => {
                 let (local, remote) = zx::Socket::create_stream();
                 (ftest_manager::LogsIterator::Stream(local), ftest_manager::Syslog::Stream(remote))
             }
@@ -280,7 +280,7 @@ impl RunningSuite {
         };
 
         let fut = async {
-            let matcher = match options.case_filters_to_run.as_ref() {
+            let matcher = match options.test_case_filters.as_ref() {
                 Some(filters) => match CaseMatcher::new(filters) {
                     Ok(p) => Some(p),
                     Err(e) => {
@@ -305,13 +305,13 @@ impl RunningSuite {
             };
             if let Ok(Some(_)) = stop_recv.try_recv() {
                 sender
-                    .send(Ok(SuiteEvents::suite_stopped(SuiteStatus::Stopped).into()))
+                    .send(Ok(SuiteEvents::suite_stopped(SuiteResult::Stopped).into()))
                     .await
                     .unwrap();
                 return Ok(());
             }
 
-            let mut suite_status = SuiteStatus::Passed;
+            let mut suite_status = SuiteResult::Finished;
             let mut invocations_iter = invocations.into_iter();
             let counter = AtomicU32::new(0);
             let timeout_time = match options.timeout {
@@ -332,7 +332,7 @@ impl RunningSuite {
                 }
                 if let Ok(Some(_)) = stop_recv.try_recv() {
                     sender
-                        .send(Ok(SuiteEvents::suite_stopped(SuiteStatus::Stopped).into()))
+                        .send(Ok(SuiteEvents::suite_stopped(SuiteResult::Stopped).into()))
                         .await
                         .unwrap();
                     return self.report_custom_artifacts(&mut sender).await;
@@ -353,12 +353,12 @@ impl RunningSuite {
                         return Err(e);
                     }
                 };
-                if res == SuiteStatus::TimedOut {
+                if res == SuiteResult::TimedOut {
                     if let Some(debug_agent) = &self.debug_agent {
                         debug_agent.report_all_backtraces(Some(test_url), sender.clone()).await;
                     }
                     sender
-                        .send(Ok(SuiteEvents::suite_stopped(SuiteStatus::TimedOut).into()))
+                        .send(Ok(SuiteEvents::suite_stopped(SuiteResult::TimedOut).into()))
                         .await
                         .unwrap();
                     return self.report_custom_artifacts(&mut sender).await;
@@ -1042,10 +1042,10 @@ async fn get_realm(
     Ok((builder, mock_ready_event))
 }
 
-fn get_invocation_options(options: ftest_manager::RunOptions) -> ftest::RunOptions {
+fn get_invocation_options(options: ftest_manager::RunSuiteOptions) -> ftest::RunOptions {
     ftest::RunOptions {
         include_disabled_tests: options.run_disabled_tests,
-        parallel: options.parallel,
+        parallel: options.max_concurrent_test_case_runs,
         arguments: options.arguments,
         break_on_failure: options.break_on_failure,
         ..Default::default()
@@ -1060,17 +1060,17 @@ async fn run_invocations(
     counter: &AtomicU32,
     sender: &mut mpsc::Sender<Result<SuiteEvents, LaunchError>>,
     timeout_fut: futures::future::Shared<fasync::Timer>,
-) -> Result<SuiteStatus, anyhow::Error> {
+) -> Result<SuiteResult, anyhow::Error> {
     let (run_listener_client, mut run_listener) = fidl::endpoints::create_request_stream();
     suite.run(&invocations, &run_options, run_listener_client)?;
 
     let tasks = Arc::new(lock::Mutex::new(vec![]));
     let running_test_cases = Arc::new(lock::Mutex::new(HashSet::new()));
     let tasks_clone = tasks.clone();
-    let initial_suite_status: SuiteStatus;
+    let initial_suite_status: SuiteResult;
     let mut sender_clone = sender.clone();
     let test_fut = async {
-        let mut initial_suite_status = SuiteStatus::DidNotFinish;
+        let mut initial_suite_status = SuiteResult::DidNotFinish;
         while let Some(result_event) =
             run_listener.try_next().await.context("error waiting for listener")?
         {
@@ -1168,7 +1168,7 @@ async fn run_invocations(
                     tasks_clone.lock().await.push(task);
                 }
                 ftest::RunListenerRequest::OnFinished { .. } => {
-                    initial_suite_status = SuiteStatus::Passed;
+                    initial_suite_status = SuiteResult::Finished;
                     break;
                 }
             }
@@ -1191,7 +1191,7 @@ async fn run_invocations(
             let running_test_cases = running_test_cases.lock().await;
             for i in &*running_test_cases {
                 sender
-                    .send(Ok(SuiteEvents::case_stopped(*i, CaseStatus::TimedOut).into()))
+                    .send(Ok(SuiteEvents::case_stopped(*i, TestCaseResult::TimedOut).into()))
                     .await
                     .unwrap();
                 sender
@@ -1199,7 +1199,7 @@ async fn run_invocations(
                     .await
                     .unwrap();
             }
-            return Ok(SuiteStatus::TimedOut);
+            return Ok(SuiteResult::TimedOut);
         }
         r = test_fut => {
             initial_suite_status = match r {
@@ -1218,27 +1218,27 @@ async fn run_invocations(
     let suite_status = join_all(all_tasks)
         .await
         .into_iter()
-        .fold(initial_suite_status, get_suite_status_from_case_status);
+        .fold(initial_suite_status, get_suite_result_from_test_case_result);
     Ok(suite_status)
 }
 
-fn concat_suite_status(initial: SuiteStatus, new: SuiteStatus) -> SuiteStatus {
+fn concat_suite_status(initial: SuiteResult, new: SuiteResult) -> SuiteResult {
     if initial.into_primitive() > new.into_primitive() {
         return initial;
     }
     return new;
 }
 
-fn get_suite_status_from_case_status(
-    initial_suite_status: SuiteStatus,
-    case_status: CaseStatus,
-) -> SuiteStatus {
+fn get_suite_result_from_test_case_result(
+    initial_suite_status: SuiteResult,
+    case_status: TestCaseResult,
+) -> SuiteResult {
     let status = match case_status {
-        CaseStatus::Passed => SuiteStatus::Passed,
-        CaseStatus::Failed => SuiteStatus::Failed,
-        CaseStatus::TimedOut => SuiteStatus::TimedOut,
-        CaseStatus::Skipped => SuiteStatus::Passed,
-        CaseStatus::Error => SuiteStatus::DidNotFinish,
+        TestCaseResult::Passed => SuiteResult::Finished,
+        TestCaseResult::Failed => SuiteResult::Failed,
+        TestCaseResult::TimedOut => SuiteResult::TimedOut,
+        TestCaseResult::Skipped => SuiteResult::Finished,
+        TestCaseResult::Error => SuiteResult::DidNotFinish,
         _ => {
             panic!("this should not happen");
         }
@@ -1259,27 +1259,27 @@ fn enumeration_error(err: fidl::Error) -> anyhow::Error {
 
 /// Listen for test completion on the given |listener|. Returns None if the channel is closed
 /// before a test completion event.
-async fn listen_for_completion(mut listener: ftest::CaseListenerRequestStream) -> CaseStatus {
+async fn listen_for_completion(mut listener: ftest::CaseListenerRequestStream) -> TestCaseResult {
     match listener.try_next().await.context("waiting for listener") {
         Ok(Some(request)) => {
             let ftest::CaseListenerRequest::Finished { result, control_handle: _ } = request;
             let result = match result.status {
                 Some(status) => match status {
-                    fidl_fuchsia_test::Status::Passed => CaseStatus::Passed,
-                    fidl_fuchsia_test::Status::Failed => CaseStatus::Failed,
-                    fidl_fuchsia_test::Status::Skipped => CaseStatus::Skipped,
+                    fidl_fuchsia_test::Status::Passed => TestCaseResult::Passed,
+                    fidl_fuchsia_test::Status::Failed => TestCaseResult::Failed,
+                    fidl_fuchsia_test::Status::Skipped => TestCaseResult::Skipped,
                 },
                 // This will happen when test protocol is not properly implemented
                 // by the test and it forgets to set the result.
-                None => CaseStatus::Error,
+                None => TestCaseResult::Error,
             };
             result
         }
         Err(e) => {
             warn!("listener failed: {:?}", e);
-            CaseStatus::Error
+            TestCaseResult::Error
         }
-        Ok(None) => CaseStatus::Error,
+        Ok(None) => TestCaseResult::Error,
     }
 }
 
@@ -1328,70 +1328,70 @@ mod tests {
     #[test]
     fn suite_status() {
         let all_case_status = vec![
-            CaseStatus::Error,
-            CaseStatus::TimedOut,
-            CaseStatus::Failed,
-            CaseStatus::Skipped,
-            CaseStatus::Passed,
+            TestCaseResult::Error,
+            TestCaseResult::TimedOut,
+            TestCaseResult::Failed,
+            TestCaseResult::Skipped,
+            TestCaseResult::Passed,
         ];
         for status in &all_case_status {
             assert_eq!(
-                get_suite_status_from_case_status(SuiteStatus::InternalError, *status),
-                SuiteStatus::InternalError
+                get_suite_result_from_test_case_result(SuiteResult::InternalError, *status),
+                SuiteResult::InternalError
             );
         }
 
         for status in &all_case_status {
-            let s = get_suite_status_from_case_status(SuiteStatus::TimedOut, *status);
-            assert_eq!(s, SuiteStatus::TimedOut);
+            let s = get_suite_result_from_test_case_result(SuiteResult::TimedOut, *status);
+            assert_eq!(s, SuiteResult::TimedOut);
         }
 
         for status in &all_case_status {
-            let s = get_suite_status_from_case_status(SuiteStatus::DidNotFinish, *status);
-            let mut expected = SuiteStatus::DidNotFinish;
-            if status == &CaseStatus::TimedOut {
-                expected = SuiteStatus::TimedOut;
+            let s = get_suite_result_from_test_case_result(SuiteResult::DidNotFinish, *status);
+            let mut expected = SuiteResult::DidNotFinish;
+            if status == &TestCaseResult::TimedOut {
+                expected = SuiteResult::TimedOut;
             }
             assert_eq!(s, expected);
         }
 
         for status in &all_case_status {
-            let s = get_suite_status_from_case_status(SuiteStatus::Failed, *status);
+            let s = get_suite_result_from_test_case_result(SuiteResult::Failed, *status);
             let expected = match *status {
-                CaseStatus::TimedOut => SuiteStatus::TimedOut,
-                CaseStatus::Error => SuiteStatus::DidNotFinish,
-                _ => SuiteStatus::Failed,
+                TestCaseResult::TimedOut => SuiteResult::TimedOut,
+                TestCaseResult::Error => SuiteResult::DidNotFinish,
+                _ => SuiteResult::Failed,
             };
             assert_eq!(s, expected);
         }
 
         for status in &all_case_status {
-            let s = get_suite_status_from_case_status(SuiteStatus::Passed, *status);
-            let mut expected = SuiteStatus::Passed;
-            if status == &CaseStatus::Error {
-                expected = SuiteStatus::DidNotFinish;
+            let s = get_suite_result_from_test_case_result(SuiteResult::Finished, *status);
+            let mut expected = SuiteResult::Finished;
+            if status == &TestCaseResult::Error {
+                expected = SuiteResult::DidNotFinish;
             }
-            if status == &CaseStatus::TimedOut {
-                expected = SuiteStatus::TimedOut;
+            if status == &TestCaseResult::TimedOut {
+                expected = SuiteResult::TimedOut;
             }
-            if status == &CaseStatus::Failed {
-                expected = SuiteStatus::Failed;
+            if status == &TestCaseResult::Failed {
+                expected = SuiteResult::Failed;
             }
             assert_eq!(s, expected);
         }
 
         let all_suite_status = vec![
-            SuiteStatus::Passed,
-            SuiteStatus::Failed,
-            SuiteStatus::TimedOut,
-            SuiteStatus::Stopped,
-            SuiteStatus::InternalError,
+            SuiteResult::Finished,
+            SuiteResult::Failed,
+            SuiteResult::TimedOut,
+            SuiteResult::Stopped,
+            SuiteResult::InternalError,
         ];
 
         for initial_status in &all_suite_status {
             for status in &all_suite_status {
                 let s = concat_suite_status(*initial_status, *status);
-                let expected: SuiteStatus;
+                let expected: SuiteResult;
                 if initial_status.into_primitive() > status.into_primitive() {
                     expected = *initial_status;
                 } else {

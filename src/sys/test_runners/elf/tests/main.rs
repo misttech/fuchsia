@@ -4,7 +4,7 @@
 
 use anyhow::{Context as _, Error};
 use fidl_fuchsia_test_manager as ftest_manager;
-use ftest_manager::{CaseStatus, RunSuiteOptions, SuiteStatus};
+use ftest_manager::{RunSuiteOptions, SuiteResult, TestCaseResult};
 use pretty_assertions::assert_eq;
 use test_manager_test_lib::{GroupRunEventByTestCase, RunEvent};
 
@@ -38,9 +38,9 @@ async fn launch_and_run_passing_test() {
         RunEvent::case_stdout("main", "stdout msg2"),
         RunEvent::case_stderr("main", "stderr msg1"),
         RunEvent::case_stderr("main", "stderr msg2"),
-        RunEvent::case_stopped("main", CaseStatus::Passed),
+        RunEvent::case_stopped("main", TestCaseResult::Passed),
         RunEvent::case_finished("main"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group();
@@ -57,9 +57,9 @@ async fn launch_and_run_failing_test() {
         RunEvent::suite_started(),
         RunEvent::case_found("main"),
         RunEvent::case_started("main"),
-        RunEvent::case_stopped("main", CaseStatus::Failed),
+        RunEvent::case_stopped("main", TestCaseResult::Failed),
         RunEvent::case_finished("main"),
-        RunEvent::suite_stopped(SuiteStatus::Failed),
+        RunEvent::suite_stopped(SuiteResult::Failed),
     ];
     assert_eq!(events, expected_events);
 }
@@ -77,9 +77,9 @@ async fn launch_and_run_test_with_custom_args() {
         RunEvent::case_found("main"),
         RunEvent::case_started("main"),
         RunEvent::case_stdout("main", "Got argv[1]=\"expected_arg\""),
-        RunEvent::case_stopped("main", CaseStatus::Passed),
+        RunEvent::case_stopped("main", TestCaseResult::Passed),
         RunEvent::case_finished("main"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ]
     .into_iter()
     .group_by_test_case_unordered();
@@ -95,9 +95,9 @@ async fn launch_and_run_test_with_environ() {
         RunEvent::suite_started(),
         RunEvent::case_found("main"),
         RunEvent::case_started("main"),
-        RunEvent::case_stopped("main", CaseStatus::Passed),
+        RunEvent::case_stopped("main", TestCaseResult::Passed),
         RunEvent::case_finished("main"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(expected_events, events);
 }
@@ -114,9 +114,9 @@ async fn launch_and_run_ambient_exec_test_without_ambient_exec_should_fail() {
         RunEvent::suite_started(),
         RunEvent::case_found("main"),
         RunEvent::case_started("main"),
-        RunEvent::case_stopped("main", CaseStatus::Failed),
+        RunEvent::case_stopped("main", TestCaseResult::Failed),
         RunEvent::case_finished("main"),
-        RunEvent::suite_stopped(SuiteStatus::Failed),
+        RunEvent::suite_stopped(SuiteResult::Failed),
     ];
     assert_eq!(events, expected_events);
 }
@@ -132,9 +132,9 @@ async fn launch_and_run_ambient_exec_test_with_ambient_exec_runner_should_succee
         RunEvent::suite_started(),
         RunEvent::case_found("main"),
         RunEvent::case_started("main"),
-        RunEvent::case_stopped("main", CaseStatus::Passed),
+        RunEvent::case_stopped("main", TestCaseResult::Passed),
         RunEvent::case_finished("main"),
-        RunEvent::suite_stopped(SuiteStatus::Passed),
+        RunEvent::suite_stopped(SuiteResult::Finished),
     ];
     assert_eq!(events, expected_events);
 }

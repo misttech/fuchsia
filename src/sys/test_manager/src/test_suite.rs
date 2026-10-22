@@ -40,7 +40,7 @@ pub(crate) struct SuiteRealm {
 
 pub(crate) struct Suite {
     pub test_url: String,
-    pub options: ftest_manager::RunOptions,
+    pub options: ftest_manager::RunSuiteOptions,
     pub controller: SuiteControllerRequestStream,
     pub resolver: Arc<ResolverProxy>,
     pub pkg_resolver: Arc<PackageResolverProxy>,
@@ -672,7 +672,7 @@ where
 }
 
 // Determine whether debug_agent should be used for test runs.
-fn use_debug_agent_for_runs(options: &ftest_manager::RunOptions) -> bool {
+fn use_debug_agent_for_runs(options: &ftest_manager::RunSuiteOptions) -> bool {
     match options.no_exception_channel {
         Some(true) => {
             // Do not use debug_agent when the option is set to true.
@@ -771,7 +771,7 @@ mod tests {
             Suite::run_controller(controller, stop_sender, remote_handle, recv).await
         });
         // sending a get event first should not prevent stop from cancelling the suite.
-        let get_events_task = fasync::Task::spawn(proxy.get_events());
+        let get_events_task = fasync::Task::spawn(proxy.watch_events());
         proxy.stop().unwrap();
 
         assert_eq!(get_events_task.await.unwrap(), Ok(vec![]));
@@ -792,7 +792,7 @@ mod tests {
             Suite::run_controller(controller, stop_sender, remote_handle, recv).await
         });
         // sending a get event first should not prevent killing the controller.
-        let get_events_task = fasync::Task::spawn(proxy.get_events());
+        let get_events_task = fasync::Task::spawn(proxy.watch_events());
         drop(proxy);
         drop(get_events_task);
         // After controller is dropped, both the controller future and the task it was
@@ -814,15 +814,15 @@ mod tests {
         sender.send(Ok(SuiteEvents::case_found(1, "case1".to_string()).into())).await.unwrap();
         sender.send(Ok(SuiteEvents::case_found(2, "case2".to_string()).into())).await.unwrap();
 
-        let events = proxy.get_events().await.unwrap().unwrap();
+        let events = proxy.watch_events().await.unwrap().unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(
-            events[0].payload,
-            SuiteEvents::case_found(1, "case1".to_string()).into_suite_run_event().payload,
+            events[0].details,
+            SuiteEvents::case_found(1, "case1".to_string()).into_event().details,
         );
         assert_eq!(
-            events[1].payload,
-            SuiteEvents::case_found(2, "case2".to_string()).into_suite_run_event().payload,
+            events[1].details,
+            SuiteEvents::case_found(2, "case2".to_string()).into_event().details,
         );
         sender.send(Ok(SuiteEvents::case_started(2).into())).await.unwrap();
         proxy.stop().unwrap();
@@ -834,17 +834,17 @@ mod tests {
         stop_recv.await.unwrap();
         // drop event sender so that fake test can end.
         drop(sender);
-        let events = proxy.get_events().await.unwrap().unwrap();
+        let events = proxy.watch_events().await.unwrap().unwrap();
         assert_eq!(events.len(), 3);
 
-        assert_eq!(events[0].payload, SuiteEvents::case_started(2).into_suite_run_event().payload,);
-        assert_eq!(events[1].payload, SuiteEvents::case_started(1).into_suite_run_event().payload,);
+        assert_eq!(events[0].details, SuiteEvents::case_started(2).into_event().details,);
+        assert_eq!(events[1].details, SuiteEvents::case_started(1).into_event().details,);
         assert_eq!(
-            events[2].payload,
-            SuiteEvents::case_found(3, "case3".to_string()).into_suite_run_event().payload,
+            events[2].details,
+            SuiteEvents::case_found(3, "case3".to_string()).into_event().details,
         );
 
-        let events = proxy.get_events().await.unwrap().unwrap();
+        let events = proxy.watch_events().await.unwrap().unwrap();
         assert_eq!(events, vec![]);
         // run controller should end after channel is closed.
         drop(proxy);
@@ -864,13 +864,8 @@ mod tests {
         Suite {
             realm: None,
             test_url,
-            options: ftest_manager::RunOptions {
-                parallel: None,
-                arguments: None,
+            options: ftest_manager::RunSuiteOptions {
                 run_disabled_tests: Some(false),
-                timeout: None,
-                case_filters_to_run: None,
-                log_iterator: None,
                 ..Default::default()
             },
             controller: controller_stream,
@@ -922,7 +917,7 @@ mod tests {
 
         // send get event call which would hang as there are no events.
         let mut get_events =
-            fasync::Task::spawn(async move { proxy.get_events().await.unwrap().unwrap() });
+            fasync::Task::spawn(async move { proxy.watch_events().await.unwrap().unwrap() });
         assert_eq!(executor.run_until_stalled(&mut get_events), std::task::Poll::Pending);
         executor.run_singlethreaded(async {
             sender.send(Ok(SuiteEvents::case_found(1, "case1".to_string()).into())).await.unwrap();
@@ -931,12 +926,12 @@ mod tests {
         let events = executor.run_singlethreaded(get_events);
         assert_eq!(events.len(), 2);
         assert_eq!(
-            events[0].payload,
-            SuiteEvents::case_found(1, "case1".to_string()).into_suite_run_event().payload,
+            events[0].details,
+            SuiteEvents::case_found(1, "case1".to_string()).into_event().details,
         );
         assert_eq!(
-            events[1].payload,
-            SuiteEvents::case_found(2, "case2".to_string()).into_suite_run_event().payload,
+            events[1].details,
+            SuiteEvents::case_found(2, "case2".to_string()).into_event().details,
         );
     }
 }

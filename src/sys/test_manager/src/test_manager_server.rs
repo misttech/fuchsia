@@ -44,7 +44,7 @@ pub async fn run_test_manager_run_builder_server(
                 builder.suites.push(Suite {
                     realm: None,
                     test_url,
-                    options,
+                    options: convert_to_run_suite_options(options),
                     controller,
                     resolver: resolver.clone(),
                     pkg_resolver: pkg_resolver.clone(),
@@ -75,7 +75,7 @@ pub async fn run_test_manager_run_builder_server(
                 builder.suites.push(Suite {
                     realm: SuiteRealm { realm_proxy, offers, test_collection }.into(),
                     test_url,
-                    options,
+                    options: convert_to_run_suite_options(options),
                     controller,
                     resolver: resolver.clone(),
                     pkg_resolver: pkg_resolver.clone(),
@@ -471,11 +471,11 @@ pub async fn run_test_manager_suite_runner_server(
         match req {
             ftest_manager::SuiteRunnerRequest::Run {
                 test_suite_url,
-                options,
+                mut options,
                 controller,
                 control_handle,
             } => {
-                let realm = if let Some(realm_options) = options.realm_options {
+                let realm = if let Some(realm_options) = options.realm_options.take() {
                     let realm_proxy = match realm_options
                         .realm
                         .map(|r| Ok(r.into_proxy()))
@@ -534,22 +534,12 @@ pub async fn run_test_manager_suite_runner_server(
                 }
 
                 let controller = controller.into_stream();
+                let accumulate_debug_data = options.accumulate_debug_data.unwrap_or(false);
 
                 let suite = Suite {
                     realm: realm.into(),
                     test_url: test_suite_url,
-                    options: ftest_manager::RunOptions {
-                        run_disabled_tests: options.run_disabled_tests,
-                        parallel: options.max_concurrent_test_case_runs,
-                        arguments: options.arguments,
-                        timeout: options.timeout,
-                        case_filters_to_run: options.test_case_filters,
-                        log_iterator: options.logs_iterator_type.map(convert),
-                        log_interest: options.log_interest,
-                        break_on_failure: options.break_on_failure,
-                        no_exception_channel: options.no_exception_channel,
-                        ..Default::default()
-                    },
+                    options,
                     controller,
                     resolver: resolver.clone(),
                     pkg_resolver: pkg_resolver.clone(),
@@ -559,7 +549,7 @@ pub async fn run_test_manager_suite_runner_server(
 
                 let diagnostics = root_diagnostics.child();
 
-                suite.run(diagnostics, options.accumulate_debug_data.unwrap_or(false)).await;
+                suite.run(diagnostics, accumulate_debug_data).await;
             }
 
             ftest_manager::SuiteRunnerRequest::_UnknownMethod {
@@ -574,12 +564,27 @@ pub async fn run_test_manager_suite_runner_server(
     Ok(())
 }
 
-fn convert(item: ftest_manager::LogsIteratorType) -> ftest_manager::LogsIteratorOption {
-    match item {
-        ftest_manager::LogsIteratorType::Batch => ftest_manager::LogsIteratorOption::BatchIterator,
-        ftest_manager::LogsIteratorType::Socket => {
-            ftest_manager::LogsIteratorOption::SocketBatchIterator
-        }
-        _ => todo!(),
+fn convert_to_run_suite_options(
+    options: ftest_manager::RunOptions,
+) -> ftest_manager::RunSuiteOptions {
+    ftest_manager::RunSuiteOptions {
+        run_disabled_tests: options.run_disabled_tests,
+        max_concurrent_test_case_runs: options.parallel,
+        arguments: options.arguments,
+        timeout: options.timeout,
+        test_case_filters: options.case_filters_to_run,
+        logs_iterator_type: options.log_iterator.map(|item| match item {
+            ftest_manager::LogsIteratorOption::BatchIterator => {
+                ftest_manager::LogsIteratorType::Batch
+            }
+            ftest_manager::LogsIteratorOption::SocketBatchIterator => {
+                ftest_manager::LogsIteratorType::Socket
+            }
+            _ => todo!(),
+        }),
+        log_interest: options.log_interest,
+        break_on_failure: options.break_on_failure,
+        no_exception_channel: options.no_exception_channel,
+        ..Default::default()
     }
 }

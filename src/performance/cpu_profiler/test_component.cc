@@ -80,8 +80,8 @@ zx::result<> profiler::TestComponent::Start(fxl::WeakPtr<Sampler> notify) {
 
   // Once we launch the test, we need to listen to the events. We don't do anything with them right
   // now, we just need to ensure they don't get backed up.
-  suite_controller_->GetEvents().Then(
-      [this](fidl::Result<fuchsia_test_manager::SuiteController::GetEvents>& events) {
+  suite_controller_->WatchEvents().Then(
+      [this](fidl::Result<fuchsia_test_manager::SuiteController::WatchEvents>& events) {
         if (events.is_ok()) {
           OnSuiteEvent(std::move(events->events()));
         }
@@ -105,12 +105,12 @@ zx::result<> profiler::TestComponent::Stop() {
 
 zx::result<> profiler::TestComponent::Destroy() { return zx::ok(); }
 
-void profiler::TestComponent::OnSuiteEvent(std::vector<fuchsia_test_manager::SuiteEvent> events) {
+void profiler::TestComponent::OnSuiteEvent(std::vector<fuchsia_test_manager::Event> events) {
   if (events.empty()) {
     return;
   }
-  suite_controller_->GetEvents().Then(
-      [this](fidl::Result<fuchsia_test_manager::SuiteController::GetEvents>& events) {
+  suite_controller_->WatchEvents().Then(
+      [this](fidl::Result<fuchsia_test_manager::SuiteController::WatchEvents>& events) {
         if (events.is_ok()) {
           this->OnSuiteEvent(std::move(events->events()));
         }
