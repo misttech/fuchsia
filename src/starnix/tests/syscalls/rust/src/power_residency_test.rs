@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const RESIDENCY_DEVICE: &str = "powerdashboard";
-const POWER_STATE_STATS_DEVICE: &str = "cap_sysfs";
+const CAP_SYSFS_DEVICE: &str = "cap_sysfs";
 
 /// Each device and the files expected under it, in sorted order.
 const DEVICES: [(&str, &[&str]); 2] = [
     (RESIDENCY_DEVICE, &["lpcm_gmc0", "platform_power_residency", "pwrblk_dpu"]),
-    (POWER_STATE_STATS_DEVICE, &["power_state_stats"]),
+    (CAP_SYSFS_DEVICE, &["dvfs_stats_clk_lit", "power_state_stats"]),
 ];
 
 /// How long to wait for a device to be added before failing.
@@ -95,11 +95,23 @@ fn platform_power_residency_is_reported() {
 #[test]
 fn power_state_stats_are_reported() {
     assert_eq!(
-        read(POWER_STATE_STATS_DEVICE, "power_state_stats"),
+        read(CAP_SYSFS_DEVICE, "power_state_stats"),
         "---\nstate: Cluster 0 off\nlast_entry_ts_ticks: 76800\nlast_exit_ts_ticks: 0\n\
          total_state_residency_ms: 250\nlast_state_entry_counts: 6\n\
          ---\nstate: Suspend\nlast_entry_ts_ticks: 0\nlast_exit_ts_ticks: 0\n\
          total_state_residency_ms: 10\nlast_state_entry_counts: 1\n"
+    );
+}
+
+#[test]
+fn dvfs_stats_are_reported() {
+    assert_eq!(
+        read(CAP_SYSFS_DEVICE, "dvfs_stats_clk_lit"),
+        "---\nclock_domain: clk_lit\nper_op_level_stats: \n\
+         \x20 - oplevel: 0\n    entry_count: 7\n    total_residency_ms: 120\n\
+         \x20   last_entry_timestamp_ticks: 115200\n\
+         \x20 - oplevel: 1\n    entry_count: 0\n    total_residency_ms: 0\n\
+         \x20   last_entry_timestamp_ticks: 0\n"
     );
 }
 

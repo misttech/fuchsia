@@ -4,6 +4,10 @@
 
 //! Exposes power residency entities from [`PowerStatsManager`] under platform devices in
 //! `/sys/devices/platform`, such as `powerdashboard` and `cap_sysfs`.
+//!
+//! These devices are not generic Linux sysfs interfaces. They emulate the SoC-specific vendor
+//! devices that the Android PowerStats HAL reads residency from: the CPM power dashboard and the
+//! CAP (CPU Auxiliary Processor) stats device.
 
 use fidl_fuchsia_hardware_power_stats as fpowerstats;
 use starnix_core::device::power_stats::PowerStatsManager;
@@ -32,7 +36,8 @@ const PLATFORM_POWER_ENTITY: &str = "soc_power_state";
 /// Name of the file [`PLATFORM_POWER_ENTITY`] is served as.
 const PLATFORM_POWER_FILE: &str = "platform_power_residency";
 
-/// Name of the platform device under which the residency files are served.
+/// Name of the platform device under which the residency files are served, emulating the
+/// SoC-specific CPM power dashboard device read by the PowerStats HAL.
 const RESIDENCY_DEVICE_NAME: &str = "powerdashboard";
 
 /// Power entity served as the power state stats file.
@@ -41,8 +46,17 @@ const POWER_STATE_STATS_ENTITY: &str = "cap_power_state";
 /// Name of the file [`POWER_STATE_STATS_ENTITY`] is served as.
 const POWER_STATE_STATS_FILE: &str = "power_state_stats";
 
-/// Name of the platform device under which [`POWER_STATE_STATS_FILE`] is served.
-const POWER_STATE_STATS_DEVICE_NAME: &str = "cap_sysfs";
+/// Name of the platform device under which [`POWER_STATE_STATS_FILE`] and the DVFS stats files are
+/// served, emulating the SoC-specific CAP stats device read by the PowerStats HAL.
+const CAP_SYSFS_DEVICE_NAME: &str = "cap_sysfs";
+
+/// Power entities whose names start with this prefix, followed by the name of a clock domain, are
+/// served as DVFS stats files.
+const DVFS_STATS_ENTITY_PREFIX: &str = "dvfs_";
+
+/// Prefix of the name of the DVFS stats file of each clock domain, which is followed by the name of
+/// the clock domain.
+const DVFS_STATS_FILE_PREFIX: &str = "dvfs_stats_";
 
 /// Ticks per millisecond of the counter that some residency files report timestamps in.
 ///
@@ -123,12 +137,11 @@ fn residency_file_spec(entity: &str) -> Option<ResidencyFileSpec> {
         (RESIDENCY_DEVICE_NAME, entity.to_string(), format_power_domain_states)
     } else if entity == PLATFORM_POWER_ENTITY {
         (RESIDENCY_DEVICE_NAME, PLATFORM_POWER_FILE.to_string(), format_platform_power_states)
+    } else if prefixed(DVFS_STATS_ENTITY_PREFIX) {
+        let file = format!("{DVFS_STATS_FILE_PREFIX}{}", &entity[DVFS_STATS_ENTITY_PREFIX.len()..]);
+        (CAP_SYSFS_DEVICE_NAME, file, format_dvfs_stats)
     } else if entity == POWER_STATE_STATS_ENTITY {
-        (
-            POWER_STATE_STATS_DEVICE_NAME,
-            POWER_STATE_STATS_FILE.to_string(),
-            format_power_state_stats,
-        )
+        (CAP_SYSFS_DEVICE_NAME, POWER_STATE_STATS_FILE.to_string(), format_power_state_stats)
     } else {
         return None;
     };
@@ -247,6 +260,27 @@ fn format_power_state_stats(stats: &fpowerstats::Stats) -> String {
         let _ = writeln!(out, "last_exit_ts_ticks: 0");
         let _ = writeln!(out, "total_state_residency_ms: {}", state.total_time_ms);
         let _ = writeln!(out, "last_state_entry_counts: {}", state.entry_count);
+    }
+    out
+}
+
+/// Formats `stats` as a record that starts with `---` and names the clock domain, followed by the
+/// entry count, residency, and last entry timestamp of each operating level.
+///
+/// Operating levels are identified by their state IDs. The power stats API does not report the
+/// level a clock domain is at or is moving to, so there are no current or target level lines.
+fn format_dvfs_stats(stats: &fpowerstats::Stats) -> String {
+    let clock_domain = stats.entity.strip_prefix(DVFS_STATS_ENTITY_PREFIX).unwrap_or(&stats.entity);
+    let mut out = String::new();
+    let _ = writeln!(out, "---");
+    let _ = writeln!(out, "clock_domain: {clock_domain}");
+    let _ = writeln!(out, "per_op_level_stats: ");
+    for state in &stats.state_residency_data {
+        let last_entry_ticks = state.last_entry_timestamp_ms.saturating_mul(TIMESTAMP_TICKS_PER_MS);
+        let _ = writeln!(out, "  - oplevel: {}", state.id);
+        let _ = writeln!(out, "    entry_count: {}", state.entry_count);
+        let _ = writeln!(out, "    total_residency_ms: {}", state.total_time_ms);
+        let _ = writeln!(out, "    last_entry_timestamp_ticks: {last_entry_ticks}");
     }
     out
 }
@@ -371,7 +405,7 @@ mod tests {
             init_power_residency_device(kernel);
 
             assert!(!exists(kernel, &format!("devices/platform/{RESIDENCY_DEVICE_NAME}")));
-            assert!(!exists(kernel, &format!("devices/platform/{POWER_STATE_STATS_DEVICE_NAME}")));
+            assert!(!exists(kernel, &format!("devices/platform/{CAP_SYSFS_DEVICE_NAME}")));
         })
         .await;
     }
@@ -450,11 +484,8 @@ mod tests {
             let residency_device = format!("devices/platform/{RESIDENCY_DEVICE_NAME}");
             assert!(exists(kernel, &format!("{residency_device}/{prefix}a")));
             assert!(!exists(kernel, &format!("{residency_device}/{prefix}b")));
-            let stats_device = format!("devices/platform/{POWER_STATE_STATS_DEVICE_NAME}");
-            assert!(exists(
-                kernel,
-                &format!("bus/platform/devices/{POWER_STATE_STATS_DEVICE_NAME}")
-            ));
+            let stats_device = format!("devices/platform/{CAP_SYSFS_DEVICE_NAME}");
+            assert!(exists(kernel, &format!("bus/platform/devices/{CAP_SYSFS_DEVICE_NAME}")));
             assert!(exists(kernel, &format!("{stats_device}/{POWER_STATE_STATS_FILE}")));
         })
         .await;
@@ -675,6 +706,27 @@ mod tests {
     }
 
     #[::fuchsia::test]
+    fn dvfs_stats_are_formatted_per_level() {
+        let fast = fpowerstats::StateResidency {
+            last_entry_timestamp_ms: 3,
+            ..state(/* id = */ 0, /* entry_count = */ 7, /* total_time_ms = */ 120)
+        };
+        let stats = stats(
+            "dvfs_clk_lit",
+            vec![fast, state(/* id = */ 1, /* entry_count = */ 0, /* total_time_ms = */ 0)],
+        );
+
+        assert_eq!(
+            format_dvfs_stats(&stats),
+            "---\nclock_domain: clk_lit\nper_op_level_stats: \n\
+             \x20 - oplevel: 0\n    entry_count: 7\n    total_residency_ms: 120\n\
+             \x20   last_entry_timestamp_ticks: 115200\n\
+             \x20 - oplevel: 1\n    entry_count: 0\n    total_residency_ms: 0\n\
+             \x20   last_entry_timestamp_ticks: 0\n"
+        );
+    }
+
+    #[::fuchsia::test]
     fn residency_with_no_states() {
         let stats = stats("a", vec![]);
 
@@ -682,6 +734,7 @@ mod tests {
         assert_eq!(format_power_domain_states(&stats), "\nSSWRP lpb\n\n\n");
         assert_eq!(format_platform_power_states(&stats), "");
         assert_eq!(format_power_state_stats(&stats), "");
+        assert_eq!(format_dvfs_stats(&stats), "---\nclock_domain: a\nper_op_level_stats: \n");
     }
 
     #[::fuchsia::test]
@@ -741,9 +794,26 @@ mod tests {
                     (RESIDENCY_DEVICE_NAME, format!("{prefix}a")),
                     (RESIDENCY_DEVICE_NAME, format!("{prefix}b_1")),
                     (RESIDENCY_DEVICE_NAME, PLATFORM_POWER_FILE.to_string()),
-                    (POWER_STATE_STATS_DEVICE_NAME, POWER_STATE_STATS_FILE.to_string()),
+                    (CAP_SYSFS_DEVICE_NAME, POWER_STATE_STATS_FILE.to_string()),
                 ]
             );
         }
+    }
+
+    #[::fuchsia::test]
+    fn dvfs_entities_are_mapped_to_cap_sysfs_files() {
+        let names = ["dvfs_clk_lit", "dvfs_clk_mid0", "dvfs_", "dvfs_../x", "dvfs_a-b", "xdvfs_a"];
+
+        let served: Vec<_> = names
+            .into_iter()
+            .filter_map(|name| residency_file_spec(name).map(|spec| (spec.device, spec.file)))
+            .collect();
+        assert_eq!(
+            served,
+            vec![
+                (CAP_SYSFS_DEVICE_NAME, "dvfs_stats_clk_lit".to_string()),
+                (CAP_SYSFS_DEVICE_NAME, "dvfs_stats_clk_mid0".to_string()),
+            ]
+        );
     }
 }
