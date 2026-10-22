@@ -1523,9 +1523,6 @@ class Scheduler {
   };
 
  private:
-  // Emits queue event tracers for trace-based scheduler performance analysis.
-  inline void TraceThreadQueueEvent(const fxt::InternedString& name, const Thread* thread) const
-      TA_REQ(queue_lock_) TA_REQ_SHARED(thread->get_lock());
 
   // Returns true if the given thread is fair scheduled.
   static bool IsFairThread(const Thread* thread) TA_REQ_SHARED(thread->get_lock()) {
