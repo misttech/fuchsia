@@ -4,13 +4,16 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("repo_tests") {
+bazel_test_suite("bazel_tests") {
   host_tests = [ "//src/sys/pkg/lib/repo:repo_tests" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":repo_tests" ]
+  deps = [
+    ":bazel_tests",
+    ":repo_tests($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -58,6 +61,21 @@ if (is_host) {
       "//tools/lib/logger",
       "//tools/lib/retry",
       "//tools/net/sshutil",
+    ]
+  }
+}
+if (is_host) {
+  go_test("repo_tests") {
+    sources = [
+      "add_test.go",
+      "config_test.go",
+    ]
+    embed = [ ":repo" ]
+    visibility = [
+      ":*",
+      "//src/sys/pkg/lib:*",
+      "//src/testing/host-target-testing/packages:*",
+      "//tools/botanist:*",
     ]
   }
 }

@@ -50,7 +50,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "mock_installer_lib_test",
     crate = ":mock-installer",
@@ -63,7 +62,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 host_rustc_test(
     name = "mock-installer_fdomain_host_test",
     binary_name = "mock_installer_fdomain_lib_test",
@@ -78,7 +76,6 @@ host_rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "mock-installer-tests",
     unit_tests = [":mock_installer_lib_test"],

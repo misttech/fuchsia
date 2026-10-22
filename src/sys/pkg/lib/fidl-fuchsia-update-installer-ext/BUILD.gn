@@ -4,13 +4,16 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("fidl-fuchsia-update-installer-ext-tests") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext:fidl-fuchsia-update-installer-ext-tests" ]
 }
 
 group("tests") {
   testonly = true
-  public_deps = [ ":fidl-fuchsia-update-installer-ext-tests" ]
+  public_deps = [
+    ":bazel_tests",
+    ":fidl-fuchsia-update-installer-ext-tests",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -73,4 +76,47 @@ rustc_library("fidl-fuchsia-update-installer-ext") {
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:typed-builder",
   ]
+}
+rustc_test("fidl_fuchsia_update_installer_ext_lib_test") {
+  sources = [
+    "src/lib.rs",
+    "src/options.rs",
+    "src/state.rs",
+  ]
+  edition = "2024"
+  proc_macro_deps = [ "//third_party/rust_crates:proptest-derive" ]
+  deps = [
+           "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+           "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+           "//src/lib/diagnostics/inspect/rust",
+           "//src/lib/fdomain/client",
+           "//src/lib/fidl/rust/fidl",
+           "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+           "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust_fdomain",
+           "//src/sys/pkg/lib/event-queue",
+           "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
+           "//third_party/cobalt/src/lib/client/rust:cobalt-client",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:http",
+           "//third_party/rust_crates:log",
+           "//third_party/rust_crates:pin-project",
+           "//third_party/rust_crates:proptest",
+           "//third_party/rust_crates:serde",
+           "//third_party/rust_crates:thiserror",
+           "//third_party/rust_crates:typed-builder",
+         ] + [
+           "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+           "//src/lib/fdomain/local",
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-async",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:serde_json",
+         ]
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
+  visibility = [ ":*" ]
+}
+fuchsia_unittest_package("fidl-fuchsia-update-installer-ext-tests") {
+  package_name = "fidl-fuchsia-update-installer-ext-tests-gn"
+  component_name = "fidl-fuchsia-update-installer-ext-tests"
+  deps = [ ":fidl_fuchsia_update_installer_ext_lib_test" ]
 }

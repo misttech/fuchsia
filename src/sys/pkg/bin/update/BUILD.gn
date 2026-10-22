@@ -18,13 +18,16 @@ fuchsia_package("update") {
   deps = [ ":update-binary" ]
 }
 
-bazel_test_suite("update-lib-tests") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/sys/pkg/bin/update:update-lib-tests" ]
 }
 
 group("hermetic_tests") {
   testonly = true
-  deps = [ ":update-lib-tests" ]
+  deps = [
+    ":bazel_tests",
+    ":update-lib-tests",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -90,4 +93,50 @@ rustc_library("lib") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:termion",
   ]
+}
+rustc_test("lib_test") {
+  sources = [
+    "src/args.rs",
+    "src/channel.rs",
+    "src/check.rs",
+    "src/commit.rs",
+    "src/install.rs",
+    "src/main.rs",
+    "src/monitor_state.rs",
+    "src/monitor_updates.rs",
+    "src/revert.rs",
+  ]
+  source_root = "src/main.rs"
+  edition = "2024"
+  deps = [
+           "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
+           "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
+           "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+           "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
+           "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust",
+           "//sdk/rust/zx",
+           "//src/lib/fidl/rust/fidl",
+           "//src/lib/fuchsia-async",
+           "//src/lib/fuchsia-component",
+           "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+           "//src/sys/pkg/lib/fidl-fuchsia-update-ext",
+           "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:argh",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:termion",
+         ] +
+         [
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-sync",
+           "//third_party/rust_crates:assert_matches",
+         ]
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
+  visibility = [ ":*" ]
+  output_name = "update_lib_test"
+}
+fuchsia_unittest_package("update-lib-tests") {
+  package_name = "update-lib-tests-gn"
+  component_name = "update-lib-tests"
+  deps = [ ":lib_test" ]
 }

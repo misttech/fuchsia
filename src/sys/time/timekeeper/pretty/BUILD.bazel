@@ -18,7 +18,6 @@ rustc_library(
     deps = ["//sdk/rust/zx"],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "time_pretty_test",
     crate = ":time_pretty",
@@ -27,7 +26,6 @@ rustc_test(
     deps = ["//third_party/rust_crates/vendor:test-case"],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "time_pretty_test_package",
     unit_tests = [":time_pretty_test"],

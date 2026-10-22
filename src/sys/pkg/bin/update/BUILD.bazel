@@ -48,7 +48,7 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
+# @bazel2gn:raw_attribute:output_name = "update_lib_test"
 rustc_test(
     name = "lib_test",
     crate = ":lib",
@@ -62,7 +62,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "update-lib-tests",
     unit_tests = [":lib_test"],

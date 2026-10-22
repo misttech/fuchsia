@@ -28,7 +28,7 @@ host_test_data_files(
     dest_dir = "invalid-fars",
 )
 
-# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# Only run in Bazel: bazel2gn can't translate `test_data`.
 # @bazel2gn:skip
 host_go_test(
     name = "go_far_test",

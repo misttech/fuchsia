@@ -4,14 +4,18 @@
 
 import("//build/bazel/bazel_test_suite.gni")
 
-bazel_test_suite("fidl-fuchsia-pkg-rewrite-ext-tests") {
+bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext:fidl-fuchsia-pkg-rewrite-ext-tests" ]
   host_tests = [ "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext:fidl-fuchsia-pkg-rewrite-ext_fdomain_test" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":fidl-fuchsia-pkg-rewrite-ext-tests" ]
+  deps = [
+    ":bazel_tests",
+    ":fidl-fuchsia-pkg-rewrite-ext-tests",
+    ":fidl-fuchsia-pkg-rewrite-ext_fdomain_test($host_toolchain)",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -86,4 +90,65 @@ rustc_library("fidl-fuchsia-pkg-rewrite-ext_fdomain") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:thiserror",
   ]
+}
+rustc_test("fidl-fuchsia-pkg-rewrite-ext_test") {
+  sources = [
+    "src/errors.rs",
+    "src/lib.rs",
+    "src/rule.rs",
+    "src/transaction.rs",
+  ]
+  edition = "2024"
+  deps = [
+           "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_flex",
+           "//sdk/rust/zx-status",
+           "//src/lib/fdomain/client:flex_fidl",
+           "//src/lib/fuchsia-url",
+           "//third_party/rust_crates:serde",
+           "//third_party/rust_crates:thiserror",
+         ] +
+         [
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-async",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:serde_json",
+         ]
+  visibility = [ ":*" ]
+}
+if (is_host) {
+  rustc_test("fidl-fuchsia-pkg-rewrite-ext_fdomain_test") {
+    sources = [
+      "src/errors.rs",
+      "src/lib.rs",
+      "src/rule.rs",
+      "src/transaction.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_fdomain_flex",
+             "//sdk/rust/zx-status",
+             "//src/lib/fdomain/client:flex_fdomain",
+             "//src/lib/fidl/rust/fidl",
+             "//src/lib/fuchsia-url",
+             "//third_party/rust_crates:serde",
+             "//third_party/rust_crates:thiserror",
+           ] +
+           [
+             "//src/lib/fdomain/local",
+             "//src/lib/fuchsia",
+             "//src/lib/fuchsia-async",
+             "//third_party/rust_crates:assert_matches",
+             "//third_party/rust_crates:futures",
+             "//third_party/rust_crates:serde_json",
+           ]
+    features = [ "fdomain" ]
+    visibility = [ "*" ]
+  }
+}
+fuchsia_unittest_package("fidl-fuchsia-pkg-rewrite-ext-tests") {
+  package_name = "fidl-fuchsia-pkg-rewrite-ext-tests-gn"
+  component_name = "fidl-fuchsia-pkg-rewrite-ext-tests"
+  deps = [ ":fidl-fuchsia-pkg-rewrite-ext_test" ]
+  visibility = [ "*" ]
 }
