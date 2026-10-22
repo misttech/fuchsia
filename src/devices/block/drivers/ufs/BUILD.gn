@@ -150,37 +150,15 @@ fuchsia_structured_config_cpp_elf_lib("ufs-config") {
   cm_label = ":ufs-pci-dml_manifest"
 }
 
-fuchsia_structured_config_values("sc-pci-values") {
-  cm_label = ":ufs-pci-dml_manifest"
-  values = {
-    enable_suspend = false
-    storage_power_management_enabled = false
-    enable_auto_hibernate = true
-    auto_hibernate_timer_us = 2000
-  }
-}
-
-fuchsia_structured_config_values("sc-pdev-values") {
-  cm_label = ":ufs-pdev-manifest"
-  values = {
-    enable_suspend = false
-    storage_power_management_enabled = false
-    enable_auto_hibernate = true
-    auto_hibernate_timer_us = 2000
-  }
-}
-
 fuchsia_driver_package("ufs-pci-package") {
   package_name = "ufs-pci"
   driver_components = [ ":ufs-pci" ]
-  deps = [ ":sc-pci-values" ]
   export_to_bazel = true
 }
 
 fuchsia_driver_package("ufs-pdev-package") {
   package_name = "ufs-pdev"
   driver_components = [ ":ufs-pdev" ]
-  deps = [ ":sc-pdev-values" ]
   export_to_bazel = true
 }
 

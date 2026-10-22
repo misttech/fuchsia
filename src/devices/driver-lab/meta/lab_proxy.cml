@@ -25,30 +25,69 @@
                 "fuchsia.hardware.spi.Service",
             ],
         },
+        {
+            // Whether the proxy is enabled. If false, sessions are rejected.
+            config: "fuchsia.driver.lab.Enabled",
+            key: "enabled",
+            type: "bool",
+            availability: "transitional",
+            default: true,
+        },
+        {
+            // Capacity of the audit ring buffer (<= 1024).
+            config: "fuchsia.driver.lab.AuditCapacity",
+            key: "audit_capacity",
+            type: "uint32",
+            availability: "transitional",
+            default: 1024,
+        },
+        {
+            // Maximum items allowed in a single snapshot (<= 64).
+            config: "fuchsia.driver.lab.MaxSnapshotItems",
+            key: "max_snapshot_items",
+            type: "uint32",
+            availability: "transitional",
+            default: 64,
+        },
+        {
+            // Maximum items allowed in a single sequence (<= 64).
+            config: "fuchsia.driver.lab.MaxSequenceItems",
+            key: "max_sequence_items",
+            type: "uint32",
+            availability: "transitional",
+            default: 64,
+        },
+        {
+            // Maximum delay allowed per sequence step in ns (<= 100ms).
+            config: "fuchsia.driver.lab.MaxDelayNs",
+            key: "max_delay_ns",
+            type: "uint64",
+            availability: "transitional",
+            default: 1000000000,
+        },
+        {
+            // Maximum sequence duration in ns (<= 1s).
+            config: "fuchsia.driver.lab.MaxSequenceDurationNs",
+            key: "max_sequence_duration_ns",
+            type: "uint64",
+            availability: "transitional",
+            default: 1000000000,
+        },
+        {
+            // Maximum deadline timeout for polls and waits in ns (<= 1s).
+            config: "fuchsia.driver.lab.MaxDeadlineNs",
+            key: "max_deadline_ns",
+            type: "uint64",
+            availability: "transitional",
+            default: 1000000000,
+        },
+        {
+            // Maximum operations allowed per second per session (0 = unlimited).
+            config: "fuchsia.driver.lab.MaxOpsPerSecond",
+            key: "max_ops_per_second",
+            type: "uint32",
+            availability: "transitional",
+            default: 0,
+        },
     ],
-    config: {
-        // Whether the proxy is enabled. If false, sessions are rejected.
-        enabled: { type: "bool" },
-
-        // Capacity of the audit ring buffer (<= 1024).
-        audit_capacity: { type: "uint32" },
-
-        // Maximum items allowed in a single snapshot (<= 64).
-        max_snapshot_items: { type: "uint32" },
-
-        // Maximum items allowed in a single sequence (<= 64).
-        max_sequence_items: { type: "uint32" },
-
-        // Maximum delay allowed per sequence step in ns (<= 100ms).
-        max_delay_ns: { type: "uint64" },
-
-        // Maximum sequence duration in ns (<= 1s).
-        max_sequence_duration_ns: { type: "uint64" },
-
-        // Maximum deadline timeout for polls and waits in ns (<= 1s).
-        max_deadline_ns: { type: "uint64" },
-
-        // Maximum operations allowed per second per session (0 = unlimited).
-        max_ops_per_second: { type: "uint32" },
-    },
 }

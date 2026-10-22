@@ -140,7 +140,11 @@
             to: "#boot-drivers",
         },
         {
-            config: "fuchsia.usb.dwc3.BypassPlatformExtension",
+            config: [
+                "fuchsia.storage.ufs.AutoHibernateTimerUs",
+                "fuchsia.storage.ufs.EnableAutoHibernate",
+                "fuchsia.usb.dwc3.BypassPlatformExtension",
+            ],
             from: "void",
             to: "#boot-drivers",
             availability: "optional",

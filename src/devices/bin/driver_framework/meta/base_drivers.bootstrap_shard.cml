@@ -190,6 +190,15 @@
             to: "#base-drivers",
         },
         {
+            config: [
+                "fuchsia.storage.ufs.AutoHibernateTimerUs",
+                "fuchsia.storage.ufs.EnableAutoHibernate",
+            ],
+            from: "void",
+            to: "#base-drivers",
+            availability: "optional",
+        },
+        {
             service: [
                 "fuchsia.hardware.adc.Service",
                 "fuchsia.hardware.backlight.Service",

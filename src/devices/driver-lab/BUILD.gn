@@ -201,21 +201,6 @@ fuchsia_structured_config_rust_lib("lab_proxy_config") {
   cm_label = ":lab_proxy_manifest"
 }
 
-fuchsia_structured_config_values("lab_proxy_config_values") {
-  testonly = true
-  cm_label = ":lab_proxy_manifest"
-  values = {
-    enabled = true
-    audit_capacity = 1024
-    max_snapshot_items = 64
-    max_sequence_items = 64
-    max_delay_ns = 1000000000
-    max_sequence_duration_ns = 1000000000
-    max_deadline_ns = 1000000000
-    max_ops_per_second = 0
-  }
-}
-
 fuchsia_driver_component("component") {
   testonly = true
   component_name = "lab_proxy"
@@ -231,7 +216,6 @@ fuchsia_driver_package("pkg") {
   testonly = true
   package_name = "lab_proxy"
   driver_components = [ ":component" ]
-  deps = [ ":lab_proxy_config_values" ]
   export_to_bazel = true
 }
 
@@ -285,7 +269,6 @@ fuchsia_unittest_package("lab_proxy-realm-test-pkg") {
   package_name = "lab_proxy-realm-test"
   deps = [
     ":component",
-    ":lab_proxy_config_values",
     ":realm_test",
     "testing:component",
     "//src/devices/misc/drivers/test-parent",

@@ -32,6 +32,20 @@
             key: "enable_suspend",
             type: "bool",
         },
+        {
+            config: "fuchsia.storage.ufs.AutoHibernateTimerUs",
+            key: "auto_hibernate_timer_us",
+            type: "uint32",
+            availability: "optional",
+            default: 2000,
+        },
+        {
+            config: "fuchsia.storage.ufs.EnableAutoHibernate",
+            key: "enable_auto_hibernate",
+            type: "bool",
+            availability: "optional",
+            default: true,
+        },
         { protocol: "fuchsia.power.system.CpuElementManager" },
         { protocol: "fuchsia.scheduler.RoleManager" },
         {
@@ -67,8 +81,4 @@
             from: "self",
         },
     ],
-    config: {
-        enable_auto_hibernate: { type: "bool" },
-        auto_hibernate_timer_us: { type: "uint32" },
-    },
 }
