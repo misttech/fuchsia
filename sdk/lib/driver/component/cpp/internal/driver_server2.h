@@ -54,14 +54,14 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     binding_.emplace(always_on_dispatcher,
                      fdf::ServerEnd<fuchsia_driver_framework::Driver>(fdf::Channel(server_handle)),
                      this, fidl::kIgnoreBindingClosure);
-    driver_->SetHealthAlertSender(fit::bind_member<&DriverServer2::SendHealthAlert>(this));
+    driver_->SetHealthAlertBinding(&binding_.value());
   }
 
   ~DriverServer2() final {
-    // The sender captures `this`; clear it so that a driver destructor calling ReportHealthAlert
-    // cannot reach this partially destroyed server.
+    // Clear the borrowed binding so that a driver destructor calling ReportHealthAlert cannot
+    // reach this partially destroyed server.
     if (driver_) {
-      driver_->SetHealthAlertSender(nullptr);
+      driver_->SetHealthAlertBinding(nullptr);
     }
   }
 
@@ -188,26 +188,9 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     }
   };
 
-  void SendHealthAlert(const fuchsia_driver_framework::HealthAlert& alert) {
-    if (driver_ && alert.Which() == fuchsia_driver_framework::HealthAlert::Tag::kSelfFault) {
-      // Self-reported faults do not come from a health check request, so no level is recorded.
-      driver_->RecordHealthCheckToInspect(std::nullopt, fit::ok(alert.self_fault().value()));
-    }
-    if (binding_.has_value()) {
-      fdf::Arena arena('HLTH');
-      fidl::OneWayStatus status =
-          fdf::WireSendEvent(*binding_).buffer(arena)->OnHealthAlert(fidl::ToWire(arena, alert));
-      // The logger only exists once Start has run.
-      if (!status.ok() && driver_->logger_) {
-        FDF_LOGL(DEBUG, driver_->logger(), "Failed to send OnHealthAlert: %s",
-                 status.FormatDescription().c_str());
-      }
-    }
-  }
-
   void StopBinding() {
     if (fdf_dispatcher_get_current_dispatcher() == dispatcher_) {
-      ClearHealthAlertSenderAndBinding();
+      ClearHealthAlertBindingAndBinding();
       return;
     }
 
@@ -217,14 +200,14 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     fdf_dispatcher_t* always_on_dispatcher = dispatcher_;
 #endif
     async::PostTask(fdf_dispatcher_get_async_dispatcher(always_on_dispatcher),
-                    [this]() { ClearHealthAlertSenderAndBinding(); });
+                    [this]() { ClearHealthAlertBindingAndBinding(); });
   }
 
-  // Must run on the dispatcher: `ReportHealthAlert` reads the sender from the driver dispatcher, so
-  // clearing it anywhere else would race with an in-flight alert.
-  void ClearHealthAlertSenderAndBinding() {
+  // Must run on the dispatcher: `ReportHealthAlert` reads the binding pointer from the driver
+  // dispatcher, so clearing it anywhere else would race with an in-flight alert.
+  void ClearHealthAlertBindingAndBinding() {
     if (driver_) {
-      driver_->SetHealthAlertSender(nullptr);
+      driver_->SetHealthAlertBinding(nullptr);
     }
     binding_.reset();
   }

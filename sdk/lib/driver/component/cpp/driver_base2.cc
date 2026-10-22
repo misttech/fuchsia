@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.driver.framework/cpp/driver/wire.h>
+#include <fidl/fuchsia.driver.framework/cpp/type_conversions.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fdf/cpp/arena.h>
 #include <lib/inspect/component/cpp/component.h>
 
 namespace fdf {
@@ -321,8 +324,23 @@ void DriverBase2::RecordHealthCheckToInspect(
 }
 
 void DriverBase2::ReportHealthAlert(fuchsia_driver_framework::HealthAlert alert) {
-  if (health_alert_sender_) {
-    health_alert_sender_(std::move(alert));
+  // The binding is cleared once the driver has been asked to stop (or the server is destroyed),
+  // making this a no-op from then on.
+  if (health_alert_binding_ == nullptr) {
+    return;
+  }
+  if (alert.Which() == fuchsia_driver_framework::HealthAlert::Tag::kSelfFault) {
+    // Self-reported faults do not come from a health check request, so no level is recorded.
+    RecordHealthCheckToInspect(std::nullopt, fit::ok(alert.self_fault().value()));
+  }
+  fdf::Arena arena('HLTH');
+  fidl::OneWayStatus status = fdf::WireSendEvent(*health_alert_binding_)
+                                  .buffer(arena)
+                                  ->OnHealthAlert(fidl::ToWire(arena, alert));
+  // The logger only exists once Start has run.
+  if (!status.ok() && logger_) {
+    FDF_LOGL(DEBUG, logger(), "Failed to send OnHealthAlert: %s",
+             status.FormatDescription().c_str());
   }
 }
 

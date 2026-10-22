@@ -33,6 +33,9 @@ class DriverServer2;
 
 namespace fdf {
 
+template <typename Protocol>
+class ServerBinding;
+
 using DriverStartArgs = fuchsia_driver_framework::DriverStartArgs;
 
 class DriverBase2;
@@ -407,14 +410,17 @@ class DriverBase2 {
   async_dispatcher_t* dispatcher() const { return driver_dispatcher_->async_dispatcher(); }
 
  private:
-  // DriverServer2 installs (and clears) the sink used by ReportHealthAlert and drives
-  // RecordHealthCheckToInspect.
+  // DriverServer2 installs (and clears) the Driver channel binding used by ReportHealthAlert and
+  // drives RecordHealthCheckToInspect.
   template <typename DriverBaseImpl>
   friend class fdf_internal::DriverServer2;
 
-  void SetHealthAlertSender(
-      fit::inline_function<void(fuchsia_driver_framework::HealthAlert)> sender) {
-    health_alert_sender_ = std::move(sender);
+  // `binding` is borrowed, not owned. It must outlive this driver or be cleared (nullptr) before
+  // it is destroyed. Only touched on the driver dispatcher. Kept as a plain pointer (rather than a
+  // callback bound in DriverServer2) so that the OnHealthAlert send path lives only in
+  // ReportHealthAlert and is dead-stripped from drivers that never call it.
+  void SetHealthAlertBinding(ServerBinding<fuchsia_driver_framework::Driver>* binding) {
+    health_alert_binding_ = binding;
   }
 
   // Mirrors the result of the latest health check into the driver's Inspect tree under
@@ -431,7 +437,7 @@ class DriverBase2 {
   // root/driver_health_check record.
   std::optional<inspect::Inspector> health_check_inspector_;
   std::optional<inspect::Node> health_check_node_;
-  fit::inline_function<void(fuchsia_driver_framework::HealthAlert)> health_alert_sender_;
+  ServerBinding<fuchsia_driver_framework::Driver>* health_alert_binding_ = nullptr;
   std::string name_;
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
   std::shared_ptr<OutgoingDirectory> outgoing_;
