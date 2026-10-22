@@ -1,0 +1,59 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wlan-fcg-crypto",
+    srcs = [
+        "src/boringssl.rs",
+        "src/ecc.rs",
+        "src/fcg.rs",
+        "src/hmac_utils.rs",
+        "src/lib.rs",
+        "src/owe.rs",
+        "src/sae/frame.rs",
+        "src/sae/mod.rs",
+        "src/sae/state.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:num-derive",
+    ],
+    visibility = [
+        "//src/connectivity/wlan/lib/rsn:__pkg__",
+        "//src/connectivity/wlan/lib/sme:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/connectivity/wlan/lib/statemachine:wlan-statemachine",
+        "//src/lib/mundane",
+        "//third_party/boringssl/rust:bssl-sys.shared-no-ssl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+    ],
+)
+
+rustc_test(
+    name = "wlan-fcg-crypto_test",
+    crate = ":wlan-fcg-crypto",
+    deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "wlan-fcg-crypto-tests",
+    unit_tests = [":wlan-fcg-crypto_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
