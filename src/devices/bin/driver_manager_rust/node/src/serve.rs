@@ -345,17 +345,22 @@ impl Node {
         let weak_self = self.weak_from_this();
         let mut driver_event_stream = driver_host_proxy.take_event_stream();
         let close_listener_task = Some(fasync::Task::local(async move {
-            if let Some(event) = driver_event_stream.next().await {
-                // The only valid way a driver host should shut down the Driver channel
-                // is with the ZX_OK epitaph.
-                // TODO(b/322235974): Increase the log severity to ERROR once we resolve the
-                // component shutdown order in DriverTestRealm.
-                let Err(e) = event;
-                if let fidl::Error::ClientChannelClosed { epitaph, .. } = e
-                    && epitaph.is_ok()
-                {
-                } else {
-                    warn!("Node: driver channel shutdown with: {e}");
+            while let Some(event) = driver_event_stream.next().await {
+                match event {
+                    Ok(fdh::DriverEvent::OnHealthAlert { .. }) => {}
+                    Err(e) => {
+                        // The only valid way a driver host should shut down the Driver channel
+                        // is with the ZX_OK epitaph.
+                        // TODO(b/322235974): Increase the log severity to ERROR once we resolve the
+                        // component shutdown order in DriverTestRealm.
+                        if let fidl::Error::ClientChannelClosed { epitaph, .. } = e
+                            && epitaph.is_ok()
+                        {
+                        } else {
+                            warn!("Node: driver channel shutdown with: {e}");
+                        }
+                        break;
+                    }
                 }
             }
 

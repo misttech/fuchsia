@@ -415,6 +415,23 @@ pub(crate) fn convert_health_check_error(
     fidl_fdf::HealthCheckError::from_primitive_allow_unknown(u32::from(err))
 }
 
+pub(crate) fn convert_health_alert(
+    alert: fidl_next_fdf::HealthAlert,
+) -> Option<fidl_fdf::HealthAlert> {
+    match alert {
+        fidl_next_fdf::HealthAlert::SelfFault(resp) => {
+            Some(fidl_fdf::HealthAlert::SelfFault(convert_health_check_response(resp)))
+        }
+        fidl_next_fdf::HealthAlert::UpstreamNeighborFault(resp) => {
+            Some(fidl_fdf::HealthAlert::UpstreamNeighborFault(convert_health_check_response(resp)))
+        }
+        fidl_next_fdf::HealthAlert::DownstreamNeighborFault(resp) => Some(
+            fidl_fdf::HealthAlert::DownstreamNeighborFault(convert_health_check_response(resp)),
+        ),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,5 +570,59 @@ mod tests {
         let unknown_err = convert_health_check_error(fidl_next_fdf::HealthCheckError::from(99));
         assert_eq!(unknown_err, fidl_fdf::HealthCheckError::from_primitive_allow_unknown(99));
         assert!(unknown_err.is_unknown());
+    }
+
+    #[fuchsia::test]
+    fn test_convert_health_alert() {
+        let self_fault = convert_health_alert(fidl_next_fdf::HealthAlert::SelfFault(
+            fidl_next_fdf::HealthCheckResponse {
+                diagnostics: None,
+                conditions: Some(vec![fidl_next_fdf::HealthCondition {
+                    status: Some(fidl_next_fdf::HealthStatus::Unhealthy),
+                    reason_code: Some("RING_STALLED".to_string()),
+                    message: Some("No DMA progress".to_string()),
+                    diagnostics: None,
+                    first_observed: None,
+                    last_observed: None,
+                    occurrence_count: None,
+                }]),
+            },
+        ))
+        .expect("self_fault");
+        let fidl_fdf::HealthAlert::SelfFault(details) = self_fault else {
+            panic!("expected SelfFault, got {self_fault:?}");
+        };
+        let conditions = details.conditions.expect("conditions");
+        assert_eq!(conditions[0].status, Some(fidl_fdf::HealthStatus::Unhealthy));
+        assert_eq!(conditions[0].reason_code.as_deref(), Some("RING_STALLED"));
+
+        let upstream = convert_health_alert(fidl_next_fdf::HealthAlert::UpstreamNeighborFault(
+            fidl_next_fdf::HealthCheckResponse {
+                diagnostics: None,
+                conditions: Some(vec![fidl_next_fdf::HealthCondition {
+                    status: Some(fidl_next_fdf::HealthStatus::Degraded),
+                    reason_code: Some("BUS_TIMEOUT".to_string()),
+                    message: None,
+                    diagnostics: None,
+                    first_observed: None,
+                    last_observed: None,
+                    occurrence_count: None,
+                }]),
+            },
+        ))
+        .expect("upstream");
+        let fidl_fdf::HealthAlert::UpstreamNeighborFault(upstream_details) = upstream else {
+            panic!("expected UpstreamNeighborFault, got {upstream:?}");
+        };
+        assert_eq!(
+            upstream_details.conditions.unwrap()[0].reason_code.as_deref(),
+            Some("BUS_TIMEOUT")
+        );
+
+        let downstream = convert_health_alert(fidl_next_fdf::HealthAlert::DownstreamNeighborFault(
+            fidl_next_fdf::HealthCheckResponse { diagnostics: None, conditions: None },
+        ))
+        .expect("downstream");
+        assert!(matches!(downstream, fidl_fdf::HealthAlert::DownstreamNeighborFault(_)));
     }
 }

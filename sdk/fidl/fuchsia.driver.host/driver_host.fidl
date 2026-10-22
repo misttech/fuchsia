@@ -47,6 +47,12 @@ closed protocol Driver {
     strict HealthCheck(struct {
         request fuchsia.driver.framework.HealthCheckRequest;
     }) -> (fuchsia.driver.framework.HealthCheckResponse) error fuchsia.driver.framework.HealthCheckError;
+
+    /// Proactively emitted by the driver (via the Driver Host) when it detects
+    /// an asynchronous self-fault or suspects an upstream/downstream neighbor.
+    strict -> OnHealthAlert(struct {
+        alert fuchsia.driver.framework.HealthAlert;
+    });
 };
 
 /// The lifecycle state of a dispatcher.

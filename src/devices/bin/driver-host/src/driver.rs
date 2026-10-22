@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::conversion::{
-    convert_health_check_error, convert_health_check_request, convert_health_check_response,
-    convert_start_args,
+    convert_health_alert, convert_health_check_error, convert_health_check_request,
+    convert_health_check_response, convert_start_args,
 };
 use crate::loader::{Library, LoaderService};
 use crate::modules::ModulesAndSymbols;
@@ -23,7 +23,7 @@ use fidl_next::ClientDispatcher;
 use fidl_next_fuchsia_driver_framework as fidl_next_fdf;
 use fuchsia_async::TimeoutExt;
 use fuchsia_sync::Mutex;
-use futures::channel::oneshot;
+use futures::channel::{mpsc, oneshot};
 use futures::future::FusedFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::warn;
@@ -50,6 +50,10 @@ type DriverClient = fidl_next::Client<
     fdf_fidl::DriverChannel<fdf::AsyncDispatcher>,
 >;
 
+/// The maximum number of health alerts from a driver that can be queued for forwarding to
+/// DriverManager. Alerts received while the queue is full are dropped.
+const HEALTH_ALERT_QUEUE_CAPACITY: usize = 64;
+
 // Per-level deadlines for a driver to answer a HealthCheck. A check that misses its deadline
 // fails with TIMEOUT, which usually means the driver's dispatcher is wedged. These three
 // constants mirror the deadlines documented on
@@ -57,6 +61,33 @@ type DriverClient = fidl_next::Client<
 const PING_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(250);
 const FAST_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 const DEEP_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(120);
+
+struct DriverEventHandler {
+    alert_tx: mpsc::Sender<fidl_fdf::HealthAlert>,
+    // Number of alerts dropped because the queue was full. Only used to rate-limit the warning.
+    dropped: u64,
+}
+
+impl<T: fidl_next::Transport> fidl_next_fdf::DriverClientHandler<T> for DriverEventHandler {
+    async fn on_health_alert(
+        &mut self,
+        request: fidl_next::Request<fidl_next_fdf::driver::OnHealthAlert, T>,
+    ) {
+        let Some(alert) = convert_health_alert(request.payload().alert) else {
+            return;
+        };
+        if let Err(e) = self.alert_tx.try_send(alert)
+            && e.is_full()
+        {
+            // Warn at 1, 2, 4, 8, ... drops so an alert flood doesn't become a log flood. This
+            // mirrors the SDK's HealthAlertReporter.
+            self.dropped += 1;
+            if self.dropped.is_power_of_two() {
+                warn!("Health alert queue full; dropped {} alerts so far", self.dropped);
+            }
+        }
+    }
+}
 
 struct LoadedDriver(u64);
 
@@ -658,6 +689,9 @@ impl Driver {
         );
         let client_dispatcher = ClientDispatcher::new(client);
         let client = client_dispatcher.client();
+        // A futures mpsc channel holds `buffer + number of senders` messages, and there is a
+        // single sender.
+        let (alert_tx, alert_rx) = mpsc::channel(HEALTH_ALERT_QUEUE_CAPACITY - 1);
 
         let client_dispatcher_task = {
             let self_clone = self.clone();
@@ -670,7 +704,7 @@ impl Driver {
                         Some(hooks.initialize(server.into_untyped().into_driver_handle()));
                 };
 
-                client_dispatcher.run_client().await
+                client_dispatcher.run(DriverEventHandler { alert_tx, dropped: 0 }).await.map(|_| ())
             })
         };
 
@@ -712,6 +746,7 @@ impl Driver {
                 driver_request,
                 client_dispatcher_task,
                 internal_stop_rx,
+                alert_rx,
                 client,
             )
             .await;
@@ -725,6 +760,7 @@ impl Driver {
         driver_request: ServerEnd<fdh::DriverMarker>,
         client_dispatcher_task: F,
         internal_stop_rx: oneshot::Receiver<()>,
+        mut alert_rx: mpsc::Receiver<fidl_fdf::HealthAlert>,
         client: DriverClient,
     ) where
         F: std::future::Future<Output = Result<O, E>> + Send + Unpin + 'static,
@@ -861,6 +897,13 @@ impl Driver {
                         let _ = responder.send(res.as_ref().map_err(|e| *e));
                     }
                 }
+                alert = alert_rx.select_next_some() => {
+                    // A send error means the channel is closed, which the request-stream arm
+                    // above already handles by exiting the loop.
+                    let _ = driver_request_stream
+                        .control_handle()
+                        .send_on_health_alert(&alert);
+                }
                 res = &mut internal_stop_receiver => {
                     log::warn!("Power transition failed, stopping driver internally {:?}", res);
                     // Unblock the resume_receiver.
@@ -883,6 +926,9 @@ impl Driver {
         for (_, responder) in health_check_responders.drain() {
             let _ = responder.send(Err(fidl_fdf::HealthCheckError::InvalidState));
         }
+        // Dropping the receiver makes stop-time `try_send` in the event handler fail as
+        // disconnected (silently) rather than filling the queue and logging drops.
+        drop(alert_rx);
 
         if should_stop {
             // Ignore the result as its possible we dropped the sender by not assigning it
@@ -1771,6 +1817,20 @@ mod health_check_tests {
                         responder.respond_err(fidl_next_fdf::HealthCheckError::NotSupported).await;
                 }
                 _ => {
+                    let _ = self
+                        .fidl_server
+                        .on_health_alert(fidl_next_fdf::HealthAlert::UpstreamNeighborFault(
+                            fidl_next_fdf::HealthCheckResponse {
+                                conditions: Some(vec![fidl_next_fdf::HealthCondition {
+                                    status: Some(fidl_next_fdf::HealthStatus::Degraded),
+                                    reason_code: Some("LINK_TIMEOUT".to_string()),
+                                    message: Some("neighbor link timed out".to_string()),
+                                    ..Default::default()
+                                }]),
+                                ..Default::default()
+                            },
+                        ))
+                        .await;
                     let _ = responder
                         .respond(fidl_next_fdf::HealthCheckResponse {
                             conditions: Some(vec![fidl_next_fdf::HealthCondition {
@@ -1995,6 +2055,32 @@ mod health_check_tests {
         let unknown = fidl_fdf::HealthCheckRequest::from_primitive_allow_unknown(0xdead);
         let res = driver_proxy.health_check(unknown).await.unwrap();
         assert_eq!(res.unwrap_err(), fidl_fdf::HealthCheckError::NotSupported);
+
+        driver_proxy.stop().unwrap();
+        drop(driver);
+        shutdown_rx.await.unwrap();
+        env.destroy_all_dispatchers();
+    }
+
+    #[fuchsia::test]
+    async fn test_run_termination_watcher_forwards_on_health_alert() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, driver_proxy, shutdown_rx, _scope) = start_test_driver(&env).await;
+
+        let mut event_stream = driver_proxy.take_event_stream();
+        let _ =
+            driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Fast).await.unwrap().unwrap();
+
+        let event = event_stream.try_next().await.unwrap().expect("expected OnHealthAlert event");
+        let fdh::DriverEvent::OnHealthAlert { alert } = event;
+        let fidl_fdf::HealthAlert::UpstreamNeighborFault(details) = alert else {
+            panic!("expected UpstreamNeighborFault, got {alert:?}");
+        };
+        let conditions = details.conditions.expect("expected alert conditions");
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].status, Some(fidl_fdf::HealthStatus::Degraded));
+        assert_eq!(conditions[0].reason_code.as_deref(), Some("LINK_TIMEOUT"));
+        assert_eq!(conditions[0].message.as_deref(), Some("neighbor link timed out"));
 
         driver_proxy.stop().unwrap();
         drop(driver);
