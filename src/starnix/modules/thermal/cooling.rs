@@ -5,7 +5,7 @@
 use anyhow::{Context, Error, anyhow, format_err};
 use fidl_fuchsia_power_battery as fbattery;
 use starnix_core::device::kobject::Device;
-use starnix_core::device::service_watcher::watch_fidl_service;
+use starnix_core::device::service_watcher::ServiceWatcher;
 use starnix_core::fs::sysfs::{CpuFreqDomain, build_device_directory, get_cpu_freq_domains};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsNodeOps;
@@ -16,7 +16,6 @@ use starnix_sync::{LockDepMutex, ThermalChargeLevelLock};
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
-use std::cell::Cell;
 use std::sync::Arc;
 
 trait CoolingOps: Send + Sync + 'static {
@@ -214,18 +213,14 @@ pub fn cooling_device_init(kernel: &Kernel, devices: Vec<String>) -> Result<(), 
 }
 
 struct FccCoolingOps {
-    proxy: fbattery::ChargerSynchronousProxy,
+    proxy: Arc<fbattery::ChargerSynchronousProxy>,
     max_charge_level: u32,
     charge_level: LockDepMutex<u32, ThermalChargeLevelLock>,
 }
 
 impl FccCoolingOps {
-    fn new(
-        proxy: fbattery::ChargerSynchronousProxy,
-        max_charge_level: u32,
-        charge_level: u32,
-    ) -> Self {
-        Self { proxy, max_charge_level, charge_level: charge_level.into() }
+    fn new(proxy: Arc<fbattery::ChargerSynchronousProxy>, max_charge_level: u32) -> Self {
+        Self { proxy, max_charge_level, charge_level: 0.into() }
     }
 }
 
@@ -282,29 +277,22 @@ fn register_fcc_device(
 ) -> Result<(), Error> {
     let max_charge_level: u32 = param.parse().context("Invalid max_charge_level")?;
     let device_id = registrar.get_next_id();
-    let device_added = Cell::new(false);
-    watch_fidl_service(
+    ServiceWatcher::register_singleton(
         kernel,
         fbattery::ChargerServiceMarker,
-        "fcc_cooling_device",
-        async move |weak_kernel, instance| {
-            let Some(kernel) = weak_kernel.upgrade() else {
-                return;
-            };
-            if device_added.get() {
-                log_warn!("Ignoring additional ChargerService instance");
-                return;
-            }
+        move |current_task, instance, scope| {
             let proxy = match instance.connect_to_device_sync() {
-                Ok(proxy) => proxy,
+                Ok(proxy) => Arc::new(proxy),
                 Err(e) => {
                     log_error!("Failed to connect to battery Charger: {e:?}");
                     return;
                 }
             };
-            device_added.set(true);
-            let ops = FccCoolingOps::new(proxy, max_charge_level, 0);
-            register_cooling_device(&kernel, device_id, "fcc".to_string(), ops);
+            scope.monitor_channel(proxy.clone());
+            let ops = FccCoolingOps::new(proxy, max_charge_level);
+            let device =
+                register_cooling_device(current_task.kernel(), device_id, "fcc".to_string(), ops);
+            scope.add_scoped_device(device);
         },
     );
     Ok(())
