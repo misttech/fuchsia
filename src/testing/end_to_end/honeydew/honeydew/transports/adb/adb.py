@@ -308,6 +308,7 @@ class Adb:
         ffx_transport: FFX transport instance used to restart wedged
             device-side adbd processes during recovery.
         run_isolated_server: Whether to run an isolated ADB server.
+        output_dir: Directory where ADB server logs should be stored.
         vendor_keys_path: Path to custom vendor keys.
 
     Raises:
@@ -322,12 +323,14 @@ class Adb:
         serial_number: str,
         ffx_transport: ffx.FFX,
         run_isolated_server: bool = True,
+        output_dir: Path | str | None = None,
         vendor_keys_path: str | None = None,
     ) -> None:
         self._device_name: str = device_name
         self._serial_number: str = serial_number
         self._ffx: ffx.FFX = ffx_transport
         self._run_isolated_server: bool = run_isolated_server
+        self._output_dir: Path | None = Path(output_dir) if output_dir else None
         (
             self._vendor_keys_path,
             self._temp_vendor_keys_dir,
@@ -353,6 +356,7 @@ class Adb:
                     self._adb_server = AdbServer(
                         adb_binary_path=self._adb_binary,
                         serial_id=self._serial_number,
+                        output_dir=self._output_dir,
                         vendor_keys_path=self._vendor_keys_path,
                     )
                     self._adb_server.start()

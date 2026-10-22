@@ -302,11 +302,75 @@ class AdbTests(unittest.TestCase):
         mock_adb_server_cls.assert_called_once_with(
             adb_binary_path="/custom/adb",
             serial_id=_SERIAL_NUMBER,
+            output_dir=None,
             vendor_keys_path="/keys",
         )
         mock_server.start.assert_called_once()
         mock_cache_pid.assert_called_once_with(obj)
+        self.assertIsNone(obj._output_dir)
         self.assertIs(obj._adb_server, mock_server)
+        obj.close()
+
+    @mock.patch.object(adb.Adb, "_cache_adbd_pid", autospec=True)
+    @mock.patch("os.path.exists", return_value=True)
+    @mock.patch.object(adb, "AdbServer")
+    def test_init_isolated_server_with_output_dir(
+        self,
+        mock_adb_server_cls: mock.Mock,
+        mock_exists: mock.Mock,
+        mock_cache_pid: mock.Mock,
+    ) -> None:
+        """Test init passes specified output_dir to AdbServer."""
+        mock_server = mock.Mock()
+        mock_adb_server_cls.return_value = mock_server
+
+        custom_output_dir = "/tmp/custom_output_dir"
+        obj = adb.Adb(
+            device_name=_DEVICE_NAME,
+            serial_number=_SERIAL_NUMBER,
+            ffx_transport=self.mock_ffx,
+            output_dir=custom_output_dir,
+            vendor_keys_path="/keys",
+        )
+        mock_adb_server_cls.assert_called_once_with(
+            adb_binary_path="/custom/adb",
+            serial_id=_SERIAL_NUMBER,
+            output_dir=Path(custom_output_dir),
+            vendor_keys_path="/keys",
+        )
+        self.assertEqual(obj._output_dir, Path(custom_output_dir))
+        mock_server.start.assert_called_once()
+        mock_cache_pid.assert_called_once_with(obj)
+        self.assertIs(obj._adb_server, mock_server)
+        obj.close()
+
+    @mock.patch.object(adb.Adb, "_cache_adbd_pid", autospec=True)
+    @mock.patch("os.path.exists", return_value=True)
+    @mock.patch.object(adb, "AdbServer")
+    def test_init_isolated_server_with_empty_output_dir(
+        self,
+        mock_adb_server_cls: mock.Mock,
+        mock_exists: mock.Mock,
+        mock_cache_pid: mock.Mock,
+    ) -> None:
+        """Test init treats empty output_dir as unspecified."""
+        mock_server = mock.Mock()
+        mock_adb_server_cls.return_value = mock_server
+
+        obj = adb.Adb(
+            device_name=_DEVICE_NAME,
+            serial_number=_SERIAL_NUMBER,
+            ffx_transport=self.mock_ffx,
+            output_dir="",
+            vendor_keys_path="/keys",
+        )
+        mock_adb_server_cls.assert_called_once_with(
+            adb_binary_path="/custom/adb",
+            serial_id=_SERIAL_NUMBER,
+            output_dir=None,
+            vendor_keys_path="/keys",
+        )
+        self.assertIsNone(obj._output_dir)
         obj.close()
 
     @mock.patch.object(adb, "AdbServer")

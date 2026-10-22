@@ -4,6 +4,8 @@
 # found in the LICENSE file.
 """Mobly test for ADB transport."""
 
+import pathlib
+
 import fuchsia_base_test
 from honeydew.device_classes import android_device
 from honeydew.transports.adb import adb as adb_transport
@@ -33,6 +35,22 @@ class AdbTest(fuchsia_base_test.FuchsiaBaseTest):
         self.adb.verify_supported()
         self.adb.check_connection()
         self.adb.wait_for_boot_complete()
+
+    async def test_adb_server_log_collected(self) -> None:
+        """Verifies adb_server_N_log.txt is created in artifacts dir."""
+        log_dir = pathlib.Path(self.log_path) / "adb"
+        server_logs = list(log_dir.glob("adb_server_*_log.txt"))
+        asserts.assert_true(
+            len(server_logs) > 0,
+            f"Expected adb_server log in {log_dir}, found none",
+        )
+        for log_file in server_logs:
+            asserts.assert_greater(
+                log_file.stat().st_size,
+                0,
+                f"Expected adb_server log {log_file.name} to be non-empty, "
+                "but its size is 0",
+            )
 
     async def test_list_devices(self) -> None:
         """Test case for ADB.run(["devices", "-l"])."""

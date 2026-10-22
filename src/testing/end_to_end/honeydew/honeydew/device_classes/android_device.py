@@ -13,6 +13,7 @@ import ipaddress
 import logging
 import re
 import types
+from pathlib import Path
 from typing import Any
 
 from honeydew import errors
@@ -165,12 +166,21 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         run_isolated_server = True
         vendor_keys_path = None
         enabled = True
+        output_dir: Path | str | None = None
 
         if self._config:
             adb_config = self._config.get("transports", {}).get("adb", {})
             run_isolated_server = adb_config.get("run_isolated_server", True)
             vendor_keys_path = adb_config.get("vendor_keys_path")
             enabled = adb_config.get("enabled", True)
+            output_dir = adb_config.get("output_dir")
+
+        if not output_dir and self._ffx_config_data.logs_dir:
+            ffx_logs_path = Path(self._ffx_config_data.logs_dir)
+            if ffx_logs_path.name == "ffx":
+                output_dir = ffx_logs_path.parent / "adb"
+            else:
+                output_dir = ffx_logs_path / "adb"
 
         # Note - An existing ADB implementation in //vendor/google is used by
         # some Lacewing tests. Running two ADB server implementations against
@@ -225,6 +235,7 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             device_name=self.device_name,
             serial_number=serial_number,
             run_isolated_server=run_isolated_server,
+            output_dir=output_dir,
             vendor_keys_path=vendor_keys_path,
             ffx_transport=self.ffx,
         )

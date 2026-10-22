@@ -61,6 +61,37 @@ class AdbServerTests(unittest.TestCase):
         self.assertFalse(self.server._server_is_ready.is_set())
         self.assertFalse(self.server._server_stop_requested.is_set())
 
+    def test_init_creates_output_dir_if_not_exists(self) -> None:
+        """Test __init__ creates output directory if it does not exist."""
+        nonexistent_dir = self.output_dir / "nested" / "logs" / "adb"
+        self.assertFalse(nonexistent_dir.exists())
+
+        server = adb_server.AdbServer(
+            adb_binary_path=_ADB_BINARY,
+            serial_id=_SERIAL_ID,
+            output_dir=nonexistent_dir,
+        )
+        self.assertTrue(nonexistent_dir.exists())
+        self.assertEqual(server._output_dir, nonexistent_dir)
+
+    def test_init_output_dir_as_str_and_empty_str(self) -> None:
+        """Test __init__ normalizes string output_dir and falls back on empty."""
+        str_dir = str(self.output_dir / "str_dir")
+        server = adb_server.AdbServer(
+            adb_binary_path=_ADB_BINARY,
+            serial_id=_SERIAL_ID,
+            output_dir=str_dir,
+        )
+        self.assertEqual(server._output_dir, Path(str_dir))
+        self.assertTrue(Path(str_dir).exists())
+
+        empty_server = adb_server.AdbServer(
+            adb_binary_path=_ADB_BINARY,
+            serial_id=_SERIAL_ID,
+            output_dir="",
+        )
+        self.assertEqual(empty_server._output_dir, Path(tempfile.gettempdir()))
+
     def test_host_and_port(self) -> None:
         """Test host() and port() accessors."""
         self.assertEqual(self.server.host(), "127.0.0.1")

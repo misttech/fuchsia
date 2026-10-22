@@ -3,8 +3,10 @@
 # found in the LICENSE file.
 """Unit tests for honeydew.device_classes.android_device.py."""
 
+import dataclasses
 import ipaddress
 import unittest
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -289,6 +291,124 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_verify_supported.assert_called_once()
         mock_check_connection.assert_called_once()
         self.ad_obj.__dict__.pop("adb", None)
+
+    @mock.patch.object(adb_transport, "Adb", autospec=True)
+    def test_adb_transport_derives_output_dir_from_ffx_logs_dir(
+        self, mock_adb_cls: mock.Mock
+    ) -> None:
+        """Test adb derives output_dir from ffx_config_data.logs_dir."""
+        orig_ffx_config_data = self.ad_obj._ffx_config_data
+        orig_config = self.ad_obj._config
+        try:
+            self.ad_obj._ffx_config_data = dataclasses.replace(
+                orig_ffx_config_data, logs_dir="/tmp/logs"
+            )
+            self.ad_obj._config = None
+
+            _ = self.ad_obj.adb
+
+            mock_adb_cls.assert_called_once_with(
+                device_name=self.ad_obj.device_name,
+                serial_number=self.ad_obj._device_info.serial_number,
+                run_isolated_server=True,
+                output_dir=Path("/tmp/logs/adb"),
+                vendor_keys_path=None,
+                ffx_transport=self.ad_obj.ffx,
+            )
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._ffx_config_data = orig_ffx_config_data
+            self.ad_obj._config = orig_config
+
+    @mock.patch.object(adb_transport, "Adb", autospec=True)
+    def test_adb_transport_derives_output_dir_when_logs_dir_ends_with_ffx(
+        self, mock_adb_cls: mock.Mock
+    ) -> None:
+        """Test adb derives output_dir when logs_dir ends with ffx."""
+        orig_ffx_config_data = self.ad_obj._ffx_config_data
+        orig_config = self.ad_obj._config
+        try:
+            self.ad_obj._ffx_config_data = dataclasses.replace(
+                orig_ffx_config_data, logs_dir="/tmp/test_run/ffx"
+            )
+            self.ad_obj._config = None
+
+            _ = self.ad_obj.adb
+
+            mock_adb_cls.assert_called_once_with(
+                device_name=self.ad_obj.device_name,
+                serial_number=self.ad_obj._device_info.serial_number,
+                run_isolated_server=True,
+                output_dir=Path("/tmp/test_run/adb"),
+                vendor_keys_path=None,
+                ffx_transport=self.ad_obj.ffx,
+            )
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._ffx_config_data = orig_ffx_config_data
+            self.ad_obj._config = orig_config
+
+    @mock.patch.object(adb_transport, "Adb", autospec=True)
+    def test_adb_transport_uses_configured_output_dir(
+        self, mock_adb_cls: mock.Mock
+    ) -> None:
+        """Test adb uses output_dir from adb_config when provided."""
+        orig_ffx_config_data = self.ad_obj._ffx_config_data
+        orig_config = self.ad_obj._config
+        try:
+            self.ad_obj._ffx_config_data = dataclasses.replace(
+                orig_ffx_config_data, logs_dir="/tmp/logs"
+            )
+            self.ad_obj._config = {
+                "transports": {
+                    "adb": {
+                        "output_dir": "/custom/adb_logs",
+                    }
+                }
+            }
+
+            _ = self.ad_obj.adb
+
+            mock_adb_cls.assert_called_once_with(
+                device_name=self.ad_obj.device_name,
+                serial_number=self.ad_obj._device_info.serial_number,
+                run_isolated_server=True,
+                output_dir="/custom/adb_logs",
+                vendor_keys_path=None,
+                ffx_transport=self.ad_obj.ffx,
+            )
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._ffx_config_data = orig_ffx_config_data
+            self.ad_obj._config = orig_config
+
+    @mock.patch.object(adb_transport, "Adb", autospec=True)
+    def test_adb_transport_output_dir_none_when_no_logs_dir(
+        self, mock_adb_cls: mock.Mock
+    ) -> None:
+        """Test adb passes output_dir=None when logs_dir is not set."""
+        orig_ffx_config_data = self.ad_obj._ffx_config_data
+        orig_config = self.ad_obj._config
+        try:
+            self.ad_obj._ffx_config_data = dataclasses.replace(
+                orig_ffx_config_data, logs_dir=""
+            )
+            self.ad_obj._config = None
+
+            _ = self.ad_obj.adb
+
+            mock_adb_cls.assert_called_once_with(
+                device_name=self.ad_obj.device_name,
+                serial_number=self.ad_obj._device_info.serial_number,
+                run_isolated_server=True,
+                output_dir=None,
+                vendor_keys_path=None,
+                ffx_transport=self.ad_obj.ffx,
+            )
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
+            self.ad_obj._ffx_config_data = orig_ffx_config_data
+            self.ad_obj._config = orig_config
 
     # TODO(b/564946370): Remove this test once 'adb root' is stable on USB.
     @mock.patch.object(

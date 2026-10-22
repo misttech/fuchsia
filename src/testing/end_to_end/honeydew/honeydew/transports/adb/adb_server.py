@@ -79,12 +79,15 @@ class AdbServer:
         self,
         adb_binary_path: str,
         serial_id: str,
-        output_dir: Path | None = None,
+        output_dir: Path | str | None = None,
         vendor_keys_path: str | None = None,
     ):
         self._adb_binary_path: str = adb_binary_path
         self._serial_id: str = serial_id
-        self._output_dir: Path = output_dir or Path(tempfile.gettempdir())
+        self._output_dir: Path = (
+            Path(output_dir) if output_dir else Path(tempfile.gettempdir())
+        )
+        self._output_dir.mkdir(parents=True, exist_ok=True)
         self._vendor_keys_path: str | None = vendor_keys_path
 
         # Use RLock to allow reentrant calls
@@ -415,6 +418,7 @@ class AdbServer:
                 else:
                     server_env.pop("ADB_VENDOR_KEYS", None)
 
+                self._output_dir.mkdir(parents=True, exist_ok=True)
                 log_file_path = self._output_dir / f"{server_name}_log.txt"
                 output_file = open(log_file_path, "w", encoding="utf-8")
                 try:
