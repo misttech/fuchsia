@@ -326,6 +326,42 @@
             ]
         },
         {
+            "name": "ExecModTest.ForkPreservesCowModifiedInChild",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "ExecModTest.ForkPreservesCowModifiedInParent",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "ExecModTest.MovePreservesCowModified",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "ExecModTest.MovePreservesCowModifiedAcrossFork",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "ExecModTest.ShrinkAndRegrowPreservesCowModified",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "ExecModTest.ShrinkAndRegrowPreservesCowModifiedAcrossFork",
+            "audit_expectations": [
+                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "Fcntl/FcntlTest.WithoutFdUse/F_GETFL",
             "audit_expectations": [
                 "avc:  denied  { use } for path=2F746D702F233233202864656C6574656429 dev=\"tmpfs\" ino=23 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
@@ -899,19 +935,7 @@
             ]
         },
         {
-            "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_AfterFork_MprotectFailure",
-            "audit_expectations": [
-                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
             "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
-            "audit_expectations": [
-                "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_ParentAfterFork_MprotectFailure",
             "audit_expectations": [
                 "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
             ]

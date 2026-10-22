@@ -1944,12 +1944,14 @@ TEST_F(MMapProcTest, PrivateFileMappingMprotectMergesMappings) {
 
   auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
     std::string maps;
-    ASSERT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
     auto report = test_helper::find_memory_mapping(addr, maps);
-    ASSERT_NE(report, std::nullopt);
-    EXPECT_EQ(report->start, addr);
-    EXPECT_EQ(report->end, addr + length);
-    EXPECT_EQ(report->perms, expected_perms);
+    EXPECT_NE(report, std::nullopt);
+    if (report.has_value()) {
+      EXPECT_EQ(report->start, addr);
+      EXPECT_EQ(report->end, addr + length);
+      EXPECT_EQ(report->perms, expected_perms);
+    }
   };
 
   auto set_prot = [&](uintptr_t addr, size_t page, int prot) {
@@ -2030,6 +2032,435 @@ TEST_F(MMapProcTest, PrivateFileMappingMprotectMergesMappings) {
   }
 }
 
+// Verify that once a writable private file mapping is modified, its copy-on-write state is
+// preserved in both parent and child across `fork()`, allowing split pieces to coalesce in
+// `/proc/self/maps` when their protections match again.
+TEST_F(MMapProcTest, PrivateFileMappingCowModifiedPreservedAcrossFork) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_cow_fork_preserved_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 3));
+
+  auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    auto report = test_helper::find_memory_mapping(addr, maps);
+    EXPECT_NE(report, std::nullopt);
+    if (report.has_value()) {
+      EXPECT_EQ(report->start, addr);
+      EXPECT_EQ(report->end, addr + length);
+      EXPECT_EQ(report->perms, expected_perms);
+    }
+  };
+
+  auto expect_split_mappings = [&](uintptr_t addr) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    for (size_t i = 0; i < 3; ++i) {
+      auto report = test_helper::find_memory_mapping(addr + i * page_size, maps);
+      EXPECT_NE(report, std::nullopt);
+      if (report.has_value()) {
+        EXPECT_EQ(report->start, addr + i * page_size);
+        EXPECT_EQ(report->end, addr + (i + 1) * page_size);
+        EXPECT_EQ(report->perms, "rw-p");
+      }
+    }
+  };
+
+  auto mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 3, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+  // Modify the first page before splitting the 3-page mapping into two pieces separated by a
+  // read-only middle page, then fork.
+  reinterpret_cast<volatile uint8_t*>(addr)[0] = 0xAB;
+  SAFE_SYSCALL(mprotect(reinterpret_cast<void*>(addr + page_size), page_size, PROT_READ));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr)[0], 0xAB);
+    // Write to the first page while the middle page is read-only so the write only touches the
+    // first piece, then restore write permissions on the middle page. On Starnix all 3 pages
+    // coalesce back into a single mapping, whereas on Linux private mappings that were modified and
+    // split before `fork()` remain separate in the child process.
+    reinterpret_cast<volatile uint8_t*>(addr)[0] = 0xCD;
+    SAFE_SYSCALL(
+        mprotect(reinterpret_cast<void*>(addr + page_size), page_size, PROT_READ | PROT_WRITE));
+    if (test_helper::IsStarnix()) {
+      expect_single_mapping(addr, page_size * 3, "rw-p");
+    } else {
+      expect_split_mappings(addr);
+    }
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr)[0], 0xCD);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+
+  SAFE_SYSCALL(
+      mprotect(reinterpret_cast<void*>(addr + page_size), page_size, PROT_READ | PROT_WRITE));
+  expect_single_mapping(addr, page_size * 3, "rw-p");
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr)[0], 0xAB);
+}
+
+// Verify that copy-on-write modifications made in a child process after `fork()` are independent
+// from the parent process.
+TEST_F(MMapProcTest, PrivateFileMappingCowModifiedIndependentAcrossFork) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_cow_fork_independent_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 2));
+
+  auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    auto report = test_helper::find_memory_mapping(addr, maps);
+    EXPECT_NE(report, std::nullopt);
+    if (report.has_value()) {
+      EXPECT_EQ(report->start, addr);
+      EXPECT_EQ(report->end, addr + length);
+      EXPECT_EQ(report->perms, expected_perms);
+    }
+  };
+
+  auto mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 2, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+  // Split the unmodified 2-page writable mapping before forking.
+  SAFE_SYSCALL(mprotect(reinterpret_cast<void*>(addr + page_size), page_size, PROT_READ));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Modify the first page in the child, then restore write permissions on the second page: both
+    // pieces should still coalesce in the child.
+    reinterpret_cast<volatile uint8_t*>(addr)[0] = 0xEF;
+    SAFE_SYSCALL(
+        mprotect(reinterpret_cast<void*>(addr + page_size), page_size, PROT_READ | PROT_WRITE));
+    expect_single_mapping(addr, page_size * 2, "rw-p");
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr)[0], 0xEF);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+
+  // The parent's mapping remains unmodified and coalesces when write permissions are restored.
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr)[0], 0);
+  SAFE_SYSCALL(
+      mprotect(reinterpret_cast<void*>(addr + page_size), page_size, PROT_READ | PROT_WRITE));
+  expect_single_mapping(addr, page_size * 2, "rw-p");
+}
+
+// Verify that shrinking and regrowing a modified private file mapping via `mremap()` preserves its
+// copy-on-write state across the remapped range.
+TEST_F(MMapProcTest, PrivateFileMappingMremapShrinkAndRegrowPreservesCowModified) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_cow_mremap_shrink_regrow_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 3));
+
+  auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    auto report = test_helper::find_memory_mapping(addr, maps);
+    EXPECT_NE(report, std::nullopt);
+    if (report.has_value()) {
+      EXPECT_EQ(report->start, addr);
+      EXPECT_EQ(report->end, addr + length);
+      EXPECT_EQ(report->perms, expected_perms);
+    }
+  };
+
+  auto mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 3, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+  // Shrink the 3-page mapping down to 2 pages, split off the second page as read-only, modify the
+  // first page, regrow the first page to 2 pages (replacing the read-only second page), and then
+  // regrow to 3 pages: all 3 pages remain in a single coalesced mapping with the modification
+  // intact.
+  void* shrunk = mremap(reinterpret_cast<void*>(addr), page_size * 3, page_size * 2,
+                        /* flags = */ 0);
+  ASSERT_EQ(shrunk, reinterpret_cast<void*>(addr)) << strerror(errno);
+
+  SAFE_SYSCALL(mprotect(reinterpret_cast<void*>(addr + page_size), page_size, PROT_READ));
+  reinterpret_cast<volatile uint8_t*>(addr)[0] = 0xAB;
+  SAFE_SYSCALL(munmap(reinterpret_cast<void*>(addr + page_size), page_size));
+
+  void* grown = mremap(reinterpret_cast<void*>(addr), page_size, page_size * 3, /* flags = */ 0);
+  ASSERT_EQ(grown, reinterpret_cast<void*>(addr)) << strerror(errno);
+  expect_single_mapping(addr, page_size * 3, "rw-p");
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr)[0], 0xAB);
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr + page_size)[0], 0);
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr + page_size * 2)[0], 0);
+}
+
+// Verify that shrinking a modified private file mapping via `mremap()` and mapping the unmapped
+// range again from the source file keeps modifications to the first mapping isolated from the
+// newly mapped range.
+TEST_F(MMapProcTest, PrivateFileMappingMremapShrinkAndMmapRetainsSeparateMappings) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_cow_mremap_shrink_mmap_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 2));
+
+  auto mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 2, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+  reinterpret_cast<volatile uint8_t*>(addr)[0] = 0xAB;
+  reinterpret_cast<volatile uint8_t*>(addr + page_size)[0] = 0xCD;
+  void* shrunk = mremap(reinterpret_cast<void*>(addr), page_size * 2, page_size, /* flags = */ 0);
+  ASSERT_EQ(shrunk, reinterpret_cast<void*>(addr)) << strerror(errno);
+
+  // Map the second page again from the underlying file: it should observe the unmodified file
+  // contents (`0`) while the first page retains its copy-on-write modification (`0xAB`), and on
+  // Starnix the two mappings remain distinct in `/proc/self/maps` because they are backed by
+  // separate copy-on-write child VMOs, whereas Linux coalesces them into a single mapping.
+  void* remapped = mmap(/* addr = */ reinterpret_cast<void*>(addr + page_size), page_size,
+                        PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, /* fd = */ fd.get(),
+                        /* offset = */ static_cast<off_t>(page_size));
+  ASSERT_EQ(remapped, reinterpret_cast<void*>(addr + page_size)) << strerror(errno);
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr)[0], 0xAB);
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(addr + page_size)[0], 0);
+
+  std::string maps;
+  ASSERT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+  auto first = test_helper::find_memory_mapping(addr, maps);
+  ASSERT_NE(first, std::nullopt);
+  EXPECT_EQ(first->start, addr);
+  EXPECT_EQ(first->perms, "rw-p");
+  if (test_helper::IsStarnix()) {
+    EXPECT_EQ(first->end, addr + page_size);
+
+    auto second = test_helper::find_memory_mapping(addr + page_size, maps);
+    ASSERT_NE(second, std::nullopt);
+    EXPECT_EQ(second->start, addr + page_size);
+    EXPECT_EQ(second->end, addr + page_size * 2);
+    EXPECT_EQ(second->perms, "rw-p");
+  } else {
+    EXPECT_EQ(first->end, addr + page_size * 2);
+  }
+}
+
+// Verify that moving pages of a modified private file mapping to a second location via `mremap()`
+// preserves their copy-on-write state across `mremap()` and `fork()`.
+TEST_F(MMapProcTest, PrivateFileMappingMremapMovePreservesCowModified) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_cow_mremap_move_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 3));
+
+  auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    auto report = test_helper::find_memory_mapping(addr, maps);
+    EXPECT_NE(report, std::nullopt);
+    if (report.has_value()) {
+      EXPECT_EQ(report->start, addr);
+      EXPECT_EQ(report->end, addr + length);
+      EXPECT_EQ(report->perms, expected_perms);
+    }
+  };
+
+  auto expect_split_mappings = [&](uintptr_t addr) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    for (size_t i = 0; i < 3; ++i) {
+      auto report = test_helper::find_memory_mapping(addr + i * page_size, maps);
+      EXPECT_NE(report, std::nullopt);
+      if (report.has_value()) {
+        EXPECT_EQ(report->start, addr + i * page_size);
+        EXPECT_EQ(report->end, addr + (i + 1) * page_size);
+        EXPECT_EQ(report->perms, "rw-p");
+      }
+    }
+  };
+
+  auto mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 3, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  uintptr_t src_addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+  reinterpret_cast<volatile uint8_t*>(src_addr)[0] = 0xAB;
+  reinterpret_cast<volatile uint8_t*>(src_addr + page_size)[0] = 0xBC;
+
+  // Move the middle page to `dst_addr`, leaving an unmapped gap between `page 0` and `page 2`.
+  void* dst_addr = mmap(/* addr = */ nullptr, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS,
+                        /* fd = */ -1, /* offset = */ 0);
+  ASSERT_NE(dst_addr, MAP_FAILED) << strerror(errno);
+  auto cleanup_dst = fit::defer([&] { SAFE_SYSCALL(munmap(dst_addr, page_size)); });
+
+  void* moved = mremap(reinterpret_cast<void*>(src_addr + page_size), page_size, page_size,
+                       MREMAP_MAYMOVE | MREMAP_FIXED, dst_addr);
+  ASSERT_EQ(moved, dst_addr) << strerror(errno);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(src_addr)[0], 0xAB);
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(dst_addr)[0], 0xBC);
+    // Write to `page 0` while `page 1` is an unmapped gap so the write only affects `page 0`, and
+    // verify `page 2` and `dst_addr` remain readable.
+    reinterpret_cast<volatile uint8_t*>(src_addr)[0] = 0xCD;
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(src_addr + page_size * 2)[0], 0);
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(dst_addr)[0], 0xBC);
+
+    // Moving `dst_addr` back into the middle gap preserves its contents; on Starnix all 3 pages
+    // also coalesce back into a single mapping, whereas on Linux private mappings that were
+    // modified and split before `fork()` remain separate in the child process.
+    void* restored = mremap(dst_addr, page_size, page_size, MREMAP_MAYMOVE | MREMAP_FIXED,
+                            reinterpret_cast<void*>(src_addr + page_size));
+    ASSERT_EQ(restored, reinterpret_cast<void*>(src_addr + page_size)) << strerror(errno);
+    if (test_helper::IsStarnix()) {
+      expect_single_mapping(src_addr, page_size * 3, "rw-p");
+    } else {
+      expect_split_mappings(src_addr);
+    }
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(src_addr)[0], 0xCD);
+    EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(src_addr + page_size)[0], 0xBC);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+
+  void* restored = mremap(dst_addr, page_size, page_size, MREMAP_MAYMOVE | MREMAP_FIXED,
+                          reinterpret_cast<void*>(src_addr + page_size));
+  ASSERT_EQ(restored, reinterpret_cast<void*>(src_addr + page_size)) << strerror(errno);
+  cleanup_dst.cancel();
+  expect_single_mapping(src_addr, page_size * 3, "rw-p");
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(src_addr)[0], 0xAB);
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(src_addr + page_size)[0], 0xBC);
+}
+
+// Verify that when part of an unmodified private file mapping is moved to a second location via
+// `mremap()` and then modified, both the moved mapping and the original mapping reflect the
+// copy-on-write modified state and can coalesce again.
+TEST_F(MMapProcTest, PrivateFileMappingMremapModifyMovedUpdatesOriginalCowModified) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_cow_mremap_modify_moved_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 3));
+
+  auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    auto report = test_helper::find_memory_mapping(addr, maps);
+    EXPECT_NE(report, std::nullopt);
+    if (report.has_value()) {
+      EXPECT_EQ(report->start, addr);
+      EXPECT_EQ(report->end, addr + length);
+      EXPECT_EQ(report->perms, expected_perms);
+    }
+  };
+
+  auto mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 3, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  uintptr_t src_addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+  // Move the middle page of the unmodified mapping to `dst_addr`, leaving `page 0` and `page 2`
+  // at `src_addr` separated by an unmapped gap.
+  void* dst_addr = mmap(/* addr = */ nullptr, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS,
+                        /* fd = */ -1, /* offset = */ 0);
+  ASSERT_NE(dst_addr, MAP_FAILED) << strerror(errno);
+  auto cleanup_dst = fit::defer([&] { SAFE_SYSCALL(munmap(dst_addr, page_size)); });
+
+  void* moved = mremap(reinterpret_cast<void*>(src_addr + page_size), page_size, page_size,
+                       MREMAP_MAYMOVE | MREMAP_FIXED, dst_addr);
+  ASSERT_EQ(moved, dst_addr) << strerror(errno);
+
+  // Modify the moved mapping at `dst_addr`, then move it back into the middle gap: the moved
+  // page retains its modification (without altering the underlying file), and on Starnix both the
+  // moved piece and the stationary pieces share the same copy-on-write state and coalesce back into
+  // a single 3-page mapping.
+  reinterpret_cast<volatile uint8_t*>(dst_addr)[0] = 0xAB;
+  void* restored = mremap(dst_addr, page_size, page_size, MREMAP_MAYMOVE | MREMAP_FIXED,
+                          reinterpret_cast<void*>(src_addr + page_size));
+  ASSERT_EQ(restored, reinterpret_cast<void*>(src_addr + page_size)) << strerror(errno);
+  cleanup_dst.cancel();
+  if (test_helper::IsStarnix()) {
+    expect_single_mapping(src_addr, page_size * 3, "rw-p");
+  }
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(src_addr + page_size)[0], 0xAB);
+
+  uint8_t file_byte = 0xFF;
+  ASSERT_THAT(pread(fd.get(), &file_byte, 1, static_cast<off_t>(page_size)),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(file_byte, 0);
+}
+
+// Verify that modifying a private file mapping does not mark a second independent private mapping
+// of the same file descriptor as copy-on-write modified.
+TEST_F(MMapProcTest, PrivateFileMappingSecondMmapIsNotCowModified) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_cow_second_mmap_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 2));
+
+  auto expect_single_mapping = [&](uintptr_t addr, size_t length, const char* expected_perms) {
+    std::string maps;
+    EXPECT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+    auto report = test_helper::find_memory_mapping(addr, maps);
+    EXPECT_NE(report, std::nullopt);
+    if (report.has_value()) {
+      EXPECT_EQ(report->start, addr);
+      EXPECT_EQ(report->end, addr + length);
+      EXPECT_EQ(report->perms, expected_perms);
+    }
+  };
+
+  auto first_mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(first_mapping, SyscallResultIsOk());
+  uintptr_t first_addr = reinterpret_cast<uintptr_t>(first_mapping->mapping());
+
+  // Modify the first private mapping.
+  reinterpret_cast<volatile uint8_t*>(first_addr)[0] = 0xAB;
+
+  // Map the same file privately a second time. The second mapping is backed by its own unmodified
+  // copy-on-write state: it observes the original file contents (`0`), and splitting it via
+  // `mprotect()` and restoring permissions coalesces it back into a single mapping.
+  auto second_mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 2, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(second_mapping, SyscallResultIsOk());
+  uintptr_t second_addr = reinterpret_cast<uintptr_t>(second_mapping->mapping());
+
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(first_addr)[0], 0xAB);
+  EXPECT_EQ(reinterpret_cast<volatile uint8_t*>(second_addr)[0], 0);
+
+  SAFE_SYSCALL(mprotect(reinterpret_cast<void*>(second_addr + page_size), page_size, PROT_READ));
+  SAFE_SYSCALL(mprotect(reinterpret_cast<void*>(second_addr + page_size), page_size,
+                        PROT_READ | PROT_WRITE));
+  expect_single_mapping(second_addr, page_size * 2, "rw-p");
+}
+
 class MMapAllProtectionsTest : public testing::TestWithParam<std::tuple<int, int>> {};
 
 TEST_P(MMapAllProtectionsTest, PrivateFileMappingAllowAllProtections) {
@@ -2054,8 +2485,7 @@ TEST_P(MMapAllProtectionsTest, PrivateFileMappingAllowAllProtections) {
     EXPECT_THAT(mapping, SyscallResultIsOk());
     if (mapping.is_ok()) {
       auto addr = mapping->mapping();
-      EXPECT_EQ(mprotect(addr, page_size, mprotect_flag), 0)
-          << "mprotect failed: " << std::strerror(errno);
+      EXPECT_THAT(mprotect(addr, page_size, mprotect_flag), SyscallSucceeds());
     }
   }
 }
