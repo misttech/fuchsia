@@ -62,9 +62,11 @@ EOF
 EOF
 }
 
-# Ensure that formatting an unchanged tree works
+# Ensure that formatting an unchanged tree works and passes --quiet by default.
 TEST_fx-format-code-no-args() {
-  BT_EXPECT "${fx}" format-code --dry-run 2> stderr
+  local out="${BT_TEMP_DIR}/_fx_format_code_output"
+  BT_EXPECT "${fx}" format-code --dry-run > "${out}" 2> stderr
+  BT_EXPECT grep -q -E '"shac fmt .*--quiet"' "${out}"
 }
 
 # Ensure that the commands for common file types are sensible.

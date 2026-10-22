@@ -132,6 +132,8 @@ def _build_shac_command(
         command.append("--all")
     if verbose:
         command.append("--verbose")
+    else:
+        command.append("--quiet")
     if only_checks:
         command.append(f"--only={','.join(only_checks)}")
     if skip_checks:
@@ -172,7 +174,8 @@ def run_shac(
             If an empty collection (or if all specified files are missing),
             returns without invoking SHAC.
         extra_args: Collection of extra CLI arguments forwarded to SHAC.
-        verbose: If True, passes '--verbose' to SHAC and logs command lines.
+        verbose: If True, passes '--verbose' to SHAC and logs command lines;
+            otherwise passes '--quiet' to SHAC.
         dry_run: If True, prints the SHAC command lines without executing them.
 
     Raises:

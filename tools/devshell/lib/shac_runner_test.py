@@ -184,9 +184,55 @@ class ShacRunnerTest(unittest.TestCase):
                 "--var=fuchsia_dir=.",
                 "--var=fuchsia_build_dir=out/default",
                 "--all",
+                "--quiet",
                 "--only=clang_format,commit_msg",
                 "--skip=rustfmt",
                 "--no-color",
+                "foo.cc",
+            ),
+        )
+
+    def test_run_shac_verbose_command_construction(self) -> None:
+        repo_groups = (
+            scm.RepoGroup(
+                repo_root=self.fuchsia_dir,
+                has_shac=True,
+                files=("foo.cc",),
+            ),
+        )
+
+        with (
+            mock.patch.object(
+                scm, "get_repo_groups", autospec=True, return_value=repo_groups
+            ),
+            mock.patch.object(
+                subprocess,
+                "run",
+                autospec=True,
+                return_value=subprocess.CompletedProcess(args=[], returncode=0),
+            ) as mock_run,
+            mock.patch.object(sys, "stdout", new_callable=io.StringIO),
+        ):
+            shac_runner.run_shac(
+                "check",
+                self.fuchsia_dir,
+                self.build_dir,
+                self.fuchsia_dir,
+                verbose=True,
+            )
+
+        mock_run.assert_called_once()
+        command = mock_run.call_args.args[0]
+        self.assertSequenceEqual(
+            command,
+            (
+                str(self.shac_binary),
+                "check",
+                "-C",
+                str(self.fuchsia_dir),
+                "--var=fuchsia_dir=.",
+                "--var=fuchsia_build_dir=out/default",
+                "--verbose",
                 "foo.cc",
             ),
         )
@@ -296,6 +342,7 @@ class ShacRunnerTest(unittest.TestCase):
                 str(self.fuchsia_dir),
                 "--var=fuchsia_dir=.",
                 "--var=fuchsia_build_dir=out/default",
+                "--quiet",
                 "src/main.cc",
             ),
         )
@@ -308,6 +355,7 @@ class ShacRunnerTest(unittest.TestCase):
                 str(subrepo),
                 "--var=fuchsia_dir=../..",
                 "--var=fuchsia_build_dir=out/default",
+                "--quiet",
                 "foo/bar.cc",
             ),
         )
