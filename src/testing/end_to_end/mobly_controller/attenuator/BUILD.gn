@@ -19,3 +19,8 @@ python_library("attenuator") {
     "//third_party/mobly",
   ]
 }
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
+}

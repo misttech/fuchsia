@@ -12,7 +12,10 @@ group("mobly_controller") {
 
 group("tests") {
   testonly = true
-  deps = [ "iperf:tests" ]
+  deps = [
+    "attenuator:tests",
+    "iperf:tests",
+  ]
 }
 
 python_library("mobly_controller_no_testonly") {
