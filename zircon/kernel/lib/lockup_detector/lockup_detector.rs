@@ -269,7 +269,6 @@ mod console {
         InstantMono, current_boot_time, timer_current_boot_ticks, zx_msec, zx_usec,
     };
     use core::ffi::{CStr, c_char, c_int, c_void};
-    use core::hint::spin_loop as arch_yield;
     use core::sync::atomic::Ordering;
     use kprint::kprintln;
     use zx_status::Status;
@@ -413,7 +412,7 @@ mod console {
             ksync::lock!(let _guard = LockupTestLock::get().lock_with(ksync::source_tag!()));
             let deadline: zx_instant_boot_t = current_boot_time().0.saturating_add(duration);
             while current_boot_time().0 < deadline {
-                arch_yield();
+                libarch::r#yield();
             }
             0
         }
@@ -431,7 +430,7 @@ mod console {
                 lockup_timed_begin(c"trigger-tool");
                 let deadline: zx_instant_boot_t = current_boot_time().0.saturating_add(duration);
                 while current_boot_time().0 < deadline {
-                    arch_yield();
+                    libarch::r#yield();
                 }
                 lockup_timed_end();
             }

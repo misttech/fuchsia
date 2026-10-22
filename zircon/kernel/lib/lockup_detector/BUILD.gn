@@ -34,6 +34,7 @@ kernel_rust_mod("lockup_detector-rs") {
     "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/zr",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/console:console_rs",
   ]
 }

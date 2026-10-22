@@ -192,7 +192,7 @@ impl SimpleGenerational {
             & Self::COUNT_MASK)
             > 0
         {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
     }
 }
@@ -310,7 +310,7 @@ mod tests {
             // Spin for a short fixed amount of time to allow the writer
             // thread to call Synchronize() from another CPU.
             for _ in 0..1_000_000 {
-                core::hint::spin_loop();
+                libarch::r#yield();
             }
 
             if shared.writer_sync_returned.load(Ordering::SeqCst) {
@@ -364,10 +364,10 @@ mod tests {
             thread
         };
 
-        // 3. Busy-spin wait for reader to enter lock. Use spin_loop() to avoid
+        // 3. Busy-spin wait for reader to enter lock. Use libarch::r#yield() to avoid
         // SleepRelative timer interrupt dependency when CPU interrupts might be disabled.
         while !shared.reader_in_lock.load(Ordering::SeqCst) {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
 
         // 4. Synchronize.

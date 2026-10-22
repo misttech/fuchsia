@@ -1173,7 +1173,7 @@ impl<T, A: SlabAllocator> PinnedDrop for SingleCache<T, A> {
         // destructed. Acq/Rel semantics here guarantee that we will properly see
         // the full release of the lock as we destruct.
         while projected.slab_free_ops_in_flight.load(Ordering::Acquire) != 0 {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
 
         // Clear all slab lists explicitly while `self` and `self.allocator` are still live.

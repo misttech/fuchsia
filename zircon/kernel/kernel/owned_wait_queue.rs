@@ -9,9 +9,9 @@ use crate::kconcurrent::{
     OwnerGuard, assert_lock_not_held, assert_no_transaction_active, assert_transaction_active,
 };
 use crate::kernel::deadline::Deadline;
-pub use crate::kernel::scheduler_state::SchedulerStateEffectiveProfile;
 use crate::kernel::scheduler::WaitQueueInheritedSchedulerState;
 use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
+pub use crate::kernel::scheduler_state::SchedulerStateEffectiveProfile;
 use crate::kernel::thread::{PreemptDisabledToken, Thread, ThreadPtr};
 use crate::kernel::wait_queue::{
     ForceInheritance, Interruptible, ResourceOwnership, WaitQueueBase, WaitQueueCollection,
@@ -2237,7 +2237,7 @@ mod owq_tests {
 
                 let deadline = current_mono_time() + DurationMono(zx_msec(200));
                 while current_mono_time() < deadline {
-                    core::hint::spin_loop();
+                    libarch::r#yield();
                 }
             }
             let _ = args.quit_event.wait_infinite();

@@ -31,6 +31,7 @@ kernel_rust_mod("kconcurrent_rs") {
   deps = [
     "//src/lib/ksync",
     "//src/lib/zr",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/system/ulib/affine/rust:affine",
     "//zircon/system/ulib/concurrent/rust:concurrent",
   ]

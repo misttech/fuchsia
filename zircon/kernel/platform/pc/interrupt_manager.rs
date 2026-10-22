@@ -458,7 +458,6 @@ impl<I: IoApic> InterruptManager<I> {
 #[unittest::suite]
 #[allow(unused_imports)]
 mod pc_interrupt_tests {
-    use core::hint;
     use core::pin::Pin;
     use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -596,7 +595,7 @@ mod pc_interrupt_tests {
             Err(s) if s == InitState::Initializing as u8 => {
                 // Spin until the initializing thread completes.
                 while INIT_STATE.load(Ordering::Acquire) != InitState::Initialized as u8 {
-                    hint::spin_loop();
+                    libarch::r#yield();
                 }
             }
             _ => {}

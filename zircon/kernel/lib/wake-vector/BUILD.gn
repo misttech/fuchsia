@@ -22,6 +22,7 @@ kernel_rust_mod("wake-vector-rs") {
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/libc:rust",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

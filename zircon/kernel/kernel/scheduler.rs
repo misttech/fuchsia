@@ -3894,7 +3894,7 @@ impl Scheduler {
         }
     }
     fn arch_yield() {
-        core::hint::spin_loop()
+        libarch::r#yield()
     }
     /// Makes a thread active on this CPU's scheduler and inserts it into the
     /// run queue tree.

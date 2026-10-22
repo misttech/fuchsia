@@ -348,7 +348,7 @@ pub extern "C" fn pv_clock_get_tsc_freq() -> u64 {
         // SAFETY: Reading version from volatile system_time page.
         let pre_version = unsafe { ptr::read_volatile(version_ptr) };
         if (pre_version & 1) != 0 {
-            core::hint::spin_loop();
+            libarch::r#yield();
             continue;
         }
         // SAFETY: Reading tsc_mul and tsc_shift from volatile system_time page.

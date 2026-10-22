@@ -20,7 +20,10 @@ library_headers("headers") {
 
 kernel_rust_mod("mmu_rcu_rs") {
   sources = [ "src/mod.rs" ]
-  deps = [ "//src/lib/zr" ]
+  deps = [
+    "//src/lib/zr",
+    "//zircon/kernel/lib/arch:arch-rs",
+  ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 

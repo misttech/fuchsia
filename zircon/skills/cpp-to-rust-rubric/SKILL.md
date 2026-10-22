@@ -123,6 +123,7 @@ graph TD
 ## 3. Detailed Guidelines & Technical Patterns
 
 ### 3.1. Memory Layout Matching & Verification
+
 - Mark FFI-shared structs with `#[repr(C)]`.
 - Do not heap-box (`kalloc::Box`) a ported Rust struct behind an extra pointer
   in the C++ wrapper when the C++ class stored its fields inline; match the
@@ -150,6 +151,7 @@ zr::static_assert!(core::mem::align_of::<PortedStruct>() == 8);
 ```
 
 ### 3.2. Fallible Allocation (`kalloc`)
+
 - Kernel code must **never** use standard `alloc::boxed::Box` or collections
   that panic on OOM.
 - Use `kalloc::Box::try_new(val)` for single values.
@@ -167,6 +169,7 @@ let slice =
 ```
 
 ### 3.3. Pointer Safety, `NonNull`, & Strict Provenance
+
 - Avoid raw pointers (`*const T` or `*mut T`) in public or internal Rust APIs.
 - Use `NonNull<T>` for pointers that must never be null.
 - Use `Option<NonNull<T>>` for optional pointers (takes advantage of Null
@@ -210,6 +213,7 @@ impl Mapping {
 ```
 
 ### 3.4. Token-Based Concurrency (`ksync`)
+
 - Concurrency in Zircon separates lock state (`KMutex`, `BrwLockPi`) from data
   (`KCell<T, Class>`). Accessing data requires proving lock ownership via
   `LockToken<'a, Class>`.
@@ -251,6 +255,10 @@ impl Mapping {
 - **Cross-CPU Contention**: Data structures used concurrently across CPUs must
   preserve C++ cache-line alignment and padding to avoid introducing false
   sharing.
+- **Spin-Wait Loops (`libarch::r#yield` vs. `core::hint::spin_loop`)**: Never
+  use `core::hint::spin_loop()` in kernel code. Always translate C++
+  `arch::Yield()` and spin-wait loop hints to `libarch::r#yield()` from
+  `//zircon/kernel/lib/arch:arch-rs`.
 
 ```rust
 #[guarded]
@@ -272,6 +280,7 @@ let fields = guard.as_mut().fields_mut();
 ```
 
 ### 3.5. Intrusive Containers & Reference Counting (`fbl`)
+
 - Ref-Counted Objects: Annotate structs with `#[fbl::ref_counted]` (requires
   `#[repr(C)]`). This injects `ref_count` at offset 0. Use `fbl::RefPtr<T>` and
   `fbl::make_ref_counted!`.
@@ -304,6 +313,7 @@ let fields = guard.as_mut().fields_mut();
   implementations.
 
 ### 3.6. Safe Initialization in `PinInit`
+
 - When initializing structs via `PinInit` (e.g. `pin_init!`), perform setup on
   `Move` fields *before* moving them into the struct using block expressions.
 - Avoid using `unsafe` in `pin_init!` post-initialization blocks (`_: { ... }`)
@@ -321,6 +331,7 @@ pin_init!(Self {
 ```
 
 ### 3.7. Zircon Status & Error Handling
+
 - Depend on `//sdk/rust/zx-status` (`zx_status::Status`).
 - Do **not** re-define `zx_status_t` or `ZX_ERR_*` constants locally.
 - Use `Result<T, Status>` as return type for fallible operations and leverage
@@ -330,6 +341,7 @@ pin_init!(Self {
   clocks instead of bare integers. Kernel durations are signed (`i64`).
 
 ### 3.8. Testing & Fuzz Testing Parity
+
 - **Kernel Mode (`zircon/kernel/`) vs Userspace**:
   - Kernel crates do **NOT** run standard `#[test]` / `#[cfg(test)]`. Use kernel
     in-tree `unittest-rs` (`#[cfg(ktest)]` + `#[unittest::suite]`) executed via
@@ -365,6 +377,7 @@ pin_init!(Self {
   fuzzer components to `BUILD.gn`.
 
 ### 3.9. Local Trace Logging (`ltrace`), `dprintf` and `printf`
+
 - Preserve all C++ `LOCAL_TRACE` / `LTRACE` statements.
 - Depend on `//zircon/kernel/lib/debug` and `use debug::ltracef;`.
 - Define module-scoped `const LOCAL_TRACE: u32 = 0;` at the top of each file.
@@ -375,6 +388,7 @@ pin_init!(Self {
 - Use `kprint` and `kprintln!` from `//src/lib/kprint` to replace `printf`.
 
 ### 3.10. Code Organization, Control Flow, Ergonomics, & Visibility
+
 - **File Structure Parity**: Organize Rust modules matching C++ header/source
   files. Re-export public types at root level (`pub use`) to preserve flat C++
   header APIs.
@@ -414,6 +428,7 @@ pin_init!(Self {
   backing array size.
 
 ### 3.11. Check existing Rust conversions
+
 - Before introducing FFI shims, or copying constants, check if there is already
   a Rust implementation. For any object, function, etc, you should
   1.  Go to the location of the C++ definition.
@@ -428,6 +443,7 @@ pin_init!(Self {
   already exists; use the facade.
 
 ### 3.12. Copyright Modernization & Preservation
+
 - Keep existing copyright headers and dates if the converted file is not
   meaningfully divergent. Do not automatically modernize the year to the current
   year when porting code that is largely a direct translation or maintains the
@@ -439,6 +455,7 @@ pin_init!(Self {
   directory.
 
 ### 3.13. FFI Interoperability & Facade Method Parity
+
 - Minimal Shims: Isolate FFI functions in `*_ffi.cc` / `*_ffi.rs`; they should
   be purely declarative with zero logic.
 - Shim Existing APIs: Expose the C++ methods the original code calls. Do not add
@@ -482,6 +499,7 @@ pin_init!(Self {
   `handle_out->Initialize(...)`.
 
 ### 3.14. RAII Deferred Cleanup (`zr::defer`)
+
 - **Translating `fit::defer`**: Translate C++ `fit::defer` /
   `fit::deferred_action` cleanup patterns into `zr::defer` / `zr::Deferred`.
 - **Automatic Error Cleanup**: `zr::defer` executes a closure upon being
@@ -511,6 +529,7 @@ Ok(())
 ```
 
 ### 3.15. In-Body Implementation & Inline Comment Parity
+
 - **Linter Blind Spot**: Automated tools (`clippy`, rustdoc `missing_docs`) only
   enforce outer documentation on public items; they cannot detect missing
   in-body implementation comments or plain `//` comments above non-`pub` items.
@@ -544,6 +563,7 @@ Ok(())
   comparison with the old C++ in the commit message or the review thread.
 
 ### 3.16. Code Formatting & Line Length Limits
+
 - **100-Character Line Limit**: All lines in Rust (`.rs`) and C++ (`.cc`, `.h`)
   files MUST be 100 characters or fewer.
 - **`fx format-code` Limitations**: Note that `fx format-code` (`rustfmt`) does
@@ -557,6 +577,7 @@ Ok(())
   pass cleanly.
 
 ### 3.17. Behavior Parity
+
 - **Error Precedence**: Keep the C++ order of validation and error checks so the
   same input returns the same status. Do not hoist a length or argument check
   above a policy, rights or peer-state check.
@@ -572,6 +593,7 @@ Ok(())
   leak a reference.
 
 ### 3.18. Soundness at the FFI Boundary
+
 - **Shared Mutable State**: Memory that C++ code or another CPU can write must
   be reached through `UnsafeCell` or atomics, never through a plain `&T`.
 - **Exclusive References**: Never hold a `&mut` across a call that can reach the
@@ -742,25 +764,30 @@ Reviewers and Coders must audit code against this checklist:
      the C++ class, and `cpp_*` FFI shims are strict 1:1 single-call forwards
      without branching (`if`/`else`) or sub-object method chaining
      (`a->b()->c()`).
-51.  [ ] **Atomic Ordering Mismatch, Unjustified Non-`SeqCst`, or False Sharing**:
-     Atomic operations match the C++ memory ordering (`Ordering`), any ordering
-     weaker than `SeqCst` has a comment explaining why it is sufficient, and
-     cross-CPU data structures preserve cache-line alignment and padding to
-     avoid false sharing.
+51.  [ ] **Atomic Ordering Mismatch, Unjustified Non-`SeqCst`, or False
+     Sharing**: Atomic operations match the C++ memory ordering (`Ordering`),
+     any ordering weaker than `SeqCst` has a comment explaining why it is
+     sufficient, and cross-CPU data structures preserve cache-line alignment and
+     padding to avoid false sharing.
 52.  [ ] **Read-Only Provenance on Mutable Raw Pointers**: Mutable raw pointers
      (`*mut T`) are derived from `&mut T`, `UnsafeCell::get()`, `addr_of_mut!`,
-     or existing `*mut T` pointers rather than cast from shared references
-     (`&T as *const T as *mut T`).
+     or existing `*mut T` pointers rather than cast from shared references (`&T
+     as *const T as *mut T`).
 53.  [ ] **Plain `//` Comments Above Item Declarations**: Declaration comments
      above functions, types, fields, and constants (including `pub(crate)` and
      private items not covered by `missing_docs`) use `///` doc comments rather
      than plain `//` comments.
+54.  [ ] **Using `core::hint::spin_loop` Instead of `libarch::r#yield`**: Kernel
+     code never calls `core::hint::spin_loop()`; C++ `arch::Yield()` and
+     spin-wait loops use `libarch::r#yield()`
+     (`//zircon/kernel/lib/arch:arch-rs`) instead.
 
 ---
 
 ## 5. Subagent Workflow & Role Guidelines
 
 ### 5.1. Guidelines for Coder Subagent (`cpp-to-rust-coder`)
+
 1.  **Author In-Tree Files Directly**: You MUST create, update, and edit the
     actual source files in the Fuchsia checkout using `write_to_file` and
     `replace_file_content`. Writing code blocks in markdown reports, chat
@@ -816,6 +843,7 @@ Reviewers and Coders must audit code against this checklist:
     not post them yourself.
 
 ### 5.2. Guidelines for Reviewer Subagent (`cpp-to-rust-reviewer`)
+
 1.  **Audit Real In-Tree Files**: You MUST inspect the actual modified files in
     the repository and check `git diff`. Do NOT review an implementation plan or
     markdown report in lieu of real files. If you were asked to review the
@@ -844,9 +872,10 @@ Reviewers and Coders must audit code against this checklist:
     `unsafe` block, raw pointer conversion (checking that `*mut T` preserves
     write provenance and is never cast from `&T`), lock acquisition, atomic
     memory ordering (matching C++ and justifying any ordering weaker than
-    `SeqCst`), and cross-CPU data structure alignment (preserving cache-line
-    alignment and padding to avoid false sharing). Insist on safe Rust
-    alternatives if possible. Ensure `// SAFETY:` comments are complete and
+    `SeqCst`), spin-wait loops (forbidding `core::hint::spin_loop()` in favor of
+    `libarch::r#yield()`), and cross-CPU data structure alignment (preserving
+    cache-line alignment and padding to avoid false sharing). Insist on safe
+    Rust alternatives if possible. Ensure `// SAFETY:` comments are complete and
     accurate.
 6.  **Evaluate against Rubric & Formatting**: Verify every item in Section 3 and
     Section 4, including checking for lines exceeding 100 characters in

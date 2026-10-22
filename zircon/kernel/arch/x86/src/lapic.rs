@@ -307,7 +307,7 @@ pub extern "C" fn apic_bsp_id() -> u8 {
 #[inline(always)]
 fn apic_wait_for_ipi_send() {
     while (lapic_reg_read(LAPIC_REG_IRQ_CMD_LOW) & ICR_DELIVERY_PENDING) != 0 {
-        core::hint::spin_loop();
+        libarch::r#yield();
     }
 }
 

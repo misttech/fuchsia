@@ -226,7 +226,7 @@ mod arm_clock_tests {
             args.waiting.fetch_sub(1, Ordering::SeqCst);
             // Wait until everyone else is ready.
             while args.waiting.load(Ordering::SeqCst) > 0 {
-                core::hint::spin_loop();
+                libarch::r#yield();
             }
 
             // If the event stream is working, it (or something else) will break us out on each

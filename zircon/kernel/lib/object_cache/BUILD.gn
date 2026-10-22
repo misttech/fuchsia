@@ -17,6 +17,7 @@ kernel_rust_mod("object_cache-rs") {
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

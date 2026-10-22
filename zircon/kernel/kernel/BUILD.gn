@@ -460,6 +460,7 @@ kernel_rust_mod("kernel-rs") {
     "//src/lib/zr",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/backtrace:backtrace-rs",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",

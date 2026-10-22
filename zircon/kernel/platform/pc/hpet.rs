@@ -377,7 +377,7 @@ pub extern "C" fn hpet_wait_ms(ms: u16) {
             .wrapping_sub(init_timer_value)
             <= target
         {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
     }
 }

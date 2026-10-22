@@ -185,7 +185,7 @@ unsafe extern "C" fn cmd_watchdog(argc: c_int, argv: *const CmdArgs, _flags: u32
 
             // Spin forever.  The watchdog should reboot us.
             loop {
-                core::hint::spin_loop();
+                libarch::r#yield();
             }
         }
 

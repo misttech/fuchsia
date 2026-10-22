@@ -982,7 +982,7 @@ impl WakeEvent {
                             reported_entries += 1;
                             curr.assign_has_been_reported(pending_guard.as_mut().token_mut(), true);
                             pending_guard.as_mut().call_unlocked(|| {
-                                core::hint::spin_loop();
+                                libarch::r#yield();
                             });
                         }
 
@@ -1025,9 +1025,10 @@ impl WakeEvent {
                 cursor.erase_current(pending_guard.as_mut());
             }
 
-            // Drop the lock and spin_loop to give any pending triggers or acks a chance to run.
+            // Drop the lock and libarch::r#yield to give any pending triggers or acks a chance to
+            // run.
             pending_guard.as_mut().call_unlocked(|| {
-                core::hint::spin_loop();
+                libarch::r#yield();
             });
         }
     }

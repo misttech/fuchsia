@@ -136,7 +136,7 @@ unsafe impl TransactionHooks for KernelTransactionHooks {
 
     #[inline]
     fn yield_cpu() {
-        core::hint::spin_loop();
+        libarch::r#yield();
     }
 
     #[inline]
@@ -248,14 +248,14 @@ fn wait_for_conflict_resolution(transaction: &ChainLockTransaction, percpu: &Per
         // thread is on, since the thread might be able to migrate during the relax phase of
         // transaction backoff.
         loop {
-            core::hint::spin_loop();
+            libarch::r#yield();
             if percpu.chain_lock_conflict_id.load(Ordering::Acquire) != conflict_id {
                 break;
             }
         }
         transaction.extra().set(0);
     } else {
-        core::hint::spin_loop();
+        libarch::r#yield();
     }
 }
 

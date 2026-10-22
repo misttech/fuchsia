@@ -339,7 +339,7 @@ mod tests {
             t.as_ref().set_deadline(&deadline, timer_cb, (&raw const arg).cast_mut().cast());
         }
         while !arg.timer_fired.load(Ordering::SeqCst) {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
         assert_false!(t.cancel());
     }
@@ -356,7 +356,7 @@ mod tests {
             t.as_ref().set_deadline(&deadline, timer_cancel_cb, (&raw const arg).cast_mut().cast());
         }
         while !arg.timer_fired.load(Ordering::SeqCst) {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
         assert_false!(t.cancel());
         assert_false!(arg.result.load(Ordering::SeqCst));
@@ -374,7 +374,7 @@ mod tests {
             t.as_ref().set_deadline(&deadline, timer_set_cb, (&raw const arg).cast_mut().cast());
         }
         while arg.remaining.load(Ordering::SeqCst) > 0 {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
 
         // We cannot assert the return value below because we don't know if the last timer has
@@ -468,7 +468,7 @@ mod tests {
             t.as_ref().set_deadline(&deadline, timer_cb, (&raw const arg).cast_mut().cast());
         }
         while !arg.timer_fired.load(Ordering::SeqCst) {
-            core::hint::spin_loop();
+            libarch::r#yield();
         }
     }
 }

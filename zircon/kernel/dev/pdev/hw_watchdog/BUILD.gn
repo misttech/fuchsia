@@ -16,6 +16,7 @@ kernel_rust_mod("watchdog-rs") {
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/kprint",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/debug",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
