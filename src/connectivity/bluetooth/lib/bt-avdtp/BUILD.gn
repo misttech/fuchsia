@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":bt-avdtp-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -58,4 +63,54 @@ if (is_fuchsia) {
       "//third_party/rust_crates:thiserror",
     ]
   }
+}
+if (is_fuchsia) {
+  rustc_test("bt-avdtp_test") {
+    sources = [
+      "src/lib.rs",
+      "src/rtp.rs",
+      "src/stream_endpoint.rs",
+      "src/tests.rs",
+      "src/types.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+             "//sdk/rust/zx",
+             "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+             "//src/connectivity/bluetooth/lib/packet-encoding",
+             "//src/lib/fuchsia-async",
+             "//src/lib/fuchsia-sync",
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:bitfield",
+             "//third_party/rust_crates:futures",
+             "//third_party/rust_crates:log",
+             "//third_party/rust_crates:slab",
+             "//third_party/rust_crates:thiserror",
+           ] +
+           [
+             "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+             "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+             "//src/lib/async-utils",
+             "//src/lib/fidl/rust/fidl",
+             "//src/lib/fuchsia",
+             "//third_party/rust_crates:assert_matches",
+             "//third_party/rust_crates:test-case",
+           ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  }
+}
+fuchsia_unittest_package("bt-avdtp-tests") {
+  package_name = "bt-avdtp-tests-gn"
+  component_name = "bt-avdtp-tests"
+  deps = [ ":bt-avdtp_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
+  ]
 }

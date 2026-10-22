@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":profile-client-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -52,6 +57,32 @@ if (is_fuchsia) {
   }
 }
 if (is_fuchsia) {
+  rustc_test("profile-client_test") {
+    sources = [
+      "src/error.rs",
+      "src/lib.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+             "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+             "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+             "//src/lib/fidl/rust/fidl",
+             "//third_party/rust_crates:futures",
+             "//third_party/rust_crates:log",
+             "//third_party/rust_crates:thiserror",
+           ] +
+           [
+             "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+             "//src/lib/fuchsia",
+             "//src/lib/fuchsia-async",
+             "//third_party/rust_crates:futures-test",
+             "//third_party/rust_crates:test-case",
+           ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  }
+}
+if (is_fuchsia) {
   rustc_library("test-profile-server") {
     testonly = true
     sources = [ "src/test/lib.rs" ]
@@ -73,4 +104,13 @@ if (is_fuchsia) {
       "//third_party/rust_crates:futures",
     ]
   }
+}
+fuchsia_unittest_package("profile-client-tests") {
+  package_name = "profile-client-tests-gn"
+  component_name = "profile-client-tests"
+  deps = [ ":profile-client_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
+  ]
 }

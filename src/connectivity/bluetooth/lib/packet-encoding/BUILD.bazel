@@ -16,7 +16,6 @@ rustc_library(
     visibility = ["//src/connectivity/bluetooth:__subpackages__"],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "packet-encoding_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -27,7 +26,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "packet-encoding-tests",
     package_name = "packet-encoding-tests",

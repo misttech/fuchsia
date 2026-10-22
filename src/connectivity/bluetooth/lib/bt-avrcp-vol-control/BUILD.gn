@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":bt-avrcp-vol-control-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -45,4 +50,33 @@ if (is_fuchsia) {
       "//third_party/rust_crates:futures",
     ]
   }
+}
+if (is_fuchsia) {
+  rustc_test("bt-avrcp-vol-control_test") {
+    sources = [ "src/lib.rs" ]
+    edition = "2024"
+    deps = [
+             "//sdk/fidl/fuchsia.bluetooth.avrcp:fuchsia.bluetooth.avrcp_rust",
+             "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+             "//src/lib/fidl/rust/fidl",
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:futures",
+           ] +
+           [
+             "//src/lib/async-utils",
+             "//src/lib/fuchsia",
+             "//src/lib/fuchsia-async",
+             "//third_party/rust_crates:assert_matches",
+           ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  }
+}
+fuchsia_unittest_package("bt-avrcp-vol-control-tests") {
+  package_name = "bt-avrcp-vol-control-tests-gn"
+  component_name = "bt-avrcp-vol-control-tests"
+  deps = [ ":bt-avrcp-vol-control_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
+  ]
 }

@@ -87,7 +87,6 @@ rustc_library(
     }),
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "fuchsia-bluetooth_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -100,7 +99,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "bluetooth-crate-tests",
     package_name = "bluetooth-crate-tests",

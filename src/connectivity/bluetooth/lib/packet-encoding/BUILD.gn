@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":packet-encoding-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -34,5 +39,22 @@ rustc_library("packet-encoding") {
   visibility = [
     ":*",
     "//src/connectivity/bluetooth/*",
+  ]
+}
+if (is_fuchsia) {
+  rustc_test("packet-encoding_test") {
+    sources = [ "src/lib.rs" ]
+    edition = "2024"
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    deps = [ "//third_party/rust_crates:assert_matches" ]
+  }
+}
+fuchsia_unittest_package("packet-encoding-tests") {
+  package_name = "packet-encoding-tests-gn"
+  component_name = "packet-encoding-tests"
+  deps = [ ":packet-encoding_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
   ]
 }

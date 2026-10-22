@@ -45,7 +45,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "bt-fidl-mocks_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -56,7 +55,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "bt-fidl-mocks-tests",
     package_name = "bt-fidl-mocks-tests",

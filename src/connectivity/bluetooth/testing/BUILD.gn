@@ -22,6 +22,7 @@ group("tests") {
   deps = [
     "hci-emulator-client:tests",
     "mock-piconet-server:tests",
+    "test-call-manager:tests",
     "test-rfcomm-client:tests",
   ]
 }

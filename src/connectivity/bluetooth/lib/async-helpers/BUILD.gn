@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":async-helpers-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -47,6 +52,29 @@ rustc_library("async-helpers") {
     "//third_party/rust_crates:futures",
   ]
 }
+if (is_fuchsia) {
+  rustc_test("async-helpers_test") {
+    sources = [
+      "src/hanging_get/async_server.rs",
+      "src/hanging_get/mod.rs",
+      "src/lib.rs",
+      "src/maybe_stream.rs",
+      "src/responding_channel.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//src/lib/async-utils",
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:futures",
+           ] +
+           [
+             "//src/lib/fuchsia",
+             "//src/lib/fuchsia-async",
+           ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    output_name = "async_helpers_lib_test"
+  }
+}
 rustc_library("async-test-helpers") {
   testonly = true
   sources = [ "src/test/lib.rs" ]
@@ -61,5 +89,14 @@ rustc_library("async-test-helpers") {
     "//src/lib/async-utils",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
+  ]
+}
+fuchsia_unittest_package("async-helpers-tests") {
+  package_name = "async-helpers-tests-gn"
+  component_name = "async-helpers-tests"
+  deps = [ ":async-helpers_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
   ]
 }

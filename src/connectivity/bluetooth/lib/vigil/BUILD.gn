@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":vigil-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -46,5 +51,35 @@ rustc_library("vigil") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
+  ]
+}
+if (is_fuchsia) {
+  rustc_test("vigil_test") {
+    sources = [
+      "src/dropped.rs",
+      "src/lib.rs",
+      "src/vigil.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//src/lib/diagnostics/inspect/derive",
+             "//src/lib/diagnostics/inspect/rust",
+             "//src/lib/fuchsia-sync",
+             "//third_party/rust_crates:futures",
+           ] +
+           [
+             "//src/lib/async-utils",
+             "//third_party/rust_crates:futures-test",
+           ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  }
+}
+fuchsia_unittest_package("vigil-tests") {
+  package_name = "vigil-tests-gn"
+  component_name = "vigil-tests"
+  deps = [ ":vigil_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
   ]
 }

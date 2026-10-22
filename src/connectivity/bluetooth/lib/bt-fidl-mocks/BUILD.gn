@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":bt-fidl-mocks-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -63,4 +68,43 @@ if (is_fuchsia) {
       "//third_party/rust_crates:log",
     ]
   }
+}
+if (is_fuchsia) {
+  rustc_test("bt-fidl-mocks_test") {
+    sources = [
+      "src/expect.rs",
+      "src/gatt.rs",
+      "src/gatt2.rs",
+      "src/hci.rs",
+      "src/le.rs",
+      "src/lib.rs",
+      "src/sys.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+             "//sdk/fidl/fuchsia.bluetooth.gatt:fuchsia.bluetooth.gatt_rust",
+             "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
+             "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_rust",
+             "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+             "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_rust",
+             "//sdk/rust/zx",
+             "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+             "//src/lib/fidl/rust/fidl",
+             "//src/lib/fuchsia-async",
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:futures",
+             "//third_party/rust_crates:log",
+           ] + [ "//src/lib/fuchsia" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  }
+}
+fuchsia_unittest_package("bt-fidl-mocks-tests") {
+  package_name = "bt-fidl-mocks-tests-gn"
+  component_name = "bt-fidl-mocks-tests"
+  deps = [ ":bt-fidl-mocks_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
+  ]
 }

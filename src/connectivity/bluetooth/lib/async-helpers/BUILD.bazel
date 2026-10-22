@@ -27,7 +27,9 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
+# The GN default binary name collides with
+# //sdk/lib/driver/async-helpers/cpp:async_helpers_test.
+# @bazel2gn:raw_attribute:output_name = "async_helpers_lib_test"
 rustc_test(
     name = "async-helpers_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -54,7 +56,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "async-helpers-tests",
     package_name = "async-helpers-tests",

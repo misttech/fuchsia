@@ -27,7 +27,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "host-watcher_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -41,7 +40,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "host-watcher-tests",
     package_name = "host-watcher-tests",

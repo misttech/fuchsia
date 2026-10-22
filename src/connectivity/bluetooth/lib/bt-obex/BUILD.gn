@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":bt-obex-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -72,4 +77,63 @@ if (is_fuchsia) {
       "//third_party/rust_crates:thiserror",
     ]
   }
+}
+if (is_fuchsia) {
+  rustc_test("bt-obex_test") {
+    sources = [
+      "src/client/get.rs",
+      "src/client/mod.rs",
+      "src/client/put.rs",
+      "src/error.rs",
+      "src/header/header_set.rs",
+      "src/header/mod.rs",
+      "src/header/obex_string.rs",
+      "src/lib.rs",
+      "src/operation.rs",
+      "src/profile.rs",
+      "src/server/get.rs",
+      "src/server/handler.rs",
+      "src/server/mod.rs",
+      "src/server/put.rs",
+      "src/transport.rs",
+    ]
+    edition = "2024"
+    proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
+    deps =
+        [
+          "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+          "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+          "//sdk/rust/zx",
+          "//src/connectivity/bluetooth/lib/bt-obex/objects",
+          "//src/connectivity/bluetooth/lib/bt-rfcomm",
+          "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+          "//src/connectivity/bluetooth/lib/packet-encoding",
+          "//src/lib/fuchsia-sync",
+          "//third_party/rust_crates:anyhow",
+          "//third_party/rust_crates:bitflags",
+          "//third_party/rust_crates:chrono",
+          "//third_party/rust_crates:futures",
+          "//third_party/rust_crates:log",
+          "//third_party/rust_crates:thiserror",
+        ] +
+        [
+          "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+          "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+          "//src/lib/async-utils",
+          "//src/lib/fuchsia",
+          "//src/lib/fuchsia-async",
+          "//third_party/rust_crates:assert_matches",
+          "//third_party/rust_crates:test-case",
+        ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  }
+}
+fuchsia_unittest_package("bt-obex-tests") {
+  package_name = "bt-obex-tests-gn"
+  component_name = "bt-obex-tests"
+  deps = [ ":bt-obex_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
+  ]
 }
