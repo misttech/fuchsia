@@ -516,17 +516,17 @@ void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::stri
 }
 #endif
 
-void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
-                            unsigned int line, std::optional<std::string_view> message,
-                            uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid) {
-  // Initialize the encoder targeting the passed buffer, and begin the record.
-
 #if FUCHSIA_API_LEVEL_AT_LEAST(24)
-  auto time = zx::clock::get_boot();
+void LogBuffer::BeginRecord(zx::basic_time<ZX_CLOCK_BOOT> time, FuchsiaLogSeverity severity,
+                            std::optional<std::string_view> file_name, unsigned int line,
+                            std::optional<std::string_view> message, uint32_t dropped_count,
+                            zx_koid_t pid, zx_koid_t tid) {
 #else
-  auto time = zx::clock::get_monotonic();
+void LogBuffer::BeginRecord(zx::basic_time<ZX_CLOCK_MONOTONIC> time, FuchsiaLogSeverity severity,
+                            std::optional<std::string_view> file_name, unsigned int line,
+                            std::optional<std::string_view> message, uint32_t dropped_count,
+                            zx_koid_t pid, zx_koid_t tid) {
 #endif
-
   auto* state = RecordState::CreatePtr(&data_);
   RecordState& record = *state;
   // Invoke the constructor of RecordState to construct a valid RecordState
@@ -555,6 +555,20 @@ void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::stri
   }
   encoder.AppendArgumentKey(record, SliceFromString(kLineFieldName));
   encoder.AppendArgumentValue(record, static_cast<uint64_t>(line));
+}
+
+void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
+                            unsigned int line, std::optional<std::string_view> message,
+                            uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid) {
+  // Initialize the encoder targeting the passed buffer, and begin the record.
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(24)
+  auto time = zx::clock::get_boot();
+#else
+  auto time = zx::clock::get_monotonic();
+#endif
+
+  BeginRecord(time, severity, file_name, line, message, dropped_count, pid, tid);
 }
 
 void LogBuffer::WriteKeyValue(std::string_view key, std::string_view value) {

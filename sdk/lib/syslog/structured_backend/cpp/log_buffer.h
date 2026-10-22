@@ -8,6 +8,7 @@
 #include <lib/fit/function.h>
 #include <lib/stdcompat/span.h>
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
+#include <lib/zx/time.h>
 #include <zircon/availability.h>
 
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
@@ -100,6 +101,20 @@ class LogBuffer final {
   void BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
                    unsigned int line, std::optional<std::string_view> message,
                    uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid);
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(24)
+  // Initializes a LogBuffer with a specified boot timestamp.
+  void BeginRecord(zx::basic_time<ZX_CLOCK_BOOT> time, FuchsiaLogSeverity severity,
+                   std::optional<std::string_view> file_name, unsigned int line,
+                   std::optional<std::string_view> message, uint32_t dropped_count, zx_koid_t pid,
+                   zx_koid_t tid);
+#else
+  // Initializes a LogBuffer with a specified monotonic timestamp.
+  void BeginRecord(zx::basic_time<ZX_CLOCK_MONOTONIC> time, FuchsiaLogSeverity severity,
+                   std::optional<std::string_view> file_name, unsigned int line,
+                   std::optional<std::string_view> message, uint32_t dropped_count, zx_koid_t pid,
+                   zx_koid_t tid);
+#endif
 
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
   void BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
