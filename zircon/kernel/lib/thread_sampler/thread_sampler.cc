@@ -299,24 +299,21 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
     user_in_ptr<const vaddr_t> user_next_fp{reinterpret_cast<vaddr_t*>(actual_fp)};
     user_in_ptr<const vaddr_t> user_pc{reinterpret_cast<vaddr_t*>(actual_fp + 8)};
 
-    // A well formed frame pointer chain ends in 0 and should never fail to copy. If a thread's
-    // stack is not readable or well formatted, we return an error to indicate that sampling should
-    // be disabled for the offending thread.
+    // Code without frame pointers (e.g. JIT or AOT compiled managed code) can leave a frame pointer
+    // that points to unreadable or non-stack memory. The frames we've already collected, including
+    // the leaf, are still valid, so record a truncated backtrace rather than discarding the whole
+    // sample.
     zx_status_t copy_res = user_pc.copy_from_user(&pc);
     if (copy_res != ZX_OK) {
-      // We eat the copy_res and return ZX_ERR_NOT_SUPPORTED here and below to indicate that we
-      // failed to take a sample, but we might still succeed in the future. A thread may not
-      // necessarily have valid frame pointers at all points in execution, so don't give on this
-      // thread just yet.
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
+      break;
     }
-    if (pc == 0) {
+    if (pc == 0 || !is_user_accessible(pc)) {
       break;
     }
     bt[frame_num++] = pc;
     copy_res = user_next_fp.copy_from_user(&fp);
     if (copy_res != ZX_OK) {
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
+      break;
     }
   }
   // Up until this point, interrupts are enabled so that we can handle faults when doing usercopies.

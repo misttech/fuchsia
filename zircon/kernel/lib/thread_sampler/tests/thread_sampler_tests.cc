@@ -55,6 +55,10 @@ class TestThreadSampler {
            sampler::ThreadSampler::kMarkingsScheduledShift;
   }
 
+  static uint64_t get_session_id(const sampler::ThreadSampler& sampler) {
+    return sampler.session_id_.load();
+  }
+
   static void SampleThread(sampler::ThreadSampler& sampler, zx_koid_t pid, zx_koid_t tid,
                            GeneralRegsSource source, void* gregs) {
     ktl::optional<sampler::ThreadSampler::PerCpuBufferRef> buffers =
@@ -662,6 +666,118 @@ class TestThreadSampler {
 
     END_TEST;
   }
+
+  static bool TruncatedBacktraceTest() {
+    BEGIN_TEST;
+    const auto restore_affinity = fit::defer(
+        [previous_affinity = Thread::Current::SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID))] {
+          Thread::Current::SetCpuAffinity(previous_affinity);
+        });
+
+    zx_sampler_config_t config{
+        .period = zx::msec(1).get(),
+        .buffer_size = kPageSize,
+    };
+    sampler::ThreadSampler& sampler = sampler::gThreadSampler;
+    ASSERT_OK(sampler.SetUp(config).status_value());
+    auto cleanup = fit::defer([] {
+      {
+        Guard<Mutex> guard(TestThreadSampler::get_lock());
+        TestThreadSampler::set_state(sampler::gThreadSampler, sampler::SamplingState::Configured);
+      }
+      zx::result<> _ = sampler::gThreadSampler.Destroy();
+    });
+    {
+      Guard<Mutex> guard(TestThreadSampler::get_lock());
+      TestThreadSampler::set_state(sampler, sampler::SamplingState::Running);
+    }
+
+    ktl::unique_ptr<testing::UserMemory> stack = testing::UserMemory::Create(kPageSize);
+    ASSERT_NE(nullptr, stack.get());
+    ASSERT_OK(stack->CommitAndMap(kPageSize));
+
+    auto encode_fp = [](vaddr_t frame_addr) -> vaddr_t {
+#ifdef __riscv
+      return frame_addr + 2 * sizeof(vaddr_t);
+#else
+      return frame_addr;
+#endif
+    };
+
+    auto make_iframe = [](vaddr_t pc, vaddr_t fp) -> iframe_t {
+      iframe_t iframe{};
+#ifdef __x86_64__
+      iframe.rbp = fp;
+      iframe.ip = pc;
+#elifdef __aarch64__
+      iframe.r[29] = fp;
+      iframe.elr = pc + 4;
+#elifdef __riscv
+      iframe.regs.s0 = fp;
+      iframe.regs.pc = pc;
+#endif
+      return iframe;
+    };
+
+    constexpr vaddr_t kLeafPc = USER_ASPACE_BASE + 0x1000;
+    constexpr vaddr_t kCaller1Pc = USER_ASPACE_BASE + 0x2000;
+    constexpr vaddr_t kCaller2Pc = USER_ASPACE_BASE + 0x3000;
+    const vaddr_t frame0_addr = stack->base() + 0x100;
+    const vaddr_t frame1_addr = stack->base() + 0x120;
+
+    // 1. Frame pointer chain ending in an unmapped address: the valid prefix frames must be kept.
+    stack->put<vaddr_t>(encode_fp(frame1_addr), (frame0_addr - stack->base()) / sizeof(vaddr_t));
+    stack->put<vaddr_t>(kCaller1Pc, ((frame0_addr - stack->base()) / sizeof(vaddr_t)) + 1);
+    stack->put<vaddr_t>(encode_fp(0x1000), (frame1_addr - stack->base()) / sizeof(vaddr_t));
+    stack->put<vaddr_t>(kCaller2Pc, ((frame1_addr - stack->base()) / sizeof(vaddr_t)) + 1);
+
+    iframe_t iframe = make_iframe(kLeafPc, encode_fp(frame0_addr));
+    ASSERT_OK(sampler
+                  .SampleThread(1, 2, GeneralRegsSource::Iframe, &iframe,
+                                TestThreadSampler::get_session_id(sampler))
+                  .status_value());
+
+    percpu_writer::Buffer& cpu_buffer =
+        TestThreadSampler::get_per_cpu_buffers(sampler)[BOOT_CPU_ID];
+    {
+      uint64_t record[7]{};
+      auto copy_fn = [&record](uint32_t offset, ktl::span<ktl::byte> data) -> zx_status_t {
+        ktl::ranges::copy(data, reinterpret_cast<ktl::byte*>(record) + offset);
+        return ZX_OK;
+      };
+      zx::result<size_t> read_result = cpu_buffer.Read(copy_fn, sizeof(record));
+      ASSERT_TRUE(read_result.is_ok());
+      ASSERT_EQ(sizeof(record), *read_result);
+      EXPECT_EQ(kLeafPc, record[4]);
+      EXPECT_EQ(kCaller1Pc, record[5]);
+      EXPECT_EQ(kCaller2Pc, record[6]);
+    }
+
+    // 2. Frame containing a non-user-accessible PC (such as machine code read from .text):
+    // garbage frames must not be recorded.
+    stack->put<vaddr_t>(0, (frame1_addr - stack->base()) / sizeof(vaddr_t));
+    stack->put<vaddr_t>(0x41064a17e7d71be7ULL,
+                        ((frame1_addr - stack->base()) / sizeof(vaddr_t)) + 1);
+
+    iframe_t bad_pc_iframe = make_iframe(kLeafPc, encode_fp(frame1_addr));
+    ASSERT_OK(sampler
+                  .SampleThread(1, 2, GeneralRegsSource::Iframe, &bad_pc_iframe,
+                                TestThreadSampler::get_session_id(sampler))
+                  .status_value());
+    {
+      uint64_t record[5]{};
+      auto copy_fn = [&record](uint32_t offset, ktl::span<ktl::byte> data) -> zx_status_t {
+        ktl::ranges::copy(data, reinterpret_cast<ktl::byte*>(record) + offset);
+        return ZX_OK;
+      };
+      zx::result<size_t> read_result = cpu_buffer.Read(copy_fn, sizeof(record));
+      ASSERT_TRUE(read_result.is_ok());
+      ASSERT_EQ(sizeof(record), *read_result);
+      EXPECT_EQ(kLeafPc, record[4]);
+    }
+
+    END_TEST;
+  }
 };
 }  // namespace thread_sampler_tests
 
@@ -677,4 +793,5 @@ UNITTEST("timer_references", thread_sampler_tests::TestThreadSampler::TimerRefer
 //          thread_sampler_tests::TestThreadSampler::CpuHotplugMultiThreaded)
 UNITTEST("acquire_buffers_reading", thread_sampler_tests::TestThreadSampler::AcquireBuffersReading)
 UNITTEST("reading_during_session", thread_sampler_tests::TestThreadSampler::ReadingDuringSession)
+UNITTEST("truncated_backtrace", thread_sampler_tests::TestThreadSampler::TruncatedBacktraceTest)
 UNITTEST_END_TESTCASE(thread_sampler_tests, "thread_sampler", "Thread Sampler tests")
