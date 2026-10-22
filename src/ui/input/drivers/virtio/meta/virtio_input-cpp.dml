@@ -6,7 +6,7 @@
     composite_name: "virtio_input",
     include: [ "//sdk/lib/driver/compat/compat.shard.cml" ],
     program: {
-        compat: "driver/virtio_input.so",
+        compat: "driver/virtio_input-cpp.so",
     },
     use: [
         {

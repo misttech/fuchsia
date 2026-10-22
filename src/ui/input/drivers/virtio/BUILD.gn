@@ -7,13 +7,15 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
-fuchsia_driver_dml("virtio_input-dml") {
-  dml = "meta/virtio_input.dml"
-  driver_name = "virtio_input"
+fuchsia_driver_dml("virtio_input-cpp-dml") {
+  dml = "meta/virtio_input-cpp.dml"
+  golden_bind = "meta/virtio_input.bind"
+  driver_name = "virtio_input-cpp"
+  component_name = "virtio_input"
 }
 
 driver_bind_rules("virtio_input_bind") {
-  dml_label = ":virtio_input-dml"
+  dml_label = ":virtio_input-cpp-dml"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -22,19 +24,19 @@ driver_bind_rules("virtio_input_bind") {
   ]
 }
 
-fuchsia_cc_driver("virtio_input-driver") {
+fuchsia_cc_driver("driver-cpp") {
   legacy = true
-  output_name = "virtio_input"
+  output_name = "virtio_input-cpp"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
   sources = [
-    "input.cc",
-    "input_driver.cc",
-    "input_kbd.cc",
-    "input_mouse.cc",
-    "input_touch.cc",
+    "cpp/input.cc",
+    "cpp/input_driver.cc",
+    "cpp/input_kbd.cc",
+    "cpp/input_mouse.cc",
+    "cpp/input_touch.cc",
   ]
   deps = [
     ":virtio_input_bind",
@@ -49,15 +51,21 @@ fuchsia_cc_driver("virtio_input-driver") {
   ]
 }
 
-fuchsia_driver_component("virtio_input") {
-  deps = [ ":virtio_input-driver" ]
+fuchsia_driver_component("component-cpp") {
+  component_name = "virtio_input"
   info = "meta/virtio_input-info.json"
-  dml_label = ":virtio_input-dml"
+  dml_label = ":virtio_input-cpp-dml"
+  deps = [ ":driver-cpp" ]
+}
+
+# The virtio-input driver component included in products.
+group("virtio_input") {
+  public_deps = [ ":component-cpp" ]
 }
 
 fuchsia_driver_package("package") {
   package_name = "virtio_input"
-  driver_components = [ ":virtio_input" ]
+  driver_components = [ ":component-cpp" ]
 }
 
 test("virtio-input-test") {
@@ -68,10 +76,10 @@ test("virtio-input-test") {
     }
   }
   sources = [
-    "input_kbd.cc",
-    "input_mouse.cc",
-    "input_test.cc",
-    "input_touch.cc",
+    "cpp/input_kbd.cc",
+    "cpp/input_mouse.cc",
+    "cpp/input_test.cc",
+    "cpp/input_touch.cc",
   ]
   deps = [
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",

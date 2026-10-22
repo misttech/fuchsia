@@ -401,7 +401,7 @@
 //src/ui/input/drivers/usb-hid:usb-hid-driver
 //src/ui/input/drivers/usb-hid:usb-one-endpoint-hid-fake-usb-driver
 //src/ui/input/drivers/usb-hid:usb-two-endpoint-hid-fake-usb-driver
-//src/ui/input/drivers/virtio:virtio_input-driver
+//src/ui/input/drivers/virtio:driver-cpp
 //src/ui/light/drivers/aml-light:aml-light-driver
 //tools/create/goldens/my-driver-cpp:driver
 //zircon/third_party/dev/ethernet/e1000:e1000-driver

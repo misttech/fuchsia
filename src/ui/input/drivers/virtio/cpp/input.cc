@@ -20,9 +20,9 @@
 #include <fbl/auto_lock.h>
 
 #include "src/devices/bus/lib/virtio/trace.h"
-#include "src/ui/input/drivers/virtio/input_kbd.h"
-#include "src/ui/input/drivers/virtio/input_mouse.h"
-#include "src/ui/input/drivers/virtio/input_touch.h"
+#include "src/ui/input/drivers/virtio/cpp/input_kbd.h"
+#include "src/ui/input/drivers/virtio/cpp/input_mouse.h"
+#include "src/ui/input/drivers/virtio/cpp/input_touch.h"
 
 #define LOCAL_TRACE 0
 

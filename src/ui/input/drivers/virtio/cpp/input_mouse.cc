@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/ui/input/drivers/virtio/input_mouse.h"
+#include "src/ui/input/drivers/virtio/cpp/input_mouse.h"
 
 #include <lib/ddk/debug.h>
 #include <zircon/status.h>

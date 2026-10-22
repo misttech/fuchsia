@@ -1,8 +1,8 @@
 // Copyright 2019 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_DEVICE_H_
-#define SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_DEVICE_H_
+#ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_DEVICE_H_
+#define SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_DEVICE_H_
 
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/zx/clock.h>
@@ -70,4 +70,4 @@ class HidDevice : public HidDeviceBase {
 
 }  // namespace virtio
 
-#endif  // SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_DEVICE_H_
+#endif  // SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_DEVICE_H_

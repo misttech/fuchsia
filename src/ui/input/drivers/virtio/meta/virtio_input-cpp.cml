@@ -11,7 +11,7 @@
     ],
     program: {
         runner: "driver",
-        compat: "driver/virtio_input.so",
+        compat: "driver/virtio_input-cpp.so",
         bind: "meta/bind/virtio_input_bind.bindbc",
     },
     capabilities: [],

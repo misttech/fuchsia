@@ -1,12 +1,12 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_MOUSE_H_
-#define SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_MOUSE_H_
+#ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_MOUSE_H_
+#define SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_MOUSE_H_
 
 #include <string>
 
-#include "src/ui/input/drivers/virtio/input_device.h"
+#include "src/ui/input/drivers/virtio/cpp/input_device.h"
 
 namespace virtio {
 
@@ -48,4 +48,4 @@ class HidMouse : public HidDevice<MouseReport> {
 
 }  // namespace virtio
 
-#endif  // SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_MOUSE_H_
+#endif  // SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_MOUSE_H_

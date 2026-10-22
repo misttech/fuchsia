@@ -1,8 +1,8 @@
 // Copyright 2019 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_TOUCH_H_
-#define SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_TOUCH_H_
+#ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_TOUCH_H_
+#define SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_TOUCH_H_
 
 #include <string>
 
@@ -60,4 +60,4 @@ class HidTouch : public HidDevice<TouchReport> {
 
 }  // namespace virtio
 
-#endif  // SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_TOUCH_H_
+#endif  // SRC_UI_INPUT_DRIVERS_VIRTIO_CPP_INPUT_TOUCH_H_
