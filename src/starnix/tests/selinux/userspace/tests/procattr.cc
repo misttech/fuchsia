@@ -205,7 +205,7 @@ void WaitForReadFd(int fd) {
 }
 
 TEST(ProcAttrTest, ZombieProcPid) {
-  ASSERT_TRUE(RunSubprocessAs("unlabeled_u:unlabeled_r:unlabeled_t:s0", []() {
+  ASSERT_TRUE(RunSubprocessAs("unconfined_u:unconfined_r:unconfined_t:s0:c0", []() {
     pid_t child_pid = SAFE_SYSCALL(fork());
     if (child_pid == 0) {
       _exit(EXIT_SUCCESS);
@@ -227,7 +227,7 @@ TEST(ProcAttrTest, ZombieProcPid) {
 }
 
 TEST(ProcAttrTest, ZombieCurrentAttr) {
-  ASSERT_TRUE(RunSubprocessAs("unlabeled_u:unlabeled_r:unlabeled_t:s0", []() {
+  ASSERT_TRUE(RunSubprocessAs("unconfined_u:unconfined_r:unconfined_t:s0:c0", []() {
     pid_t child_pid = SAFE_SYSCALL(fork());
     if (child_pid == 0) {
       _exit(EXIT_SUCCESS);

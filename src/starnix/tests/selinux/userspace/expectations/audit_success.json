@@ -1995,12 +1995,6 @@
             ]
         },
         {
-            "name": "ProcAttrTest.ZombieProcPid",
-            "audit_expectations": [
-                "avc:  denied  { dyntransition } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=unlabeled_u:unlabeled_r:unlabeled_t:s0 tclass=process permissive=1"
-            ]
-        },
-        {
             "name": "PtraceTest.PtraceAttachAllowed",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
