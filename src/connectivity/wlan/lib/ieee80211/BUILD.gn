@@ -49,3 +49,30 @@ rustc_library("ieee80211") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+rustc_test("ieee80211_test") {
+  sources = [
+    "src/bssid.rs",
+    "src/lib.rs",
+    "src/mac_addr.rs",
+    "src/ssid.rs",
+  ]
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:arbitrary",
+    "//third_party/rust_crates:hex",
+    "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
+  ]
+  visibility = [ ":*" ]
+}
+fuchsia_unittest_package("ieee80211-tests") {
+  package_name = "ieee80211-tests-gn"
+  component_name = "ieee80211-tests"
+  deps = [ ":ieee80211_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/wlan:*",
+  ]
+}

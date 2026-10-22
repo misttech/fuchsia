@@ -84,3 +84,49 @@ rustc_library("donut-lib-fdomain") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+rustc_test("donut-lib_test") {
+  sources = [
+    "src/lib.rs",
+    "src/opts.rs",
+    "src/serialize.rs",
+  ]
+  edition = "2024"
+  deps = [
+           "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex",
+           "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust_flex",
+           "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_flex",
+           "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_rust_flex",
+           "//src/lib/fdomain/client:flex_fidl",
+           "//src/lib/fidl/rust/fidl",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:clap",
+           "//third_party/rust_crates:eui48",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:hex",
+           "//third_party/rust_crates:percent-encoding",
+           "//third_party/rust_crates:serde",
+           "//third_party/rust_crates:serde_json",
+         ] +
+         [
+           "//sdk/rust/zx-status",
+           "//src/connectivity/wlan/lib/ieee80211",
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-async",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:test-case",
+         ]
+}
+fuchsia_unittest_package("donut-lib-tests") {
+  package_name = "donut-lib-tests-gn"
+  component_name = "donut-lib-tests"
+  deps = [ ":donut-lib_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  visibility = [
+    ":*",
+    "//src/connectivity/wlan:*",
+  ]
+}

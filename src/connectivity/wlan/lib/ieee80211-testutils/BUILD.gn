@@ -38,3 +38,21 @@ rustc_library("ieee80211-testutils") {
   ]
   deps = [ "//third_party/rust_crates:regex" ]
 }
+rustc_test("ieee80211-testutils_test") {
+  sources = [ "src/lib.rs" ]
+  edition = "2024"
+  deps = [ "//third_party/rust_crates:regex" ] + [
+           "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+           "//src/connectivity/wlan/lib/ieee80211",
+           "//third_party/rust_crates:rand",
+         ]
+}
+fuchsia_unittest_package("ieee80211-testutils-tests") {
+  package_name = "ieee80211-testutils-tests-gn"
+  component_name = "ieee80211-testutils-tests"
+  deps = [ ":ieee80211-testutils_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/wlan:*",
+  ]
+}

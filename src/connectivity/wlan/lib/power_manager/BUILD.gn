@@ -65,3 +65,30 @@ rustc_library("power_manager_testing") {
     "//third_party/rust_crates:anyhow",
   ]
 }
+rustc_test("power_manager_test") {
+  sources = [ "src/lib.rs" ]
+  edition = "2024"
+  proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
+  deps = [
+           "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+           "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+           "//sdk/rust/zx",
+           "//src/lib/fidl/rust/fidl",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:log",
+         ] +
+         [
+           "//src/lib/fuchsia-async",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:futures",
+         ]
+}
+fuchsia_unittest_package("wlan-power-manager-tests") {
+  package_name = "wlan-power-manager-tests-gn"
+  component_name = "wlan-power-manager-tests"
+  deps = [ ":power_manager_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/wlan:*",
+  ]
+}

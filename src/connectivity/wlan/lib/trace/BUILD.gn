@@ -42,3 +42,23 @@ rustc_library("wlan-trace") {
     "//src/lib/trace/rust:trace",
   ]
 }
+rustc_test("wlan-trace_test") {
+  sources = [
+    "src/lib.rs",
+    "src/names.rs",
+  ]
+  edition = "2024"
+  deps = [
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace",
+  ]
+}
+fuchsia_unittest_package("wlan-trace-tests") {
+  package_name = "wlan-trace-tests-gn"
+  component_name = "wlan-trace-tests"
+  deps = [ ":wlan-trace_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/wlan:*",
+  ]
+}

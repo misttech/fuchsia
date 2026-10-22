@@ -69,7 +69,6 @@ rustc_library(
 # for the host. The wlan_common library is used only for assisting in these
 # tests and itself includes many Fuchsia-specific libraries. As such, there
 # attributes should only be included when the build targets Fuchsia.
-# @bazel2gn:skip
 rustc_test(
     name = "donut-lib_test",
     crate = ":donut-lib",
@@ -83,8 +82,6 @@ rustc_test(
     ],
 )
 
-# TODO(https://fxbug.dev/574121341): Run this test in GN too.
-# @bazel2gn:skip
 fx_unittest_package(
     name = "donut-lib-tests",
     max_log_severity = "ERROR",
