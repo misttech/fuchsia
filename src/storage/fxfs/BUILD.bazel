@@ -1,0 +1,162 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_build_info//:args.bzl", "rust_debug_assertions")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_proc_macro(
+    name = "fxfs_macros",
+    srcs = ["macros/macros.rs"],
+    crate_root = "macros/macros.rs",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip
+    visibility = ["//src/storage/fxfs:__subpackages__"],
+    deps = [
+        "//third_party/rust_crates/vendor:proc-macro2",
+        "//third_party/rust_crates/vendor:quote",
+        "//third_party/rust_crates/vendor:syn",
+    ],
+)
+
+# LINT.IfChange
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/blob_metadata.rs",
+        "src/checksum.rs",
+        "src/debug_assert_not_too_long.rs",
+        "src/drop_event.rs",
+        "src/errors.rs",
+        "src/filesystem.rs",
+        "src/fsck.rs",
+        "src/fsck/errors.rs",
+        "src/fsck/store_scanner.rs",
+        "src/fsck/tests.rs",
+        "src/future_with_guard.rs",
+        "src/hooks.rs",
+        "src/lib.rs",
+        "src/log.rs",
+        "src/lsm_tree.rs",
+        "src/lsm_tree/bloom_filter.rs",
+        "src/lsm_tree/cache.rs",
+        "src/lsm_tree/merge.rs",
+        "src/lsm_tree/persistent_layer.rs",
+        "src/lsm_tree/skip_list_layer.rs",
+        "src/lsm_tree/testing.rs",
+        "src/lsm_tree/types.rs",
+        "src/metrics.rs",
+        "src/object_handle.rs",
+        "src/object_store.rs",
+        "src/object_store/allocator.rs",
+        "src/object_store/allocator/merge.rs",
+        "src/object_store/allocator/strategy.rs",
+        "src/object_store/caching_object_handle.rs",
+        "src/object_store/data_object_handle.rs",
+        "src/object_store/data_object_handle/allocated_ranges.rs",
+        "src/object_store/directory.rs",
+        "src/object_store/extent.rs",
+        "src/object_store/extent_mapping_iterator.rs",
+        "src/object_store/extent_record.rs",
+        "src/object_store/flush.rs",
+        "src/object_store/graveyard.rs",
+        "src/object_store/install.rs",
+        "src/object_store/journal.rs",
+        "src/object_store/journal/bootstrap_handle.rs",
+        "src/object_store/journal/checksum_list.rs",
+        "src/object_store/journal/reader.rs",
+        "src/object_store/journal/super_block.rs",
+        "src/object_store/journal/writer.rs",
+        "src/object_store/key_manager.rs",
+        "src/object_store/merge.rs",
+        "src/object_store/object_manager.rs",
+        "src/object_store/object_record.rs",
+        "src/object_store/object_record/legacy.rs",
+        "src/object_store/project_id.rs",
+        "src/object_store/store_object_handle.rs",
+        "src/object_store/transaction.rs",
+        "src/object_store/tree.rs",
+        "src/object_store/tree_cache.rs",
+        "src/object_store/volume.rs",
+        "src/range.rs",
+        "src/round.rs",
+        "src/serialized_types.rs",
+        "src/serialized_types/serialized_key.rs",
+        "src/serialized_types/test_traits.rs",
+        "src/serialized_types/tests.rs",
+        "src/serialized_types/traits.rs",
+        "src/serialized_types/types.rs",
+        "src/serialized_types/varint.rs",
+        "src/stable_hash.rs",
+        "src/testing.rs",
+        "src/testing/fake_object.rs",
+        "src/testing/writer.rs",
+        "src/virtual_device.rs",
+        "src/zerocopy_serialization.rs",
+    ],
+    # Match GN's default_debug_assertions so cfg(debug_assertions) matches
+    # rust_debug_assertions (the Bazel Rust toolchain currently sets
+    # -Cdebug-assertions=no by default).
+    build_flags = ["//build/config/rust:default_debug_assertions"],  # @bazel2gn:skip
+    crate_name = "fxfs",
+    edition = "2024",
+    proc_macro_deps = [
+        ":fxfs_macros",
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = [
+        "//src/storage/fxfs:__subpackages__",
+        "//vendor/google/storage:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/fxfs/crypto",
+        "//src/storage/fxfs/trace",
+        "//src/storage/fxfs/unicode",
+        "//src/storage/lib/blob_metadata",
+        "//src/storage/lib/fscrypt",
+        "//src/storage/lib/fsverity-merkle",
+        "//src/storage/lib/ptr_slice",
+        "//src/storage/lib/storage_device",
+        "//src/storage/lib/units",
+        "//src/storage/type-fprint:fprint",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:bincode",
+        "//third_party/rust_crates/vendor:bit-vec",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:either",
+        "//third_party/rust_crates/vendor:event-listener",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:linked-hash-map",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:pin-project",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:rapidhash",
+        "//third_party/rust_crates/vendor:rustc-hash",
+        "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:smallvec",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:uuid",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
+        "//conditions:default": [],
+    }) + (select({
+        "@platforms//os:fuchsia": ["//src/lib/debug/rust"],
+        "//conditions:default": [],
+    }) if rust_debug_assertions else []),
+)
+# LINT.ThenChange(BUILD.gn)

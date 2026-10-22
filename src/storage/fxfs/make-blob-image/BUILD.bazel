@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+_SRCS = ["src/lib.rs"]
+
+# @bazel2gn:transformer=deps
+_DEPS = [
+    "//src/lib/fuchsia-async",
+    "//src/storage/fxfs:lib",
+    "//src/storage/lib/delivery_blob",
+    "//src/storage/lib/sparse/rust:lib",
+    "//src/storage/lib/storage_device",
+    "//src/storage/lib/units",
+    "//src/sys/pkg/lib/fuchsia-merkle",
+    "//third_party/rust_crates/vendor:anyhow",
+    "//third_party/rust_crates/vendor:futures",
+    "//third_party/rust_crates/vendor:rayon",
+    "//third_party/rust_crates/vendor:serde",
+    "//third_party/rust_crates/vendor:serde_json",
+    "//third_party/rust_crates/vendor:tempfile",
+]
+
+rustc_library(
+    name = "make-blob-image",
+    srcs = _SRCS,
+    crate_name = "fxfs_make_blob_image",
+    edition = "2024",
+    visibility = [
+        "//src/lib/assembly/fxfs:__pkg__",
+        "//src/storage/fshost/integration:__pkg__",
+        "//src/storage/fxfs:__subpackages__",
+    ],
+    deps = _DEPS,
+)
+
+rustc_test(
+    name = "make-blob-image_test",
+    srcs = _SRCS,
+    crate_name = "fxfs_make_blob_image_lib_test",
+    edition = "2024",
+    visibility = ["//src/storage/fxfs:__subpackages__"],
+    deps = _DEPS + [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
