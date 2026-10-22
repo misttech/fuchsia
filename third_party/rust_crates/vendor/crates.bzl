@@ -501,7 +501,7 @@ _NORMAL_DEPENDENCIES = {
             "siphasher": Label("//third_party/rust_crates/vendor/siphasher-1.0.3:siphasher"),
             "slab": Label("//third_party/rust_crates/vendor/slab-0.4.12:slab"),
             "smallvec": Label("//third_party/rust_crates/vendor/smallvec-1.15.2:smallvec"),
-            "socket2": Label("//third_party/rust_crates/vendor/socket2-0.6.4:socket2"),
+            "socket2": Label("//third_party/rust_crates/vendor/socket2-0.6.5:socket2"),
             "splines": Label("//third_party/rust_crates/vendor/splines-5.0.0:splines"),
             "static_assertions": Label("//third_party/rust_crates/vendor/static_assertions-1.1.0:static_assertions"),
             "strsim": Label("//third_party/rust_crates/vendor/strsim-0.11.1:strsim"),

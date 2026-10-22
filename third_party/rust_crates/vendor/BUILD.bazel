@@ -3008,14 +3008,14 @@ alias(
 )
 
 alias(
-    name = "socket2-0.6.4",
-    actual = "//third_party/rust_crates/vendor/socket2-0.6.4:socket2",
+    name = "socket2-0.6.5",
+    actual = "//third_party/rust_crates/vendor/socket2-0.6.5:socket2",
     tags = ["manual"],
 )
 
 alias(
     name = "socket2",
-    actual = "//third_party/rust_crates/vendor/socket2-0.6.4:socket2",
+    actual = "//third_party/rust_crates/vendor/socket2-0.6.5:socket2",
     tags = ["manual"],
 )
 

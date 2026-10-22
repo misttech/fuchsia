@@ -2329,11 +2329,11 @@ group("smallvec-1.15.2") {
 }
 
 group("socket2") {
-  public_deps = [ ":socket2-v0_6_4" ]
+  public_deps = [ ":socket2-v0_6_5" ]
 }
 
-group("socket2-0.6.4") {
-  public_deps = [ ":socket2-v0_6_4" ]
+group("socket2-0.6.5") {
+  public_deps = [ ":socket2-v0_6_5" ]
 }
 
 if (current_os == "fuchsia") {
@@ -12072,7 +12072,7 @@ rustc_library("hyper-util-v0_1_20") {
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-v1_11_1" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
-  deps += [ ":socket2-v0_6_4" ]
+  deps += [ ":socket2-v0_6_5" ]
   deps += [ ":tower-service-v0_3_3" ]
   deps += [ ":tracing-v0_1_44" ]
 
@@ -22441,18 +22441,18 @@ rustc_library("smallvec-v1_15_2") {
   applicable_licenses = [ ":smallvec-v1_15_2.license" ]
 }
 
-license("socket2-v0_6_4.license") {
+license("socket2-v0_6_5.license") {
   public_package_name = "socket2"
   license_files = [
-    "//third_party/rust_crates/vendor/socket2-0.6.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/socket2-0.6.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/socket2-0.6.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/socket2-0.6.5/LICENSE-MIT",
   ]
 }
 
-rustc_library("socket2-v0_6_4") {
+rustc_library("socket2-v0_6_5") {
   crate_name = "socket2"
-  source_root = "//third_party/rust_crates/vendor/socket2-0.6.4/src/lib.rs"
-  output_name = "socket2-b53d3f2e5088687b"
+  source_root = "//third_party/rust_crates/vendor/socket2-0.6.5/src/lib.rs"
+  output_name = "socket2-737bda19f29b723f"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -22470,14 +22470,14 @@ rustc_library("socket2-v0_6_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b53d3f2e5088687b",
-    "-Cextra-filename=-b53d3f2e5088687b",
+    "-Cmetadata=737bda19f29b723f",
+    "-Cextra-filename=-737bda19f29b723f",
     "--cfg=feature=\"all\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":socket2-v0_6_4.license" ]
+  applicable_licenses = [ ":socket2-v0_6_5.license" ]
 }
 
 license("spki-v0_6_0.license") {
@@ -24029,7 +24029,7 @@ rustc_library("tokio-v1_53_1") {
     deps += [ ":mio-v1_2_1" ]
   }
   if (!(current_cpu == "wasm32") || (false && !false)) {
-    deps += [ ":socket2-v0_6_4" ]
+    deps += [ ":socket2-v0_6_5" ]
   }
   if (false) {
     deps += [ ":libc-v0_2_190" ]
@@ -24047,7 +24047,7 @@ rustc_library("tokio-v1_53_1") {
     deps += [ ":mio-v1_2_1" ]
     deps += [ ":num_cpus-v1_17_0" ]
     deps += [ ":signal-hook-registry-v1_4_8" ]
-    deps += [ ":socket2-v0_6_4" ]
+    deps += [ ":socket2-v0_6_5" ]
   }
 
   rustenv = []
