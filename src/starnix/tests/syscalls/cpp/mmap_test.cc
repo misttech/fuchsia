@@ -2032,6 +2032,56 @@ TEST_F(MMapProcTest, PrivateFileMappingMprotectMergesMappings) {
   }
 }
 
+// Split a 3-page writable private file mapping by making the outer pages read-only, modify the
+// middle page via `pread` from `/proc/self/exe` (which writes directly into the user VMAR via
+// `zx::Stream::readv_at`), and verify that restoring `PROT_WRITE` on the outer pages merges all
+// three pieces back into a single mapping.
+TEST_F(MMapProcTest, PrivateFileMappingMprotectMergesMappingsWithPread) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir tmp_dir;
+  std::string path = tmp_dir.path() + "/private_merge_pread_file";
+  fbl::unique_fd fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+  SAFE_SYSCALL(ftruncate(fd.get(), page_size * 3));
+
+  auto set_prot = [&](uintptr_t addr, size_t page, int prot) {
+    SAFE_SYSCALL(mprotect(reinterpret_cast<void*>(addr + page * page_size), page_size, prot));
+  };
+
+  auto mapping = test_helper::ScopedMMap::MMap(
+      /* addr = */ nullptr, page_size * 3, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd.get(),
+      /* offset = */ 0);
+  ASSERT_THAT(mapping, SyscallResultIsOk());
+  uintptr_t addr = reinterpret_cast<uintptr_t>(mapping->mapping());
+
+  set_prot(addr, /* page = */ 0, PROT_READ);
+  set_prot(addr, /* page = */ 2, PROT_READ);
+
+  fbl::unique_fd exe_fd(open("/proc/self/exe", O_RDONLY));
+  ASSERT_TRUE(exe_fd.is_valid()) << strerror(errno);
+  ASSERT_THAT(pread(exe_fd.get(), reinterpret_cast<void*>(addr + page_size), /* count = */ 4,
+                    /* offset = */ 0),
+              SyscallSucceedsWithValue(4));
+
+  set_prot(addr, /* page = */ 0, PROT_READ | PROT_WRITE);
+  set_prot(addr, /* page = */ 2, PROT_READ | PROT_WRITE);
+
+  std::string maps;
+  ASSERT_TRUE(files::ReadFileToString(proc_path() + "/self/maps", &maps));
+  auto report = test_helper::find_memory_mapping(addr, maps);
+  ASSERT_NE(report, std::nullopt);
+  EXPECT_EQ(report->start, addr);
+  EXPECT_EQ(report->end, addr + page_size * 3);
+  EXPECT_EQ(report->perms, "rw-p");
+
+  uint8_t file_byte = 0xFF;
+  ASSERT_THAT(
+      pread(fd.get(), &file_byte, /* count = */ 1, /* offset = */ static_cast<off_t>(page_size)),
+      SyscallSucceedsWithValue(1));
+  EXPECT_EQ(file_byte, 0);
+}
+
 // Verify that once a writable private file mapping is modified, its copy-on-write state is
 // preserved in both parent and child across `fork()`, allowing split pieces to coalesce in
 // `/proc/self/maps` when their protections match again.

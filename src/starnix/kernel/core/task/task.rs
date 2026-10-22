@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::{MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
+use crate::mm::{
+    MappingAccess, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor,
+};
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::ptrace::{AtomicStopState, PtraceEventData, PtraceState, PtraceStatus, StopState};
 use crate::signals::{KernelSignal, SignalDetail, SignalInfo, SignalState};
@@ -1689,7 +1691,11 @@ impl TaskMemoryAccessor for Task {
         self.mm().map(|mm| mm.maximum_valid_user_address).ok()
     }
 
-    fn ensure_buffers_mapped_in_user_vmar(&self, _buffers: &[UserBuffer]) -> Result<(), Errno> {
+    fn ensure_buffers_mapped_in_user_vmar(
+        &self,
+        _buffers: &[UserBuffer],
+        _access: MappingAccess,
+    ) -> Result<(), Errno> {
         // Using `Task` rather than `CurrentTask` indicates that the target address space is not
         // mapped in the current thread, so buffers cannot be mapped for direct user-VMAR access.
         // Returning `ENOTSUP` lets callers of `peek_each_segment` (like `with_iovec_segments`)

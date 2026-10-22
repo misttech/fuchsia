@@ -7,9 +7,10 @@ use crate::mm::mapping::MappingBackingMemory;
 use crate::mm::memory::MemoryObject;
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
-    FaultRegisterMode, InflightVmsplicedPayloads, MapInfoCache, Mapping, MappingBacking,
-    MappingFlags, MappingMode, MappingName, MappingNameRef, MlockPinFlavor, PrefetchMessage,
-    ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment,
+    FaultRegisterMode, InflightVmsplicedPayloads, MapInfoCache, Mapping, MappingAccess,
+    MappingBacking, MappingFlags, MappingMode, MappingName, MappingNameRef, MlockPinFlavor,
+    PrefetchMessage, ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload,
+    VmsplicePayloadSegment,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -653,6 +654,15 @@ fn protect_mapping_range(
     prot_flags: ProtectionFlags,
     probes: &ExecutableMemoryProbes,
 ) -> Result<bool, Errno> {
+    // Unmodified private file mappings omit `MappingFlags::WRITE` in `vmar_flags()`, so
+    // `protect_vmar_range` below won't check whether the backing memory is writable.
+    if prot_flags.contains(ProtectionFlags::WRITE)
+        && let MappingBacking::Memory(backing) = mapping.get_backing_internal()
+        && !backing.memory().get_rights().contains(zx::Rights::WRITE)
+    {
+        return error!(EACCES);
+    }
+
     mapping.set_flags(mapping.flags().with_access_flags(prot_flags));
 
     if prot_flags.contains(ProtectionFlags::EXEC) {
@@ -668,7 +678,11 @@ fn protect_mapping_range(
         }
     }
 
-    mapping_context.protect_vmar_range(range.start, range.end - range.start, prot_flags)?;
+    mapping_context.protect_vmar_range(
+        range.start,
+        range.end - range.start,
+        mapping.vmar_flags().access_flags(),
+    )?;
     Ok(false)
 }
 
@@ -721,15 +735,9 @@ fn effective_prot_flags(
 fn must_block_writes_during_execmod_check(mapping: &Mapping, prot_flags: ProtectionFlags) -> bool {
     prot_flags.contains(ProtectionFlags::EXEC)
         && !mapping.can_exec()
-        && mapping.can_write()
+        && mapping.vmar_flags().contains(MappingFlags::WRITE)
         && mapping.mapping_mode() == MappingMode::Eager
-        && is_private_file_mapping(mapping)
-}
-
-/// Returns whether `mapping` is a private mapping of a file.
-fn is_private_file_mapping(mapping: &Mapping) -> bool {
-    !mapping.flags().intersects(MappingFlags::SHARED | MappingFlags::ANONYMOUS)
-        && matches!(mapping.name(), MappingNameRef::File(_))
+        && mapping.is_private_file()
 }
 
 /// The memory of the target of `MemoryManager::snapshot_of()` for the private memory of the
@@ -997,13 +1005,29 @@ impl MemoryManagerState {
 
         let selected_address = self.select_address(addr, length, flags)?;
         let mapped_addr = selected_address.addr();
+        if !mapped_addr.is_aligned(*PAGE_SIZE) || memory_offset % *PAGE_SIZE != 0 {
+            return error!(EINVAL);
+        }
+        let mut backing = MappingBackingMemory::new(mapped_addr, memory, memory_offset);
+        if cow_modified {
+            backing.set_cow_modified();
+        }
+        let mapping = Mapping::with_name(
+            MappingBacking::Memory(Box::new(backing)),
+            flags,
+            name,
+            mapping_mode,
+        );
         if mapping_mode == MappingMode::Eager {
+            // For unmodified writable private file mappings, `mapping.vmar_flags()` omits `WRITE`,
+            // which also causes `populate` (`MAP_POPULATE`) to prefetch pages read-only rather
+            // than pre-committing writable copy-on-write pages before any write occurs.
             mm.mapping_context.map_in_user_vmar(
                 selected_address,
-                &memory,
+                Self::mapping_memory(&mm.mapping_context, &mapping),
                 memory_offset,
                 length,
-                flags,
+                mapping.vmar_flags(),
                 populate,
             )?;
         }
@@ -1015,16 +1039,6 @@ impl MemoryManagerState {
             self.update_after_unmap(mm, addr, end - addr, released_mappings);
         }
 
-        let mut backing = MappingBackingMemory::new(mapped_addr, memory, memory_offset);
-        if cow_modified {
-            backing.set_cow_modified();
-        }
-        let mapping = Mapping::with_name(
-            MappingBacking::Memory(Box::new(backing)),
-            flags,
-            name,
-            mapping_mode,
-        );
         released_mappings.extend(self.mappings.insert(mapped_addr..end, mapping));
 
         Ok(mapped_addr)
@@ -1108,7 +1122,21 @@ impl MemoryManagerState {
         )
     }
 
-    fn any_ranges_lazy<I>(&self, ranges: I) -> bool
+    /// Returns whether `mapping` needs to be mapped or have its write permissions enabled in the
+    /// user VMAR for `access`.
+    fn mapping_needs_vmar_update(mapping: &Mapping, access: MappingAccess) -> bool {
+        mapping.mapping_mode() == MappingMode::Lazy
+            || (access == MappingAccess::ForWriting
+                && mapping.can_write()
+                && mapping.is_unmodified_private_file())
+    }
+
+    /// Returns whether any mapping in `ranges` needs a user VMAR update for `access`.
+    ///
+    /// For each `(addr, length)` item, `length: None` checks only the mapping covering the single
+    /// address `addr`, whereas `length: Some(len)` checks all mappings intersecting
+    /// `addr..(addr + len)`.
+    fn any_ranges_need_vmar_update<I>(&self, ranges: I, access: MappingAccess) -> bool
     where
         I: IntoIterator<Item = (UserAddress, Option<usize>)>,
     {
@@ -1116,7 +1144,7 @@ impl MemoryManagerState {
             match length {
                 None => {
                     if let Some((_, mapping)) = self.mappings.get(addr) {
-                        if mapping.mapping_mode() == MappingMode::Lazy {
+                        if Self::mapping_needs_vmar_update(mapping, access) {
                             return true;
                         }
                     }
@@ -1127,7 +1155,7 @@ impl MemoryManagerState {
                     if self
                         .mappings
                         .range(addr..end)
-                        .any(|(_, mapping)| mapping.mapping_mode() == MappingMode::Lazy)
+                        .any(|(_, mapping)| Self::mapping_needs_vmar_update(mapping, access))
                     {
                         return true;
                     }
@@ -1137,24 +1165,63 @@ impl MemoryManagerState {
         false
     }
 
+    /// Ensures that the mapping at `addr` (if `length` is `None`) or all mappings intersecting
+    /// `addr..(addr + len)` (if `length` is `Some(len)`) are mapped in the user VMAR for reading.
+    ///
+    /// Returns `true` if any mappings were updated in the user VMAR.
     fn ensure_range_mapped_in_user_vmar(
         &mut self,
         addr: UserAddress,
         length: Option<usize>,
         context: &MappingContext,
     ) -> Result<bool, Errno> {
-        self.ensure_ranges_mapped_in_user_vmar(std::iter::once((addr, length)), context)
+        self.ensure_range_mapped_in_user_vmar_for_access(
+            addr,
+            length,
+            MappingAccess::ForReading,
+            context,
+        )
     }
 
-    fn ensure_ranges_mapped_in_user_vmar<I>(
+    /// Ensures that the mapping at `addr` (if `length` is `None`) or all mappings intersecting
+    /// `addr..(addr + len)` (if `length` is `Some(len)`) are mapped in the user VMAR with the
+    /// permissions needed for `access`.
+    ///
+    /// Returns `true` if any mappings were updated in the user VMAR.
+    fn ensure_range_mapped_in_user_vmar_for_access(
+        &mut self,
+        addr: UserAddress,
+        length: Option<usize>,
+        access: MappingAccess,
+        context: &MappingContext,
+    ) -> Result<bool, Errno> {
+        self.ensure_ranges_mapped_in_user_vmar_for_access(
+            std::iter::once((addr, length)),
+            access,
+            context,
+        )
+    }
+
+    /// Ensures that any mappings in `ranges` are mapped in the user VMAR with the permissions
+    /// needed for `access`.
+    ///
+    /// For each `(addr, length)` item, `length: None` handles a fault at the single address `addr`
+    /// (updating the mapping covering `addr`), whereas `length: Some(len)` updates all mappings
+    /// intersecting the range `addr..(addr + len)`. Returns `true` if any mappings were updated in
+    /// the user VMAR.
+    fn ensure_ranges_mapped_in_user_vmar_for_access<I>(
         &mut self,
         ranges: I,
+        access: MappingAccess,
         context: &MappingContext,
     ) -> Result<bool, Errno>
     where
         I: IntoIterator<Item = (UserAddress, Option<usize>)>,
     {
-        // Collect lazy VMA ranges to materialize (up to 64 when batching nearby VMAs on a fault).
+        // Cap the number of lazy VMAs materialized in a single fault batch to bound stack usage and
+        // per-fault VMAR map latency. The asymmetric window (4 MiB backward, up to 16 VMAs; 8 MiB
+        // forward, up to 64 VMAs total) favors forward sequential access across nearby segments
+        // (such as adjacent ELF segments or heap allocations after `fork()`).
         const MAX_BATCH_RANGES: usize = 64;
         const MAX_BATCH_BEFORE_FAULT: usize = 16;
         const BATCH_BACKWARD_WINDOW: usize = 4 * 1024 * 1024;
@@ -1162,10 +1229,26 @@ impl MemoryManagerState {
 
         let mut ranges_to_update =
             SmallVec::<[std::ops::Range<UserAddress>; MAX_BATCH_RANGES]>::new();
+        // A single fault or buffer check typically touches at most one unmodified writable private
+        // file mapping, so an inline capacity of 1 avoids heap allocation in the common case.
+        let mut cow_addrs = SmallVec::<[UserAddress; 1]>::new();
         for (addr, length) in ranges {
             match length {
+                // `None` indicates a single-address fault (e.g. from a page fault or usercopy
+                // fault). Unlike the explicit range case (`Some(len)`), where the caller already
+                // knows the exact buffer span to materialize, a single-address fault on a lazy
+                // mapping after `fork()` is often followed by faults on nearby mappings, so we
+                // opportunistically batch-materialize nearby accessible lazy VMAs around the
+                // faulting range.
                 None => {
                     if let Some((fault_range, mapping)) = self.mappings.get(addr) {
+                        if access == MappingAccess::ForWriting
+                            && mapping.can_write()
+                            && mapping.is_unmodified_private_file()
+                            && !cow_addrs.contains(&fault_range.start)
+                        {
+                            cow_addrs.push(fault_range.start);
+                        }
                         if mapping.mapping_mode() == MappingMode::Lazy {
                             let target_access = mapping.flags().access_flags();
                             if ranges_to_update.is_empty() && !target_access.is_empty() {
@@ -1199,10 +1282,20 @@ impl MemoryManagerState {
                         }
                     }
                 }
+                // `Some(len)` indicates an explicit buffer range `addr..(addr + len)` (e.g. before
+                // passing user buffer `iovec`s directly to Zircon syscalls); only the mappings
+                // intersecting that range need to be updated.
                 Some(len) => {
                     assert!(len > 0);
                     let end = addr.checked_add(len).expect("address overflowed after validation");
                     for (range, mapping) in self.mappings.range(addr..end) {
+                        if access == MappingAccess::ForWriting
+                            && mapping.can_write()
+                            && mapping.is_unmodified_private_file()
+                            && !cow_addrs.contains(&range.start)
+                        {
+                            cow_addrs.push(range.start);
+                        }
                         if mapping.mapping_mode() == MappingMode::Lazy
                             && !ranges_to_update.contains(range)
                         {
@@ -1213,8 +1306,16 @@ impl MemoryManagerState {
             }
         }
 
-        if ranges_to_update.is_empty() {
+        if ranges_to_update.is_empty() && cow_addrs.is_empty() {
             return Ok(false);
+        }
+
+        for start_addr in cow_addrs {
+            self.set_private_file_cow_modified(context, start_addr)?;
+        }
+
+        if ranges_to_update.is_empty() {
+            return Ok(true);
         }
 
         ranges_to_update.sort_unstable_by_key(|r| r.start);
@@ -1230,7 +1331,7 @@ impl MemoryManagerState {
                 anon_start.ptr() as u64,
                 anon_end - anon_start,
                 anon_flags,
-                false,
+                /* populate = */ false,
             )?;
             for r in &ranges_to_update[indices] {
                 let updated = mappings
@@ -1246,9 +1347,13 @@ impl MemoryManagerState {
 
         let mut pending_anon: Option<(UserAddress, UserAddress, MappingFlags, Range<usize>)> = None;
         for (idx, range) in ranges_to_update.iter().enumerate() {
-            let (_, mapping) =
-                self.mappings.get(range.start).expect("Expected lazy mapping to exist");
-            let flags = mapping.flags();
+            let Some((_, mapping)) = self.mappings.get(range.start) else {
+                continue;
+            };
+            if mapping.mapping_mode() != MappingMode::Lazy {
+                continue;
+            }
+            let flags = mapping.vmar_flags();
             if matches!(mapping.get_backing_internal(), MappingBacking::PrivateAnonymous) {
                 match &mut pending_anon {
                     Some((_, anon_end, anon_flags, indices))
@@ -1271,8 +1376,13 @@ impl MemoryManagerState {
                 flush_anon(&mut self.mappings, prev_anon, &ranges_to_update)?;
             }
 
-            let (_, mapping) =
-                self.mappings.get(range.start).expect("Expected lazy mapping to exist");
+            let Some((range, mapping)) = self.mappings.get(range.start) else {
+                continue;
+            };
+            if mapping.mapping_mode() != MappingMode::Lazy {
+                continue;
+            }
+            let range = range.clone();
             match mapping.get_backing_internal() {
                 MappingBacking::PrivateAnonymous => {
                     pending_anon = Some((range.start, range.end, flags, idx..idx + 1));
@@ -1286,12 +1396,12 @@ impl MemoryManagerState {
                         backing.memory(),
                         backing_memory_offset,
                         mapping_length,
-                        flags,
-                        false,
+                        mapping.vmar_flags(),
+                        /* populate = */ false,
                     )?;
                     let updated = self
                         .mappings
-                        .update_exact(range, |m| {
+                        .update_exact(&range, |m| {
                             m.set_mapping_mode(MappingMode::Eager);
                             Ok::<(), Errno>(())
                         })
@@ -1844,7 +1954,7 @@ impl MemoryManagerState {
             // guard restores the original protection of the range.
             let writes_blocked_guard =
                 if must_block_writes_during_execmod_check(mapping, prot_flags) {
-                    let old_access_flags = mapping.flags().access_flags();
+                    let old_access_flags = mapping.vmar_flags().access_flags();
                     let length = intersection.end - intersection.start;
                     mapping_context.protect_vmar_range(
                         intersection.start,
@@ -1977,22 +2087,30 @@ impl MemoryManagerState {
         let MappingBacking::Memory(backing) = mapping.get_backing_internal() else {
             unreachable!("only memory-backed mappings can be promoted to a private child");
         };
+        let run = if mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE) {
+            self.collect_lazy_private_run(&range, &mapping, backing)
+        } else {
+            vec![(range.clone(), mapping.clone())]
+        };
         let child_memory = Arc::new(
             backing
                 .memory()
                 .create_private_child()
                 .map_err(MemoryManager::get_errno_for_vmo_err)?,
         );
-        let run = if mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE) {
-            self.collect_lazy_private_run(&range, &mapping, backing)
-        } else {
-            vec![(range.clone(), mapping.clone())]
-        };
 
         let mut promoted_mapping = None;
         for (run_range, mut run_mapping) in run {
+            let cow_modified = run_mapping.is_known_cow_modified();
             let memory_offset = run_mapping.address_to_offset(run_range.start);
             let flags = run_mapping.flags().difference(MappingFlags::LAZY_PRIVATE_FILE);
+            run_mapping.set_backing_internal(MappingBacking::Memory(Box::new(
+                MappingBackingMemory::new(run_range.start, child_memory.clone(), memory_offset),
+            )));
+            if cow_modified {
+                run_mapping.set_cow_modified();
+            }
+            run_mapping.set_flags(flags);
             // Map every entry, even ones that were lazily mapped (e.g. after `fork()`), so all
             // entries in the run end up `Eager`. Otherwise `MAPPED_IN_VMAR` would differ between
             // neighbors and keep them from merging once their protections match.
@@ -2001,18 +2119,9 @@ impl MemoryManagerState {
                 &child_memory,
                 memory_offset,
                 run_range.end - run_range.start,
-                flags,
-                false,
+                run_mapping.vmar_flags(),
+                /* populate = */ false,
             )?;
-            let cow_modified = run_mapping.is_known_cow_modified();
-            run_mapping.set_backing_internal(MappingBacking::Memory(Box::new(
-                MappingBackingMemory::new(run_range.start, child_memory.clone(), memory_offset),
-            )));
-            // The pages known to be modified are still part of the memory of the child.
-            if cow_modified {
-                run_mapping.set_cow_modified();
-            }
-            run_mapping.set_flags(flags);
             run_mapping.set_mapping_mode(MappingMode::Eager);
             released_mappings.extend(self.mappings.insert(run_range.clone(), run_mapping.clone()));
             if run_mapping.flags().contains(MappingFlags::LOCKED) {
@@ -2032,8 +2141,8 @@ impl MemoryManagerState {
     }
 
     /// Returns `range` and all contiguous `LAZY_PRIVATE_FILE` mappings immediately preceding and
-    /// following it that share the same underlying file VMO (`koid` and `EXECUTE` rights), mapping
-    /// name, and contiguous file offsets, in address order.
+    /// following it that share the same underlying file VMO (`koid`), `EXECUTE` handle right,
+    /// mapping name, and contiguous file offsets, in address order.
     ///
     /// These are typically pieces of a single read-only `MAP_PRIVATE` file mapping that were split
     /// into multiple entries by `mprotect` or `madvise`. Promoting them together ensures they keep
@@ -2062,7 +2171,7 @@ impl MemoryManagerState {
                 return false;
             }
             let adj_memory = adj_backing.memory();
-            adj_memory.get_koid() == memory_koid
+            (adj_memory == memory || adj_memory.get_koid() == memory_koid)
                 && adj_memory.get_rights().contains(zx::Rights::EXECUTE) == has_exec_right
         };
 
@@ -2428,12 +2537,15 @@ impl MemoryManagerState {
             MlockPinFlavor::Noop | MlockPinFlavor::ShadowProcess => (),
         }
 
-        for (range, mapping, shadow_mapping) in updates {
+        for (range, mut mapping, shadow_mapping) in updates {
             if let Some(shadow_mapping) = shadow_mapping {
                 released_mappings.extend_pins(
                     self.shadow_mappings_for_mlock.insert(range.clone(), shadow_mapping),
                 );
             }
+            // `ensure_range_mapped_in_user_vmar` above materialized any `Lazy` mappings in
+            // `start_addr..end_addr`, so ensure the cloned `mapping` retains `MappingMode::Eager`.
+            mapping.set_mapping_mode(MappingMode::Eager);
             released_mappings.extend(self.mappings.insert(range, mapping));
         }
 
@@ -3114,6 +3226,9 @@ impl MemoryManagerState {
         bytes: &[u8],
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
         let (range, mut mapping) = {
             let (r, m) = self.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
             (r.clone(), m.clone())
@@ -3156,24 +3271,14 @@ impl MemoryManagerState {
             };
 
         if needs_private_child {
-            // Pages modified via copy-on-write in the current memory won't be attributed to its
-            // new child, so record them. See `Mapping::has_cow_modifications`. If the check fails,
-            // assume that there are some, so that `execmod` is still checked.
-            let cow_modified = mapping.has_cow_modifications().unwrap_or(true);
-            mapping = self.promote_to_private_child(
-                kernel,
-                context,
-                range.clone(),
-                mapping,
-                released_mappings,
-            )?;
-            if cow_modified && !mapping.is_known_cow_modified() {
-                mapping.set_cow_modified();
-                released_mappings.extend(self.mappings.insert(range, mapping.clone()));
-            }
+            mapping =
+                self.promote_to_private_child(kernel, context, range, mapping, released_mappings)?;
             Self::mapping_vmo(context, &mapping)?
                 .write(bytes, addr_offset)
                 .map_err(MemoryManager::get_errno_for_vmo_err)?;
+        }
+        if mapping.is_unmodified_private_file() {
+            self.set_private_file_cow_modified(context, addr)?;
         }
 
         // Only synchronize caches if the mapping itself is currently executable; backing VMOs
@@ -3190,6 +3295,119 @@ impl MemoryManagerState {
             system_barrier(BarrierType::InstructionStream);
         }
 
+        Ok(())
+    }
+
+    /// Marks the private file mapping at `addr` (and any other mappings sharing its backing VMO)
+    /// as holding pages modified via copy-on-write, and updates the user VMAR protection of any
+    /// eagerly mapped writable ones.
+    ///
+    /// Keeping `cow_modified` consistent across all mappings that share a private file VMO ensures
+    /// that CoW modifications are tracked across both contiguous and non-contiguous splits (e.g.
+    /// after `mremap()`) and allows adjacent split mappings to merge back together once their
+    /// protections match.
+    ///
+    /// When a private file VMO is first written to, it becomes CoW-modified, and we iterate over
+    /// all mappings once to mark any unmodified private file mappings backed by that same open file
+    /// memory.
+    fn set_private_file_cow_modified(
+        &mut self,
+        context: &MappingContext,
+        addr: UserAddress,
+    ) -> Result<(), Errno> {
+        let Some((_, mapping)) = self.mappings.get(addr) else {
+            return Ok(());
+        };
+        if !mapping.is_unmodified_private_file()
+            || mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE)
+        {
+            return Ok(());
+        }
+        let MappingBacking::Memory(backing) = mapping.get_backing_internal() else {
+            return Ok(());
+        };
+
+        let Some(file) = mapping.name().as_file().cloned() else {
+            return Ok(());
+        };
+        let memory = backing.memory().clone();
+        let mut memory_koid = None;
+        let ranges: SmallVec<[Range<UserAddress>; 1]> = self
+            .mappings
+            .iter()
+            .filter_map(|(r, m)| {
+                if !m.is_unmodified_private_file()
+                    || m.flags().contains(MappingFlags::LAZY_PRIVATE_FILE)
+                    || m.name().as_file() != Some(&file)
+                {
+                    return None;
+                }
+                let MappingBacking::Memory(m_backing) = m.get_backing_internal() else {
+                    return None;
+                };
+                let m_memory = m_backing.memory();
+                let same_vmo = *m_memory == memory
+                    || m_memory.get_koid() == *memory_koid.get_or_insert_with(|| memory.get_koid());
+                same_vmo.then(|| r.clone())
+            })
+            .collect();
+
+        for run_range in ranges {
+            let updated = self.mappings.update_exact(&run_range, |mapping| {
+                // `set_cow_modified()` adds `WRITE` to `mapping.vmar_flags()`, so update the
+                // user VMAR to grant write access before marking the mapping modified.
+                if mapping.mapping_mode() == MappingMode::Eager && mapping.can_write() {
+                    context.protect_vmar_range(
+                        run_range.start,
+                        run_range.end - run_range.start,
+                        mapping.flags().access_flags(),
+                    )?;
+                }
+                mapping.set_cow_modified();
+                Ok(())
+            })?;
+            assert!(updated, "Expected to update exactly one mapping");
+        }
+        Ok(())
+    }
+
+    /// Returns whether any contiguous writable mapping starting at `addr` (up to `length` bytes)
+    /// is a private file mapping that is not yet recorded as modified via copy-on-write.
+    fn any_writable_private_file_mappings_unmodified(
+        &self,
+        addr: UserAddress,
+        length: usize,
+        context: &MappingContext,
+    ) -> Result<bool, Errno> {
+        Ok(self
+            .get_contiguous_mappings_at(addr, length, context)?
+            .take_while(|(mapping, _)| mapping.can_write())
+            .any(|(mapping, _)| mapping.is_unmodified_private_file()))
+    }
+
+    /// Records that any contiguous writable private file mappings starting at `addr` (up to
+    /// `length` bytes) hold pages modified via copy-on-write, and updates their user VMAR
+    /// protection if they are eagerly mapped.
+    fn record_writable_private_file_mappings_modified(
+        &mut self,
+        addr: UserAddress,
+        length: usize,
+        context: &MappingContext,
+    ) -> Result<(), Errno> {
+        let mut addrs = SmallVec::<[UserAddress; 1]>::new();
+        let mut cur_addr = addr;
+        for (mapping, len) in self.get_contiguous_mappings_at(addr, length, context)? {
+            if !mapping.can_write() {
+                break;
+            }
+            if mapping.is_unmodified_private_file() {
+                addrs.push(cur_addr);
+            }
+            cur_addr = (cur_addr + len)?;
+        }
+        for start_addr in addrs {
+            self.set_private_file_cow_modified(context, start_addr)?;
+        }
         Ok(())
     }
 
@@ -3365,7 +3583,7 @@ impl MemoryManagerState {
         }
         for (range, mapping) in updates {
             let length = range.end - range.start;
-            let restored_flags = mapping.flags().access_flags();
+            let restored_flags = mapping.vmar_flags().access_flags();
 
             released_mappings.extend(self.mappings.insert(range.clone(), mapping));
 
@@ -3396,7 +3614,7 @@ impl MemoryManagerState {
         // Use a separate loop to avoid mutating the mappings structure while iterating over it.
         for (range, mapping) in updates {
             let length = range.end - range.start;
-            let restored_flags = mapping.flags().access_flags();
+            let restored_flags = mapping.vmar_flags().access_flags();
             released_mappings.extend(self.mappings.insert(range.clone(), mapping));
             // We can't recover from an error here as this is run during the cleanup.
             mm.mapping_context
@@ -3494,38 +3712,57 @@ impl MemoryManagerState {
 pub struct MlockShadowProcess(memory_pinning::ShadowProcess);
 
 impl MemoryManager {
-    /// Ensures that any mapping at `addr` is actually mapped at in the user vmar.
+    /// Ensures that the mapping at `addr` (if `length` is `None`) or all mappings intersecting
+    /// `addr..(addr + len)` (if `length` is `Some(len)`) are mapped in the user VMAR for reading.
     ///
-    /// If `length` is `None`, it will ensure the mapping only on the page `addr` falls into.
-    /// Returns `true` if any lazy mappings are mapped.
+    /// Returns `true` if any mappings were updated in the user VMAR.
     pub fn ensure_range_mapped_in_user_vmar(
         &self,
         addr: UserAddress,
         length: Option<usize>,
     ) -> Result<bool, Errno> {
-        if !self.state.read().any_ranges_lazy(std::iter::once((addr, length))) {
-            return Ok(false);
-        }
-        self.state.write().ensure_ranges_mapped_in_user_vmar(
-            std::iter::once((addr, length)),
-            &self.mapping_context,
-        )
+        self.ensure_range_mapped_in_user_vmar_for_access(addr, length, MappingAccess::ForReading)
     }
 
-    /// Ensures that any mappings in the specified ranges are actually mapped in the user vmar.
+    /// Ensures that the mapping at `addr` (if `length` is `None`) or all mappings intersecting
+    /// `addr..(addr + len)` (if `length` is `Some(len)`) are mapped in the user VMAR with the
+    /// permissions needed for `access`.
     ///
-    /// If `length` is `None`, it will ensure the mapping only on the page `addr` falls into.
-    /// Returns `true` if any lazy mappings are mapped.
-    pub fn ensure_ranges_mapped_in_user_vmar<I>(&self, ranges: I) -> Result<bool, Errno>
+    /// Returns `true` if any mappings were updated in the user VMAR.
+    fn ensure_range_mapped_in_user_vmar_for_access(
+        &self,
+        addr: UserAddress,
+        length: Option<usize>,
+        access: MappingAccess,
+    ) -> Result<bool, Errno> {
+        self.ensure_ranges_mapped_in_user_vmar_for_access(std::iter::once((addr, length)), access)
+    }
+
+    /// Ensures that any mappings in `ranges` are mapped in the user VMAR with the permissions
+    /// needed for `access`.
+    ///
+    /// For each `(addr, length)` item, `length: None` handles a fault at the single address `addr`
+    /// (updating the mapping covering `addr`), whereas `length: Some(len)` updates all mappings
+    /// intersecting the range `addr..(addr + len)`. Returns `true` if any mappings were updated in
+    /// the user VMAR.
+    pub fn ensure_ranges_mapped_in_user_vmar_for_access<I>(
+        &self,
+        ranges: I,
+        access: MappingAccess,
+    ) -> Result<bool, Errno>
     where
         I: IntoIterator<Item = (UserAddress, Option<usize>)>,
         I::IntoIter: Clone,
     {
         let ranges = ranges.into_iter();
-        if !self.state.read().any_ranges_lazy(ranges.clone()) {
+        if !self.state.read().any_ranges_need_vmar_update(ranges.clone(), access) {
             return Ok(false);
         }
-        self.state.write().ensure_ranges_mapped_in_user_vmar(ranges, &self.mapping_context)
+        self.state.write().ensure_ranges_mapped_in_user_vmar_for_access(
+            ranges,
+            access,
+            &self.mapping_context,
+        )
     }
 
     /// Releases private anonymous memory for an exiting process (`process_mrelease(2)`).
@@ -3582,9 +3819,10 @@ impl MemoryManager {
     where
         F: FnMut(UserAddress, usize) -> Result<ControlFlow<usize, usize>, Errno>,
     {
-        // A usercopy fault acquires MemoryManagerStateLock via ensure_range_mapped_in_user_vmar
-        // or extend_growsdown_mapping_to_address. Assert lock ordering upfront so lockdep catches
-        // callers holding higher-level locks even when the user buffer is resident.
+        // A usercopy fault acquires MemoryManagerStateLock via
+        // ensure_range_mapped_in_user_vmar_for_access or extend_growsdown_mapping_to_address.
+        // Assert lock ordering upfront so lockdep catches callers holding higher-level locks even
+        // when the user buffer is resident.
         assert_lock_level::<MemoryManagerStateLock>();
         let mut copied = 0;
         // The address at which the transfer was last retried because the mapping allowed it.
@@ -3594,7 +3832,8 @@ impl MemoryManager {
                 ControlFlow::Continue(num_copied) => {
                     if num_copied == 0 {
                         let fault_addr = (addr + copied)?;
-                        // If we successfully mapped a lazy mapping, retry the copy.
+                        // If we successfully mapped a lazy mapping (or enabled write access to a
+                        // writable private file mapping), retry the copy.
                         // Otherwise, this might be a permission fault or invalid address, so we
                         // stop and return the partial result.
                         //
@@ -3604,7 +3843,14 @@ impl MemoryManager {
                         // threads on faults, but adds overhead (locks and range lookups)
                         // if the memory is already mapped. We use the reactive approach
                         // for now, but this could be tuned in the future.
-                        if self.ensure_range_mapped_in_user_vmar(fault_addr, None)? {
+                        let access = if is_write {
+                            MappingAccess::ForWriting
+                        } else {
+                            MappingAccess::ForReading
+                        };
+                        if self.ensure_range_mapped_in_user_vmar_for_access(
+                            fault_addr, /* length = */ None, access,
+                        )? {
                             continue;
                         }
                         // A failed transfer can also be resolved by extending a GROWSDOWN mapping
@@ -3691,7 +3937,33 @@ impl MemoryManager {
             let cur_addr = (addr + copied)?;
             let flow = {
                 let state = self.state.read();
-                transfer_fn(&state, cur_addr, copied)?
+                if is_write
+                    && state.any_writable_private_file_mappings_unmodified(
+                        cur_addr,
+                        len - copied,
+                        &self.mapping_context,
+                    )?
+                {
+                    std::mem::drop(state);
+                    let mut state = self.state.write();
+                    let flow = transfer_fn(&state, cur_addr, copied)?;
+                    let (ControlFlow::Continue(num_copied) | ControlFlow::Break(num_copied)) = flow;
+                    if num_copied > 0 {
+                        if let Err(e) = state.record_writable_private_file_mappings_modified(
+                            cur_addr,
+                            num_copied,
+                            &self.mapping_context,
+                        ) {
+                            log_error!(
+                                "Failed to record private file CoW modification after write: {e}"
+                            );
+                            return Ok(copied + num_copied);
+                        }
+                    }
+                    flow
+                } else {
+                    transfer_fn(&state, cur_addr, copied)?
+                }
             };
             match flow {
                 ControlFlow::Continue(num_copied) => {
@@ -4071,11 +4343,10 @@ impl MappingContext {
             &memory,
             memory_offset,
             range.end - range.start,
-            mapping.flags(),
+            mapping.vmar_flags(),
             /* populate = */ false,
         )?;
         let mut backing = MappingBackingMemory::new(range.start, memory, memory_offset);
-        // The memory is the same, only the handle to it changes.
         if mapping.is_known_cow_modified() {
             backing.set_cow_modified();
         }
@@ -4388,7 +4659,7 @@ impl MemoryManager {
         // generated. Only do this on the pages that were populated by this operation.
         for (range, mapping) in state.mappings.range(addr..trimmed_end) {
             let range_to_protect = range.intersect(&(addr..trimmed_end));
-            let restored_flags = mapping.flags().access_flags();
+            let restored_flags = mapping.vmar_flags().access_flags();
             let length = range_to_protect.end - range_to_protect.start;
             self.mapping_context
                 .protect_vmar_range(range_to_protect.start, length, restored_flags)
@@ -4560,13 +4831,19 @@ impl MemoryManager {
             target_state.forkable_state = state.forkable_state.clone();
 
             for range in cow_modified_source_ranges {
-                let updated = state
-                    .mappings
-                    .update_exact(&range, |mapping| {
-                        mapping.set_cow_modified();
-                        Ok::<(), Errno>(())
-                    })
-                    .expect("infallible update");
+                let updated = state.mappings.update_exact(&range, |mapping| {
+                    // `set_cow_modified()` adds `WRITE` to `mapping.vmar_flags()`, so update the
+                    // source's user VMAR to grant write access before marking the mapping modified.
+                    if mapping.mapping_mode() == MappingMode::Eager && mapping.can_write() {
+                        source_mm.mapping_context.protect_vmar_range(
+                            range.start,
+                            range.end - range.start,
+                            mapping.flags().access_flags(),
+                        )?;
+                    }
+                    mapping.set_cow_modified();
+                    Ok(())
+                })?;
                 debug_assert!(updated);
             }
         }
@@ -4701,7 +4978,7 @@ impl MemoryManager {
             length,
             flags,
             options.contains(MappingOptions::POPULATE),
-            /* cow_modified= */ false,
+            /* cow_modified = */ false,
             name,
             MappingMode::Eager,
             &mut released_mappings,
@@ -5101,50 +5378,86 @@ impl MemoryManager {
         #[cfg(not(target_arch = "aarch64"))]
         let addr = UserAddress::from(raw_faulting_address);
 
-        // On uffd-registered range, handle according to the uffd rules
+        // An `ACCESS_DENIED` fault can occur when the user VMAR permissions are stricter than the
+        // mapping's permissions in Starnix (e.g. for `userfaultfd`-registered ranges or unmodified
+        // writable private file mappings).
+        let mut checked_vmar_mapping = false;
         if error_code == zx::Status::ACCESS_DENIED {
             let state = self.state.read();
             if let Some((_, mapping)) = state.mappings.get(addr) {
-                if mapping.flags().contains(MappingFlags::UFFD) {
-                    // TODO(https://fxbug.dev/391599171): Support other modes
-                    assert!(mapping.flags().contains(MappingFlags::UFFD_MISSING));
-
-                    if let Some(_uffd) = state.find_uffd(addr) {
-                        // If the SIGBUS feature was set, no event will be sent to the file.
-                        // Instead, SIGBUS is delivered to the process that triggered the fault.
-                        // TODO(https://fxbug.dev/391599171): For now we only support this feature,
-                        // so we assume it is set.
-                        // Check for the SIGBUS feature when we start supporting running without it.
-                        return ExceptionResult::Signal(SignalInfo::with_detail(
-                            SIGBUS,
-                            BUS_ADRERR as i32,
-                            SignalDetail::SigFault { addr: raw_faulting_address },
-                        ));
-                    };
-                }
-                // The access may have been denied while the protection of the mapping was being
-                // changed, e.g. while writes are blocked during an `execmod` check (see
-                // `must_block_writes_during_execmod_check()`), or because of a data race between
-                // uffd unregistration and the page fault. Retry the access if Starnix's own
-                // information about the mapping allows it.
                 if check_access_permissions_in_page_fault(is_write, is_execute, mapping) {
-                    let writes_may_have_been_blocked = is_write && is_private_file_mapping(mapping);
-                    if !writes_may_have_been_blocked {
-                        track_stub!(
-                            TODO("https://fxbug.dev/435171399"),
-                            "Inconsistent permission fault"
-                        );
+                    // On uffd-registered range, handle according to the uffd rules.
+                    if mapping.flags().contains(MappingFlags::UFFD) {
+                        // TODO(https://fxbug.dev/391599171): Support other modes
+                        assert!(mapping.flags().contains(MappingFlags::UFFD_MISSING));
+
+                        if let Some(_uffd) = state.find_uffd(addr) {
+                            // If the SIGBUS feature was set, no event will be sent to the file.
+                            // Instead, SIGBUS is delivered to the process that triggered the fault.
+                            // TODO(https://fxbug.dev/391599171): For now we only support this feature,
+                            // so we assume it is set.
+                            // Check for the SIGBUS feature when we start supporting running without it.
+                            return ExceptionResult::Signal(SignalInfo::with_detail(
+                                SIGBUS,
+                                BUS_ADRERR as i32,
+                                SignalDetail::SigFault { addr: raw_faulting_address },
+                            ));
+                        };
                     }
-                    return ExceptionResult::Handled;
+                    if is_write && !mapping.vmar_flags().contains(MappingFlags::WRITE) {
+                        std::mem::drop(state);
+                        checked_vmar_mapping = true;
+                        let mut state = self.state.write();
+                        match state.ensure_range_mapped_in_user_vmar_for_access(
+                            addr,
+                            /* length = */ None,
+                            MappingAccess::ForWriting,
+                            &self.mapping_context,
+                        ) {
+                            Ok(true) => return ExceptionResult::Handled,
+                            Ok(false) => {
+                                // Another thread may have enabled write access concurrently, or
+                                // changed the mapping's protection before we acquired the write
+                                // lock.
+                                if state.mappings.get(addr).is_some_and(|(_, m)| m.can_write()) {
+                                    return ExceptionResult::Handled;
+                                }
+                            }
+                            Err(e) => {
+                                log_error!("Failed to enable write access to mapping: {e}");
+                            }
+                        }
+                    } else {
+                        // The access may have been denied while the protection of the mapping was
+                        // being changed, e.g. while writes are blocked during an `execmod` check
+                        // (see `must_block_writes_during_execmod_check()`), or because of a race
+                        // between updating the mapping's VMAR permissions (when enabling write
+                        // access on a private file mapping or unregistering uffd) and the page
+                        // fault. Retry the access if Starnix's own information about the mapping
+                        // allows it.
+                        if !(is_write && mapping.is_private_file()) {
+                            track_stub!(
+                                TODO("https://fxbug.dev/435171399"),
+                                "Inconsistent permission fault"
+                            );
+                        }
+                        return ExceptionResult::Handled;
+                    }
                 }
             }
-            std::mem::drop(state);
         }
 
         if not_present {
-            {
+            if !checked_vmar_mapping {
+                let access =
+                    if is_write { MappingAccess::ForWriting } else { MappingAccess::ForReading };
                 let mut state = self.state.write();
-                match state.ensure_range_mapped_in_user_vmar(addr, None, &self.mapping_context) {
+                match state.ensure_range_mapped_in_user_vmar_for_access(
+                    addr,
+                    /* length = */ None,
+                    access,
+                    &self.mapping_context,
+                ) {
                     Ok(true) => return ExceptionResult::Handled,
                     Ok(false) => {
                         // If the mapping generation has changed since the last time this thread
@@ -5471,7 +5784,12 @@ impl MemoryManager {
         stats
     }
 
-    fn run_atomic_op<F, T>(&self, futex_addr: FutexAddress, mut op: F) -> Result<T, Errno>
+    fn run_atomic_op<F, T>(
+        &self,
+        futex_addr: FutexAddress,
+        access: MappingAccess,
+        mut op: F,
+    ) -> Result<T, Errno>
     where
         F: FnMut(&usercopy::Usercopy) -> Result<T, ()>,
     {
@@ -5484,16 +5802,24 @@ impl MemoryManager {
         if let Ok(val) = op(uc) {
             return Ok(val);
         }
-        self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
+        self.ensure_range_mapped_in_user_vmar_for_access(
+            futex_addr.into(),
+            /* length = */ None,
+            access,
+        )?;
         op(uc).map_err(|_| errno!(EFAULT))
     }
 
     pub fn atomic_load_u32_acquire(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
-        self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_acquire(futex_addr.ptr()))
+        self.run_atomic_op(futex_addr, MappingAccess::ForReading, |uc| {
+            uc.atomic_load_u32_acquire(futex_addr.ptr())
+        })
     }
 
     pub fn atomic_load_u32_relaxed(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
-        self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_relaxed(futex_addr.ptr()))
+        self.run_atomic_op(futex_addr, MappingAccess::ForReading, |uc| {
+            uc.atomic_load_u32_relaxed(futex_addr.ptr())
+        })
     }
 
     pub fn atomic_store_u32_relaxed(
@@ -5501,7 +5827,9 @@ impl MemoryManager {
         futex_addr: FutexAddress,
         value: u32,
     ) -> Result<(), Errno> {
-        self.run_atomic_op(futex_addr, |uc| uc.atomic_store_u32_relaxed(futex_addr.ptr(), value))
+        self.run_atomic_op(futex_addr, MappingAccess::ForWriting, |uc| {
+            uc.atomic_store_u32_relaxed(futex_addr.ptr(), value)
+        })
     }
 
     pub fn atomic_compare_exchange_u32_acq_rel(
@@ -5510,9 +5838,11 @@ impl MemoryManager {
         current: u32,
         new: u32,
     ) -> CompareExchangeResult<u32> {
-        CompareExchangeResult::from_usercopy(self.run_atomic_op(futex_addr, |uc| {
-            uc.atomic_compare_exchange_u32_acq_rel(futex_addr.ptr(), current, new)
-        }))
+        CompareExchangeResult::from_usercopy(self.run_atomic_op(
+            futex_addr,
+            MappingAccess::ForWriting,
+            |uc| uc.atomic_compare_exchange_u32_acq_rel(futex_addr.ptr(), current, new),
+        ))
     }
 
     pub fn atomic_compare_exchange_weak_u32_acq_rel(
@@ -5521,9 +5851,11 @@ impl MemoryManager {
         current: u32,
         new: u32,
     ) -> CompareExchangeResult<u32> {
-        CompareExchangeResult::from_usercopy(self.run_atomic_op(futex_addr, |uc| {
-            uc.atomic_compare_exchange_weak_u32_acq_rel(futex_addr.ptr(), current, new)
-        }))
+        CompareExchangeResult::from_usercopy(self.run_atomic_op(
+            futex_addr,
+            MappingAccess::ForWriting,
+            |uc| uc.atomic_compare_exchange_weak_u32_acq_rel(futex_addr.ptr(), current, new),
+        ))
     }
 }
 
@@ -5852,7 +6184,11 @@ impl DynamicFileSource for ProcSmapsFile {
                 .collect()
         };
         if !lazy_ranges.is_empty() {
-            mm.state.write().ensure_ranges_mapped_in_user_vmar(lazy_ranges, &mm.mapping_context)?;
+            mm.state.write().ensure_ranges_mapped_in_user_vmar_for_access(
+                lazy_ranges,
+                MappingAccess::ForReading,
+                &mm.mapping_context,
+            )?;
         }
 
         let fs_context = task.fs().ok();
@@ -6419,14 +6755,20 @@ mod tests {
 
             {
                 let state = mm.state.read();
-                assert!(state.any_ranges_lazy(std::iter::once((addr, Some(length)))));
+                assert!(state.any_ranges_need_vmar_update(
+                    std::iter::once((addr, Some(length))),
+                    MappingAccess::ForReading,
+                ));
             }
 
             assert!(mm.ensure_range_mapped_in_user_vmar(addr, Some(length)).unwrap());
 
             {
                 let state = mm.state.read();
-                assert!(!state.any_ranges_lazy(std::iter::once((addr, Some(length)))));
+                assert!(!state.any_ranges_need_vmar_update(
+                    std::iter::once((addr, Some(length))),
+                    MappingAccess::ForReading,
+                ));
             }
         })
         .await;
@@ -8267,8 +8609,11 @@ mod tests {
             .expect("mprotect(PROT_READ | PROT_WRITE) failed");
             fill_page(current_task, middle_page, 'b');
 
-            // Writes survive toggling the protection off and on again.
+            // Once protections match again, the split mappings merge back into a single mapping,
+            // and writes survive toggling the protection off and on again.
+            let end_addr = (addr + *PAGE_SIZE * 3).unwrap();
             mm.protect(current_task, middle_page, page_size, ProtectionFlags::READ).unwrap();
+            assert_eq!(mm.state.read().mappings.get(addr).unwrap().0, &(addr..end_addr));
             mm.protect(
                 current_task,
                 middle_page,

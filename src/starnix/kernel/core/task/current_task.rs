@@ -4,7 +4,9 @@
 
 use crate::arch::task::handle_hardware_exception;
 use crate::execution::{CreateDuringShutdown, TaskInfo, create_zircon_process};
-use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
+use crate::mm::{
+    DumpPolicy, MappingAccess, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor,
+};
 use crate::ptrace::{PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
 use crate::signals::{SignalInfo, send_standard_signal};
@@ -2294,14 +2296,18 @@ impl TaskMemoryAccessor for CurrentTask {
         self.mm().ok().map(|mm| mm.maximum_valid_user_address)
     }
 
-    fn ensure_buffers_mapped_in_user_vmar(&self, buffers: &[UserBuffer]) -> Result<(), Errno> {
+    fn ensure_buffers_mapped_in_user_vmar(
+        &self,
+        buffers: &[UserBuffer],
+        access: MappingAccess,
+    ) -> Result<(), Errno> {
         let mut ranges = buffers
             .iter()
             .filter(|b| !b.is_empty())
             .map(|b| (b.address, Some(b.length)))
             .peekable();
         if ranges.peek().is_some() {
-            self.mm()?.ensure_ranges_mapped_in_user_vmar(ranges)?;
+            self.mm()?.ensure_ranges_mapped_in_user_vmar_for_access(ranges, access)?;
         }
         Ok(())
     }

@@ -202,33 +202,49 @@ impl Mapping {
         self.max_access().contains(Access::EXEC)
     }
 
+    /// Returns whether this is a private mapping of a file (as opposed to a `MAP_SHARED` mapping
+    /// or an anonymous mapping).
+    ///
+    /// Unlike `MAP_SHARED` and anonymous mappings (which access their backing pages directly),
+    /// writes to a private file mapping perform copy-on-write against the underlying file VMO.
+    /// `MappingFlags::ANONYMOUS` must also be checked because some anonymous mappings (such as
+    /// `mmap` of `/dev/zero`) carry `MappingName::File` for `/proc/<pid>/maps` display while
+    /// setting `MappingFlags::ANONYMOUS`.
+    pub fn is_private_file(&self) -> bool {
+        !self.flags.intersects(MappingFlags::SHARED | MappingFlags::ANONYMOUS)
+            && matches!(self.name(), MappingNameRef::File(_))
+    }
+
+    /// Returns whether this is a private file mapping that is not yet recorded as holding pages
+    /// modified via copy-on-write.
+    pub fn is_unmodified_private_file(&self) -> bool {
+        self.is_private_file() && !self.is_known_cow_modified()
+    }
+
     /// Returns whether this is a private file mapping with pages that were modified via
     /// copy-on-write, and are therefore no longer shared with the mapped file.
     ///
     /// Writable private file mappings created by `default_mmap()` are backed by a copy-on-write
-    /// child of the file's memory, created for each `mmap()` call. This over-approximates the
-    /// modified pages to the whole region that was mapped, rather than just the pages of this
-    /// mapping. Read-only ones (`MappingFlags::LAZY_PRIVATE_FILE`) are backed by the file's memory
-    /// until they are written, so they have no modified pages.
+    /// child of the file's memory, created for each `mmap()` call. Copy-on-write modifications are
+    /// tracked at the granularity of the backing `MemoryObject` (and synchronized across all
+    /// mappings sharing that backing memory when write access is enabled), rather than per-page.
+    /// Read-only ones (`MappingFlags::LAZY_PRIVATE_FILE`) are backed by the file's memory until
+    /// they are written, so they have no modified pages.
     ///
     /// Zircon only reports the number of pages that a memory object holds, not which ones, so the
     /// whole memory object is considered.
     ///
-    /// TODO(https://fxbug.dev/409256444): This also reports pages that were committed without
-    /// being written (e.g. with `MAP_POPULATE`), and, for files whose memory isn't pager-backed
-    /// (e.g. tmpfs), pages that the file stopped sharing because the file was modified.
+    /// TODO(https://fxbug.dev/409256444): For files whose memory isn't pager-backed (e.g. tmpfs),
+    /// this also reports pages that the file stopped sharing because the file was modified.
     ///
     /// # Errors
     ///
     /// Fails if the information about the memory object can't be retrieved (e.g. if its handle
     /// lacks `Rights::INSPECT`), in which case whether it holds modified pages is unknown.
     pub fn has_cow_modifications(&self) -> Result<bool, Errno> {
-        if self.flags.intersects(MappingFlags::SHARED | MappingFlags::ANONYMOUS) {
+        if !self.is_private_file() {
             return Ok(false);
         }
-        let MappingNameRef::File(_) = self.name() else {
-            return Ok(false);
-        };
         let MappingBacking::Memory(backing) = &self.backing else {
             return Ok(false);
         };
@@ -259,6 +275,25 @@ impl Mapping {
     /// copy-on-write.
     pub fn is_known_cow_modified(&self) -> bool {
         matches!(&self.backing, MappingBacking::Memory(backing) if backing.is_cow_modified())
+    }
+
+    /// Returns the [`MappingFlags`] to apply in the user VMAR when mapping or restoring
+    /// permissions on populated pages of this mapping.
+    ///
+    /// For writable private file mappings, `MappingFlags::WRITE` is omitted while the mapping is
+    /// unmodified (both when initially mapped and across any subsequent VMAR remaps or protection
+    /// updates) so that the first write faults. Once a write is recorded with
+    /// [`Mapping::set_cow_modified`], `vmar_flags()` includes `MappingFlags::WRITE`.
+    ///
+    /// Note that `userfaultfd` (`MappingFlags::UFFD`) strips VMAR permissions separately on
+    /// unpopulated pages via `UserFault`, and uses `vmar_flags()` when restoring permissions on
+    /// populated or unregistered ranges.
+    pub fn vmar_flags(&self) -> MappingFlags {
+        if self.is_unmodified_private_file() {
+            self.flags - MappingFlags::WRITE
+        } else {
+            self.flags
+        }
     }
 
     pub fn private_anonymous(&self) -> bool {
@@ -426,10 +461,11 @@ pub struct MappingBackingMemory {
 // Keep the size of the backing of memory mappings, which are allocated for each mapping.
 static_assertions::assert_eq_size!(MappingBackingMemory, [u8; 16]);
 
-/// Set in `MappingBackingMemory::address_to_offset_delta_and_flags` when the memory is known to
-/// hold pages modified via copy-on-write that are no longer shared with the mapped file, even if
-/// they are no longer attributed to the memory alone (e.g. after `fork()`). See
-/// `Mapping::has_cow_modifications`.
+/// Set in `MappingBackingMemory::address_to_offset_delta_and_flags` when the backing memory is
+/// known to hold pages modified via copy-on-write (tracked at the granularity of the backing
+/// `MemoryObject` and synchronized across all mappings sharing that backing memory when write
+/// access is enabled on a private file mapping) that are no longer shared with the mapped file.
+/// See `Mapping::has_cow_modifications`.
 const COW_MODIFIED: u64 = 1;
 
 /// The flags stored in `MappingBackingMemory::address_to_offset_delta_and_flags`.

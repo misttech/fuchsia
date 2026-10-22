@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::{
-    MemoryAccessorExt, NumberOfElementsRead, TaskMemoryAccessor, read_to_array,
+    MappingAccess, MemoryAccessorExt, NumberOfElementsRead, TaskMemoryAccessor, read_to_array,
     read_to_object_as_bytes, read_to_vec,
 };
 use crate::task::{CurrentTask, Task};
@@ -435,8 +435,13 @@ impl<'a, M: TaskMemoryAccessor> Buffer for UserBuffersOutputBuffer<'a, M> {
         // safe to write to.
         // Callers (including `peek_all_segments_as_iovecs` and `with_iovec_segments`) pass these
         // segments as `iovec` / `zx_iovec_t` slices directly to Zircon syscalls or `zxio` C FFI
-        // calls (bypassing `usercopy`), so lazy mappings must be mapped in the user VMAR upfront.
-        self.mm.ensure_buffers_mapped_in_user_vmar(&self.buffers)?;
+        // calls (bypassing `usercopy`), so lazy mappings must be mapped and writable private file
+        // mappings must be granted `ZX_VM_PERM_WRITE` (and marked `COW_MODIFIED`) in the user VMAR
+        // upfront. Note that this conservatively marks any writable private file mappings in
+        // `self.buffers` as `COW_MODIFIED` even if the subsequent `zx::Stream::readv` or `zxio`
+        // operation reads 0 bytes (e.g. at EOF), performs a short read that never reaches later
+        // `iovec` segments, or fails before writing.
+        self.mm.ensure_buffers_mapped_in_user_vmar(&self.buffers, MappingAccess::ForWriting)?;
         for buffer in self.buffers.iter().rev() {
             if buffer.is_null() {
                 continue;
@@ -631,7 +636,7 @@ impl<'a, M: TaskMemoryAccessor> Buffer for UserBuffersInputBuffer<'a, M> {
         // Callers (including `peek_all_segments_as_iovecs` and `with_iovec_segments`) pass these
         // segments as `iovec` / `zx_iovec_t` slices directly to Zircon syscalls or `zxio` C FFI
         // calls (bypassing `usercopy`), so lazy mappings must be mapped in the user VMAR upfront.
-        self.mm.ensure_buffers_mapped_in_user_vmar(&self.buffers)?;
+        self.mm.ensure_buffers_mapped_in_user_vmar(&self.buffers, MappingAccess::ForReading)?;
         for buffer in self.buffers.iter().rev() {
             if buffer.is_null() {
                 continue;

@@ -83,12 +83,24 @@ pub trait MemoryAccessor {
     fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno>;
 }
 
+/// Whether user-space memory is being accessed for reading or writing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MappingAccess {
+    ForReading,
+    ForWriting,
+}
+
 pub trait TaskMemoryAccessor: MemoryAccessor {
     /// Returns the maximum valid address for this memory accessor.
     fn maximum_valid_address(&self) -> Option<UserAddress>;
 
-    /// Ensures that any lazy mappings in `buffers` are mapped in the user VMAR.
-    fn ensure_buffers_mapped_in_user_vmar(&self, buffers: &[UserBuffer]) -> Result<(), Errno>;
+    /// Ensures that any mappings in `buffers` are mapped in the user VMAR with the permissions
+    /// needed for `access`.
+    fn ensure_buffers_mapped_in_user_vmar(
+        &self,
+        buffers: &[UserBuffer],
+        access: MappingAccess,
+    ) -> Result<(), Errno>;
 }
 
 // TODO(https://fxbug.dev/42079727): replace this with MaybeUninit::as_bytes_mut.

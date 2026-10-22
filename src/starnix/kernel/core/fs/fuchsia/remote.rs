@@ -48,7 +48,6 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     __kernel_fsid_t, XATTR_NAME_SELINUX, errno, error, from_status_like_fdio, fsverity_descriptor,
@@ -2212,22 +2211,6 @@ impl RemotePipeObject {
     fn new(zxio: Zxio) -> Self {
         Self { zxio }
     }
-
-    /// Prefaults any lazy user mappings covered by `iovecs` into the task's user VMAR before
-    /// passing `iovecs` to `zxio`.
-    fn ensure_iovecs_mapped(
-        current_task: &CurrentTask,
-        iovecs: &[syncio::zxio::zx_iovec],
-    ) -> Result<(), Errno> {
-        if let Ok(mm) = current_task.mm() {
-            let ranges = iovecs
-                .iter()
-                .filter(|iovec| iovec.capacity > 0)
-                .map(|iovec| (UserAddress::from_ptr(iovec.buffer as usize), Some(iovec.capacity)));
-            mm.ensure_ranges_mapped_in_user_vmar(ranges)?;
-        }
-        Ok(())
-    }
 }
 
 impl FileOps for RemotePipeObject {
@@ -2247,7 +2230,6 @@ impl FileOps for RemotePipeObject {
         }
         file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let read_bytes = with_iovec_segments(data, |iovecs| {
-                Self::ensure_iovecs_mapped(current_task, iovecs)?;
                 // SAFETY: The `iovecs` are valid for writing because they come from `OutputBuffer`.
                 match unsafe { self.zxio.readv(iovecs) } {
                     Ok(actual) => Ok(actual),
@@ -2290,7 +2272,6 @@ impl FileOps for RemotePipeObject {
                 if iovecs.is_empty() {
                     return self.zxio.write(&[]).map_err(|status| from_status_like_fdio!(status));
                 }
-                Self::ensure_iovecs_mapped(current_task, iovecs)?;
                 // SAFETY: The `iovecs` are valid for reading because they come from `InputBuffer`.
                 unsafe { self.zxio.writev(iovecs).map_err(map_stream_error) }
             }) {
