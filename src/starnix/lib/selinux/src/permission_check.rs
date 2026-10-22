@@ -111,7 +111,7 @@ impl<'a> PermissionCheck<'a> {
             target_sid,
             permission,
             xperm,
-            || {
+            move || {
                 has_extended_permission(
                     self.access_vector_cache,
                     xperms_kind,
@@ -171,7 +171,7 @@ impl<'a> PermissionCheck<'a> {
             source_sid,
             target_sid,
             target_class,
-            || {
+            move || {
                 self.access_vector_cache.compute_access_decision(
                     source_sid,
                     target_sid,
@@ -195,7 +195,7 @@ fn has_permission(
 
     if permission == KernelPermission::Fd(FdPermission::Use) {
         // fd use checks are cached separately.
-        return local_cache.lookup_fd_use(policy_seqno, source_sid, target_sid, || {
+        return local_cache.lookup_fd_use(policy_seqno, source_sid, target_sid, move || {
             let decision = query.compute_access_decision(source_sid, target_sid, KernelClass::Fd);
             access_decision_to_permission_check_result(permission_access_vector, decision)
         });
@@ -206,7 +206,7 @@ fn has_permission(
         source_sid,
         target_sid,
         permission.class(),
-        || query.compute_access_decision(source_sid, target_sid, permission.class()),
+        move || query.compute_access_decision(source_sid, target_sid, permission.class()),
     );
     access_decision_to_permission_check_result(permission_access_vector, decision)
 }

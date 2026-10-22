@@ -117,7 +117,7 @@ impl FifoQueryCache {
         target_class: KernelClass,
     ) -> KernelAccessDecision {
         let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
-        self.access_cache.get_or_insert(&query_args, || {
+        self.access_cache.get_or_insert(&query_args, move || {
             delegate.compute_access_decision(source_sid, target_sid, target_class)
         })
     }
@@ -134,7 +134,7 @@ impl FifoQueryCache {
             delegate.compute_create_sid(source_sid, target_sid, target_class, name)
         } else {
             let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
-            self.create_sid_cache.get_or_try_insert(&query_args, || {
+            self.create_sid_cache.get_or_try_insert(&query_args, move || {
                 delegate.compute_create_sid(source_sid, target_sid, target_class, name)
             })
         }
@@ -156,7 +156,7 @@ impl FifoQueryCache {
             permission,
             xperms_prefix,
         };
-        self.xperms_access_cache.get_or_insert(&query_args, || {
+        self.xperms_access_cache.get_or_insert(&query_args, move || {
             delegate.compute_xperms_access_decision(
                 xperms_kind,
                 source_sid,
