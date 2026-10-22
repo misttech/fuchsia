@@ -10,6 +10,7 @@ test_suite(
     tests = [
         "//src/connectivity/wlan/lib/bitfield/wlan-bitfield-tests",
         "//src/connectivity/wlan/lib/common/rust:wlan-common-tests",
+        "//src/connectivity/wlan/lib/eapol:eapol-tests",
         "//src/connectivity/wlan/lib/fidl-ext:wlan-fidl-ext-tests",
         "//src/connectivity/wlan/lib/ieee80211:ieee80211-tests",
         "//src/connectivity/wlan/lib/ieee80211-testutils:ieee80211-testutils-tests",

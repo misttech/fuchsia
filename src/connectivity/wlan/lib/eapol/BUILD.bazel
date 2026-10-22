@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "eapol",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/connectivity/wlan/lib/bitfield:wlan-bitfield",
+    ],
+    visibility = [
+        "//src/connectivity/wlan/lib/rsn:__pkg__",
+        "//src/connectivity/wlan/lib/sme:__pkg__",
+        "//src/connectivity/wlan/testing/hw-sim:__pkg__",
+        "//src/connectivity/wlan/tests/helpers/fullmac-helpers:__pkg__",
+    ],
+    deps = [
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "eapol_test",
+    crate = ":eapol",
+    deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+fx_unittest_package(
+    name = "eapol-tests",
+    unit_tests = [":eapol_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
