@@ -387,8 +387,9 @@ capabilities: [
 There is another kind of `dictionary` capability where the dictionary is
 created by the component's program itself at runtime. These dictionaries do
 not support [extension](#extension) or [aggregation](#aggregation) in CML;
-it is up to the program to populate the dictionary using the fidl
-[sandbox][fidl-sandbox-capability-store] API.
+it is up to the program to populate the dictionary using the
+[`fuchsia.component.runtime.Capabilities`][fidl-runtime-capabilities] FIDL API
+(or the `fuchsia_component::runtime` Rust library).
 
 ```json5
 capabilities: [
@@ -401,15 +402,15 @@ capabilities: [
 
 `<outgoing-dir-path>` is a path in the component's
 [outgoing directory][glossary-outgoing-directory] to a
-[`fuchsia.component.sandbox/DictionaryRouter`][fidl-sandbox-router] protocol which is
-expected to return a [`Dictionary`][fidl-sandbox-dictionary] capability.
+[`fuchsia.component.runtime/DictionaryRouter`][fidl-runtime-router] protocol which is
+expected to return a [`Dictionary`][fidl-runtime-dictionary] capability.
 
 To illustrate this feature, let's walk through an example. The example consists
 of two components.
 
 -   `dynamic-dictionary-provider`: Creates a runtime
-    [`Dictionary`][fidl-sandbox-dictionary] with three `Echo` protocol
-    instances. It exposes the `Dictionary` via a [`DictionaryRouter`][fidl-sandbox-router]
+    [`Dictionary`][fidl-runtime-dictionary] with three `Echo` protocol
+    instances. It exposes the `Dictionary` via a [`DictionaryRouter`][fidl-runtime-router]
     and defines a `dictionary` backed by it.
 -   `dynamic-dictionary`: Declares CML to [retrieve](#retrieval) the three
     `Echo` protocols from the `dictionary`, and runs code to use each of these
@@ -426,15 +427,16 @@ see the `dictionary` definition for `bundle` that names a `DictionaryRouter` in 
 ```
 
 At initialization, `dynamic-dictionary-provider` uses the
-[`CapabilityStore`][fidl-sandbox-capability-store] sandbox API to create a new
-`Dictionary` and adds three [`Connector`][fidl-sandbox-connector] to it. Each
-`Connector` represents one of the `Echo` protocol instances.
+[`fuchsia.component.runtime.Capabilities`][fidl-runtime-capabilities] API (via
+`fuchsia_component::runtime`) to create a new `Dictionary` and adds three
+[`Connector`][fidl-runtime-connector] capabilities to it. Each `Connector`
+represents one of the `Echo` protocol instances.
 
 ```json5
 {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/components/dictionaries/provider/src/main.rs" region_tag="init" adjust_indentation="auto" %}
 ```
 
-Each `Connector` is bound to a [`Receiver`][fidl-sandbox-receiver] which handles
+Each `Connector` is bound to a [`Receiver`][fidl-runtime-receiver] which handles
 incoming requests for `Echo`. The implementation of the `Receiver` handler is
 very similar to a [`ServiceFs`][src-service-fs] handler, except unlike
 `ServiceFs`, the `Receiver` is bound to the `Connector` instead of the
@@ -445,18 +447,16 @@ component's outgoing directory.
 ```
 
 Finally, we need to expose the dictionary created earlier with a
-[`DictionaryRouter`][fidl-sandbox-router].
+[`DictionaryRouter`][fidl-runtime-router].
 
 ```json5
 {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/components/dictionaries/provider/src/main.rs" region_tag="serve" adjust_indentation="auto" %}
 ```
 
-The [`DictionaryRouter`][fidl-sandbox-router] request handler exports the dictionary and
-returns it. Note that it makes a
-[`CapabilityStore.Duplicate`][fidl-sandbox-capability-store] of the dictionary
-first because the framework may call `DictionaryRouter.Route` multiple times. This has the
-effect of duplicating the dictionary *handle*, without copying the inner
-contents.
+The [`DictionaryRouter`][fidl-runtime-router] request handler clones the dictionary
+reference and returns it because the framework may call `DictionaryRouter.Route`
+multiple times. Cloning the `Dictionary` duplicates the dictionary *handle*
+without copying the inner contents.
 
 ```json5
 {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/components/dictionaries/provider/src/main.rs" region_tag="request" adjust_indentation="auto" %}
@@ -503,11 +503,11 @@ The program just connects to each protocol in turn and tries to use it:
 [capability-protocol]: ./protocol.md
 [capability-protocol-consume]: ./protocol.md#consume
 [capability-routing]: /docs/concepts/components/v2/capabilities/README.md#routing
-[fidl-sandbox-capability-store]: https://fuchsia.dev/reference/fidl/fuchsia.component.sandbox#CapabilityStore
-[fidl-sandbox-connector]: https://fuchsia.dev/reference/fidl/fuchsia.component.sandbox#Connector
-[fidl-sandbox-dictionary]: https://fuchsia.dev/reference/fidl/fuchsia.component.sandbox#DictionaryRef
-[fidl-sandbox-router]: https://fuchsia.dev/reference/fidl/fuchsia.component.sandbox#DictionaryRouter
-[fidl-sandbox-receiver]: https://fuchsia.dev/reference/fidl/fuchsia.component.sandbox#Receiver
+[fidl-runtime-capabilities]: https://fuchsia.dev/reference/fidl/fuchsia.component.runtime#Capabilities
+[fidl-runtime-connector]: https://fuchsia.dev/reference/fidl/fuchsia.component.runtime#Connector
+[fidl-runtime-dictionary]: https://fuchsia.dev/reference/fidl/fuchsia.component.runtime#Dictionary
+[fidl-runtime-router]: https://fuchsia.dev/reference/fidl/fuchsia.component.runtime#DictionaryRouter
+[fidl-runtime-receiver]: https://fuchsia.dev/reference/fidl/fuchsia.component.runtime#Receiver
 [glossary-dictionary]: /docs/glossary/README.md#dictionary
 [glossary-outgoing-directory]: /docs/glossary/README.md#outgoing-directory
 [src-service-fs]: /src/lib/fuchsia-component/server/src/lib.rs

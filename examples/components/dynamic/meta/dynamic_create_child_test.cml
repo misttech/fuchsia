@@ -19,7 +19,7 @@
         {
             protocol: [
                 "fuchsia.component.Realm",
-                "fuchsia.component.sandbox.CapabilityStore",
+                "fuchsia.component.runtime.Capabilities",
             ],
             from: "framework",
         },

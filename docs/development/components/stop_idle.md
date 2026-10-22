@@ -326,17 +326,17 @@ if let Some(controller) = inspect_controller {
 ### Stateful protocols, and other important state
 
 The `fuchsia.process.lifecycle/Lifecycle.OnEscrow` event takes another argument,
-an `escrowed_dictionary client_end:fuchsia.component.sandbox.Dictionary` which
+an `escrowed_dictionary_handle zx.Handle:EVENTPAIR` which
 is a reference to a `Dictionary` object. [Dictionaries][dictionaries] are
 key-value maps that may hold data or capabilities.
 
-- You may create a `DictionaryRef` by using `fuchsia.component.sandbox.CapabilityStore`
-  from framework, and calling `DictionaryCreate` on the `Factory` protocol:
+- You may create a `Dictionary` by using `fuchsia.component.runtime.Capabilities`
+  from framework (for example, via `fuchsia_component::runtime::Dictionary::new` in Rust):
 
   ```json5
   use: [
       {
-          protocol: "fuchsia.component.sandbox.CapabilityStore",
+          protocol: "fuchsia.component.runtime.Capabilities",
           from: "framework",
       }
   ]
@@ -347,15 +347,15 @@ key-value maps that may hold data or capabilities.
   ```
 
 - You may add some data (e.g. a vector of bytes) to the `Dictionary` by calling
-  `Insert` on the `Dictionary` FIDL connection. Refer to the
-  [`fuchsia.component.sandbox`][sandbox-fidl] FIDL library documentation for
+  `insert` on the `Dictionary`. Refer to the
+  [`fuchsia.component.runtime`][runtime-fidl] FIDL library documentation for
   other methods:
 
   ```rust
         {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/components/lifecycle/rust/src/lifecycle.rs" region_tag="escrow_populate_dictionary" adjust_indentation="auto" %}
   ```
 
-- Before exiting, send the `Dictionary` client endpoint in `send_on_escrow`:
+- Before exiting, send the `Dictionary` handle in `send_on_escrow`:
 
   ```rust
         {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/components/lifecycle/rust/src/lifecycle.rs" region_tag="escrow_send_dictionary" adjust_indentation="auto" %}
@@ -368,8 +368,8 @@ key-value maps that may hold data or capabilities.
   ```
 
 The `Dictionary` object supports a variety of item data types. If your
-component's state is less than `fuchsia.component.sandbox/MAX_DATA_LENGTH`,
-you may consider storing the `fuchsia.component.sandbox/Data` item,
+component's state is less than `fuchsia.component.runtime/MAX_DATA_LENGTH`,
+you may consider storing the `fuchsia.component.runtime/Data` item,
 which can hold a byte vector.
 
 ## I want to wait for a channel to be readable
@@ -446,7 +446,7 @@ by improper stopping of components.
 [execution-scope]: https://cs.opensource.google/fuchsia/fuchsia/+/6eb3df68a36e998290d272274445893970d96979:src/storage/lib/vfs/rust/src/execution_scope.rs;l=54
 [http-client]: https://cs.opensource.google/fuchsia/fuchsia/+/50b8825378e19078d84171ce21f9eb3d7e22d6db:src/connectivity/policy/http-client/src/main.rs
 [dictionaries]: /docs/contribute/governance/rfcs/0235_component_dictionaries.md
-[sandbox-fidl]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.component.sandbox/sandbox.fidl
+[runtime-fidl]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.component.runtime/capabilities.fidl
 [http-client-test]: https://cs.opensource.google/fuchsia/fuchsia/+/565cbdce0f486511230a95fc8cc30106b25172fb:src/connectivity/policy/http-client/integration/src/lib.rs;l=565
 [dashboard]: http://go/fuchsia-escrow-metrics
 [inspect-controller-rustdoc]: https://fuchsia-docs.firebaseapp.com/rust/inspect_runtime/struct.PublishedInspectController.html
