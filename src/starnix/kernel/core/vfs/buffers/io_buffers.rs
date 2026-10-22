@@ -656,9 +656,23 @@ impl<'a, M: TaskMemoryAccessor> InputBuffer for UserBuffersInputBuffer<'a, M> {
     }
 
     fn peek_each(&mut self, callback: &mut InputBufferCallback<'_>) -> Result<usize, Errno> {
+        // Segments of up to `STACK_BUF_LEN` bytes are read into this stack buffer instead of a
+        // newly allocated `Vec`. It is 8-byte aligned for the same reason as the object in
+        // `read_to_object_as_bytes`: when the user address is 8-byte aligned, `hermetic_copy` can
+        // then use aligned word accesses on both sides.
+        const STACK_BUF_LEN: usize = 512;
+        #[repr(C, align(8))]
+        struct AlignedBuf([MaybeUninit<u8>; STACK_BUF_LEN]);
+        let mut stack_buf = AlignedBuf([MaybeUninit::uninit(); STACK_BUF_LEN]);
         self.peek_each_inner(|buffer, _read_so_far| {
-            let bytes = self.mm.read_memory_to_vec(buffer.address, buffer.length)?;
-            callback(&bytes)
+            if buffer.length <= STACK_BUF_LEN {
+                let bytes =
+                    self.mm.read_memory(buffer.address, &mut stack_buf.0[..buffer.length])?;
+                callback(bytes)
+            } else {
+                let bytes = self.mm.read_memory_to_vec(buffer.address, buffer.length)?;
+                callback(&bytes)
+            }
         })
     }
 

@@ -16,15 +16,19 @@ hermetic_copy:
     // fully by popping a single frame.
     stp     x29, x30, [sp, #-16]!
     mov     x29, sp
-    orr     w8, w1, w0
-    tst     x8, #0x7
+    // Unlike the reference, align only the faultable buffer (`dest` if
+    // `ret_dest` is set, `source` otherwise) to 8 bytes before the word loop,
+    // instead of copying byte by byte whenever `dest` and `source` have
+    // different alignments. 8-byte accesses to the faultable buffer then never
+    // straddle a page boundary, while the other buffer may be accessed with
+    // unaligned 8-byte loads/stores. See the header for the preconditions.
+    tst     w3, #0x1
+    csel    x9, x0, x1, ne
+    ands    x9, x9, #0x7
     b.eq    .check_if_atleast_u64_left_to_copy_after_alignment
-    eor     w8, w1, w0
-    and     x9, x0, #0x7
     mov     w10, #8
-    tst     x8, #0x7
     sub     x8, x10, x9
-    ccmp    x2, #8, #0, eq
+    cmp     x2, #8
     csel    x8, x2, x8, lo
     sub     x2, x2, x8
     cbz     x8, .check_if_atleast_u64_left_to_copy_after_alignment
