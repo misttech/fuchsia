@@ -20,7 +20,7 @@ rustc_library(
     visibility = ["//:__subpackages__"],
     with_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
         "//sdk/rust/zx-status",
         "//third_party/rust_crates/vendor:memchr",
         "//third_party/rust_crates/vendor:static_assertions",

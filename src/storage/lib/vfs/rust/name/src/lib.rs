@@ -9,7 +9,7 @@
 //!
 //! These should be aligned with the library comments in sdk/fidl/fuchsia.io/io.fidl.
 
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io_common as fio;
 use static_assertions::const_assert_eq;
 use std::borrow::Borrow;
 use std::fmt::Display;
