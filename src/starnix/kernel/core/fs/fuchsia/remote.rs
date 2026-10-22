@@ -48,6 +48,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     __kernel_fsid_t, XATTR_NAME_SELINUX, errno, error, from_status_like_fdio, fsverity_descriptor,
@@ -2211,6 +2212,22 @@ impl RemotePipeObject {
     fn new(zxio: Zxio) -> Self {
         Self { zxio }
     }
+
+    /// Prefaults any lazy user mappings covered by `iovecs` into the task's user VMAR before
+    /// passing `iovecs` to `zxio`.
+    fn ensure_iovecs_mapped(
+        current_task: &CurrentTask,
+        iovecs: &[syncio::zxio::zx_iovec],
+    ) -> Result<(), Errno> {
+        if let Ok(mm) = current_task.mm() {
+            let ranges = iovecs
+                .iter()
+                .filter(|iovec| iovec.capacity > 0)
+                .map(|iovec| (UserAddress::from_ptr(iovec.buffer as usize), Some(iovec.capacity)));
+            mm.ensure_ranges_mapped_in_user_vmar(ranges)?;
+        }
+        Ok(())
+    }
 }
 
 impl FileOps for RemotePipeObject {
@@ -2229,14 +2246,34 @@ impl FileOps for RemotePipeObject {
             return Ok(0);
         }
         file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
-            let total = data.available();
-            let mut bytes = vec![0u8; total];
-            let actual = match self.zxio.read(&mut bytes) {
-                Ok(actual) => actual,
-                Err(zx::Status::PEER_CLOSED | zx::Status::BAD_STATE) => return Ok(0),
-                Err(status) => return Err(from_status_like_fdio!(status)),
-            };
-            data.write_all(&bytes[0..actual])
+            let read_bytes = with_iovec_segments(data, |iovecs| {
+                Self::ensure_iovecs_mapped(current_task, iovecs)?;
+                // SAFETY: The `iovecs` are valid for writing because they come from `OutputBuffer`.
+                match unsafe { self.zxio.readv(iovecs) } {
+                    Ok(actual) => Ok(actual),
+                    Err(zx::Status::PEER_CLOSED | zx::Status::BAD_STATE) => Ok(0),
+                    Err(status) => Err(map_stream_error(status)),
+                }
+            });
+            match read_bytes {
+                Some(actual) => {
+                    let actual = actual?;
+                    // SAFETY: We successfully read `actual` bytes directly to the buffer segments.
+                    unsafe { data.advance(actual) }?;
+                    Ok(actual)
+                }
+                None => {
+                    // Perform the (slower) operation by using an intermediate buffer.
+                    let total = data.available();
+                    let mut bytes = vec![0u8; total];
+                    let actual = match self.zxio.read(&mut bytes) {
+                        Ok(actual) => actual,
+                        Err(zx::Status::PEER_CLOSED | zx::Status::BAD_STATE) => return Ok(0),
+                        Err(status) => return Err(from_status_like_fdio!(status)),
+                    };
+                    data.write_all(&bytes[0..actual])
+                }
+            }
         })
     }
 
@@ -2249,9 +2286,21 @@ impl FileOps for RemotePipeObject {
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
         file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, || {
-            let bytes = data.peek_all()?;
-            let actual =
-                self.zxio.write(&bytes).map_err(|status| from_status_like_fdio!(status))?;
+            let actual = match with_iovec_segments(data, |iovecs| {
+                if iovecs.is_empty() {
+                    return self.zxio.write(&[]).map_err(|status| from_status_like_fdio!(status));
+                }
+                Self::ensure_iovecs_mapped(current_task, iovecs)?;
+                // SAFETY: The `iovecs` are valid for reading because they come from `InputBuffer`.
+                unsafe { self.zxio.writev(iovecs).map_err(map_stream_error) }
+            }) {
+                Some(actual) => actual?,
+                None => {
+                    // Perform the (slower) operation by using an intermediate buffer.
+                    let bytes = data.peek_all()?;
+                    self.zxio.write(&bytes).map_err(|status| from_status_like_fdio!(status))?
+                }
+            };
             data.advance(actual)?;
             Ok(actual)
         })
@@ -2722,6 +2771,13 @@ mod test {
 
             assert_eq!(bytes_read, bytes.len());
             assert_eq!(pipe.read(&current_task, &mut VecOutputBuffer::new(0)).unwrap(), 0);
+
+            assert_eq!(
+                pipe.write(&current_task, &mut VecInputBuffer::new(&bytes)).unwrap(),
+                bytes.len()
+            );
+            let mut server_buf = [0u8; 64];
+            assert_eq!(server.read(&mut server_buf).unwrap(), bytes.len());
 
             std::mem::drop(server);
             assert_eq!(pipe.read(&current_task, &mut VecOutputBuffer::new(64)).unwrap(), 0);
