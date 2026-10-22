@@ -269,7 +269,7 @@ impl Range {
         self.addr + self.size
     }
 
-    /// Align the ends of a range to be multiples of `alignment`.
+    /// Align the ends of a range outward to be multiples of `alignment`.
     ///
     /// The start address is rounded down and the end address is rounded up.  If the end address
     /// would be larger than 2^64, we saturate it.
@@ -277,7 +277,7 @@ impl Range {
     /// # Panics
     ///
     /// Panics if `alignment` is not a power of two.
-    pub const fn align_to(&self, alignment: u64) -> Self {
+    pub const fn align_out(&self, alignment: u64) -> Self {
         assert!(alignment.is_power_of_two());
         let aligned_addr = self.addr & alignment.wrapping_neg();
         let aligned_end = match self.end().checked_add(alignment - 1) {
@@ -453,47 +453,47 @@ mod tests {
 
     // Unaligned start rounds down to alignment boundary.
     #[test]
-    fn range_test_align_to_start_rounds_down() {
+    fn range_test_align_out_start_rounds_down() {
         let r = Range::new(1, 0x1000 - 1, Type::FreeRam);
-        assert_eq!(r.align_to(0x1000), Range::new(0, 0x1000, Type::FreeRam));
+        assert_eq!(r.align_out(0x1000), Range::new(0, 0x1000, Type::FreeRam));
     }
 
     // Unaligned end rounds up to alignment boundary.
     #[test]
-    fn range_test_align_to_end_rounds_up() {
+    fn range_test_align_out_end_rounds_up() {
         let r = Range::new(0, 0x1000 - 1, Type::FreeRam);
-        assert_eq!(r.align_to(0x1000), Range::new(0, 0x1000, Type::FreeRam));
+        assert_eq!(r.align_out(0x1000), Range::new(0, 0x1000, Type::FreeRam));
     }
 
     // Sub-chunk range expands to a full aligned chunk.
     #[test]
-    fn range_test_align_to_range_smaller_than_alignment() {
+    fn range_test_align_out_range_smaller_than_alignment() {
         let r = Range::new(1, 1, Type::FreeRam);
-        assert_eq!(r.align_to(0x1000), Range::new(0, 0x1000, Type::FreeRam));
+        assert_eq!(r.align_out(0x1000), Range::new(0, 0x1000, Type::FreeRam));
     }
 
     // Unaligned start and end round outward in both directions.
     #[test]
-    fn range_test_align_to_both_ends_change() {
+    fn range_test_align_out_both_ends_change() {
         let r = Range::new(1, 0x1000, Type::FreeRam);
-        assert_eq!(r.align_to(0x1000), Range::new(0, 2 * 0x1000, Type::FreeRam));
+        assert_eq!(r.align_out(0x1000), Range::new(0, 2 * 0x1000, Type::FreeRam));
     }
 
     // Upward end alignment saturates at `u64::MAX` on overflow.
     #[test]
-    fn range_test_align_to_saturates() {
+    fn range_test_align_out_saturates() {
         let r = Range::new(u64::MAX - 1, 1, Type::FreeRam);
         assert_eq!(
-            r.align_to(0x1000),
+            r.align_out(0x1000),
             Range::new(u64::MAX - 0x1000 + 1, 0x1000 - 1, Type::FreeRam),
         );
     }
 
     // Empty ranges are still aligned outward to have a size of `alignment`.
     #[test]
-    fn range_test_align_to_empty_range() {
+    fn range_test_align_out_empty_range() {
         let r = Range::new(0x3000 + 1, 0, Type::FreeRam);
-        assert_eq!(r.align_to(0x1000), Range::new(0x3000, 0x1000, Type::FreeRam));
+        assert_eq!(r.align_out(0x1000), Range::new(0x3000, 0x1000, Type::FreeRam));
     }
 
     // Adjacent ranges do not intersect.
