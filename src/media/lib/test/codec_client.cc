@@ -210,6 +210,28 @@ void CodecClient::Start() {
     all_input_buffers_.push_back(std::move(local_buffer));
   }
 
+  if (dynamic_buffer_count.has_value()) {
+    for (uint32_t i = 0; i < all_input_buffers_.size(); ++i) {
+      zx::vmo dup_vmo;
+      const zx_status_t dup_status =
+          all_input_buffers_.at(i)->vmo().duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_vmo);
+      ZX_ASSERT(dup_status == ZX_OK);
+      fuchsia::media::StreamProcessorAddBufferRequest add_request;
+      add_request.set_port(fuchsia::media::Port::INPUT);
+      add_request.set_buffer_constraints_version_ordinal(
+          input_constraints_->buffer_constraints_version_ordinal());
+      add_request.set_buffer_lifetime_ordinal(kInputBufferLifetimeOrdinal);
+      add_request.set_buffer_index(i);
+      add_request.set_buffer(std::move(dup_vmo));
+      PostToFidlThread([this, add_request = std::move(add_request)]() mutable {
+        if (!codec_) {
+          return;
+        }
+        codec_->AddBuffer(std::move(add_request));
+      });
+    }
+  }
+
   // Now that we've SetInputBufferPartialSettings(), the codec will get the
   // input buffers from sysmem.  The input packets all start as free with the
   // Codec client, per protocol.  Same goes for input buffers - this client
@@ -637,7 +659,7 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
     // change.
     //
     // The main mechanism used to detect that the server isn't sending output
-    // too soon is output_config_action_pending_.  In contrast, the client code
+    // too soon is output_constraints_action_pending_.  In contrast, the client code
     // in this example permits itself to send RecycleOutputPacket() after the
     // client has already seen OnOutputConstraints() with action required true,
     // even though the client could stop itself from doing so as a potential
@@ -657,6 +679,8 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
     // RecycleOutputPacket() as long as all those will be sent before
     // SetOutputSettings().
     std::shared_ptr<const fuchsia::media::StreamOutputConstraints> snapped_constraints;
+    uint32_t old_output_buffer_count;
+    uint64_t old_output_buffer_lifetime_ordinal;
     uint64_t new_output_buffer_lifetime_ordinal;
     {  // scope lock
       std::unique_lock<std::mutex> lock(lock_);
@@ -665,7 +689,7 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
       // because we're only here if it's set.
       ZX_ASSERT(output_constraints_action_pending_);
       // We know this because we reject additional output from the server when
-      // output_config_action_pending_ is true, and because we've drained all
+      // output_constraints_action_pending_ is true, and because we've drained all
       // previous output by this point.
       ZX_ASSERT(emitted_output_.empty());
       // We know this because we're only here if we have pending constraints.
@@ -673,6 +697,8 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
 
       output_used_packet_indexes_.clear();
 
+      old_output_buffer_count = static_cast<uint32_t>(all_output_buffers_.size());
+      old_output_buffer_lifetime_ordinal = current_output_buffer_lifetime_ordinal_;
       // Free the old output buffers, if any.
       all_output_buffers_.clear();
 
@@ -724,12 +750,24 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
       FX_LOGS(FATAL) << "ConfigurePortBufferCollection failed (output)";
     }
 
+    std::vector<zx::vmo> dup_vmos;
+    bool is_caught_up = false;
     // Configure tracking for output buffers.
     {  // scope lock
       std::lock_guard<std::mutex> lock(lock_);
 
       all_output_buffers_.reserve(packet_count);
+      if (dynamic_buffer_count.has_value()) {
+        dup_vmos.reserve(packet_count);
+      }
       for (uint32_t i = 0; i < packet_count; i++) {
+        if (dynamic_buffer_count.has_value()) {
+          zx::vmo dup_vmo;
+          const zx_status_t dup_status = buffer_collection_info.buffers().at(i).vmo().duplicate(
+              ZX_RIGHT_SAME_RIGHTS, &dup_vmo);
+          ZX_ASSERT(dup_status == ZX_OK);
+          dup_vmos.push_back(std::move(dup_vmo));
+        }
         std::unique_ptr<CodecBuffer> buffer = CodecBuffer::CreateFromVmo(
             i, std::move(*buffer_collection_info.mutable_buffers()->at(i).mutable_vmo()),
             static_cast<uint32_t>(buffer_collection_info.buffers()[i].vmo_usable_start()),
@@ -743,43 +781,27 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
       }
 
       current_output_buffer_lifetime_ordinal_ = new_output_buffer_lifetime_ordinal;
-    }  // ~lock
-
-    // We're ready to receive output.
-    PostToFidlThread([this, output_buffer_lifetime_ordinal = new_output_buffer_lifetime_ordinal] {
-      if (!codec_) {
-        return;
-      }
-      if (output_buffer_lifetime_ordinal != current_output_buffer_lifetime_ordinal_) {
-        return;
-      }
-      codec_->CompleteOutputBufferPartialSettings(output_buffer_lifetime_ordinal);
-    });
-
-    {  // scope lock
-      std::lock_guard<std::mutex> lock(lock_);
 
       // So, now that we're done with that output re-config, it's time to see if
       // that re-config was the last one we need to do, or if there's a newer
       // config that's action-required.
-
       if (snapped_constraints->buffer_constraints().buffer_constraints_version_ordinal() >=
           last_required_output_constraints_->buffer_constraints()
               .buffer_constraints_version_ordinal()) {
-        // Good.  The client is caught up.  The output_config_action_pending_
-        // can become false here, but may very shortly become true again if
-        // another OnOutputConstraints() is received after we release the lock
-        // (roughly speaking; see code).
+        // Good.  The client is caught up.  The
+        // output_constraints_action_pending_ can become false here, but may
+        // very shortly become true again if another OnOutputConstraints() is
+        // received after we release the lock (roughly speaking; see code).
         //
-        // It's ok that we didn't set output_config_action_pending_ to false
-        // before sending the last AddOutputBuffer() above, because
-        // OnOutputConstraints() was still able to update
-        // last_required_output_config_ as needed, which it's been able to do
-        // all along during most of this whole method.  If we had set to false
-        // up there, it would probably be less obvious why it works vs. here,
-        // but either can work.
-        FX_LOGS(DEBUG) << "output_config_action_pending_ = false, because client "
+        // We must set output_constraints_action_pending_ to false before
+        // sending CompleteOutputBufferPartialSettings() (or AddBuffer() when
+        // is_dynamic_buffers_ is true) below, because as soon as that message
+        // is sent, the server can send OnOutputPacket() or
+        // OnOutputEndOfStream(), both of which assert
+        // !output_constraints_action_pending_.
+        FX_LOGS(DEBUG) << "output_constraints_action_pending_ = false, because client "
                           "caught up";
+        is_caught_up = true;
         output_constraints_action_pending_ = false;
         // Because this was true for at least pending config reason which we
         // are only just clearing immediately above.
@@ -799,8 +821,61 @@ std::unique_ptr<CodecOutput> CodecClient::BlockingGetEmittedOutput() {
                           "has sent yet another action-required output constraints";
         ZX_ASSERT(output_constraints_action_pending_);
         ZX_ASSERT(output_pending_);
+        all_output_buffers_.clear();
       }
     }  // ~lock
+
+    if (dynamic_buffer_count.has_value()) {
+      for (uint32_t i = 0; i < old_output_buffer_count; ++i) {
+        fuchsia::media::StreamProcessorRemoveBufferRequest remove_request;
+        remove_request.set_port(fuchsia::media::Port::OUTPUT);
+        remove_request.set_buffer_lifetime_ordinal(old_output_buffer_lifetime_ordinal);
+        remove_request.set_buffer_index(i);
+        PostToFidlThread([this, remove_request = std::move(remove_request)]() mutable {
+          if (!codec_) {
+            return;
+          }
+          codec_->RemoveBuffer(std::move(remove_request),
+                               [](fuchsia::media::StreamProcessor_RemoveBuffer_Result result) {});
+        });
+      }
+    }
+
+    if (!is_caught_up) {
+      continue;
+    }
+
+    // We're ready to receive output.
+    if (dynamic_buffer_count.has_value()) {
+      for (uint32_t i = 0; i < packet_count; ++i) {
+        fuchsia::media::StreamProcessorAddBufferRequest add_request;
+        add_request.set_port(fuchsia::media::Port::OUTPUT);
+        add_request.set_buffer_constraints_version_ordinal(
+            buffer_constraints.buffer_constraints_version_ordinal());
+        add_request.set_buffer_lifetime_ordinal(new_output_buffer_lifetime_ordinal);
+        add_request.set_buffer_index(i);
+        add_request.set_buffer(std::move(dup_vmos.at(i)));
+        PostToFidlThread([this, add_request = std::move(add_request)]() mutable {
+          if (!codec_) {
+            return;
+          }
+          codec_->AddBuffer(std::move(add_request));
+        });
+      }
+    } else {
+      PostToFidlThread([this, output_buffer_lifetime_ordinal = new_output_buffer_lifetime_ordinal] {
+        if (!codec_) {
+          return;
+        }
+        {
+          std::lock_guard<std::mutex> lock(lock_);
+          if (output_buffer_lifetime_ordinal != current_output_buffer_lifetime_ordinal_) {
+            return;
+          }
+        }
+        codec_->CompleteOutputBufferPartialSettings(output_buffer_lifetime_ordinal);
+      });
+    }
   }
 }
 
@@ -832,7 +907,7 @@ bool CodecClient::ConfigurePortBufferCollection(
 
   if (dynamic_buffer_count.has_value()) {
     // For now CodecClient still allocates a collection, not each buffer separately, but the
-    // AddBuffer messages are separate below.
+    // AddBuffer messages are separate.
     constraints.set_min_buffer_count(*dynamic_buffer_count);
   } else {
     if (is_output) {
@@ -946,48 +1021,6 @@ bool CodecClient::ConfigurePortBufferCollection(
               min_output_buffer_count_ > kMaxExpectedBufferCount);
   }
 
-  if (dynamic_buffer_count.has_value()) {
-    std::vector<std::unique_ptr<CodecBuffer>>& all_buffers =
-        is_output ? all_output_buffers_ : all_input_buffers_;
-    ZX_ASSERT(all_buffers.size() == 0 || is_output);
-    // remove old buffers if any
-    for (uint32_t i = 0; i < all_buffers.size(); ++i) {
-      // input gets configured once and never re-configured
-      ZX_ASSERT(is_output);
-      fuchsia::media::StreamProcessorRemoveBufferRequest remove_request;
-      remove_request.set_port(is_output ? fuchsia::media::Port::OUTPUT
-                                        : fuchsia::media::Port::INPUT);
-      remove_request.set_buffer_lifetime_ordinal(current_output_buffer_lifetime_ordinal_);
-      remove_request.set_buffer_index(i);
-      PostToFidlThread([this, remove_request = std::move(remove_request)]() mutable {
-        if (!codec_) {
-          return;
-        }
-        codec_->RemoveBuffer(std::move(remove_request),
-                             [](fuchsia::media::StreamProcessor_RemoveBuffer_Result result) {});
-      });
-    }
-    // add new buffers
-    for (uint32_t i = 0; i < buffer_collection_info.buffers().size(); ++i) {
-      auto& vmo = buffer_collection_info.buffers().at(i).vmo();
-      zx::vmo dup_vmo;
-      zx_status_t dup_status = vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_vmo);
-      ZX_ASSERT(dup_status == ZX_OK);
-      fuchsia::media::StreamProcessorAddBufferRequest add_request;
-      add_request.set_port(is_output ? fuchsia::media::Port::OUTPUT : fuchsia::media::Port::INPUT);
-      add_request.set_buffer_constraints_version_ordinal(buffer_constraints_version_ordinal);
-      add_request.set_buffer_lifetime_ordinal(new_buffer_lifetime_ordinal);
-      add_request.set_buffer_index(i);
-      add_request.set_buffer(std::move(dup_vmo));
-      PostToFidlThread([this, add_request = std::move(add_request)]() mutable {
-        if (!codec_) {
-          return;
-        }
-        codec_->AddBuffer(std::move(add_request));
-      });
-    }
-  }
-
   fuchsia::sysmem2::BufferCollectionPtr buffer_collection_ptr;
 
   // For the Bind() we probably don't strictly need to be on FIDL thread, so do
@@ -1070,7 +1103,7 @@ void CodecClient::OnOutputConstraints(fuchsia::media::StreamOutputConstraints ou
       // A client is allowed to forget the output format on any action required
       // buffer constraints, so forget here.
       last_output_format_ = nullptr;
-      FX_LOGS(DEBUG) << "output_config_action_pending_ = true, because received a "
+      FX_LOGS(DEBUG) << "output_constraints_action_pending_ = true, because received a "
                         "buffer_constraints_action_required constraints\n";
       output_constraints_action_pending_ = true;
       if (!output_pending_) {

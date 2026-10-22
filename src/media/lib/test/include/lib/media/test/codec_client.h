@@ -341,7 +341,7 @@ class CodecClient {
 
   // Invariant:
   // output_pending_ == (!emitted_output_.empty() ||
-  // output_config_action_pending_)
+  // output_constraints_action_pending_)
   bool ComputeOutputPendingLocked() {
     return !emitted_output_.empty() || output_constraints_action_pending_;
   }
