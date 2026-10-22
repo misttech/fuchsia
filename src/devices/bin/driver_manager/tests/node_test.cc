@@ -2009,3 +2009,266 @@ TEST_F(Dfv2NodeTest, OnHealthAlertSelfFaultRecordsDetails) {
   EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, child->last_health_check()->status);
   EXPECT_TRUE(child->last_health_check()->conditions.empty());
 }
+
+TEST_F(Dfv2NodeTest, OnHealthAlertUpstreamNeighborFaultCompositeParents) {
+  auto bus_a = CreateNode("bus-a");
+  auto bus_b = CreateNode("bus-b");
+  auto owned_b = CreateNode("owned-b", bus_b);
+  auto [owned_b_client, owned_b_server] = fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+  owned_b->SetOwnedByParent(std::move(owned_b_server));
+  auto frag_a = CreateNode("frag-a", bus_a);
+  auto frag_b = CreateNode("frag-b", owned_b);
+  frag_a->MarkAsCompositeParent();
+  frag_b->MarkAsCompositeParent();
+
+  std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_props{
+      {"frag-a", {}},
+      {"frag-b", {}},
+  };
+  auto composite = CreateCompositeNode("composite-ns", {frag_a, frag_b}, parent_props);
+
+  StartTestDriver(bus_a);
+  auto [bus_a_server, bus_a_node] = node_manager->driver_host().TakeDriver("bus-a");
+  FakeDriver bus_a_driver(dispatcher(), std::move(bus_a_server), std::move(bus_a_node));
+
+  StartTestDriver(bus_b);
+  auto [bus_b_server, bus_b_node] = node_manager->driver_host().TakeDriver("bus-b");
+  FakeDriver bus_b_driver(dispatcher(), std::move(bus_b_server), std::move(bus_b_node));
+
+  StartTestDriver(composite);
+  auto [comp_server, comp_node] = node_manager->driver_host().TakeDriver("composite-ns");
+  FakeDriver comp_driver(dispatcher(), std::move(comp_server), std::move(comp_node));
+
+  size_t bus_a_probes = 0;
+  size_t bus_b_probes = 0;
+  bus_a_driver.SetHealthCheckCallback(
+      [&bus_a_probes](const fuchsia_driver_framework::HealthCheckRequest& req) {
+        bus_a_probes++;
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+  bus_b_driver.SetHealthCheckCallback(
+      [&bus_b_probes](const fuchsia_driver_framework::HealthCheckRequest& req) {
+        bus_b_probes++;
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+
+  ASSERT_EQ(ZX_OK,
+            comp_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(1u, bus_a_probes);
+  EXPECT_EQ(1u, bus_b_probes);
+}
+
+TEST_F(Dfv2NodeTest, OnHealthAlertUpstreamNeighborFaultCooldownCoalescesStorm) {
+  auto parent = CreateNode("parent-cd");
+  auto child_1 = CreateNode("child-cd-1", parent);
+  auto child_2 = CreateNode("child-cd-2", parent);
+
+  StartTestDriver(parent);
+  auto [parent_server, parent_node_client] = node_manager->driver_host().TakeDriver("parent-cd");
+  FakeDriver parent_driver(dispatcher(), std::move(parent_server), std::move(parent_node_client));
+
+  StartTestDriver(child_1);
+  auto [c1_server, c1_node_client] = node_manager->driver_host().TakeDriver("child-cd-1");
+  FakeDriver c1_driver(dispatcher(), std::move(c1_server), std::move(c1_node_client));
+
+  StartTestDriver(child_2);
+  auto [c2_server, c2_node_client] = node_manager->driver_host().TakeDriver("child-cd-2");
+  FakeDriver c2_driver(dispatcher(), std::move(c2_server), std::move(c2_node_client));
+
+  size_t parent_probes = 0;
+  parent_driver.SetHealthCheckCallback(
+      [&parent_probes](const fuchsia_driver_framework::HealthCheckRequest& req) {
+        parent_probes++;
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+
+  // First alert from child_1 probes parent.
+  ASSERT_EQ(ZX_OK,
+            c1_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(1u, parent_probes);
+
+  // Duplicate alert from child_1 within cooldown is coalesced.
+  ASSERT_EQ(ZX_OK,
+            c1_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(1u, parent_probes);
+
+  // Alert from sibling child_2 within cooldown also avoids re-probing the same parent.
+  ASSERT_EQ(ZX_OK,
+            c2_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(1u, parent_probes);
+
+  // Advance virtual time past kNeighborAlertCooldown; next alert probes parent again.
+  RunLoopFor(driver_manager::Node::kNeighborAlertCooldown);
+  ASSERT_EQ(ZX_OK,
+            c1_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(2u, parent_probes);
+}
+
+TEST_F(Dfv2NodeTest, OnHealthAlertNeighborFaultSweepsNamedSideOnly) {
+  auto parent = CreateNode("parent-dir");
+  auto middle = CreateNode("middle-dir", parent);
+  auto child = CreateNode("child-dir", middle);
+
+  StartTestDriver(parent);
+  auto [parent_server, parent_node_client] = node_manager->driver_host().TakeDriver("parent-dir");
+  FakeDriver parent_driver(dispatcher(), std::move(parent_server), std::move(parent_node_client));
+
+  StartTestDriver(middle);
+  auto [middle_server, middle_node_client] = node_manager->driver_host().TakeDriver("middle-dir");
+  FakeDriver middle_driver(dispatcher(), std::move(middle_server), std::move(middle_node_client));
+
+  StartTestDriver(child);
+  auto [child_server, child_node_client] = node_manager->driver_host().TakeDriver("child-dir");
+  FakeDriver child_driver(dispatcher(), std::move(child_server), std::move(child_node_client));
+
+  size_t parent_probes = 0;
+  size_t child_probes = 0;
+  parent_driver.SetHealthCheckCallback(
+      [&parent_probes](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, req);
+        parent_probes++;
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+  child_driver.SetHealthCheckCallback(
+      [&child_probes](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, req);
+        child_probes++;
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{{
+            .conditions = {{{{
+                .status = fuchsia_driver_framework::HealthStatus::kDegraded,
+                .reason_code = "CHILD_DEGRADED",
+            }}}},
+        }});
+      });
+
+  // upstream_neighbor_fault probes only the parents (what the reporter depends on).
+  ASSERT_EQ(ZX_OK,
+            middle_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(1u, parent_probes);
+  EXPECT_EQ(0u, child_probes);
+  ASSERT_TRUE(parent->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, parent->last_health_check()->status);
+
+  // downstream_neighbor_fault probes only the children (what depends on the reporter). It is sent
+  // immediately after the upstream alert: alerts are not coalesced per reporter, so an alert of a
+  // different type within kNeighborAlertCooldown still sweeps its own side.
+  ASSERT_EQ(ZX_OK,
+            middle_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithDownstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(1u, parent_probes);
+  EXPECT_EQ(1u, child_probes);
+  ASSERT_TRUE(child->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kDegraded, child->last_health_check()->status);
+  EXPECT_EQ("CHILD_DEGRADED", child->last_health_check()->first_reason_code());
+
+  // Neighbor fault alerts do not overwrite the reporter's own record.
+  EXPECT_FALSE(middle->last_health_check().has_value());
+}
+
+TEST_F(Dfv2NodeTest, OnHealthAlertSelfFaultRecordsAndPingsParent) {
+  auto parent = CreateNode("parent-sf");
+  auto child = CreateNode("child-sf", parent);
+
+  StartTestDriver(parent);
+  auto [parent_server, parent_node_client] = node_manager->driver_host().TakeDriver("parent-sf");
+  FakeDriver parent_driver(dispatcher(), std::move(parent_server), std::move(parent_node_client));
+
+  StartTestDriver(child);
+  auto [child_server, child_node_client] = node_manager->driver_host().TakeDriver("child-sf");
+  FakeDriver child_driver(dispatcher(), std::move(child_server), std::move(child_node_client));
+
+  std::optional<fuchsia_driver_framework::HealthCheckRequest> parent_check_level;
+  size_t parent_ping_count = 0;
+  parent_driver.SetHealthCheckCallback(
+      [&parent_check_level,
+       &parent_ping_count](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        parent_check_level = req;
+        parent_ping_count++;
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+
+  ASSERT_EQ(ZX_OK, child_driver
+                       .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+                           fuchsia_driver_framework::HealthCheckResponse{{
+                               .conditions = {{{{
+                                   .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+                                   .reason_code = "FW_CRASH",
+                                   .message = "Firmware crashed",
+                               }}}},
+                           }}))
+                       .status_value());
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(child->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, child->last_health_check()->status);
+  ASSERT_EQ(1u, child->last_health_check()->conditions.size());
+  EXPECT_EQ("FW_CRASH", child->last_health_check()->first_reason_code());
+  EXPECT_EQ("Firmware crashed", child->last_health_check()->conditions[0].message());
+
+  ASSERT_TRUE(parent_check_level.has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, *parent_check_level);
+  EXPECT_EQ(1u, parent_ping_count);
+  ASSERT_TRUE(parent->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, parent->last_health_check()->status);
+
+  // A second SELF_FAULT within kNeighborAlertCooldown always records the faulting node's latest
+  // details, but coalesces the parent PING probe.
+  ASSERT_EQ(ZX_OK, child_driver
+                       .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+                           fuchsia_driver_framework::HealthCheckResponse{{
+                               .conditions = {{{{
+                                   .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+                                   .reason_code = "FW_CRASH_2",
+                                   .message = "Second crash",
+                               }}}},
+                           }}))
+                       .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ("FW_CRASH_2", child->last_health_check()->first_reason_code());
+  EXPECT_EQ(1u, parent_ping_count);
+
+  // However, an UpstreamNeighborFault alert within the same cooldown window must NOT be suppressed
+  // by the earlier kPing liveness check—it must still escalate and run a kFast probe on the parent.
+  ASSERT_EQ(ZX_OK,
+            child_driver
+                .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithUpstreamNeighborFault(
+                    fuchsia_driver_framework::HealthCheckResponse{}))
+                .status_value());
+  RunLoopUntilIdle();
+  EXPECT_EQ(2u, parent_ping_count);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, *parent_check_level);
+}

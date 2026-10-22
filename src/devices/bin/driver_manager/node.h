@@ -644,6 +644,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     std::vector<fuchsia_driver_framework::HealthCondition> conditions;
   };
 
+  // Minimum interval between health probes that driver_manager sends to a node in response to
+  // health alerts. Enforced per probe target, not per reporter.
+  static constexpr zx::duration kNeighborAlertCooldown = zx::sec(5);
+
   // Forwards |request| to this node's driver if, and only if, it is running. A node that is
   // unbound, still binding, stopped or whose driver host is gone is not forwarded to; |cb| is
   // invoked synchronously with INVALID_STATE instead, and nothing is cached.
@@ -657,13 +661,19 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
                                      fuchsia_driver_framework::HealthCheckResponse>)>
           cb);
 
-  // Handles a health alert reported by this node's driver. self_fault records the details in
-  // last_health_check_. Alerts with an unknown variant are logged and ignored.
+  // Handles a health alert reported by this node's driver. self_fault records the details and
+  // pings the parents.
+  // upstream_neighbor_fault sweeps the bound parents (what the reporter depends on);
+  // downstream_neighbor_fault sweeps the bound children (what depends on the reporter).
+  // Alerts with an unknown variant are logged and ignored.
   void OnHealthAlert(fuchsia_driver_framework::HealthAlert alert);
 
   const std::optional<HealthCheckRecord>& last_health_check() const { return last_health_check_; }
 
  private:
+  // Which side of this node's topology a neighbor sweep walks.
+  enum class NeighborSide { kParents, kChildren };
+
   // Caches |record| as the latest health check outcome for this node, subject to the replacement
   // policy documented on HealthCheckRecord. Every cache write goes through here.
   void MaybeStoreHealthCheckRecord(HealthCheckRecord record);
@@ -671,7 +681,20 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Clears the cached records and alert probe timestamps. Called when a new driver is started.
   void ResetHealthCheckState();
 
+  // Returns the nearest nodes on |side| that have a running driver, routing through up to three
+  // intermediate composite parent or owned-by-parent nodes.
+  std::vector<std::shared_ptr<Node>> GetBoundNeighborNodes(NeighborSide side) const;
+
+  // If this node has not been probed within kNeighborAlertCooldown, records |now| and |level| as
+  // its latest alert probe and returns true. Within the cooldown only a kFast probe following a
+  // kPing probe is accepted (the sweep upgrades the liveness check); everything else is coalesced.
+  bool TryClaimProbe(zx::time now, fuchsia_driver_framework::HealthCheckRequest level);
+
   void HandleSelfFault(fuchsia_driver_framework::HealthCheckResponse details);
+  void HandleNeighborFault(const fuchsia_driver_framework::HealthCheckResponse& details,
+                           NeighborSide side);
+  void ProbeNeighbors(NeighborSide side, fuchsia_driver_framework::HealthCheckRequest level,
+                      zx::time now);
 
   struct DriverComponent {
     DriverComponent(
@@ -972,6 +995,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // The most recent informative record that did not come from a PING (FAST, DEEP or a self_fault
   // alert). See replacement policy (b) on HealthCheckRecord.
   std::optional<HealthCheckRecord> last_non_ping_health_check_;
+  // When and at what level this node was last probed in response to a health alert.
+  std::optional<zx::time> last_alert_probe_time_;
+  std::optional<fuchsia_driver_framework::HealthCheckRequest> last_alert_probe_level_;
 };
 
 }  // namespace driver_manager

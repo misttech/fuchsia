@@ -3434,6 +3434,74 @@ void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
 void Node::ResetHealthCheckState() {
   last_health_check_.reset();
   last_non_ping_health_check_.reset();
+  last_alert_probe_time_.reset();
+  last_alert_probe_level_.reset();
+}
+
+namespace {
+
+// Returns true if |last| is within Node::kNeighborAlertCooldown of |now|.
+bool WithinCooldown(const std::optional<zx::time>& last, zx::time now) {
+  return last.has_value() && (now - *last) < Node::kNeighborAlertCooldown;
+}
+
+}  // namespace
+
+std::vector<std::shared_ptr<Node>> Node::GetBoundNeighborNodes(NeighborSide side) const {
+  // Composite parent and owned-by-parent nodes have no driver of their own, so the search routes
+  // through them to reach the nearest nodes with a running driver. The deepest real layout is a
+  // composite whose fragment is itself owned by its parent, which is owned by the bus driver's
+  // node: fragment -> owned-by-parent -> bus driver, i.e. two driverless intermediates before the
+  // bound node at depth 3. The walk allows one more for headroom and never routes past depth
+  // kMaxRoutingHops.
+  constexpr size_t kMaxRoutingHops = 4;
+  std::vector<std::shared_ptr<Node>> result;
+  std::unordered_set<const Node*> visited;
+  std::deque<std::pair<std::shared_ptr<Node>, size_t>> queue;
+  auto enqueue_neighbors = [side, &queue](const Node& node, size_t depth) {
+    if (side == NeighborSide::kParents) {
+      for (const auto& weak_parent : node.parents()) {
+        if (auto parent = weak_parent.lock()) {
+          queue.emplace_back(std::move(parent), depth);
+        }
+      }
+    } else {
+      for (const auto& child : node.children()) {
+        if (child) {
+          queue.emplace_back(child, depth);
+        }
+      }
+    }
+  };
+  enqueue_neighbors(*this, 1);
+  while (!queue.empty()) {
+    auto [curr, depth] = std::move(queue.front());
+    queue.pop_front();
+    if (!visited.insert(curr.get()).second) {
+      continue;
+    }
+    if (const auto* dc = std::get_if<DriverComponent>(&curr->state_);
+        dc && dc->state == DriverState::kRunning && dc->driver.is_valid()) {
+      result.push_back(std::move(curr));
+    } else if (depth < kMaxRoutingHops && (std::holds_alternative<CompositeParent>(curr->state_) ||
+                                           std::holds_alternative<OwnedByParent>(curr->state_))) {
+      enqueue_neighbors(*curr, depth + 1);
+    }
+  }
+  return result;
+}
+
+bool Node::TryClaimProbe(zx::time now, fuchsia_driver_framework::HealthCheckRequest level) {
+  // Within the cooldown window, a kFast neighbor sweep still upgrades an earlier kPing liveness
+  // probe on the same node, while duplicate probes at the same or lower level are coalesced.
+  if (WithinCooldown(last_alert_probe_time_, now) &&
+      (level == fuchsia_driver_framework::HealthCheckRequest::kPing ||
+       last_alert_probe_level_ != fuchsia_driver_framework::HealthCheckRequest::kPing)) {
+    return false;
+  }
+  last_alert_probe_time_ = now;
+  last_alert_probe_level_ = level;
+  return true;
 }
 
 void Node::OnHealthAlert(fuchsia_driver_framework::HealthAlert alert) {
@@ -3442,7 +3510,10 @@ void Node::OnHealthAlert(fuchsia_driver_framework::HealthAlert alert) {
       HandleSelfFault(std::move(alert.self_fault().value()));
       break;
     case fuchsia_driver_framework::HealthAlert::Tag::kUpstreamNeighborFault:
+      HandleNeighborFault(alert.upstream_neighbor_fault().value(), NeighborSide::kParents);
+      break;
     case fuchsia_driver_framework::HealthAlert::Tag::kDownstreamNeighborFault:
+      HandleNeighborFault(alert.downstream_neighbor_fault().value(), NeighborSide::kChildren);
       break;
     default:
       fdf_log::warn("Node {} ({}) reported a health alert with an unknown variant; ignoring",
@@ -3468,6 +3539,50 @@ void Node::HandleSelfFault(fuchsia_driver_framework::HealthCheckResponse details
                    MakeComponentMoniker(), driver_url(), status, record.first_reason_code());
   }
   MaybeStoreHealthCheckRecord(std::move(record));
+
+  // A recovery (empty conditions, derived status OK) is not a fault, so there is nothing upstream
+  // to check.
+  if (status == fuchsia_driver_framework::HealthStatus::kOk) {
+    return;
+  }
+
+  // Ping the parents to see whether the fault is local. A parent that was probed recently is not
+  // pinged again, while a later neighbor-fault sweep within the cooldown still upgrades to kFast.
+  ProbeNeighbors(NeighborSide::kParents, fuchsia_driver_framework::HealthCheckRequest::kPing, now);
+}
+
+void Node::HandleNeighborFault(const fuchsia_driver_framework::HealthCheckResponse& details,
+                               NeighborSide side) {
+  // The reporter's own cached record is left alone: the alert is about a neighbor, not itself.
+  std::string_view reason = "-";
+  if (details.conditions().has_value() && !details.conditions()->empty() &&
+      details.conditions()->front().reason_code().has_value()) {
+    reason = details.conditions()->front().reason_code().value();
+  }
+  const std::string_view alert_name =
+      side == NeighborSide::kParents ? "UPSTREAM_NEIGHBOR_FAULT" : "DOWNSTREAM_NEIGHBOR_FAULT";
+  // Debug rather than info: a driver may raise these at interrupt rate during a fault storm.
+  fdf_log::debug("Node {} ({}) reported {} health alert: reason={}", MakeComponentMoniker(),
+                 driver_url(), alert_name, reason);
+
+  // Alerts are not coalesced per reporter: an UPSTREAM and a DOWNSTREAM alert name different
+  // neighbors, so both must sweep. Storms are absorbed by the probe targets instead, each of which
+  // accepts at most one probe per kNeighborAlertCooldown (see TryClaimProbe).
+  //
+  // Only the side the reporter named is probed: upstream is what the reporter depends on
+  // (its bound parents), downstream is what depends on the reporter (its bound children).
+  ProbeNeighbors(side, fuchsia_driver_framework::HealthCheckRequest::kFast,
+                 async::Now(dispatcher_));
+}
+
+void Node::ProbeNeighbors(NeighborSide side, fuchsia_driver_framework::HealthCheckRequest level,
+                          zx::time now) {
+  for (const auto& neighbor : GetBoundNeighborNodes(side)) {
+    if (!neighbor->TryClaimProbe(now, level)) {
+      continue;
+    }
+    neighbor->RunHealthCheck(level, [](auto) {});
+  }
 }
 
 }  // namespace driver_manager
