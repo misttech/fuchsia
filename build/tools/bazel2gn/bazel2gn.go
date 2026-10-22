@@ -48,6 +48,9 @@ func FileToGN(f *syntax.File) ([]string, error) {
 	if err := inlineRustTestCrates(f); err != nil {
 		return nil, err
 	}
+	if err := resolveComponentTargets(f); err != nil {
+		return nil, err
+	}
 	var lines []string
 	for _, stmt := range f.Stmts {
 		stmtLines, err := StmtToGN(stmt)
@@ -290,13 +293,28 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		}
 		return rustcCheckCfgBuildFlagsToGN(expr)
 	}
-	gnTemplateName, ok := bazelRuleToGNTemplate[bazelRule]
-	if !ok {
-		return nil, fmt.Errorf("%s is not a known Bazel rule to convert to GN", bazelRule)
+	var gnTemplateName string
+	if bazelRule == internalRenamedBinaryRule {
+		gnTemplateName = "renamed_binary"
+	} else {
+		var ok bool
+		gnTemplateName, ok = bazelRuleToGNTemplate[bazelRule]
+		if !ok {
+			return nil, fmt.Errorf("%s is not a known Bazel rule to convert to GN", bazelRule)
+		}
 	}
 
-	if bazelRule == "cml_shard" {
+	switch bazelRule {
+	case "cml_shard":
 		if err := validateCmlShard(expr); err != nil {
+			return nil, err
+		}
+	case "fx_component_manifest":
+		if err := validateFxComponentManifest(expr); err != nil {
+			return nil, err
+		}
+	case "fx_component":
+		if err := validateFxComponent(expr); err != nil {
 			return nil, err
 		}
 	}
@@ -714,7 +732,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 	switch attrName {
 	case "visibility":
 		transformers = append(transformers, bazelVisibilityToGN)
-	case "deps", "test_deps", "proc_macro_deps", "link_deps", "args_deps", "plugin_deps", "fidls", "non_rust_deps", "sdk_deps", "validations":
+	case "deps", "test_deps", "proc_macro_deps", "link_deps", "args_deps", "plugin_deps", "fidls", "non_rust_deps", "sdk_deps", "validations", "cm_label", "source_deps":
 		transformers = append(transformers, bazelDepToGN)
 	case "public_deps":
 		transformers = append(transformers, bazelDepToGN)
@@ -738,6 +756,10 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 	case "includes":
 		if bazelRule == "expect_includes" {
 			transformers = append(transformers, bazelCmlIncludesToGN)
+		}
+	case "manifest":
+		if bazelRule == "fx_component_manifest" {
+			transformers = append(transformers, bazelFilePathsToGN)
 		}
 	case "args":
 		if bazelRule == compiledActionRule {

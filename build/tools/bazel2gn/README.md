@@ -117,6 +117,37 @@ annotation. `args` only support `$(location <file>)`, `$(execpath <file>)`, and
 `$(RULEDIR)`; any other substitution is an error. The GN tool's output name must
 match its target name, because `tool_output_name` is not synced.
 
+#### Components
+
+`fx_component_manifest()` and `fx_component()` sync to GN
+`fuchsia_component_manifest()` and `fuchsia_component()`:
+
+*   `fx_component_manifest()` maps `manifest` to a GN path and omits `includes`
+    (which lists `.cml` shard inputs for the Bazel action sandbox; GN runs `cmc`
+    with global include paths and a depfile instead). An
+    `fx_component_manifest()` referenced via `compiled_manifest` only by
+    `fx_test_component()` or a skipped `fx_component()` in the same
+    `BUILD.bazel` (and not by any un-skipped `fx_component()` or
+    `fuchsia_structured_config_rust_lib()`) is skipped automatically.
+*   `fx_component()` maps `compiled_manifest` (which must refer to a
+    `:<manifest>` target in the same `BUILD` file) to `cm_label`. If the
+    `fx_component_manifest()` appears after a consumer in `BUILD.bazel`,
+    `bazel2gn` hoists it earlier in `BUILD.gn` so GN's `get_target_outputs()`
+    succeeds.
+*   `fx_packaged_binary()` has no standalone GN equivalent, but when an
+    `fx_component()` depends on a `:<packaged_bin>` defined in the same
+    `BUILD.bazel` wrapping an un-skipped binary target in the same file:
+    *   If `install_root + binary_name` matches the GN binary's default
+        `"bin/<output_name>"`, `:<packaged_bin>` in `deps` unwraps directly to
+        the underlying `:<binary>` target.
+    *   Otherwise, `bazel2gn` emits a GN `renamed_binary("<packaged_bin>")`
+        target and keeps `:<packaged_bin>` in `deps`.
+
+Put `# @bazel2gn:skip` (with a brief explanatory comment) on an `fx_component()`
+when its package is Bazel-only and has no GN consumer (its
+`fx_component_manifest()` will then be skipped automatically unless used by
+another un-skipped target).
+
 #### Tests
 
 While a library is used in both build systems, its tests run in both (see

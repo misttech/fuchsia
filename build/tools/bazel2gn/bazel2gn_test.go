@@ -268,19 +268,6 @@ fx_packaged_binary(
 	binary_name = "foo",
 )
 
-fx_component_manifest(
-	name = "foo-manifest",
-	component_name = "foo",
-	manifest = "meta/foo.cml",
-)
-
-fx_component(
-	name = "foo-component",
-	compiled_manifest = ":foo-manifest",
-	component_name = "foo",
-	deps = [":foo_packaged_bin"],
-)
-
 fx_test_component(
 	name = "foo-test-component",
 	compiled_manifest = ":foo-manifest",
@@ -300,6 +287,43 @@ fx_test(
 	package = ":foo-package",
 )`,
 			wantGN: "",
+		},
+		{
+			name: "fx_component_manifest and fx_component",
+			bazel: `fx_component_manifest(
+	name = "manifest",
+	component_name = "my-component",
+	includes = [
+		"//sdk/lib/syslog:client.shard",
+		"//sdk/lib/inspect:client.shard.cml",
+	],
+	manifest = ":meta/my_component.cml",
+)
+
+fx_component(
+	name = "component",
+	check_includes = False,
+	compiled_manifest = ":manifest",
+	component_name = "my-component",
+	visibility = ["//bundles/assembly:__subpackages__"],
+	deps = ["//src/starnix/containers:default_init"],
+)`,
+			wantGN: `fuchsia_component_manifest("manifest") {
+	component_name = "my-component"
+	manifest = "meta/my_component.cml"
+}
+fuchsia_component("component") {
+	check_includes = false
+	cm_label = ":manifest"
+	component_name = "my-component"
+	visibility = [
+		":*",
+		"//bundles/assembly/*",
+	]
+	deps = [
+		"//src/starnix/containers:default_init",
+	]
+}`,
 		},
 		{
 			name: "Ignored unittest targets",

@@ -100,6 +100,8 @@ CONVERTIBLE_BAZEL_RULES = {
     "fidl_library",
     "zither_fidl_library",
     "fuchsia_structured_config_rust_lib",
+    "fx_component",
+    "fx_component_manifest",
 }
 
 # Plain GN `shared_library()` is intentionally excluded: `build/tools/bazel2gn/constants.go`
@@ -126,6 +128,8 @@ CONVERTIBLE_GN_TEMPLATES = {
     "sdk_shared_library",
     "zx_library",
     "fuchsia_structured_config_rust_lib",
+    "fuchsia_component",
+    "fuchsia_component_manifest",
 }
 
 # A hand-written GN test above the sentinel either duplicates the GN copy bazel2gn generates
@@ -735,6 +739,27 @@ for pkg_dir in sorted(candidate_dirs):
     for t in bazel_targets:
         if t["rule"] == "fx_unittest_package":
             packaged_binaries.update(t.get("unit_tests_refs", []))
+    converted_manifest_refs = {
+        r
+        for t in bazel_targets
+        if t["rule"] in ("fx_component", "fuchsia_structured_config_rust_lib")
+        and t["skip_line"] is None
+        for r in t.get("gn_dep_refs", ())
+    }
+    bazel_only_manifest_refs = {
+        r
+        for t in bazel_targets
+        if t["rule"] == "fx_test_component"
+        or (t["rule"] in ("fx_component", "fuchsia_structured_config_rust_lib") and t["skip_line"] is not None)
+        for r in t.get("dep_refs", ())
+    }
+    auto_skipped_manifests = {
+        t["name"]
+        for t in bazel_targets
+        if t["rule"] == "fx_component_manifest"
+        and t["name"] in bazel_only_manifest_refs
+        and t["name"] not in converted_manifest_refs
+    }
     fx_all_pkgs = [
         t
         for t in bazel_targets
@@ -1157,7 +1182,7 @@ for pkg_dir in sorted(candidate_dirs):
                 )
                 for ptmpl, _, pbody in gn_info["pre_targets"].values()
             )
-            if tname in packaged_binaries and not in_pre_gn and not ref_in_pre_gn:
+            if (tname in packaged_binaries or tname in auto_skipped_manifests) and not in_pre_gn and not ref_in_pre_gn:
                 continue
             if rule in BAZEL_TEST_RULES or is_test_bin:
                 continue
@@ -1700,6 +1725,7 @@ for pkg_dir in sorted(candidate_dirs):
             if (
                 t["rule"] in CONVERTIBLE_BAZEL_RULES
                 and t["skip_line"] is None
+                and t["name"] not in auto_skipped_manifests
                 and is_bazel_only_private_test_dep(
                     t, bazel_targets, gn_info, pkg_dir, packaged_binaries, gn_kept_pkg_test_deps
                 )
@@ -1727,7 +1753,7 @@ for pkg_dir in sorted(candidate_dirs):
         migrated_pkg_names = {t["name"] for t in bazel_targets} | {t["package_name"] for t in fx_pkgs}
         migrated_manifests = set(re.findall(r'\bmanifest\s*=\s*"([^"]+)"', bazel_text_raw))
         has_b2gn_convertible = any(
-            t["rule"] in CONVERTIBLE_BAZEL_RULES and t["name"] not in packaged_binaries and t["skip_line"] is None
+            t["rule"] in CONVERTIBLE_BAZEL_RULES and t["name"] not in packaged_binaries and t["name"] not in auto_skipped_manifests and t["skip_line"] is None
             for t in bazel_targets
         )
         if gn_info and gn_info["has_sentinel"] and not has_b2gn_convertible:

@@ -48,8 +48,6 @@ testonly_targets = set()
 alias_map = {}
 
 BAZEL_NON_GN_SYNCED_RULES = {
-    "fx_component",
-    "fx_component_manifest",
     "fx_packaged_binary",
     "fx_test_component",
     "fx_unittest_component",

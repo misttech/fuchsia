@@ -34,6 +34,13 @@ motivation, and comment annotations.
 -   [`compiled_action.go`](./compiled_action.go): Converts `compiled_action`
     `outs` (placed under `$target_gen_dir` unless overwritten) and `args`
     (`$(location <label>)`, `$(execpath <label>)`, and `$(RULEDIR)`).
+-   [`fx_component.go`](./fx_component.go): Validates `fx_component_manifest`
+    and `fx_component`, skips `fx_component_manifest` targets consumed only by
+    `fx_test_component` or a skipped `fx_component` in the same file, hoists
+    remaining `fx_component_manifest` targets before earlier same-file
+    consumers, and resolves `fx_packaged_binary` dependencies in `fx_component`
+    `deps` (either unwrapping to the underlying binary target or emitting a GN
+    `renamed_binary`).
 -   [`fx_unittest_package.go`](./fx_unittest_package.go): Converts
     `fx_unittest_package` into `fuchsia_unittest_package` (or
     `fuchsia_unittest_component` + `fuchsia_test_package` for multiple test
@@ -79,8 +86,9 @@ When adding support for a Bazel rule or attribute, check all five touchpoints:
 
 1.  **Rule registration ([`constants.go`](./constants.go))**:
     -   Add the Bazel rule to `bazelRuleToGNTemplate`.
-    -   Map Bazel-only rules (such as `fx_package`, `fx_component`, `fx_test`,
-        or `host_cc_test`) to `noGNEquivalent` so `bazel2gn` skips them cleanly.
+    -   Map Bazel-only rules (such as `fx_package`, `fx_test_component`,
+        `fx_test`, or `host_cc_test`) to `noGNEquivalent` so `bazel2gn` skips
+        them cleanly.
     -   If the rule requires custom target emission (like
         `rustc_check_cfg_build_flags`), intercept it in `callExprToGN` in
         [`bazel2gn.go`](./bazel2gn.go).

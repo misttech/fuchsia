@@ -35,11 +35,7 @@ fx_component_manifest(
     name = "component-manifest",
     testonly = True,
     component_name = "exit-with-error",
-    includes = [
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
-    ],
+    includes = ["//sdk/lib/syslog:client.shard"],
     manifest = "meta/exit-with-error.cml",
 )
 

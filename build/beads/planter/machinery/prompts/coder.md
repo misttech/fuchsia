@@ -72,20 +72,26 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      `output_name` / `name`), and pass `deps = [":<n>_packaged_bin"]` to
      `fx_component(name = "<c>", compiled_manifest = ":<c>-manifest", component_name = "<comp_name>", deps = [...])`.
 3. **`fx_package`, `BUILD.gn`, `bazel2gn`, and `//bundles/assembly` bridge cleanup**:
-   - `bazel2gn` does NOT support `fx_package`, `fx_component`, `fx_component_manifest`,
-     `fx_packaged_binary`, `fx_unittest_component`, or `resource` (`fx_cc_binary` IS translated
-     by `bazel2gn` into a GN `executable`). Delete the migrated
-     `fuchsia_package`/`fuchsia_package_with_single_component`/`fuchsia_component` (and any
-     dedicated binary/resource not used by remaining GN test targets) from `BUILD.gn`, and
+   - `bazel2gn` converts `fx_component` and `fx_component_manifest` (resolving same-package
+     `fx_packaged_binary` deps in `fx_component`), so `fuchsia_component` and
+     `fuchsia_component_manifest` targets that still have GN consumers can be migrated to
+     `BUILD.bazel` and synced below `## BAZEL2GN SENTINEL`. `bazel2gn` does NOT support
+     `fx_package`, `fx_test_component`, `fx_unittest_component`, or `resource` (`fx_cc_binary` IS
+     translated by `bazel2gn` into a GN `executable`). When migrating a package fully to Bazel,
+     delete the migrated `fuchsia_package`/`fuchsia_package_with_single_component`/`fuchsia_component`
+     (and any dedicated binary/resource not used by remaining GN targets) from `BUILD.gn`, and
      remove any reference to the deleted GN package target from a parent `BUILD.gn` group.
    - If nothing remains in `BUILD.gn`, delete `BUILD.gn` (`git rm <dir>/BUILD.gn`, Case 1). If
      `BUILD.gn` retains only GN-only targets (`bazel_test_suite`, `group("tests")`, a test package
-     that must stay in GN, or an unmigratable library) and `BUILD.bazel` defines only `fx_*`
-     package/test targets, do NOT add `## BAZEL2GN SENTINEL` and do NOT run `fx bazel2gn`.
-     (If `BUILD.bazel` also dual-builds a library via `bazel2gn`, annotate any non-test
-     `fx_cc_binary`/`rustc_binary` packaged only into an `fx_package` with `# @bazel2gn:skip`;
-     do NOT put `# @bazel2gn:skip` on `fx_package`/`fx_component*`/`fx_packaged_binary`/`fx_test`
-     since `bazel2gn` already ignores them, and do NOT skip test binaries: see "Migrating Tests").
+     that must stay in GN, or an unmigratable library) and `BUILD.bazel` defines only Bazel-only
+     `fx_package`/test targets with no GN consumers, do NOT add `## BAZEL2GN SENTINEL` and do NOT
+     run `fx bazel2gn`. (If `BUILD.bazel` also dual-builds targets via `bazel2gn`, annotate any
+     non-test `fx_cc_binary`/`rustc_binary`/`fx_component` used only by a
+     Bazel `fx_package` with `# @bazel2gn:skip` and a brief reason comment;
+     `bazel2gn` automatically skips `fx_component_manifest` targets consumed only by
+     `fx_test_component` or a skipped `fx_component`, and ignores
+     `fx_package`/`fx_test_component`/`fx_packaged_binary`/`fx_test`, so do NOT put
+     `# @bazel2gn:skip` on those, and do NOT skip test binaries: see "Migrating Tests").
    - When `//bundles/assembly/bazel_inputs/<dir>/BUILD.gn` bridges the package: (a) replace
      `"//bundles/assembly/bazel_inputs/<dir>..."` with `"//<dir>:<pkg>"` in
      `//bundles/assembly/BUILD.bazel`, (b) remove the entry from

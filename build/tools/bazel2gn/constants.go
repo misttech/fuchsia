@@ -112,6 +112,8 @@ var bazelRuleToGNTemplate = map[string]string{
 	// Components
 	"expect_includes":                    "expect_includes",
 	"fuchsia_structured_config_rust_lib": "fuchsia_structured_config_rust_lib",
+	"fx_component":                       "fuchsia_component",
+	"fx_component_manifest":              "fuchsia_component_manifest",
 
 	// Host tools
 	"cc_binary_host_tool": "executable",
@@ -147,8 +149,6 @@ var bazelRuleToGNTemplate = map[string]string{
 	// targets (such as `bazel_fuchsia_package()` or `bazel_test_suite()`) are
 	// maintained by hand above the bazel2gn sentinel in BUILD.gn.
 	"cml_shard":             noGNEquivalent,
-	"fx_component":          noGNEquivalent,
-	"fx_component_manifest": noGNEquivalent,
 	"fx_package":            noGNEquivalent,
 	"fx_packaged_binary":    noGNEquivalent,
 	"fx_runner_shard":       noGNEquivalent,
@@ -236,6 +236,10 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// wraps. GN has no such wrapper.
 	"host_go_test":    {"size": true, "binary_name": true},
 	"host_rustc_test": {"size": true, "binary_name": true},
+	// `includes` lists `.cml` shard targets and files needed in the Bazel
+	// action sandbox. GN runs `cmc` with global include paths and a depfile
+	// instead, and `fuchsia_component_manifest()` does not accept `includes`.
+	"fx_component_manifest": {"includes": true},
 }
 
 // unsupportedAttrsByRules lists attributes that bazel2gn can't translate yet.
@@ -431,6 +435,12 @@ var structuredConfigRustLibAttrMap = map[string]string{
 	"crate_name": "name",
 }
 
+// fxComponentAttrMap maps from attribute names in Bazel `fx_component()` to GN
+// `fuchsia_component()` parameter names.
+var fxComponentAttrMap = map[string]string{
+	"compiled_manifest": "cm_label",
+}
+
 // pythonBinAttrMap maps from attribute name in Bazel Python binary rules to GN parameter names.
 var pythonBinAttrMap = map[string]string{
 	"main": "main_source",
@@ -487,6 +497,7 @@ var attrMapsByRules = map[string]map[string]string{
 
 	// Components
 	"fuchsia_structured_config_rust_lib": structuredConfigRustLibAttrMap,
+	"fx_component":                       fxComponentAttrMap,
 
 	// Tools
 	"ffx_tool":           rustBinAttrMap,

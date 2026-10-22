@@ -49,6 +49,7 @@ rustc_binary(
 
 # The GN build uses the `fuchsia_component_manifest("manifest")` target defined
 # above the bazel2gn sentinel in BUILD.gn instead.
+# @bazel2gn:skip
 fx_component_manifest(
     name = "manifest",
     component_name = "null-update-checker",

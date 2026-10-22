@@ -2,15 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-
-fuchsia_component("component") {
-  component_name = "exit-with-error"
-  testonly = true
-  manifest = "meta/exit-with-error.cml"
-  deps = [ ":exit-with-error-bin" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -42,4 +33,15 @@ rustc_binary("exit-with-error-bin") {
   output_name = "exit_with_error_bin"
   edition = "2024"
   deps = [ "//src/lib/fuchsia" ]
+}
+fuchsia_component_manifest("component-manifest") {
+  testonly = true
+  component_name = "exit-with-error"
+  manifest = "meta/exit-with-error.cml"
+}
+fuchsia_component("component") {
+  testonly = true
+  cm_label = ":component-manifest"
+  component_name = "exit-with-error"
+  deps = [ ":exit-with-error-bin" ]
 }
