@@ -521,6 +521,7 @@ class FuchsiaDevice(
         return starnix_using_ffx.StarnixUsingFfx(
             device_name=self.device_name,
             ffx=self.ffx,
+            inspect=self,
         )
 
     @properties.Affordance

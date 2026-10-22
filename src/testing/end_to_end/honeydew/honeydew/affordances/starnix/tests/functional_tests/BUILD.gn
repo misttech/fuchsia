@@ -15,7 +15,10 @@ if (is_host) {
     params = {
       is_starnix_supported = true
     }
-    environments = [ vim3_env ]
+    environments = [
+      vim3_env,
+      iris_env,
+    ]
   }
 
   python_mobly_test("starnix_test_on_non_starnix") {

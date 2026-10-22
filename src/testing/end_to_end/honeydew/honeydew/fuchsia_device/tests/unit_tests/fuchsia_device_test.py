@@ -603,7 +603,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(
         ffx.FFX,
         "run",
-        return_value="core/starnix_runner/kernels:",
+        return_value='{"instances": [{"moniker": "core/starnix_runner/kernels:kernel"}]}',
         autospec=True,
     )
     def test_system_power_state_controller(
@@ -621,7 +621,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(
         ffx.FFX,
         "run",
-        return_value="core/starnix_runner/kernels:",
+        return_value='{"instances": [{"moniker": "core/starnix_runner/kernels:kernel"}]}',
         autospec=True,
     )
     def test_starnix(
@@ -2408,7 +2408,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(
         ffx.FFX,
         "run",
-        return_value="core/starnix_runner/kernels:",
+        return_value='{"instances": [{"moniker": "core/starnix_runner/kernels:kernel"}]}',
         autospec=True,
     )
     def test_is_starnix_device(self, mock_ffx: mock.Mock) -> None:
@@ -2420,7 +2420,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     @mock.patch.object(
         ffx.FFX,
         "run",
-        return_value="",
+        return_value='{"instances": []}',
         autospec=True,
     )
     def test_is_starnix_device_unsupported_error(
