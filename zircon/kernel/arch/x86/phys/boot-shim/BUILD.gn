@@ -16,21 +16,7 @@ import("//zircon/kernel/phys/shim_executable.gni")
 import("//zircon/kernel/phys/zbi_executable.gni")
 
 # The 32-bit legacy shims can be booted directly by QEMU and other things.
-legacy_shims = [
-  {
-    name = "multiboot-shim"
-    format = "multiboot"
-  },
-
-  # This boot shim is not meant to be used with qemu, but it works with it.
-  # So we test it via qemu just to get some automated testing of it at all.
-  # Its logic that differs from multiboot-shim won't really be exercised
-  # this way, so it needs direct testing on Chromebook devices too.
-  {
-    name = "depthcharge-multiboot-shim"
-    format = "multiboot"
-  },
-]
+legacy_shims = []
 
 linux_thin_shims = [
   # The 32-bit Linux/x896 shim can be booted directly by QEMU and others.
@@ -158,31 +144,6 @@ if (toolchain_environment == "kernel.phys32" ||
     defines = [ "BI=\"[bi]\"" ]
     deps = [ ":legacy-boot-shim" ]
   }
-
-  if (toolchain_environment == "kernel.phys32") {
-    shim_executable("multiboot-shim") {
-      sources = [ "multiboot-shim.cc" ]
-      deps = [
-        ":legacy-boot-shim",
-        "..:multiboot",
-      ]
-    }
-
-    shim_executable("depthcharge-multiboot-shim") {
-      sources = [ "depthcharge-multiboot-shim.cc" ]
-      deps = [
-        ":legacy-boot-shim",
-        "..:multiboot",
-        "//sdk/lib/fit",
-        "//sdk/lib/zbi-format",
-        "//src/lib/zbitl",
-        "//zircon/kernel/phys:stdio",
-        "//zircon/kernel/phys:symbolize",
-        "//zircon/kernel/phys:uart-console",
-        "//zircon/system/ulib/uart",
-      ]
-    }
-  }
 } else {
   foreach(shim, legacy_shims) {
     foreach(qemu, qemu_boot_formats) {
@@ -262,7 +223,7 @@ if (current_toolchain != host_toolchain) {
 
   group("boot_tests") {
     testonly = true
-    deps = [ "depthcharge-tests:tests" ]
+    deps = []
     foreach(shim, legacy_shims) {
       deps += [ ":${shim.name}" ]
       foreach(test, qemu_shim_tests) {

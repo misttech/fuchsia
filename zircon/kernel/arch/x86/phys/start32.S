@@ -39,7 +39,7 @@
   lidt -6(%esp)
 
   // Now we can use the stack for scratch space.  %eax is already zero
-  // from above.  Use it to clear EFLAGS, since Multiboot makes few
+  // from above.  Use it to clear EFLAGS, since boot loaders make few
   // guarantees about the initial state.
   push %eax
   .cfi_adjust_cfa_offset 4
@@ -91,7 +91,7 @@
   .cfi_adjust_cfa_offset 4
   push %edx  // Second argument (2nd word): arch::EarlyTicks (low order)
   .cfi_adjust_cfa_offset 4
-  push %esi  // First argument (1st word): void* (Multiboot or boot_params)
+  push %esi  // First argument (1st word): void* (boot_params)
   .cfi_adjust_cfa_offset 4
 
   // Initialize cpuid data.  This could be done earlier, but nothing needs it

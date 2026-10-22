@@ -11,11 +11,11 @@ inherently machine-dependent.
 `lib/arch` code is intended to be compatible with a wide variety of low-level
 environments.  Not every API is usable in every context.  But everywhere
 possible, every API is written to be compatible with all these different
-contexts.  For example, due to the [Multiboot] and [EFI] environments, nothing
-uses `long int` types and instead everything carefully uses `uint64_t`,
+contexts.  For example, due to the `kernel.phys32` and [EFI] environments,
+nothing uses `long int` types and instead everything carefully uses `uint64_t`,
 `uintptr_t`, etc. to distinguish specific bit widths from pointer and type
-sizes (pointers are 32 bits in Multiboot, `long int` is 32 bits in EFI though
-pointers are 64 bits).
+sizes (pointers are 32 bits in `kernel.phys32`, `long int` is 32 bits in EFI
+though pointers are 64 bits).
 
 ### Privileged environments
 
@@ -60,11 +60,11 @@ These places have many more things they can't do:
   available.
 * ARM64 requires strictly aligned memory access.
 
-#### Multiboot
+#### Zircon `kernel.phys32` environment
 
-[Multiboot] is a legacy boot method used by some pre-EFI x86 boot loaders such
-as GRUB, and by QEMU's support for directly booting x86 kernels without a boot
-loader.
+This is used for the 32-bit x86 boot shims that support the legacy Linux/x86
+boot protocols, as used by QEMU's support for directly booting x86 kernels
+without a boot loader.
 
 This is a `kernel.phys`-like environment, but it's actually x86-32 (i686),
 i.e. ILP32!
@@ -289,6 +289,5 @@ constraints of the code under test itself.
 [clang-doc]: https://clang.llvm.org/extra/clang-doc.html
 [EFI]: https://en.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface
 [`hwreg`]: ../../../system/ulib/hwreg
-[Multiboot]: https://www.gnu.org/software/grub/manual/multiboot/multiboot.html
 [phys]: ../../phys
 [`<lib/arch/asm.h>`]: include/lib/arch/asm.h

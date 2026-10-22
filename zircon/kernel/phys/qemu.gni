@@ -65,12 +65,6 @@ qemu_default_boot_format = ""
 if (current_cpu == "x64") {
   qemu_default_boot_format = "linuxbiboot"
 
-  # The multiboot x86-32 protocol is supported by QEMU and AEMU.
-  multiboot_environments = [
-    qemu_env,
-    aemu_env,
-  ]
-
   # The Linux/x86 16-bit/32-bit protocol is supported by QEMU and AEMU.
   linuxboot32_environments = [
     qemu_env,
@@ -81,17 +75,6 @@ if (current_cpu == "x64") {
   linuxboot64_environments = [ crosvm_env ]
 
   qemu_boot_formats += [
-    {
-      name = "multiboot"
-      environment = "//zircon/kernel/arch/x86/phys:kernel.phys32"
-      deps = [ "//zircon/kernel/arch/x86/phys:multiboot" ]
-      shim_deps = [
-        "//zircon/kernel/arch/x86/phys/boot-shim:multiboot-shim($environment)",
-      ]
-      timeout = qemu_short_timeout
-
-      supported_environments = multiboot_environments
-    },
     {
       name = "linuxboot"
       has_embed = false

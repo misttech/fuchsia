@@ -16,7 +16,7 @@
 
 #include "../legacy-boot.h"
 
-// Pure Multiboot loaders like QEMU provide no means of information about the
+// Legacy loaders like QEMU provide no means of information about the
 // serial port, just the command line.  So parse it just for kernel.serial.
 void UartFromCmdLine(ktl::string_view cmdline, uart::all::Config<>& uart_config) {
   BootOptions boot_opts;

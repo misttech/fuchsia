@@ -281,7 +281,7 @@ ways. In Fuchsia there will be several toolchains:
  - `userboot`
  - Kernel
  - Kernel physical-address mode for ARM64 (compiled with `-mstrict-align`)
- - Multiboot for x86 (compiled with `-m32`)
+ - 32-bit kernel physical-address mode for x86 (compiled with `-m32`)
  - UEFI for Gigaboot
  - Toolchains are also used in the ["variants"
    scheme](/docs/gen/build_arguments.md#known_variants) that is how we allow selectively

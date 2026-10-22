@@ -122,11 +122,10 @@ if (current_toolchain == default_toolchain) {
     }
 
     # This is used by phys_executable(), but we put nothing here so that
-    # each target has explicit deps for multiboot for linuxboot.
+    # each target has explicit deps for linuxboot.
     source_set("phys") {
     }
 
-    # This is common to multiboot and linuxboot.
     source_set("phys32") {
       sources = [
         "gdt32.cc",
@@ -172,48 +171,6 @@ if (current_toolchain == default_toolchain) {
                                      clang_inputs),
                          ".",
                          root_build_dir)
-    }
-
-    # Just putting this in deps of a phys_executable() in the kernel.phys32
-    # environment makes it a Multiboot-compatible kernel image.
-    source_set("multiboot") {
-      sources = [
-        "multiboot-header.S",
-        "multiboot-start.S",
-      ]
-      deps = [
-        ":multiboot-init",
-        ":phys32",
-        "//zircon/kernel/lib/arch",
-      ]
-
-      public_configs = [ ":load-1mb" ]
-    }
-
-    # This is a little library instead of a source_set() so it can be included
-    # implicitly by phys_executable() without adding bloat to the tiny tests
-    # that don't use it.
-    static_library("multiboot-init") {
-      complete_static_lib = true
-
-      sources = [ "multiboot-init.cc" ]
-      deps = [
-        "//src/lib/zbitl",
-        "//zircon/kernel/lib/arch",
-        "//zircon/kernel/phys:allocation",
-        "//zircon/kernel/phys:main",
-        "//zircon/kernel/phys:symbolize",
-        "//zircon/kernel/phys/lib/memalloc",
-        "//zircon/system/ulib/pretty",
-      ]
-      public_deps = [
-        ":legacy-boot",
-        "//zircon/kernel/lib/ktl",
-        "//zircon/kernel/lib/libc",
-      ]
-
-      # Allow the inclusion of <ktl/enforce.h> to bypass this check.
-      cflags = [ "-Wno-include-angled-in-module-purview" ]
     }
 
     # Just putting this in deps of a phys_executable() in the kernel.phys32
@@ -388,12 +345,6 @@ if (current_toolchain == default_toolchain) {
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/phys:boot-zbi.deps",
     ]
-  }
-
-  # This is where code is actually loaded both for the Multiboot spec and for
-  # the original/legacy x86 ZBI booting spec.
-  config("load-1mb") {
-    ldflags = [ "-Wl,-defsym,PHYS_LOAD_ADDRESS=0x100000" ]
   }
 }
 

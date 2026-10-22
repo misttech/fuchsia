@@ -148,8 +148,8 @@ config("retpoline") {
   cflags = [ "-mretpoline" ]
   rustflags = [ "-Zretpoline" ]
   if (toolchain_environment == "kernel") {
-    # The kernel proper uses its own optimized thunks, but phys and
-    # multiboot can just use the compiler's safe default thunks.
+    # The kernel proper uses its own optimized thunks, but phys can just use
+    # the compiler's safe default thunks.
     cflags += [ "-mretpoline-external-thunk" ]
     rustflags += [ "-Zretpoline-external-thunk" ]
   }
