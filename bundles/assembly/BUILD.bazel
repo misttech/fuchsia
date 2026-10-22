@@ -1498,7 +1498,10 @@ assembly_input_bundle(
             "components": [
                 {
                     "component_name": "network",
-                    "shards": ["//src/connectivity/network:meta/common.shard.cml"],
+                    "shards": [
+                        "//src/connectivity/network:meta/common.shard.cml",
+                        "//src/connectivity/network:meta/netstack3.shard.cml",
+                    ],
                 },
             ],
             "component_includes": [
@@ -1527,6 +1530,7 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "network_realm_packages",
     base_packages = [
+        "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",
@@ -3721,36 +3725,6 @@ assembly_input_bundle(
     ],
     bootstrap_shards = [
         "//src/paravirtualization/vsock:meta/vsock_service.bootstrap_shard.cml",
-    ],
-)
-
-# Netstack3 as the netstack for use by base networking.
-#
-# To be used in conjunction with netstack3_packages.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "netstack3",
-    compiled_packages = [
-        {
-            "name": "network",
-            "components": [
-                {
-                    "component_name": "network",
-                    "shards": ["//src/connectivity/network:meta/netstack3.shard.cml"],
-                },
-            ],
-        },
-    ],
-)
-
-# Netstack3 packages.
-#
-# This AIB provides packages for the netstack3 configuration.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "netstack3_packages",
-    base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
     ],
 )
 

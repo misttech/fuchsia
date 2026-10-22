@@ -245,8 +245,6 @@ platform_aib_names = bringup_platform_aib_names + [
     "memory_monitor_page_refaults",
 
     # Netstack
-    "netstack3",
-    "netstack3_packages",
     "socket-proxy-enabled",
     "socket-proxy-disabled",
     "socket_proxy_packages",

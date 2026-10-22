@@ -160,9 +160,6 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 )?;
             }
 
-            builder.platform_bundle("netstack3")?;
-            builder.platform_bundle("netstack3_packages")?;
-
             // Define netstack3 configuration capabilities.
             //
             // Non-configurable fields (debug_logs, opaque_iids) use their .cml

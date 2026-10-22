@@ -638,6 +638,7 @@ group("network_realm") {
 
 group("network_realm_packages") {
   deps = [
+    "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",
@@ -1262,15 +1263,6 @@ group("vsock_service") {
 
 group("vsock_service_bootstrap") {
   deps = [ "//bundles/assembly/bazel_inputs/src/paravirtualization/vsock:vsock_service" ]
-}
-
-group("netstack3") {
-  deps = []
-}
-
-group("netstack3_packages") {
-  deps =
-      [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3" ]
 }
 
 group("socket-proxy-enabled") {
