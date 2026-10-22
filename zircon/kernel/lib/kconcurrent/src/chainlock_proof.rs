@@ -42,6 +42,7 @@
 
 use core::marker::PhantomData;
 
+use concurrent::{AllowFinalized, RecordBackoff};
 use ksync::LockToken;
 
 use super::chainlock::{ChainLock, ChainLockGuard, ChainLockTransactionToken};
@@ -446,6 +447,25 @@ impl<'a, O: ChainLocked> OwnerGuard<'a, O> {
         if guard.try_acquire() { Some(Self { guard, owner }) } else { None }
     }
 
+    /// Conditionally acquires `owner.lock()` with the given `allow_finalized` and
+    /// `record_backoff` options, returning `None` on failure.
+    #[inline]
+    #[must_use]
+    pub fn try_acquire_with_options(
+        owner: &'a O,
+        token: &'a ChainLockTransactionToken,
+        allow_finalized: AllowFinalized,
+        record_backoff: RecordBackoff,
+    ) -> Option<Self> {
+        let mut guard = ChainLockGuard::defer(owner.lock().raw(), token);
+        // `Self` is only returned once the deferred guard has actually acquired the lock.
+        if guard.try_acquire_with_options(allow_finalized, record_backoff) {
+            Some(Self { guard, owner })
+        } else {
+            None
+        }
+    }
+
     /// Conditionally acquires `owner.lock()` using the given `callable`, returning `None` on
     /// failure.
     ///
@@ -756,6 +776,42 @@ mod proof_tests {
         expect_eq!(sum, 3);
         expect_true!(first.lock().is_unlocked());
         expect_true!(second.lock().is_unlocked());
+    }
+
+    /// Verifies `OwnerGuard::try_acquire_with_options` success path and `release`.
+    #[test]
+    fn owner_guard_try_acquire_with_options() {
+        let owner = Guarded { lock: ClassedChainLock::new(), value: KCell::new(11) };
+        let mut held = false;
+        let mut value = 0;
+        let mut unlocked_after_release = false;
+
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("owner_try_acquire_opts"),
+            |token| {
+                let Some(mut guard) = OwnerGuard::try_acquire_with_options(
+                    &owner,
+                    token,
+                    AllowFinalized::No,
+                    RecordBackoff::No,
+                ) else {
+                    panic!("uncontended try_acquire_with_options failed");
+                };
+                ChainLockTransaction::finalize(token);
+                held = guard.is_held() && owner.lock().is_held(token);
+                *guard.proof().value_mut() += 31;
+                value = *guard.proof().value();
+                guard.release();
+                unlocked_after_release = owner.lock().is_unlocked();
+                DONE
+            },
+        );
+
+        expect_true!(held);
+        expect_eq!(value, 42);
+        expect_true!(unlocked_after_release);
+        expect_true!(owner.lock().is_unlocked());
     }
 
     /// Verifies the safe, check-free owned scope path via `single_chain_lock_guard_owned!`.
