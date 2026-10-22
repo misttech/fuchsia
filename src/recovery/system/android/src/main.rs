@@ -41,6 +41,8 @@ mod view_sender;
 use view_sender::ViewSender;
 
 const LOGO_IMAGE_PATH: &str = "/system-recovery-config/logo.riv";
+// Base pixel density in pixels per mm (254 DPI).
+const BASE_PIXELS_PER_MM: f32 = 10.0;
 const BG_COLOR: Color = Color::new(); // Black
 const HEADER_COLOR: Color = Color { r: 249, g: 194, b: 0, a: 255 };
 const MESSAGE_COLOR: Color = Color { r: 247, g: 0, b: 6, a: 255 };
@@ -234,7 +236,29 @@ impl ViewAssistant for RecoveryViewAssistant {
         Ok(())
     }
 
-    fn get_scene(&mut self, size: Size) -> Option<&mut Scene> {
+    fn get_scene_with_contexts(
+        &mut self,
+        _render_context: &mut carnelian::render::Context,
+        view_context: &ViewAssistantContext,
+    ) -> Option<&mut Scene> {
+        let size = view_context.size;
+        let scale = view_context
+            .display_info
+            .as_ref()
+            .and_then(|info| {
+                // `size` is affected by screen rotation, but because pixels are square, the
+                // smallest mm size will always correspond to the smallest pixel size, and the x and
+                // y density ratios are the same.
+                let min_mm = info.horizontal_size_mm.min(info.vertical_size_mm) as f32;
+                if min_mm > 0.0 {
+                    let min_px = size.width.min(size.height);
+                    Some(min_px / min_mm / BASE_PIXELS_PER_MM)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(1.0);
+
         Some(self.scene.get_or_insert_with(|| {
             let mut builder =
                 SceneBuilder::new().background_color(BG_COLOR).round_scene_corners(true);
@@ -244,7 +268,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                         builder.text(
                             self.font_face.clone(),
                             message.as_str(),
-                            28.0,
+                            28.0 * scale,
                             Point::zero(),
                             TextFacetOptions {
                                 color: Color::white(),
@@ -270,16 +294,16 @@ impl ViewAssistant for RecoveryViewAssistant {
                             )),
                         );
 
-                        let logo_size: Size = size2(50.0, 50.0);
+                        let logo_size: Size = size2(50.0 * scale, 50.0 * scale);
                         let facet = RiveFacet::new_from_file(logo_size, &logo_file, None)
                             .expect("facet_from_file");
                         builder.facet(Box::new(facet));
                         builder.end_group(); // logo_row
                     }
 
-                    builder.space(size2(size.width, 10.0));
+                    builder.space(size2(size.width, 10.0 * scale));
 
-                    let text_size = 25.0;
+                    let text_size = 25.0 * scale;
                     builder.text(
                         self.font_face.clone(),
                         "Android Recovery",
@@ -313,7 +337,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                             );
                         });
 
-                    builder.space(size2(size.width, 30.0));
+                    builder.space(size2(size.width, 30.0 * scale));
 
                     builder
                         .group()
@@ -371,7 +395,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                                     });
                             }
 
-                            const MENU_ITEM_HEIGHT: f32 = 30.0;
+                            let menu_item_height = 30.0 * scale;
 
                             for item in self.menu.items() {
                                 builder.group().stack().contents(|builder| {
@@ -383,7 +407,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                                         .contents(|builder| {
                                             // padding on the left of the menu text
                                             builder
-                                                .space(size2(size.width * 0.1, MENU_ITEM_HEIGHT));
+                                                .space(size2(size.width * 0.1, menu_item_height));
                                             builder.text(
                                                 self.font_face.clone(),
                                                 item.title(),
@@ -405,7 +429,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                                             );
                                         });
 
-                                    let rect_size = size2(size.width, MENU_ITEM_HEIGHT);
+                                    let rect_size = size2(size.width, menu_item_height);
                                     if self.menu.current_item() == item {
                                         builder.rectangle(
                                             rect_size,
