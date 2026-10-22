@@ -20,9 +20,11 @@ group("testing") {
 group("tests") {
   testonly = true
   deps = [
+    "bt-affordances/affordances:tests",
     "hci-emulator-client:tests",
     "mock-piconet-server:tests",
     "test-call-manager:tests",
+    "test-harness-tests:tests",
     "test-rfcomm-client:tests",
   ]
 }

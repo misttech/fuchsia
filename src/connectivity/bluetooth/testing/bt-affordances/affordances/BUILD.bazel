@@ -38,7 +38,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "affordances_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -51,7 +50,6 @@ rustc_test(
 )
 
 # run: fx test fuchsia_bt_test_affordances_tests
-# @bazel2gn:skip
 fx_unittest_package(
     name = "fuchsia_bt_test_affordances_tests",
     package_name = "fuchsia_bt_test_affordances_tests",

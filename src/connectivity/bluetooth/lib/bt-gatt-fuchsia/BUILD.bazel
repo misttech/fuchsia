@@ -42,7 +42,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "bt-gatt-fuchsia_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -51,7 +50,6 @@ rustc_test(
     deps = ["//src/lib/fuchsia"],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "bt-gatt-fuchsia-tests",
     package_name = "bt-gatt-fuchsia-tests",

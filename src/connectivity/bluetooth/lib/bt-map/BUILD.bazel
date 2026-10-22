@@ -6,11 +6,9 @@ load(
     "@fuchsia_rules_common//packages:resources.bzl",
     "fuchsia_package_resource_group",
 )
-load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
-load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
-load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -44,7 +42,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "bt-map_test",
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
@@ -54,6 +51,8 @@ rustc_test(
     deps = ["//src/lib/fuchsia"],
 )
 
+# bazel2gn can't translate resource groups or packages with resources, so the
+# GN copy of this test is packaged by hand in BUILD.gn.
 # @bazel2gn:skip
 fuchsia_package_resource_group(
     name = "test-files",
@@ -81,25 +80,9 @@ fuchsia_package_resource_group(
 )
 
 # @bazel2gn:skip
-fx_unittest_component(
-    name = "bt-map-tests-component",
-    binary = ":bt-map_test",
-    component_name = "bt-map-tests",
-    visibility = ["//visibility:private"],
-)
-
-# @bazel2gn:skip
-fx_package(
-    name = "bt-map-tests-package",
-    package_name = "bt-map-tests",
-    resources = [":test-files"],
-    test_components = [":bt-map-tests-component"],
-    visibility = ["//visibility:private"],
-)
-
-# @bazel2gn:skip
-fx_test(
+fx_unittest_package(
     name = "bt-map-tests",
-    package = ":bt-map-tests-package",
+    resources = [":test-files"],
+    unit_tests = [":bt-map_test"],
     visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

@@ -6,8 +6,8 @@ import("//build/components.gni")
 import("//build/dist/resource.gni")
 
 # GN copy of the Bazel test "bt-obex-objects-tests", while the library is used
-# in both build systems. bazel2gn can't translate explicit fx_package() tests
-# yet.
+# in both build systems. bazel2gn can't translate
+# fuchsia_package_resource_group() yet.
 resource("objects-test-files") {
   testonly = true
   sources = [

@@ -49,6 +49,8 @@ rustc_test(
     ],
 )
 
+# bazel2gn can't translate resource groups or packages with resources, so the
+# GN copy of this test is packaged by hand in BUILD.gn.
 # @bazel2gn:skip
 fuchsia_package_resource_group(
     name = "objects-test-files",

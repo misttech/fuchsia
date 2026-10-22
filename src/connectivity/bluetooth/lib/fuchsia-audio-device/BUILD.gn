@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+group("tests") {
+  testonly = true
+  deps = [ ":fuchsia-audio-device-tests" ]
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -64,4 +69,50 @@ if (is_fuchsia) {
       "//third_party/rust_crates:thiserror",
     ]
   }
+}
+if (is_fuchsia) {
+  rustc_test("fuchsia-audio-device_test") {
+    sources = [
+      "src/audio_frame_sink.rs",
+      "src/audio_frame_stream.rs",
+      "src/codec.rs",
+      "src/frame_vmo.rs",
+      "src/lib.rs",
+      "src/stream_config.rs",
+      "src/types.rs",
+    ]
+    edition = "2024"
+    deps = [
+             "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_rust",
+             "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_rust",
+             "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+             "//sdk/rust/zx",
+             "//src/connectivity/bluetooth/lib/async-helpers",
+             "//src/lib/async-utils",
+             "//src/lib/diagnostics/inspect/derive",
+             "//src/lib/diagnostics/inspect/rust",
+             "//src/lib/fidl/rust/fidl",
+             "//src/lib/fuchsia-async",
+             "//src/lib/fuchsia-sync",
+             "//third_party/rust_crates:anyhow",
+             "//third_party/rust_crates:futures",
+             "//third_party/rust_crates:log",
+             "//third_party/rust_crates:thiserror",
+           ] +
+           [
+             "//src/lib/fuchsia",
+             "//third_party/rust_crates:futures-test",
+           ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    proc_macro_deps = [ "//src/lib/testing/fixture" ]
+  }
+}
+fuchsia_unittest_package("fuchsia-audio-device-tests") {
+  package_name = "fuchsia-audio-device-tests-gn"
+  component_name = "fuchsia-audio-device-tests"
+  deps = [ ":fuchsia-audio-device_test" ]
+  visibility = [
+    ":*",
+    "//src/connectivity/bluetooth:*",
+  ]
 }
