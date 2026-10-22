@@ -760,14 +760,14 @@ alias(
 )
 
 alias(
-    name = "der-0.8.1",
-    actual = "//third_party/rust_crates/vendor/der-0.8.1:der",
+    name = "der-0.8.2",
+    actual = "//third_party/rust_crates/vendor/der-0.8.2:der",
     tags = ["manual"],
 )
 
 alias(
     name = "der",
-    actual = "//third_party/rust_crates/vendor/der-0.8.1:der",
+    actual = "//third_party/rust_crates/vendor/der-0.8.2:der",
     tags = ["manual"],
 )
 
@@ -3038,14 +3038,14 @@ alias(
 )
 
 alias(
-    name = "spki-0.8.0",
-    actual = "//third_party/rust_crates/vendor/spki-0.8.0:spki",
+    name = "spki-0.8.1",
+    actual = "//third_party/rust_crates/vendor/spki-0.8.1:spki",
     tags = ["manual"],
 )
 
 alias(
     name = "spki",
-    actual = "//third_party/rust_crates/vendor/spki-0.8.0:spki",
+    actual = "//third_party/rust_crates/vendor/spki-0.8.1:spki",
     tags = ["manual"],
 )
 

@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "spki",
     package_url = "https://github.com/RustCrypto/formats",
-    package_version = "0.8.0",
+    package_version = "0.8.1",
 )
 
 license(
@@ -77,8 +77,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.8.0",
+    version = "0.8.1",
     deps = [
-        "//third_party/rust_crates/vendor/der-0.8.1:der",
+        "//third_party/rust_crates/vendor/der-0.8.2:der",
     ],
 )

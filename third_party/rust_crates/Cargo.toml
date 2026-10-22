@@ -331,7 +331,7 @@ rust_icu_uloc = { version = "5.8.0", default-features = false, features = ["rena
 rust_icu_ustring = { version = "5.8.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 sec1 = { version = "0.8.1", features = ["alloc", "der", "zeroize"] }
 sec1-0_7_3 = { package = "sec1", version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
-spki = { version = "0.8.0", features = ["alloc"] }
+spki = { version = "0.8.1", features = ["alloc"] }
 spki-0_7_3 = { package = "spki", version = "0.7.3", features = ["alloc"] }
 tokio = { version = "=1.53.1", default-features = false }
 trust-dns-proto = { version = "0.22.0", default-features = false, features = ["testing"] }

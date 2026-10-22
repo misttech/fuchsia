@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "der",
     package_url = "https://github.com/RustCrypto/formats",
-    package_version = "0.8.1",
+    package_version = "0.8.2",
 )
 
 license(
@@ -105,7 +105,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.8.1",
+    version = "0.8.2",
     deps = [
         "//third_party/rust_crates/forks/zeroize",
         "//third_party/rust_crates/vendor/const-oid-0.10.2:const_oid",

@@ -87,12 +87,12 @@ rust_library(
     version = "0.17.0",
     deps = [
         "//third_party/rust_crates/forks/zeroize",
-        "//third_party/rust_crates/vendor/der-0.8.1:der",
+        "//third_party/rust_crates/vendor/der-0.8.2:der",
         "//third_party/rust_crates/vendor/digest-0.11.3:digest",
         "//third_party/rust_crates/vendor/elliptic-curve-0.14.1:elliptic_curve",
         "//third_party/rust_crates/vendor/rfc6979-0.6.0:rfc6979",
         "//third_party/rust_crates/vendor/serdect-0.4.3:serdect",
         "//third_party/rust_crates/vendor/signature-3.0.0:signature",
-        "//third_party/rust_crates/vendor/spki-0.8.0:spki",
+        "//third_party/rust_crates/vendor/spki-0.8.1:spki",
     ],
 )

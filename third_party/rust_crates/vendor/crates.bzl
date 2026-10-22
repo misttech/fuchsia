@@ -579,7 +579,7 @@ _NORMAL_DEPENDENCIES = {
         },
         "cfg(target_os = \"fuchsia\")": {
             "coset": Label("//third_party/rust_crates/vendor/coset-0.4.2:coset"),
-            "der": Label("//third_party/rust_crates/vendor/der-0.8.1:der"),
+            "der": Label("//third_party/rust_crates/vendor/der-0.8.2:der"),
             "der_0_7_10": Label("//third_party/rust_crates/vendor/der-0.7.10:der"),
             "euclid": Label("//third_party/rust_crates/vendor/euclid-0.22.14:euclid"),
             "flagset": Label("//third_party/rust_crates/vendor/flagset-0.4.7:flagset"),
@@ -603,7 +603,7 @@ _NORMAL_DEPENDENCIES = {
             "rust_icu_ustring": Label("//third_party/rust_crates/vendor/rust_icu_ustring-5.8.0:rust_icu_ustring"),
             "sec1": Label("//third_party/rust_crates/vendor/sec1-0.8.1:sec1"),
             "sec1_0_7_3": Label("//third_party/rust_crates/vendor/sec1-0.7.3:sec1"),
-            "spki": Label("//third_party/rust_crates/vendor/spki-0.8.0:spki"),
+            "spki": Label("//third_party/rust_crates/vendor/spki-0.8.1:spki"),
             "spki_0_7_3": Label("//third_party/rust_crates/vendor/spki-0.7.3:spki"),
             "tokio": Label("//third_party/rust_crates/vendor/tokio-1.53.1:tokio"),
             "trust-dns-proto": Label("//third_party/rust_crates/vendor/trust-dns-proto-0.22.0:trust_dns_proto"),

@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 rust-version = "1.85"
-name = "der"
+name = "spki"
 version = "0.8.1"
 authors = ["RustCrypto Developers"]
 build = false
@@ -22,25 +22,20 @@ autoexamples = false
 autotests = false
 autobenches = false
 description = """
-Pure Rust embedded-friendly implementation of the Distinguished Encoding Rules
-(DER) for Abstract Syntax Notation One (ASN.1) as described in ITU X.690 with
-full support for heapless `no_std`/`no_alloc` targets
+X.509 Subject Public Key Info (RFC5280) describing public keys as well as their
+associated AlgorithmIdentifiers (i.e. OIDs)
 """
-homepage = "https://github.com/RustCrypto/formats/tree/master/der"
+homepage = "https://github.com/RustCrypto/formats/tree/master/spki"
 readme = "README.md"
 keywords = [
-    "asn1",
     "crypto",
-    "no-alloc",
-    "itu",
-    "pkcs",
+    "x509",
 ]
 categories = [
     "cryptography",
     "data-structures",
     "encoding",
     "no-std",
-    "parser-implementations",
 ]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/RustCrypto/formats"
@@ -48,113 +43,76 @@ resolver = "2"
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = [
-    "--cfg",
-    "docsrs",
-]
 
 [features]
-alloc = ["zeroize?/alloc"]
+alloc = [
+    "base64ct?/alloc",
+    "der/alloc",
+]
 arbitrary = [
-    "dep:arbitrary",
-    "dep:derive_arbitrary",
-    "const-oid?/arbitrary",
     "std",
+    "dep:arbitrary",
+    "der/arbitrary",
 ]
-ber = []
-bytes = [
-    "dep:bytes",
-    "alloc",
+base64 = ["dep:base64ct"]
+fingerprint = [
+    "digest",
+    "sha2",
 ]
-derive = ["dep:der_derive"]
-oid = ["dep:const-oid"]
 pem = [
-    "dep:pem-rfc7468",
     "alloc",
-    "zeroize",
+    "der/pem",
 ]
-real = []
-std = ["alloc"]
+std = [
+    "der/std",
+    "alloc",
+]
 
 [lib]
-name = "der"
+name = "spki"
 path = "src/lib.rs"
 
 [[test]]
-name = "datetime"
-path = "tests/datetime.rs"
+name = "spki"
+path = "tests/spki.rs"
 
 [[test]]
-name = "derive"
-path = "tests/derive.rs"
+name = "traits"
+path = "tests/traits.rs"
 
-[[test]]
-name = "derive_no_alloc"
-path = "tests/derive_no_alloc.rs"
-
-[[test]]
-name = "nesting"
-path = "tests/nesting.rs"
-
-[[test]]
-name = "pem"
-path = "tests/pem.rs"
-
-[[test]]
-name = "set_of"
-path = "tests/set_of.rs"
+[[bench]]
+name = "mod"
+path = "benches/mod.rs"
 
 [dependencies.arbitrary]
-version = "1.4.2"
+version = "1.4"
 features = ["derive"]
 optional = true
 
-[dependencies.bytes]
+[dependencies.base64ct]
 version = "1"
 optional = true
 default-features = false
 
-[dependencies.const-oid]
-version = "0.10"
-optional = true
+[dependencies.der]
+version = "0.8.2"
+features = ["oid"]
 
-[dependencies.der_derive]
-version = "0.8"
-optional = true
-
-[dependencies.derive_arbitrary]
-version = "1.4.2"
-optional = true
-
-[dependencies.flagset]
-version = "0.4.7"
-optional = true
-
-[dependencies.heapless]
-version = "0.9"
+[dependencies.digest]
+version = "0.11"
 optional = true
 default-features = false
 
-[dependencies.pem-rfc7468]
-version = "1"
-features = ["alloc"]
-optional = true
-
-[dependencies.time]
-version = "0.3.4"
-optional = true
-default-features = false
-
-[dependencies.zeroize]
-version = "1.8"
+[dependencies.sha2]
+version = "0.11"
 optional = true
 default-features = false
 
 [dev-dependencies.hex-literal]
 version = "1"
 
-[target."cfg(any(unix, windows))".dev-dependencies.proptest]
-version = "1.10"
+[dev-dependencies.tempfile]
+version = "3"
 
 [lints.clippy]
 borrow_as_ptr = "warn"
@@ -165,7 +123,6 @@ cast_precision_loss = "warn"
 cast_sign_loss = "warn"
 checked_conversions = "warn"
 doc_markdown = "warn"
-from_iter_instead_of_collect = "warn"
 implicit_saturating_sub = "warn"
 manual_assert = "warn"
 map_unwrap_or = "warn"
