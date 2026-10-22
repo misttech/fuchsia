@@ -5,7 +5,10 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fit/defer.h>
+#include <lib/sync/completion.h>
 
+#include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/minfs/runner.h"
 #include "src/storage/minfs/test/unit/journal_integration_fixture.h"
 
 namespace minfs {
@@ -61,6 +64,56 @@ TEST_F(TruncateTest, EnsureOldDataWhenTransactionFails) {
   for (uint8_t c : buf) {
     EXPECT_EQ(kFill, c);
   }
+}
+
+TEST(TruncateSameSizeTest, DoesNotCommitTransaction) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+
+  constexpr uint64_t kBlockCount = 1 << 15;
+  auto device = std::make_unique<block_client::FakeBlockDevice>(kBlockCount, kMinfsBlockSize);
+  auto* device_ptr = device.get();
+  auto bcache_or = Bcache::Create(std::move(device), kBlockCount);
+  ASSERT_TRUE(bcache_or.is_ok());
+  ASSERT_TRUE(Mkfs(bcache_or.value().get()).is_ok());
+  auto fs_or = Runner::Create(loop.dispatcher(), *std::move(bcache_or), MountOptions{});
+  ASSERT_TRUE(fs_or.is_ok());
+
+  auto root = fs_or->minfs().VnodeGet(kMinfsRootIno);
+  ASSERT_TRUE(root.is_ok());
+  zx::result foo = root->Create("foo", fs::CreationType::kFile);
+  ASSERT_TRUE(foo.is_ok()) << foo.status_string();
+  auto close = fit::defer([foo]() { ASSERT_EQ(foo->Close(), ZX_OK); });
+
+  auto sync_fs = [&]() {
+    sync_completion_t completion;
+    fs_or->minfs().Sync([&completion](zx_status_t status) {
+      EXPECT_EQ(status, ZX_OK);
+      sync_completion_signal(&completion);
+    });
+    ASSERT_EQ(sync_completion_wait(&completion, zx::duration::infinite().get()), ZX_OK);
+  };
+
+  ASSERT_NO_FATAL_FAILURE(sync_fs());
+  device_ptr->ResetBlockCounts();
+
+  // Truncating an already-empty file to 0 should not issue any block writes.
+  ASSERT_EQ(foo->Truncate(0), ZX_OK);
+  ASSERT_NO_FATAL_FAILURE(sync_fs());
+  EXPECT_EQ(device_ptr->GetWriteBlockCount(), 0u);
+
+  // Write some data, flush it to disk, and reset block counts.
+  std::vector<uint8_t> buf(100, kFill);
+  size_t written = 0;
+  ASSERT_EQ(foo->Write(buf.data(), buf.size(), 0, &written), ZX_OK);
+  ASSERT_EQ(written, buf.size());
+  ASSERT_NO_FATAL_FAILURE(sync_fs());
+  EXPECT_GT(device_ptr->GetWriteBlockCount(), 0u);
+  device_ptr->ResetBlockCounts();
+
+  // Truncating a non-empty file to its current size should not issue any block writes.
+  ASSERT_EQ(foo->Truncate(buf.size()), ZX_OK);
+  ASSERT_NO_FATAL_FAILURE(sync_fs());
+  EXPECT_EQ(device_ptr->GetWriteBlockCount(), 0u);
 }
 
 }  // namespace

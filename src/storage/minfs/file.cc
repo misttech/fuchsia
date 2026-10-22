@@ -428,6 +428,10 @@ zx_status_t File::Truncate(size_t len) {
       return ZX_ERR_INVALID_ARGS;
     }
 
+    if (len == GetSize()) {
+      return ZX_OK;
+    }
+
     // TODO(unknown): Following can be optimized.
     // - do not flush part of the file that will be truncated.
     // - conditionally flush unaffected part if necessary.
