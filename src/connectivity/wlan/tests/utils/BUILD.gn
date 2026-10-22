@@ -11,11 +11,16 @@ if (is_host) {
     sources = [
       "__init__.py",
       "odpm_utils.py",
+      "throughput_utils.py",
     ]
     library_deps = [
+      "//src/performance/lib/perf_publish",
       "//src/performance/lib/reporting",
       "//src/performance/lib/trace_processing",
       "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_controller/legacy_access_point",
+      "//src/testing/end_to_end/mobly_controller/openwrt_access_point",
+      "//third_party/mobly",
     ]
   }
 
