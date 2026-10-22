@@ -1,0 +1,66 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "flatland-frame-scheduling-lib",
+    srcs = [
+        "src/lib.rs",
+        "src/throughput_scheduler.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = [
+        "//src/starnix/modules/framebuffer:__pkg__",
+        "//src/ui/examples/flatland-rainbow:__pkg__",
+        "//src/ui/lib/scene_management:__pkg__",
+        "//src/ui/testing/puppet:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
+        "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/trace/rust:trace",
+    ],
+)
+
+fx_cc_library(
+    name = "simple_present",
+    srcs = ["src/simple_present.cc"],
+    hdrs = ["src/simple_present.h"],
+    implementation_deps = [
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/syslog/cpp",
+    ],
+    visibility = [
+        "//src/camera/bin/camera-gym:__pkg__",
+        "//src/lib/vulkan/swapchain:__pkg__",
+        "//src/ui/examples/screen_recording:__pkg__",
+        "//src/ui/tests/integration_input_tests/touch/touch-flatland-client:__pkg__",
+    ],
+    deps = ["//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp"],
+    alwayslink = True,
+)
+
+rustc_test(
+    name = "flatland-frame-scheduling-lib_test",
+    crate = ":flatland-frame-scheduling-lib",
+    edition = "2024",
+    deps = ["//third_party/rust_crates/vendor:assert_matches"],
+)
+
+fx_unittest_package(
+    name = "flatland-frame-scheduling-lib-tests",
+    unit_tests = [":flatland-frame-scheduling-lib_test"],
+)
