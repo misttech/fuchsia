@@ -220,8 +220,8 @@ class IntelTiledFormats : public ImageFormatSet {
 
   CheckedNumeric<uint64_t> ImageFormatPlaneByteOffset(const ImageFormat& image_format,
                                                       uint32_t plane) const override {
-    ZX_ASSERT(IsSupported(PixelFormatAndModifier(image_format.pixel_format().value(),
-                                                 image_format.pixel_format_modifier().value())));
+    const auto pixel_format_and_modifier = PixelFormatAndModifierFromImageFormat(image_format);
+    ZX_ASSERT(IsSupported(pixel_format_and_modifier));
 
     uint32_t num_of_planes = FormatNumOfPlanes(image_format.pixel_format().value());
 
@@ -230,8 +230,8 @@ class IntelTiledFormats : public ImageFormatSet {
     // For image data planes, calculate the size of all previous the image data planes
     if (plane < num_of_planes) {
       end_plane = plane;
-    } else if (plane == kCcsPlane) {  // If requesting the CCS Aux plane, calculate the size of all
-                                      // the image data planes
+    } else if (plane == kCcsPlane && FormatHasCcs(pixel_format_and_modifier)) {
+      // If requesting the CCS Aux plane, calculate the size of all the image data planes
       end_plane = num_of_planes;
     } else {  // Plane is out of bounds, return !IsValid
       return kInvalidCheckedNumeric64;

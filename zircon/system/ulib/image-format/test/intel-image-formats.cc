@@ -246,7 +246,7 @@ TEST(ImageFormat, IntelYTiledFormat_V2BytesPerRowDivisor) {
 TEST(ImageFormat, IntelPlaneByteOffsetOverflowIsInvalid) {
   fuchsia_images2::ImageFormat image_format;
   image_format.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
-  image_format.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kIntelI915YTiled;
+  image_format.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kIntelI915YTiledCcs;
   image_format.size() = {0xFFFFFFFFu, 0xFFFFFFFFu};
   image_format.bytes_per_row() = 0xFFFFFFFFu;
 
@@ -287,4 +287,28 @@ TEST(ImageFormat, IntelBytesPerRowDivisorIsLeastCommonMultiple) {
 
   constraints.bytes_per_row_divisor() = 0u;
   EXPECT_FALSE(ImageFormatMinimumRowBytes(constraints, 17u, &row_bytes));
+}
+
+TEST(ImageFormat, IntelCcsPlaneOnlyWithCcsModifier) {
+  fuchsia_images2::ImageFormat image_format;
+  image_format.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
+  image_format.size() = {1920u, 1080u};
+  image_format.bytes_per_row() = 1920u * 4;
+
+  constexpr uint32_t kCcsPlane = 3;
+  uint64_t offset;
+  uint32_t row_bytes;
+  for (const auto modifier : {fuchsia_images2::PixelFormatModifier::kIntelI915XTiled,
+                              fuchsia_images2::PixelFormatModifier::kIntelI915YTiled,
+                              fuchsia_images2::PixelFormatModifier::kIntelI915YfTiled}) {
+    image_format.pixel_format_modifier() = modifier;
+    EXPECT_FALSE(ImageFormatPlaneByteOffset(image_format, kCcsPlane, &offset));
+    EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, kCcsPlane, &row_bytes));
+  }
+  for (const auto modifier : {fuchsia_images2::PixelFormatModifier::kIntelI915YTiledCcs,
+                              fuchsia_images2::PixelFormatModifier::kIntelI915YfTiledCcs}) {
+    image_format.pixel_format_modifier() = modifier;
+    EXPECT_TRUE(ImageFormatPlaneByteOffset(image_format, kCcsPlane, &offset));
+    EXPECT_TRUE(ImageFormatPlaneRowBytes(image_format, kCcsPlane, &row_bytes));
+  }
 }
