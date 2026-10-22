@@ -31,8 +31,8 @@ fi
 #        - a02b : GOOGLE_USB_CDC_AND_ADB_AND_VSOCK_BRIDGE_PID
 #        - a02c : GOOGLE_USB_CDC_AND_ADB_AND_FASTBOOT_PID
 #        - 4ee0 : GOOGLE_USB_FASTBOOT_PID (userspace Fastboot)
-#   2. Honeydew Virtual USB Hub Driver:
-#      //src/testing/end_to_end/honeydew/honeydew/auxiliary_devices/usb_power_hub/linux_virtual_usb_hub.py
+#   2. Virtual USB Hub Driver:
+#      //src/tests/end_to_end/usb/lib/linux_virtual_usb_hub.py
 #        - d00d : Standard Google Fastboot / Bootloader / Recovery USB Product ID
 #
 # Every PID above is covered so that a virtual disconnect works regardless of
@@ -50,7 +50,7 @@ RULE_FILE="/etc/udev/rules.d/99-fuchsia-usb-authorize.rules"
 # The USB Vendor ID and Product IDs that the rules below grant access to.
 #
 # `_find_usb_bus_id()` in
-# //src/testing/end_to_end/honeydew/honeydew/auxiliary_devices/usb_power_hub/linux_virtual_usb_hub.py
+# //src/tests/end_to_end/usb/lib/linux_virtual_usb_hub.py
 # hardcodes its own narrower copy of this list. A later CL will replace both
 # copies with a shared .txt file listing the PIDs, read by this script and by
 # linux_virtual_usb_hub.py, so the two can no longer drift apart.

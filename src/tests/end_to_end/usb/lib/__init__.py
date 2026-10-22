@@ -14,6 +14,11 @@ from .irq_storm import (
     assert_no_irq_storm,
     take_irq_storm_snapshot,
 )
+from .linux_virtual_usb_hub import (
+    DEFAULT_BUS_ID_LOOKUP_ATTEMPTS,
+    DEFAULT_BUS_ID_LOOKUP_TIMEOUT_SEC,
+    LinuxVirtualUsbPowerHub,
+)
 from .sysfs_usb import (
     HostDevice,
     find_host_device,
@@ -37,6 +42,8 @@ from .usb_config import (
 from .usb_power_hub_base_test import UsbPowerHubBaseTest
 
 __all__ = [
+    "DEFAULT_BUS_ID_LOOKUP_ATTEMPTS",
+    "DEFAULT_BUS_ID_LOOKUP_TIMEOUT_SEC",
     "DispatcherSnapshot",
     "FUNCTION_INTERFACES",
     "FUNCTION_PIDS",
@@ -44,6 +51,7 @@ __all__ = [
     "HostDevice",
     "IrqStormSnapshot",
     "KERNEL_LOG_RE",
+    "LinuxVirtualUsbPowerHub",
     "UsbPowerHubBaseTest",
     "assert_no_irq_storm",
     "build_config_matrix",

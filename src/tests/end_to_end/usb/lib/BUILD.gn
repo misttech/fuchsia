@@ -13,6 +13,7 @@ python_library("usb_lib") {
     "fastboot_utils.py",
     "irq_storm.py",
     "link_speed.py",
+    "linux_virtual_usb_hub.py",
     "sysfs_usb.py",
     "usb_config.py",
     "usb_power_hub_base_test.py",
@@ -39,12 +40,23 @@ if (is_host) {
     main_callable = "unittest.main"
     extra_args = [ "-v" ]
   }
+
+  python_host_test("linux_virtual_usb_hub_test") {
+    main_source = "linux_virtual_usb_hub_test.py"
+    libraries = [
+      ":usb_lib",
+      "//src/testing/end_to_end/honeydew",
+    ]
+    main_callable = "unittest.main"
+    extra_args = [ "-v" ]
+  }
 }
 
 group("tests") {
   testonly = true
   public_deps = [
     ":irq_storm_test($host_toolchain)",
+    ":linux_virtual_usb_hub_test($host_toolchain)",
     "testusb:tests",
     "zero_function:tests",
   ]

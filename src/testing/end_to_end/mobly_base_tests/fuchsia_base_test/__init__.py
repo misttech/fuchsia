@@ -21,7 +21,6 @@ from honeydew.auxiliary_devices.power_switch import (
     power_switch_using_dmc,
 )
 from honeydew.auxiliary_devices.usb_power_hub import (
-    linux_virtual_usb_hub,
     usb_power_hub,
     usb_power_hub_using_dmc,
 )
@@ -556,16 +555,17 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     ) -> tuple[usb_power_hub.UsbPowerHub | None, int | None]:
         """Returns the USB power hub and port to use for the given device.
 
+        LinuxVirtualUsbPowerHub is only used by USB E2E users now, so it
+        lives in usb_lib rather than Honeydew until wider demand (see
+        discussion on fxr/1876367). The `use_virtual_usb_hub` branch of
+        FuchsiaBaseTest._lookup_usb_power_hub() moves into an override in
+        UsbPowerHubBaseTest, handling the virtual hub when no physical hub
+        (`usb_power_hub_hw` + `usb_power_hub_impl`) configured.
+
         Selected in this order:
           1. The hub described by `usb_power_hub_hw` + `usb_power_hub_impl`
              in the testbed config, when both are present.
-          2. The host side virtual hub, when the `use_virtual_usb_hub` param
-             is set. It toggles the device USB `authorized` attribute instead
-             of cutting power, so it needs no testbed config nor physical
-             hub. Intended for at-desk runs; see
-             //src/tests/end_to_end/usb/lib/disconnect/udev.sh for the host
-             permissions it requires.
-          3. DMC, for devices power cycled in infra.
+          2. DMC, for devices power cycled in infra.
 
         Returns:
             The USB power hub and its port, or `(None, None)` if none apply.
@@ -592,27 +592,6 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             return (
                 usb_power_hub_class(**usb_power_hub_hw),
                 usb_power_hub_port,
-            )
-        elif self.user_params.get("use_virtual_usb_hub"):
-            # Disambiguates discovery when more than one Fuchsia USB device is
-            # attached to the same host.
-            target_serial = typing.cast(
-                Union[str, None], device_config.get("device_serial", None)
-            )
-            return (
-                linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
-                    target_serial=target_serial,
-                    # Retry settings for the bus ID lookup in power_off().
-                    bus_id_lookup_attempts=self.user_params.get(
-                        "bus_id_lookup_attempts",
-                        linux_virtual_usb_hub.DEFAULT_BUS_ID_LOOKUP_ATTEMPTS,
-                    ),
-                    bus_id_lookup_timeout_sec=self.user_params.get(
-                        "bus_id_lookup_timeout_sec",
-                        linux_virtual_usb_hub.DEFAULT_BUS_ID_LOOKUP_TIMEOUT_SEC,
-                    ),
-                ),
-                None,
             )
         elif usb_power_hub_using_dmc.DMC_PATH_KEY in os.environ:
             return (

@@ -9,11 +9,9 @@ from typing import Any
 from unittest import mock
 
 from honeydew import errors
-from honeydew.auxiliary_devices.usb_power_hub import (
-    linux_virtual_usb_hub,
-    usb_power_hub,
-)
+from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.utils import host_shell
+from usb_lib import linux_virtual_usb_hub, usb_power_hub_base_test
 
 
 # pylint: disable=protected-access
@@ -332,3 +330,34 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
             linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
                 target_serial="NON_EXISTENT_SERIAL"
             )
+
+    @mock.patch.object(
+        linux_virtual_usb_hub, "LinuxVirtualUsbPowerHub", autospec=True
+    )
+    def test_usb_power_hub_base_test_lookup_virtual_hub(
+        self, mock_virtual_hub_cls: mock.Mock
+    ) -> None:
+        """Test UsbPowerHubBaseTest._lookup_usb_power_hub creates LinuxVirtualUsbPowerHub."""
+        test_obj = object.__new__(usb_power_hub_base_test.UsbPowerHubBaseTest)
+        test_obj.user_params = {
+            "use_virtual_usb_hub": True,
+            "bus_id_lookup_attempts": 10,
+            "bus_id_lookup_timeout_sec": 15.0,
+        }
+        mock_device = mock.MagicMock()
+        mock_device.device_name = "fuchsia-dut"
+
+        with mock.patch.object(
+            usb_power_hub_base_test.UsbPowerHubBaseTest,
+            "_get_device_config",
+            return_value={"device_serial": "SER123"},
+        ):
+            hub, port = test_obj._lookup_usb_power_hub(mock_device)
+
+        self.assertIs(hub, mock_virtual_hub_cls.return_value)
+        self.assertIsNone(port)
+        mock_virtual_hub_cls.assert_called_once_with(
+            target_serial="SER123",
+            bus_id_lookup_attempts=10,
+            bus_id_lookup_timeout_sec=15.0,
+        )
