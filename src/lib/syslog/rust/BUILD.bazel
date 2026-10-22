@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: do not add anything to this list. This library is deprecated. Please
+# use `//src/lib/diagnostics/reader/rust`.
+rustc_library(
+    name = "syslog-listener",
+    srcs = ["syslog-listener/src/lib.rs"],
+    crate_name = "fuchsia_syslog_listener",
+    crate_root = "syslog-listener/src/lib.rs",
+    edition = "2024",
+    visibility = [
+        "//src/diagnostics/archivist/tests/integration/test_cases:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
