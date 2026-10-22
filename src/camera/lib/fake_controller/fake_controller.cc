@@ -93,8 +93,10 @@ static std::vector<fuchsia::camera2::hal::Config> DefaultConfigs() {
 
 fpromise::result<std::unique_ptr<FakeController>, zx_status_t> FakeController::Create(
     fidl::InterfaceRequest<fuchsia::camera2::hal::Controller> request,
-    fuchsia::sysmem2::AllocatorHandle allocator) {
+    fuchsia::sysmem2::AllocatorHandle allocator,
+    std::vector<fuchsia::camera2::hal::Config> configs) {
   auto controller = std::make_unique<FakeController>();
+  controller->configs_ = std::move(configs);
 
   zx_status_t status = controller->loop_.StartThread("Fake Controller Loop");
   if (status != ZX_OK) {
@@ -156,12 +158,12 @@ zx_status_t FakeController::SendFrameViaLegacyStream(fuchsia::camera2::FrameAvai
 
 void FakeController::GetNextConfig(
     fuchsia::camera2::hal::Controller::GetNextConfigCallback callback) {
-  if (get_configs_call_count_ >= DefaultConfigs().size()) {
+  if (get_configs_call_count_ >= configs_.size()) {
     callback(nullptr, ZX_ERR_STOP);
     return;
   }
   callback(std::make_unique<fuchsia::camera2::hal::Config>(
-               std::move(DefaultConfigs()[get_configs_call_count_++])),
+               std::move(configs_[get_configs_call_count_++])),
            ZX_OK);
 }
 

@@ -109,6 +109,11 @@ fpromise::promise<std::unique_ptr<DeviceImpl>, zx_status_t> DeviceImpl::Create(
             if (result.is_error()) {
               return fpromise::error(result.error());
             }
+            // SetConfiguration(0) below needs at least one configuration.
+            if (result.value().empty()) {
+              FX_LOGS(ERROR) << "Controller reported no configurations.";
+              return fpromise::error(ZX_ERR_NOT_FOUND);
+            }
             for (uint32_t config_index = 0; config_index < result.value().size(); ++config_index) {
               const auto& config = result.value()[config_index];
               auto result = Convert(*config);

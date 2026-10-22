@@ -12,6 +12,7 @@
 #include <zircon/errors.h>
 
 #include <limits>
+#include <optional>
 
 #include "src/camera/bin/device/stream_impl.h"
 #include "src/camera/bin/device/testing/fake_device_listener_registry.h"
@@ -195,6 +196,40 @@ TEST_F(DeviceImplTest, CreateStreamFakeLegacyStream) {
       },
       nop_buffers_requested, nop);
   RunLoopUntilIdle();
+}
+
+// The camera controller had no configurations for every client after the first one
+// (b/244178394).
+TEST_F(DeviceImplTest, CreateFailsWithoutConfigurations) {
+  fuchsia::sysmem2::AllocatorHandle controller_allocator;
+  context_->svc()->Connect(controller_allocator.NewRequest());
+  fuchsia::camera2::hal::ControllerHandle controller;
+  auto controller_result = FakeController::Create(controller.NewRequest(),
+                                                  std::move(controller_allocator), /*configs=*/{});
+  ASSERT_TRUE(controller_result.is_ok());
+  auto no_configs_controller = controller_result.take_value();
+  fuchsia::sysmem2::AllocatorHandle allocator;
+  context_->svc()->Connect(allocator.NewRequest());
+  fuchsia::ui::policy::DeviceListenerRegistryHandle registry;
+  fake_listener_registry_.GetHandler()(registry.NewRequest());
+  zx::event bad_state_event;
+  ASSERT_EQ(zx::event::create(0, &bad_state_event), ZX_OK);
+
+  bool create_returned = false;
+  std::optional<zx_status_t> create_error;
+  executor_.schedule_task(
+      DeviceImpl::Create(dispatcher(), executor_, std::move(controller), std::move(allocator),
+                         std::move(registry), std::move(bad_state_event))
+          .then([&](fpromise::result<std::unique_ptr<DeviceImpl>, zx_status_t>& result) {
+            create_returned = true;
+            if (result.is_error()) {
+              create_error = result.error();
+            }
+          }));
+  RunLoopUntilFailureOr(create_returned);
+
+  ASSERT_TRUE(create_error.has_value());
+  EXPECT_EQ(*create_error, ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(DeviceImplTest, GetFrames) {

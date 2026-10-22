@@ -23,9 +23,11 @@ class FakeController : public fuchsia::camera2::hal::Controller {
  public:
   FakeController();
   ~FakeController() override;
+  // The controller hands out |configs| through GetNextConfig, the default ones unless given.
   static fpromise::result<std::unique_ptr<FakeController>, zx_status_t> Create(
       fidl::InterfaceRequest<fuchsia::camera2::hal::Controller> request,
-      fuchsia::sysmem2::AllocatorHandle allocator);
+      fuchsia::sysmem2::AllocatorHandle allocator,
+      std::vector<fuchsia::camera2::hal::Config> configs = GetDefaultConfigs());
   static std::vector<fuchsia::camera2::hal::Config> GetDefaultConfigs();
   zx_status_t SendFrameViaLegacyStream(fuchsia::camera2::FrameAvailableInfo info);
   bool LegacyStreamBufferIsOutstanding(uint32_t id);
@@ -40,6 +42,7 @@ class FakeController : public fuchsia::camera2::hal::Controller {
   void GetDeviceInfo(fuchsia::camera2::hal::Controller::GetDeviceInfoCallback callback) override;
 
   async::Loop loop_;
+  std::vector<fuchsia::camera2::hal::Config> configs_;
   uint32_t get_configs_call_count_ = 0;
   fidl::Binding<fuchsia::camera2::hal::Controller> binding_;
   std::unique_ptr<camera::FakeLegacyStream> stream_;
