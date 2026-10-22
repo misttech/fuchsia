@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = [
+        "include/lib/symbolizer-markup/line-buffered-sink.h",
+        "include/lib/symbolizer-markup/writer.h",
+    ],
+)
+
+fx_cc_library(
+    name = "symbolizer-markup",
+    visibility = [
+        "//sdk/lib/c/ld:__pkg__",
+        "//sdk/lib/c/sanitizers:__pkg__",
+        "//sdk/lib/ld:__subpackages__",
+        "//src/bringup/lib/restricted-machine:__subpackages__",
+        "//src/lib/elfldltl/test:__pkg__",
+        "//zircon/kernel/phys:__pkg__",
+        "//zircon/system/utest/core/standalone-elf-load:__pkg__",
+    ],
+    deps = [":headers"],
+    alwayslink = True,
+)
+
+# @bazel2gn:skip
+cc_test(
+    name = "symbolizer-markup-unittests",
+    srcs = ["unittests.cc"],
+    tags = ["manual"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":symbolizer-markup",
+        "//src/lib/fxl/test:gtest_main",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+host_test(
+    name = "symbolizer-markup-host-test",
+    binary = ":symbolizer-markup-unittests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
