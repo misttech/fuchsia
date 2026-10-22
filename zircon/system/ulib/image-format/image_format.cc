@@ -1891,6 +1891,9 @@ fpromise::result<ImageFormat> ImageConstraintsToFormat(const ImageFormatConstrai
     return fpromise::error();
   }
   if (constraints.size_alignment().has_value()) {
+    if (constraints.size_alignment()->width() == 0 || constraints.size_alignment()->height() == 0) {
+      return fpromise::error();
+    }
     if ((width % constraints.size_alignment()->width()) != 0) {
       return fpromise::error();
     }

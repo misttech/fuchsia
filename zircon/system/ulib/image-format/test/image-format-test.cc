@@ -2458,3 +2458,16 @@ TEST(ImageFormat, ImageConstraintsToFormatDefaultsModifierToLinear) {
   EXPECT_EQ(fuchsia_images2::PixelFormatModifier::kLinear, image_format.pixel_format_modifier());
   EXPECT_EQ(64u * 4, image_format.bytes_per_row());
 }
+
+TEST(ImageFormat, ImageConstraintsToFormatZeroSizeAlignmentFails) {
+  sysmem_v2::ImageFormatConstraints constraints;
+  constraints.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
+  constraints.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+
+  constraints.size_alignment() = {0u, 1u};
+  EXPECT_FALSE(ImageConstraintsToFormat(constraints, 64u, 32u).is_ok());
+  constraints.size_alignment() = {1u, 0u};
+  EXPECT_FALSE(ImageConstraintsToFormat(constraints, 64u, 32u).is_ok());
+  constraints.size_alignment() = {1u, 1u};
+  EXPECT_TRUE(ImageConstraintsToFormat(constraints, 64u, 32u).is_ok());
+}
