@@ -57,6 +57,11 @@ _DEVICE_NOT_CONNECTED: str = "Timeout attempting to reach target"
 # when the target is reachable, while preventing unbounded hangs when the target is offline.
 _TARGET_STATUS_TIMEOUT_SECS: float = 30.0
 
+# Timeout for `ffx monitor intentional-disconnect`.
+# Since notifying ffx monitor is best-effort (ffx monitor may not even be running),
+# cap the command execution time so it cannot hang the test workflow.
+_NOTIFY_INTENTIONAL_DISCONNECT_TIMEOUT_SECS: float = 15.0
+
 
 class FFX:
     """Provides methods for Host-(Fuchsia)Target interactions via FFX.
@@ -143,36 +148,8 @@ class FFX:
         Returns:
             Serial number if available, else None.
         """
-        target_info = self.get_target_information()
+        target_info = self.get_target_info_from_target_show()
         return target_info.device.serial_number
-
-    # FFX monitor session management:
-    # For infra runs, ffx monitor session is started and managed by botanist.
-    # Currently it is not started by default and is only started for on a
-    # specific builder basis. But once ffx monitor is thoroughly tested, it
-    # will be started by default on all infra builders.
-    #
-    # For local runs, ffx monitor eventually will be started and managed by
-    # `fx test`. Until this support is added (b/455924189), local users would
-    # have to manually start monitors through `ffx monitor start`.
-    def _check_running_monitor(self) -> bool:
-        """Check whether there is a running monitor.
-
-        Returns:
-            True if a monitor is running.
-        """
-        cmd: list[str] = _FFX_CMDS["MONITOR_CONFIG_GET"]
-        # "ffx config get" does not support JSON
-        output: str = self.run(cmd=cmd, machine=MachineFormat.RAW).strip('"')
-        _LOGGER.info(
-            "Fetched config: `%s` returned: %s path exists: `%s`",
-            " ".join(cmd),
-            output,
-            Path(output).exists(),
-        )
-
-        # If the pid_path exist, it means there is a running monitor.
-        return Path(output).exists()
 
     def check_connection(self) -> None:
         """Checks the FFX connection from host to Fuchsia device.
@@ -187,7 +164,7 @@ class FFX:
                 f"FFX connection check failed for {self._log_name} with err: {err}"
             ) from err
 
-    def get_target_information(self) -> TargetInfoData:
+    def get_target_info_from_target_show(self) -> TargetInfoData:
         """Executed and returns the output of `ffx -t {target} target show`.
 
         Returns:
@@ -260,7 +237,9 @@ class FFX:
             target = self._get_target_status()
             return target.nodename
 
-        ffx_target_show_info: TargetInfoData = self.get_target_information()
+        ffx_target_show_info: TargetInfoData = (
+            self.get_target_info_from_target_show()
+        )
         return ffx_target_show_info.target.name
 
     def resolve_target_address(self) -> None:
@@ -341,7 +320,9 @@ class FFX:
                 )
             return target.target_type.split(".")[1]
 
-        target_show_info: TargetInfoData = self.get_target_information()
+        target_show_info: TargetInfoData = (
+            self.get_target_info_from_target_show()
+        )
         return (
             target_show_info.build.board if target_show_info.build.board else ""
         )
@@ -364,14 +345,16 @@ class FFX:
                 )
             return target.target_type.split(".", maxsplit=1)[0]
 
-        target_show_info: TargetInfoData = self.get_target_information()
+        target_show_info: TargetInfoData = (
+            self.get_target_info_from_target_show()
+        )
         return (
             target_show_info.build.product
             if target_show_info.build.product
             else ""
         )
 
-    def get_ffx_target_status(self) -> str:
+    def get_target_status(self) -> str:
         """Returns FFX target status.
 
         Returns:
@@ -386,6 +369,10 @@ class FFX:
             cmd=cmd,
             include_target=True,
         )
+        # Use host_shell.run() directly instead of self.run() because
+        # get_target_status() is invoked inside self.run()'s exception handler
+        # for diagnostic triage, and needs to raise FfxTargetStatusError rather
+        # than triggering recursive triage or target connection error translation.
         try:
             return (
                 host_shell.run(
@@ -400,7 +387,18 @@ class FFX:
             raise ffx_errors.FfxTargetStatusError(err) from err
 
     def notify_intentional_disconnect(self) -> None:
-        """Notifies the FFX monitor of an upcoming intentional disconnect."""
+        """Best-effort notification to the FFX monitor of an upcoming intentional disconnect.
+
+        Since `ffx monitor` may be running in infra even when monitor state is not used,
+        this method lives on the base `FFX` class. Any `HoneydewError` (including timeout or
+        command failure when monitor is not running) is logged at DEBUG level and suppressed.
+        """
+        if not self._check_running_monitor():
+            _LOGGER.debug(
+                "FFX monitor is not running; skipping intentional disconnect notification."
+            )
+            return
+
         nodename = self._name if self._name else self._query
         cmd = _FFX_CMDS["MONITOR_INTENTIONAL_DISCONNECT"][:]
         cmd.extend(["--nodename", nodename])
@@ -410,13 +408,57 @@ class FFX:
                 cmd=cmd,
                 include_target=False,
                 log_status_on_failure=False,
-                timeout=30.0,
+                timeout=_NOTIFY_INTENTIONAL_DISCONNECT_TIMEOUT_SECS,
             )
         except errors.HoneydewError as err:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Failed to notify intentional disconnect to FFX monitor: %s",
                 err,
             )
+
+    def _check_running_monitor(self) -> bool:
+        """Best-effort check for whether there is a running FFX monitor.
+
+        Returns:
+            True if a monitor is running, False otherwise (including if the command fails).
+        """
+        cmd: list[str] = _FFX_CMDS["MONITOR_CONFIG_GET"]
+        # "ffx config get" does not support JSON.
+        # `include_target=False` is used because `monitor.pid_file` is a host-level
+        # configuration resolved via `shared_data` for the single host monitor process
+        # that tracks all connected targets, and omitting `-t <target>` avoids
+        # unnecessary target address resolution.
+        ffx_cmd: list[str] = self.generate_ffx_cmd(
+            cmd=cmd,
+            include_target=False,
+            machine=MachineFormat.RAW,
+        )
+        # Use host_shell.run() directly instead of self.run() because this is a
+        # best-effort, host-local config check that does not interact with the
+        # target and should bypass self.run()'s target error handling and failure
+        # triage.
+        try:
+            output: str = (host_shell.run(cmd=ffx_cmd) or "").strip().strip('"')
+        except errors.HoneydewError as err:
+            _LOGGER.debug(
+                "Failed to check if FFX monitor is running: %s",
+                err,
+            )
+            return False
+
+        if not output:
+            return False
+
+        pid_file_exists: bool = Path(output).exists()
+        _LOGGER.debug(
+            "Fetched config: `%s` returned: %s path exists: `%s`",
+            " ".join(cmd),
+            output,
+            pid_file_exists,
+        )
+
+        # If the pid_path exists, it means there is a running monitor.
+        return pid_file_exists
 
     def run(
         self,
@@ -428,6 +470,7 @@ class FFX:
         machine: MachineFormat = MachineFormat.JSON,
         log_status_on_failure: bool = True,
         disable_controlmaster: bool = False,
+        config_overrides: dict[str, Any] | None = None,
     ) -> str:
         """Runs an FFX command.
 
@@ -449,6 +492,7 @@ class FFX:
             log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
                 if the command fails or times out. Defaults to True.
             disable_controlmaster: boolean value of controlmaster.
+            config_overrides: FFX configuration overrides.
 
         Returns:
             Output of FFX command when capture_output is set to True, otherwise
@@ -464,6 +508,7 @@ class FFX:
             include_target=include_target,
             machine=machine,
             disable_controlmaster=disable_controlmaster,
+            config_overrides=config_overrides,
         )
         try:
             # TODO(b/484362368): when machine == `JSON`, we should parse the output
@@ -480,13 +525,13 @@ class FFX:
         except (errors.HostCmdError, errors.HoneydewTimeoutError) as err:
             if log_status_on_failure:
                 try:
-                    output: str = self.get_ffx_target_status()
+                    output: str = self.get_target_status()
                     _LOGGER.info(
                         "FFX Triage: State captured after command failure (ffx target status):\n%s",
                         output,
                     )
                 except errors.HoneydewError as e:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Failed to execute diagnostic 'ffx target status' on target %s: %s",
                         self._log_name,
                         e,
@@ -648,7 +693,11 @@ class FFX:
                     # Run target list without `-t` but with nodename filter as positional arg
                     target_filter = self._name if self._name else self._query
                     cmd = ["target", "list", target_filter]
-                    output = self.run(cmd=cmd, include_target=False)
+                    output = self.run(
+                        cmd=cmd,
+                        include_target=False,
+                        log_status_on_failure=False,
+                    )
                     targets = json.loads(output)
                     if targets and targets[0].get("rcs_state") == "Y":
                         _LOGGER.info("RCS connected!")
@@ -670,9 +719,7 @@ class FFX:
         _LOGGER.info("%s is connected to host", self._log_name)
         return
 
-    def wait_for_rcs_disconnection(
-        self,
-    ) -> subprocess.Popen[custom_types.AnyString]:
+    def wait_for_rcs_disconnection(self) -> None:
         """Wait until FFX is able to disconnect RCS connection to the target.
 
         Raises:
@@ -680,16 +727,19 @@ class FFX:
             FfxCommandError: In case of other FFX command failure.
         """
         _LOGGER.info(
-            "Waiting for %s to disconnect from host in background...",
+            "Waiting for %s to disconnect from host...",
             self._log_name,
         )
-        return self.popen(
+        self.run(
             cmd=_FFX_CMDS["TARGET_WAIT_DOWN"],
+            disable_controlmaster=True,
             config_overrides={
                 "ssh.connect_timeout": 2,
                 "ssh.connection_attempts": 1,
             },
         )
+        _LOGGER.info("%s is not connected to host", self._log_name)
+        return
 
     def _get_target_status(self) -> MonitorTargetInfo:
         """Gets the status information of the target node from 'ffx monitor status'.

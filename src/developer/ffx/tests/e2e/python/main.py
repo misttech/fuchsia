@@ -40,7 +40,7 @@ class FfxTest(ffxtestcase.FfxTestCase):
 
     def test_target_show(self) -> None:
         """Test `ffx target show` output returns as expected."""
-        output = self.dut.ffx.get_target_information()
+        output = self.dut.ffx.get_target_info_from_target_show()
         got_device_name = output.target.name
         # Assert FFX's target show device name matches Honeydew's.
         asserts.assert_equal(got_device_name, self.dut.device_name)

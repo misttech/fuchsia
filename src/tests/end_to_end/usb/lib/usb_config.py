@@ -120,7 +120,7 @@ def get_dut_serial(dut: fuchsia_device.FuchsiaDevice | None) -> str | None:
     Tries, in order:
     1. `dut.serial_number()`, which resolves over FIDL and therefore needs the
        device to still be reachable.
-    2. `dut.ffx.get_target_information()`.
+    2. `dut.ffx.get_target_info_from_target_show()`.
 
     These tests deliberately tear down the USB functions that carry FIDL and
     SSH, so callers should resolve the serial once up front while the device
@@ -146,7 +146,7 @@ def get_dut_serial(dut: fuchsia_device.FuchsiaDevice | None) -> str | None:
 
     # 2. Ask ffx what it knows about the target.
     try:
-        info = dut.ffx.get_target_information()
+        info = dut.ffx.get_target_info_from_target_show()
         dev_sn = getattr(getattr(info, "device", None), "serial_number", None)
         if dev_sn:
             return str(dev_sn).strip()

@@ -20,9 +20,9 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         """Test case for FFX.check_connection()."""
         self.dut.ffx.check_connection()
 
-    async def test_get_target_information(self) -> None:
-        """Test case for FFX.get_target_information()."""
-        self.dut.ffx.get_target_information()
+    async def test_get_target_info_from_target_show(self) -> None:
+        """Test case for FFX.get_target_info_from_target_show()."""
+        self.dut.ffx.get_target_info_from_target_show()
 
     async def test_get_target_info_from_target_list(self) -> None:
         """Test case for FFX.get_target_info_from_target_list()."""
@@ -107,9 +107,9 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         cmd: str = "ls"
         self.dut.ffx.run_ssh_cmd(cmd)
 
-    async def test_get_ffx_target_status(self) -> None:
-        """Test case for FFX.get_ffx_target_status()."""
-        output: str = self.dut.ffx.get_ffx_target_status()
+    async def test_get_target_status(self) -> None:
+        """Test case for FFX.get_target_status()."""
+        output: str = self.dut.ffx.get_target_status()
         asserts.assert_is_instance(output, str)
 
 

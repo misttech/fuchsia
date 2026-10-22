@@ -97,13 +97,16 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         adb_cache_pid_patcher.start()
         self.addCleanup(adb_cache_pid_patcher.stop)
 
+        ffx_monitor_patcher = mock.patch.object(
+            ffx.FFX,
+            "_check_running_monitor",
+            return_value=False,
+            autospec=True,
+        )
+        ffx_monitor_patcher.start()
+        self.addCleanup(ffx_monitor_patcher.stop)
+
         with (
-            mock.patch.object(
-                ffx.FFX,
-                "_check_running_monitor",
-                return_value=False,
-                autospec=True,
-            ),
             mock.patch.object(
                 fc_transport.FuchsiaController,
                 "create_context",

@@ -1457,8 +1457,8 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        ffx.FFX,
-        "wait_for_rcs_disconnection",
+        fuchsia_device.FuchsiaDevice,
+        "wait_for_offline",
         autospec=True,
     )
     @mock.patch.object(
@@ -1475,24 +1475,20 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self,
         mock_log_message_to_device: mock.Mock,
         mock_send_reboot_command: mock.Mock,
-        mock_ffx_wait_for_rcs_disconnection: mock.Mock,
+        mock_wait_for_offline: mock.Mock,
         mock_wait_for_online: mock.Mock,
         mock_on_device_boot: mock.Mock,
         mock_ffx_notify_intentional_disconnect: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.reboot()"""
-        mock_process = mock.MagicMock()
-        mock_ffx_wait_for_rcs_disconnection.return_value = mock_process
-
         await self.fd_fc_obj.reboot()
 
         self.assertEqual(mock_log_message_to_device.call_count, 2)
+        mock_ffx_notify_intentional_disconnect.assert_called()
         mock_send_reboot_command.assert_called()
-        mock_ffx_wait_for_rcs_disconnection.assert_called()
-        mock_process.wait.assert_called_once_with(timeout=60)
+        mock_wait_for_offline.assert_called()
         mock_wait_for_online.assert_called()
         mock_on_device_boot.assert_called()
-        mock_ffx_notify_intentional_disconnect.assert_called()
 
     async def test_suspend_error(self) -> None:
         """Testcase for FuchsiaDevice.suspend() raising NotSupportedError."""

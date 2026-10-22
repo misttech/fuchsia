@@ -3,13 +3,11 @@
 # found in the LICENSE file.
 """FuchsiaDevice abstract base class implementation."""
 
-import asyncio
 import dataclasses
 import inspect
 import json
 import logging
 import os
-import subprocess
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any
@@ -144,8 +142,6 @@ _LOG_SEVERITIES: dict[custom_types.LEVEL, f_diagnostics_types.Severity] = {
 }
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
-
-_REBOOT_OFFLINE_TIMEOUT_SEC: int = 60
 
 
 class FuchsiaDevice(
@@ -983,7 +979,7 @@ class FuchsiaDevice(
         _LOGGER.info("Powering off %s...", self.device_name)
         self.ffx.notify_intentional_disconnect()
         self._power_switch.power_off(self._power_switch_outlet)
-        await asyncio.to_thread(self.wait_for_offline)
+        self.wait_for_offline()
 
         _LOGGER.info("Powering on %s...", self.device_name)
         self._power_switch.power_on(self._power_switch_outlet)
@@ -1072,7 +1068,7 @@ class FuchsiaDevice(
 
         self.ffx.notify_intentional_disconnect()
         self._usb_power_hub.power_off(self._usb_power_hub_port)
-        await asyncio.to_thread(self.wait_for_offline)
+        self.wait_for_offline()
 
     async def resume(self) -> None:
         """Resume the device by reconnecting USB power.
@@ -1121,31 +1117,8 @@ class FuchsiaDevice(
         )
 
         self.ffx.notify_intentional_disconnect()
-
-        # Start wait for offline in background to avoid race conditions.
-        _LOGGER.info(
-            "Starting background wait for %s to go offline...", self.device_name
-        )
-        wait_process = self.ffx.wait_for_rcs_disconnection()
-        try:
-            await self._send_reboot_command()
-
-            _LOGGER.info(
-                "Waiting for background offline process to complete..."
-            )
-            try:
-                await asyncio.to_thread(
-                    wait_process.wait, timeout=_REBOOT_OFFLINE_TIMEOUT_SEC
-                )
-            except subprocess.TimeoutExpired as err:
-                raise errors.FuchsiaDeviceError(
-                    f"'{self.device_name}' failed to go offline within "
-                    f"{_REBOOT_OFFLINE_TIMEOUT_SEC} seconds."
-                ) from err
-        finally:
-            if wait_process.poll() is None:
-                wait_process.kill()
-                wait_process.wait()
+        await self._send_reboot_command()
+        self.wait_for_offline()
         await self.wait_for_online()
         await self.on_device_boot()
 
@@ -1304,17 +1277,7 @@ class FuchsiaDevice(
         """
         _LOGGER.info("Waiting for %s to go offline...", self.device_name)
         try:
-            wait_process = self.ffx.wait_for_rcs_disconnection()
-            try:
-                wait_process.wait(timeout=60)
-            except subprocess.TimeoutExpired as err:
-                raise errors.FuchsiaDeviceError(
-                    f"'{self.device_name}' failed to go offline within 60 seconds."
-                ) from err
-            finally:
-                if wait_process.poll() is None:
-                    wait_process.kill()
-                    wait_process.wait()
+            self.ffx.wait_for_rcs_disconnection()
             _LOGGER.info("%s is offline.", self.device_name)
         except (
             errors.DeviceNotConnectedError,
