@@ -216,7 +216,7 @@ impl Config {
             )
     }
 
-    fn get_periodic_rtc_update_interval(&self) -> Option<zx::BootDuration> {
+    fn get_periodic_rtc_update_interval(&self) -> Option<zx::MonotonicDuration> {
         let update_interval_minutes =
             self.source_config.periodic_rtc_update_interval_minutes as i64;
         // Intentional interval of zero is really an operator error, so make that a "None" value,
@@ -224,7 +224,7 @@ impl Config {
         let update_interval = if update_interval_minutes == 0 {
             None
         } else {
-            Some(zx::BootDuration::from_minutes(update_interval_minutes))
+            Some(zx::MonotonicDuration::from_minutes(update_interval_minutes))
         };
         debug!("Periodic RTC update inerval set to: {update_interval:?}");
         update_interval
@@ -828,10 +828,13 @@ async fn maintain_utc<R: Rtc, D: 'static>(
     future::join4(fut1, fut2, oneshot, rtc_updater).await;
 }
 
-async fn periodic_rtc_update(mut cmd_send: mpsc::Sender<Command>, interval: zx::BootDuration) {
+async fn periodic_rtc_update(mut cmd_send: mpsc::Sender<Command>, interval: zx::MonotonicDuration) {
     info!("periodic_rtc_update: starting periodic RTC updates, update interval: {interval:?}");
     loop {
-        fasync::Timer::new(fasync::BootInstant::after(interval)).await;
+        // Use the monotonic timeline so the periodic timer pauses across suspend
+        // instead of expiring while suspended and firing immediately on CPU wakeup
+        // before the system and storage have resumed.
+        fasync::Timer::new(fasync::MonotonicInstant::after(interval)).await;
         debug!("periodic_rtc_update: sending command");
         if let Err(e) = cmd_send.send(Command::UpdateRtc).await {
             // Reported as "error" since if this does not work, it generates
@@ -1590,16 +1593,20 @@ mod tests {
     fn test_periodic_rtc_update() {
         let mut executor = fasync::TestExecutor::new_with_fake_time();
         let (tx, mut rx) = mpsc::channel(1);
-        let interval = zx::BootDuration::from_minutes(10);
+        let interval = zx::MonotonicDuration::from_minutes(10);
         let mut fut = pin!(periodic_rtc_update(tx, interval));
 
         // Let it run until it stalls on the first timer.
         assert!(executor.run_until_stalled(&mut fut).is_pending());
 
-        // Advance by 10 minutes.
-        executor.set_fake_time(fasync::MonotonicInstant::after(
-            zx::MonotonicDuration::from_minutes(interval.into_minutes()),
-        ));
+        // Advancing boot time (simulating time spent in suspend) without advancing
+        // monotonic time must not trigger the periodic RTC update timer.
+        executor.set_fake_boot_to_mono_offset(zx::BootDuration::from_minutes(20));
+        assert!(!executor.wake_expired_timers());
+        assert!(executor.run_until_stalled(&mut fut).is_pending());
+
+        // Advance monotonic time by 10 minutes.
+        executor.set_fake_time(fasync::MonotonicInstant::after(interval));
         assert!(executor.wake_expired_timers());
 
         // It should now send the command and then stall on the next timer.
