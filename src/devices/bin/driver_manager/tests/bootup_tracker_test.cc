@@ -148,35 +148,41 @@ TEST_F(BootupTrackerTest, WaitForBootupAfterComplete) {
 }
 
 TEST_F(BootupTrackerTest, ExponentialBackoff) {
+#if defined(__riscv)
+  constexpr int64_t kTimeoutMultiplier = 5;
+#else
+  constexpr int64_t kTimeoutMultiplier = 1;
+#endif
+
   tracker->NotifyNewStartRequest("node_1", "driver_url");
 
   // First timeout, not exceeded deadline yet.
   tracker->should_exceed_update_deadline = false;
   TriggerBootupTimeout();
-  EXPECT_EQ(tracker->last_timeout, zx::sec(2));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(2) * kTimeoutMultiplier);
 
   // Exceed deadline.
   tracker->should_exceed_update_deadline = true;
   TriggerBootupTimeout();
-  EXPECT_EQ(tracker->last_timeout, zx::sec(4));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(4) * kTimeoutMultiplier);
 
   TriggerBootupTimeout();
-  EXPECT_EQ(tracker->last_timeout, zx::sec(8));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(8) * kTimeoutMultiplier);
 
   TriggerBootupTimeout();
-  EXPECT_EQ(tracker->last_timeout, zx::sec(16));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(16) * kTimeoutMultiplier);
 
   TriggerBootupTimeout();
-  EXPECT_EQ(tracker->last_timeout, zx::sec(32));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(32) * kTimeoutMultiplier);
 
   TriggerBootupTimeout();
-  EXPECT_EQ(tracker->last_timeout, zx::sec(60));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(60) * kTimeoutMultiplier);
 
   TriggerBootupTimeout();
-  EXPECT_EQ(tracker->last_timeout, zx::sec(60));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(60) * kTimeoutMultiplier);
 
   // New request should reset timeout.
   tracker->NotifyNewStartRequest("node_2", "driver_url");
-  EXPECT_EQ(tracker->last_timeout, zx::sec(2));
+  EXPECT_EQ(tracker->last_timeout, zx::sec(2) * kTimeoutMultiplier);
 }
 }  // namespace driver_manager

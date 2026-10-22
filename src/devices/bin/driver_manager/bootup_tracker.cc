@@ -18,9 +18,16 @@ namespace driver_manager {
 
 namespace {
 
-zx::duration kBootupTimeoutDuration = zx::sec(2);
-zx::duration kLastUpdatedTimeoutDuration = zx::sec(20);
-zx::duration kMaxTimeoutDuration = zx::sec(60);
+#if defined(__riscv)
+// Under RISC-V TCG emulation, timeouts can take longer.
+constexpr int64_t kTimeoutMultiplier = 5;
+#else
+constexpr int64_t kTimeoutMultiplier = 1;
+#endif
+
+zx::duration kBootupTimeoutDuration = zx::sec(2) * kTimeoutMultiplier;
+zx::duration kLastUpdatedTimeoutDuration = zx::sec(20) * kTimeoutMultiplier;
+zx::duration kMaxTimeoutDuration = zx::sec(60) * kTimeoutMultiplier;
 
 }  // namespace
 
