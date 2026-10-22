@@ -13,6 +13,7 @@ use zx_status::Status;
 use zx_types::zx_signals_t;
 
 use crate::kernel::event::Event;
+use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 
 use super::dispatcher::Dispatcher;
 use super::{HandleRef, HandleTableLockClass};
@@ -34,6 +35,7 @@ zr::static_assert_size_and_align!(
 #[repr(C, align(8))]
 pub struct WaitSignalObserverState {
     canary: Canary<{ fbl::magic(b"WTSO") }>,
+    // Safety invariant: Between `begin()` and `end()`, points to a live, initialized `Event`.
     event: *const Event,
     dispatcher: Option<RefPtr<Dispatcher>>,
     final_signal_state: AtomicU32,
@@ -41,25 +43,41 @@ pub struct WaitSignalObserverState {
 
 impl WaitSignalObserverState {
     /// Callback when watched signals match.
-    pub fn on_match(&self, signals: zx_signals_t, queue_to_own: *mut c_void) {
+    ///
+    /// # Safety
+    ///
+    /// - `self.event` must point to a valid, initialized `Event` that stays live through the
+    ///   signal operation (as required by [`Event::signal_worker`]).
+    /// - `queue_to_own` must be null or point to a valid, initialized `OwnedWaitQueue`.
+    /// - No `ChainLockTransaction` may be active on this CPU.
+    pub unsafe fn on_match(&self, signals: zx_signals_t, queue_to_own: *mut c_void) {
         self.canary.assert();
         // Save the signal state, and wake our waiter.
         self.final_signal_state.store(signals, Ordering::Release);
-        // SAFETY: `self.event` is a valid Event pointer set during begin().
+        // SAFETY: The caller guarantees `queue_to_own` is null or a valid `OwnedWaitQueue`,
+        // `self.event` points to a live `Event`, and no `ChainLockTransaction` is active.
         unsafe {
-            (*self.event).signal_etc(Ok(()), queue_to_own);
+            let queue_to_own = queue_to_own.cast::<OwnedWaitQueue>().as_ref();
+            Event::signal_worker(self.event, Ok(()), queue_to_own);
         }
     }
 
     /// Callback when handle is cancelled or closed.
-    pub fn on_cancel(&self, signals: zx_signals_t) {
+    ///
+    /// # Safety
+    ///
+    /// - `self.event` must point to a valid, initialized `Event` that stays live through the
+    ///   signal operation (as required by [`Event::signal_worker`]).
+    /// - No `ChainLockTransaction` may be active on this CPU.
+    pub unsafe fn on_cancel(&self, signals: zx_signals_t) {
         self.canary.assert();
         // Save the signal state, and wake our waiter.
         self.final_signal_state
             .store(signals | zx_types::ZX_SIGNAL_HANDLE_CLOSED, Ordering::Release);
-        // SAFETY: `self.event` is a valid Event pointer set during begin().
+        // SAFETY: The caller guarantees `self.event` points to a live `Event` and no
+        // `ChainLockTransaction` is active.
         unsafe {
-            (*self.event).signal_etc(Status::CANCELED, core::ptr::null_mut());
+            Event::signal_worker(self.event, Err(Status::CANCELED), None);
         }
     }
 }
@@ -109,27 +127,38 @@ pub unsafe extern "C" fn rust_wait_signal_observer_destroy(storage: *mut WaitSig
 ///
 /// # Safety
 ///
-/// `state` must point to a valid initialized `WaitSignalObserverState`.
+/// - `state` must point to a valid initialized `WaitSignalObserverState` whose `event` points to a
+///   live, initialized `Event`.
+/// - `queue_to_own` must be null or point to a valid, initialized `OwnedWaitQueue`.
+/// - No `ChainLockTransaction` may be active on this CPU.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_wait_signal_observer_on_match(
     state: &WaitSignalObserverState,
     signals: zx_signals_t,
     queue_to_own: *mut c_void,
 ) {
-    state.on_match(signals, queue_to_own);
+    // SAFETY: Forwarded from the caller.
+    unsafe {
+        state.on_match(signals, queue_to_own);
+    }
 }
 
 /// FFI callback when handle is cancelled or closed.
 ///
 /// # Safety
 ///
-/// `state` must point to a valid initialized `WaitSignalObserverState`.
+/// - `state` must point to a valid initialized `WaitSignalObserverState` whose `event` points to a
+///   live, initialized `Event`.
+/// - No `ChainLockTransaction` may be active on this CPU.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_wait_signal_observer_on_cancel(
     state: &WaitSignalObserverState,
     signals: zx_signals_t,
 ) {
-    state.on_cancel(signals);
+    // SAFETY: Forwarded from the caller.
+    unsafe {
+        state.on_cancel(signals);
+    }
 }
 
 /// Helper struct for waiting on `object_wait_one` and `object_wait_many` syscalls.

@@ -17,8 +17,6 @@ source_set("kernel") {
     "brwlock.cc",
     "cpu_distance_map.cc",
     "cpu_search_set.cc",
-    "event.cc",
-    "event_ffi.cc",
     "idle_power_thread.cc",
     "idle_power_thread_ffi.cc",
     "init.cc",
@@ -119,49 +117,33 @@ group("kernel-tests") {
 
 kernel_bindgen_crate("event-bindings") {
   visibility = [ "//zircon/kernel/*" ]
-  headers = [ "//zircon/kernel/include/kernel/event_ffi.h" ]
+  headers = [ "//zircon/kernel/include/kernel/event_layout.h" ]
   non_rust_deps = [ ":kernel" ]
   output_name = "event_bindings.rs"
   cpp = true
 
   edition = "2024"
   notice_year = 2026
-  function_allowlist = [
-    "cpp_event_.*",
-    "cpp_autounsignal_event_.*",
-  ]
+
+  # Layout contract only: the opaque `Event`/`AutounsignalEvent` types
+  # (re-exported by other bindgen crates for pointer signatures) and the
+  # `EventLayout` constants the Rust `Event` asserts its layout against.
+  function_blocklist = [ ".*" ]
+  var_allowlist = [ "EventLayout_k.*" ]
   type_allowlist = [
     "Event",
     "AutounsignalEvent",
-  ]
-  type_blocklist = [
-    "Deadline",
-    "Interruptible",
-    "OwnedWaitQueue",
-    "zx_instant_mono_t",
-    "zx_status_t",
   ]
   opaque_types = [
     "Event",
     "AutounsignalEvent",
   ]
-  function_blocklist = [
-    "Event_.*",
-    "AutounsignalEvent_.*",
-  ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  deps = [ "//sdk/rust/zx-types" ]
   expect_lints = [
     "non_camel_case_types",
     "non_upper_case_globals",
   ]
-  raw_lines = [
-    "#![no_std]",
-    "pub use zx_types::{zx_instant_mono_t, zx_status_t};",
-    "pub type Deadline = core::ffi::c_void;",
-    "pub type Interruptible = bool;",
-    "pub type OwnedWaitQueue = core::ffi::c_void;",
-  ]
+  raw_lines = [ "#![no_std]" ]
 }
 
 kernel_bindgen_crate("percpu-bindings") {

@@ -11469,7 +11469,7 @@ unsafe fn unblock_list_raw(list: *mut UnblockList) {
 ///   an active, finalized `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token)`,
 ///   `TA_REL(thread->get_lock())`).
 /// - Interrupts must be disabled.
-unsafe fn unblock_synchronous(thread: *mut Thread) {
+unsafe fn unblock_synchronous_raw(thread: *mut Thread) {
     let mut trace = local_ktrace_begin_scope!(COMMON, "sched_unblock_sync");
     // SAFETY: The caller guarantees an active `ChainLockTransaction` on the current CPU.
     let token = unsafe { ChainLockTransaction::assert_active() };
@@ -11749,7 +11749,7 @@ pub unsafe extern "C" fn rust_scheduler_unblock_list(list: *mut UnblockList) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_scheduler_unblock_synchronous(thread: *mut Thread) {
     // SAFETY: Forwarded from the caller.
-    unsafe { unblock_synchronous(thread) };
+    unsafe { unblock_synchronous_raw(thread) };
 }
 
 /// Marks the idle `thread` ready on its assigned CPU.
@@ -12656,7 +12656,7 @@ pub unsafe fn block(
 /// - `thread.owner()` is a blocked thread that has been dequeued from its wait queue and is
 ///   ready to be placed into a scheduler run queue.
 /// - The active transaction is finalized.
-#[inline]
+#[inline(always)]
 pub unsafe fn unblock(thread: OwnerGuard<'_, Thread>, clt_token: &ChainLockTransactionToken) {
     assert_transaction_active(clt_token);
     let thread = thread.into_unguarded();
@@ -12664,6 +12664,27 @@ pub unsafe fn unblock(thread: OwnerGuard<'_, Thread>, clt_token: &ChainLockTrans
     // and the caller guarantees `thread` is ready to be unblocked in the scheduler.
     unsafe {
         unblock_raw(thread.as_raw());
+    }
+}
+
+/// Like [`unblock`] (consumes the thread's guard, releasing its lock), but uses target CPU
+/// selection criteria that enable a "synchronous wake", if possible; local rescheduling is
+/// deferred rather than performed here.
+///
+/// # Safety
+///
+/// As [`unblock`].
+#[inline(always)]
+pub unsafe fn unblock_synchronous(
+    thread: OwnerGuard<'_, Thread>,
+    clt_token: &ChainLockTransactionToken,
+) {
+    assert_transaction_active(clt_token);
+    let thread = thread.into_unguarded();
+    // SAFETY: `thread.lock()` is held via the consumed `OwnerGuard` in the active transaction,
+    // and the caller guarantees `thread` is ready to be unblocked in the scheduler.
+    unsafe {
+        unblock_synchronous_raw(thread.as_raw());
     }
 }
 

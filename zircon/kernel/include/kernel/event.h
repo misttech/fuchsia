@@ -14,6 +14,7 @@
 #include <zircon/types.h>
 
 #include <fbl/canary.h>
+#include <kernel/event_ffi.h>
 #include <kernel/thread.h>
 #include <kernel/timer.h>
 #include <ktl/atomic.h>
@@ -40,7 +41,7 @@ class Event {
  public:
   constexpr explicit Event(bool initial = false) : Event(initial, Flags::NONE) {}
 
-  ~Event();
+  ~Event() { rust_event_destroy(this); }
 
   Event(const Event&) = delete;
   Event& operator=(const Event&) = delete;
@@ -83,8 +84,10 @@ class Event {
   // this is not-null, then we will perform an assign-owner operation on the queue. If there is no
   // thread waiting, then no assign-owner operation will occur.
   void Signal(zx_status_t wait_result = ZX_OK, OwnedWaitQueue* queue_to_own = nullptr)
-      TA_EXCL(chainlock_transaction_token);
-  zx_status_t Unsignal();
+      TA_EXCL(chainlock_transaction_token) {
+    rust_event_signal(this, wait_result, queue_to_own);
+  }
+  zx_status_t Unsignal() { return rust_event_unsignal(this); }
   bool is_signaled() const { return result_.load(ktl::memory_order_relaxed) != kNotSignaled; }
 
  protected:
@@ -98,16 +101,23 @@ class Event {
       : magic_(kMagic), result_(initial ? ZX_OK : kNotSignaled), flags_(flags) {}
 
  private:
-  zx_status_t WaitWorker(const Deadline& deadline, Interruptible interruptible, uint signal_mask)
-      TA_EXCL(chainlock_transaction_token);
+  friend struct EventLayout;
 
+  zx_status_t WaitWorker(const Deadline& deadline, Interruptible interruptible, uint signal_mask)
+      TA_EXCL(chainlock_transaction_token) {
+    return rust_event_wait_worker(this, &deadline, interruptible, signal_mask);
+  }
+
+  // The constructors initialize these members (and is_signaled() reads result_); everything else,
+  // including the destructor, is implemented in Rust (kernel/event.rs), which shares this layout
+  // (see event_layout.h).
   static constexpr uint32_t kMagic = fbl::magic("evnt");
-  uint32_t magic_;
+  [[maybe_unused]] uint32_t magic_;
 
   static constexpr zx_status_t kNotSignaled = INT_MAX;
   ktl::atomic<zx_status_t> result_;
 
-  Flags flags_;
+  [[maybe_unused]] Flags flags_;
   WaitQueue wait_;
 };
 

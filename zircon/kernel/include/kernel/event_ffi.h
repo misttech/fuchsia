@@ -10,37 +10,24 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
-#include <kernel/deadline.h>
-#include <kernel/event.h>
-#include <kernel/ffi.h>
-#include <kernel/owned_wait_queue.h>
-#include <kernel/thread.h>
+class Deadline;
+class Event;
+class OwnedWaitQueue;
+enum class Interruptible : bool;
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 __BEGIN_CDECLS
 
-// Event FFI routines
-FFI_ALWAYS_INLINE void cpp_event_init(Event* event, bool initial);
-FFI_ALWAYS_INLINE void cpp_event_destroy(Event* event);
-FFI_ALWAYS_INLINE void cpp_event_signal(Event* event, zx_status_t wait_result);
-FFI_ALWAYS_INLINE void cpp_event_signal_etc(Event* event, zx_status_t wait_result,
-                                            OwnedWaitQueue* queue_to_own);
-FFI_ALWAYS_INLINE zx_status_t cpp_event_unsignal(Event* event);
-FFI_ALWAYS_INLINE zx_status_t cpp_event_wait(Event* event, zx_instant_mono_t deadline);
-FFI_ALWAYS_INLINE zx_status_t cpp_event_wait_deadline(Event* event, const Deadline* deadline);
-FFI_ALWAYS_INLINE zx_status_t cpp_event_wait_mask(Event* event, const Deadline* deadline,
-                                                  uint32_t signal_mask);
-FFI_ALWAYS_INLINE zx_status_t cpp_event_wait_infinite(Event* event);
-FFI_ALWAYS_INLINE zx_status_t cpp_event_wait_interruptible(Event* event, zx_instant_mono_t deadline,
-                                                           Interruptible interruptible);
-FFI_ALWAYS_INLINE bool cpp_event_is_signaled(const Event* event);
-
-// AutounsignalEvent FFI routines
-FFI_ALWAYS_INLINE void cpp_autounsignal_event_init(AutounsignalEvent* event, bool initial);
-FFI_ALWAYS_INLINE void cpp_autounsignal_event_destroy(AutounsignalEvent* event);
-FFI_ALWAYS_INLINE Event* cpp_autounsignal_event_as_event(AutounsignalEvent* event);
-FFI_ALWAYS_INLINE const Event* cpp_autounsignal_event_as_event_const(
-    const AutounsignalEvent* event);
+// Rust implementations of the Event methods (kernel/event.rs). The C++ methods of the same name
+// are thin forwarders to these and carry the lock annotations; none may be called with a
+// ChainLockTransaction active.
+zx_status_t rust_event_wait_worker(const Event* event, const Deadline* deadline,
+                                   Interruptible interruptible, uint32_t signal_mask);
+// |queue_to_own| may be null; otherwise its lock must not be held and it must not be downstream
+// of the event's waiters' PI chains.
+void rust_event_signal(const Event* event, zx_status_t wait_result, OwnedWaitQueue* queue_to_own);
+zx_status_t rust_event_unsignal(const Event* event);
+// ~Event: asserts the magic and resets the fields; the embedded WaitQueue is destroyed by C++.
+void rust_event_destroy(Event* event);
 
 __END_CDECLS
 
