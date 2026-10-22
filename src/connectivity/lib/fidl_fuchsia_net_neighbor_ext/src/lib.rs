@@ -363,7 +363,12 @@ mod tests {
                 .expect("failed to send event batch");
         }
 
-        let (view, entry_iter_fut) = testutil::create_fake_view(batches_receiver);
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (view, view_server_end) = client.create_proxy::<fnet_neighbor::ViewMarker>();
+        let entry_iter_fut = testutil::serve_view_impl(batches_receiver, view_server_end);
 
         let event_stream =
             event_stream_from_view(&view).expect("failed to open entry iterator").fuse();
@@ -414,7 +419,11 @@ mod tests {
         ];
 
         // Instantiate the fake EntryIterator implementations.
-        let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (view, view_server_end) = client.create_proxy::<fnet_neighbor::ViewMarker>();
         let view_request_stream = view_server_end.into_stream();
         let entry_iters_fut = view_request_stream
             .zip(futures::stream::iter(test_data.clone()))
@@ -485,7 +494,13 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Instantiate the fake entry iterator implementation.
-        let (view, entry_iter_fut) = testutil::create_fake_view(futures::stream::iter(batches));
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (view, view_server_end) = client.create_proxy::<fnet_neighbor::ViewMarker>();
+        let entry_iter_fut =
+            testutil::serve_view_impl(futures::stream::iter(batches), view_server_end);
 
         let event_stream = event_stream_from_view(&view).expect("failed to connect to view").fuse();
 
@@ -508,7 +523,13 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Instantiate the fake EntryIterator implementation.
-        let (view, entry_iter_fut) = testutil::create_fake_view(futures::stream::iter(batches));
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (view, view_server_end) = client.create_proxy::<fnet_neighbor::ViewMarker>();
+        let entry_iter_fut =
+            testutil::serve_view_impl(futures::stream::iter(batches), view_server_end);
 
         let event_stream =
             event_stream_from_view(&view).expect("failed to create entry iterator").fuse();

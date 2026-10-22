@@ -30,7 +30,7 @@ fn handle_get_next(
 /// Feeds events received in `events` as responses to `GetNext()`.
 async fn fake_entry_iterator_impl(
     events: impl Stream<Item = Vec<fnet_neighbor::EntryIteratorItem>>,
-    server_end: fidl::endpoints::ServerEnd<fnet_neighbor::EntryIteratorMarker>,
+    server_end: flex_client::fidl::ServerEnd<fnet_neighbor::EntryIteratorMarker>,
 ) {
     let request_stream = server_end.into_stream();
     request_stream
@@ -57,16 +57,14 @@ pub async fn serve_view_request(
     .await
 }
 
-/// Create a `ViewProxy` whose server end will respond to the first
-/// `OpenEntryIterator` request it receives by returning an entry iterator
-/// backed by the given event stream. The returned future drives the entry
-/// iterator implementation.
-pub fn create_fake_view(
+/// Serve the first `OpenEntryIterator` request received on `server_end` by
+/// returning an entry iterator backed by the given event stream. The returned
+/// future drives the entry iterator implementation.
+pub fn serve_view_impl(
     event_stream: impl Stream<Item = Vec<fnet_neighbor::EntryIteratorItem>>,
-) -> (fnet_neighbor::ViewProxy, impl FusedFuture<Output = ()>) {
-    let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
-
-    let entry_iter_fut = view_server_end
+    server_end: flex_client::fidl::ServerEnd<fnet_neighbor::ViewMarker>,
+) -> impl FusedFuture<Output = ()> {
+    server_end
         .into_stream()
         .into_future()
         .then(async |(req, _rest)| {
@@ -77,8 +75,19 @@ pub fn create_fake_view(
             )
             .await
         })
-        .fuse();
+        .fuse()
+}
 
+/// Create a `ViewProxy` whose server end will respond to the first
+/// `OpenEntryIterator` request it receives by returning an entry iterator
+/// backed by the given event stream. The returned future drives the entry
+/// iterator implementation.
+#[cfg(not(feature = "fdomain"))]
+pub fn create_fake_view(
+    event_stream: impl Stream<Item = Vec<fnet_neighbor::EntryIteratorItem>>,
+) -> (fnet_neighbor::ViewProxy, impl FusedFuture<Output = ()>) {
+    let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
+    let entry_iter_fut = serve_view_impl(event_stream, view_server_end);
     (view, entry_iter_fut)
 }
 
@@ -166,12 +175,18 @@ mod tests {
         }
 
         // Instantiate the fake View implementation.
-        let (view, entry_iter_fut) = create_fake_view(event_stream_receiver);
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (view, view_server_end) = client.create_proxy::<fnet_neighbor::ViewMarker>();
+        let entry_iter_fut = serve_view_impl(event_stream_receiver, view_server_end);
         futures::pin_mut!(entry_iter_fut);
 
         // Drive the event iterator, asserting it observes the expected data.
+        use flex_client::ProxyHasDomain as _;
         let (entry_iter, entry_iter_server_end) =
-            fidl::endpoints::create_proxy::<fnet_neighbor::EntryIteratorMarker>();
+            view.domain().create_proxy::<fnet_neighbor::EntryIteratorMarker>();
         view.open_entry_iterator(entry_iter_server_end, &Default::default())
             .expect("failed to open entry iterator");
         for batch_shape in test_shape {
