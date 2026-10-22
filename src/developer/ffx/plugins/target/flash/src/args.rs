@@ -162,21 +162,22 @@ impl FlashCommand {
 #[cfg(test)]
 mod test {
     use super::*;
-    use anyhow::Result;
+    use ffx_config::ConfigLevel;
     use tempfile::NamedTempFile;
 
-    #[test]
-    fn test_oem_staged_file_from_str() -> Result<()> {
+    #[fuchsia::test]
+    fn test_oem_staged_file_from_str() {
         let test_oem_cmd = "test-oem-cmd";
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
-        let test_staged_file = format!("{},{}", test_oem_cmd, tmp_file_name).parse::<OemFile>()?;
+        let test_staged_file = format!("{},{}", test_oem_cmd, tmp_file_name)
+            .parse::<OemFile>()
+            .expect("parse OemFile");
         assert_eq!(test_oem_cmd, test_staged_file.command());
         assert_eq!(tmp_file_name, test_staged_file.file());
-        Ok(())
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_oem_staged_file_from_str_fails_with_nonexistent_file() {
         let test_oem_cmd = "test-oem-cmd";
         let tmp_file_name = "/fake/test/for/testing/that/should/not/exist";
@@ -184,7 +185,7 @@ mod test {
         assert!(test_staged_file.is_err());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_oem_staged_file_from_str_fails_with_malformed_string() {
         let test_oem_cmd = "test-oem-cmd";
         let tmp_file_name = "/fake/test/for/testing/that/should/not/exist";
@@ -192,19 +193,21 @@ mod test {
         assert!(test_staged_file.is_err());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_oem_staged_file_from_str_fails_with_empty_string() {
         let test_staged_file = "".parse::<OemFile>();
         assert!(test_staged_file.is_err());
     }
 
-    #[test]
-    fn test_oem_staged_files_are_in_manifest_params() -> Result<()> {
-        let env = ffx_config::test_env().build()?;
+    #[fuchsia::test]
+    fn test_oem_staged_files_are_in_manifest_params() {
+        let env = ffx_config::test_env().build().expect("test env");
         let test_oem_cmd = "test-oem-cmd";
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
-        let test_staged_file = format!("{},{}", test_oem_cmd, tmp_file_name).parse::<OemFile>()?;
+        let test_staged_file = format!("{},{}", test_oem_cmd, tmp_file_name)
+            .parse::<OemFile>()
+            .expect("parse OemFile");
         let cmd = FlashCommand {
             manifest_path: None,
             manifest: None,
@@ -224,6 +227,95 @@ mod test {
         assert_eq!(params.oem_stage[0].file(), tmp_file_name);
         assert_eq!(params.oem_stage[0].command(), test_oem_cmd);
         assert!(params.streaming_flash);
-        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_flash_config_defaults() {
+        let env = ffx_config::test_env().build().expect("test env");
+
+        // Ensure `src/developer/ffx/data/config.json` provides the expected default values
+        // for the exact configuration keys used by infra and external callers.
+        let default_min_timeout: u64 = env
+            .context
+            .query("fastboot.flash.min_timeout_secs")
+            .level(Some(ConfigLevel::Default))
+            .build()
+            .get(&env.context)
+            .expect("default fastboot.flash.min_timeout_secs");
+        assert_eq!(default_min_timeout, 60);
+
+        let default_timeout_rate: f64 = env
+            .context
+            .query("fastboot.flash.timeout_rate")
+            .level(Some(ConfigLevel::Default))
+            .build()
+            .get(&env.context)
+            .expect("default fastboot.flash.timeout_rate");
+        assert_eq!(default_timeout_rate, 2.0);
+
+        let cmd = FlashCommand::default();
+        assert_eq!(cmd.min_timeout_secs(&env.context).expect("min_timeout_secs"), 60);
+        assert_eq!(cmd.timeout_rate(&env.context).expect("timeout_rate"), 2.0);
+
+        let params = cmd.to_manifest(&env.context);
+        assert_eq!(params.flash_min_timeout_seconds, 60);
+        assert_eq!(params.flash_timeout_rate_mb_per_second, 2.0);
+    }
+
+    #[fuchsia::test]
+    fn test_flash_config_user_overrides() {
+        let env = ffx_config::test_env()
+            .user_config("fastboot.flash.min_timeout_secs", 600)
+            .user_config("fastboot.flash.timeout_rate", 4.5)
+            .build()
+            .expect("test env");
+
+        let cmd = FlashCommand::default();
+        assert_eq!(cmd.min_timeout_secs(&env.context).expect("min_timeout_secs"), 600);
+        assert_eq!(cmd.timeout_rate(&env.context).expect("timeout_rate"), 4.5);
+
+        let params = cmd.to_manifest(&env.context);
+        assert_eq!(params.flash_min_timeout_seconds, 600);
+        assert_eq!(params.flash_timeout_rate_mb_per_second, 4.5);
+    }
+
+    #[fuchsia::test]
+    fn test_flash_config_runtime_string_overrides() {
+        // Infra and external callers pass runtime overrides via `-c key=value`, which
+        // may be stored as strings (e.g. "600", "1").
+        let env = ffx_config::test_env()
+            .runtime_config("fastboot.flash.min_timeout_secs", "600")
+            .runtime_config("fastboot.flash.timeout_rate", "1")
+            .build()
+            .expect("test env");
+
+        let cmd = FlashCommand::default();
+        assert_eq!(cmd.min_timeout_secs(&env.context).expect("min_timeout_secs"), 600);
+        assert_eq!(cmd.timeout_rate(&env.context).expect("timeout_rate"), 1.0);
+
+        let params = cmd.to_manifest(&env.context);
+        assert_eq!(params.flash_min_timeout_seconds, 600);
+        assert_eq!(params.flash_timeout_rate_mb_per_second, 1.0);
+    }
+
+    #[fuchsia::test]
+    fn test_flash_cli_args_override_config() {
+        let env = ffx_config::test_env()
+            .runtime_config("fastboot.flash.min_timeout_secs", 600)
+            .runtime_config("fastboot.flash.timeout_rate", 4.0)
+            .build()
+            .expect("test env");
+
+        let cmd = FlashCommand {
+            min_timeout_secs: Some(120),
+            timeout_rate: Some(8.0),
+            ..Default::default()
+        };
+        assert_eq!(cmd.min_timeout_secs(&env.context).expect("min_timeout_secs"), 120);
+        assert_eq!(cmd.timeout_rate(&env.context).expect("timeout_rate"), 8.0);
+
+        let params = cmd.to_manifest(&env.context);
+        assert_eq!(params.flash_min_timeout_seconds, 120);
+        assert_eq!(params.flash_timeout_rate_mb_per_second, 8.0);
     }
 }

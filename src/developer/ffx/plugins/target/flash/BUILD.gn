@@ -58,7 +58,7 @@ ffx_plugin("ffx_flash") {
     "//third_party/rust_crates:tempfile",
   ]
   args_test_deps = [
-    "//third_party/rust_crates:anyhow",
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:tempfile",
   ]
 
