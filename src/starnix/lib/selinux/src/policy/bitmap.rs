@@ -141,7 +141,7 @@ impl ExtensibleBitmap {
 
     /// Returns an iterator that yields the indices of this bitmap's set bits.
     fn indices_of_set_bits(&self) -> BitIter<'_> {
-        BitIter { spans: self.spans(), current: 1, high: 0 }
+        BitIter { items: self.items.iter(), current_start_bit: 0, current_map: 0 }
     }
 
     /// Returns `true` if all set bits in `self` are also set in `other`.
@@ -379,23 +379,23 @@ impl<'a> Iterator for BitSpansIter<'a> {
 /// Iterator over the indices of bits set in [`ExtensibleBitmap`].
 #[derive(Clone)]
 struct BitIter<'a> {
-    spans: BitSpansIter<'a>,
-    current: u32,
-    high: u32,
+    items: std::slice::Iter<'a, BinaryMapItem>,
+    current_start_bit: u32,
+    current_map: MapNode,
 }
 
 impl<'a> Iterator for BitIter<'a> {
     type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current > self.high {
-            let (low, high) = self.spans.next()?;
-            self.current = low;
-            self.high = high;
+        if self.current_map == 0 {
+            let item = self.items.next()?;
+            self.current_start_bit = item.start_bit;
+            self.current_map = item.map;
         }
-        let result = self.current;
-        self.current += 1;
-        Some(result)
+        let bit = self.current_map.trailing_zeros();
+        self.current_map &= self.current_map - 1;
+        Some(self.current_start_bit + bit)
     }
 }
 
