@@ -79,9 +79,7 @@ code consistency and prevent CQ Dry Run or presubmit builder failures.
   in the code review UI.
 
 Note: The [skills.star](scripts/shac/skills.star) integration is configured to
-scan for `SKILL.md` files within the `.agents/skills/` and several other
-directories. This scope can be expanded to include other directories in the
-future as needed.
+scan for all `SKILL.md` files across the Fuchsia codebase (`**/SKILL.md`).
 
 ## Validation Rules
 

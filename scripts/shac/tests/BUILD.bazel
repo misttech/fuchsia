@@ -24,6 +24,7 @@ test_suite(
         ":mirror_blocklists_test",
         ":prebuilts_test",
         ":python_test",
+        ":skills_test",
         ":underscore_vs_dash_test",
     ],
 )
@@ -116,6 +117,12 @@ host_shac_test(
 host_shac_test(
     name = "python_test",
     src = "python_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "skills_test",
+    src = "skills_test.star",
     data = ["//scripts/shac:starlark_files"],
 )
 

@@ -12,50 +12,37 @@ def _skill_format(ctx):
     )
     exe_script = "%s/scripts/skill_linter/skill_linter.py" % get_fuchsia_dir(ctx)
 
-    skill_files = ctx.scm.affected_files(glob = [
-        ".agents/skills/**/SKILL.md",
-        "docs/skills/**/SKILL.md",
-        "zircon/skills/**/SKILL.md",
-        "src/devices/skills/**/SKILL.md",
-        "src/developer/debug/skills/**/SKILL.md",
-        "src/diagnostics/skills/**/SKILL.md",
-    ])
+    skill_files = ctx.scm.affected_files(glob = ["**/SKILL.md"])
 
     if not skill_files:
         return
 
-    procs = []
-    for f in skill_files:
-        file_path = ctx.scm.root + "/" + f
-        procs.append(
-            os_exec(
-                ctx,
-                [exe_interp, exe_script, "--suggest-fix-in-json", file_path],
-                env = {
-                    "PYTHONPATH": get_fuchsia_dir(ctx) + "/third_party/pyyaml/src/lib",
-                },
-            ),
+    file_paths = [ctx.scm.root + "/" + f for f in skill_files]
+    res = os_exec(
+        ctx,
+        [exe_interp, exe_script, "--suggest-fix-in-json"] + file_paths,
+        env = {
+            "PYTHONPATH": get_fuchsia_dir(ctx) + "/third_party/pyyaml/src/lib",
+        },
+        ok_retcodes = [0, 1],
+    ).wait()
+
+    # Check for failure to produce JSON.
+    if not res.stdout.strip().startswith("["):
+        ctx.emit.finding(
+            level = "error",
+            message = "Skill linter error:\n%s" % res.stderr,
         )
+        return
 
-    for proc in procs:
-        res = proc.wait()
-
-        # Check for failure to produce JSON.
-        if not res.stdout.strip().startswith("["):
-            ctx.emit.finding(
-                level = "error",
-                message = "Skill linter error:\n%s" % res.stderr,
-            )
-            continue
-
-        findings = json.decode(res.stdout)
-        for finding in findings:
-            ctx.emit.finding(
-                level = finding["level"],
-                filepath = finding["filepath"],
-                message = finding["message"],
-                replacements = finding.get("replacements"),
-            )
+    findings = json.decode(res.stdout)
+    for finding in findings:
+        ctx.emit.finding(
+            level = finding["level"],
+            filepath = finding["filepath"],
+            message = finding["message"],
+            replacements = finding.get("replacements"),
+        )
 
 def register_skills_checks():
     shac.register_check(shac.check(_skill_format, formatter = True))
