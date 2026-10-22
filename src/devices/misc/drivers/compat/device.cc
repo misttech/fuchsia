@@ -801,13 +801,15 @@ zx_status_t Device::GetMetadata(uint32_t type, void* buf, size_t buflen, size_t*
 
 zx_status_t Device::RegisterServiceMember(component::AnyHandler handler, const char* service_name,
                                           const char* instance_name, const char* member_name) {
-  std::string fullpath = std::format("svc/{}/{}", service_name, instance_name);
-  zx::result result = driver_->outgoing().component().AddUnmanagedProtocolAt(std::move(handler),
-                                                                             fullpath, member_name);
-  if (result.is_error()) {
-    logger_->log(fdf::ERROR, "Registering driver failed. {}", result.error_value());
-  }
-  return result.status_value();
+  return driver_->RunOnDispatcher([&] {
+    std::string fullpath = std::format("svc/{}/{}", service_name, instance_name);
+    zx::result result = driver_->outgoing().component().AddUnmanagedProtocolAt(
+        std::move(handler), fullpath, member_name);
+    if (result.is_error()) {
+      logger_->log(fdf::ERROR, "Registering driver failed. {}", result.error_value());
+    }
+    return result.status_value();
+  });
 }
 
 bool Device::MessageOp(fidl::IncomingHeaderAndMessage msg, device_fidl_txn_t txn) {

@@ -94,15 +94,15 @@ class Driver : public fdf::DriverBase2 {
 
   const fdf::ServiceValidator& service_validator() { return service_validator_.value(); }
 
- private:
-  bool IsComposite();
-
-  bool IsRunningOnDispatcher() const;
-
   // If the current thread is running a task from our dispatcher, calls |task|
   // synchronously. Otherwise, schedules |task| onto our dispatcher and blocks
   // to receive its result.
   zx_status_t RunOnDispatcher(fit::callback<zx_status_t()> task);
+
+ private:
+  bool IsComposite();
+
+  bool IsRunningOnDispatcher() const;
 
   // Loads the driver using the provided `vmos`.
   zx::result<> LoadDriver(

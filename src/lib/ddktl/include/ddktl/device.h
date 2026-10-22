@@ -450,9 +450,8 @@ class Device : public ::ddk::internal::base_device<D, Mixins...> {
   // for compat drivers will always exist.
   // |handler| is the handler for the service.
   template <typename Service, typename = std::enable_if_t<fidl::IsServiceV<Service>>>
-  zx::result<> DdkAddService(
-      fidl::ServiceInstanceHandler<fidl::internal::ChannelTransport> handler) {
-    constexpr char kInstanceName[] = "default";
+  zx::result<> DdkAddService(fidl::ServiceInstanceHandler<fidl::internal::ChannelTransport> handler,
+                             const char* instance_name = component::kDefaultInstance) {
     auto handlers = handler.TakeMemberHandlers();
     if (handlers.empty()) {
       return zx::error(ZX_ERR_INVALID_ARGS);
@@ -462,7 +461,7 @@ class Device : public ::ddk::internal::base_device<D, Mixins...> {
     for (auto& [member_name, member_handler] : handlers) {
       zx_status_t status =
           device_register_service_member(this->parent_, static_cast<void*>(&member_handler),
-                                         service_name.c_str(), kInstanceName, member_name.c_str());
+                                         service_name.c_str(), instance_name, member_name.c_str());
       if (status != ZX_OK) {
         return zx::make_result(status);
       }
