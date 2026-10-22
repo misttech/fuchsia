@@ -5386,7 +5386,7 @@ impl MemoryManager {
         let generation = state.mappings.generation;
         let now = zx::MonotonicInstant::get();
         if !(self_cache_mode == SelfStatsCacheMode::BypassCache && is_self_read) {
-            const CACHE_TTL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(250);
+            const CACHE_TTL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(2000);
             let cached = self.cached_stats.lock();
             if let Some((timestamp, cached_gen, stats)) = *cached {
                 if cached_gen == generation && now - timestamp < CACHE_TTL {
@@ -5404,32 +5404,26 @@ impl MemoryManager {
             .sum();
 
         self.with_zx_mappings(current_task, |zx_mappings| {
-            let mut mm_iter = state.mappings.iter().peekable();
+            let mut mappings_iter = state.mappings.iter().peekable();
             for zx_mapping in zx_mappings {
                 // We only care about map info for actual mappings.
                 let zx_details = zx_mapping.details();
                 let Some(zx_details) = zx_details.as_mapping() else { continue };
                 let user_address = UserAddress::from(zx_mapping.base as u64);
-                while let Some((mm_range, _)) = mm_iter.peek() {
-                    if mm_range.end.ptr() <= zx_mapping.base {
-                        mm_iter.next();
-                    } else {
-                        break;
-                    }
+                while mappings_iter
+                    .peek()
+                    .is_some_and(|(mm_range, _)| mm_range.end.ptr() <= zx_mapping.base)
+                {
+                    mappings_iter.next();
                 }
-                let mm_mapping = match mm_iter.peek() {
-                    Some((mm_range, mm_mapping)) if mm_range.start.ptr() <= zx_mapping.base => {
-                        *mm_mapping
-                    }
-                    _ => {
-                        let (_, mm_mapping) = state.mappings.get(user_address).unwrap_or_else(|| {
-                            panic!(
-                                "mapping bookkeeping must be consistent with zircon's: not found: {user_address:?}"
-                            )
-                        });
-                        mm_mapping
-                    }
-                };
+                let (_, mm_mapping) = mappings_iter
+                    .peek()
+                    .filter(|(mm_range, _)| mm_range.start.ptr() <= zx_mapping.base)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "mapping bookkeeping must be consistent with zircon's: not found: {user_address:?}"
+                        )
+                    });
                 debug_assert_eq!(
                     match state.get_mapping_backing(mm_mapping) {
                         MappingBacking::Memory(m)=>m.memory().get_koid(),
@@ -8664,6 +8658,196 @@ mod tests {
             let read_buf: [u8; 16] = current_task.read_memory_to_array(addr).unwrap();
             assert_eq!(&read_buf, &[0x42; 16]);
         })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_stats_linear_scan() {
+        use crate::task::KernelFeatures;
+        use crate::testing::spawn_kernel_with_features_and_run;
+
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let mm = current_task.mm().unwrap();
+                let page_size = *PAGE_SIZE as usize;
+                let stats_before = mm.get_stats(&current_task, SelfStatsCacheMode::BypassCache);
+
+                let insert_lazy_mapping = |lazy_addr: UserAddress| {
+                    let lazy_memory = create_anonymous_mapping_memory(page_size as u64).unwrap();
+                    let lazy_flags = MappingFlags::from_access_flags_and_options(
+                        ProtectionFlags::empty(),
+                        MappingOptions::ANONYMOUS,
+                    );
+                    let lazy_mapping = Mapping::with_name(
+                        MappingBacking::Memory(Box::new(MappingBackingMemory::new(
+                            lazy_addr,
+                            lazy_memory,
+                            0,
+                        ))),
+                        lazy_flags,
+                        MappingName::None,
+                        MappingMode::Lazy,
+                    );
+                    let mut state = mm.state.write();
+                    state
+                        .mappings
+                        .insert(lazy_addr..(lazy_addr + page_size).unwrap(), lazy_mapping);
+                };
+
+                // 1. Lazy mapping before active mappings (no corresponding Zircon VMAR mapping).
+                insert_lazy_mapping((mm.base_addr + 4 * page_size).unwrap());
+
+                // 2. 1-to-1 split: map 3 pages, commit the first page, and split protections on the
+                // middle page so both Starnix's RangeMap and Zircon's VMAR have 3 entries.
+                let addr_a = (mm.base_addr + 10 * page_size).unwrap();
+                assert_eq!(map_memory(&current_task, addr_a, 3 * *PAGE_SIZE), addr_a);
+                current_task.write_memory(addr_a, &[1u8; 16]).unwrap();
+                mm.protect(
+                    &current_task,
+                    (addr_a + page_size).unwrap(),
+                    page_size,
+                    ProtectionFlags::READ,
+                )
+                .unwrap();
+
+                // 3. Lazy mapping between active mappings.
+                insert_lazy_mapping((mm.base_addr + 14 * page_size).unwrap());
+
+                // 4. N-to-1 split (2 Starnix RangeMap entries -> 1 Zircon VMAR mapping): map 2 pages,
+                // commit the second page, and name only the first page in Starnix.
+                let addr_b = (mm.base_addr + 16 * page_size).unwrap();
+                assert_eq!(map_memory(&current_task, addr_b, 2 * *PAGE_SIZE), addr_b);
+                current_task.write_memory((addr_b + page_size).unwrap(), &[2u8; 16]).unwrap();
+                mm.set_mapping_name(addr_b, page_size, Some("first_half".into())).unwrap();
+
+                // 5. 1-to-N split (1 Starnix RangeMap entry -> 2 Zircon VMAR mappings): map 2 pages,
+                // commit the first page, and split protections on the first page directly in user_vmar.
+                let addr_c = (mm.base_addr + 20 * page_size).unwrap();
+                assert_eq!(map_memory(&current_task, addr_c, 2 * *PAGE_SIZE), addr_c);
+                current_task.write_memory(addr_c, &[3u8; 16]).unwrap();
+                // SAFETY: This is safe because it's performed on the restricted vmar.
+                unsafe {
+                    mm.mapping_context.user_vmar.protect(
+                        addr_c.ptr(),
+                        page_size,
+                        zx::VmarFlags::PERM_READ,
+                    )
+                }
+                .unwrap();
+
+                // 6. Lazy mapping after active mappings.
+                insert_lazy_mapping((mm.base_addr + 24 * page_size).unwrap());
+
+                let stats_after = mm.get_stats(&current_task, SelfStatsCacheMode::BypassCache);
+                assert_eq!(stats_after.vm_size - stats_before.vm_size, 7 * page_size);
+                assert_eq!(stats_after.vm_rss - stats_before.vm_rss, 3 * page_size);
+                assert_eq!(stats_after.rss_anonymous - stats_before.rss_anonymous, 3 * page_size);
+            },
+            KernelFeatures { cached_zx_map_info_bytes: 4096, ..Default::default() },
+        )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_stats_caching() {
+        use crate::task::KernelFeatures;
+        use crate::testing::spawn_kernel_with_features_and_run;
+
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let page_size = *PAGE_SIZE as usize;
+                let mm = current_task.mm().unwrap();
+                let reader = current_task.clone_task_for_test(0, None);
+                assert!(mm.cached_stats.lock().is_none());
+
+                // 1. Natural cache population on a non-self get_stats call.
+                let addr1 = map_memory(&current_task, UserAddress::default(), 2 * *PAGE_SIZE);
+                current_task.write_memory(addr1, &[42u8; 8]).unwrap();
+
+                let initial_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
+                assert!(mm.cached_stats.lock().is_some());
+                assert!(initial_stats.vm_size >= 2 * page_size);
+                assert!(initial_stats.vm_rss >= page_size);
+
+                // Commit the second page of addr1 in-place (without changing mappings.generation)
+                // and verify a subsequent read within CACHE_TTL hits the cache.
+                current_task.write_memory((addr1 + page_size).unwrap(), &[1u8; 8]).unwrap();
+
+                let cached_hit = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
+                assert_eq!(
+                    (cached_hit.vm_size, cached_hit.vm_rss),
+                    (initial_stats.vm_size, initial_stats.vm_rss)
+                );
+
+                // 2. Cache expiration once now - timestamp >= CACHE_TTL (2000ms), and cache
+                // invalidation when mappings.generation changes.
+                let gen1 = mm.state.read().mappings.generation;
+                *mm.cached_stats.lock() = Some((
+                    zx::MonotonicInstant::get() - zx::MonotonicDuration::from_millis(2001),
+                    gen1,
+                    initial_stats,
+                ));
+                let expired_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
+                assert_eq!(expired_stats.vm_size, initial_stats.vm_size);
+                assert_eq!(expired_stats.vm_rss - initial_stats.vm_rss, page_size);
+
+                let addr2 = map_memory(&current_task, UserAddress::default(), 2 * *PAGE_SIZE);
+                current_task.write_memory(addr2, &[1u8; 8]).unwrap();
+                current_task.write_memory((addr2 + page_size).unwrap(), &[2u8; 8]).unwrap();
+
+                let refreshed_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
+                assert_eq!(refreshed_stats.vm_size - initial_stats.vm_size, 2 * page_size);
+                assert_eq!(refreshed_stats.vm_rss - initial_stats.vm_rss, 3 * page_size);
+
+                // 3. Kernel thread (mm() == Err, is_self_read == false) uses cached_stats, whereas a
+                // CLONE_VM sibling thread (is_self_read == true) bypasses stale cached_stats when
+                // SelfStatsCacheMode::BypassCache is requested.
+                let gen2 = mm.state.read().mappings.generation;
+                *mm.cached_stats.lock() = Some((
+                    zx::MonotonicInstant::get(),
+                    gen2,
+                    MemoryStats { vm_size: 123_456, vm_rss: 654_321, ..Default::default() },
+                ));
+
+                let (kthread_result_fn, req) =
+                    crate::task::dynamic_thread_spawner::SpawnRequestBuilder::new()
+                        .with_sync_closure({
+                            let mm = Arc::clone(&mm);
+                            move |kthread| {
+                                assert!(kthread.mm().is_err());
+                                mm.get_stats(kthread, SelfStatsCacheMode::BypassCache)
+                            }
+                        })
+                        .build_with_sync_result();
+                current_task.kernel().kthreads.spawner().spawn_from_request(req);
+                let kthread_stats = kthread_result_fn().expect("kthread get_stats");
+                assert_eq!((kthread_stats.vm_size, kthread_stats.vm_rss), (123_456, 654_321));
+
+                let sibling = current_task.clone_task_for_test(
+                    (starnix_uapi::CLONE_THREAD
+                        | starnix_uapi::CLONE_VM
+                        | starnix_uapi::CLONE_SIGHAND) as u64,
+                    None,
+                );
+                assert!(Arc::ptr_eq(&sibling.mm().unwrap(), &mm));
+                let sibling_cached = mm.get_stats(&sibling, SelfStatsCacheMode::AllowCached);
+                assert_eq!((sibling_cached.vm_size, sibling_cached.vm_rss), (123_456, 654_321));
+                let sibling_stats = mm.get_stats(&sibling, SelfStatsCacheMode::BypassCache);
+                assert_eq!(
+                    (sibling_stats.vm_size, sibling_stats.vm_rss),
+                    (refreshed_stats.vm_size, refreshed_stats.vm_rss)
+                );
+
+                // 4. MemoryManager::mrelease() invalidates cached_stats so an immediate non-self read
+                // observes the released RSS rather than stale cached stats.
+                mm.mrelease().unwrap();
+                assert!(mm.cached_stats.lock().is_none());
+                let post_release_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
+                assert_eq!(post_release_stats.vm_size, refreshed_stats.vm_size);
+                assert!(post_release_stats.vm_rss + 4 * page_size <= refreshed_stats.vm_rss);
+            },
+            KernelFeatures { cached_zx_map_info_bytes: 4096, ..Default::default() },
+        )
         .await;
     }
 }
