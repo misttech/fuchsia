@@ -8,11 +8,10 @@
 #include <lib/zx/time.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
-#include <stdio.h>
-#include <string.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
 
+#include <sstream>
 #include <string>
 
 #include <zxtest/zxtest.h>
@@ -30,41 +29,33 @@ TEST(PsUtilsMemgraph, OnJob) {
   zx_info_handle_basic_t basic_info = {};
   ASSERT_OK(job.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr));
 
-  char root_buffer[1024] = {};
-  FILE* root_file = fmemopen(root_buffer, sizeof(root_buffer), "w");
-  ASSERT_NOT_NULL(root_file);
+  std::ostringstream root_output;
   JsonTaskEnumerator root_enumerator(/*self_koid=*/0, /*show_threads=*/true,
-                                     /*show_vmos=*/false, /*show_handle_stats=*/false, root_file);
+                                     /*show_vmos=*/false, /*show_handle_stats=*/false, root_output);
   EXPECT_OK(root_enumerator.OnJob(/*depth=*/0, job.get(), basic_info.koid, /*parent_koid=*/0));
-  fclose(root_file);
-  EXPECT_OK(root_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(root_buffer, "\"type\": \"j\""));
-  EXPECT_NOT_NULL(strstr(root_buffer, "\"parent\": \"kernel/vmo\""));
-  EXPECT_NOT_NULL(strstr(root_buffer, "\"name\": \"memgraph-test-job\""));
+  EXPECT_TRUE(root_enumerator.partial_failures().empty());
+  EXPECT_TRUE(root_output.str().contains("\"type\": \"j\""));
+  EXPECT_TRUE(root_output.str().contains("\"parent\": \"kernel/vmo\""));
+  EXPECT_TRUE(root_output.str().contains("\"name\": \"memgraph-test-job\""));
 
-  char child_buffer[1024] = {};
-  FILE* child_file = fmemopen(child_buffer, sizeof(child_buffer), "w");
-  ASSERT_NOT_NULL(child_file);
+  std::ostringstream child_output;
   JsonTaskEnumerator child_enumerator(/*self_koid=*/0, /*show_threads=*/true,
-                                      /*show_vmos=*/false, /*show_handle_stats=*/false, child_file);
+                                      /*show_vmos=*/false, /*show_handle_stats=*/false,
+                                      child_output);
   EXPECT_OK(
       child_enumerator.OnJob(/*depth=*/1, job.get(), basic_info.koid, basic_info.related_koid));
-  fclose(child_file);
-  EXPECT_OK(child_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(child_buffer, "\"parent\": \"j/"));
-  EXPECT_NOT_NULL(strstr(child_buffer, "\"name\": \"memgraph-test-job\""));
+  EXPECT_TRUE(child_enumerator.partial_failures().empty());
+  EXPECT_TRUE(child_output.str().contains("\"parent\": \"j/"));
+  EXPECT_TRUE(child_output.str().contains("\"name\": \"memgraph-test-job\""));
 
-  char invalid_buffer[1024] = {};
-  FILE* invalid_file = fmemopen(invalid_buffer, sizeof(invalid_buffer), "w");
-  ASSERT_NOT_NULL(invalid_file);
+  std::ostringstream invalid_output;
   JsonTaskEnumerator invalid_enumerator(/*self_koid=*/0, /*show_threads=*/true,
                                         /*show_vmos=*/false, /*show_handle_stats=*/false,
-                                        invalid_file);
+                                        invalid_output);
   EXPECT_OK(invalid_enumerator.OnJob(/*depth=*/1, ZX_HANDLE_INVALID, /*koid=*/1234,
                                      /*parent_koid=*/5678));
-  fclose(invalid_file);
-  EXPECT_OK(invalid_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(invalid_buffer, "\"name\": \"<UNKNOWN>\""));
+  EXPECT_TRUE(invalid_enumerator.partial_failures().empty());
+  EXPECT_TRUE(invalid_output.str().contains("\"name\": \"<UNKNOWN>\""));
 }
 
 TEST(PsUtilsMemgraph, OnProcessLiveWithVmosAndHandleStats) {
@@ -82,55 +73,49 @@ TEST(PsUtilsMemgraph, OnProcessLiveWithVmosAndHandleStats) {
   ASSERT_OK(zx::process::self()->get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info),
                                           nullptr, nullptr));
 
-  std::string buffer(65536, '\0');
-  FILE* file = fmemopen(buffer.data(), buffer.size(), "w");
-  ASSERT_NOT_NULL(file);
+  std::ostringstream out;
   JsonTaskEnumerator json_task_enumerator(/*self_koid=*/0, /*show_threads=*/true,
-                                          /*show_vmos=*/true, /*show_handle_stats=*/true, file);
+                                          /*show_vmos=*/true, /*show_handle_stats=*/true, out);
   EXPECT_OK(json_task_enumerator.OnProcess(/*depth=*/1, zx::process::self()->get(), basic_info.koid,
                                            basic_info.related_koid));
-  fclose(file);
 
   ASSERT_OK(zx::vmar::root_self()->unmap(mapped_address, page_size));
 
-  EXPECT_OK(json_task_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"type\": \"p\""));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"private_bytes\": "));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"vmos\": ["));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"name\": \"memgraph-test-vmo\""));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"vmo_refs\": ["));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"HANDLE\""));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"MAPPING\""));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"handle_rights\": [\"READ\", \"WRITE\""));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"handle_stats\": {"));
-  EXPECT_NOT_NULL(strstr(buffer.c_str(), "\"vmo\": "));
+  EXPECT_TRUE(json_task_enumerator.partial_failures().empty());
+  EXPECT_TRUE(out.str().contains("\"type\": \"p\""));
+  EXPECT_TRUE(out.str().contains("\"private_bytes\": "));
+  EXPECT_TRUE(out.str().contains("\"vmos\": ["));
+  EXPECT_TRUE(out.str().contains("\"name\": \"memgraph-test-vmo\""));
+  EXPECT_TRUE(out.str().contains("\"vmo_refs\": ["));
+  EXPECT_TRUE(out.str().contains("\"HANDLE\""));
+  EXPECT_TRUE(out.str().contains("\"MAPPING\""));
+  EXPECT_TRUE(out.str().contains("\"handle_rights\": [\"READ\", \"WRITE\""));
+  EXPECT_TRUE(out.str().contains("\"handle_stats\": {"));
+  EXPECT_TRUE(out.str().contains("\"vmo\": "));
 
   // When self_koid matches the target process koid, VMO enumeration is skipped.
-  char self_buffer[1024] = {};
-  FILE* self_file = fmemopen(self_buffer, sizeof(self_buffer), "w");
-  ASSERT_NOT_NULL(self_file);
+  std::ostringstream self_output;
   JsonTaskEnumerator self_enumerator(/*self_koid=*/basic_info.koid, /*show_threads=*/true,
-                                     /*show_vmos=*/true, /*show_handle_stats=*/false, self_file);
+                                     /*show_vmos=*/true, /*show_handle_stats=*/false, self_output);
   EXPECT_OK(self_enumerator.OnProcess(/*depth=*/1, zx::process::self()->get(), basic_info.koid,
                                       basic_info.related_koid));
-  fclose(self_file);
-  EXPECT_OK(self_enumerator.partial_failure());
-  EXPECT_NULL(strstr(self_buffer, "\"vmos\": ["));
-  EXPECT_NULL(strstr(self_buffer, "\"handle_stats\": {"));
+  EXPECT_TRUE(self_enumerator.partial_failures().empty());
+  EXPECT_FALSE(self_output.str().contains("\"vmos\": ["));
+  EXPECT_FALSE(self_output.str().contains("\"handle_stats\": {"));
 }
 
 TEST(PsUtilsMemgraph, OnProcessInvalidHandleRecordsPartialFailure) {
-  char buffer[1024] = {};
-  FILE* file = fmemopen(buffer, sizeof(buffer), "w");
-  ASSERT_NOT_NULL(file);
+  std::ostringstream out;
   JsonTaskEnumerator json_task_enumerator(/*self_koid=*/0, /*show_threads=*/true,
-                                          /*show_vmos=*/true, /*show_handle_stats=*/true, file);
+                                          /*show_vmos=*/true, /*show_handle_stats=*/true, out);
   EXPECT_OK(json_task_enumerator.OnProcess(/*depth=*/1, ZX_HANDLE_INVALID, /*koid=*/1234,
                                            /*parent_koid=*/5678));
-  fclose(file);
 
-  EXPECT_EQ(json_task_enumerator.partial_failure(), ZX_ERR_BAD_HANDLE);
-  EXPECT_NOT_NULL(strstr(buffer, "\"name\": \"<UNKNOWN>\""));
+  ASSERT_EQ(json_task_enumerator.partial_failures().size(), 3u);
+  EXPECT_EQ(json_task_enumerator.partial_failures()[0], ZX_ERR_BAD_HANDLE);
+  EXPECT_EQ(json_task_enumerator.partial_failures()[1], ZX_ERR_BAD_HANDLE);
+  EXPECT_EQ(json_task_enumerator.partial_failures()[2], ZX_ERR_BAD_HANDLE);
+  EXPECT_TRUE(out.str().contains("\"name\": \"<UNKNOWN>\""));
 }
 
 TEST(PsUtilsMemgraph, ExitedProcessDoesNotCausePartialFailure) {
@@ -152,19 +137,14 @@ TEST(PsUtilsMemgraph, ExitedProcessDoesNotCausePartialFailure) {
   ASSERT_EQ(process.get_info(ZX_INFO_TASK_STATS, &task_stats, sizeof(task_stats), nullptr, nullptr),
             ZX_ERR_BAD_STATE);
 
-  char buffer[1024] = {};
-  FILE* file = fmemopen(buffer, sizeof(buffer), "w");
-  ASSERT_NOT_NULL(file);
-
+  std::ostringstream out;
   JsonTaskEnumerator json_task_enumerator(/*self_koid=*/0, /*show_threads=*/true,
-                                          /*show_vmos=*/false,
-                                          /*show_handle_stats=*/false, file);
+                                          /*show_vmos=*/false, /*show_handle_stats=*/false, out);
   EXPECT_OK(json_task_enumerator.OnProcess(/*depth=*/1, process.get(), basic_info.koid,
                                            basic_info.related_koid));
-  fclose(file);
 
-  EXPECT_OK(json_task_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(buffer, "\"private_bytes\": 0, \"shared_bytes\": 0, \"pss_bytes\": 0"));
+  EXPECT_TRUE(json_task_enumerator.partial_failures().empty());
+  EXPECT_TRUE(out.str().contains("\"private_bytes\": 0, \"shared_bytes\": 0, \"pss_bytes\": 0"));
 }
 
 TEST(PsUtilsMemgraph, OnThread) {
@@ -172,18 +152,15 @@ TEST(PsUtilsMemgraph, OnThread) {
   ASSERT_OK(zx::thread::self()->get_info(ZX_INFO_HANDLE_BASIC, &self_info, sizeof(self_info),
                                          nullptr, nullptr));
 
-  char running_buffer[1024] = {};
-  FILE* running_file = fmemopen(running_buffer, sizeof(running_buffer), "w");
-  ASSERT_NOT_NULL(running_file);
+  std::ostringstream running_output;
   JsonTaskEnumerator running_enumerator(/*self_koid=*/0, /*show_threads=*/true,
                                         /*show_vmos=*/false, /*show_handle_stats=*/false,
-                                        running_file);
+                                        running_output);
   EXPECT_OK(running_enumerator.OnThread(/*depth=*/2, zx::thread::self()->get(), self_info.koid,
                                         self_info.related_koid));
-  fclose(running_file);
-  EXPECT_OK(running_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(running_buffer, "\"type\": \"t\""));
-  EXPECT_NOT_NULL(strstr(running_buffer, "\"state\": \"RUNNING\""));
+  EXPECT_TRUE(running_enumerator.partial_failures().empty());
+  EXPECT_TRUE(running_output.str().contains("\"type\": \"t\""));
+  EXPECT_TRUE(running_output.str().contains("\"state\": \"RUNNING\""));
 
   static constexpr char kThreadName[] = "memgraph-test-thread";
   zx::thread thread;
@@ -193,58 +170,46 @@ TEST(PsUtilsMemgraph, OnThread) {
   ASSERT_OK(
       thread.get_info(ZX_INFO_HANDLE_BASIC, &thread_info, sizeof(thread_info), nullptr, nullptr));
 
-  char new_buffer[1024] = {};
-  FILE* new_file = fmemopen(new_buffer, sizeof(new_buffer), "w");
-  ASSERT_NOT_NULL(new_file);
+  std::ostringstream new_output;
   JsonTaskEnumerator new_enumerator(/*self_koid=*/0, /*show_threads=*/true,
-                                    /*show_vmos=*/false, /*show_handle_stats=*/false, new_file);
+                                    /*show_vmos=*/false, /*show_handle_stats=*/false, new_output);
   EXPECT_OK(new_enumerator.OnThread(/*depth=*/2, thread.get(), thread_info.koid,
                                     thread_info.related_koid));
-  fclose(new_file);
-  EXPECT_OK(new_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(new_buffer, "\"name\": \"memgraph-test-thread\""));
-  EXPECT_NOT_NULL(strstr(new_buffer, "\"state\": \"NEW\""));
+  EXPECT_TRUE(new_enumerator.partial_failures().empty());
+  EXPECT_TRUE(new_output.str().contains("\"name\": \"memgraph-test-thread\""));
+  EXPECT_TRUE(new_output.str().contains("\"state\": \"NEW\""));
 
-  char invalid_buffer[1024] = {};
-  FILE* invalid_file = fmemopen(invalid_buffer, sizeof(invalid_buffer), "w");
-  ASSERT_NOT_NULL(invalid_file);
+  std::ostringstream invalid_output;
   JsonTaskEnumerator invalid_enumerator(/*self_koid=*/0, /*show_threads=*/true,
                                         /*show_vmos=*/false, /*show_handle_stats=*/false,
-                                        invalid_file);
+                                        invalid_output);
   EXPECT_OK(invalid_enumerator.OnThread(/*depth=*/2, ZX_HANDLE_INVALID, /*koid=*/1234,
                                         /*parent_koid=*/5678));
-  fclose(invalid_file);
-  EXPECT_EQ(invalid_enumerator.partial_failure(), ZX_ERR_BAD_HANDLE);
-  EXPECT_NOT_NULL(strstr(invalid_buffer, "\"name\": \"<UNKNOWN>\""));
+  ASSERT_EQ(invalid_enumerator.partial_failures().size(), 1u);
+  EXPECT_EQ(invalid_enumerator.partial_failures()[0], ZX_ERR_BAD_HANDLE);
+  EXPECT_TRUE(invalid_output.str().contains("\"name\": \"<UNKNOWN>\""));
 }
 
 TEST(PsUtilsMemgraph, WalkJobTree) {
-  std::string with_threads_buffer(16384, '\0');
-  FILE* with_threads_file = fmemopen(with_threads_buffer.data(), with_threads_buffer.size(), "w");
-  ASSERT_NOT_NULL(with_threads_file);
+  std::ostringstream with_threads_output;
   JsonTaskEnumerator with_threads_enumerator(/*self_koid=*/0, /*show_threads=*/true,
                                              /*show_vmos=*/false, /*show_handle_stats=*/false,
-                                             with_threads_file);
+                                             with_threads_output);
   EXPECT_OK(with_threads_enumerator.WalkJobTree(zx::job::default_job()->get()));
-  fclose(with_threads_file);
-  EXPECT_OK(with_threads_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(with_threads_buffer.c_str(), "\"type\": \"j\""));
-  EXPECT_NOT_NULL(strstr(with_threads_buffer.c_str(), "\"type\": \"p\""));
-  EXPECT_NOT_NULL(strstr(with_threads_buffer.c_str(), "\"type\": \"t\""));
+  EXPECT_TRUE(with_threads_enumerator.partial_failures().empty());
+  EXPECT_TRUE(with_threads_output.str().contains("\"type\": \"j\""));
+  EXPECT_TRUE(with_threads_output.str().contains("\"type\": \"p\""));
+  EXPECT_TRUE(with_threads_output.str().contains("\"type\": \"t\""));
 
-  std::string without_threads_buffer(16384, '\0');
-  FILE* without_threads_file =
-      fmemopen(without_threads_buffer.data(), without_threads_buffer.size(), "w");
-  ASSERT_NOT_NULL(without_threads_file);
+  std::ostringstream without_threads_output;
   JsonTaskEnumerator without_threads_enumerator(/*self_koid=*/0, /*show_threads=*/false,
                                                 /*show_vmos=*/false, /*show_handle_stats=*/false,
-                                                without_threads_file);
+                                                without_threads_output);
   EXPECT_OK(without_threads_enumerator.WalkJobTree(zx::job::default_job()->get()));
-  fclose(without_threads_file);
-  EXPECT_OK(without_threads_enumerator.partial_failure());
-  EXPECT_NOT_NULL(strstr(without_threads_buffer.c_str(), "\"type\": \"j\""));
-  EXPECT_NOT_NULL(strstr(without_threads_buffer.c_str(), "\"type\": \"p\""));
-  EXPECT_NULL(strstr(without_threads_buffer.c_str(), "\"type\": \"t\""));
+  EXPECT_TRUE(without_threads_enumerator.partial_failures().empty());
+  EXPECT_TRUE(without_threads_output.str().contains("\"type\": \"j\""));
+  EXPECT_TRUE(without_threads_output.str().contains("\"type\": \"p\""));
+  EXPECT_FALSE(without_threads_output.str().contains("\"type\": \"t\""));
 }
 
 }  // namespace

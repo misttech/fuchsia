@@ -6,31 +6,33 @@
 // See memgraph-schema.json for the schema.
 
 #include <getopt.h>
-#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 #include <zircon/process.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
 
-#include "memgraph_internal.h"
+#include <iostream>
+#include <print>
+
 // Defines kMemgraphSchema containing the contents of memgraph-schema.json
 #include "memgraph-schema.h"
+#include "memgraph_internal.h"
 #include "resources.h"
 
 namespace {
 
-static void print_kernel_json(const char* name, const char* parent, uint64_t size_bytes) {
-  printf(
-      "  {"
-      "\"id\": \"kernel/%s\", "
+void print_kernel_json(const char* name, const char* parent, uint64_t size_bytes) {
+  std::println(
+      "  {{"
+      "\"id\": \"kernel/{}\", "
       "\"type\": \"kernel\", "
-      "\"parent\": \"%s\", "
-      "\"name\": \"%s\", "
-      "\"size_bytes\": %zu"
-      "},\n",
+      "\"parent\": \"{}\", "
+      "\"name\": \"{}\", "
+      "\"size_bytes\": {}"
+      "}},",
       name, parent, name, size_bytes);
 }
 
@@ -45,8 +47,8 @@ zx_status_t dump_kernel_memory() {
                          nullptr);
   zx_handle_close(info_resource);
   if (s != ZX_OK) {
-    fprintf(stderr, "WARNING: failed to get kernel memory stats: %s (%d)\n",
-            zx_status_get_string(s), s);
+    std::println(stderr, "WARNING: failed to get kernel memory stats: {} ({})",
+                 zx_status_get_string(s), s);
     return s;
   }
 
@@ -65,14 +67,14 @@ zx_status_t dump_kernel_memory() {
 }
 
 void print_help(FILE* f) {
-  fprintf(f, "Usage: memgraph [options]\n");
-  fprintf(f, "  Prints system-wide task and memory info as JSON.\n");
-  fprintf(f, "Options:\n");
-  fprintf(f, " -t|--threads  Include threads in the output\n");
-  fprintf(f, " -v|--vmos     Include VMOs in the output\n");
-  fprintf(f, " -H|--handles  Include handle stats in the output\n");
-  fprintf(f, " -S|--schema   Print the schema for the JSON output format\n");
-  fprintf(f, " -h|--help     Display this message\n");
+  std::println(f, "Usage: memgraph [options]");
+  std::println(f, "  Prints system-wide task and memory info as JSON.");
+  std::println(f, "Options:");
+  std::println(f, " -t|--threads  Include threads in the output");
+  std::println(f, " -v|--vmos     Include VMOs in the output");
+  std::println(f, " -H|--handles  Include handle stats in the output");
+  std::println(f, " -S|--schema   Print the schema for the JSON output format");
+  std::println(f, " -h|--help     Display this message");
 }
 
 }  // namespace
@@ -82,13 +84,16 @@ int main(int argc, char** argv) {
   bool show_vmos = false;
   bool show_handle_stats = false;
   while (true) {
-    static option options[] = {
-        {"threads", no_argument, nullptr, 't'}, {"vmos", no_argument, nullptr, 'v'},
-        {"handles", no_argument, nullptr, 'H'}, {"schema", no_argument, nullptr, 'S'},
-        {"help", no_argument, nullptr, 'h'},    {nullptr, 0, nullptr, 0},
+    static constexpr option kOptions[] = {
+        {.name = "threads", .has_arg = no_argument, .flag = nullptr, .val = 't'},
+        {.name = "vmos", .has_arg = no_argument, .flag = nullptr, .val = 'v'},
+        {.name = "handles", .has_arg = no_argument, .flag = nullptr, .val = 'H'},
+        {.name = "schema", .has_arg = no_argument, .flag = nullptr, .val = 'S'},
+        {.name = "help", .has_arg = no_argument, .flag = nullptr, .val = 'h'},
+        {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
     };
     int option_index = 0;
-    int c = getopt_long(argc, argv, "tvHSh", options, &option_index);
+    int c = getopt_long(argc, argv, "tvHSh", kOptions, &option_index);
     if (c < 0) {
       break;
     }
@@ -103,7 +108,7 @@ int main(int argc, char** argv) {
         show_handle_stats = true;
         break;
       case 'S':
-        printf(kMemgraphSchema);
+        std::print("{}", kMemgraphSchema);
         return 0;
       case 'h':
       default:
@@ -112,11 +117,11 @@ int main(int argc, char** argv) {
     }
   }
   if (optind < argc) {
-    fprintf(stderr, "%s: unrecognized extra arguments:", argv[0]);
+    std::print(stderr, "{}: unrecognized extra arguments:", argv[0]);
     while (optind < argc) {
-      fprintf(stderr, " %s", argv[optind++]);
+      std::print(stderr, " {}", argv[optind++]);
     }
-    fprintf(stderr, "\n");
+    std::println(stderr, "");
     print_help(stderr);
     return 1;
   }
@@ -128,7 +133,8 @@ int main(int argc, char** argv) {
   if (s != ZX_OK) {
     // This will probably result in a partial failure when we try to read
     // our own VMOs, but keep going.
-    fprintf(stderr, "WARNING: could not find our own koid: %s (%d)\n", zx_status_get_string(s), s);
+    std::println(stderr, "WARNING: could not find our own koid: {} ({})", zx_status_get_string(s),
+                 s);
     info = {};
     info.koid = 0;
   }
@@ -137,14 +143,14 @@ int main(int argc, char** argv) {
   struct timespec now;
   timespec_get(&now, TIME_UTC);
 
-  printf("[\n");
+  std::println("[");
 
   zx_status_t ks = dump_kernel_memory();
 
-  JsonTaskEnumerator jte(info.koid, show_threads, show_vmos, show_handle_stats, stdout);
+  JsonTaskEnumerator jte(info.koid, show_threads, show_vmos, show_handle_stats, std::cout);
   s = jte.WalkRootJobTree();
   if (s != ZX_OK) {
-    fprintf(stderr, "ERROR: %s (%d)\n", zx_status_get_string(s), s);
+    std::println(stderr, "ERROR: {} ({})", zx_status_get_string(s), s);
     return 1;
   }
 
@@ -155,21 +161,26 @@ int main(int argc, char** argv) {
   gmtime_r(&now.tv_sec, &nowtm);
   char tbuf[40];
   strftime(tbuf, sizeof(tbuf), "%FT%T", &nowtm);
-  printf(
-      "  {"
+  std::println(
+      "  {{"
       "\"type\": \"__META\", "
-      "\"timestamp\": \"%s.%03ldZ\"}\n",
-      tbuf, now.tv_nsec / (1000 * 1000));
-  printf("]\n");
+      "\"timestamp\": \"{}.{:03}Z\"}}",
+      static_cast<const char*>(tbuf), now.tv_nsec / (1000L * 1000L));
+  std::println("]");
 
   // Exit with an error status if we hit any partial failures.
-  s = jte.partial_failure();
-  if (s == ZX_OK) {
-    s = ks;
+  bool had_partial_failure = false;
+  if (ks != ZX_OK) {
+    std::println(stderr, "ERROR: delayed exit after partial failure: {} ({})",
+                 zx_status_get_string(ks), ks);
+    had_partial_failure = true;
   }
-  if (s != ZX_OK) {
-    fprintf(stderr, "ERROR: delayed exit after partial failure: %s (%d)\n", zx_status_get_string(s),
-            s);
+  for (zx_status_t failure : jte.partial_failures()) {
+    std::println(stderr, "ERROR: delayed exit after partial failure: {} ({})",
+                 zx_status_get_string(failure), failure);
+    had_partial_failure = true;
+  }
+  if (had_partial_failure) {
     return 1;
   }
   return 0;
