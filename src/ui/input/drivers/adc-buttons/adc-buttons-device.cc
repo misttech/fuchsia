@@ -4,7 +4,6 @@
 
 #include "adc-buttons-device.h"
 
-#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/clock.h>
 #include <zircon/status.h>
@@ -17,8 +16,8 @@ namespace adc_buttons_device {
 void AdcButtonsDevice::AdcButtonInputReport::ToFidlInputReport(
     fidl::WireTableBuilder<::fuchsia_input_report::wire::InputReport>& input_report,
     fidl::AnyArena& allocator) const {
-  fidl::VectorView<fuchsia_input_report::wire::ConsumerControlButton> pressed_buttons_rpt(
-      allocator, buttons.size());
+  fidl::VectorView<fuchsia_input::wire::ConsumerControlButton> pressed_buttons_rpt(allocator,
+                                                                                   buttons.size());
   std::copy(buttons.begin(), buttons.end(), pressed_buttons_rpt.begin());
 
   auto consumer_control_report =
@@ -49,7 +48,7 @@ void AdcButtonsDevice::PollingTask(async_dispatcher_t* dispatcher, async::TaskBa
 }
 
 zx::result<AdcButtonsDevice::AdcButtonInputReport> AdcButtonsDevice::GetInputReport() {
-  std::set<fuchsia_input_report::ConsumerControlButton> buttons;
+  std::set<fuchsia_input::ConsumerControlButton> buttons;
   for (const auto& client : clients_) {
     auto result = client.adc_->GetSample();
     if (!result.ok()) {
@@ -70,9 +69,9 @@ zx::result<AdcButtonsDevice::AdcButtonInputReport> AdcButtonsDevice::GetInputRep
     }
   }
   ZX_DEBUG_ASSERT_MSG(
-      buttons.size() <= fuchsia_input_report::kConsumerControlMaxNumButtons,
+      buttons.size() <= fuchsia_input::kConsumerControlMaxNumButtons,
       "More buttons than expected (max = %d). Please increase kConsumerControlMaxNumButtons ",
-      fuchsia_input_report::kConsumerControlMaxNumButtons);
+      fuchsia_input::kConsumerControlMaxNumButtons);
 
   return zx::ok(AdcButtonInputReport{
       .event_time = zx::clock::get_monotonic(),
@@ -121,8 +120,7 @@ void AdcButtonsDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
       static_cast<uint32_t>(fuchsia_input_report::wire::VendorGoogleProductId::kAdcButtons));
   device_info.polling_rate(polling_interval_.get());
 
-  fidl::VectorView<fuchsia_input_report::wire::ConsumerControlButton> buttons(allocator,
-                                                                              buttons_.size());
+  fidl::VectorView<fuchsia_input::wire::ConsumerControlButton> buttons(allocator, buttons_.size());
   std::copy(buttons_.begin(), buttons_.end(), buttons.begin());
 
   const auto input = fuchsia_input_report::wire::ConsumerControlInputDescriptor::Builder(allocator)

@@ -386,12 +386,20 @@ TEST_F(VirtualKeyboardTest, ShowAndHideKeyboard) {
   is_keyboard_visible.reset();
 
   FX_LOGS(INFO) << "Tapping _outside_ input box";
-  InjectTap(static_cast<int32_t>(input_pos.x1() + 1), static_cast<int32_t>(input_pos.y1() + 1));
-
-  FX_LOGS(INFO) << "Waiting for keyboard to be hidden";
   virtualkeyboard_manager->WatchTypeAndVisibility().Then(
       [&is_keyboard_visible](auto& res) { is_keyboard_visible = res->is_visible(); });
-  RunLoopUntil([&]() { return is_keyboard_visible.has_value(); });
+
+  for (int i = 0; i < kMaxRetries; i++) {
+    FX_LOGS(INFO) << "Tapping outside: " << i + 1 << "/" << kMaxRetries;
+    InjectTap(static_cast<int32_t>(input_pos.x1() + 1), static_cast<int32_t>(input_pos.y1() + 1));
+    FX_LOGS(INFO) << "Waiting for keyboard to be hidden";
+    RunLoopWithTimeoutOrUntil([&]() { return is_keyboard_visible.has_value(); }, zx::sec(1));
+    if (is_keyboard_visible.has_value()) {
+      FX_LOGS(INFO) << "Keyboard is hidden: tapped " << i + 1 << " times";
+      break;
+    }
+  }
+
   EXPECT_FALSE(is_keyboard_visible.value());
 }
 

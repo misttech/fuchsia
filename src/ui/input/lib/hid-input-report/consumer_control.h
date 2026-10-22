@@ -28,8 +28,7 @@ class ConsumerControl : public Device {
 
   // Fields for the input reports.
   size_t num_buttons_ = 0;
-  std::array<hid::ReportField, fuchsia_input_report::wire::kConsumerControlMaxNumButtons>
-      button_fields_;
+  std::array<hid::ReportField, fuchsia_input::wire::kConsumerControlMaxNumButtons> button_fields_;
   size_t input_report_size_ = 0;
   uint8_t input_report_id_ = 0;
 };

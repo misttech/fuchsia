@@ -37,12 +37,12 @@ namespace ft {
 
 namespace {
 
-constexpr fuchsia_input_report::wire::Axis XYAxis(int64_t max) {
+constexpr fuchsia_input::wire::Axis XYAxis(int64_t max) {
   return {
       .range = {.min = 0, .max = max},
       .unit =
           {
-              .type = fuchsia_input_report::wire::UnitType::kOther,
+              .type = fuchsia_input::wire::UnitType::kOther,
               .exponent = 0,
           },
   };

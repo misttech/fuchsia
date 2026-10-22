@@ -234,12 +234,12 @@ TEST_F(Gt92xxTest, TestGetDescriptor) {
 
     EXPECT_EQ(c.position_x().range.min, 0);
     EXPECT_EQ(c.position_x().range.max, 600);
-    EXPECT_EQ(c.position_x().unit.type, fuchsia_input_report::wire::UnitType::kOther);
+    EXPECT_EQ(c.position_x().unit.type, fuchsia_input::wire::UnitType::kOther);
     EXPECT_EQ(c.position_x().unit.exponent, 0);
 
     EXPECT_EQ(c.position_y().range.min, 0);
     EXPECT_EQ(c.position_y().range.max, 1024);
-    EXPECT_EQ(c.position_y().unit.type, fuchsia_input_report::wire::UnitType::kOther);
+    EXPECT_EQ(c.position_y().unit.type, fuchsia_input::wire::UnitType::kOther);
     EXPECT_EQ(c.position_y().unit.exponent, 0);
   }
 }

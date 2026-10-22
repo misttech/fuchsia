@@ -4,7 +4,6 @@
 
 #include "buttons-device.h"
 
-#include <fidl/fuchsia.input.report/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/clock.h>
 #include <zircon/assert.h>
@@ -21,8 +20,8 @@ namespace buttons {
 void ButtonsDevice::ButtonsInputReport::ToFidlInputReport(
     fidl::WireTableBuilder<::fuchsia_input_report::wire::InputReport>& input_report,
     fidl::AnyArena& allocator) const {
-  fidl::VectorView<fuchsia_input_report::wire::ConsumerControlButton> buttons_rpt(
-      allocator, fuchsia_input_report::wire::kConsumerControlMaxNumButtons);
+  fidl::VectorView<fuchsia_input::wire::ConsumerControlButton> buttons_rpt(
+      allocator, fuchsia_input::wire::kConsumerControlMaxNumButtons);
   size_t count = 0;
   bool mic_mute = false;
   bool cam_mute = false;
@@ -33,43 +32,43 @@ void ButtonsDevice::ButtonsInputReport::ToFidlInputReport(
 
     switch (static_cast<fuchsia_buttons::GpioButtonId>(id)) {
       case fuchsia_buttons::GpioButtonId::kPower:
-        buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kPower;
+        buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kPower;
         count++;
         break;
       case fuchsia_buttons::GpioButtonId::kVolumeUp:
-        buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kVolumeUp;
+        buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kVolumeUp;
         count++;
         break;
       case fuchsia_buttons::GpioButtonId::kVolumeDown:
-        buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kVolumeDown;
+        buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kVolumeDown;
         count++;
         break;
       case fuchsia_buttons::GpioButtonId::kFdr:
-        buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kFactoryReset;
+        buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kFactoryReset;
         count++;
         break;
       case fuchsia_buttons::GpioButtonId::kMicMute:
         if (!mic_mute) {
-          buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kMicMute;
+          buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kMicMute;
           count++;
           mic_mute = true;
         }
         break;
       case fuchsia_buttons::GpioButtonId::kCamMute:
         if (!cam_mute) {
-          buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kCameraDisable;
+          buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kCameraDisable;
           count++;
           cam_mute = true;
         }
         break;
       case fuchsia_buttons::GpioButtonId::kMicAndCamMute:
         if (!mic_mute) {
-          buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kMicMute;
+          buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kMicMute;
           count++;
           mic_mute = true;
         }
         if (!cam_mute) {
-          buttons_rpt[count] = fuchsia_input_report::ConsumerControlButton::kCameraDisable;
+          buttons_rpt[count] = fuchsia_input::ConsumerControlButton::kCameraDisable;
           count++;
           cam_mute = true;
         }
@@ -251,13 +250,13 @@ void ButtonsDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   device_info.product_id(
       static_cast<uint32_t>(fuchsia_input_report::VendorGoogleProductId::kHidButtons));
 
-  const std::vector<fuchsia_input_report::ConsumerControlButton> buttons = {
-      fuchsia_input_report::ConsumerControlButton::kVolumeUp,
-      fuchsia_input_report::ConsumerControlButton::kVolumeDown,
-      fuchsia_input_report::ConsumerControlButton::kFactoryReset,
-      fuchsia_input_report::ConsumerControlButton::kCameraDisable,
-      fuchsia_input_report::ConsumerControlButton::kMicMute,
-      fuchsia_input_report::ConsumerControlButton::kPower};
+  const std::vector<fuchsia_input::ConsumerControlButton> buttons = {
+      fuchsia_input::ConsumerControlButton::kVolumeUp,
+      fuchsia_input::ConsumerControlButton::kVolumeDown,
+      fuchsia_input::ConsumerControlButton::kFactoryReset,
+      fuchsia_input::ConsumerControlButton::kCameraDisable,
+      fuchsia_input::ConsumerControlButton::kMicMute,
+      fuchsia_input::ConsumerControlButton::kPower};
 
   const auto input = fuchsia_input_report::wire::ConsumerControlInputDescriptor::Builder(arena)
                          .buttons(buttons)

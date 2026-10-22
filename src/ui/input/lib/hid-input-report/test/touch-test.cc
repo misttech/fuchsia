@@ -222,13 +222,13 @@ TEST(TouchscreenTest, AtlasTouchpad) {
   EXPECT_EQ(descriptor.mouse().input().movement_x().range.min, -127);
   EXPECT_EQ(descriptor.mouse().input().movement_x().range.max, 127);
   EXPECT_EQ(descriptor.mouse().input().movement_x().unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+            fuchsia_input::wire::UnitType::kNone);
   EXPECT_EQ(descriptor.mouse().input().movement_x().unit.exponent, 0);
   ASSERT_TRUE(descriptor.mouse().input().has_movement_y());
   EXPECT_EQ(descriptor.mouse().input().movement_y().range.min, -127);
   EXPECT_EQ(descriptor.mouse().input().movement_y().range.max, 127);
-  EXPECT_EQ(descriptor.mouse().input().movement_x().unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+  EXPECT_EQ(descriptor.mouse().input().movement_y().unit.type,
+            fuchsia_input::wire::UnitType::kNone);
   EXPECT_EQ(descriptor.mouse().input().movement_y().unit.exponent, 0);
 
   ASSERT_TRUE(descriptor.has_touch());
@@ -243,7 +243,7 @@ TEST(TouchscreenTest, AtlasTouchpad) {
   for (size_t i = 0; i < descriptor.touch().input().contacts().size(); i++) {
     ASSERT_TRUE(descriptor.touch().input().contacts()[i].has_position_x());
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_x().unit.type,
-              fuchsia_input_report::wire::UnitType::kMeters);
+              fuchsia_input::wire::UnitType::kMeters);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_x().unit.exponent, -6);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_x().range.min, 0);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_x().range.max,
@@ -255,7 +255,7 @@ TEST(TouchscreenTest, AtlasTouchpad) {
                   450));
     ASSERT_TRUE(descriptor.touch().input().contacts()[i].has_position_y());
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_y().unit.type,
-              fuchsia_input_report::wire::UnitType::kMeters);
+              fuchsia_input::wire::UnitType::kMeters);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_y().unit.exponent, -6);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_y().range.min, 0);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].position_y().range.max,
@@ -267,7 +267,7 @@ TEST(TouchscreenTest, AtlasTouchpad) {
                   248));
     ASSERT_TRUE(descriptor.touch().input().contacts()[i].has_contact_width());
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_width().unit.type,
-              fuchsia_input_report::wire::UnitType::kMeters);
+              fuchsia_input::wire::UnitType::kMeters);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_width().unit.exponent, -6);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_width().range.min, 0);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_width().range.max,
@@ -279,7 +279,7 @@ TEST(TouchscreenTest, AtlasTouchpad) {
                   248));
     ASSERT_TRUE(descriptor.touch().input().contacts()[i].has_contact_height());
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_height().unit.type,
-              fuchsia_input_report::wire::UnitType::kMeters);
+              fuchsia_input::wire::UnitType::kMeters);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_height().unit.exponent, -6);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_height().range.min, 0);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].contact_height().range.max,
@@ -291,7 +291,7 @@ TEST(TouchscreenTest, AtlasTouchpad) {
                   248));
     ASSERT_TRUE(descriptor.touch().input().contacts()[i].has_pressure());
     EXPECT_EQ(descriptor.touch().input().contacts()[i].pressure().unit.type,
-              fuchsia_input_report::wire::UnitType::kMeters);
+              fuchsia_input::wire::UnitType::kMeters);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].pressure().unit.exponent, -6);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].pressure().range.min, 0);
     EXPECT_EQ(descriptor.touch().input().contacts()[i].pressure().range.max,

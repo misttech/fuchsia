@@ -5,56 +5,56 @@
 #include "src/ui/input/lib/hid-input-report/axis.h"
 
 namespace hid_input_report {
-fuchsia_input_report::wire::Unit HidUnitToLlcppUnit(hid::unit::UnitType unit) {
-  fuchsia_input_report::wire::Unit out_unit;
-  out_unit.type = fuchsia_input_report::wire::UnitType::kNone;
+fuchsia_input::wire::Unit HidUnitToLlcppUnit(hid::unit::UnitType unit) {
+  fuchsia_input::wire::Unit out_unit;
+  out_unit.type = fuchsia_input::wire::UnitType::kNone;
   out_unit.exponent = 0;
 
   switch (unit) {
     case hid::unit::UnitType::None:
       return out_unit;
     case hid::unit::UnitType::Distance:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kMeters;
+      out_unit.type = fuchsia_input::wire::UnitType::kMeters;
       out_unit.exponent = -6;
       return out_unit;
     case hid::unit::UnitType::Weight:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kGrams;
+      out_unit.type = fuchsia_input::wire::UnitType::kGrams;
       out_unit.exponent = -3;
       return out_unit;
     case hid::unit::UnitType::Rotation:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kDegrees;
+      out_unit.type = fuchsia_input::wire::UnitType::kDegrees;
       out_unit.exponent = -3;
       return out_unit;
     case hid::unit::UnitType::AngularVelocity:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kEnglishAngularVelocity;
+      out_unit.type = fuchsia_input::wire::UnitType::kEnglishAngularVelocity;
       out_unit.exponent = -3;
       return out_unit;
     case hid::unit::UnitType::LinearVelocity:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kSiLinearVelocity;
+      out_unit.type = fuchsia_input::wire::UnitType::kSiLinearVelocity;
       out_unit.exponent = -3;
       return out_unit;
     case hid::unit::UnitType::Acceleration:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kSiLinearAcceleration;
+      out_unit.type = fuchsia_input::wire::UnitType::kSiLinearAcceleration;
       out_unit.exponent = -3;
       return out_unit;
     case hid::unit::UnitType::MagneticFlux:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kWebers;
+      out_unit.type = fuchsia_input::wire::UnitType::kWebers;
       out_unit.exponent = -6;
       return out_unit;
     case hid::unit::UnitType::Light:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kCandelas;
+      out_unit.type = fuchsia_input::wire::UnitType::kCandelas;
       out_unit.exponent = 0;
       return out_unit;
     case hid::unit::UnitType::Pressure:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kPascals;
+      out_unit.type = fuchsia_input::wire::UnitType::kPascals;
       out_unit.exponent = -3;
       return out_unit;
     case hid::unit::UnitType::Lux:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kLux;
+      out_unit.type = fuchsia_input::wire::UnitType::kLux;
       out_unit.exponent = -6;
       return out_unit;
     default:
-      out_unit.type = fuchsia_input_report::wire::UnitType::kOther;
+      out_unit.type = fuchsia_input::wire::UnitType::kOther;
       out_unit.exponent = 0;
       return out_unit;
   }
@@ -132,8 +132,8 @@ zx_status_t HidLedUsageToLlcppLedType(hid::usage::LEDs usage,
   return ZX_OK;
 }
 
-fuchsia_input_report::wire::Axis LlcppAxisFromAttribute(const hid::Attributes& attrs) {
-  fuchsia_input_report::wire::Axis axis;
+fuchsia_input::wire::Axis LlcppAxisFromAttribute(const hid::Attributes& attrs) {
+  fuchsia_input::wire::Axis axis;
   axis.range.min = static_cast<int64_t>(
       hid::unit::ConvertValToUnitType(attrs.unit, static_cast<double>(attrs.phys_mm.min)));
   axis.range.max = static_cast<int64_t>(

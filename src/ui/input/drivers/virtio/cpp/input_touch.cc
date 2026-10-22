@@ -14,12 +14,12 @@ namespace virtio {
 
 namespace {
 
-constexpr fuchsia_input_report::wire::Axis CreateNonNegativeAxis(int64_t max_micrometer) {
+constexpr fuchsia_input::wire::Axis CreateNonNegativeAxis(int64_t max_micrometer) {
   return {
       .range = {.min = 0, .max = max_micrometer},
       .unit =
           {
-              .type = fuchsia_input_report::wire::UnitType::kMeters,
+              .type = fuchsia_input::wire::UnitType::kMeters,
               .exponent = -6,
           },
   };

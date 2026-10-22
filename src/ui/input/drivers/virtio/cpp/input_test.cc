@@ -137,8 +137,8 @@ TEST_F(VirtioInputTest, MultiTouchReportDescriptor) {
     EXPECT_FALSE(contact.has_contact_width());
     EXPECT_FALSE(contact.has_pressure());
 
-    CHECK_AXIS(contact, position_x, 0L, 259200L, fuchsia_input_report::wire::UnitType::kMeters, -6)
-    CHECK_AXIS(contact, position_y, 0L, 172800L, fuchsia_input_report::wire::UnitType::kMeters, -6)
+    CHECK_AXIS(contact, position_x, 0L, 259200L, fuchsia_input::wire::UnitType::kMeters, -6)
+    CHECK_AXIS(contact, position_y, 0L, 172800L, fuchsia_input::wire::UnitType::kMeters, -6)
   }
 }
 
@@ -320,11 +320,11 @@ TEST_F(VirtioInputTest, MouseReportDescriptor) {
   EXPECT_TRUE(std::set(descriptor.mouse().input().buttons().begin(),
                        descriptor.mouse().input().buttons().end()) == kExpectedButtons);
   CHECK_AXIS(descriptor.mouse().input(), movement_x, -32767L, 32767L,
-             fuchsia_input_report::wire::UnitType::kNone, 0)
+             fuchsia_input::wire::UnitType::kNone, 0)
   CHECK_AXIS(descriptor.mouse().input(), movement_y, -32767L, 32767L,
-             fuchsia_input_report::wire::UnitType::kNone, 0)
+             fuchsia_input::wire::UnitType::kNone, 0)
   CHECK_AXIS(descriptor.mouse().input(), scroll_v, -32767L, 32767L,
-             fuchsia_input_report::wire::UnitType::kNone, 0)
+             fuchsia_input::wire::UnitType::kNone, 0)
 }
 
 TEST_F(VirtioInputTest, MouseTest) {

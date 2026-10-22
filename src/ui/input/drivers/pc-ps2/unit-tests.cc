@@ -386,14 +386,14 @@ TEST_F(ControllerTest, GetMouseDescriptorTest) {
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_x().range.min, -127);
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_x().range.max, 127);
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_x().unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+            fuchsia_input::wire::UnitType::kNone);
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_x().unit.exponent, 0);
 
   ASSERT_TRUE(response.value().descriptor.mouse().input().has_movement_y());
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_y().range.min, -127);
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_y().range.max, 127);
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_y().unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+            fuchsia_input::wire::UnitType::kNone);
   EXPECT_EQ(response.value().descriptor.mouse().input().movement_y().unit.exponent, 0);
 }
 

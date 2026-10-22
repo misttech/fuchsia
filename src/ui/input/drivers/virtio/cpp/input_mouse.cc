@@ -20,11 +20,11 @@ constexpr uint16_t kKeyCodeBtnMiddle = 0x112;  // BTN_MIDDLE
 
 constexpr int64_t kRangeMin = -32767;
 constexpr int64_t kRangeMax = 32767;
-constexpr fuchsia_input_report::wire::Axis kMouseRange = {
+constexpr fuchsia_input::wire::Axis kMouseRange = {
     .range = {.min = kRangeMin, .max = kRangeMax},
     .unit =
         {
-            .type = fuchsia_input_report::wire::UnitType::kNone,
+            .type = fuchsia_input::wire::UnitType::kNone,
             .exponent = 0,
         },
 };

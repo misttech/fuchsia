@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.adc/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/fidl.h>
-#include <fidl/fuchsia.input.report/cpp/wire.h>
+#include <fidl/fuchsia.input/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/assert.h>
@@ -32,7 +32,7 @@ class AdcButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevi
 
   AdcButtonsDevice(async_dispatcher_t* dispatcher, std::vector<AdcButtonClient> clients,
                    zx::duration polling_interval,
-                   std::set<fuchsia_input_report::ConsumerControlButton> buttons)
+                   std::set<fuchsia_input::ConsumerControlButton> buttons)
       : dispatcher_(dispatcher),
         polling_interval_(polling_interval),
         clients_(std::move(clients)),
@@ -72,7 +72,7 @@ class AdcButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevi
   static constexpr size_t kFeatureAndDescriptorBufferSize = 512;
   struct AdcButtonInputReport {
     zx::time event_time = zx::time(ZX_TIME_INFINITE_PAST);
-    std::set<fuchsia_input_report::ConsumerControlButton> buttons;
+    std::set<fuchsia_input::ConsumerControlButton> buttons;
 
     void ToFidlInputReport(
         fidl::WireTableBuilder<fuchsia_input_report::wire::InputReport>& input_report,
@@ -88,7 +88,7 @@ class AdcButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevi
   zx::duration polling_interval_;
 
   std::vector<AdcButtonClient> clients_;
-  std::set<fuchsia_input_report::ConsumerControlButton> buttons_;  // For descriptor
+  std::set<fuchsia_input::ConsumerControlButton> buttons_;  // For descriptor
 
   std::optional<AdcButtonInputReport> rpt_ = std::nullopt;
   input_report_reader::InputReportReaderManager<AdcButtonInputReport> readers_;

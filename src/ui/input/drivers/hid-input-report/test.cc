@@ -513,16 +513,16 @@ TEST_F(HidDevTest, SensorTest) {
 
   ASSERT_EQ(sensor_desc.values()[0].type,
             fuchsia_input_report::wire::SensorType::kLightIlluminance);
-  ASSERT_EQ(sensor_desc.values()[0].axis.unit.type, fuchsia_input_report::wire::UnitType::kNone);
+  ASSERT_EQ(sensor_desc.values()[0].axis.unit.type, fuchsia_input::wire::UnitType::kNone);
 
   ASSERT_EQ(sensor_desc.values()[1].type, fuchsia_input_report::wire::SensorType::kLightRed);
-  ASSERT_EQ(sensor_desc.values()[1].axis.unit.type, fuchsia_input_report::wire::UnitType::kNone);
+  ASSERT_EQ(sensor_desc.values()[1].axis.unit.type, fuchsia_input::wire::UnitType::kNone);
 
   ASSERT_EQ(sensor_desc.values()[2].type, fuchsia_input_report::wire::SensorType::kLightBlue);
-  ASSERT_EQ(sensor_desc.values()[2].axis.unit.type, fuchsia_input_report::wire::UnitType::kNone);
+  ASSERT_EQ(sensor_desc.values()[2].axis.unit.type, fuchsia_input::wire::UnitType::kNone);
 
   ASSERT_EQ(sensor_desc.values()[3].type, fuchsia_input_report::wire::SensorType::kLightGreen);
-  ASSERT_EQ(sensor_desc.values()[3].axis.unit.type, fuchsia_input_report::wire::UnitType::kNone);
+  ASSERT_EQ(sensor_desc.values()[3].axis.unit.type, fuchsia_input::wire::UnitType::kNone);
 
   fidl::WireSyncClient<fuchsia_input_report::InputReportsReaderV2> reader(
       GetReaderV2(sync_client, kDefaultMaxUnacknowledgedReports));
@@ -724,15 +724,15 @@ TEST_F(HidDevTest, ConsumerControlTest) {
   ASSERT_EQ(5UL, consumer_control_desc.buttons().size());
 
   ASSERT_EQ(consumer_control_desc.buttons()[0],
-            fuchsia_input_report::wire::ConsumerControlButton::kVolumeUp);
+            fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
   ASSERT_EQ(consumer_control_desc.buttons()[1],
-            fuchsia_input_report::wire::ConsumerControlButton::kVolumeDown);
+            fuchsia_input::wire::ConsumerControlButton::kVolumeDown);
   ASSERT_EQ(consumer_control_desc.buttons()[2],
-            fuchsia_input_report::wire::ConsumerControlButton::kFactoryReset);
+            fuchsia_input::wire::ConsumerControlButton::kFactoryReset);
   ASSERT_EQ(consumer_control_desc.buttons()[3],
-            fuchsia_input_report::wire::ConsumerControlButton::kCameraDisable);
+            fuchsia_input::wire::ConsumerControlButton::kCameraDisable);
   ASSERT_EQ(consumer_control_desc.buttons()[4],
-            fuchsia_input_report::wire::ConsumerControlButton::kMicMute);
+            fuchsia_input::wire::ConsumerControlButton::kMicMute);
 
   fidl::WireSyncClient<fuchsia_input_report::InputReportsReaderV2> reader(
       GetReaderV2(sync_client, kDefaultMaxUnacknowledgedReports));
@@ -771,11 +771,11 @@ TEST_F(HidDevTest, ConsumerControlTest) {
         EXPECT_EQ(3UL, report.pressed_buttons().size());
 
         EXPECT_EQ(report.pressed_buttons()[0],
-                  fuchsia_input_report::wire::ConsumerControlButton::kVolumeUp);
+                  fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
         EXPECT_EQ(report.pressed_buttons()[1],
-                  fuchsia_input_report::wire::ConsumerControlButton::kFactoryReset);
+                  fuchsia_input::wire::ConsumerControlButton::kFactoryReset);
         EXPECT_EQ(report.pressed_buttons()[2],
-                  fuchsia_input_report::wire::ConsumerControlButton::kMicMute);
+                  fuchsia_input::wire::ConsumerControlButton::kMicMute);
       });
   ASSERT_OK(report_status);
 }
@@ -845,11 +845,11 @@ TEST_F(HidDevTest, ConsumerControlTwoClientsTest) {
         EXPECT_EQ(3UL, report.pressed_buttons().size());
 
         EXPECT_EQ(report.pressed_buttons()[0],
-                  fuchsia_input_report::wire::ConsumerControlButton::kVolumeUp);
+                  fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
         EXPECT_EQ(report.pressed_buttons()[1],
-                  fuchsia_input_report::wire::ConsumerControlButton::kFactoryReset);
+                  fuchsia_input::wire::ConsumerControlButton::kFactoryReset);
         EXPECT_EQ(report.pressed_buttons()[2],
-                  fuchsia_input_report::wire::ConsumerControlButton::kMicMute);
+                  fuchsia_input::wire::ConsumerControlButton::kMicMute);
       });
   ASSERT_OK(status3);
 
@@ -864,11 +864,11 @@ TEST_F(HidDevTest, ConsumerControlTwoClientsTest) {
         EXPECT_EQ(3UL, report.pressed_buttons().size());
 
         EXPECT_EQ(report.pressed_buttons()[0],
-                  fuchsia_input_report::wire::ConsumerControlButton::kVolumeUp);
+                  fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
         EXPECT_EQ(report.pressed_buttons()[1],
-                  fuchsia_input_report::wire::ConsumerControlButton::kFactoryReset);
+                  fuchsia_input::wire::ConsumerControlButton::kFactoryReset);
         EXPECT_EQ(report.pressed_buttons()[2],
-                  fuchsia_input_report::wire::ConsumerControlButton::kMicMute);
+                  fuchsia_input::wire::ConsumerControlButton::kMicMute);
       });
   ASSERT_OK(status4);
 }

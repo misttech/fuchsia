@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.input/cpp/wire.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
+#include <fidl/fuchsia.input/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/irq.h>

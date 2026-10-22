@@ -54,22 +54,22 @@ TEST(SensorTest, AmbientLight) {
   ASSERT_EQ(descriptor.sensor().input()[0].values()[0].type,
             fuchsia_input_report::wire::SensorType::kLightIlluminance);
   ASSERT_EQ(descriptor.sensor().input()[0].values()[0].axis.unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+            fuchsia_input::wire::UnitType::kNone);
 
   ASSERT_EQ(descriptor.sensor().input()[0].values()[1].type,
             fuchsia_input_report::wire::SensorType::kLightRed);
   ASSERT_EQ(descriptor.sensor().input()[0].values()[1].axis.unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+            fuchsia_input::wire::UnitType::kNone);
 
   ASSERT_EQ(descriptor.sensor().input()[0].values()[2].type,
             fuchsia_input_report::wire::SensorType::kLightBlue);
   ASSERT_EQ(descriptor.sensor().input()[0].values()[2].axis.unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+            fuchsia_input::wire::UnitType::kNone);
 
   ASSERT_EQ(descriptor.sensor().input()[0].values()[3].type,
             fuchsia_input_report::wire::SensorType::kLightGreen);
   ASSERT_EQ(descriptor.sensor().input()[0].values()[3].axis.unit.type,
-            fuchsia_input_report::wire::UnitType::kNone);
+            fuchsia_input::wire::UnitType::kNone);
 
   // Create the report.
   ambient_light_input_rpt_t report_data = {};
@@ -151,17 +151,17 @@ TEST(SensorTest, MultiSensor) {
     EXPECT_EQ(descriptor.sensor().input()[0].values()[0].type,
               fuchsia_input_report::wire::SensorType::kAccelerometerX);
     EXPECT_EQ(descriptor.sensor().input()[0].values()[0].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[0].values()[1].type,
               fuchsia_input_report::wire::SensorType::kAccelerometerY);
     EXPECT_EQ(descriptor.sensor().input()[0].values()[1].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[0].values()[2].type,
               fuchsia_input_report::wire::SensorType::kAccelerometerZ);
     EXPECT_EQ(descriptor.sensor().input()[0].values()[2].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     // Create the report.
     accelerometer_input_rpt_t report_data = {};
@@ -202,17 +202,17 @@ TEST(SensorTest, MultiSensor) {
     EXPECT_EQ(descriptor.sensor().input()[1].values()[0].type,
               fuchsia_input_report::wire::SensorType::kGyroscopeX);
     EXPECT_EQ(descriptor.sensor().input()[1].values()[0].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[1].values()[1].type,
               fuchsia_input_report::wire::SensorType::kGyroscopeY);
     EXPECT_EQ(descriptor.sensor().input()[1].values()[1].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[1].values()[2].type,
               fuchsia_input_report::wire::SensorType::kGyroscopeZ);
     EXPECT_EQ(descriptor.sensor().input()[1].values()[2].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     // Create the report.
     gyrometer_input_rpt_t gyrometer_report_data = {};
@@ -254,17 +254,17 @@ TEST(SensorTest, MultiSensor) {
     EXPECT_EQ(descriptor.sensor().input()[2].values()[0].type,
               fuchsia_input_report::wire::SensorType::kMagnetometerX);
     EXPECT_EQ(descriptor.sensor().input()[2].values()[0].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[2].values()[1].type,
               fuchsia_input_report::wire::SensorType::kMagnetometerY);
     EXPECT_EQ(descriptor.sensor().input()[2].values()[1].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[2].values()[2].type,
               fuchsia_input_report::wire::SensorType::kMagnetometerZ);
     EXPECT_EQ(descriptor.sensor().input()[2].values()[2].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     // Create the report.
     compass_input_rpt_t compass_report_data = {};
@@ -306,17 +306,17 @@ TEST(SensorTest, MultiSensor) {
     EXPECT_EQ(descriptor.sensor().input()[3].values()[0].type,
               fuchsia_input_report::wire::SensorType::kAccelerometerX);
     EXPECT_EQ(descriptor.sensor().input()[3].values()[0].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[3].values()[1].type,
               fuchsia_input_report::wire::SensorType::kAccelerometerY);
     EXPECT_EQ(descriptor.sensor().input()[3].values()[1].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     EXPECT_EQ(descriptor.sensor().input()[3].values()[2].type,
               fuchsia_input_report::wire::SensorType::kAccelerometerZ);
     EXPECT_EQ(descriptor.sensor().input()[3].values()[2].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     // Create the report.
     accelerometer_input_rpt_t accelerometer_report_data = {};
@@ -358,7 +358,7 @@ TEST(SensorTest, MultiSensor) {
     EXPECT_EQ(descriptor.sensor().input()[4].values()[0].type,
               fuchsia_input_report::wire::SensorType::kLightIlluminance);
     EXPECT_EQ(descriptor.sensor().input()[4].values()[0].axis.unit.type,
-              fuchsia_input_report::wire::UnitType::kNone);
+              fuchsia_input::wire::UnitType::kNone);
 
     // Create the report.
     illuminance_input_rpt_t illuminance_report_data = {};

@@ -244,14 +244,14 @@ void Gt6853Device::GetInputReportsReaderV2(GetInputReportsReaderV2RequestView re
 void Gt6853Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   constexpr size_t kDescriptorBufferSize = 512;
 
-  constexpr fuchsia_input_report::wire::Axis kAxisX = {
+  constexpr fuchsia_input::wire::Axis kAxisX = {
       .range = {.min = 0, .max = kMaxContactX},
-      .unit = {.type = fuchsia_input_report::wire::UnitType::kNone, .exponent = 0},
+      .unit = {.type = fuchsia_input::wire::UnitType::kNone, .exponent = 0},
   };
 
-  constexpr fuchsia_input_report::wire::Axis kAxisY = {
+  constexpr fuchsia_input::wire::Axis kAxisY = {
       .range = {.min = 0, .max = kMaxContactY},
-      .unit = {.type = fuchsia_input_report::wire::UnitType::kNone, .exponent = 0},
+      .unit = {.type = fuchsia_input::wire::UnitType::kNone, .exponent = 0},
   };
 
   fidl::Arena<kDescriptorBufferSize> allocator;

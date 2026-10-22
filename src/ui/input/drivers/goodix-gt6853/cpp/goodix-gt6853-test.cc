@@ -560,12 +560,12 @@ TEST_F(Gt6853Test, GetDescriptor) {
 
     EXPECT_EQ(contact.position_x().range.min, 0);
     EXPECT_EQ(contact.position_x().range.max, 600);
-    EXPECT_EQ(contact.position_x().unit.type, fuchsia_input_report::wire::UnitType::kNone);
+    EXPECT_EQ(contact.position_x().unit.type, fuchsia_input::wire::UnitType::kNone);
     EXPECT_EQ(contact.position_x().unit.exponent, 0);
 
     EXPECT_EQ(contact.position_y().range.min, 0);
     EXPECT_EQ(contact.position_y().range.max, 1024);
-    EXPECT_EQ(contact.position_y().unit.type, fuchsia_input_report::wire::UnitType::kNone);
+    EXPECT_EQ(contact.position_y().unit.type, fuchsia_input::wire::UnitType::kNone);
     EXPECT_EQ(contact.position_y().unit.exponent, 0);
   }
 

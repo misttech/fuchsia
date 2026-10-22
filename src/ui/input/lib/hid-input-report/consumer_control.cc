@@ -17,11 +17,11 @@
 #include "src/ui/input/lib/hid-input-report/device.h"
 
 namespace hid_input_report {
-using fuchsia_input_report::wire::ConsumerControlButton;
+using fuchsia_input::wire::ConsumerControlButton;
 
 namespace {
 
-std::optional<fuchsia_input_report::wire::ConsumerControlButton> HidToConsumerControlButton(
+std::optional<fuchsia_input::wire::ConsumerControlButton> HidToConsumerControlButton(
     hid::Usage usage) {
   struct {
     hid::Usage usage;
@@ -54,8 +54,7 @@ std::optional<fuchsia_input_report::wire::ConsumerControlButton> HidToConsumerCo
 
 ParseResult ConsumerControl::ParseInputReportDescriptor(
     const hid::ReportDescriptor& hid_report_descriptor) {
-  std::array<hid::ReportField, fuchsia_input_report::wire::kConsumerControlMaxNumButtons>
-      button_fields;
+  std::array<hid::ReportField, fuchsia_input::wire::kConsumerControlMaxNumButtons> button_fields;
   size_t num_buttons = 0;
 
   for (size_t i = 0; i < hid_report_descriptor.input_count; i++) {
@@ -115,8 +114,7 @@ ParseResult ConsumerControl::ParseInputReportInternal(
     fuchsia_input_report::wire::InputReport& input_report) {
   fuchsia_input_report::wire::ConsumerControlInputReport consumer_report(allocator);
 
-  std::array<ConsumerControlButton, fuchsia_input_report::wire::kConsumerControlMaxNumButtons>
-      buttons;
+  std::array<ConsumerControlButton, fuchsia_input::wire::kConsumerControlMaxNumButtons> buttons;
   size_t buttons_size = 0;
 
   for (const hid::ReportField& field : button_fields_) {

@@ -327,13 +327,13 @@ void I8042Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
     buttons[1] = 0x02;
     buttons[2] = 0x03;
 
-    constexpr fuchsia_input_report::wire::Axis movement_x{
+    constexpr fuchsia_input::wire::Axis movement_x{
         .range = {.min = -127, .max = 127},
-        .unit = {.type = fuchsia_input_report::wire::UnitType::kNone, .exponent = 0},
+        .unit = {.type = fuchsia_input::wire::UnitType::kNone, .exponent = 0},
     };
-    constexpr fuchsia_input_report::wire::Axis movement_y{
+    constexpr fuchsia_input::wire::Axis movement_y{
         .range = {.min = -127, .max = 127},
-        .unit = {.type = fuchsia_input_report::wire::UnitType::kNone, .exponent = 0},
+        .unit = {.type = fuchsia_input::wire::UnitType::kNone, .exponent = 0},
     };
 
     auto mouse_in_desc = fuchsia_input_report::wire::MouseInputDescriptor::Builder(allocator);

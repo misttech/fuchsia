@@ -44,6 +44,7 @@ fx_cc_library(
         "@fuchsia_sdk//fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
+        "@fuchsia_sdk//fidl/fuchsia.input:fuchsia.input_cpp",
         "@fuchsia_sdk//fidl/fuchsia.input.report:fuchsia.input.report_cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_devfs_cpp",
