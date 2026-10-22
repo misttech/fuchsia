@@ -262,7 +262,6 @@ async fn create_realm_instance(
     {
         let source = source.ok_or(CreateRealmError::SourceNotProvided)?;
         let name = name.ok_or(CreateRealmError::NameNotProvided)?;
-        let diagnostics_name = format!("{name}-diagnostics");
         let mut child = ChildOptions::new();
         if eager.unwrap_or(false) {
             child = child.eager();
@@ -322,20 +321,6 @@ async fn create_realm_instance(
                 offering_children.push(name.clone());
             }
         }
-        // TODO(https://fxbug.dev/324494668): delete when Netstack2 is gone.
-        builder
-            .add_route(
-                Route::new()
-                    .capability(
-                        Capability::directory("diagnostics")
-                            .path("/diagnostics")
-                            .rights(fio::R_STAR_DIR)
-                            .as_(diagnostics_name.clone()),
-                    )
-                    .from(&child_ref)
-                    .to(Ref::parent()),
-            )
-            .await?;
         let config_values = config_values.unwrap_or_default();
         if !config_values.is_empty() {
             let child_decl = builder.get_component_decl(&child_ref).await?;
@@ -1134,23 +1119,6 @@ impl ManagedRealm {
                     responder
                         .send(response.map_err(zx::Status::into_raw))
                         .context("responding to StopChildComponent request")?;
-                }
-                ManagedRealmRequest::OpenDiagnosticsDirectory {
-                    child_name,
-                    directory,
-                    control_handle: _,
-                } => {
-                    let flags = fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY;
-                    realm
-                        .root
-                        .get_exposed_dir()
-                        .open(
-                            &format!("{child_name}-diagnostics"),
-                            flags,
-                            &Default::default(),
-                            directory.into_channel(),
-                        )
-                        .context(format!("opening diagnostics dir for {child_name}"))?;
                 }
                 ManagedRealmRequest::GetCrashListener { listener, control_handle: _ } => {
                     // We must create the event stream now, to ensure that it's

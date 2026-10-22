@@ -27,7 +27,6 @@ use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext};
 use fnet_ext::{FromExt as _, IntoExt as _};
 
 use fidl_fuchsia_hardware_network as fnetwork;
-use fidl_fuchsia_io as fio;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_dhcp as fnet_dhcp;
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
@@ -453,15 +452,6 @@ impl<'a> TestRealm<'a> {
             Result::Ok(proxy)
         })()
         .with_context(|| format!("{} from {child}", S::DEBUG_NAME))
-    }
-
-    /// Opens the diagnostics directory of a component.
-    pub fn open_diagnostics_directory(&self, child_name: &str) -> Result<fio::DirectoryProxy> {
-        let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        self.realm()
-            .open_diagnostics_directory(child_name, server_end)
-            .context("open diagnostics dir")?;
-        Ok(proxy)
     }
 
     /// Connects to a protocol within the realm.
