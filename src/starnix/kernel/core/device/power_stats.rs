@@ -4,7 +4,7 @@
 
 //! Per-[`Kernel`] discovery and querying of `fuchsia.hardware.power.stats.Service` providers.
 
-use crate::device::service_watcher::watch_fidl_service;
+use crate::device::service_watcher::{ServiceBindingScope, ServiceWatcher};
 use crate::task::Kernel;
 use fidl::endpoints::{Proxy as _, SynchronousProxy as _};
 use fidl_fuchsia_hardware_power_stats as fpowerstats;
@@ -14,8 +14,8 @@ use starnix_sync::{LockDepMutex, PowerStatsManagerLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
 
 /// How long to wait for a power stats provider to respond to a FIDL request before failing.
 const PROVIDER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
@@ -25,7 +25,7 @@ const PROVIDER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seco
 pub struct PowerStatsProvider {
     instance_name: String,
     entity_names: HashSet<String>,
-    proxy: fpowerstats::DeviceSynchronousProxy,
+    proxy: Arc<fpowerstats::DeviceSynchronousProxy>,
 }
 
 impl PowerStatsProvider {
@@ -38,7 +38,7 @@ impl PowerStatsProvider {
         Self {
             instance_name: instance_name.into(),
             entity_names: entity_names.into_iter().map(Into::into).collect(),
-            proxy,
+            proxy: Arc::new(proxy),
         }
     }
 
@@ -87,8 +87,9 @@ type ProviderListener = dyn FnMut(&Kernel, &Arc<PowerStatsProvider>) + Send;
 struct PowerStatsManagerState {
     /// Discovered provider instances that announced new entities, in discovery order.
     providers: Vec<Arc<PowerStatsProvider>>,
-    /// Active or last-known provider serving each discovered entity name.
-    entity_providers: HashMap<String, Arc<PowerStatsProvider>>,
+    /// Active provider serving each discovered entity name, or `None` when the provider that was
+    /// serving that entity has disconnected and has not yet been replaced.
+    entity_providers: HashMap<String, Option<Arc<PowerStatsProvider>>>,
     /// Listeners notified whenever a provider instance announces new entities.
     listeners: Vec<Box<ProviderListener>>,
 }
@@ -107,17 +108,12 @@ impl std::fmt::Debug for PowerStatsManagerState {
 /// [`PowerStatsManager::get_or_init`].
 #[derive(Debug, Default)]
 struct PowerStatsManagerInner {
-    watch_started: AtomicBool,
+    driver_registered: AtomicBool,
     state: LockDepMutex<PowerStatsManagerState, PowerStatsManagerLock>,
 }
 
-/// Handle to the per-[`Kernel`] singleton that watches `fuchsia.hardware.power.stats.Service` on
-/// the kernel's main async executor and tracks discovered power entities for kernel subsystems and
-/// modules.
-///
-/// Discovery is performed asynchronously as providers appear in `/svc`, while
-/// [`Self::entity_stats`] looks up the [`PowerStatsProvider`] serving a given entity and issues the
-/// synchronous `GetStats` call outside the internal lock.
+/// Handle to the per-[`Kernel`] singleton that discovers
+/// `fuchsia.hardware.power.stats.Service` providers and queries per-entity residency statistics.
 #[derive(Clone, Debug)]
 pub struct PowerStatsManager {
     inner: Arc<PowerStatsManagerInner>,
@@ -128,29 +124,33 @@ impl PowerStatsManager {
     /// `/svc/fuchsia.hardware.power.stats.Service` on first access.
     pub fn get_or_init(kernel: &Kernel) -> Self {
         let inner = kernel.expando.get::<PowerStatsManagerInner>();
-        if !inner.watch_started.swap(true, Ordering::AcqRel) {
-            watch_fidl_service(
+        let manager = Self { inner };
+        if !manager.inner.driver_registered.swap(true, Ordering::AcqRel) {
+            let manager_for_bind = manager.clone();
+            ServiceWatcher::register_with_probe(
                 kernel,
                 fpowerstats::ServiceMarker,
-                "power_stats",
-                Self::handle_service_instance,
+                Self::probe_service_instance,
+                move |current_task, provider, scope| {
+                    manager_for_bind.bind_provider(current_task.kernel(), provider, scope);
+                },
             );
         }
-        Self { inner }
+        manager
     }
 
     /// Returns the per-[`Kernel`] [`PowerStatsManager`] for unit testing, suppressing the
     /// background `/svc` watcher if it has not been started yet.
     pub fn get_or_init_for_testing(kernel: &Kernel) -> Self {
         let inner = kernel.expando.get::<PowerStatsManagerInner>();
-        inner.watch_started.store(true, Ordering::Release);
+        inner.driver_registered.store(true, Ordering::Release);
         Self { inner }
     }
 
     /// Registers `provider` with the per-[`Kernel`] [`PowerStatsManager`] for unit testing,
     /// suppressing the background `/svc` watcher if it has not been started yet.
     pub fn add_provider_for_testing(kernel: &Kernel, provider: PowerStatsProvider) {
-        Self::get_or_init_for_testing(kernel).register_provider(kernel, provider);
+        let _ = Self::get_or_init_for_testing(kernel).register_provider(kernel, provider);
     }
 
     /// Registers `listener` to be invoked for every [`PowerStatsProvider`] that announces newly
@@ -178,23 +178,29 @@ impl PowerStatsManager {
         state.listeners.push(Box::new(listener));
     }
 
-    /// Queries the current residency [`fpowerstats::Stats`] for `entity_name`, returning
-    /// `Ok(None)` if no provider reporting `entity_name` has been discovered yet.
+    /// Queries the current residency [`fpowerstats::Stats`] for `entity_name`.
+    ///
+    /// Returns `Ok(None)` if no provider reporting `entity_name` has been discovered yet, or
+    /// `Err(EIO)` if the provider serving `entity_name` has disconnected, timed out, or omitted
+    /// `entity_name` from its report.
     pub fn entity_stats(&self, entity_name: &str) -> Result<Option<fpowerstats::Stats>, Errno> {
-        let provider = self.inner.state.lock().entity_providers.get(entity_name).cloned();
-        provider.map(|provider| provider.entity_stats(entity_name)).transpose()
+        let provider = match self.inner.state.lock().entity_providers.get(entity_name).cloned() {
+            None => return Ok(None),
+            Some(None) => return error!(EIO),
+            Some(Some(provider)) => provider,
+        };
+        provider.entity_stats(entity_name).map(Some)
     }
 
-    async fn handle_service_instance(
-        weak_kernel: &Weak<Kernel>,
-        instance: fpowerstats::ServiceProxy,
-    ) {
+    async fn probe_service_instance(
+        instance: Arc<fpowerstats::ServiceProxy>,
+    ) -> Option<PowerStatsProvider> {
         let instance_name = instance.instance_name().to_string();
         let device_proxy = match instance.connect_to_device() {
             Ok(proxy) => proxy,
             Err(e) => {
                 log_warn!("Failed to connect to power stats provider {instance_name}: {e:#}");
-                return;
+                return None;
             }
         };
         let entities = match async { Some(device_proxy.get_entities().await) }
@@ -204,31 +210,44 @@ impl PowerStatsManager {
             Some(Ok(entities)) => entities,
             Some(Err(e)) => {
                 log_warn!("Failed to get power entities from {instance_name}: {e:#}");
-                return;
+                return None;
             }
             None => {
                 log_warn!("Timed out getting power entities from {instance_name}");
-                return;
+                return None;
             }
-        };
-        let Some(kernel) = weak_kernel.upgrade() else {
-            return;
         };
         let client_end = match device_proxy.into_client_end() {
             Ok(client_end) => client_end,
             Err(_) => {
                 log_warn!("Failed to unwrap device proxy channel for {instance_name}");
-                return;
+                return None;
             }
         };
         let entity_names = entities.into_iter().map(|entity| entity.name);
         let sync_proxy = fpowerstats::DeviceSynchronousProxy::new(client_end.into_channel());
-        let provider = PowerStatsProvider::new(instance_name, entity_names, sync_proxy);
-        let inner = kernel.expando.get::<PowerStatsManagerInner>();
-        Self { inner }.register_provider(&kernel, provider);
+        Some(PowerStatsProvider::new(instance_name, entity_names, sync_proxy))
     }
 
-    fn register_provider(&self, kernel: &Kernel, mut provider: PowerStatsProvider) {
+    fn bind_provider(
+        &self,
+        kernel: &Kernel,
+        provider: PowerStatsProvider,
+        scope: &mut ServiceBindingScope,
+    ) {
+        scope.monitor_channel(provider.proxy.clone());
+        let provider = self.register_provider(kernel, provider);
+        let manager = self.clone();
+        scope.on_disconnect(move |_current_task| {
+            manager.disconnect_provider(&provider);
+        });
+    }
+
+    fn register_provider(
+        &self,
+        kernel: &Kernel,
+        mut provider: PowerStatsProvider,
+    ) -> Arc<PowerStatsProvider> {
         let mut state = self.inner.state.lock();
         let instance_name = provider.instance_name.clone();
         let served_entities: Vec<String> = provider
@@ -238,6 +257,7 @@ impl PowerStatsManager {
                 if let Some(existing) = state
                     .entity_providers
                     .get(entity_name)
+                    .and_then(|slot| slot.as_ref())
                     .filter(|existing| !existing.is_closed())
                 {
                     log_warn!(
@@ -256,12 +276,22 @@ impl PowerStatsManager {
             .retain(|entity_name| !state.entity_providers.contains_key(entity_name));
         let provider = Arc::new(provider);
         for entity_name in served_entities {
-            state.entity_providers.insert(entity_name, provider.clone());
+            state.entity_providers.insert(entity_name, Some(provider.clone()));
         }
         if !provider.entity_names.is_empty() {
             state.providers.push(provider.clone());
             for listener in &mut state.listeners {
                 listener(kernel, &provider);
+            }
+        }
+        provider
+    }
+
+    fn disconnect_provider(&self, disconnected: &Arc<PowerStatsProvider>) {
+        let mut state = self.inner.state.lock();
+        for slot in state.entity_providers.values_mut() {
+            if slot.as_ref().is_some_and(|current| Arc::ptr_eq(current, disconnected)) {
+                *slot = None;
             }
         }
     }
@@ -270,18 +300,18 @@ impl PowerStatsManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::service_watcher::run_fidl_service_watcher;
+    use crate::device::service_watcher::watch_service_dir_for_testing;
     use crate::testing::{spawn_kernel_and_run, spawn_kernel_and_run_sync};
-    use fidl::endpoints::{ServerEnd, create_endpoints, create_sync_proxy};
-    use fidl_fuchsia_io as fio;
+    use fidl::endpoints::{ServerEnd, create_sync_proxy};
     use fuchsia_async as fasync;
-    use fuchsia_component::client as fclient;
-    use fuchsia_component::server::ServiceFs;
     use futures::StreamExt;
-    use futures::channel::oneshot;
-    use futures::future::{Either, select};
+    use futures::channel::{mpsc, oneshot};
+    use futures::future::select;
+    use starnix_sync::Mutex;
     use std::pin::pin;
     use std::sync::atomic::AtomicUsize;
+    use vfs::directory::helper::DirectlyMutable as _;
+    use vfs::directory::immutable::Simple;
 
     fn state(id: i32, entry_count: u32, total_time_ms: u64) -> fpowerstats::StateResidency {
         fpowerstats::StateResidency {
@@ -333,83 +363,53 @@ mod tests {
         std::thread::spawn(move || fasync::LocalExecutor::default().run_singlethreaded(serve()));
     }
 
-    #[derive(Clone)]
-    enum ProviderBehavior {
-        Healthy(Vec<fpowerstats::Stats>),
-        Closed,
-        Hung,
+    fn start_test_service_dir(kernel: &Kernel) -> Arc<Simple> {
+        let dir = vfs::directory::immutable::simple();
+        let proxy = vfs::directory::serve_read_only(dir.clone(), vfs::ExecutionScope::new());
+        watch_service_dir_for_testing::<fpowerstats::ServiceMarker>(kernel, proxy);
+        dir
     }
 
-    fn serve_service(
-        providers: Vec<(&'static str, ProviderBehavior)>,
-    ) -> fclient::Service<fpowerstats::ServiceMarker> {
-        let (client, server) = create_endpoints::<fio::DirectoryMarker>();
-        spawn_server(move || async move {
-            let mut fs = ServiceFs::new_local();
-            for (instance, behavior) in providers {
-                fs.add_fidl_service_instance(instance, move |request| {
-                    let fpowerstats::ServiceRequest::Device(stream) = request;
-                    (stream, behavior.clone())
-                });
-            }
-            fs.serve_connection(server).expect("serve service directory");
-            fs.for_each_concurrent(None, |(stream, behavior)| async move {
-                match behavior {
-                    ProviderBehavior::Healthy(reports) => {
-                        serve_provider(stream, reports).await;
-                    }
-                    ProviderBehavior::Closed => {}
-                    ProviderBehavior::Hung => {
-                        let _stream = stream;
-                        std::future::pending::<()>().await;
-                    }
-                }
-            })
-            .await;
-        });
-        fclient::Service::open_from_dir(client, fpowerstats::ServiceMarker).expect("open service")
+    fn add_instance(
+        dir: &Arc<Simple>,
+        name: &str,
+        on_open: impl Fn(zx::Channel) + Send + Sync + 'static,
+    ) {
+        let instance_dir = vfs::pseudo_directory! {
+            "device" => vfs::service::endpoint(move |_scope, channel| {
+                on_open(channel.into_zx_channel());
+            }),
+        };
+        dir.add_entry_may_overwrite(name, instance_dir, /* overwrite = */ true)
+            .expect("add service instance");
     }
 
     #[::fuchsia::test]
     async fn discovers_entities_and_queries_stats() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            let manager = PowerStatsManager::get_or_init_for_testing(kernel);
+            let dir = start_test_service_dir(kernel);
+            let manager = PowerStatsManager::get_or_init(kernel);
             assert!(Arc::ptr_eq(&manager.inner, &PowerStatsManager::get_or_init(kernel).inner));
             assert_eq!(manager.entity_stats("cpu_c2"), Ok(None));
 
-            let (tx, rx) = oneshot::channel();
-            let mut tx = Some(tx);
-            manager.watch_providers(kernel, move |_, _| {
-                if let Some(tx) = tx.take() {
-                    let _ = tx.send(());
-                }
+            let (notified_tx, mut notified_rx) = mpsc::unbounded();
+            manager.watch_providers(kernel, move |_, provider| {
+                let _ = notified_tx.unbounded_send(provider.instance_name().to_string());
             });
 
-            let service = serve_service(vec![(
-                "default",
-                ProviderBehavior::Healthy(vec![
-                    stats("cpu_c2", vec![state(0, 5, 120)]),
-                    stats("lpcm_soc", vec![]),
-                ]),
-            )]);
-            let weak_kernel = kernel.weak_self.clone();
-            let watcher = pin!(run_fidl_service_watcher(
-                &weak_kernel,
-                service,
-                PowerStatsManager::handle_service_instance,
-            ));
+            add_instance(&dir, "default", move |server_end| {
+                spawn_server(move || {
+                    let stream =
+                        ServerEnd::<fpowerstats::DeviceMarker>::new(server_end).into_stream();
+                    serve_provider(
+                        stream,
+                        vec![stats("cpu_c2", vec![state(0, 5, 120)]), stats("lpcm_soc", vec![])],
+                    )
+                });
+            });
 
-            match select(watcher, rx).await {
-                Either::Left((result, _)) => {
-                    panic!("watcher exited before provider was discovered: {result:?}");
-                }
-                Either::Right((Ok(()), _)) => {}
-                Either::Right((Err(e), _)) => {
-                    panic!("oneshot sender dropped before signalling: {e:?}");
-                }
-            }
-
+            assert_eq!(notified_rx.next().await.as_deref(), Some("default"));
             let cpu_c2 = manager
                 .entity_stats("cpu_c2")
                 .expect("GetStats succeeded")
@@ -418,122 +418,6 @@ mod tests {
             assert_eq!(cpu_c2.state_residency_data[0].entry_count, 5);
             assert_eq!(cpu_c2.state_residency_data[0].total_time_ms, 120);
             assert_eq!(manager.entity_stats("unknown"), Ok(None));
-        })
-        .await;
-    }
-
-    #[::fuchsia::test]
-    async fn closed_provider_returns_eio_and_restarted_provider_recovers() {
-        spawn_kernel_and_run_sync(|current_task| {
-            let kernel = current_task.kernel();
-            let manager = PowerStatsManager::get_or_init_for_testing(kernel);
-
-            let (live_proxy, live_server) = create_sync_proxy::<fpowerstats::DeviceMarker>();
-            spawn_server(move || {
-                serve_provider(
-                    live_server.into_stream(),
-                    vec![stats("cpu_c2", vec![state(0, 9, 42)])],
-                )
-            });
-            PowerStatsManager::add_provider_for_testing(
-                kernel,
-                PowerStatsProvider::new("first", ["cpu_c2"], live_proxy),
-            );
-
-            let (closed_proxy, server) = create_sync_proxy::<fpowerstats::DeviceMarker>();
-            drop::<ServerEnd<_>>(server);
-            PowerStatsManager::add_provider_for_testing(
-                kernel,
-                PowerStatsProvider::new(
-                    "second",
-                    ["cpu_c2", "dead_entity", "unrecovered_entity"],
-                    closed_proxy,
-                ),
-            );
-
-            // Listeners only observe newly announced entities on subsequent providers.
-            let early_seen = Arc::new(std::sync::Mutex::new(Vec::new()));
-            let early_seen_for_listener = early_seen.clone();
-            manager.watch_providers(kernel, move |_, provider| {
-                early_seen_for_listener
-                    .lock()
-                    .unwrap()
-                    .push((provider.instance_name().to_string(), provider.entity_names().clone()));
-            });
-            assert_eq!(
-                *early_seen.lock().unwrap(),
-                vec![
-                    ("first".to_string(), HashSet::from(["cpu_c2".to_string()])),
-                    (
-                        "second".to_string(),
-                        HashSet::from([
-                            "dead_entity".to_string(),
-                            "unrecovered_entity".to_string()
-                        ])
-                    ),
-                ]
-            );
-
-            // The first provider to report `cpu_c2` continues to serve it even when a second
-            // provider reports a duplicate `cpu_c2`.
-            let cpu_c2 = manager
-                .entity_stats("cpu_c2")
-                .expect("GetStats succeeded")
-                .expect("cpu_c2 entity served by first provider");
-            assert_eq!(cpu_c2.state_residency_data[0].total_time_ms, 42);
-
-            // Querying an entity served by a closed provider returns `EIO` until a replacement
-            // provider registers for that entity, even if an unrelated provider registers in the
-            // meantime.
-            assert_eq!(manager.entity_stats("dead_entity"), error!(EIO));
-            let (unrelated_proxy, _unrelated_server) =
-                create_sync_proxy::<fpowerstats::DeviceMarker>();
-            PowerStatsManager::add_provider_for_testing(
-                kernel,
-                PowerStatsProvider::new("unrelated", ["other_entity"], unrelated_proxy),
-            );
-            assert_eq!(manager.entity_stats("dead_entity"), error!(EIO));
-
-            // When a restarted provider registers, it replaces the closed provider for
-            // `dead_entity` without re-announcing `dead_entity` to existing or late listeners,
-            // while `unrecovered_entity` continues returning `EIO`.
-            let (restarted_proxy, restarted_server) =
-                create_sync_proxy::<fpowerstats::DeviceMarker>();
-            spawn_server(move || {
-                serve_provider(
-                    restarted_server.into_stream(),
-                    vec![stats("dead_entity", vec![state(0, 3, 99)])],
-                )
-            });
-            PowerStatsManager::add_provider_for_testing(
-                kernel,
-                PowerStatsProvider::new("second_restarted", ["dead_entity"], restarted_proxy),
-            );
-            let recovered = manager
-                .entity_stats("dead_entity")
-                .expect("GetStats succeeded")
-                .expect("dead_entity served by restarted provider");
-            assert_eq!(recovered.state_residency_data[0].total_time_ms, 99);
-            assert_eq!(manager.entity_stats("unrecovered_entity"), error!(EIO));
-
-            let late_seen = Arc::new(std::sync::Mutex::new(Vec::new()));
-            let late_seen_for_listener = late_seen.clone();
-            manager.watch_providers(kernel, move |_, provider| {
-                late_seen_for_listener
-                    .lock()
-                    .unwrap()
-                    .push((provider.instance_name().to_string(), provider.entity_names().clone()));
-            });
-            let expected_announcements = vec![
-                ("first".to_string(), HashSet::from(["cpu_c2".to_string()])),
-                (
-                    "second".to_string(),
-                    HashSet::from(["dead_entity".to_string(), "unrecovered_entity".to_string()]),
-                ),
-                ("unrelated".to_string(), HashSet::from(["other_entity".to_string()])),
-            ];
-            assert_eq!(*early_seen.lock().unwrap(), expected_announcements);
-            assert_eq!(*late_seen.lock().unwrap(), expected_announcements);
         })
         .await;
     }
@@ -607,50 +491,27 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    async fn handle_service_instance_skips_failing_provider_and_discovers_subsequent_instances() {
+    async fn probe_service_instance_skips_failing_provider_and_discovers_subsequent_instances() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            let manager = PowerStatsManager::get_or_init_for_testing(kernel);
+            let dir = start_test_service_dir(kernel);
+            let manager = PowerStatsManager::get_or_init(kernel);
 
-            let (tx, rx) = oneshot::channel();
-            let mut tx = Some(tx);
-            let mut seen_names = Vec::new();
+            let (notified_tx, mut notified_rx) = mpsc::unbounded();
             manager.watch_providers(kernel, move |_, provider| {
-                seen_names.push(provider.instance_name().to_string());
-                if provider.instance_name() == "healthy" {
-                    if let Some(tx) = tx.take() {
-                        let _ = tx.send(std::mem::take(&mut seen_names));
-                    }
-                }
+                let _ = notified_tx.unbounded_send(provider.instance_name().to_string());
             });
 
-            let service = serve_service(vec![
-                ("broken_closed", ProviderBehavior::Closed),
-                ("broken_hung", ProviderBehavior::Hung),
-                (
-                    "healthy",
-                    ProviderBehavior::Healthy(vec![stats("cpu_c2", vec![state(0, 4, 80)])]),
-                ),
-            ]);
+            add_instance(&dir, "broken_closed", |_| {});
+            add_instance(&dir, "healthy", move |server_end| {
+                spawn_server(move || {
+                    let stream =
+                        ServerEnd::<fpowerstats::DeviceMarker>::new(server_end).into_stream();
+                    serve_provider(stream, vec![stats("cpu_c2", vec![state(0, 4, 80)])])
+                });
+            });
 
-            let weak_kernel = kernel.weak_self.clone();
-            let watcher = pin!(run_fidl_service_watcher(
-                &weak_kernel,
-                service,
-                PowerStatsManager::handle_service_instance,
-            ));
-
-            let seen_names = match select(watcher, rx).await {
-                Either::Left((result, _)) => {
-                    panic!("watcher exited before healthy provider was discovered: {result:?}");
-                }
-                Either::Right((Ok(seen_names), _)) => seen_names,
-                Either::Right((Err(e), _)) => {
-                    panic!("oneshot sender dropped before signalling: {e:?}");
-                }
-            };
-
-            assert_eq!(seen_names, vec!["healthy".to_string()]);
+            assert_eq!(notified_rx.next().await.as_deref(), Some("healthy"));
             let cpu_c2 = manager
                 .entity_stats("cpu_c2")
                 .expect("GetStats succeeded")
@@ -697,6 +558,24 @@ mod tests {
                 PowerStatsProvider::new("second", ["shared", "only_second"], proxy2),
             );
 
+            let announcements = Arc::new(Mutex::new(Vec::new()));
+            let announcements_for_listener = announcements.clone();
+            manager.watch_providers(kernel, move |_, provider| {
+                announcements_for_listener
+                    .lock()
+                    .push((provider.instance_name().to_string(), provider.entity_names().clone()));
+            });
+            assert_eq!(
+                *announcements.lock(),
+                vec![
+                    (
+                        "first".to_string(),
+                        HashSet::from(["shared".to_string(), "only_first".to_string()])
+                    ),
+                    ("second".to_string(), HashSet::from(["only_second".to_string()])),
+                ]
+            );
+
             let shared = manager.entity_stats("shared").unwrap().unwrap();
             assert_eq!(shared.state_residency_data[0].total_time_ms, 10);
 
@@ -705,6 +584,89 @@ mod tests {
 
             let only_second = manager.entity_stats("only_second").unwrap().unwrap();
             assert_eq!(only_second.state_residency_data[0].total_time_ms, 30);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn watcher_disconnect_clears_provider_and_restarted_instance_recovers() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let dir = start_test_service_dir(kernel);
+            let manager = PowerStatsManager::get_or_init(kernel);
+
+            let (announced_tx, mut announced_rx) = mpsc::unbounded();
+            manager.watch_providers(kernel, move |_, provider| {
+                let _ = announced_tx.unbounded_send((
+                    provider.instance_name().to_string(),
+                    provider.entity_names().clone(),
+                ));
+            });
+
+            let (stop_tx, stop_rx) = oneshot::channel::<()>();
+            let stop_rx = Arc::new(Mutex::new(Some(stop_rx)));
+            let (stopped_tx, stopped_rx) = oneshot::channel::<()>();
+            let stopped_tx = Arc::new(Mutex::new(Some(stopped_tx)));
+            add_instance(&dir, "first", move |server_end| {
+                let stop_rx = stop_rx.lock().take().expect("stop_rx taken once");
+                let stopped_tx = stopped_tx.lock().take().expect("stopped_tx taken once");
+                spawn_server(move || async move {
+                    {
+                        let stream =
+                            ServerEnd::<fpowerstats::DeviceMarker>::new(server_end).into_stream();
+                        let serve_fut = pin!(serve_provider(
+                            stream,
+                            vec![
+                                stats("cpu_c2", vec![state(0, 5, 100)]),
+                                stats("unrecovered_entity", vec![state(0, 1, 10)]),
+                            ],
+                        ));
+                        let _ = select(serve_fut, stop_rx).await;
+                    }
+                    let _ = stopped_tx.send(());
+                });
+            });
+
+            assert_eq!(
+                announced_rx.next().await,
+                Some((
+                    "first".to_string(),
+                    HashSet::from(["cpu_c2".to_string(), "unrecovered_entity".to_string()]),
+                ))
+            );
+            let cpu_c2 = manager.entity_stats("cpu_c2").unwrap().unwrap();
+            assert_eq!(cpu_c2.state_residency_data[0].total_time_ms, 100);
+
+            // Stop `"first"`; queries for its entities now return `EIO`.
+            let _ = stop_tx.send(());
+            let _ = stopped_rx.await;
+            assert_eq!(manager.entity_stats("cpu_c2"), error!(EIO));
+            assert_eq!(manager.entity_stats("unrecovered_entity"), error!(EIO));
+
+            // Inject a restarted instance serving `cpu_c2` plus `new_entity`; `cpu_c2` recovers
+            // without being re-announced to listeners, while `unrecovered_entity` still returns
+            // `EIO`.
+            add_instance(&dir, "first_restarted", move |server_end| {
+                spawn_server(move || {
+                    let stream =
+                        ServerEnd::<fpowerstats::DeviceMarker>::new(server_end).into_stream();
+                    serve_provider(
+                        stream,
+                        vec![
+                            stats("cpu_c2", vec![state(0, 7, 250)]),
+                            stats("new_entity", vec![state(0, 1, 20)]),
+                        ],
+                    )
+                });
+            });
+
+            assert_eq!(
+                announced_rx.next().await,
+                Some(("first_restarted".to_string(), HashSet::from(["new_entity".to_string()])))
+            );
+            let recovered = manager.entity_stats("cpu_c2").unwrap().unwrap();
+            assert_eq!(recovered.state_residency_data[0].total_time_ms, 250);
+            assert_eq!(manager.entity_stats("unrecovered_entity"), error!(EIO));
         })
         .await;
     }
