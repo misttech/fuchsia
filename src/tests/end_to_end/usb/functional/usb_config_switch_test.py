@@ -11,6 +11,14 @@ that the host sees the right interfaces, that CDC and ADB carry traffic, and
 that `usb-cli diag` shows no health errors or stuck DWC3 endpoints. Finally it
 restores the starting config.
 
+This guards against a bug where each DWC3 endpoint kept the TRB ring that it
+got when first enabled after boot. An endpoint that was Interrupt then wedged
+once it carried traffic as Bulk. Which endpoints each function gets depends on
+which function starts first, and that can change from boot to boot. So the test
+logs the endpoint types and traffic, and fails (or, without ADB, warns) if a
+run never hit that case. For that, it assumes that the DUT hasn't switched
+configs since boot.
+
 `usb-cli` runs on the serial console, the only transport that survives a
 switch, so the Mobly config must provide `serial_socket`.
 """
@@ -18,6 +26,7 @@ switch, so the Mobly config must provide `serial_socket`.
 import contextlib
 import logging
 import os
+import re
 import tempfile
 import time
 from collections.abc import Iterator
@@ -73,6 +82,8 @@ _BAD_HEALTH_TAGS = (
 )
 # EP0 OUT and IN. Control endpoints stall by design to reject requests.
 _DWC3_EP0 = ("endpoint-0x00", "endpoint-0x01")
+# How `usb-cli diag` prints a DWC3 endpoint type, e.g. "2 (Bulk)".
+_ENDPOINT_TYPE_RE = re.compile(r"\d+ \((\w+)\)")
 
 
 def _get(node: Any, *names: str) -> dict[str, Any]:
@@ -167,6 +178,27 @@ def find_stuck_endpoints(endpoints: dict[str, Any]) -> list[str]:
     return problems
 
 
+def get_endpoint_types(endpoints: dict[str, Any]) -> dict[str, str]:
+    """Returns the type of each enabled DWC3 endpoint but EP0, e.g. "Bulk"."""
+    types: dict[str, str] = {}
+    for name in sorted(endpoints):
+        endpoint = _get(endpoints, name)
+        match = _ENDPOINT_TYPE_RE.fullmatch(str(endpoint.get("type")))
+        if name not in _DWC3_EP0 and endpoint.get("enabled") is True and match:
+            types[name] = match.group(1)
+    return types
+
+
+def get_endpoint_bytes(endpoints: dict[str, Any]) -> dict[str, int]:
+    """Returns how many bytes each DWC3 endpoint has carried since boot."""
+    total: dict[str, int] = {}
+    for name in endpoints:
+        value = str(_get(endpoints, name).get("total_bytes"))
+        if value.isdigit():
+            total[name] = int(value)
+    return total
+
+
 @contextlib.contextmanager
 def _expect_no_raises(message: str) -> Iterator[None]:
     """Records an exception as a test failure, and carries on.
@@ -215,17 +247,44 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def test_usb_config_switch(self) -> None:
         """Switches to every config made from the starting functions."""
+        # The type of each DWC3 endpoint when the test first saw it enabled,
+        # the last byte count of each, and each endpoint that was Interrupt
+        # when first seen and then carried a full transfer as Bulk, e.g.
+        # "endpoint-0x05 in cdc". That is the case that caused endpoints to
+        # wedge.
+        self._first_types: dict[str, str] = {}
+        self._endpoint_bytes: dict[str, int] = {}
+        self._triggers: list[str] = []
         matrix = build_config_matrix(self._initial)
         _LOGGER.info(
             "Testing %d USB configs: %s",
             len(matrix),
             " ".join(",".join(config) for config in matrix),
         )
-        # Check the starting config too.
+        # Check the starting config too. That also records the endpoint types
+        # at boot, which decide where the bug can happen.
         self._check(self._initial)
         for config in matrix:
             self._switch_to(config)
             self._check(config)
+        if self._triggers:
+            _LOGGER.info(
+                "DWC3 endpoints that were Interrupt when first seen and then "
+                "carried a full transfer as Bulk: %s",
+                ", ".join(self._triggers),
+            )
+        elif not expects.recorder.has_error:
+            # Only if the run passed. In a failed run, a stuck endpoint may
+            # never have completed a full transfer.
+            msg = (
+                "No DWC3 endpoint that was Interrupt when first seen carried "
+                "a full transfer as Bulk"
+            )
+            if {"cdc", "adb"} <= set(self._initial):
+                asserts.fail(msg)
+            # Without ADB, e.g. on `cdc,vsock`, only VSOCK reuses `cdc`'s
+            # Interrupt endpoint when `cdc` starts first at boot.
+            _LOGGER.warning(msg)
 
     async def teardown_test(self) -> None:
         try:
@@ -420,9 +479,50 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
             time.sleep(1)
             output = self._usb_cli_diag(config)
             problems = find_diag_problems(output)
+        self._log_endpoint_types(",".join(config), output)
         if problems:
             _LOGGER.warning("usb-cli diag output: %s", output)
         asserts.assert_false(problems, f"usb-cli diag: {problems}")
+
+    def _log_endpoint_types(self, label: str, output: str) -> None:
+        """Logs the DWC3 endpoint types, and which could wedge.
+
+        Those are the Bulk endpoints that were Interrupt when the test first
+        saw them enabled. One only counts if it has carried a full transfer
+        since the last check.
+        """
+        endpoints = parse_dwc3_endpoints(output)
+        types = get_endpoint_types(endpoints)
+        total_bytes = get_endpoint_bytes(endpoints)
+        for name, kind in types.items():
+            self._first_types.setdefault(name, kind)
+        # Bulk endpoints that were Interrupt when first seen, with the bytes
+        # that each carried since the last check. Serial can garble a count,
+        # so never go below 0.
+        exposed = {
+            name: max(
+                total_bytes.get(name, 0) - self._endpoint_bytes.get(name, 0), 0
+            )
+            for name, kind in types.items()
+            if kind == "Bulk" and self._first_types[name] == "Interrupt"
+        }
+        self._endpoint_bytes.update(total_bytes)
+        self._triggers += [
+            f"{name} in {label}"
+            for name, carried in exposed.items()
+            if carried >= _TRANSFER_SIZE_BYTES
+        ]
+        _LOGGER.info(
+            "[%s] DWC3 endpoint types: %s. Bulk, but Interrupt when first "
+            "seen: %s",
+            label,
+            types,
+            ", ".join(
+                f"{name} carried {carried} bytes since the last check"
+                for name, carried in exposed.items()
+            )
+            or "none",
+        )
 
     def _usb_cli_diag(self, config: list[str]) -> str:
         """Runs `usb-cli diag` over SSH if CDC is up and works, else serial."""
