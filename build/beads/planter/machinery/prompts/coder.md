@@ -127,9 +127,16 @@ Every test moves to Bazel: C++ and Rust device tests, and host tests. A Bazel te
   4. **Unsupported test binary rule or cross-package `rustc_test`**: `cc_test`, `host_cc_test`,
      `host_py_test`, `host_shac_test`, `host_test`, or `rustc_test` with cross-package `srcs`/`crate`
      or conflicting `rustc_env` on both the test and `crate = ":<lib>"`.
-  Agents must not add `# @bazel2gn:skip` to a translatable test on their own (preserve any
-  pre-existing `# @bazel2gn:skip` annotations added by human code owners). When the library's
-  last GN user migrates, delete the GN library and its GN test copies.
+  5. **Dual-testing cost outweighs the risk** (needs a human to confirm): you MAY propose this only
+     when the cost criteria in docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems
+     apply (1:1 translation of the library, no frequently changing GN-only deps, slow or
+     resource-heavy test). Put the comment
+     `# Needs reviewer attention (bazel2gn skip): <why the cost outweighs the risk>` directly above
+     `# @bazel2gn:skip`, and add a `Needs reviewer attention: <target>: <reason>` line to the commit
+     message body and `summary`. Checks report it as INFO; never treat that INFO as something to fix.
+  Apart from condition 5, agents must not add `# @bazel2gn:skip` to a translatable test on their
+  own (preserve any pre-existing `# @bazel2gn:skip` annotations added by human code owners). When
+  the library's last GN user migrates, delete the GN library and its GN test copies.
 - **Default to `fx_unittest_package` (or `fx_unittest_component`) for unit tests without a custom manifest.**
   For a `fuchsia_unittest_package` (or `fuchsia_unittest_component`) that had no custom `.cml`
   manifest or extra capability shards, you MUST use `fx_unittest_package` from

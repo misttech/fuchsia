@@ -45,6 +45,9 @@ set -euo pipefail
 #    test binary rule (`cc_test`, `host_cc_test`, `host_py_test`, `host_shac_test`, `host_test`)
 #    or `rustc_test` with cross-package `srcs`/`crate` or conflicting `rustc_env`, or (T5) a
 #    human explanatory comment precedes `# @bazel2gn:skip`.
+# 6. test_skip_needs_reviewer_attention (info): a test skip whose comment starts with
+#    `# Needs reviewer attention (bazel2gn skip):` uses the dual-testing cost exception, which only
+#    a human can confirm. It is never rejected, but always reported for the reviewer.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -141,6 +144,10 @@ UNSUPPORTED_TEST_BINARY_RULES = {
     "host_test_data_files",
 }
 COMMENT_REASON_RE = re.compile(r"^#(?!\s*@bazel2gn\b)\s*\S")
+# Marker for a `# @bazel2gn:skip` on a test that a coder justified with exception (c) of
+# docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems (dual-testing cost
+# outweighs the risk). It is never rejected, but always surfaced as INFO for a human to confirm.
+NEEDS_ATTENTION_RE = re.compile(r"^#\s*Needs reviewer attention \(bazel2gn skip\):", re.IGNORECASE)
 
 EXCLUDED_GLOBAL_DIRS = (
     "bundles/assembly",
@@ -252,6 +259,7 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
         cross_pkg_srcs_or_crate = False
         local_test_refs = []
         skipped_test_attrs = []
+        attention_test_attrs = []
         for kw in call.keywords:
             if kw.arg == "target_compatible_with":
                 tcw_seg = ast.get_source_segment(text, kw.value) or ""
@@ -332,6 +340,7 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
             if kw.arg in UNIT_TEST_ATTRS:
                 attr_skip = None
                 attr_reason = False
+                attr_attention = False
                 if 1 <= kw.lineno <= len(lines) and "@bazel2gn:skip" in lines[kw.lineno - 1]:
                     attr_skip = kw.lineno
                 kidx = kw.lineno - 2
@@ -345,16 +354,21 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
                             attr_skip = kidx + 1
                         if COMMENT_REASON_RE.search(ks):
                             attr_reason = True
+                        if NEEDS_ATTENTION_RE.search(ks):
+                            attr_attention = True
                         kidx -= 1
                         continue
                     break
                 if attr_skip is not None:
                     skipped_test_attrs.append((kw.arg, attr_skip, attr_reason))
+                    if attr_attention:
+                        attention_test_attrs.append((kw.arg, attr_skip))
         if not tname:
             continue
         start_line = node.lineno
         skip_line = None
         has_skip_reason = False
+        has_attention_marker = False
         idx = start_line - 2
         while idx >= 0:
             s = lines[idx].strip()
@@ -366,6 +380,8 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
                     skip_line = idx + 1
                 if COMMENT_REASON_RE.search(s):
                     has_skip_reason = True
+                if NEEDS_ATTENTION_RE.search(s):
+                    has_attention_marker = True
                 idx -= 1
                 continue
             break
@@ -375,6 +391,7 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
             "line": start_line,
             "skip_line": skip_line,
             "has_skip_reason": has_skip_reason,
+            "has_attention_marker": has_attention_marker,
             "binary_ref": binary_ref,
             "package_name": pkg_name or tname,
             "unit_tests": unit_tests,
@@ -392,6 +409,7 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
             "cross_pkg_srcs_or_crate": cross_pkg_srcs_or_crate,
             "local_test_refs": local_test_refs,
             "skipped_test_attrs": skipped_test_attrs,
+            "attention_test_attrs": attention_test_attrs,
         })
     return targets
 
@@ -880,6 +898,28 @@ for pkg_dir in sorted(candidate_dirs):
         for t in bazel_targets:
             tname = t["name"]
             rule = t["rule"]
+            is_test_bin = rule in ("fx_cc_binary", "cc_binary") and t.get("testonly")
+            attention = [(f"`{a}` on `{rule}(name = \"{tname}\")`", ln) for a, ln in t.get("attention_test_attrs", [])]
+            if t["skip_line"] is not None and t.get("has_attention_marker") and (rule in BAZEL_TEST_RULES or is_test_bin):
+                attention.append((f"`{rule}(name = \"{tname}\")`", t["skip_line"]))
+            for what, ln in attention:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "test_skip_needs_reviewer_attention",
+                    "severity": "INFO",
+                    "file": bazel_rel,
+                    "line": ln,
+                    "message": (
+                        f"{what} in '{bazel_rel}' skips dual-running its test in GN because the coder judged that "
+                        "dual-testing cost outweighs the risk (marked `# Needs reviewer attention (bazel2gn skip): ...`)."
+                    ),
+                    "remediation": (
+                        "A human reviewer must confirm this exception (see the cost criteria in "
+                        "docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems) and the CL "
+                        "description must list it under \"Needs reviewer attention\". Do not remove the skip just "
+                        "to clear this finding."
+                    ),
+                })
             if t["skip_line"] is None:
                 for attr_name, attr_skip_line, attr_reason in t.get("skipped_test_attrs", []):
                     if t.get("has_test_data") or attr_reason:

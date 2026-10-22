@@ -19,8 +19,9 @@ working).
   Never put `# @bazel2gn:skip` on a test rule or test attribute (`with_unit_tests`,
   `with_host_unit_tests`, `test_deps`) unless one of the conditions in "Migrating Tests"
   holds (target under test is itself skipped in BUILD.bazel, `fx_unittest_package` has `resources`,
-  host test uses `data`/`test_data`/`test_label`, or the test binary rule is unsupported by
-  bazel2gn). Tests whose packaging bazel2gn can't translate (`fx_unittest_package` with `resources`,
+  host test uses `data`/`test_data`/`test_label`, the test binary rule is unsupported by
+  bazel2gn, or the dual-testing cost exception marked
+  `# Needs reviewer attention (bazel2gn skip): ...` for a human to confirm). Tests whose packaging bazel2gn can't translate (`fx_unittest_package` with `resources`,
   or explicit `fx_package` chains) get a hand-written GN package above the sentinel (`<pkg>-gn`)
   wrapping the generated test binary. `group("tests")` lists every GN copy (host ones as
   `:<name>($host_toolchain)`) and a hand-written `bazel_test_suite("bazel_tests")` above the
