@@ -11,7 +11,7 @@
 use pin_project::pin_project;
 use starnix_sync::{LockDepRwLock, ThreadLockupDetectorRegistryLock};
 use std::borrow::Borrow;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
@@ -22,9 +22,6 @@ pub struct ThreadLockupDetector;
 /// Thread-local state that registers the thread in the global registry on creation
 /// and removes it on drop.
 struct ThreadState {
-    /// Pointer to the atomic u64 used to store the start time of the current operation.
-    /// This is boxed to ensure its address remains stable while registered.
-    atomic: Box<AtomicU64>,
     /// The KOID of the thread, used as the key for removal in `Drop`.
     koid: zx::Koid,
 }
@@ -34,8 +31,7 @@ impl ThreadState {
     fn new() -> Self {
         let handle = fuchsia_runtime::with_thread_self(|thread| thread.raw_handle());
         let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
-        let atomic = Box::new(AtomicU64::new(0));
-        let ptr = &*atomic as *const AtomicU64;
+        let ptr = OPERATION_START_NANOS.with(|atomic| atomic as *const AtomicU64);
 
         let mut rcu_nesting_level = std::ptr::null();
         let mut rcu_counter_index = std::ptr::null();
@@ -53,7 +49,7 @@ impl ThreadState {
             rcu_counter_index,
         };
         REGISTRY.write().insert(registered);
-        Self { atomic, koid }
+        Self { koid }
     }
 }
 
@@ -61,11 +57,23 @@ impl Drop for ThreadState {
     /// Removes the thread from the global `REGISTRY` when the thread exits.
     fn drop(&mut self) {
         REGISTRY.write().remove(&self.koid);
+        IS_REGISTERED.set(false);
     }
 }
 
 thread_local! {
     static THREAD_STATE: RefCell<Option<ThreadState>> = const { RefCell::new(None) };
+
+    /// The start time of the operation running on the current thread, in nanoseconds on the
+    /// monotonic clock, or 0 if no operation is running.
+    ///
+    /// This is a `const`-initialized thread-local without a destructor, so accessing it is cheap and
+    /// its storage remains valid until the thread exits. `ThreadState::new` registers its address
+    /// in `REGISTRY`, and dropping the `ThreadState` removes it again.
+    static OPERATION_START_NANOS: AtomicU64 = const { AtomicU64::new(0) };
+
+    /// Whether the current thread's `OPERATION_START_NANOS` is registered in `REGISTRY`.
+    static IS_REGISTERED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// The information stored in the global registry for each tracked thread.
@@ -75,7 +83,7 @@ struct RegisteredThread {
     thread: zx::Unowned<'static, zx::Thread>,
     /// The KOID of the thread.
     koid: zx::Koid,
-    /// Pointer to the atomic u64 in the thread's `ThreadState`.
+    /// Pointer to the thread's `OPERATION_START_NANOS` thread-local.
     atomic: *const AtomicU64,
     /// Pointer to the RCU nesting level.
     rcu_nesting_level: *const AtomicUsize,
@@ -125,21 +133,31 @@ static REGISTRY: LazyLock<
 
 impl ThreadLockupDetector {
     /// Starts an operation by storing the current time in the thread-local atomic.
+    #[inline]
     fn start_operation() {
-        THREAD_STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            let state = state.get_or_insert_with(|| ThreadState::new());
-            state.atomic.store(zx::MonotonicInstant::get().into_nanos() as u64, Ordering::Relaxed);
+        if !IS_REGISTERED.get() {
+            Self::register_current_thread();
+        }
+        let now = zx::MonotonicInstant::get().into_nanos() as u64;
+        OPERATION_START_NANOS.with(|start| start.store(now, Ordering::Relaxed));
+    }
+
+    /// Registers the current thread in `REGISTRY` the first time it starts an operation.
+    #[cold]
+    #[inline(never)]
+    fn register_current_thread() {
+        // `try_with` fails once `THREAD_STATE` has been destroyed during thread exit. The thread
+        // is no longer tracked from that point on.
+        let _ = THREAD_STATE.try_with(|state| {
+            state.borrow_mut().get_or_insert_with(ThreadState::new);
+            IS_REGISTERED.set(true);
         });
     }
 
     /// Stops an operation by storing 0 in the thread-local atomic.
+    #[inline]
     fn stop_operation() {
-        THREAD_STATE.with(|state| {
-            if let Some(state) = state.borrow().as_ref() {
-                state.atomic.store(0, Ordering::Relaxed);
-            }
-        });
+        OPERATION_START_NANOS.with(|start| start.store(0, Ordering::Relaxed));
     }
 
     /// Iterates over the registry, finds threads that have been running longer than the threshold,
@@ -336,6 +354,42 @@ mod tests {
 
         // Guard dropped.
         assert!(get_long_running_koids().is_empty());
+    }
+
+    #[test]
+    fn test_start_time_is_recorded() {
+        let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
+
+        let before = zx::MonotonicInstant::get();
+        let _guard = ThreadLockupDetector::track();
+        let after = zx::MonotonicInstant::get();
+
+        // Make sure the operation has been running for longer than the zero threshold.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        let info =
+            ThreadLockupDetector::get_long_running_threads(zx::MonotonicDuration::from_nanos(0))
+                .into_iter()
+                .find(|info| info.koid == koid)
+                .expect("current thread is tracked");
+        assert!(before <= info.start_time && info.start_time <= after);
+    }
+
+    #[test]
+    fn test_thread_exit_unregisters_thread() {
+        let koid = std::thread::spawn(|| {
+            let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
+            // Leak the guard so that the operation is still active when the thread exits.
+            std::mem::forget(ThreadLockupDetector::track());
+            assert!(REGISTRY.read().contains(&koid));
+            koid
+        })
+        .join()
+        .unwrap();
+
+        // Exiting the thread must remove the pointer to its thread-local from the registry.
+        assert!(!REGISTRY.read().contains(&koid));
+        assert!(!get_long_running_koids().contains(&koid));
     }
 
     #[test]
