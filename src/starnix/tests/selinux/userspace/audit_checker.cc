@@ -269,12 +269,8 @@ bool AuditChecker::AuditLogEntry::operator==(const AuditChecker::AuditLogEntry& 
     default;
 
 bool AuditChecker::AuditLogEntry::contains(const AuditLogEntry& other) const {
-  // TODO: https://fxbug.dev/449714364 - Remove after denials are generated in permissive mode.
-  bool granted = !denied || permissive;
-  bool other_granted = !other.denied || other.permissive;
-
-  if (other_granted != granted || other.scontext != scontext || other.tcontext != tcontext ||
-      other.tclass != tclass) {
+  if (other.denied != denied || other.permissive != permissive || other.scontext != scontext ||
+      other.tcontext != tcontext || other.tclass != tclass) {
     return false;
   }
   if (other.permission == permission) {
@@ -467,7 +463,7 @@ bool AuditChecker::CheckAuditExpectations(const std::string& test_name) {
         if (expected_it->permission == actual_it->permission) {
           // Move to next expectation in case of exact match.
           expected_it++;
-        } else if (actual_it->denied) {
+        } else if (actual_it->denied && !actual_it->permissive) {
           // Move to next expectation, if any, in case of partial match denied access, since the
           // first denial will prevent the subsequent checks being made.
           expected_it++;
