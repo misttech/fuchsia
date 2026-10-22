@@ -101,6 +101,8 @@ def fidl_cpp_family(
         library supports drivers.
       enable_cpp: Boolean indicating whether to generate C++ bindings.
       enable_hlcpp: Boolean indicating whether to generate HLCPP bindings.
+      hlcpp_lib_deps: List of `Label`s for the HLCPP bindings library dependencies.
+      define_idk_atom_aliases: Boolean indicating whether to define aliases to the IDK atom.
       testonly: Usual meaning.
       visibility: Usual meaning.
     """
@@ -162,32 +164,29 @@ def fidl_cpp_family(
         })
 
         if contains_drivers:
-            # TODO(https://fxbug.dev/503359085): Implement driver transport
-            # support and uncomment these lines.
-            # generated_header_files += ["driver/wire.h"] + select({
-            #     "@platforms//os:fuchsia": [
-            #         "driver/fidl.h",
-            #         "driver/natural_messaging.h",
-            #         "driver/wire_messaging.h",
-            #     ],
-            #     "//conditions:default": [],
-            # })
-            # generated_source_files += select({
-            #     "@platforms//os:fuchsia": [
-            #         "driver/natural_messaging.cc",
-            #         "driver/wire_messaging.cc",
-            #     ],
-            #     "//conditions:default": [],
-            # })
-            # generated_testing_header_files += [
-            #     "driver/test_base.h",
-            #     "driver/wire_test_base.h",
-            # ]
-            # additional_deps += [
-            #     "//sdk/lib/fidl_driver",
-            #     "//sdk/lib/fidl_driver:fidl_driver_natural",
-            # ]
-            pass
+            generated_header_files += ["driver/wire.h"] + select({
+                "@platforms//os:fuchsia": [
+                    "driver/fidl.h",
+                    "driver/natural_messaging.h",
+                    "driver/wire_messaging.h",
+                ],
+                "//conditions:default": [],
+            })
+            generated_source_files += select({
+                "@platforms//os:fuchsia": [
+                    "driver/natural_messaging.cc",
+                    "driver/wire_messaging.cc",
+                ],
+                "//conditions:default": [],
+            })
+            generated_testing_header_files += [
+                "driver/test_base.h",
+                "driver/wire_test_base.h",
+            ]
+            additional_deps += [
+                "//sdk/lib/fidl_driver",
+                "//sdk/lib/fidl_driver:fidl_driver_natural",
+            ]
 
         generated_hlcpp_conversion_header_files = []
         if enable_hlcpp:

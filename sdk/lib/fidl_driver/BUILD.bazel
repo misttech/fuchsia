@@ -1,0 +1,105 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library(
+    name = "fidl_driver_transport",
+    srcs = ["transport.cc"],
+    hdrs = ["include/lib/fidl_driver/cpp/transport.h"],
+    api_area = "FIDL",
+    category = "partner",
+    idk_name = "fidl_driver_transport",
+    public_configs = [":include"],
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/driver/incoming/cpp:__pkg__",
+        "//sdk/lib/driver/outgoing/cpp:__pkg__",
+        "//src/devices/bin/driver_runtime:__pkg__",
+        "//src/graphics/drivers/msd-vsi-vip:__pkg__",
+        "//src/lib/ddktl:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/driver/runtime:driver_runtime",
+        "//sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//sdk/lib/fidl/cpp/wire",
+    ],
+)
+
+idk_cc_source_library(
+    name = "fidl_driver",
+    srcs = select({
+        "@platforms//os:fuchsia": ["unknown_interactions.cc"],
+        "//conditions:default": [],
+    }),
+    hdrs = [
+        "include/lib/fidl_driver/cpp/wire_types.h",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "include/lib/fidl_driver/cpp/internal/server_details.h",
+            "include/lib/fidl_driver/cpp/internal/wire_client_details.h",
+            "include/lib/fidl_driver/cpp/server.h",
+            "include/lib/fidl_driver/cpp/sync_call.h",
+            "include/lib/fidl_driver/cpp/unknown_interactions.h",
+            "include/lib/fidl_driver/cpp/wire_client.h",
+            "include/lib/fidl_driver/cpp/wire_messaging.h",
+            "include/lib/fidl_driver/cpp/wire_messaging_declarations.h",
+        ],
+        "//conditions:default": [],
+    }),
+    api_area = "FIDL",
+    category = "partner",
+    idk_name = "fidl_driver",
+    public_configs = [":include"],
+    stable = True,
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":fidl_driver_transport",
+        "//sdk/lib/driver/runtime:driver_runtime",
+        "//sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//sdk/lib/fidl/cpp/wire",
+    ],
+)
+
+# buildifier: leave-alone - Do not sort `fuchsia_*`.
+idk_cc_source_library(
+    name = "fidl_driver_natural",
+    srcs = select({
+        "@platforms//os:fuchsia": ["natural_messaging.cc"],
+        "//conditions:default": [],
+    }),
+    hdrs = [
+        "include/lib/fidl_driver/cpp/natural_ostream.h",
+        "include/lib/fidl_driver/cpp/natural_types.h",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "include/lib/fidl_driver/cpp/internal/endpoint_conversions.h",
+            "include/lib/fidl_driver/cpp/internal/natural_client_details.h",
+            "include/lib/fidl_driver/cpp/natural_client.h",
+            "include/lib/fidl_driver/cpp/natural_messaging.h",
+            "include/lib/fidl_driver/cpp/unified_messaging_declarations.h",
+        ],
+        "//conditions:default": [],
+    }),
+    api_area = "FIDL",
+    category = "partner",
+    deps = [
+        ":fidl_driver",
+        "//sdk/lib/driver/runtime:driver_runtime",
+        "//sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//sdk/lib/fidl/cpp:cpp_base",
+        "//sdk/lib/fidl/cpp:natural_ostream",
+    ],
+    fuchsia_deps = [
+        "//sdk/lib/fidl/cpp",
+    ],
+    idk_name = "fidl_driver_natural",
+    public_configs = [":include"],
+    stable = True,
+    visibility = ["//:__subpackages__"],
+)

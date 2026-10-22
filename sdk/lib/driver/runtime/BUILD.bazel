@@ -1,0 +1,180 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# buildifier: leave-alone - Do not sort `fuchsia_*`.
+idk_cc_source_library(
+    name = "driver_runtime",
+    hdrs = [
+        "include/lib/fdf/arena.h",
+        "include/lib/fdf/channel.h",
+        "include/lib/fdf/channel_read.h",
+        "include/lib/fdf/dispatcher.h",
+        "include/lib/fdf/handle.h",
+        "include/lib/fdf/token.h",
+        "include/lib/fdf/types.h",
+    ],
+    api_area = "Driver SDK",
+    category = "partner",
+    implementation_deps = [],  # For bazel2gn, fuchsia_implementation_deps appends to this in GN.
+    fuchsia_implementation_deps = [
+        "//zircon/system/ulib/sync",
+        "//zircon/system/ulib/zx",
+    ],
+    idk_name = "driver_runtime",
+    public_configs = [":include"],
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/driver/runtime/rust/fdf_sys:__pkg__",
+        "//sdk/lib/driver/symbols:__pkg__",
+        "//sdk/lib/fidl_driver:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//src/lib/ddk:__pkg__",
+        "//src/lib/dso/cpp:__pkg__",
+    ],
+    deps = [
+        # <lib/fdf/channel_read.h> and <lib/fdf/dispatcher.h> have
+        # #include <lib/async/dispatcher.h>.
+        "//sdk/lib/async",
+    ],
+)
+
+idk_cc_source_library(
+    name = "driver_runtime_cpp",
+    srcs = [
+        "arena.cc",
+        "channel_read.cc",
+        "protocol.cc",
+    ],
+    hdrs = [
+        "include/lib/fdf/cpp/arena.h",
+        "include/lib/fdf/cpp/channel.h",
+        "include/lib/fdf/cpp/channel_read.h",
+        "include/lib/fdf/cpp/dispatcher.h",
+        "include/lib/fdf/cpp/protocol.h",
+        "include/lib/fdf/cpp/unowned.h",
+        "include/lib/fdf/cpp/wake_vector.h",
+    ],
+    api_area = "Driver SDK",
+    category = "partner",
+    idk_name = "driver_runtime_cpp",
+    public_configs = [":include"],
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//examples/drivers:__subpackages__",
+        "//sdk/lib/driver:__subpackages__",
+        "//sdk/lib/fidl_driver:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//src/lib/ddktl:__pkg__",
+        "//src/lib/fidl/llcpp/tests/integration:__pkg__",
+        "//src/media:__subpackages__",
+        "//src/storage:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":driver_runtime",
+        "//sdk/lib/fidl/cpp/wire",
+        "//sdk/lib/fit",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+idk_cc_source_library(
+    name = "driver_runtime_env",
+    hdrs = ["include/lib/fdf/env.h"],
+    api_area = "Driver SDK",
+    category = "partner",
+    idk_name = "driver_runtime_env",
+    public_configs = [":include"],
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/driver/runtime:__subpackages__",
+        "//src/devices/bin/driver_runtime:__subpackages__",
+        "//src/devices/tee/drivers/optee:__pkg__",
+        "//src/devices/testing/driver-runtime-main:__subpackages__",
+
+        # These can be removed when the tests stop using the
+        # fdf_env_register_driver_entry/exit calls.
+        "//sdk/lib/fidl_driver/tests/transport:__subpackages__",
+        "//src/lib/fidl/llcpp/tests/integration:__pkg__",
+        "//src/tests/benchmarks/fidl/driver_cpp:__pkg__",
+        "//src/tests/benchmarks/fidl/driver_llcpp:__pkg__",
+    ],
+    deps = [
+        ":driver_runtime",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+idk_cc_source_library(
+    name = "driver_runtime_env_cpp",
+    srcs = ["env.cc"],
+    hdrs = ["include/lib/fdf/cpp/env.h"],
+    api_area = "Driver SDK",
+    category = "partner",
+    idk_name = "driver_runtime_env_cpp",
+    public_configs = [":include"],
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/driver/runtime/testing/cpp:__pkg__",
+        "//sdk/lib/driver/testing/cpp:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/tests/benchmarks/fidl/driver_cpp:__pkg__",
+        "//src/tests/benchmarks/fidl/driver_llcpp:__pkg__",
+        "//src/virtualization:__subpackages__",
+    ],
+    deps = [
+        ":driver_runtime_cpp",
+        ":driver_runtime_env",
+        "//sdk/lib/fit",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+idk_cc_source_library(
+    name = "driver_runtime_testing",
+    hdrs = ["include/lib/fdf/testing.h"],
+    api_area = "Driver SDK",
+    category = "partner",
+    idk_name = "driver_runtime_testing",
+    public_configs = [":include"],
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/driver/runtime:__subpackages__",
+        "//sdk/lib/driver/testing:__subpackages__",
+        "//sdk/lib/fidl_driver/tests/transport:__subpackages__",
+        "//src/devices/bin/driver_runtime:__subpackages__",
+        "//src/devices/testing/driver-runtime-main:__subpackages__",
+        "//src/lib/fidl/llcpp/tests/integration:__pkg__",
+        "//src/tests/benchmarks/fidl/driver_cpp:__subpackages__",
+        "//src/tests/benchmarks/fidl/driver_llcpp:__subpackages__",
+    ],
+    deps = [
+        ":driver_runtime",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+fx_cc_library(
+    name = "driver_runtime_internal",
+    hdrs = ["include/lib/fdf/internal.h"],
+    includes = ["include"],
+    public_configs = [":include"],
+    visibility = ["//src/devices/bin/driver_runtime:__pkg__"],
+    alwayslink = True,
+)

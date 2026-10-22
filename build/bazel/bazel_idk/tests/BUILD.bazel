@@ -1005,8 +1005,7 @@ filegroup(
         # A library with indirect dependencies.
         # It is also a library not in a category.
         "//sdk/fidl/fuchsia.hardware.display.engine",
-        # TODO(https://fxbug.dev/454977301): Uncomment once FIDL for drivers is supported.
-        # "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
+        "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
         # fdomain uses `excluded_checks` and `experimental_flags`.
         "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_cpp",
         "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust",
