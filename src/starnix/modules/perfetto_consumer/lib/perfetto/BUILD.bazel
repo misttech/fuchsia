@@ -1,0 +1,110 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load(
+    "//src/starnix/modules/perfetto_consumer/lib/perfetto:rust_proto_library.bzl",
+    "rust_proto_library",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "perfetto",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/modules/perfetto_consumer:__pkg__"],
+    deps = [
+        ":perfetto_protos",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:prost",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rust_proto_library(
+    name = "perfetto_protos",
+    srcs = [
+        "//:perfetto_ipc_consumer_port_proto",  # @bazel2gn:path_overwrite://third_party/perfetto/protos/perfetto/ipc/consumer_port.proto
+        "//:perfetto_ipc_producer_port_proto",  # @bazel2gn:path_overwrite://third_party/perfetto/protos/perfetto/ipc/producer_port.proto
+        "//:perfetto_ipc_wire_protocol_proto",  # @bazel2gn:path_overwrite://third_party/perfetto/protos/perfetto/ipc/wire_protocol.proto
+    ],
+    crate_root = "perfetto_protos/lib.rs",  # @bazel2gn:skip
+    include_dirs = ["//third_party/perfetto"],
+    packages = ["perfetto.protos"],
+    proto_deps = ["//:perfetto_proto_files"],
+    visibility = [
+        "//src/starnix/modules/perfetto_consumer:__pkg__",
+        "//src/starnix/modules/perfetto_consumer/lib/perfetto/trace_decoder:__pkg__",
+    ],
+)
+
+# @bazel2gn:skip
+filegroup(
+    name = "perfetto_trace_proto",
+    srcs = ["//:perfetto_trace_proto"],
+)
+
+# @bazel2gn:skip
+filegroup(
+    name = "frameworks_native_trace_packet_proto",
+    srcs = ["//:frameworks_native_trace_packet_proto"],
+)
+
+# FrameTimelineEvent was moved from perfetto_trace.proto into
+# frameworks_native_trace_packet.proto as an out-of-tree extension.
+# Since Rust prost does not support proto2 extensions
+# natively, it treats them as unknown fields and discards them on serialization.
+# We resolve proto extensions at build time to merge the extension back into the
+# main TracePacket statically to allow Starnix to rewrite frame timelines
+# without losing the events. If the type is already present, then the proto
+# definition is unchanged.
+# TODO(b/533158938): Investigate other ways to handle extension fields in Rust.
+# @bazel2gn:raw_attribute:script = "merge_extension.py"
+# @bazel2gn:raw_attribute:args = [ "--input-proto", rebase_path("//third_party/perfetto/protos/perfetto/trace/perfetto_trace.proto", root_build_dir), "--input-extensions", rebase_path("//third_party/perfetto/protos/third_party/android/frameworks/native/tracing/frameworks_native_trace_packet.proto", root_build_dir), "--output-proto", rebase_path(outputs[0], root_build_dir), "--merge-field-id", "76", "--merge-message-type", "FrameTimelineEvent", "--merge-field-name", "frame_timeline_event" ]
+genrule(
+    name = "merge_perfetto_trace_extensions",
+    srcs = [
+        "frameworks_native_trace_packet_proto",
+        "perfetto_trace_proto",
+    ],  # @bazel2gn:raw_overwrite:[ "//third_party/perfetto/protos/third_party/android/frameworks/native/tracing/frameworks_native_trace_packet.proto", "//third_party/perfetto/protos/perfetto/trace/perfetto_trace.proto" ]
+    outs = [
+        "perfetto_trace_modified.proto",  # @bazel2gn:path_overwrite:$target_gen_dir/perfetto_trace_modified.proto
+    ],
+    cmd = "python3 $(location :merge_extension.py) --input-proto $(location :perfetto_trace_proto) --input-extensions $(location :frameworks_native_trace_packet_proto) --output-proto $@ --merge-field-id 76 --merge-message-type FrameTimelineEvent --merge-field-name frame_timeline_event",  # @bazel2gn:skip
+    tools = [":merge_extension.py"],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:raw_attribute:deps = [ ":merge_perfetto_trace_extensions" ]
+rust_proto_library(
+    name = "perfetto_trace_protos",
+    srcs = [
+        ":perfetto_trace_modified.proto",  # @bazel2gn:path_overwrite:$target_gen_dir/perfetto_trace_modified.proto
+    ],
+    include_dirs = ["//third_party/perfetto"],
+    packages = ["perfetto.protos"],
+    proto_deps = ["//:perfetto_proto_files"],
+    visibility = [
+        "//src/starnix/modules/perfetto_consumer:__pkg__",
+        "//src/starnix/modules/perfetto_consumer/lib/perfetto/trace_decoder:__pkg__",
+    ],
+)
+
+# @bazel2gn:skip
+host_py_test(
+    name = "merge_extension_test",
+    srcs = [
+        "merge_extension.py",
+        "merge_extension_test.py",
+    ],
+    imports = ["."],
+    main = "merge_extension_test.py",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)

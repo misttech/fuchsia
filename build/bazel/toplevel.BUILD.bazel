@@ -182,6 +182,45 @@ filegroup(
     visibility = ["//src/lib/assembly/test_keys:__pkg__"],
 )
 
+# Perfetto .proto files used by //src/starnix/modules/perfetto_consumer/lib/perfetto.
+# third_party/perfetto has no Fuchsia BUILD.bazel file, so these filegroups give
+# Bazel packages root package labels without a slash.
+filegroup(
+    name = "perfetto_ipc_consumer_port_proto",
+    srcs = ["third_party/perfetto/protos/perfetto/ipc/consumer_port.proto"],
+    visibility = ["//src/starnix/modules/perfetto_consumer/lib/perfetto:__pkg__"],
+)
+
+filegroup(
+    name = "perfetto_ipc_producer_port_proto",
+    srcs = ["third_party/perfetto/protos/perfetto/ipc/producer_port.proto"],
+    visibility = ["//src/starnix/modules/perfetto_consumer/lib/perfetto:__pkg__"],
+)
+
+filegroup(
+    name = "perfetto_ipc_wire_protocol_proto",
+    srcs = ["third_party/perfetto/protos/perfetto/ipc/wire_protocol.proto"],
+    visibility = ["//src/starnix/modules/perfetto_consumer/lib/perfetto:__pkg__"],
+)
+
+filegroup(
+    name = "perfetto_trace_proto",
+    srcs = ["third_party/perfetto/protos/perfetto/trace/perfetto_trace.proto"],
+    visibility = ["//src/starnix/modules/perfetto_consumer/lib/perfetto:__pkg__"],
+)
+
+filegroup(
+    name = "frameworks_native_trace_packet_proto",
+    srcs = ["third_party/perfetto/protos/third_party/android/frameworks/native/tracing/frameworks_native_trace_packet.proto"],
+    visibility = ["//src/starnix/modules/perfetto_consumer/lib/perfetto:__pkg__"],
+)
+
+filegroup(
+    name = "perfetto_proto_files",
+    srcs = glob(["third_party/perfetto/protos/**/*.proto"]),
+    visibility = ["//src/starnix/modules/perfetto_consumer/lib/perfetto:__pkg__"],
+)
+
 fuchsia_devicetree_toolchain_info(
     name = "fuchsia_devicetree_toolchain_info",
     dtc = "//:prebuilt/third_party/dtc/%s/dtc" % build_config.host_tag,

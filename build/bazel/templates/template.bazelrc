@@ -191,8 +191,8 @@ build --@rules_python//python/config_settings:venvs_use_declare_symlink=no
 build --per_file_copt=external/re2.*/.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/re2.*/.*@-Wno-deprecated-declarations
 
-# Ignore upstream BUILD.bazel files inside third_party/boringssl/src so that
-# //third_party/boringssl/BUILD.bazel and //third_party/boringssl/rust/BUILD.bazel
-# can reference upstream sources directly without crossing subpackage boundaries.
-common --deleted_packages=third_party/boringssl/src,third_party/boringssl/src/rust/bssl-macros,third_party/boringssl/src/rust/bssl-sys
+# Ignore upstream BUILD/BUILD.bazel files inside third_party/boringssl/src and
+# third_party/perfetto so that Fuchsia BUILD.bazel files can reference upstream
+# sources directly without crossing subpackage boundaries.
+common --deleted_packages=third_party/boringssl/src,third_party/boringssl/src/rust/bssl-macros,third_party/boringssl/src/rust/bssl-sys,third_party/perfetto
 
