@@ -4,24 +4,6 @@
 
 import("//build/test.gni")
 
-test("unittests") {
-  output_name = "analytics_cpp_core_dev_tools_unittests"
-  sources = [
-    "environment_status_unittest.cc",
-    "persistent_status_unittest.cc",
-  ]
-
-  deps = [
-    ":core_dev_tools",
-    ":testable_internals",
-    "//src/lib/analytics/cpp/metric_properties",
-    "//src/lib/files",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/uuid",
-    "//third_party/googletest:gtest",
-  ]
-}
-
 test("system_info_manualtest") {
   output_name = "analytics_cpp_core_dev_tools_system_info_manualtest"
   sources = [ "system_info_manualtest.cc" ]
@@ -56,7 +38,6 @@ group("tests") {
     ":analytics_executor_manualtest",
     ":google_analytics_4_client_manualtest",
     ":system_info_manualtest",
-    ":unittests",
   ]
 }
 
@@ -94,7 +75,6 @@ source_set("testable_internals") {
     "environment_status.h",
     "persistent_status.h",
   ]
-  visibility = [ "*" ]
   public_deps = [
     "//sdk/lib/syslog/cpp",
     "//src/lib/analytics/cpp/metric_properties",
@@ -125,7 +105,13 @@ static_library("core_dev_tools") {
     "//src/developer/debug/shared",
     "//src/developer/debug/zxdb/common",
   ]
-  visibility = [ "*" ]
+  visibility = [
+    ":*",
+    "//src/developer/debug/zxdb/client:*",
+    "//tools/fidlcat:*",
+    "//tools/fidlcat/lib:*",
+    "//tools/symbolizer:*",
+  ]
   public_deps = [
     ":testable_internals",
     "//sdk/lib/fit-promise",

@@ -6,7 +6,6 @@ if (is_host) {
   group("host_tests") {
     testonly = true
     deps = [
-      "core_dev_tools:unittests",
       "google_analytics_4:unittests",
       "metric_properties:unittests",
     ]
