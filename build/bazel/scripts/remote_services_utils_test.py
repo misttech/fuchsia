@@ -411,6 +411,7 @@ my_results_url={results_url}
             build_dir=build_dir,
             output_path=output_file,
             download_outputs="all",
+            environ={},
         )
         self.assertTrue(output_file.is_file())
 

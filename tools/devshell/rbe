@@ -345,6 +345,15 @@ function auth_subcommand() {
   active_profile="$("$python" -S "$FUCHSIA_DIR/build/rbe/rbe_profile.py" active)"
   style::echo --bold "Testing RBE authentication for profile: ${active_profile}"
 
+  local profile_auth_type
+  profile_auth_type="$("$python" -S "$FUCHSIA_DIR/build/rbe/rbe_profile.py" auth-type)"
+
+  if [[ "$profile_auth_type" == "none" ]]; then
+    style::echo --green "The active RBE profile ('${active_profile}') does not require authentication (auth_type: none)."
+    style::echo --bold --green "No authentication setup is required. You can now 'fx build' with RBE."
+    return 0
+  fi
+
   if [[ "$force" == 1 ]]
   then
     # Start with a re-auth to get a fresh token.
@@ -498,6 +507,10 @@ function preflight_subcommand() {
   # If no authenticated services are used, this is a no-op.
   if ! fx-build-needs-auth
   then return 0
+  fi
+  # Skip credential preflight if the active RBE profile specifies auth_type: none.
+  if [[ "$("$python" -S "$FUCHSIA_DIR/build/rbe/rbe_profile.py" auth-type)" == "none" ]]; then
+    return 0
   fi
   ensure_adc_file_exists && ensure_auth_for_reclient && ensure_auth_for_bazel
 }

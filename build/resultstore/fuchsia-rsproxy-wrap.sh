@@ -161,7 +161,7 @@ rsproxy_options=(
 #
 ### 'fx build'
 # Select config based on auth type.
-# FX_BUILD_AUTH_TYPE is set by 'fx build' to either "oauth" or "loas",
+# FX_BUILD_RS_AUTH_TYPE is set by 'fx build' to either "oauth" or "loas",
 # and influences the authentication method.
 #
 # If auth_type was set by a command-line option (e.g. 'none' for TUI),
@@ -174,7 +174,7 @@ if [[ "$use_gce_machine_credentials" == "true" ]]; then
 fi
 
 if [[ "$auth_type" == "auto" ]]; then
-  auth_type="${FX_BUILD_AUTH_TYPE:-"auto"}"
+  auth_type="${FX_BUILD_RS_AUTH_TYPE:-"auto"}"
 fi
 [[ "$auth_type" != "auto" ]] || {
   # Automatically select authentication type (loas, oauth, or machine)
@@ -267,7 +267,8 @@ else
 fi
 
 proxy_env=()
-if [[ "$use_gce_machine_credentials" == "true" ]]; then
+# Use GCE VM credentials whenever auth_type resolves to "machine" (via flag or profile).
+if [[ "$auth_type" == "machine" ]]; then
   proxy_env+=(
     RS_use_application_default_credentials=false
     RS_use_gce_credentials=true

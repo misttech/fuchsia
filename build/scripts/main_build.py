@@ -689,7 +689,10 @@ class FuchsiaBuildContext(object):
                 pass
 
         if not user:
-            if self.auth_type in ("loas", "oauth"):
+            if self.rbe_auth_type in (
+                "loas",
+                "oauth",
+            ) or self.resultstore_auth_type in ("loas", "oauth"):
                 raise BuildConfigurationError(
                     "USER environment variable is not set and could not be "
                     "inferred. This is required for RBE/ResultStore user authentication."
@@ -778,7 +781,11 @@ class FuchsiaBuildContext(object):
             The Path to the isolated credentials file, or None if isolation failed
             or was bypassed.
         """
-        if self.auth_type in ("machine", "none"):
+        # Skip credential isolation if neither service requires user-based credentials.
+        if self.rbe_auth_type in (
+            "machine",
+            "none",
+        ) and self.resultstore_auth_type in ("machine", "none"):
             return None
 
         isolate_script = self.gcloud_creds_script
@@ -787,7 +794,12 @@ class FuchsiaBuildContext(object):
                 f"Required in-tree credentials management script is missing or unreadable: {isolate_script}"
             )
 
-        quota_project = self.rbe_quota_project
+        # Use ResultStore's quota project if RBE does not require user credentials.
+        quota_project = (
+            self.rbe_quota_project
+            if self.rbe_auth_type not in ("machine", "none")
+            else self.resultstore_quota_project
+        )
         if not quota_project:
             return None
 
@@ -813,16 +825,16 @@ class FuchsiaBuildContext(object):
 
         return None
 
-    @property
+    @functools.cached_property
     def auth_env(self) -> dict[str, str]:
         """Returns a dictionary of authentication-related environment variables."""
         env: dict[str, str] = {}
         env["USER"] = self.authenticated_user
+        env["FX_BUILD_RBE_AUTH_TYPE"] = self.rbe_auth_type
+        env["FX_BUILD_RS_AUTH_TYPE"] = self.resultstore_auth_type
 
         if not self.needs_auth:
             return env
-
-        env["FX_BUILD_AUTH_TYPE"] = self.auth_type
 
         # Isolate Google Application Credentials to avoid global quota_project_id contamination.
         local_adc_path = self._isolate_gcloud_credentials()
@@ -832,7 +844,10 @@ class FuchsiaBuildContext(object):
             env["GOOGLE_APPLICATION_CREDENTIALS"] = self.env[
                 "GOOGLE_APPLICATION_CREDENTIALS"
             ]
-        elif self.auth_type not in ("machine", "none"):
+        elif self.rbe_auth_type not in (
+            "machine",
+            "none",
+        ) or self.resultstore_auth_type not in ("machine", "none"):
             try:
                 default_adc = pathlib.Path.home() / gcloud.ADC_SUBPATH
                 env["GOOGLE_APPLICATION_CREDENTIALS"] = str(default_adc)
@@ -851,7 +866,7 @@ class FuchsiaBuildContext(object):
 
         return env
 
-    @property
+    @functools.cached_property
     def build_service_env(self) -> dict[str, str]:
         """Returns a dictionary of environment variables related to build-service proxying/overrides."""
         env: dict[str, str] = {}
@@ -1167,14 +1182,14 @@ class FuchsiaBuildContext(object):
                 "Make sure you have run 'fx set'."
             )
 
-    @property
+    @functools.cached_property
     def rbe_enabled(self) -> bool:
         if self.config.rbe is not None:
             return self.config.rbe
 
         return self._rbe_settings.needs_reproxy
 
-    @property
+    @functools.cached_property
     def needs_auth(self) -> bool:
         if (
             self.config.resultstore != "none"
@@ -1224,8 +1239,8 @@ class FuchsiaBuildContext(object):
             )
 
     @functools.cached_property
-    def auth_type(self) -> str:
-        """Automatically detect the authentication type (loas, oauth, machine, or none)."""
+    def _detected_auth_type(self) -> str:
+        """Automatically detect the host authentication type (loas, oauth, machine, or none)."""
         mode = self.config.auth_mode
         if mode == "none" or not self.needs_auth:
             return "none"
@@ -1235,6 +1250,29 @@ class FuchsiaBuildContext(object):
 
         # Under 'user' or 'auto' mode: run our auth selection script
         return self._run_select_auth_script()
+
+    @functools.cached_property
+    def rbe_auth_type(self) -> str:
+        """Determines the authentication mechanism for RBE."""
+        if self.config.auth_mode == "none":
+            return "none"
+        if not self.rbe_enabled or self.rbe_profile.auth_type == "none":
+            return "none"
+        if not self._rbe_settings.needs_auth:
+            return "none"
+        return self._detected_auth_type
+
+    @functools.cached_property
+    def resultstore_auth_type(self) -> str:
+        """Determines the authentication mechanism for ResultStore."""
+        if self.config.auth_mode == "none":
+            return "none"
+        if (
+            self.config.resultstore == "none"
+            or self.resultstore_profile.auth_type == "none"
+        ):
+            return "none"
+        return self._detected_auth_type
 
 
 class BuildInvocation(object):
@@ -1456,8 +1494,13 @@ class BuildInvocation(object):
 
         # Auth type handling
         yield "--auth-type"
-        yield context.auth_type
-        if context.auth_type == "machine":
+        yield context.rbe_auth_type
+        # Only pass --use-machine-credentials if ResultStore is disabled or also using machine auth,
+        # avoiding overriding ResultStore's auth_type: none in fuchsia-rsproxy-wrap.sh.
+        if context.rbe_auth_type == "machine" and (
+            context.config.resultstore == "none"
+            or context.resultstore_auth_type == "machine"
+        ):
             yield "--use-machine-credentials"
 
         # Log directory setup
@@ -1589,7 +1632,7 @@ class BuildInvocation(object):
         if resultstore in ("all", "bazel"):
             # Decide between "resultstore" (developer) and "resultstore_infra" (infra).
             if (
-                self.context.auth_type == "loas"
+                self.context.resultstore_auth_type == "loas"
                 and "BUILDBUCKET_ID" not in self.context.env
             ):
                 resultstore_bazel = "resultstore"
@@ -1766,7 +1809,8 @@ class BuildCommandExecution(object):
             auth_summary = (
                 f"\n[Auth Configuration Resolved]:\n"
                 f"  Config Auth Mode: {config.auth_mode}\n"
-                f"  Resolved Auth:    {self.invocation.context.auth_type}\n"
+                f"  RBE Auth:         {self.invocation.context.rbe_auth_type}\n"
+                f"  ResultStore Auth: {self.invocation.context.resultstore_auth_type}\n"
                 f"  Auth User:       {self.invocation.context.authenticated_user}\n"
                 f"  Metadata Host:   {self.env.get('GCE_METADATA_HOST', 'NOT_SET')}\n"
                 f"  Java Metadata:   {self.env.get('G_CLOUD_METADATA_HOST', 'NOT_SET')}\n"

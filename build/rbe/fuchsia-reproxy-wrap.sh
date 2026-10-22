@@ -315,7 +315,7 @@ rewrapper_env=(
 # Check authentication.
 # Same as 'fx rbe preflight', but re-implemented here to be standalone.
 if [[ "$auth_type" == "auto" ]]; then
-  auth_type="${FX_BUILD_AUTH_TYPE:-"auto"}"
+  auth_type="${FX_BUILD_RBE_AUTH_TYPE:-"auto"}"
 fi
 
 [[ "$auth_type" != "auto" ]] || {

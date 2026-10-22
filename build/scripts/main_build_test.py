@@ -261,7 +261,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             new_callable=mock.PropertyMock,
             return_value=False,
         ):
-            self.assertEqual(context.auth_type, "none")
+            self.assertEqual(context._detected_auth_type, "none")
 
     def test_auth_type_detected_when_needs_auth(self) -> None:
         context = self.create_context()
@@ -275,7 +275,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             "_run_select_auth_script",
             return_value="oauth",
         ) as mock_run:
-            self.assertEqual(context.auth_type, "oauth")
+            self.assertEqual(context._detected_auth_type, "oauth")
             mock_run.assert_called_once()
 
     def test_auth_type_loas_detected(self) -> None:
@@ -290,7 +290,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             "_run_select_auth_script",
             return_value="loas",
         ) as mock_run:
-            self.assertEqual(context.auth_type, "loas")
+            self.assertEqual(context._detected_auth_type, "loas")
             mock_run.assert_called_once()
 
     def test_needs_auth_matrix(self) -> None:
@@ -324,6 +324,65 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                     ):
                         ctx = self.create_context(rbe=rbe, resultstore=rs_mode)
                         self.assertEqual(ctx.needs_auth, expected)
+
+    def test_service_auth_types_decoupled(self) -> None:
+        """Verifies that rbe_auth_type and resultstore_auth_type are decoupled."""
+        auth_settings = rbe_settings.fake(needs_reproxy=True, needs_auth=True)
+        with mock.patch.object(
+            rbe_settings, "load", return_value=auth_settings
+        ):
+            # Scenario 1: RBE auth is 'none', but ResultStore auth is 'google'
+            with mock.patch.object(
+                rbe_profile,
+                "load",
+                return_value=rbe_profile.fake(auth_type="none"),
+            ), mock.patch.object(
+                rs_profile,
+                "load",
+                return_value=rs_profile.fake(auth_type="google"),
+            ):
+                ctx = self.create_context(rbe=True, resultstore="all")
+                self.assertTrue(ctx.needs_auth)
+                self.assertEqual(ctx.rbe_auth_type, "none")
+                self.assertEqual(ctx.resultstore_auth_type, "oauth")
+                self.assertEqual(ctx.auth_env["FX_BUILD_RBE_AUTH_TYPE"], "none")
+                self.assertEqual(ctx.auth_env["FX_BUILD_RS_AUTH_TYPE"], "oauth")
+
+            # Scenario 2: RBE auth is 'google', but ResultStore is disabled ('none')
+            with mock.patch.object(
+                rbe_profile,
+                "load",
+                return_value=rbe_profile.fake(auth_type="google"),
+            ), mock.patch.object(
+                rs_profile,
+                "load",
+                return_value=rs_profile.fake(auth_type="none"),
+            ):
+                ctx = self.create_context(rbe=True, resultstore="none")
+                self.assertTrue(ctx.needs_auth)
+                self.assertEqual(ctx.rbe_auth_type, "oauth")
+                self.assertEqual(ctx.resultstore_auth_type, "none")
+                self.assertEqual(
+                    ctx.auth_env["FX_BUILD_RBE_AUTH_TYPE"], "oauth"
+                )
+                self.assertEqual(ctx.auth_env["FX_BUILD_RS_AUTH_TYPE"], "none")
+
+            # Scenario 3: Both RBE and ResultStore auth are 'none'
+            with mock.patch.object(
+                rbe_profile,
+                "load",
+                return_value=rbe_profile.fake(auth_type="none"),
+            ), mock.patch.object(
+                rs_profile,
+                "load",
+                return_value=rs_profile.fake(auth_type="none"),
+            ):
+                ctx = self.create_context(rbe=True, resultstore="all")
+                self.assertFalse(ctx.needs_auth)
+                self.assertEqual(ctx.rbe_auth_type, "none")
+                self.assertEqual(ctx.resultstore_auth_type, "none")
+                self.assertEqual(ctx.auth_env["FX_BUILD_RBE_AUTH_TYPE"], "none")
+                self.assertEqual(ctx.auth_env["FX_BUILD_RS_AUTH_TYPE"], "none")
 
     def test_run_select_auth_script_success(self) -> None:
         self.run_select_patcher.stop()
@@ -621,7 +680,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                 ):
                     with mock.patch.object(
                         main_build.FuchsiaBuildContext,
-                        "auth_type",
+                        "rbe_auth_type",
                         new_callable=mock.PropertyMock,
                         return_value=auth_mode,
                     ):
@@ -637,7 +696,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         with mock.patch.object(getpass, "getuser", side_effect=Exception()):
             with mock.patch.object(
                 main_build.FuchsiaBuildContext,
-                "auth_type",
+                "rbe_auth_type",
                 new_callable=mock.PropertyMock,
                 return_value="none",
             ):
@@ -647,7 +706,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         pathlib.Path, "home", return_value=pathlib.Path("/mock/home")
     )
     def test_auth_env_needs_auth_false(self, mock_home: mock.Mock) -> None:
-        """Verifies that auth_env only contains USER when needs_auth is False."""
+        """Verifies that auth_env sets service auth types to none when needs_auth is False."""
         context = self.create_context(resultstore="none")
         with mock.patch.object(
             main_build.FuchsiaBuildContext,
@@ -655,7 +714,14 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             new_callable=mock.PropertyMock,
             return_value=False,
         ):
-            self.assertEqual(context.auth_env, {"USER": "fake-user"})
+            self.assertEqual(
+                context.auth_env,
+                {
+                    "USER": "fake-user",
+                    "FX_BUILD_RBE_AUTH_TYPE": "none",
+                    "FX_BUILD_RS_AUTH_TYPE": "none",
+                },
+            )
 
     @mock.patch.object(
         pathlib.Path, "home", return_value=pathlib.Path("/mock/home")
@@ -673,7 +739,8 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             return_value=True,
         ), mock.patch.object(getpass, "getuser", side_effect=Exception()):
             env = context.auth_env
-            self.assertEqual(env["FX_BUILD_AUTH_TYPE"], "machine")
+            self.assertEqual(env["FX_BUILD_RBE_AUTH_TYPE"], "none")
+            self.assertEqual(env["FX_BUILD_RS_AUTH_TYPE"], "machine")
             self.assertEqual(env["USER"], "builder")
             self.assertNotIn("GOOGLE_APPLICATION_CREDENTIALS", env)
 
@@ -731,12 +798,13 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             main_build, "has_loas", return_value=True
         ), mock.patch.object(
             main_build.FuchsiaBuildContext,
-            "auth_type",
+            "_detected_auth_type",
             new_callable=mock.PropertyMock,
             return_value="oauth",
         ):
             env = context.auth_env
-            self.assertEqual(env["FX_BUILD_AUTH_TYPE"], "oauth")
+            self.assertEqual(env["FX_BUILD_RS_AUTH_TYPE"], "oauth")
+            self.assertEqual(env["FX_BUILD_RBE_AUTH_TYPE"], "none")
             self.assertEqual(env["USER"], "custom-user")
             self.assertEqual(
                 env["GOOGLE_APPLICATION_CREDENTIALS"],
@@ -759,14 +827,15 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             return_value=True,
         ), mock.patch.object(
             main_build.FuchsiaBuildContext,
-            "auth_type",
+            "_detected_auth_type",
             new_callable=mock.PropertyMock,
             return_value="machine",
         ), mock.patch.object(
             getpass, "getuser", side_effect=Exception()
         ):
             env = context.auth_env
-            self.assertEqual(env["FX_BUILD_AUTH_TYPE"], "machine")
+            self.assertEqual(env["FX_BUILD_RS_AUTH_TYPE"], "machine")
+            self.assertEqual(env["FX_BUILD_RBE_AUTH_TYPE"], "none")
             self.assertEqual(env["USER"], "builder")
 
     @mock.patch.object(
@@ -789,7 +858,8 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             getpass, "getuser", side_effect=Exception()
         ):
             env = context.auth_env
-            self.assertEqual(env["FX_BUILD_AUTH_TYPE"], "oauth")
+            self.assertEqual(env["FX_BUILD_RS_AUTH_TYPE"], "oauth")
+            self.assertEqual(env["FX_BUILD_RBE_AUTH_TYPE"], "none")
             self.assertEqual(env["USER"], "custom-bot")
             self.assertEqual(
                 env["GOOGLE_APPLICATION_CREDENTIALS"],
@@ -811,7 +881,8 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             pathlib.Path, "home", side_effect=RuntimeError("Cannot find home")
         ):
             env = context.auth_env
-            self.assertEqual(env["FX_BUILD_AUTH_TYPE"], "oauth")
+            self.assertEqual(env["FX_BUILD_RS_AUTH_TYPE"], "oauth")
+            self.assertEqual(env["FX_BUILD_RBE_AUTH_TYPE"], "none")
             self.assertEqual(env["USER"], "test-user")
             self.assertNotIn("GOOGLE_APPLICATION_CREDENTIALS", env)
 
@@ -844,6 +915,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                 context = self.create_context(
                     out_dir=out_dir,
                     source_dir=workspace_root,
+                    rbe=True,
                     resultstore="all",
                 )
                 context.env = {"GOOGLE_APPLICATION_CREDENTIALS": str(adc_src)}
@@ -858,6 +930,11 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                 ), mock.patch.object(
                     main_build.FuchsiaBuildContext,
                     "rbe_instance",
+                    new_callable=mock.PropertyMock,
+                    return_value="projects/fake-project/instances/default",
+                ), mock.patch.object(
+                    main_build.FuchsiaBuildContext,
+                    "resultstore_instance",
                     new_callable=mock.PropertyMock,
                     return_value="projects/fake-project/instances/default",
                 ):
@@ -962,12 +1039,12 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         self.assertEqual(context.resultstore_quota_project, "flag-rs-project")
 
     def test_auth_type_explicit_none(self) -> None:
-        """Verifies that auth_mode 'none' resolves to 'none' for auth_type."""
+        """Verifies that auth_mode 'none' resolves to 'none' for _detected_auth_type."""
         context = self.create_context(auth_mode="none")
-        self.assertEqual(context.auth_type, "none")
+        self.assertEqual(context._detected_auth_type, "none")
 
     def test_auth_type_needs_auth_false(self) -> None:
-        """Verifies that if needs_auth is False, auth_type is always 'none'."""
+        """Verifies that if needs_auth is False, _detected_auth_type is always 'none'."""
         context = self.create_context(auth_mode="machine", resultstore="none")
         with mock.patch.object(
             main_build.FuchsiaBuildContext,
@@ -975,10 +1052,10 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             new_callable=mock.PropertyMock,
             return_value=False,
         ):
-            self.assertEqual(context.auth_type, "none")
+            self.assertEqual(context._detected_auth_type, "none")
 
     def test_auth_type_explicit_machine(self) -> None:
-        """Verifies that explicit 'machine' auth_mode resolves to 'machine' for auth_type."""
+        """Verifies that explicit 'machine' auth_mode resolves to 'machine' for _detected_auth_type."""
         context = self.create_context(auth_mode="machine", resultstore="all")
         with mock.patch.object(
             main_build.FuchsiaBuildContext,
@@ -986,7 +1063,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             new_callable=mock.PropertyMock,
             return_value=True,
         ):
-            self.assertEqual(context.auth_type, "machine")
+            self.assertEqual(context._detected_auth_type, "machine")
 
     def test_auth_type_explicit_user(self) -> None:
         """Verifies that explicit 'user' auth_mode resolves through the selection script."""
@@ -1001,10 +1078,10 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             "_run_select_auth_script",
             return_value="oauth",
         ):
-            self.assertEqual(context.auth_type, "oauth")
+            self.assertEqual(context._detected_auth_type, "oauth")
 
     def test_auth_type_auto_on_bot(self) -> None:
-        """Verifies that 'auto' auth_mode on a bot resolves to 'machine' for auth_type."""
+        """Verifies that 'auto' auth_mode on a bot resolves to 'machine' for _detected_auth_type."""
         context = self.create_context(auth_mode="auto", resultstore="all")
         context.env = {"BUILDBUCKET_ID": "123"}
         with mock.patch.object(
@@ -1017,7 +1094,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             "_run_select_auth_script",
             return_value="machine",
         ):
-            self.assertEqual(context.auth_type, "machine")
+            self.assertEqual(context._detected_auth_type, "machine")
 
     def test_auth_type_auto_on_workstation(self) -> None:
         """Verifies that 'auto' auth_mode on a workstation resolves through the selection script."""
@@ -1033,7 +1110,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             "_run_select_auth_script",
             return_value="loas",
         ):
-            self.assertEqual(context.auth_type, "loas")
+            self.assertEqual(context._detected_auth_type, "loas")
 
 
 class BuildInvocationTest(MainBuildTestBase):
@@ -1334,7 +1411,7 @@ class BuildInvocationTest(MainBuildTestBase):
         with self.mock_invocation_context():
             with mock.patch.object(
                 main_build.FuchsiaBuildContext,
-                "auth_type",
+                "_detected_auth_type",
                 new_callable=mock.PropertyMock,
                 return_value="loas",
             ):
@@ -1406,7 +1483,7 @@ class BuildInvocationTest(MainBuildTestBase):
             )
 
     def test_get_build_env_missing_user_error(self) -> None:
-        context = self.create_context()
+        context = self.create_context(resultstore="all")
         context.env = {}  # No USER
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
@@ -1418,7 +1495,7 @@ class BuildInvocationTest(MainBuildTestBase):
             ):
                 with mock.patch.object(
                     main_build.FuchsiaBuildContext,
-                    "auth_type",
+                    "_detected_auth_type",
                     new_callable=mock.PropertyMock,
                     return_value="loas",
                 ):
@@ -1809,6 +1886,34 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
             invocation = main_build.BuildInvocation(context)
             prefix = list(invocation.top_build_command_prefix())
             self.assertIn("--tui", prefix)
+
+    def test_use_machine_credentials_omitted_when_resultstore_is_none(
+        self,
+    ) -> None:
+        """Verifies --use-machine-credentials is not passed when ResultStore auth is none."""
+        context = self.create_context(resultstore="all")
+        with mock.patch.multiple(
+            main_build.FuchsiaBuildContext,
+            rbe_auth_type=mock.PropertyMock(return_value="machine"),
+            resultstore_auth_type=mock.PropertyMock(return_value="none"),
+        ):
+            with self.mock_invocation_context():
+                invocation = main_build.BuildInvocation(context)
+                prefix = list(invocation.top_build_command_prefix())
+                self.assertNotIn("--use-machine-credentials", prefix)
+
+    def test_use_machine_credentials_passed_when_both_machine(self) -> None:
+        """Verifies --use-machine-credentials is passed when both use machine credentials."""
+        context = self.create_context(resultstore="all")
+        with mock.patch.multiple(
+            main_build.FuchsiaBuildContext,
+            rbe_auth_type=mock.PropertyMock(return_value="machine"),
+            resultstore_auth_type=mock.PropertyMock(return_value="machine"),
+        ):
+            with self.mock_invocation_context():
+                invocation = main_build.BuildInvocation(context)
+                prefix = list(invocation.top_build_command_prefix())
+                self.assertIn("--use-machine-credentials", prefix)
 
 
 class InjectNinjaArgsTest(MainBuildTestBase):

@@ -12,8 +12,8 @@
 # Use build/auth/select_auth_method.py to determine authentication type.
 #
 # Note: --config=gcertauth is appended by build/bazel/wrapper.bazel.sh when
-# FX_BUILD_AUTH_TYPE is "loas". When running on GCE bots or other
-# machine-based environments where FX_BUILD_AUTH_TYPE is "machine" or absent,
+# FX_BUILD_RBE_AUTH_TYPE or FX_BUILD_RS_AUTH_TYPE is "loas". When running on GCE bots
+# or other machine-based environments where neither is "loas",
 # --config=gcertauth is omitted, and Bazel automatically falls back to using
 # GCE VM Metadata Server credentials via --google_default_credentials=true below.
 common:gcertauth --credential_helper=*.googleapis.com=/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper

@@ -430,6 +430,13 @@ class ServiceProfileManager(Generic[T]):
                 print(f"  {line}")
         return 0
 
+    def _cmd_auth_type(
+        self, args: argparse.Namespace, environ: Mapping[str, str]
+    ) -> int:
+        prof = self.load(args.fuchsia_dir, environ)
+        print(getattr(prof, "auth_type", "none"))
+        return 0
+
     def _cmd_run(
         self, args: argparse.Namespace, environ: Mapping[str, str]
     ) -> int:
@@ -504,6 +511,13 @@ class ServiceProfileManager(Generic[T]):
             help="Show detailed configuration of the active profile.",
         )
         parser_active.set_defaults(func=self._cmd_active)
+
+        # auth-type
+        parser_auth_type = subparsers.add_parser(
+            "auth-type",
+            help=f"Print the active {self.spec.service_name} profile's auth_type.",
+        )
+        parser_auth_type.set_defaults(func=self._cmd_auth_type)
 
         # run
         parser_run = subparsers.add_parser(

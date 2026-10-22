@@ -16,11 +16,16 @@ import service_profile
 
 class DummyProfile:
     def __init__(
-        self, endpoint: str, threads: int, name: str = "default"
+        self,
+        endpoint: str,
+        threads: int,
+        name: str = "default",
+        auth_type: str = "none",
     ) -> None:
         self.endpoint = endpoint
         self.threads = threads
         self.name = name
+        self.auth_type = auth_type
 
     @classmethod
     def from_dict(cls, data: service_profile.JSONObject) -> "DummyProfile":
@@ -28,6 +33,7 @@ class DummyProfile:
             endpoint=str(data.get("endpoint", "")),
             threads=int(str(data.get("threads", 0))),
             name=str(data.get("profile_name", "default")),
+            auth_type=str(data.get("auth_type", "none")),
         )
 
     def to_env_dict(self) -> dict[str, str]:
@@ -202,6 +208,15 @@ class TestServiceProfileManager(unittest.TestCase):
             self.assertEqual(args, ["echo", "hi"])
             self.assertEqual(env["MY_ENDPOINT"], "https://default.example.com")
             self.assertEqual(env["EXISTING"], "1")
+
+    def test_cli_auth_type_subcommand(self) -> None:
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            ret = self.manager.main(
+                [f"--fuchsia-dir={self.fuchsia_dir}", "auth-type"], {}
+            )
+        self.assertEqual(ret, 0)
+        self.assertEqual(buf.getvalue().strip(), "none")
 
 
 if __name__ == "__main__":
