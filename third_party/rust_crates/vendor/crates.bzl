@@ -534,7 +534,7 @@ _NORMAL_DEPENDENCIES = {
             "vt100": Label("//third_party/rust_crates/vendor/vt100-0.16.2:vt100"),
             "vte": Label("//third_party/rust_crates/vendor/vte-0.15.0:vte"),
             "walkdir": Label("//third_party/rust_crates/vendor/walkdir-2.5.0:walkdir"),
-            "which": Label("//third_party/rust_crates/vendor/which-8.0.4:which"),
+            "which": Label("//third_party/rust_crates/vendor/which-8.0.6:which"),
             "winnow": Label("//third_party/rust_crates/vendor/winnow-1.0.4:winnow"),
             "xml": Label("//third_party/rust_crates/vendor/xml-1.4.0:xml"),
             "zerocopy": Label("//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy"),
