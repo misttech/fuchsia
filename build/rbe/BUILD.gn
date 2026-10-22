@@ -402,6 +402,7 @@ if (is_host) {
       "reproxy_logs_test.py",
       "rpl_tool.py",
       "rpl_tool_test.py",
+      "textpb_benchmark.py",
       "upload_reproxy_logs.py",
       "upload_reproxy_logs_test.py",
     ]

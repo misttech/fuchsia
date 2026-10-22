@@ -436,6 +436,184 @@ class ParseTests(unittest.TestCase):
         ):
             textpb.parse(["foo: }"])
 
+    def test_comma_and_semicolon_separators(self) -> None:
+        self.assertEqual(
+            textpb.parse(["foo: 1, bar: 2; baz: 3"]),
+            {
+                "foo": [textpb.Token("1", type=textpb.TokenType.OTHER_VALUE)],
+                "bar": [textpb.Token("2", type=textpb.TokenType.OTHER_VALUE)],
+                "baz": [textpb.Token("3", type=textpb.TokenType.OTHER_VALUE)],
+            },
+        )
+
+
+class ParseLazyTests(unittest.TestCase):
+    def test_empty(self) -> None:
+        lazy = textpb.parse_lazy("")
+        self.assertEqual(len(lazy), 0)
+        self.assertEqual(lazy, {})
+
+    def test_scalar_fields(self) -> None:
+        text = 'name: "foo"\ncount: 42\nstatus: ACTIVE\n'
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(
+            lazy["name"],
+            [textpb.Token(text='"foo"', type=textpb.TokenType.STRING_VALUE)],
+        )
+        self.assertEqual(
+            lazy["count"],
+            [textpb.Token(text="42", type=textpb.TokenType.OTHER_VALUE)],
+        )
+        self.assertEqual(
+            lazy["status"],
+            [textpb.Token(text="ACTIVE", type=textpb.TokenType.OTHER_VALUE)],
+        )
+        self.assertEqual(lazy, textpb.parse(text.splitlines()))
+
+    def test_empty_message(self) -> None:
+        text = "empty: {}"
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy, textpb.parse([text]))
+        self.assertEqual(len(lazy["empty"][0]), 0)
+
+    def test_repeated_fields(self) -> None:
+        text = 'arg: "one"\narg: "two"\n'
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(
+            lazy["arg"],
+            [
+                textpb.Token(text='"one"', type=textpb.TokenType.STRING_VALUE),
+                textpb.Token(text='"two"', type=textpb.TokenType.STRING_VALUE),
+            ],
+        )
+        self.assertEqual(lazy, textpb.parse(text.splitlines()))
+
+    def test_nested_messages(self) -> None:
+        text = """
+        parent: {
+            child: {
+                value: 123
+            }
+        }
+        """
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy, textpb.parse(text.splitlines()))
+        self.assertEqual(
+            lazy["parent"][0]["child"][0]["value"],
+            [textpb.Token(text="123", type=textpb.TokenType.OTHER_VALUE)],
+        )
+
+    def test_angle_brackets(self) -> None:
+        text = "sub: < val: 99 >"
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy, textpb.parse([text]))
+
+    def test_key_value_auto_dict(self) -> None:
+        text = """
+        metadata: {
+            key: "color"
+            value: "blue"
+        }
+        metadata: {
+            key: "size"
+            value: "large"
+        }
+        """
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy, textpb.parse(text.splitlines()))
+        self.assertIn("color", lazy["metadata"])
+        self.assertEqual(lazy["metadata"]["color"].text, '"blue"')
+        self.assertEqual(lazy["metadata"]["size"].text, '"large"')
+
+    def test_braces_in_strings_and_comments(self) -> None:
+        text = """
+        command: {
+            args: "awk '{print $1}'"
+            args: "echo \\\" } < \\\" "
+            # comment with { and }
+            trailing: 1
+        }
+        other: "outside"
+        """
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy["other"][0].text, '"outside"')
+        self.assertEqual(lazy["command"][0]["trailing"][0].text, "1")
+        self.assertEqual(lazy, textpb.parse(text.splitlines()))
+
+    def test_escaped_quotes_and_backslashes(self) -> None:
+        text = r"""
+        msg: {
+            simple: "hello"
+            escaped_quote: "foo \" bar"
+            escaped_backslash: "foo \\"
+            escaped_backslash_and_quote: "foo \\\" bar"
+            brace_after_escaped_quote: "brace: \"} inside"
+            complex_flag: "-DFOO=\"https://b.f.org/e.cgi\\?prod=gShoe\" "
+        }
+        """
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy, textpb.parse(text.splitlines()))
+        sub = lazy["msg"][0]
+        self.assertEqual(sub["simple"][0].text, '"hello"')
+        self.assertEqual(sub["escaped_quote"][0].text, r'"foo \" bar"')
+        self.assertEqual(sub["escaped_backslash"][0].text, r'"foo \\"')
+        self.assertEqual(
+            sub["escaped_backslash_and_quote"][0].text, r'"foo \\\" bar"'
+        )
+        self.assertEqual(
+            sub["brace_after_escaped_quote"][0].text, r'"brace: \"} inside"'
+        )
+
+    def test_unterminated_string_in_block(self) -> None:
+        with self.assertRaisesRegex(textpb.ParseError, "Unterminated string"):
+            len(textpb.parse_lazy('msg: { a: "unclosed string'))
+        with self.assertRaisesRegex(textpb.ParseError, "Unterminated string"):
+            len(textpb.parse_lazy('msg: { a: "unclosed string with brace }'))
+
+    def test_lazy_evaluation_unaccessed_block(self) -> None:
+        text = """
+        good_block: {
+            value: "ok"
+        }
+        bad_block: {
+            this is totally invalid syntax inside but delimiters are balanced: { }
+        }
+        """
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy["good_block"][0]["value"][0].text, '"ok"')
+        with self.assertRaises(textpb.ParseError):
+            _ = lazy["bad_block"][0]["anything"]
+
+    def test_mapping_methods(self) -> None:
+        text = 'a: 1\nb: "two"\n'
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(set(lazy.keys()), {"a", "b"})
+        self.assertEqual(len(lazy), 2)
+        self.assertIn("a", lazy)
+        self.assertNotIn("c", lazy)
+        self.assertEqual(lazy.get("c", "default"), "default")
+        self.assertEqual(dict(lazy.items()), lazy.to_dict())
+
+    def test_unbalanced_delimiters(self) -> None:
+        with self.assertRaisesRegex(
+            textpb.ParseError, "Unexpected end-of-block"
+        ):
+            len(textpb.parse_lazy("}"))
+        with self.assertRaisesRegex(textpb.ParseError, "Unexpected EOF"):
+            len(textpb.parse_lazy("msg: {"))
+        with self.assertRaisesRegex(
+            textpb.ParseError, "Mismatched end-of-block"
+        ):
+            len(textpb.parse_lazy("msg: { >"))
+
+    def test_comma_and_semicolon_separators(self) -> None:
+        text = "foo: 1, bar: 2; baz: 3"
+        lazy = textpb.parse_lazy(text)
+        self.assertEqual(lazy, textpb.parse([text]))
+        self.assertEqual(lazy["foo"][0].text, "1")
+        self.assertEqual(lazy["bar"][0].text, "2")
+        self.assertEqual(lazy["baz"][0].text, "3")
+
 
 if __name__ == "__main__":
     unittest.main()
