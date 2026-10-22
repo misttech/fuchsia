@@ -7,6 +7,5 @@ mod engine;
 mod imported_image;
 mod imported_images;
 mod resources;
-mod virtio;
 mod virtio_gpu_abi;
 mod virtio_gpu_device;

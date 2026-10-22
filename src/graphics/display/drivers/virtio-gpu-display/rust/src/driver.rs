@@ -4,8 +4,8 @@
 
 use crate::engine::EngineService;
 use crate::resources::PlatformResources;
-use crate::virtio::VirtioPciDeviceBuilder;
 use crate::virtio_gpu_device::VirtioGpuDeviceBuilder;
+use virtio_driver::VirtioPciDeviceBuilder;
 
 use fdf_component::{
     Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,

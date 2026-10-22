@@ -5,10 +5,10 @@
 //! The memory structures used by split virtqueues.
 
 #[cfg(doc)]
-use super::feature_bits::VirtioFeatureBits;
+use crate::VirtioFeatureBits;
 
 #[cfg(doc)]
-use super::queue_buffer::{VirtioBufferRef, VirtioMemoryRangeAccess};
+use super::buffer::{VirtioBufferRef, VirtioMemoryRangeAccess};
 
 use bitfield::bitfield;
 use std::num::Wrapping;

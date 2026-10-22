@@ -10,14 +10,14 @@ pub mod descriptor_table;
 pub mod layout;
 pub mod rings;
 
-use crate::virtio::common::queue::buffer::{
+use crate::common::queue::buffer::{
     VirtioBufferRef, VirtioReturnedBufferInfo, VirtioSubmittedBufferId,
 };
-use crate::virtio::common::queue::descriptor_table::VirtioQueueDescriptorTable;
-use crate::virtio::common::queue::layout::{
+use crate::common::queue::descriptor_table::VirtioQueueDescriptorTable;
+use crate::common::queue::layout::{
     VirtioQueueMemoryLayout, VirtioQueuePartsBuilder, VirtioQueuePhysicalMemoryLayout,
 };
-use crate::virtio::common::queue::rings::{VirtioQueueReturnedRing, VirtioQueueSubmittedRing};
+use crate::common::queue::rings::{VirtioQueueReturnedRing, VirtioQueueSubmittedRing};
 
 use std::num::NonZero;
 use zx::Vmo;

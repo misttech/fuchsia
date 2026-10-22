@@ -14,7 +14,7 @@ use super::capabilities::VirtioPciCapabilities;
 use super::common_configuration::{VirtioPciCommonConfiguration, *};
 use super::pci_notifications::VirtioPciNotifications;
 use super::pci_queue::VirtioPciQueue;
-use crate::virtio::{DeviceStatus, VirtioBufferRef, VirtioFeatureBits, VirtioMemoryRange};
+use crate::{DeviceStatus, VirtioBufferRef, VirtioFeatureBits, VirtioMemoryRange};
 
 /// Manages a fully initialized virtio device using the PCI transport.
 ///
@@ -31,7 +31,6 @@ pub struct VirtioPciDevice {
     bti: zx::Bti,
 
     /// The feature bits negotiated with the virtio device.
-    #[expect(dead_code)]
     feature_bits: VirtioFeatureBits,
 
     #[expect(dead_code)]
@@ -59,7 +58,6 @@ impl VirtioPciDevice {
     }
 
     /// Returns the feature bits negotiated with the virtio device.
-    #[expect(dead_code)]
     pub fn feature_bits(&self) -> VirtioFeatureBits {
         self.feature_bits
     }

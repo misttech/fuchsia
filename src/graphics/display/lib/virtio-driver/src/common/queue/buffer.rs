@@ -149,7 +149,11 @@ pub struct VirtioMemoryRange {
 }
 
 impl VirtioMemoryRange {
-    /// SAFETY: `start_physical_address` and `size` must identify a valid range
+    /// Describes a memory range that will be submitted to a virtio device.
+    ///
+    /// # Safety
+    ///
+    /// `start_physical_address` and `size` must identify a valid range
     /// of memory that is contiguous in the PCI virtio device's physical address
     /// space. The newly created instance must be treated like a mutable Rust
     /// reference covering the entire memory range.

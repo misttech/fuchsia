@@ -3,9 +3,6 @@
 // found in the LICENSE file.
 
 #[cfg(doc)]
-use super::capabilities::PciCapabilityData;
-
-#[cfg(doc)]
 use super::common_configuration::VirtioPciCommonConfiguration;
 
 /// Identifies the type of data stored by virtio in a PCI capability.
@@ -74,7 +71,8 @@ impl PciCapabilityType {
 }
 
 impl PciCapabilityType {
-    /// True iff [`PciCapabilityData`] can represent the capability's data.
+    /// True iff [`PciCapabilityData`](super::capabilities::PciCapabilityData)
+    /// can represent the capability's data.
     pub fn has_bar_data(self) -> bool {
         match self {
             // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"

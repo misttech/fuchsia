@@ -6,10 +6,10 @@
 use super::capability_type::PciCapabilityType;
 
 #[cfg(doc)]
-use crate::virtio::VirtioFeatureBits;
+use crate::VirtioFeatureBits;
 
 #[cfg(doc)]
-use crate::virtio::common::device_status::DeviceStatus;
+use crate::common::device_status::DeviceStatus;
 
 use mmio::{register, register_block};
 

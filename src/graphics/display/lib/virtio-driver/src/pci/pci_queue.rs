@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use super::pci_notifications::VirtioPciNotificationData;
-use crate::virtio::common::queue::VirtioQueue;
-use crate::virtio::common::queue::buffer::{
+use crate::common::queue::VirtioQueue;
+use crate::common::queue::buffer::{
     VirtioBufferRef, VirtioReturnedBufferInfo, VirtioSubmittedBufferId,
 };
-use crate::virtio::common::queue::layout::VirtioQueuePhysicalMemoryLayout;
+use crate::common::queue::layout::VirtioQueuePhysicalMemoryLayout;
 
 use std::num::NonZero;
 

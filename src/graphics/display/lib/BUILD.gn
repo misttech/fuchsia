@@ -16,5 +16,6 @@ group("tests") {
     "fake-display-stack:tests",
     "framebuffer-display:tests",
     "rust:tests",
+    "virtio-driver:tests",
   ]
 }

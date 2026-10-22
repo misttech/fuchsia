@@ -6,10 +6,10 @@
 // attributes when the Rust port is completed.
 #![expect(dead_code)]
 
-use crate::virtio::VirtioFeatureBits;
 use bitfield::bitfield;
 use fidl_next_fuchsia_images2 as fidl_images2;
 use std::num::NonZero;
+use virtio_driver::VirtioFeatureBits;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 // These definitions map the specification types "le32" and "le64"

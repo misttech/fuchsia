@@ -58,7 +58,10 @@ regress key development workflows.
 The code contains references to the following documents.
 
 * `@ref(virtio): kind=doc title="Virtual I/O Device (VIRTIO) Specification" version=1.4 date=2026-04-08 url=https://docs.oasis-open.org/virtio/virtio/v1.4/virtio-v1.4.html local=local/virtio-spec/all.md`
-* `@ref(pci): kind=doc title="PCI Local Bus Specification" version=3.0 date=2004-02-03`
+
+The virtio transport library in
+[`//src/graphics/display/lib/virtio-driver`](/src/graphics/display/lib/virtio-driver/README.md)
+lists its own references.
 
 [change-validation-guide]: ./docs/change-validation.md
 [manual-testing-process]: ./docs/manual-testing.md

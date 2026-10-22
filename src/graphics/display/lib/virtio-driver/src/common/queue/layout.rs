@@ -21,7 +21,6 @@ use fuchsia_runtime;
 use std::mem::align_of;
 use std::num::NonZero;
 use std::ptr::NonNull;
-use zx::{VmarFlags, Vmo};
 
 /// The computed memory layout of a split virtqueue.
 pub struct VirtioQueueMemoryLayout {
@@ -214,7 +213,7 @@ impl VirtioQueuePartsBuilder {
     /// [`VirtioQueueMemoryLayout::size_bytes()`] bytes.
     pub fn new(
         queue_layout: &VirtioQueueMemoryLayout,
-        queue_data_vmo: &Vmo,
+        queue_data_vmo: &zx::Vmo,
     ) -> Result<VirtioQueuePartsBuilder, zx::Status> {
         // When debug assertions are disabled, [`zx::vmar::map()`] will fail
         // with an error if the VMO is too small.
@@ -231,7 +230,9 @@ impl VirtioQueuePartsBuilder {
                 &queue_data_vmo,
                 /* vmo_offset= */ 0,
                 queue_layout.total_size.get(),
-                VmarFlags::PERM_READ | VmarFlags::PERM_WRITE | VmarFlags::REQUIRE_NON_RESIZABLE,
+                zx::VmarFlags::PERM_READ
+                    | zx::VmarFlags::PERM_WRITE
+                    | zx::VmarFlags::REQUIRE_NON_RESIZABLE,
             )
             .map_err(|_| zx::Status::INTERNAL)?;
         let queue_data_address = NonZero::<usize>::new(queue_data_address)
@@ -350,7 +351,10 @@ mod tests {
     use super::*;
 
     #[fuchsia::test]
-    #[allow(clippy::absurd_extreme_comparisons)]
+    #[expect(
+        clippy::absurd_extreme_comparisons,
+        reason = "SENTINEL is u16::MAX; the test documents that it is out of range"
+    )]
     fn test_descriptor_list_sentinel() {
         assert!(
             VirtioQueueDescriptorTable::SENTINEL >= VirtioQueueMemoryLayout::MAX_CAPACITY,

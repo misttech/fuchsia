@@ -6,7 +6,7 @@
 use super::device_status::DeviceStatus;
 
 #[cfg(doc)]
-use super::queue_abi::VirtioMemoryRangeFlags;
+use super::queue::abi::VirtioMemoryRangeFlags;
 
 use bitfield::bitfield;
 

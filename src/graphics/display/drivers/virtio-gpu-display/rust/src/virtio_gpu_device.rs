@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::virtio::{
-    VirtioMemoryRange, VirtioMemoryRangeAccess, VirtioPciDevice, VirtioPciDeviceBuilder,
-};
 use crate::virtio_gpu_abi as abi;
 use dma_buffer::ContiguousBuffer;
 use std::num::NonZero;
+use virtio_driver::{
+    VirtioMemoryRange, VirtioMemoryRangeAccess, VirtioPciDevice, VirtioPciDeviceBuilder,
+};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 /// Index of the virtqueue that carries 2D commands and their responses.

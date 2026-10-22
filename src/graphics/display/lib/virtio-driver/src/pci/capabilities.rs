@@ -345,7 +345,7 @@ impl VirtioPciCapabilities {
 
             // Keep the first instance of each structure type. The instances are
             // ordered from optimal (first) to least-optimal (last).
-            // @cite(virtio): sec="4.1.4.1" title="Driver Requirements: Virtio Structure PCI Capabilities" q="The driver SHOULD use the first instance of each virtio structure type they can support."
+            // @cite(virtio): sec="4.1.4.1" title="Driver Requirements: Virtio Structure PCI Capabilities" q="SHOULD use the first instance of each virtio structure type"
             // @cite(virtio): sec="4.1.4.2" title="Virtio Structure PCI Capabilities"
             match capability_data.type_ {
                 PciCapabilityType::COMMON_CONFIGURATION => {
