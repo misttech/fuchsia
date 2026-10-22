@@ -38,14 +38,20 @@ parsers don't treat it as a directive.
 
 Two limits keep the exception honest:
 
-- A test skip justified by any other comment that did not exist at
-  `$PLANTER_CHANGE_BASE` is also reported as INFO
-  `test_skip_needs_reviewer_attention`. Only comments that code owners wrote
-  before the change are still accepted silently.
+- A test skip that did not exist at `$PLANTER_CHANGE_BASE`, has no technical
+  skip condition, and is justified only by an unmarked comment is the error
+  `unjustified_test_skip`: an agent-added skip must either meet a technical
+  condition or use the marker. Only skips that code owners added before the
+  change are still accepted silently.
 - The exception never applies to tests of `sdk_*()` libraries other than
-  `sdk_source_set()` (Bazel `idk_cc_shared_library`, `idk_cc_static_library`).
-  Those stay dual-tested, so `migration_sanity.sh` reports the marker on them
-  as the error `sdk_library_test_skip` and the reviewer seats reject it.
+  `sdk_source_set()` (Bazel `idk_cc_shared_library`, `idk_cc_static_library`
+  and their `_zx` variants). Those stay dual-tested, so `migration_sanity.sh`
+  reports a new marked or commented skip on them as the error
+  `sdk_library_test_skip`, following same-package references from the test
+  (for example `fx_unittest_package` -> `fx_cc_binary` -> library) and stopping
+  at the library under test, whose own deps don't count. When the
+  library lives in another package, the INFO finding says it can't be
+  verified. The reviewer seats reject such skips too.
 
 ## Why not a one-off fix
 

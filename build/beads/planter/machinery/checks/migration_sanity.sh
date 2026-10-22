@@ -45,14 +45,18 @@ set -euo pipefail
 #    test binary rule (`cc_test`, `host_cc_test`, `host_py_test`, `host_shac_test`, `host_test`)
 #    or `rustc_test` with cross-package `srcs`/`crate` or conflicting `rustc_env`, or (T5) a
 #    human explanatory comment precedes `# @bazel2gn:skip`.
-# 6. test_skip_needs_reviewer_attention (info): a test skip whose comment starts with
-#    `# Needs reviewer attention (bazel2gn skip):` uses the dual-testing cost exception, which only
-#    a human can confirm. It is never rejected, but always reported for the reviewer. A test skip
-#    justified (T5) by a comment that did not exist at PLANTER_CHANGE_BASE is reported the same
-#    way, so agent-written reasons are never silently accepted.
-# 7. sdk_library_test_skip (error): the dual-testing cost marker on a test of an sdk_*() library
-#    other than sdk_source_set() (Bazel `idk_cc_shared_library`, `idk_cc_static_library`), whose
-#    tests stay dual-tested.
+# 6. test_skip_needs_reviewer_attention (info): a test skip added in this change whose comment
+#    starts with `# Needs reviewer attention (bazel2gn skip):` uses the dual-testing cost exception,
+#    which only a human can confirm. It is never rejected, but always reported for the reviewer.
+# 7. unjustified_test_skip (error) also covers a test skip that did not exist at
+#    PLANTER_CHANGE_BASE, has no technical condition (T1-T4) and is justified only by an unmarked
+#    comment: agent-added skips must use the cost marker or meet T1-T4. Skips that existed at the
+#    change base (code owner annotations) stay silent.
+# 8. sdk_library_test_skip (error): a new marked or commented test skip whose target under test
+#    (followed through same-package references, e.g. fx_unittest_package -> fx_cc_binary ->
+#    library) is an sdk_*() library other than sdk_source_set() (Bazel `idk_cc_shared_library`,
+#    `idk_cc_static_library` and their `_zx` variants), whose tests stay dual-tested. When the
+#    target under test lives in another package, the INFO finding says this can't be verified.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -156,7 +160,14 @@ COMMENT_REASON_RE = re.compile(r"^#(?!\s*@bazel2gn\b)\s*\S")
 # outweighs the risk). It is never rejected, but always surfaced as INFO for a human to confirm.
 # Bazel rules that bazel2gn emits as GN sdk_*() libraries other than sdk_source_set() (see
 # //build/tools/bazel2gn/constants.go). Their tests stay dual-tested.
-SDK_DUAL_TESTED_BAZEL_RULES = {"idk_cc_shared_library", "idk_cc_static_library"}
+SDK_DUAL_TESTED_BAZEL_RULES = {
+    "idk_cc_shared_library",
+    "idk_cc_shared_library_zx",
+    "idk_cc_static_library",
+    "idk_cc_static_library_zx",
+}
+# Attributes whose labels name the code a test exercises.
+TUT_REF_ATTRS = {"deps", "crate", "unit_tests", "binary", "binary_name", "embed", "implementation_deps", "test_deps"}
 NEEDS_ATTENTION_RE = re.compile(r"^#\s*Needs reviewer attention \(bazel2gn skip\):", re.IGNORECASE)
 
 EXCLUDED_GLOBAL_DIRS = (
@@ -233,11 +244,12 @@ for p in changed:
             candidate_dirs.add(d)
 
 
-def parse_bazel_targets(bazel_path, pkg_dir=""):
-    try:
-        text = open(bazel_path, encoding="utf-8").read()
-    except Exception:
-        return []
+def parse_bazel_targets(bazel_path, pkg_dir="", text=None):
+    if text is None:
+        try:
+            text = open(bazel_path, encoding="utf-8").read()
+        except Exception:
+            return []
     lines = text.splitlines()
     targets = []
     try:
@@ -261,6 +273,7 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
         vis_items = []
         dep_refs = set()
         gn_dep_refs = set()
+        ext_tut_refs = set()
         is_test_pkg = rule == "fx_unittest_package"
         has_resources = False
         has_test_data = False
@@ -270,7 +283,6 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
         local_test_refs = []
         skipped_test_attrs = []
         attention_test_attrs = []
-        reasoned_test_attrs = []
         for kw in call.keywords:
             if kw.arg == "target_compatible_with":
                 tcw_seg = ast.get_source_segment(text, kw.value) or ""
@@ -341,6 +353,8 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
                             local_ref = sval[1:]
                         elif pkg_dir and sval.startswith(f"//{pkg_dir}:"):
                             local_ref = sval.split(":", 1)[1]
+                        elif sval.startswith("//") and kw.arg in TUT_REF_ATTRS:
+                            ext_tut_refs.add(sval)
                         if local_ref:
                             dep_refs.add(local_ref)
                             if not attr_skipped and not has_skip_comment(lines, sub.lineno):
@@ -352,7 +366,6 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
                 attr_skip = None
                 attr_reason = False
                 attr_attention = False
-                attr_reason_lines = []
                 if 1 <= kw.lineno <= len(lines) and "@bazel2gn:skip" in lines[kw.lineno - 1]:
                     attr_skip = kw.lineno
                 kidx = kw.lineno - 2
@@ -366,7 +379,6 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
                             attr_skip = kidx + 1
                         if COMMENT_REASON_RE.search(ks):
                             attr_reason = True
-                            attr_reason_lines.append(ks)
                         if NEEDS_ATTENTION_RE.search(ks):
                             attr_attention = True
                         kidx -= 1
@@ -376,15 +388,12 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
                     skipped_test_attrs.append((kw.arg, attr_skip, attr_reason))
                     if attr_attention:
                         attention_test_attrs.append((kw.arg, attr_skip))
-                    elif attr_reason:
-                        reasoned_test_attrs.append((kw.arg, attr_skip, attr_reason_lines))
         if not tname:
             continue
         start_line = node.lineno
         skip_line = None
         has_skip_reason = False
         has_attention_marker = False
-        skip_reason_lines = []
         idx = start_line - 2
         while idx >= 0:
             s = lines[idx].strip()
@@ -396,7 +405,6 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
                     skip_line = idx + 1
                 if COMMENT_REASON_RE.search(s):
                     has_skip_reason = True
-                    skip_reason_lines.append(s)
                 if NEEDS_ATTENTION_RE.search(s):
                     has_attention_marker = True
                 idx -= 1
@@ -409,7 +417,6 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
             "skip_line": skip_line,
             "has_skip_reason": has_skip_reason,
             "has_attention_marker": has_attention_marker,
-            "skip_reason_lines": skip_reason_lines,
             "binary_ref": binary_ref,
             "package_name": pkg_name or tname,
             "unit_tests": unit_tests,
@@ -418,6 +425,7 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
             "testonly": testonly,
             "vis_items": vis_items,
             "dep_refs": dep_refs,
+            "ext_tut_refs": ext_tut_refs,
             "gn_dep_refs": gn_dep_refs,
             "is_test_pkg": is_test_pkg,
             "has_resources": has_resources,
@@ -428,7 +436,6 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
             "local_test_refs": local_test_refs,
             "skipped_test_attrs": skipped_test_attrs,
             "attention_test_attrs": attention_test_attrs,
-            "reasoned_test_attrs": reasoned_test_attrs,
         })
     return targets
 
@@ -436,6 +443,60 @@ def parse_bazel_targets(bazel_path, pkg_dir=""):
 # Check whether a convertible Bazel target is a helper or sub-library
 # whose only consumers in BUILD.bazel are Bazel-only targets (leaving any
 # bazel2gn-generated GN target orphaned in BUILD.gn).
+def has_technical_test_skip_condition(t, targets_by_name):
+    """T1-T4 of unjustified_test_skip: a skip that bazel2gn limits or Bazel-only code require."""
+    rule = t["rule"]
+    tut_refs = [t["crate_ref"]] if t.get("crate_ref") else t.get("local_test_refs", [])
+    local_refs = [r for r in tut_refs if r in targets_by_name]
+    t1_tut_skipped = bool(local_refs) and all(targets_by_name[r]["skip_line"] is not None for r in local_refs)
+    t2_fx_unittest_resources = rule == "fx_unittest_package" and t.get("has_resources")
+    t3_host_test_data = rule in ("host_go_test", "go_test", "host_rustc_test") and t.get("has_test_data")
+    t4_unsupported_rule = rule in UNSUPPORTED_TEST_BINARY_RULES or (
+        rule == "rustc_test"
+        and (
+            t.get("cross_pkg_srcs_or_crate")
+            or (
+                t.get("has_rustc_env")
+                and t.get("crate_ref") in targets_by_name
+                and targets_by_name[t["crate_ref"]].get("has_rustc_env")
+            )
+        )
+    )
+    return bool(t1_tut_skipped or t2_fx_unittest_resources or t3_host_test_data or t4_unsupported_rule)
+
+
+def resolve_targets_under_test(seed_names, targets_by_name):
+    """Follows same-package references from a test to the target under test.
+
+    Expands test and testonly targets (package -> test binary -> ...) and stops at the first
+    non-test, non-testonly target: that is the target under test, and its own deps are not.
+    Returns (sdk_dual_tested_targets, local_library_targets, external_refs).
+    """
+    seen = set()
+    queue = list(seed_names)
+    sdk, libs, ext = set(), set(), set()
+    while queue:
+        name = queue.pop()
+        if name in seen or name not in targets_by_name:
+            continue
+        seen.add(name)
+        tgt = targets_by_name[name]
+        if tgt["rule"] not in BAZEL_TEST_RULES and not tgt.get("testonly"):
+            # The target under test (or, for a skipped test attribute, the seed library itself).
+            if tgt["rule"] in SDK_DUAL_TESTED_BAZEL_RULES:
+                sdk.add(name)
+            if name not in seed_names:
+                libs.add(name)
+            continue
+        ext.update(tgt.get("ext_tut_refs", ()))
+        refs = set(tgt.get("dep_refs", ())) | set(tgt.get("local_test_refs", ())) | set(tgt.get("unit_tests_refs", ()))
+        for extra in (tgt.get("crate_ref"), tgt.get("binary_ref")):
+            if extra:
+                refs.add(extra)
+        queue.extend(refs)
+    return sorted(sdk), sorted(libs), sorted(ext)
+
+
 def is_bazel_only_private_test_dep(
     target, bazel_targets, gn_info, pkg_dir, packaged_binaries, gn_kept_pkg_test_deps=()
 ):
@@ -916,7 +977,9 @@ for pkg_dir in sorted(candidate_dirs):
         bazel_names = {t["name"] for t in bazel_targets}
         bazel_rules_by_name = {t["name"]: t["rule"] for t in bazel_targets}
         targets_by_name = {t["name"]: t for t in bazel_targets}
-        # BUILD.bazel at the change base, to tell pre-existing owner comments from new ones.
+        # Skips that already existed at the change base were added by code owners and are kept.
+        # The harness always sets PLANTER_CHANGE_BASE (HEAD~1 once the task is committed); like
+        # every other check, an unset value falls back to HEAD.
         try:
             base_bazel_text = subprocess.check_output(
                 ["git", "-C", workdir, "show", f"{change_base}:{bazel_rel}"],
@@ -925,24 +988,44 @@ for pkg_dir in sorted(candidate_dirs):
             )
         except Exception:
             base_bazel_text = ""
+        base_targets = parse_bazel_targets(bazel_rel, pkg_dir, text=base_bazel_text) if base_bazel_text else []
+        base_target_skips = {bt["name"]: bt["skip_line"] is not None for bt in base_targets}
+        base_attr_skips = {(bt["name"], a) for bt in base_targets for a, _, _ in bt.get("skipped_test_attrs", [])}
         for t in bazel_targets:
             tname = t["name"]
             rule = t["rule"]
             is_test_bin = rule in ("fx_cc_binary", "cc_binary") and t.get("testonly")
             is_test_target = rule in BAZEL_TEST_RULES or is_test_bin
-            attention = [(f"`{a}` on `{rule}(name = \"{tname}\")`", ln) for a, ln in t.get("attention_test_attrs", [])]
-            if t["skip_line"] is not None and t.get("has_attention_marker") and is_test_target:
-                attention.append((f"`{rule}(name = \"{tname}\")`", t["skip_line"]))
-            # Exception (c) never applies to sdk_*() libraries other than sdk_source_set().
-            tut_names = [t["crate_ref"]] if t.get("crate_ref") else t.get("local_test_refs", [])
-            if t.get("attention_test_attrs"):
-                tut_names = tut_names + [tname]
-            sdk_tut = sorted(
-                n for n in tut_names
-                if n in targets_by_name and targets_by_name[n]["rule"] in SDK_DUAL_TESTED_BAZEL_RULES
-            )
-            if attention and sdk_tut:
-                for what, ln in attention:
+            # Test skips added in this change (not present at the change base) are surfaced for a
+            # human, and the dual-testing cost exception never applies to sdk_*() libraries.
+            skip_records = []  # (what, line, has_marker, has_comment, technical, tut_seed)
+            if t["skip_line"] is not None and is_test_target and not base_target_skips.get(tname):
+                skip_records.append((
+                    f"`{rule}(name = \"{tname}\")`",
+                    t["skip_line"],
+                    t.get("has_attention_marker"),
+                    t.get("has_skip_reason"),
+                    has_technical_test_skip_condition(t, targets_by_name),
+                    [tname],
+                ))
+            marked_attrs = set(t.get("attention_test_attrs", []))
+            for a, ln, reason in t.get("skipped_test_attrs", []):
+                if t["skip_line"] is None and (tname, a) not in base_attr_skips:
+                    skip_records.append((
+                        f"`{a}` on `{rule}(name = \"{tname}\")`",
+                        ln,
+                        (a, ln) in marked_attrs,
+                        reason,
+                        bool(t.get("has_test_data")),
+                        [tname],
+                    ))
+            for what, ln, has_marker, has_comment, technical, seed in skip_records:
+                if technical or not (has_marker or has_comment):
+                    # Justified by a technical condition, or a bare skip that unjustified_test_skip
+                    # reports below.
+                    continue
+                sdk_tut, local_libs, ext_refs = resolve_targets_under_test(seed, targets_by_name)
+                if sdk_tut:
                     findings.append({
                         "source": "migration_sanity",
                         "category": "sdk_library_test_skip",
@@ -950,62 +1033,64 @@ for pkg_dir in sorted(candidate_dirs):
                         "file": bazel_rel,
                         "line": ln,
                         "message": (
-                            f"{what} in '{bazel_rel}' claims the dual-testing cost exception, but the target under "
-                            f"test ({', '.join(sdk_tut)}) is an sdk_*() library other than sdk_source_set(), "
-                            "whose tests stay dual-tested."
+                            f"{what} in '{bazel_rel}' skips dual-running a test of an sdk_*() library other than "
+                            f"sdk_source_set() ({', '.join(sdk_tut)}). Those tests stay dual-tested, so the "
+                            "dual-testing cost exception does not apply."
                         ),
                         "remediation": (
-                            "Remove `# @bazel2gn:skip` and the `# Needs reviewer attention (bazel2gn skip):` comment, "
+                            "Remove `# @bazel2gn:skip` and its comment, re-run "
+                            f"`fx bazel2gn -d {pkg_dir}`, and wire the generated GN test into `group(\"tests\")` "
+                            "(see docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)."
+                        ),
+                    })
+                    continue
+                unverifiable = ""
+                if not local_libs and ext_refs:
+                    unverifiable = (
+                        " The target under test is defined in another package, so this check cannot verify that "
+                        "it is not an sdk_*() library other than sdk_source_set() (those stay dual-tested): "
+                        + ", ".join(sorted(ext_refs)[:3]) + "."
+                    )
+                if has_marker:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "test_skip_needs_reviewer_attention",
+                        "severity": "INFO",
+                        "file": bazel_rel,
+                        "line": ln,
+                        "message": (
+                            f"{what} in '{bazel_rel}' skips dual-running its test in GN because the coder judged that "
+                            "dual-testing cost outweighs the risk (marked `# Needs reviewer attention (bazel2gn skip): ...`)."
+                            + unverifiable
+                        ),
+                        "remediation": (
+                            "A human reviewer must confirm this exception (see the cost criteria in "
+                            "docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems) and the CL "
+                            "description must list it under \"Needs reviewer attention\". Do not remove the skip just "
+                            "to clear this finding."
+                        ),
+                    })
+                else:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "unjustified_test_skip",
+                        "severity": "error",
+                        "file": bazel_rel,
+                        "line": ln,
+                        "message": (
+                            f"{what} in '{bazel_rel}' has a `# @bazel2gn:skip` that did not exist at the change base, "
+                            "is justified only by an unmarked comment, and no technical skip condition applies. "
+                            "Skips added in a migration must meet a technical condition or use the dual-testing cost "
+                            "marker." + unverifiable
+                        ),
+                        "remediation": (
+                            "If this is the dual-testing cost exception, start the comment with "
+                            "`# Needs reviewer attention (bazel2gn skip): <reason>` and add a matching "
+                            "\"Needs reviewer attention:\" line to the commit message. Otherwise remove the skip, "
                             f"re-run `fx bazel2gn -d {pkg_dir}`, and wire the generated GN test into `group(\"tests\")` "
                             "(see docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)."
                         ),
                     })
-                attention = []
-            # A justification comment written in this change (not a pre-existing owner comment) is
-            # also something only a human can confirm.
-            new_reason = []
-            if t["skip_line"] is not None and is_test_target and not t.get("has_attention_marker"):
-                if any(l not in base_bazel_text for l in t.get("skip_reason_lines", [])):
-                    new_reason.append((f"`{rule}(name = \"{tname}\")`", t["skip_line"]))
-            for a, ln, rlines in t.get("reasoned_test_attrs", []):
-                if any(l not in base_bazel_text for l in rlines):
-                    new_reason.append((f"`{a}` on `{rule}(name = \"{tname}\")`", ln))
-            for what, ln in new_reason:
-                findings.append({
-                    "source": "migration_sanity",
-                    "category": "test_skip_needs_reviewer_attention",
-                    "severity": "INFO",
-                    "file": bazel_rel,
-                    "line": ln,
-                    "message": (
-                        f"{what} in '{bazel_rel}' is skipped with an explanatory comment added in this change "
-                        "rather than a pre-existing code owner comment."
-                    ),
-                    "remediation": (
-                        "A human reviewer must confirm the reason. If it is the dual-testing cost exception, start the "
-                        "comment with `# Needs reviewer attention (bazel2gn skip):` and list it under \"Needs reviewer "
-                        "attention\" in the commit message; otherwise remove the skip unless another documented skip "
-                        "condition applies."
-                    ),
-                })
-            for what, ln in attention:
-                findings.append({
-                    "source": "migration_sanity",
-                    "category": "test_skip_needs_reviewer_attention",
-                    "severity": "INFO",
-                    "file": bazel_rel,
-                    "line": ln,
-                    "message": (
-                        f"{what} in '{bazel_rel}' skips dual-running its test in GN because the coder judged that "
-                        "dual-testing cost outweighs the risk (marked `# Needs reviewer attention (bazel2gn skip): ...`)."
-                    ),
-                    "remediation": (
-                        "A human reviewer must confirm this exception (see the cost criteria in "
-                        "docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems) and the CL "
-                        "description must list it under \"Needs reviewer attention\". Do not remove the skip just "
-                        "to clear this finding."
-                    ),
-                })
             if t["skip_line"] is None:
                 for attr_name, attr_skip_line, attr_reason in t.get("skipped_test_attrs", []):
                     if t.get("has_test_data") or attr_reason:
@@ -1029,26 +1114,8 @@ for pkg_dir in sorted(candidate_dirs):
                     })
             is_test_bin = rule in ("fx_cc_binary", "cc_binary") and t.get("testonly")
             if t["skip_line"] is not None and (rule in BAZEL_TEST_RULES or is_test_bin):
-                tut_refs = [t["crate_ref"]] if t.get("crate_ref") else t.get("local_test_refs", [])
-                local_refs = [r for r in tut_refs if r in targets_by_name]
-                t1_tut_skipped = bool(local_refs) and all(
-                    targets_by_name[r]["skip_line"] is not None for r in local_refs
-                )
-                t2_fx_unittest_resources = rule == "fx_unittest_package" and t.get("has_resources")
-                t3_host_test_data = rule in ("host_go_test", "go_test", "host_rustc_test") and t.get("has_test_data")
-                t4_unsupported_rule = rule in UNSUPPORTED_TEST_BINARY_RULES or (
-                    rule == "rustc_test"
-                    and (
-                        t.get("cross_pkg_srcs_or_crate")
-                        or (
-                            t.get("has_rustc_env")
-                            and t.get("crate_ref") in targets_by_name
-                            and targets_by_name[t["crate_ref"]].get("has_rustc_env")
-                        )
-                    )
-                )
                 t5_owner_reason = t.get("has_skip_reason")
-                if not (t1_tut_skipped or t2_fx_unittest_resources or t3_host_test_data or t4_unsupported_rule or t5_owner_reason):
+                if not (has_technical_test_skip_condition(t, targets_by_name) or t5_owner_reason):
                     findings.append({
                         "source": "migration_sanity",
                         "category": "unjustified_test_skip",

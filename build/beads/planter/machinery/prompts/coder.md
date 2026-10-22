@@ -134,8 +134,8 @@ Every test moves to Bazel: C++ and Rust device tests, and host tests. A Bazel te
      library compiled in several GN configurations, it has no frequently changing GN-only deps, and
      the test is slow or resource-heavy or the library's remaining GN users are actively being
      migrated). Never use it for tests of `sdk_*()` libraries other than `sdk_source_set()` (in
-     BUILD.bazel: `idk_cc_shared_library`, `idk_cc_static_library`); those stay dual-tested.
-     Put the comment
+     BUILD.bazel: `idk_cc_shared_library`, `idk_cc_static_library` and their `_zx` variants);
+     those stay dual-tested. Put the comment
      `# Needs reviewer attention (bazel2gn skip): <why the cost outweighs the risk>` directly above
      `# @bazel2gn:skip`, and add a `Needs reviewer attention: <target>: <reason>` line to the commit
      message body and `summary`. Checks report it as INFO; never treat that INFO as something to fix.
