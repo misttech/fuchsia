@@ -290,8 +290,12 @@ where
     /// Marker to ensure the list container is pinned in memory. Pinning is required
     /// because the sentinel pointer points back to the container's own memory address,
     /// meaning the list cannot be safely moved once initialized.
+    ///
+    /// Wrapped in `PhantomData` so the list remains FFI-safe when embedded in `#[repr(C)]`
+    /// structs named in `extern` signatures (`improper_ctypes` rejects a bare `PhantomPinned`,
+    /// but ignores `PhantomData` fields).
     #[pin]
-    _pin: core::marker::PhantomPinned,
+    _pin: core::marker::PhantomData<core::marker::PhantomPinned>,
 
     _phantom: core::marker::PhantomData<(P, Tag)>,
 }
@@ -308,7 +312,7 @@ where
         pin_init!(&this in Self {
             head: make_sentinel(this.as_ptr()),
             size: S::INIT,
-            _pin: core::marker::PhantomPinned,
+            _pin: core::marker::PhantomData,
             _phantom: core::marker::PhantomData,
         })
     }

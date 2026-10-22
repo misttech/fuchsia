@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::marker::PhantomPinned;
+use core::marker::{PhantomData, PhantomPinned};
 use core::mem::offset_of;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
@@ -95,7 +95,10 @@ struct AttemptResult {
 pub struct ChainLock<T: Transaction> {
     state: AtomicToken,
     contention_state: T::ContentionState,
-    _pin: PhantomPinned,
+    // Wrapped in `PhantomData` so `#[repr(C)]` structs embedding a `ChainLock` (e.g. the kernel's
+    // `Thread`) stay FFI-safe when named in `extern` signatures (`improper_ctypes` rejects a bare
+    // `PhantomPinned`, but ignores `PhantomData` fields).
+    _pin: PhantomData<PhantomPinned>,
 }
 
 impl<T: Transaction> ChainLock<T> {
@@ -108,7 +111,7 @@ impl<T: Transaction> ChainLock<T> {
         Self {
             state: AtomicToken::new(Self::UNLOCKED_TOKEN),
             contention_state: T::ContentionState::INIT,
-            _pin: PhantomPinned,
+            _pin: PhantomData,
         }
     }
 

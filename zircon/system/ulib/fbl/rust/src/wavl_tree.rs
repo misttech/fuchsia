@@ -141,6 +141,9 @@ pub trait WavlTreeObserver {
     fn verify_balance(&self, _size: usize, _depth: usize) {}
 }
 
+// `repr(transparent)` over a `PhantomData` so `WavlTree`s embedded in `#[repr(C)]` structs named
+// in `extern` signatures stay FFI-safe (`improper_ctypes`).
+#[repr(transparent)]
 pub struct DefaultWavlTreeObserver<T>(PhantomData<T>);
 impl<T> Default for DefaultWavlTreeObserver<T> {
     fn default() -> Self {
@@ -184,6 +187,9 @@ pub trait WavlTreeAugmentedInvariantObserverTraits {
 }
 
 /// A WAVL tree observer that maintains augmented invariants.
+// `repr(transparent)` over a `PhantomData` so `WavlTree`s embedded in `#[repr(C)]` structs named
+// in `extern` signatures stay FFI-safe (`improper_ctypes`).
+#[repr(transparent)]
 pub struct WavlTreeAugmentedInvariantObserver<
     Tag,
     Traits,
@@ -825,8 +831,11 @@ pub struct WavlTree<
     right_most: *mut P::Target,
     size: S,
     observer: O,
+    // Wrapped in `PhantomData` so the tree remains FFI-safe when embedded in `#[repr(C)]` structs
+    // named in `extern` signatures (`improper_ctypes` rejects a bare `PhantomPinned`, but ignores
+    // `PhantomData` fields).
     #[pin]
-    _pin: core::marker::PhantomPinned,
+    _pin: core::marker::PhantomData<core::marker::PhantomPinned>,
     _phantom: core::marker::PhantomData<(K, P, Tag)>,
 }
 
@@ -846,7 +855,7 @@ where
             right_most: make_sentinel(this.as_ptr()),
             size: S::INIT,
             observer,
-            _pin: core::marker::PhantomPinned,
+            _pin: core::marker::PhantomData,
             _phantom: core::marker::PhantomData,
         })
     }

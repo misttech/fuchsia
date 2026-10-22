@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::marker::PhantomData;
+
 /// Trait for tracking the size of the list.
 pub trait SizeTracker: Clone {
     /// The initial value for the tracker.
@@ -21,10 +23,15 @@ pub trait SizeTracker: Clone {
 }
 
 /// A size tracker that does not actually track the size (zero overhead).
+///
+/// Carries a `PhantomData` instead of being a unit struct so that containers using it stay
+/// FFI-safe when embedded in `#[repr(C)]` structs named in `extern` signatures:
+/// `improper_ctypes` rejects fieldless structs but ignores `PhantomData`.
 #[derive(Clone, Copy)]
-pub struct NonTrackingSize;
+#[repr(transparent)]
+pub struct NonTrackingSize(PhantomData<()>);
 impl SizeTracker for NonTrackingSize {
-    const INIT: Self = NonTrackingSize;
+    const INIT: Self = NonTrackingSize(PhantomData);
     const IS_TRACKING: bool = false;
     #[inline]
     fn increment(&mut self) {}
@@ -41,7 +48,11 @@ impl SizeTracker for NonTrackingSize {
 }
 
 /// A size tracker that maintains the count of elements in the list.
+///
+/// `repr(transparent)` keeps containers using this tracker FFI-safe when embedded in `#[repr(C)]`
+/// structs named in `extern` signatures.
 #[derive(Clone, Copy)]
+#[repr(transparent)]
 pub struct TrackingSize(usize);
 impl SizeTracker for TrackingSize {
     const INIT: Self = TrackingSize(0);
@@ -75,14 +86,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "Cannot get the size if we are not tracking the size.")]
     fn test_non_tracking_size_get_panics() {
-        let tracker = NonTrackingSize;
+        let tracker = NonTrackingSize::INIT;
         let _ = tracker.get();
     }
 
     #[test]
     fn test_non_tracking_size_set_swap() {
-        let mut tracker1 = NonTrackingSize;
-        let mut tracker2 = NonTrackingSize;
+        let mut tracker1 = NonTrackingSize::INIT;
+        let mut tracker2 = NonTrackingSize::INIT;
         tracker1.increment();
         tracker1.decrement();
         tracker1.set(10);
