@@ -40,6 +40,7 @@ battery_manager_deps = [
 ]
 
 battery_manager_sources = [
+  "src/arbiter.rs",
   "src/battery_info_recorders.rs",
   "src/battery_manager.rs",
   "src/battery_simulator.rs",
@@ -59,6 +60,8 @@ rustc_binary("bin") {
   test_deps = [
     "//src/lib/async-utils",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/power/lib/election",
+    "//src/power/lib/governor",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:tempfile",
   ]
