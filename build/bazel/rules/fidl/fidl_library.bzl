@@ -361,7 +361,7 @@ def _fidl_library_impl(
             fidl_library_name = library_name,
             fidl_ir_json = fidl_ir_target_name,
             deps = deps,
-            contains_drivers = contains_drivers,
+            contains_drivers = contains_drivers and enable_rust_drivers,
             testonly = testonly,
             visibility = visibility,
         )
