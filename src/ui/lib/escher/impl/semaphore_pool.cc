@@ -6,10 +6,16 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <type_traits>
+
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
+#include "src/ui/lib/escher/util/fuchsia_utils.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 
 namespace escher {
+
+static_assert(Semaphore::kInvalidKoid == ZX_KOID_INVALID);
+static_assert(std::is_same_v<zx_koid_t, uint64_t>);
 
 SemaphorePool::SemaphorePool(vk::Device device, vk::detail::DispatchLoaderDynamic dispatch_loader)
     : device_(device), dispatch_loader_(dispatch_loader) {}
@@ -46,9 +52,7 @@ SemaphorePtr SemaphorePool::Allocate() {
     auto sem = std::move(uncleaned_free_list_.back());
     uncleaned_free_list_.pop_back();
 
-    zx::event cleaning_event;
-    zx_status_t status = zx::event::create(0, &cleaning_event);
-    FX_DCHECK(status == ZX_OK);
+    zx::event cleaning_event = CreateEvent();
 
     vk::ImportSemaphoreZirconHandleInfoFUCHSIA info;
     info.semaphore = sem->vk_semaphore();
@@ -83,6 +87,8 @@ SemaphorePtr SemaphorePool::AllocateAndImport(zx::event event_to_import) {
     sem = Semaphore::New(device_, this);
   }
 
+  const zx_koid_t koid = GetEventKoid(event_to_import);
+
   vk::ImportSemaphoreZirconHandleInfoFUCHSIA info;
   info.semaphore = sem->vk_semaphore();
   info.zirconHandle = event_to_import.release();
@@ -92,7 +98,7 @@ SemaphorePtr SemaphorePool::AllocateAndImport(zx::event event_to_import) {
     TRACE_DURATION("gfx", "SemaphorePool::AllocateAndImport[importSemaphoreZirconHandleFUCHSIA]");
     ESCHER_CHECKED_VK_RESULT(device_.importSemaphoreZirconHandleFUCHSIA(info, dispatch_loader_));
   }
-  sem->set_is_imported(true);
+  sem->set_koid(koid);
   return sem;
 }
 
@@ -103,18 +109,17 @@ void SemaphorePool::ReturnSemaphore(SemaphorePtr semaphore) {
   // Semaphores with previous imports will likely be required to import a Zircon event again
   // when reused, so it makes sense not to clean them here.
   if (semaphore->is_imported()) {
-    // Reset the flag to false during retirement. This flag is set again in AllocateAndImport
-    // if the semaphore imports a Zircon event when re-allocated.
-    semaphore->set_is_imported(false);
+    // Reset the KOID (and derived `is_imported()` state) during retirement so that if this
+    // semaphore is later lazy-cleaned and returned by `Allocate()` as an unimported semaphore, it
+    // does not carry a stale KOID.
+    semaphore->set_koid(Semaphore::kInvalidKoid);
     uncleaned_free_list_.push_back(std::move(semaphore));
     return;
   }
 
   // If the semaphore did not previously import a Zircon event, it is "cleaned" with a fresh
   // Zircon event to guarantee it is unsignaled and returned to the cleaned list.
-  zx::event cleaning_event;
-  zx_status_t status = zx::event::create(0, &cleaning_event);
-  FX_DCHECK(status == ZX_OK);
+  zx::event cleaning_event = CreateEvent();
 
   vk::ImportSemaphoreZirconHandleInfoFUCHSIA info;
   info.semaphore = semaphore->vk_semaphore();

@@ -112,17 +112,22 @@ class CommandBuffer : public Reffable {
   uint64_t sequence_number() const { return impl_->sequence_number(); }
 
   // During Submit(), these semaphores will be added to the vk::SubmitInfo.
-  // No-op if semaphore is null
+  // No-op if semaphore is null. If a matching semaphore (by pointer or non-zero imported event
+  // KOID) is already present, merges |stage| into its existing pipeline stage mask instead of
+  // adding a duplicate entry.
   void AddWaitSemaphore(SemaphorePtr semaphore, vk::PipelineStageFlags stage) {
-    impl_->AddWaitSemaphore(semaphore, stage);
+    impl_->AddWaitSemaphore(std::move(semaphore), stage);
   }
 
   // During Submit(), these semaphores will be added to the vk::SubmitInfo.
-  // No-op if semaphore is null.
-  void AddSignalSemaphore(SemaphorePtr semaphore) { impl_->AddSignalSemaphore(semaphore); }
+  // No-op if semaphore is null or if a matching semaphore (by pointer or non-zero imported event
+  // KOID) is already present.
+  void AddSignalSemaphore(SemaphorePtr semaphore) {
+    impl_->AddSignalSemaphore(std::move(semaphore));
+  }
 
-  // Checks to see if the provided semaphore is part of the command buffer's vector
-  // of signal semaphores.
+  // Checks whether |semaphore| (matching by pointer or non-zero imported event KOID) is already in
+  // the command buffer's signal semaphore list.
   bool ContainsSignalSemaphore(const SemaphorePtr& semaphore) const {
     return impl_->ContainsSignalSemaphore(semaphore);
   }

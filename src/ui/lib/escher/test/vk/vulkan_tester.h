@@ -52,6 +52,16 @@ class VulkanTester {
         cb->current_pipeline_layout_.get(), cb->current_program_, /*log_pipeline_creation=*/false);
   }
 
+  template <typename CommandBufferT>  // CommandBuffer* or CommandBufferPtr
+  static const std::vector<SemaphorePtr>& GetWaitSemaphores(CommandBufferT cb) {
+    return cb->impl()->wait_semaphores_;
+  }
+
+  template <typename CommandBufferT>  // CommandBuffer* or CommandBufferPtr
+  static const std::vector<vk::PipelineStageFlags>& GetWaitSemaphoreStages(CommandBufferT cb) {
+    return cb->impl()->wait_semaphore_stages_;
+  }
+
   const ShaderProgramPtr& ClearPipelineStash(const ShaderProgramPtr& program) {
     if (program) {
       program->ClearPipelineStash();

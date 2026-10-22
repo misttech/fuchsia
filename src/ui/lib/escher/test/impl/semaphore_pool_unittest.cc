@@ -11,6 +11,7 @@
 
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/common/test_with_vk_validation_layer.h"
+#include "src/ui/lib/escher/util/fuchsia_utils.h"
 #include "src/ui/lib/escher/vk/vulkan_context.h"
 #include "src/ui/lib/escher/vk/vulkan_device_queues.h"
 
@@ -18,14 +19,6 @@ namespace escher {
 namespace {
 
 using SemaphorePoolTest = escher::test::TestWithVkValidationLayer;
-
-// Helper to get a fresh Zircon event.
-zx::event CreateEvent() {
-  zx::event event;
-  zx_status_t status = zx::event::create(0, &event);
-  FX_DCHECK(status == ZX_OK);
-  return event;
-}
 
 // Verify that allocating from a completely empty pool returns a new, valid,
 // unimported C++ Semaphore object.
@@ -41,6 +34,7 @@ VK_TEST_F(SemaphorePoolTest, AllocateFromEmptyPool) {
   ASSERT_TRUE(sem);
   EXPECT_NE(sem->vk_semaphore(), vk::Semaphore());
   EXPECT_FALSE(sem->is_imported());
+  EXPECT_EQ(sem->koid(), Semaphore::kInvalidKoid);
 }
 
 // Verify that an unimported semaphore is routed to the cleaned_free_list_
@@ -56,6 +50,7 @@ VK_TEST_F(SemaphorePoolTest, RecycleAndReuseCleanedSemaphore) {
   auto sem1 = pool.Allocate();
   const auto raw_vk_sem = sem1->vk_semaphore();
   EXPECT_FALSE(sem1->is_imported());
+  EXPECT_EQ(sem1->koid(), Semaphore::kInvalidKoid);
 
   // Release semaphore. When its ref-count hits 0, it should return to the pool.
   sem1 = nullptr;
@@ -64,6 +59,7 @@ VK_TEST_F(SemaphorePoolTest, RecycleAndReuseCleanedSemaphore) {
   auto sem2 = pool.Allocate();
   EXPECT_EQ(sem2->vk_semaphore(), raw_vk_sem);
   EXPECT_FALSE(sem2->is_imported());
+  EXPECT_EQ(sem2->koid(), Semaphore::kInvalidKoid);
 }
 
 // Verify that an imported semaphore is routed to the uncleaned_free_list_ upon
@@ -76,21 +72,33 @@ VK_TEST_F(SemaphorePoolTest, RecycleAndReuseUncleanedSemaphore) {
 
   SemaphorePool pool(device, dispatch_loader);
 
-  auto sem1 = pool.AllocateAndImport(CreateEvent());
+  zx::event event1 = CreateEvent();
+  const zx_koid_t koid1 = GetEventKoid(event1);
+  ASSERT_NE(koid1, Semaphore::kInvalidKoid);
+
+  auto sem1 = pool.AllocateAndImport(std::move(event1));
   const auto raw_vk_sem = sem1->vk_semaphore();
   EXPECT_TRUE(sem1->is_imported());
+  EXPECT_EQ(sem1->koid(), koid1);
 
   // Release semaphore. It should return to the pool's uncleaned list.
   sem1 = nullptr;
 
-  // Allocate and import again. The pool should reuse the exact same Vulkan semaphore.
-  auto sem2 = pool.AllocateAndImport(CreateEvent());
+  zx::event event2 = CreateEvent();
+  const zx_koid_t koid2 = GetEventKoid(event2);
+  ASSERT_NE(koid2, Semaphore::kInvalidKoid);
+  ASSERT_NE(koid1, koid2);
+
+  // Allocate and import again. The pool should reuse the exact same Vulkan semaphore
+  // and update its tracked KOID to the newly imported event.
+  auto sem2 = pool.AllocateAndImport(std::move(event2));
   EXPECT_EQ(sem2->vk_semaphore(), raw_vk_sem);
   EXPECT_TRUE(sem2->is_imported());
+  EXPECT_EQ(sem2->koid(), koid2);
 }
 
-// Verify the decoupled fallback where Allocate() pulls from the uncleaned list,
-// performs a lazy clean, resets/preserves the flags, and returns.
+// Verify the decoupled fallback where `Allocate()` pulls from the uncleaned list,
+// performs a lazy clean, and returns the semaphore with its KOID cleared to invalid.
 VK_TEST_F(SemaphorePoolTest, AllocatePullsFromUncleanedWithLazyStomp) {
   auto vulkan_queues =
       escher::test::EscherEnvironment::GetGlobalTestEnvironment()->GetVulkanDevice();
@@ -100,19 +108,23 @@ VK_TEST_F(SemaphorePoolTest, AllocatePullsFromUncleanedWithLazyStomp) {
   SemaphorePool pool(device, dispatch_loader);
 
   // Put a semaphore into the uncleaned list by allocating/importing and releasing.
-  auto sem1 = pool.AllocateAndImport(CreateEvent());
+  zx::event event1 = CreateEvent();
+  const zx_koid_t koid1 = GetEventKoid(event1);
+  auto sem1 = pool.AllocateAndImport(std::move(event1));
   const auto raw_vk_sem = sem1->vk_semaphore();
+  EXPECT_EQ(sem1->koid(), koid1);
   sem1 = nullptr;
 
-  // Call Allocate() (with cleaned list empty). It should fallback to uncleaned,
-  // perform a lazy clean, and return it.
+  // Call `Allocate()` (with cleaned list empty). It should fallback to uncleaned,
+  // perform a lazy clean, and return it with its KOID cleared to `Semaphore::kInvalidKoid`.
   auto sem2 = pool.Allocate();
   EXPECT_EQ(sem2->vk_semaphore(), raw_vk_sem);
   EXPECT_FALSE(sem2->is_imported());
+  EXPECT_EQ(sem2->koid(), Semaphore::kInvalidKoid);
 }
 
-// Verify the decoupled fallback where AllocateAndImport() pulls from the cleaned
-// list, overwrites it with a new import, and sets is_imported to true.
+// Verify the decoupled fallback where `AllocateAndImport()` pulls from the cleaned
+// list, overwrites it with a new import, and sets its KOID to the new event's KOID.
 VK_TEST_F(SemaphorePoolTest, AllocateAndImportPullsFromCleaned) {
   auto vulkan_queues =
       escher::test::EscherEnvironment::GetGlobalTestEnvironment()->GetVulkanDevice();
@@ -124,13 +136,17 @@ VK_TEST_F(SemaphorePoolTest, AllocateAndImportPullsFromCleaned) {
   // Put a semaphore into the cleaned list by allocating internally and releasing.
   auto sem1 = pool.Allocate();
   const auto raw_vk_sem = sem1->vk_semaphore();
+  EXPECT_EQ(sem1->koid(), Semaphore::kInvalidKoid);
   sem1 = nullptr;
 
   // Call AllocateAndImport() (with uncleaned list empty). It should fallback to cleaned,
-  // import the new event, and return it.
-  auto sem2 = pool.AllocateAndImport(CreateEvent());
+  // import the new event, and return it with the event's KOID.
+  zx::event event = CreateEvent();
+  const zx_koid_t koid = GetEventKoid(event);
+  auto sem2 = pool.AllocateAndImport(std::move(event));
   EXPECT_EQ(sem2->vk_semaphore(), raw_vk_sem);
   EXPECT_TRUE(sem2->is_imported());
+  EXPECT_EQ(sem2->koid(), koid);
 }
 
 // Verify that a cleaned semaphore can be signaled and waited on again by the GPU queue.

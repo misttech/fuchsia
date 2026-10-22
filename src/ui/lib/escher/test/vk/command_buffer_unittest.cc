@@ -7,6 +7,13 @@
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/vk/vulkan_tester.h"
 
+#ifdef __Fuchsia__
+#include <lib/zx/event.h>
+
+#include "src/ui/lib/escher/impl/semaphore_pool.h"
+#include "src/ui/lib/escher/util/fuchsia_utils.h"
+#endif
+
 namespace {
 using namespace escher;
 
@@ -330,5 +337,200 @@ VK_TEST_F(CommandBufferTest, StaticStateSettingMatches) {
   // shouldn't cause problems in e.g. CommandBufferPool due to a forever-straggling buffer.
   EXPECT_TRUE(cb->Submit(nullptr));
 }
+
+VK_TEST_F(CommandBufferTest, AddWaitSemaphoreIgnoresNullAndDeduplicatesSamePointer) {
+  auto escher = test::GetEscher();
+  auto sem1 = Semaphore::New(escher->vk_device());
+  auto sem2 = Semaphore::New(escher->vk_device());
+  EXPECT_EQ(sem1->koid(), Semaphore::kInvalidKoid);
+  EXPECT_EQ(sem2->koid(), Semaphore::kInvalidKoid);
+
+  // Submit a command buffer that signals sem1 and sem2 so that the subsequent command buffer can
+  // wait on them cleanly.
+  auto signal_cb = CommandBuffer::NewForGraphics(escher, false);
+  signal_cb->AddSignalSemaphore(sem1);
+  signal_cb->AddSignalSemaphore(sem2);
+  EXPECT_TRUE(signal_cb->Submit(nullptr));
+
+  auto cb = CommandBuffer::NewForGraphics(escher, false);
+  cb->AddWaitSemaphore(SemaphorePtr(), vk::PipelineStageFlagBits::eBottomOfPipe);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 0u);
+  EXPECT_TRUE(GetWaitSemaphores(cb).empty());
+
+  cb->AddWaitSemaphore(sem1, vk::PipelineStageFlagBits::eVertexShader);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 1u);
+  ASSERT_EQ(GetWaitSemaphores(cb).size(), 1u);
+  EXPECT_EQ(GetWaitSemaphores(cb)[0], sem1);
+  ASSERT_EQ(GetWaitSemaphoreStages(cb).size(), 1u);
+  EXPECT_EQ(GetWaitSemaphoreStages(cb)[0], vk::PipelineStageFlagBits::eVertexShader);
+
+  // Adding the same `SemaphorePtr` again must coalesce into the existing entry and bitwise-OR the
+  // pipeline stage flags.
+  cb->AddWaitSemaphore(sem1, vk::PipelineStageFlagBits::eFragmentShader);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 1u);
+  ASSERT_EQ(GetWaitSemaphores(cb).size(), 1u);
+  EXPECT_EQ(GetWaitSemaphores(cb)[0], sem1);
+  ASSERT_EQ(GetWaitSemaphoreStages(cb).size(), 1u);
+  EXPECT_EQ(GetWaitSemaphoreStages(cb)[0],
+            vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader);
+
+  // Distinct unimported semaphores both have `koid() == Semaphore::kInvalidKoid` and must not be
+  // coalesced.
+  cb->AddWaitSemaphore(sem2, vk::PipelineStageFlagBits::eTransfer);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 2u);
+  ASSERT_EQ(GetWaitSemaphores(cb).size(), 2u);
+  EXPECT_EQ(GetWaitSemaphores(cb)[0], sem1);
+  EXPECT_EQ(GetWaitSemaphores(cb)[1], sem2);
+  ASSERT_EQ(GetWaitSemaphoreStages(cb).size(), 2u);
+  EXPECT_EQ(GetWaitSemaphoreStages(cb)[1], vk::PipelineStageFlagBits::eTransfer);
+
+  // Adding `sem2` a second time must merge into index 1 without modifying index 0.
+  cb->AddWaitSemaphore(sem2, vk::PipelineStageFlagBits::eComputeShader);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 2u);
+  ASSERT_EQ(GetWaitSemaphores(cb).size(), 2u);
+  EXPECT_EQ(GetWaitSemaphores(cb)[0], sem1);
+  EXPECT_EQ(GetWaitSemaphores(cb)[1], sem2);
+  ASSERT_EQ(GetWaitSemaphoreStages(cb).size(), 2u);
+  EXPECT_EQ(GetWaitSemaphoreStages(cb)[0],
+            vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader);
+  EXPECT_EQ(GetWaitSemaphoreStages(cb)[1],
+            vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eComputeShader);
+
+  EXPECT_TRUE(cb->Submit(nullptr));
+}
+
+VK_TEST_F(CommandBufferTest, AddSignalSemaphoreIgnoresNullAndDeduplicatesSamePointer) {
+  auto escher = test::GetEscher();
+  auto cb = CommandBuffer::NewForGraphics(escher, false);
+
+  auto sem1 = Semaphore::New(escher->vk_device());
+  auto sem2 = Semaphore::New(escher->vk_device());
+  EXPECT_EQ(sem1->koid(), Semaphore::kInvalidKoid);
+  EXPECT_EQ(sem2->koid(), Semaphore::kInvalidKoid);
+
+  cb->AddSignalSemaphore(SemaphorePtr());
+  EXPECT_EQ(cb->NumSignalSemaphores(), 0u);
+  EXPECT_FALSE(cb->ContainsSignalSemaphore(SemaphorePtr()));
+
+  cb->AddSignalSemaphore(sem1);
+  EXPECT_EQ(cb->NumSignalSemaphores(), 1u);
+  EXPECT_FALSE(cb->ContainsSignalSemaphore(SemaphorePtr()));
+  EXPECT_TRUE(cb->ContainsSignalSemaphore(sem1));
+  EXPECT_FALSE(cb->ContainsSignalSemaphore(sem2));
+
+  cb->AddSignalSemaphore(sem1);
+  EXPECT_EQ(cb->NumSignalSemaphores(), 1u);
+
+  // Distinct unimported semaphores both have `koid() == Semaphore::kInvalidKoid` and must not be
+  // coalesced.
+  cb->AddSignalSemaphore(sem2);
+  EXPECT_EQ(cb->NumSignalSemaphores(), 2u);
+  EXPECT_TRUE(cb->ContainsSignalSemaphore(sem2));
+
+  EXPECT_TRUE(cb->Submit(nullptr));
+}
+
+#ifdef __Fuchsia__
+VK_TEST_F(CommandBufferTest, AddWaitSemaphoreDeduplicatesSameKoidAndMergesStages) {
+  auto escher = test::GetEscher();
+  auto cb = CommandBuffer::NewForGraphics(escher, false);
+
+  zx::event event1;
+  ASSERT_EQ(zx::event::create(0u, &event1), ZX_OK);
+  zx::event event1_dup1;
+  zx::event event1_dup2;
+  ASSERT_EQ(event1.duplicate(ZX_RIGHT_SAME_RIGHTS, &event1_dup1), ZX_OK);
+  ASSERT_EQ(event1.duplicate(ZX_RIGHT_SAME_RIGHTS, &event1_dup2), ZX_OK);
+
+  zx::event event2;
+  ASSERT_EQ(zx::event::create(0u, &event2), ZX_OK);
+  zx::event event2_dup;
+  ASSERT_EQ(event2.duplicate(ZX_RIGHT_SAME_RIGHTS, &event2_dup), ZX_OK);
+
+  // Import two duplicate handles to `event1` into two distinct `Semaphore` objects.
+  auto sem1_a = escher->semaphore_pool()->AllocateAndImport(std::move(event1_dup1));
+  auto sem1_b = escher->semaphore_pool()->AllocateAndImport(std::move(event1_dup2));
+  auto sem2 = escher->semaphore_pool()->AllocateAndImport(std::move(event2_dup));
+
+  ASSERT_NE(sem1_a, sem1_b);
+  EXPECT_NE(sem1_a->vk_semaphore(), sem1_b->vk_semaphore());
+  EXPECT_NE(sem1_a->koid(), Semaphore::kInvalidKoid);
+  EXPECT_EQ(sem1_a->koid(), sem1_b->koid());
+  EXPECT_NE(sem1_a->koid(), sem2->koid());
+
+  cb->AddWaitSemaphore(sem1_a, vk::PipelineStageFlagBits::eColorAttachmentOutput);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 1u);
+  ASSERT_EQ(GetWaitSemaphores(cb).size(), 1u);
+  EXPECT_EQ(GetWaitSemaphores(cb)[0], sem1_a);
+
+  // Adding a distinct `Semaphore` wrapping the same underlying Zircon event must coalesce into the
+  // existing wait entry and merge pipeline stages, preventing a double-wait deadlock on submit.
+  cb->AddWaitSemaphore(sem1_b, vk::PipelineStageFlagBits::eTransfer);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 1u);
+  ASSERT_EQ(GetWaitSemaphores(cb).size(), 1u);
+  EXPECT_EQ(GetWaitSemaphores(cb)[0], sem1_a);
+  ASSERT_EQ(GetWaitSemaphoreStages(cb).size(), 1u);
+  EXPECT_EQ(GetWaitSemaphoreStages(cb)[0], vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                                               vk::PipelineStageFlagBits::eTransfer);
+
+  cb->AddWaitSemaphore(sem2, vk::PipelineStageFlagBits::eFragmentShader);
+  EXPECT_EQ(cb->NumWaitSemaphores(), 2u);
+  ASSERT_EQ(GetWaitSemaphores(cb).size(), 2u);
+  EXPECT_EQ(GetWaitSemaphores(cb)[0], sem1_a);
+  EXPECT_EQ(GetWaitSemaphores(cb)[1], sem2);
+
+  // The wait count and merged stage assertions above are what this test verifies; signal both
+  // events so `Submit()` and `TearDown()` complete cleanly.
+  ASSERT_EQ(event1.signal(0u, ZX_EVENT_SIGNALED), ZX_OK);
+  ASSERT_EQ(event2.signal(0u, ZX_EVENT_SIGNALED), ZX_OK);
+  EXPECT_TRUE(cb->Submit(nullptr));
+}
+
+VK_TEST_F(CommandBufferTest, AddSignalSemaphoreDeduplicatesSameKoid) {
+  auto escher = test::GetEscher();
+  auto cb = CommandBuffer::NewForGraphics(escher, false);
+
+  zx::event event1;
+  ASSERT_EQ(zx::event::create(0u, &event1), ZX_OK);
+  zx::event event1_dup1;
+  zx::event event1_dup2;
+  ASSERT_EQ(event1.duplicate(ZX_RIGHT_SAME_RIGHTS, &event1_dup1), ZX_OK);
+  ASSERT_EQ(event1.duplicate(ZX_RIGHT_SAME_RIGHTS, &event1_dup2), ZX_OK);
+
+  zx::event event2;
+  ASSERT_EQ(zx::event::create(0u, &event2), ZX_OK);
+  zx::event event2_dup;
+  ASSERT_EQ(event2.duplicate(ZX_RIGHT_SAME_RIGHTS, &event2_dup), ZX_OK);
+
+  // Import one handle via `SemaphorePool::AllocateAndImport` and one via `GetSemaphoreForEvent` to
+  // verify that both import paths record the event KOID.
+  auto sem1_a = escher->semaphore_pool()->AllocateAndImport(std::move(event1_dup1));
+  auto sem1_b = GetSemaphoreForEvent(escher->device(), std::move(event1_dup2));
+  auto sem2 = escher->semaphore_pool()->AllocateAndImport(std::move(event2_dup));
+
+  ASSERT_NE(sem1_a, sem1_b);
+  EXPECT_TRUE(sem1_b->is_imported());
+  EXPECT_NE(sem1_a->koid(), Semaphore::kInvalidKoid);
+  EXPECT_EQ(sem1_a->koid(), sem1_b->koid());
+  EXPECT_NE(sem1_a->koid(), sem2->koid());
+
+  cb->AddSignalSemaphore(sem1_a);
+  EXPECT_EQ(cb->NumSignalSemaphores(), 1u);
+  EXPECT_TRUE(cb->ContainsSignalSemaphore(sem1_a));
+  EXPECT_TRUE(cb->ContainsSignalSemaphore(sem1_b));
+  EXPECT_FALSE(cb->ContainsSignalSemaphore(sem2));
+
+  cb->AddSignalSemaphore(sem1_b);
+  EXPECT_EQ(cb->NumSignalSemaphores(), 1u);
+
+  cb->AddSignalSemaphore(sem2);
+  EXPECT_EQ(cb->NumSignalSemaphores(), 2u);
+  EXPECT_TRUE(cb->ContainsSignalSemaphore(sem2));
+
+  EXPECT_TRUE(cb->Submit(nullptr));
+  EXPECT_EQ(event1.wait_one(ZX_EVENT_SIGNALED, zx::deadline_after(zx::sec(30)), nullptr), ZX_OK);
+  EXPECT_EQ(event2.wait_one(ZX_EVENT_SIGNALED, zx::deadline_after(zx::sec(30)), nullptr), ZX_OK);
+}
+#endif
 
 }  // namespace

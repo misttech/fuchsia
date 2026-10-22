@@ -5,6 +5,10 @@
 #ifndef SRC_UI_LIB_ESCHER_IMPL_SEMAPHORE_POOL_H_
 #define SRC_UI_LIB_ESCHER_IMPL_SEMAPHORE_POOL_H_
 
+#ifndef __Fuchsia__
+#error "This file is Fuchsia-only."
+#endif
+
 #include <lib/zx/event.h>
 
 #include <vector>
@@ -33,7 +37,7 @@ class SemaphorePool {
   friend class Semaphore;
 
   // Return a semaphore to the pool. Routes it to either the cleaned or uncleaned
-  // free list depending on its current import state, and resets its imported flag.
+  // free list depending on its current import state, and resets its imported KOID.
   void ReturnSemaphore(SemaphorePtr semaphore);
 
   vk::Device device_;

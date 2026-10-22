@@ -1033,10 +1033,7 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
 
     // Create a flow event that ends in the magma system driver.
     if (TRACE_ENABLED()) {
-      zx_info_handle_basic_t koid_info;
-      fence_original.get_info(ZX_INFO_HANDLE_BASIC, &koid_info, sizeof(koid_info), nullptr,
-                              nullptr);
-      TRACE_FLOW_BEGIN("gfx", "semaphore", koid_info.koid);
+      TRACE_FLOW_BEGIN("gfx", "semaphore", sema->koid());
     }
 
     // TODO(https://fxbug.dev/42174813): Semaphore lifetime should be guaranteed by Escher. This

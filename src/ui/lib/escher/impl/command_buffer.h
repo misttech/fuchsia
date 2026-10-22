@@ -16,6 +16,7 @@
 #include "src/ui/lib/escher/vk/vulkan_context.h"
 
 namespace escher {
+class VulkanTester;
 typedef fit::function<void()> CommandBufferFinishedCallback;
 
 namespace impl {
@@ -47,15 +48,18 @@ class CommandBuffer {
   bool Submit(vk::Queue queue, CommandBufferFinishedCallback callback);
 
   // During Submit(), these semaphores will be added to the vk::SubmitInfo.
-  // No-op if semaphore is null.
+  // No-op if semaphore is null. If a matching semaphore (by pointer or non-zero imported event
+  // KOID) is already present, merges |stage| into its existing pipeline stage mask instead of
+  // adding a duplicate entry.
   void AddWaitSemaphore(SemaphorePtr semaphore, vk::PipelineStageFlags stage);
 
   // During Submit(), these semaphores will be added to the vk::SubmitInfo.
-  // No-op if semaphore is null.
+  // No-op if semaphore is null or if a matching semaphore (by pointer or non-zero imported event
+  // KOID) is already present.
   void AddSignalSemaphore(SemaphorePtr semaphore);
 
-  // Checks to see if the provided semaphore is part of the command buffer's vector
-  // of signal semaphores.
+  // Checks whether |semaphore| (matching by pointer or non-zero imported event KOID) is already in
+  // the command buffer's signal semaphore list.
   bool ContainsSignalSemaphore(const SemaphorePtr& semaphore) const;
 
   // These resources will be retained until the command-buffer is finished
@@ -118,6 +122,7 @@ class CommandBuffer {
 
  private:
   friend class CommandBufferPool;
+  friend class escher::VulkanTester;
 
   // Called by CommandBufferPool, which is responsible for eventually destroying
   // the Vulkan command buffer and fence.  Submit() and Retire() use the fence

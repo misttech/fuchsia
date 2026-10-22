@@ -5,6 +5,10 @@
 #ifndef SRC_UI_LIB_ESCHER_UTIL_FUCHSIA_UTILS_H_
 #define SRC_UI_LIB_ESCHER_UTIL_FUCHSIA_UTILS_H_
 
+#ifndef __Fuchsia__
+#error "This file is Fuchsia-only."
+#endif
+
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/zx/event.h>
 #include <lib/zx/vmo.h>
@@ -15,6 +19,15 @@
 #include "src/ui/lib/escher/vk/color_space.h"
 
 namespace escher {
+
+// Creates a fresh unsignaled `zx::event`. On failure, logs an error, fails `FX_DCHECK` in debug
+// builds, and returns an invalid handle in release builds.
+zx::event CreateEvent();
+
+// Queries `ZX_INFO_HANDLE_BASIC` for `event` and returns its kernel object ID (`zx_koid_t`).
+// On failure, logs an error, fails `FX_DCHECK` in debug builds, and returns
+// `Semaphore::kInvalidKoid` (`ZX_KOID_INVALID`) in release builds.
+zx_koid_t GetEventKoid(const zx::event& event);
 
 // Create a new escher::Semaphore and a corresponding zx::event using
 // the VK_KHR_EXTERNAL_SEMAPHORE_FD extension.  If it fails, both elements

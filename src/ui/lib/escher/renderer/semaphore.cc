@@ -4,7 +4,9 @@
 
 #include "src/ui/lib/escher/renderer/semaphore.h"
 
+#ifdef __Fuchsia__
 #include "src/ui/lib/escher/impl/semaphore_pool.h"
+#endif
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 
@@ -37,11 +39,13 @@ SemaphorePtr Semaphore::New(vk::Device device, SemaphorePool* pool) {
 }
 
 bool Semaphore::OnZeroRefCount() {
+#ifdef __Fuchsia__
   if (pool_) {
     // Retain the ref-count to prevent immediate deletion during ReturnSemaphore execution.
     pool_->ReturnSemaphore(SemaphorePtr(this));
     return false;  // Defer destruction!
   }
+#endif
   return true;  // Destroy if unpooled.
 }
 

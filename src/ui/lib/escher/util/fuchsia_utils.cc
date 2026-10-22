@@ -16,11 +16,32 @@
 
 namespace escher {
 
-std::pair<escher::SemaphorePtr, zx::event> NewSemaphoreEventPair(escher::Escher* escher) {
+zx::event CreateEvent() {
   zx::event event;
-  zx_status_t status = zx::event::create(0u, &event);
+  const zx_status_t status = zx::event::create(0u, &event);
   if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to create event to import as VkSemaphore.";
+    FX_LOGS(ERROR) << "Failed to create zx::event: " << status;
+    FX_DCHECK(false);
+    return zx::event();
+  }
+  return event;
+}
+
+zx_koid_t GetEventKoid(const zx::event& event) {
+  zx_info_handle_basic_t koid_info{};
+  const zx_status_t status =
+      event.get_info(ZX_INFO_HANDLE_BASIC, &koid_info, sizeof(koid_info), nullptr, nullptr);
+  if (status != ZX_OK) {
+    FX_LOGS(ERROR) << "Failed to query ZX_INFO_HANDLE_BASIC for event: " << status;
+    FX_DCHECK(false);
+    return Semaphore::kInvalidKoid;
+  }
+  return koid_info.koid;
+}
+
+std::pair<escher::SemaphorePtr, zx::event> NewSemaphoreEventPair(escher::Escher* escher) {
+  zx::event event = CreateEvent();
+  if (!event) {
     return std::make_pair(escher::SemaphorePtr(), zx::event());
   }
 
@@ -37,6 +58,11 @@ std::pair<escher::SemaphorePtr, zx::event> NewSemaphoreEventPair(escher::Escher*
 }
 
 escher::SemaphorePtr GetSemaphoreForEvent(VulkanDeviceQueues* device, zx::event event) {
+  const zx_koid_t koid = GetEventKoid(event);
+  if (koid == Semaphore::kInvalidKoid) {
+    return escher::SemaphorePtr();
+  }
+
   auto sema = escher::Semaphore::New(device->vk_device());
 
   vk::ImportSemaphoreZirconHandleInfoFUCHSIA info;
@@ -51,6 +77,7 @@ escher::SemaphorePtr GetSemaphoreForEvent(VulkanDeviceQueues* device, zx::event 
     zx_handle_close(info.zirconHandle);
     return escher::SemaphorePtr();
   }
+  sema->set_koid(koid);
   return sema;
 }
 
