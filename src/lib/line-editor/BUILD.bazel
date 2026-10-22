@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "line-editor",
+    srcs = [
+        "src/config.rs",
+        "src/control.rs",
+        "src/editor.rs",
+        "src/history.rs",
+        "src/io.rs",
+        "src/lib.rs",
+        "src/state.rs",
+        "src/tests.rs",
+        "src/types.rs",
+    ],
+    edition = "2024",
+    visibility = ["//src/zircon/bin/zxsh:__pkg__"],
+    deps = [
+        "//third_party/rust_crates/vendor:bstr",
+        "//third_party/rust_crates/vendor:libc",
+    ],
+)
+
+rustc_test(
+    name = "line-editor_test",
+    crate = ":line-editor",
+    edition = "2024",
+)
+
+fx_unittest_package(
+    name = "line-editor-tests",
+    unit_tests = [":line-editor_test"],
+)
