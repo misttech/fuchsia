@@ -72,6 +72,7 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
       "vk/image_layout_updater_unittest.cc",
       "vk/push_constant_range_unittest.cc",
       "vk/render_pass_info_unittest.cc",
+      "vk/texture_unittest.cc",
       "vk/validation_layer_test.cc",
       "vk/vulkan_tester.h",
       "vk/vulkan_utils_unittest.cc",

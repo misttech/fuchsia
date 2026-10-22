@@ -9,6 +9,7 @@
 #include "src/ui/lib/escher/resources/resource.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 #include "src/ui/lib/escher/vk/image.h"
+#include "src/ui/lib/escher/vk/sampler.h"
 
 namespace escher {
 
@@ -18,25 +19,28 @@ class ImageView : public Resource {
   const ResourceTypeInfo& type_info() const override { return kTypeInfo; }
 
   // Construct an ImageView, which encapsulates a newly-created VkImageView.
-  // |aspect_mask| is used to create the VkImageView, and |resource_recycler|
+  // `aspect_mask` is used to create the VkImageView, and `resource_recycler`
   // guarantees that the underlying Vulkan resources are not destroyed while
-  // still referenced by a pending command buffer. |extension_data| is used
-  // as the pNext pointer in the ImageView's construction, and is assumed to be
-  // a temporary variable.
+  // still referenced by a pending command buffer. If `sampler` has extension
+  // data (e.g., VkSamplerYcbcrConversionInfo), it is passed via pNext during
+  // VkImageView creation and `sampler` is retained so the conversion outlives
+  // the VkImageView.
   ImageView(ResourceRecycler* resource_recycler, ImagePtr image,
             vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlags(),
-            void* extension_data = nullptr);
+            SamplerPtr sampler = nullptr);
   ~ImageView() override;
 
-  static ImageViewPtr New(ImagePtr image,
-                          vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlags());
+  static ImageViewPtr New(ImagePtr image, vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlags(),
+                          SamplerPtr sampler = nullptr);
 
   // TODO(https://fxbug.dev/42151125): unfortunately we can't just get the recycler from
   // image->escher(), because that is null for Vulkan swapchain images.
   static ImageViewPtr New(ResourceRecycler* resource_recycler, ImagePtr image,
-                          vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlags());
+                          vk::ImageAspectFlags aspect_mask = vk::ImageAspectFlags(),
+                          SamplerPtr sampler = nullptr);
 
   const ImagePtr& image() const { return image_; }
+  const SamplerPtr& sampler() const { return sampler_; }
   vk::ImageView vk() const { return image_view_; }
 
   // TODO(https://fxbug.dev/42151125): for a depth-stencil texture, we may want to sample the
@@ -50,7 +54,11 @@ class ImageView : public Resource {
   uint32_t height() const { return height_; }
 
  private:
+  // `image_` and `sampler_` are destroyed after ~ImageView() destroys `image_view_`,
+  // ensuring that the underlying VkImage and any VkSamplerYcbcrConversion owned by
+  // `sampler_` outlive the VkImageView.
   ImagePtr image_;
+  SamplerPtr sampler_;
   vk::ImageView image_view_;
   uint32_t width_;
   uint32_t height_;

@@ -32,15 +32,17 @@ TexturePtr Texture::New(ResourceRecycler* resource_recycler, ImagePtr image, vk:
                         "multiple Texture objects.";
   }
 
-  return fxl::MakeRefCounted<Texture>(resource_recycler, std::move(sampler), image, aspect_mask);
+  return fxl::MakeRefCounted<Texture>(resource_recycler, std::move(sampler), std::move(image),
+                                      aspect_mask);
 }
 
 Texture::Texture(ResourceRecycler* recycler, SamplerPtr sampler, ImagePtr image,
                  vk::ImageAspectFlags aspect_mask)
-    : ImageView(recycler, image, aspect_mask, sampler->GetExtensionData()),
-      sampler_(std::move(sampler)),
-      is_yuv_format_(image_utils::IsYuvFormat(image->format())) {}
+    : ImageView(recycler, std::move(image), aspect_mask, std::move(sampler)),
+      is_yuv_format_(image_utils::IsYuvFormat(this->image()->format())) {
+  FX_DCHECK(this->sampler());
+}
 
-Texture::~Texture() {}
+Texture::~Texture() = default;
 
 }  // namespace escher

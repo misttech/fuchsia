@@ -18,9 +18,10 @@ const ResourceTypeInfo ImageView::kTypeInfo("ImageView", ResourceType::kResource
                                             ResourceType::kImageView);
 
 ImageView::ImageView(ResourceRecycler* resource_recycler, ImagePtr image,
-                     vk::ImageAspectFlags aspect_mask, void* extension_data)
+                     vk::ImageAspectFlags aspect_mask, SamplerPtr sampler)
     : Resource(resource_recycler),
       image_(std::move(image)),
+      sampler_(std::move(sampler)),
       width_(image_->width()),
       height_(image_->height()) {
   if (!aspect_mask) {
@@ -39,7 +40,7 @@ ImageView::ImageView(ResourceRecycler* resource_recycler, ImagePtr image,
   }
 
   vk::ImageViewCreateInfo view_info;
-  view_info.pNext = extension_data;
+  view_info.pNext = sampler_ ? sampler_->GetExtensionData() : nullptr;
   view_info.viewType = vk::ImageViewType::e2D;
   view_info.subresourceRange.baseMipLevel = 0;
   view_info.subresourceRange.levelCount = 1;
@@ -53,15 +54,17 @@ ImageView::ImageView(ResourceRecycler* resource_recycler, ImagePtr image,
 
 ImageView::~ImageView() { vk_device().destroyImageView(image_view_); }
 
-ImageViewPtr ImageView::New(ImagePtr image, vk::ImageAspectFlags aspect_mask) {
+ImageViewPtr ImageView::New(ImagePtr image, vk::ImageAspectFlags aspect_mask, SamplerPtr sampler) {
   FX_CHECK(image && image->escher());
-  return fxl::MakeRefCounted<ImageView>(image->escher()->resource_recycler(), std::move(image),
-                                        aspect_mask);
+  auto* recycler = image->escher()->resource_recycler();
+  return fxl::MakeRefCounted<ImageView>(recycler, std::move(image), aspect_mask,
+                                        std::move(sampler));
 }
 
 ImageViewPtr ImageView::New(ResourceRecycler* recycler, ImagePtr image,
-                            vk::ImageAspectFlags aspect_mask) {
-  return fxl::MakeRefCounted<ImageView>(recycler, std::move(image), aspect_mask);
+                            vk::ImageAspectFlags aspect_mask, SamplerPtr sampler) {
+  return fxl::MakeRefCounted<ImageView>(recycler, std::move(image), aspect_mask,
+                                        std::move(sampler));
 }
 
 }  // namespace escher

@@ -168,11 +168,13 @@ Sampler::Sampler(ResourceRecycler* resource_recycler, vk::Format format, vk::Fil
 }
 
 Sampler::~Sampler() {
+  // All VkSampler and VkImageView objects created using a VkSamplerYcbcrConversion
+  // must be destroyed prior to destroying the conversion.
+  vk_device().destroySampler(sampler_);
   if (is_immutable_) {
     vk_device().destroySamplerYcbcrConversionKHR(ycbcr_conversion_.conversion, nullptr,
                                                  vulkan_context().loader);
   }
-  vk_device().destroySampler(sampler_);
 }
 
 }  // namespace escher
