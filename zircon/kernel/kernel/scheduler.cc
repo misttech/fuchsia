@@ -10,10 +10,8 @@
 #include <debug.h>
 #include <inttypes.h>
 #include <lib/arch/intrin.h>
-#include <lib/counters.h>
 #include <lib/kconcurrent/chainlock.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
-#include <lib/ktrace.h>
 #include <lib/sched/affine.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
@@ -26,17 +24,12 @@
 #include <arch/interrupt.h>
 #include <arch/ops.h>
 #include <arch/thread.h>
-#include <ffl/string.h>
-#include <kernel/auto_preempt_disabler.h>
 #include <kernel/cpu.h>
-#include <kernel/event_limiter.h>
 #include <kernel/ffi.h>
 #include <kernel/lockdep.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
-#include <kernel/scheduler_inline.h>
 #include <kernel/scheduler_state.h>
-#include <kernel/scheduler_tracing.h>
 #include <kernel/thread.h>
 #include <ktl/algorithm.h>
 #include <ktl/forward.h>
@@ -49,39 +42,7 @@
 #include <object/thread_dispatcher.h>
 #include <vm/vm.h>
 
-// TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
-// when unblocking once we solve races higher in the stack.
-#include <lib/boot-options/boot-options.h>
-
 #include <ktl/enforce.h>
-
-using ffl::Round;
-
-void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
-  rust_kernel_scheduler_dump(this, output_target, queue_state_only);
-}
-
-void Scheduler::DumpActiveThread(FILE* output_target) {
-  rust_kernel_scheduler_dump_active_thread(this, output_target);
-}
-
-SchedWeight Scheduler::GetTotalWeight() const {
-  Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-  return rust_state_.weight_total;
-}
-
-size_t Scheduler::GetRunnableTasks() const {
-  Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-  const int64_t total_runnable_tasks = runnable_task_count();
-  return static_cast<size_t>(total_runnable_tasks);
-}
-
-Scheduler* Scheduler::Get() { return Get(arch_curr_cpu_num()); }
-
-Scheduler* Scheduler::Get(cpu_num_t cpu) {
-  AssertLayout();
-  return &percpu::Get(cpu).scheduler;
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_dump_active(const Thread* thread,
@@ -95,6 +56,56 @@ FFI_ALWAYS_INLINE void cpp_thread_dump_active(const Thread* thread,
     DEBUG_ASSERT(status == ZX_OK);
     fprintf(output_target, "process: name=%s\n", name);
   }
+}
+
+Scheduler* Scheduler::Get() { return Get(arch_curr_cpu_num()); }
+
+Scheduler* Scheduler::Get(cpu_num_t cpu) { return &percpu::Get(cpu).scheduler; }
+
+void Scheduler::SetPowerDomainSet(PowerDomainSet power_domain_set) {
+  percpu::ForEach([&power_domain_set](cpu_num_t cpu_num, percpu* percpu) {
+    percpu->scheduler.ExchangePowerDomainSet(power_domain_set);
+  });
+}
+
+zx::result<cpu_mask_t> Scheduler::UpdatePowerLevel(uint32_t domain_id, uint64_t controller_id,
+                                                   power_management::ControlInterface interface,
+                                                   uint64_t arg) {
+  // Get a ref to the power domain using the power domain set for the current
+  // CPU.
+  fbl::RefPtr<PowerDomain> domain;
+  {
+    Scheduler* scheduler = Get();
+    Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
+    const PowerDomainSet& power_domain_set = scheduler->power_state_.power_domain_set();
+    domain = fbl::RefPtr{power_domain_set.FindByDomainId(domain_id)};
+  }
+
+  if (!domain) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  if (domain->controller()->id() != controller_id ||
+      domain->controller()->control_interface() != interface) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  ktl::optional<uint8_t> power_level = domain->model().FindPowerLevel(interface, arg);
+  if (!power_level.has_value()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  cpu_mask_t domain_cpus = domain->cpus();
+  cpu_mask_t cpus_to_reschedule_mask = 0;
+  while (domain_cpus != 0) {
+    const cpu_num_t cpu_num = remove_cpu_from_mask(domain_cpus);
+    Scheduler* scheduler = Get(cpu_num);
+    if (scheduler->UpdateActivePowerLevel(*power_level).is_ok()) {
+      cpus_to_reschedule_mask |= cpu_num_to_mask(cpu_num);
+    }
+  }
+
+  return zx::ok(cpus_to_reschedule_mask);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -364,287 +375,4 @@ FFI_ALWAYS_INLINE uint32_t cpp_scheduler_power_level_control_domain_id(const Sch
 FFI_ALWAYS_INLINE SchedUtilization cpp_scheduler_power_level_control_total_normalized_utilization(
     const Scheduler* sched) TA_NO_THREAD_SAFETY_ANALYSIS {
   return sched->power_state_.total_normalized_utilization();
-}
-
-void Scheduler::InitializeThread(Thread* thread, const SchedulerState::BaseProfile& profile) {
-  new (&thread->scheduler_state()) SchedulerState{profile};
-  thread->scheduler_state().expected_runtime_ns_ =
-      profile.IsFair() ? kMinimumFairCapacity : profile.deadline.capacity_ns;
-}
-
-// Initialize the first thread to run on the current CPU.  Called from
-// thread_construct_first, this method will initialize the thread's scheduler
-// state, then mark the thread as being "active" in its cpu's scheduler.
-void Scheduler::InitializeFirstThread(Thread* thread) {
-  cpu_num_t current_cpu = arch_curr_cpu_num();
-
-  // Construct our scheduler state and assign a "priority"
-  InitializeThread(thread, SchedulerState::BaseProfile{HIGHEST_PRIORITY});
-
-  // Fill out other details about the thread, making sure to assign it to the
-  // current CPU with hard affinity.
-  SchedulerState& state = thread->scheduler_state();
-  state.state_ = THREAD_RUNNING;
-  state.curr_cpu_ = current_cpu;
-  state.last_cpu_ = current_cpu;
-  state.hard_affinity_ = cpu_num_to_mask(current_cpu);
-
-  // Finally, make sure that the thread is the active thread for the scheduler,
-  // and that the weight_total bookkeeping is accurate.
-  {
-    Scheduler* scheduler = Get(current_cpu);
-    Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&scheduler->queue_lock_, SOURCE_TAG};
-    scheduler->AssertInScheduler(*thread);
-
-    SchedulerQueueState& queue_state = thread->scheduler_queue_state();
-    queue_state.OnInsert();
-    scheduler->rust_state_.active_thread = thread;
-
-    scheduler->rust_state_.weight_total += state.effective_profile_.weight();
-    DEBUG_ASSERT(scheduler->rust_state_.weight_total > SchedWeight{0});
-    scheduler->rust_state_.runnable_task_count++;
-    scheduler->UpdateTotalExpectedRuntime(state.expected_runtime_ns_);
-  }
-}
-
-// Remove the impact of a CPUs first thread from the scheduler's bookkeeping.
-//
-// During initial startup, threads are not _really_ being scheduled, yet they
-// can still do things like obtain locks and block, resulting in profile
-// inheritance.  In order to hold the scheduler's bookkeeping invariants, we
-// assign these threads a fair weight, and include it in the total fair weight
-// tracked by the scheduler instance.  When the thread either becomes the idle
-// thread (as the boot CPU first thread does), or exits (as secondary CPU first
-// threads do), it is important that we remove this weight from the total
-// bookkeeping.  However, this is not as simple as just changing the thread's
-// weight via ChangeWeight, as idle threads are special cases who contribute no
-// weight to the total.
-//
-// So, this small method simply fixes up the bookkeeping before allowing the
-// thread to move on to become the idle thread (boot CPU), or simply exiting
-// (secondary CPU).
-void Scheduler::RemoveFirstThread(Thread* thread) {
-  cpu_num_t current_cpu = arch_curr_cpu_num();
-  Scheduler* scheduler = Get(current_cpu);
-  SchedulerState& state = thread->scheduler_state();
-
-  // Since this is becoming an idle thread, it must have been one of the CPU's
-  // first threads.  It should already be bound to this core with hard affinity.
-  // Assert this.
-  DEBUG_ASSERT(state.last_cpu_ == current_cpu);
-  DEBUG_ASSERT(state.curr_cpu_ == current_cpu);
-  DEBUG_ASSERT(state.hard_affinity_ == cpu_num_to_mask(current_cpu));
-
-  {
-    Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&scheduler->queue_lock_, SOURCE_TAG};
-    scheduler->AssertInScheduler(*thread);
-    SchedulerQueueState& queue_state = thread->scheduler_queue_state();
-
-    // We are becoming the idle thread.  We should currently be running with a
-    // fair (not deadline) profile, and we should not be holding any locks
-    // (therefore, we should not be inheriting any profile pressure).
-    DEBUG_ASSERT(state.base_profile_.IsFair());
-    DEBUG_ASSERT(state.inherited_profile_values_.total_weight == SchedWeight{0});
-    DEBUG_ASSERT(state.inherited_profile_values_.uncapped_utilization == SchedUtilization{0});
-
-    // We should also be the currently active thread on this core, but no
-    // longer.  We are about to either exit, or "UnblockIdle".
-    DEBUG_ASSERT(scheduler->rust_state_.active_thread == thread);
-    DEBUG_ASSERT(scheduler->rust_state_.runnable_task_count > 0);
-    queue_state.OnRemove(INVALID_CPU);  // Set active to false.
-    scheduler->rust_state_.active_thread = nullptr;
-    scheduler->rust_state_.weight_total -= state.effective_profile_.weight();
-    DEBUG_ASSERT(scheduler->rust_state_.weight_total >= SchedWeight{0});
-    scheduler->rust_state_.runnable_task_count--;
-    scheduler->UpdateTotalExpectedRuntime(-state.expected_runtime_ns_);
-
-    state.base_profile_.fair.weight = SchedulerState::ConvertPriorityToWeight(IDLE_PRIORITY);
-    state.effective_profile_.MarkBaseProfileChanged();
-    state.RecomputeEffectiveProfile();
-  }
-}
-
-// Attempts to steal work from other busy CPUs and move it to the local run
-// queues. Returns a pointer to the stolen thread that is now associated with
-// the local Scheduler instance, or nullptr is no work was stolen.
-Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate processing_rate) {
-  DequeueResult result;
-  rust_scheduler_steal_work(this, now, processing_rate, &result);
-  return result;
-}
-
-Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
-                                             const Thread* reference_thread) {
-  return rust_scheduler_find_earlier_deadline_thread(this, eligible_time, reference_thread);
-}
-
-SchedTime Scheduler::GetNextEligibleTime() const {
-  return rust_scheduler_get_next_eligible_time(this);
-}
-
-void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
-                                                 SchedMonoTimeAndBootTicks now,
-                                                 SchedDuration actual_runtime_ns) {
-  rust_scheduler_update_estimated_energy_consumption(this, current_thread, now.mono_time,
-                                                     now.boot_ticks, actual_runtime_ns);
-}
-
-void Scheduler::UpdateCpuStatsSegment(SchedTime now, CpuStatsSegmentType stats_segment_type,
-                                      SchedProcessingRate segment_processing_rate) const {
-  rust_scheduler_update_cpu_stats_segment(
-      this, now, stats_segment_type == CpuStatsSegmentType::Idle, segment_processing_rate);
-}
-
-cpu_stats Scheduler::GetProjectedCpuStats(cpu_num_t cpu_num) {
-  cpu_stats stats;
-  rust_kernel_scheduler_get_projected_cpu_stats(cpu_num, &stats);
-  return stats;
-}
-
-void Scheduler::TrampolineLockHandoff() { rust_kernel_scheduler_lock_handoff(); }
-
-SchedDuration Scheduler::CalculateTimeslice(const Thread* thread) {
-  return rust_scheduler_calculate_timeslice(this, thread);
-}
-
-SchedTime Scheduler::ClampToDeadline(SchedTime completion_time) {
-  return rust_scheduler_clamp_to_deadline(this, completion_time);
-}
-
-SchedTime Scheduler::ClampToEarlierDeadline(SchedTime completion_time,
-                                            const Thread* reference_thread) {
-  return rust_scheduler_clamp_to_earlier_deadline(this, completion_time, reference_thread);
-}
-
-SchedTime Scheduler::NextThreadTimeslice(Thread* thread, SchedTime now) {
-  return rust_scheduler_next_thread_timeslice(this, thread, now);
-}
-
-void Scheduler::UpdateActivation(Thread* thread, SchedTime now) {
-  rust_scheduler_update_activation(this, thread, now);
-}
-
-void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
-                            SchedDuration total_runtime_ns) {
-  rust_scheduler_queue_thread(this, thread, static_cast<int32_t>(placement), now);
-}
-
-void Scheduler::UpdateFairBandwidthPeriod(SchedTime now) {
-  rust_scheduler_update_fair_bandwidth_period(this, now);
-}
-
-void Scheduler::AdjustFairBandwidth(Thread* thread, SchedTime now) {
-  rust_scheduler_adjust_fair_bandwidth(this, thread, now);
-}
-
-void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
-  rust_scheduler_insert(this, now, thread, static_cast<int32_t>(placement));
-}
-
-void Scheduler::Remove(SchedTime now, Thread* thread, cpu_num_t stolen_by) {
-  rust_scheduler_remove(this, now, thread, stolen_by);
-}
-
-void Scheduler::RemoveThreadLocked(SchedTime now, Thread* thread) {
-  rust_scheduler_remove_thread_locked(this, now, thread);
-}
-
-void Scheduler::ValidateInvariantsUnconditional() const {
-  rust_scheduler_validate_invariants_unconditional(this);
-}
-
-void Scheduler::Block(Thread* const current_thread) { rust_kernel_scheduler_block(current_thread); }
-
-void Scheduler::Unblock(Thread* thread) { rust_scheduler_unblock(thread); }
-
-void Scheduler::Unblock(Thread::UnblockList list) { rust_scheduler_unblock_list(&list); }
-
-void Scheduler::UnblockSynchronous(Thread* thread) { rust_scheduler_unblock_synchronous(thread); }
-
-void Scheduler::UnblockIdle(Thread* thread) { rust_scheduler_unblock_idle(thread); }
-
-void Scheduler::Yield(Thread* const current_thread) { rust_scheduler_yield(current_thread); }
-
-void Scheduler::Preempt(PreemptType preempt_type) {
-  rust_scheduler_preempt(static_cast<uint8_t>(preempt_type));
-}
-
-void Scheduler::PreemptLocked(Thread* current_thread, PreemptType preempt_type) {
-  rust_scheduler_preempt_locked(current_thread, static_cast<uint8_t>(preempt_type));
-}
-
-void Scheduler::Reschedule(Thread* const current_thread) {
-  rust_scheduler_reschedule(current_thread);
-}
-
-void Scheduler::RescheduleInternal(Thread* const current_thread) {
-  rust_scheduler_reschedule_internal(current_thread);
-}
-
-void Scheduler::MigrateUnpinnedThreads() { rust_kernel_scheduler_migrate_unpinned_threads(Get()); }
-
-void Scheduler::TimerTick(SchedTime now) { rust_kernel_scheduler_timer_tick(now); }
-
-void Scheduler::UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info) {
-  rust_scheduler_update_processing_rates(info.data(), info.size());
-}
-
-void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
-  rust_scheduler_update_processing_limits(limits.data(), limits.size());
-}
-
-cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
-                                     AffinityType affinity_type) {
-  return rust_kernel_scheduler_set_cpu_affinity(&thread, affinity,
-                                                static_cast<int32_t>(affinity_type));
-}
-
-bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
-  return rust_scheduler_request_power_level_for_testing(this, power_level);
-}
-
-void Scheduler::SetPowerDomainSet(PowerDomainSet power_domain_set) {
-  percpu::ForEach([&power_domain_set](cpu_num_t cpu_num, percpu* percpu) {
-    percpu->scheduler.ExchangePowerDomainSet(power_domain_set);
-  });
-}
-
-zx::result<cpu_mask_t> Scheduler::UpdatePowerLevel(uint32_t domain_id, uint64_t controller_id,
-                                                   power_management::ControlInterface interface,
-                                                   uint64_t arg) {
-  // Get a ref to the power domain using the power domain set for the current
-  // CPU.
-  fbl::RefPtr<PowerDomain> domain;
-  {
-    Scheduler* scheduler = Get();
-    Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-    const PowerDomainSet& power_domain_set = scheduler->power_level_control_.power_domain_set();
-    domain = fbl::RefPtr{power_domain_set.FindByDomainId(domain_id)};
-  }
-
-  if (!domain) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-
-  if (domain->controller()->id() != controller_id ||
-      domain->controller()->control_interface() != interface) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-
-  ktl::optional<uint8_t> power_level = domain->model().FindPowerLevel(interface, arg);
-  if (!power_level.has_value()) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-
-  cpu_mask_t domain_cpus = domain->cpus();
-  cpu_mask_t cpus_to_reschedule_mask = 0;
-  while (domain_cpus != 0) {
-    const cpu_num_t cpu_num = remove_cpu_from_mask(domain_cpus);
-    Scheduler* scheduler = Get(cpu_num);
-    if (scheduler->UpdateActivePowerLevel(*power_level).is_ok()) {
-      cpus_to_reschedule_mask |= cpu_num_to_mask(cpu_num);
-    }
-  }
-
-  return zx::ok(cpus_to_reschedule_mask);
 }
