@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/object-constants.h>
 #include <lib/user_copy/user_ptr.h>
@@ -153,9 +152,6 @@ zx_status_t cpp_thread_dispatcher_read_state(ThreadDispatcher* thread, uint32_t 
 
 zx_status_t cpp_thread_dispatcher_write_state(ThreadDispatcher* thread, uint32_t state_kind,
                                               const void* buffer, size_t buffer_size) {
-  if ((state_kind & ZX_THREAD_STATE_DEBUG_REGS) && !BootOptions::Get()->enable_debugging_syscalls) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
   return thread->WriteState(static_cast<zx_thread_state_topic_t>(state_kind),
                             make_user_in_ptr(buffer), buffer_size);
 }

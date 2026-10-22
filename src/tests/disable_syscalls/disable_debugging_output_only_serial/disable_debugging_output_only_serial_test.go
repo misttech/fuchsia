@@ -35,7 +35,8 @@ func TestDisableDebuggingOutputOnlySerialSyscalls(t *testing.T) {
 
 	ensureContains(t, stdout, "zx_debug_send_command: disabled")
 	ensureContains(t, stdout, "zx_process_write_memory: disabled")
-	ensureContains(t, stdout, "zx_thread_write_state: disabled")
+	ensureContains(t, stdout, "zx_thread_write_state(ZX_THREAD_STATE_DEBUG_REGS): disabled")
+	ensureContains(t, stdout, "zx_thread_write_state(ZX_THREAD_STATE_SINGLE_STEP): enabled")
 	if stderr != "" {
 		t.Fatal(stderr)
 	}

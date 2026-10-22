@@ -34,7 +34,8 @@ func TestEnableDebuggingSyscalls(t *testing.T) {
 	ensureContains(t, stdout, "zx_debug_send_command: enabled")
 	ensureContains(t, stdout, "zx_debug_write: enabled")
 	ensureContains(t, stdout, "zx_process_write_memory: enabled")
-	ensureContains(t, stdout, "zx_thread_write_state: enabled")
+	ensureContains(t, stdout, "zx_thread_write_state(ZX_THREAD_STATE_DEBUG_REGS): enabled")
+	ensureContains(t, stdout, "zx_thread_write_state(ZX_THREAD_STATE_SINGLE_STEP): enabled")
 
 	if stderr != "" {
 		t.Fatal(stderr)

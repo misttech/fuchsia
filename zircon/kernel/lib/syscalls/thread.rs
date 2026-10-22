@@ -151,7 +151,7 @@ pub fn sys_thread_write_state(
 ) -> Result<(), Status> {
     ltracef!("handle {:#x}, kind {}\n", handle.raw_value(), kind);
 
-    if (kind & ZX_THREAD_STATE_DEBUG_REGS) != 0 && !BootOptions::get().enable_debugging_syscalls {
+    if kind == ZX_THREAD_STATE_DEBUG_REGS && !BootOptions::get().enable_debugging_syscalls {
         return Err(Status::NOT_SUPPORTED);
     }
 
