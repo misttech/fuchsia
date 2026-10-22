@@ -36,6 +36,7 @@ Global fx options: fx [OPTION] ${cmd} ...
                                    out/.
   -x                               Print commands and their arguments as they are executed.
   -xx                              Print extra logging of the fx tool itself (implies -x)
+  --invoker=INVOKER                Override the command invoker for metrics and logging.
 END
   if [[ -n "$(list_optional_features)" ]]; then
     echo "  --enable|disable=FEATURE  Enable or disable a feature (non-persistent). Valid features:"
