@@ -181,7 +181,7 @@
       <!-- GBL from Android Artifacts. -->
      <package name="fuchsia/third_party/android/gbl/mainline"
               path="prebuilt/third_party/android/gbl/mainline"
-              version="bid:14942092"/>
+              version="bid:16675970"/>
 
     <!--
         ************************************************************
