@@ -27,6 +27,7 @@ load(
     "analysis_failure_test",
     "verify_fx_test_environments",
     "verify_fx_test_realms",
+    "verify_fx_test_unstripped_binaries",
     "verify_runner_shard",
 )
 load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
@@ -258,6 +259,77 @@ verify_fx_test_realms(
     test = ":example_test",
 )
 
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_test_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_test_bin",
+    ],
+    test = ":example_test",
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_multi_unittest_package_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_second_test_bin",
+        "example_test_bin",
+    ],
+    test = ":example_multi_unittest_package",
+)
+
+fx_packaged_binary(
+    name = "example_second_test_packaged_bin",
+    testonly = True,
+    binary = ":example_second_test_bin",
+    binary_name = "example_second_test",
+)
+
+fx_component(
+    name = "example_subpackage_component",
+    testonly = True,
+    compiled_manifest = ":example_helper_manifest",
+    component_name = "example_helper",
+    deps = [
+        ":example_second_test_packaged_bin",
+    ],
+)
+
+fx_package(
+    name = "example_subpackage",
+    package_name = "fx-subpackage-example",
+    testonly = True,
+    components = [
+        ":example_subpackage_component",
+    ],
+)
+
+fx_package(
+    name = "example_test_package_with_subpackage",
+    package_name = "fx-test-package-with-subpackage-example",
+    subpackages = [
+        ":example_subpackage",
+    ],
+    test_components = [
+        ":example_test_component",
+    ],
+)
+
+fx_test(
+    name = "example_test_with_subpackage",
+    package = ":example_test_package_with_subpackage",
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_test_with_subpackage_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_second_test_bin",
+        "example_test_bin",
+    ],
+    test = ":example_test_with_subpackage",
+)
+
 fx_test(
     name = "example_test_with_test_type",
     package = ":example_test_package",
@@ -357,6 +429,7 @@ filegroup(
         ":example_multi_unittest_package",
         ":example_rust_unittest_package",
         ":example_test",
+        ":example_test_with_subpackage",
         ":example_test_with_test_type",
         ":example_unenforced_omitted_package",
         ":example_unittest_package",
@@ -365,8 +438,12 @@ filegroup(
         ":verify_example_gtest_runner_shard",
         ":verify_example_multi_component_test_realms",
         ":verify_example_multi_unittest_package_realms",
+        ":verify_example_multi_unittest_package_unstripped_binaries",
         ":verify_example_rust_runner_shard",
+        ":verify_example_rust_unittest_package_unstripped_binaries",
         ":verify_example_test_default_realm",
+        ":verify_example_test_unstripped_binaries",
+        ":verify_example_test_with_subpackage_unstripped_binaries",
         ":verify_example_test_with_test_type",
         ":verify_example_unittest_package_default_name_realms",
         ":verify_example_unittest_package_realms",
@@ -421,6 +498,16 @@ fx_unittest_package(
     name = "example_rust_unittest_package",
     package_name = "fx-rust-unittest-package-example",
     unit_tests = [":example_rust_test_bin"],
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_rust_unittest_package_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_rust_test_bin",
+        "libfdio.so",
+    ],
+    test = ":example_rust_unittest_package",
 )
 
 fx_cc_binary(

@@ -18,6 +18,11 @@ load(
     "FuchsiaPackageInfo",
 )
 load(
+    "//build/bazel/debug_symbols:aspects.bzl",
+    "DebugSymbolManifestInfo",
+    "collect_debug_symbols_manifest_aspect",
+)
+load(
     "//build/bazel/rules:current_platform_info.bzl",
     "CURRENT_PLATFORM_INFO_ATTRS",
     "get_current_platform_info",
@@ -53,6 +58,8 @@ _FUCHSIA_TEST_INFO_FIELDS = {
                        "with `component_name`, `package_url`, and `realm` fields. `realm` " +
                        "is the non-hermetic test realm moniker to run the component in, or " +
                        "None if the test is hermetic.",
+    "unstripped_binaries": "A depset of File values for the unstripped ELF binaries in the " +
+                           "test package.",
 }
 
 def _fuchsia_test_info_init(**kwargs):
@@ -177,9 +184,19 @@ def _fx_test_impl(ctx):
         **LOCAL_ONLY_ACTION_KWARGS
     )
 
+    unstripped_binaries = ctx.attr.package[DebugSymbolManifestInfo].unstripped_binaries
+
     return [
+        # Include `unstripped_binaries` in `DefaultInfo.files` so that building
+        # an `fx_test()` target on demand (e.g. `fx build --fuchsia_platform`
+        # during `fx test` or `fx coverage`) downloads the unstripped ELF
+        # binaries under `--remote_download_outputs=toplevel` without running
+        # `GenerateDebugSymbols`.
         DefaultInfo(
-            files = depset([package_manifest] + package_info.files),
+            files = depset(
+                [package_manifest] + package_info.files,
+                transitive = [unstripped_binaries],
+            ),
             executable = stub_executable(ctx),
         ),
         FuchsiaTestInfo(
@@ -192,6 +209,7 @@ def _fx_test_impl(ctx):
             package_name = package_info.package_name,
             package_manifest = package_manifest,
             test_components = test_component_entries,
+            unstripped_binaries = unstripped_binaries,
         ),
         # Found by //build/bazel/debug_symbols:aspects.bzl so that
         # //build/bazel/target_tests can export the symbols to the GN build.
@@ -240,7 +258,11 @@ fx_test = rule(
     attrs = {
         "package": attr.label(
             doc = "The `fx_package()` target containing the test components.",
-            providers = [FuchsiaPackageInfo],
+            providers = [
+                FuchsiaPackageInfo,
+                FuchsiaDebugSymbolInfo,
+            ],
+            aspects = [collect_debug_symbols_manifest_aspect],
             mandatory = True,
         ),
         "environments": attr.label_list(

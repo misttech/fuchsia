@@ -112,6 +112,44 @@ verify_fx_test_realms = rule(
     },
 )
 
+def _verify_fx_test_unstripped_binaries_impl(ctx):
+    test_info = ctx.attr.test[FuchsiaTestInfo]
+    unstripped_files = test_info.unstripped_binaries.to_list()
+    actual = sorted([f.basename for f in unstripped_files])
+    expected = sorted(ctx.attr.expected_basenames)
+    if actual != expected:
+        fail(
+            "Expected unstripped_binaries {}, got {}.".format(
+                expected,
+                actual,
+            ),
+        )
+    default_files = {f: True for f in ctx.attr.test[DefaultInfo].files.to_list()}
+    missing = [f.short_path for f in unstripped_files if f not in default_files]
+    if missing:
+        fail(
+            "Expected unstripped_binaries {} to be in DefaultInfo.files of {}.".format(
+                missing,
+                ctx.attr.test.label,
+            ),
+        )
+    return []
+
+verify_fx_test_unstripped_binaries = rule(
+    doc = "Verifies `FuchsiaTestInfo.unstripped_binaries` and `DefaultInfo.files` of an `fx_test()` target.",
+    implementation = _verify_fx_test_unstripped_binaries_impl,
+    attrs = {
+        "test": attr.label(
+            providers = [FuchsiaTestInfo],
+            mandatory = True,
+        ),
+        "expected_basenames": attr.string_list(
+            doc = "Expected basenames of the unstripped binaries.",
+            mandatory = True,
+        ),
+    },
+)
+
 def _verify_runner_shard_impl(ctx):
     shards = [
         "//" + f.short_path

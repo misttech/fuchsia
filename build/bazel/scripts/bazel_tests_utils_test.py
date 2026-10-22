@@ -367,6 +367,82 @@ class BazelTestsUtilsTest(unittest.TestCase):
         self.assertIn("--config=fuchsia_platform", query_command)
         self.assertIn("FuchsiaTestInfo.cquery", query_command)
 
+    def test_generate_device_tests_json_with_debug_symbols(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        test1 = {
+            "label": "@@//src/my_test:my_test",
+            "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+            "unstripped_binary_execroot_paths": [
+                "bazel-out/my_test/bin/my_test_bin",
+                "bazel-out/shared/bin/sdk/lib/fdio/libfdio.so",
+            ],
+            "os": "fuchsia",
+            "cpu": "x64",
+            "test_components": [
+                {
+                    "component_name": "my_test",
+                    "package_url": "fuchsia-pkg://fuchsia.com/my-test#meta/my_test.cm",
+                },
+            ],
+        }
+        test2 = {
+            "label": "@@//src/other_test:other_test",
+            "package_manifest_execroot_path": "bazel-out/other_test/package_manifest.json",
+            "unstripped_binary_execroot_paths": [
+                "bazel-out/other_test/bin/other_test_bin",
+                "bazel-out/shared/bin/sdk/lib/fdio/libfdio.so",
+            ],
+            "os": "fuchsia",
+            "cpu": "x64",
+            "test_components": [
+                {
+                    "component_name": "other_test",
+                    "package_url": "fuchsia-pkg://fuchsia.com/other-test#meta/other_test.cm",
+                },
+            ],
+        }
+        mock_runner.push_result(
+            stdout=json.dumps(test1) + "\n" + json.dumps(test2)
+        )
+
+        bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        manifest_file = (
+            self.bazel_paths.ninja_build_dir
+            / "bazel_device_tests.debug_symbols.json"
+        )
+        self.assertTrue(manifest_file.exists())
+        execroot_path = "gen/build/bazel/output_base/execroot/_main"
+        # Shared libraries (e.g. libfdio.so) referenced by multiple test
+        # packages must be deduplicated in bazel_device_tests.debug_symbols.json.
+        self.assertEqual(
+            json.loads(manifest_file.read_text()),
+            [
+                {
+                    "cpu": "x64",
+                    "debug": f"{execroot_path}/bazel-out/my_test/bin/my_test_bin",
+                    "label": "@@//src/my_test:my_test",
+                    "os": "fuchsia",
+                },
+                {
+                    "cpu": "x64",
+                    "debug": f"{execroot_path}/bazel-out/shared/bin/sdk/lib/fdio/libfdio.so",
+                    "label": "@@//src/my_test:my_test",
+                    "os": "fuchsia",
+                },
+                {
+                    "cpu": "x64",
+                    "debug": f"{execroot_path}/bazel-out/other_test/bin/other_test_bin",
+                    "label": "@@//src/other_test:other_test",
+                    "os": "fuchsia",
+                },
+            ],
+        )
+
     def test_generate_device_tests_json_build_only(self) -> None:
         self._setUpDeviceTests(["//fake/device_tests"])
 
@@ -772,6 +848,11 @@ class BazelTestsUtilsTest(unittest.TestCase):
             json.loads(packages_list.read_text()),
             {"content": {"manifests": []}, "version": "1"},
         )
+        device_debug_manifest = (
+            self.bazel_paths.ninja_build_dir
+            / "bazel_device_tests.debug_symbols.json"
+        )
+        self.assertEqual(json.loads(device_debug_manifest.read_text()), [])
         # `build/bazel/tests_json.gn_targets` is also populated so that direct
         # `fx build --fuchsia_platform <label>` invocations can use it even when
         # no suites are in `ungrouped_bazel_target_test_suites.txt`.

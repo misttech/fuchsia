@@ -12,7 +12,18 @@
 #         --output=starlark --starlark:file=/path/to/this/file \
 #         'tests(//build/bazel/rules/packages/tests:example_test)'
 #
+
+"""Starlark cquery formatter for FuchsiaTestInfo."""
+
 def format(target):
+    """Formats a target's FuchsiaTestInfo provider as JSON.
+
+    Args:
+        target: The configured target being queried.
+
+    Returns:
+        A JSON-encoded string representing the target's FuchsiaTestInfo.
+    """
     p = providers(target)
     if not p:
         return json.encode({
@@ -43,6 +54,10 @@ def format(target):
                 "realm": component.realm,
             }
             for component in test_info.test_components
+        ],
+        "unstripped_binary_execroot_paths": [
+            f.path
+            for f in test_info.unstripped_binaries.to_list()
         ],
         # LINT.ThenChange(//build/bazel/scripts/bazel_tests_utils.py:device_cquery_output_schema)
     }

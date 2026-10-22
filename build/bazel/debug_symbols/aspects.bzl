@@ -67,6 +67,7 @@ DebugSymbolManifestInfo = provider(
     doc = """A provider for a set of DebugSymbolManifestEntryInfo items and related build files.""",
     fields = {
         "entries": "A depset of DebugSymbolManifestEntryInfo",
+        "unstripped_binaries": "A depset of File values pointing to Fuchsia debug binaries.",
         "dest_paths": "A depset of (debug, dest_path) pairs which provide a way to map debug binaries to " +
                       "their Fuchsia destination path, if available.",
         "prebuilt_packages": "A depset of PrebuiltPackageManifestEntryInfo",
@@ -228,8 +229,15 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
         if DebugSymbolManifestInfo in dep
     ]
 
+    unstripped_binaries = [
+        entry.debug
+        for entry in entries
+        if entry.os == "fuchsia" and entry.label.repo_name != "bazel_tools"
+    ]
+
     return [DebugSymbolManifestInfo(
         entries = depset(entries, transitive = [info.entries for info in dep_infos]),
+        unstripped_binaries = depset(unstripped_binaries, transitive = [info.unstripped_binaries for info in dep_infos]),
         dest_paths = depset(dest_paths, transitive = [info.dest_paths for info in dep_infos]),
         prebuilt_packages = depset(prebuilt_packages, transitive = [info.prebuilt_packages for info in dep_infos]),
         prebuilt_containers = depset(prebuilt_containers, transitive = [info.prebuilt_containers for info in dep_infos]),

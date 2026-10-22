@@ -94,6 +94,31 @@ def _execroot_path_to_ninja_path(bazel_paths: BazelPaths, path: str) -> str:
     )
 
 
+# LINT.IfChange(debug_symbols)
+def _debug_manifest_entry(
+    bazel_paths: BazelPaths,
+    label: str,
+    cpu: str,
+    os_val: str,
+    unstripped_binary_execroot_path: str,
+) -> dict[str, str]:
+    """Create a debug manifest entry for a Bazel test binary.
+
+    This is a simple wrapper function to avoid nested IFTTT.
+    """
+    return {
+        "cpu": cpu,
+        "debug": _execroot_path_to_ninja_path(
+            bazel_paths, unstripped_binary_execroot_path
+        ),
+        "label": label,
+        "os": os_val.lower(),
+    }
+
+
+# LINT.ThenChange(//BUILD.gn:debug_symbols)
+
+
 def _check_starlark_cquery_result(ret: build_utils.CommandResult) -> None:
     """Raise if a `cquery --output=starlark` invocation failed.
 
@@ -189,28 +214,6 @@ def _generate_host_tests_json(
     host_test_debug_manifests: list[dict[str, str]] = []
     targets_missing_test_info: set[str] = set()
 
-    # LINT.IfChange(debug_symbols)
-    def _debug_manifest_entry(
-        label: str,
-        cpu: str,
-        os_val: str,
-        unstripped_binary_execroot_path: str,
-    ) -> dict[str, str]:
-        """Create a debug manifest entry for a host test.
-
-        This is a simple wrapper function to avoid nested IFTTT.
-        """
-        return {
-            "cpu": cpu,
-            "debug": _execroot_path_to_ninja_path(
-                bazel_paths, unstripped_binary_execroot_path
-            ),
-            "label": label,
-            "os": os_val.lower(),
-        }
-
-    # LINT.ThenChange(//BUILD.gn:debug_symbols)
-
     for line in ret.stdout.splitlines():
         line = line.strip()
         if not line:
@@ -281,6 +284,7 @@ def _generate_host_tests_json(
         if cquery_test.get("unstripped_binary_execroot_path"):
             host_test_debug_manifests.append(
                 _debug_manifest_entry(
+                    bazel_paths,
                     label,
                     cpu,
                     os_val,
@@ -380,9 +384,16 @@ def _generate_device_tests_json(
         )
     )
 
+    # LINT.IfChange(bazel_device_tests_debug_symbols_json)
+    bazel_device_tests_debug_manifest = (
+        bazel_paths.ninja_build_dir / "bazel_device_tests.debug_symbols.json"
+    )
+    # LINT.ThenChange(//build/bazel/scripts/copy_bazel_debug_symbols.py:bazel_device_tests_debug_symbols_json)
+
     if not all_suites:
         # Skip running `bazel cquery` to get the full list of tests if no Bazel
         # device tests are included in the build graph, to save time on regen.
+        bazel_device_tests_debug_manifest.write_text("[]\n")
         write_bazel_test_packages_list(bazel_paths.ninja_build_dir, [])
         return BazelTestsJson(
             tests=[],
@@ -400,6 +411,8 @@ def _generate_device_tests_json(
     all_tests_json: list[TestSpec] = []
     tests_by_label: dict[str, list[TestSpec]] = {}
     package_manifests: list[str] = []
+    device_test_debug_manifests: list[dict[str, str]] = []
+    seen_unstripped_paths: set[str] = set()
     targets_missing_test_info: set[str] = set()
 
     with tempfile.NamedTemporaryFile(mode="w") as query_file:
@@ -488,6 +501,21 @@ def _generate_device_tests_json(
             else:
                 test_dict["environments"] = envs
             target_tests_json.append(test_dict)
+
+        for unstripped_path in cquery_test.get(
+            "unstripped_binary_execroot_paths", []
+        ):
+            if unstripped_path not in seen_unstripped_paths:
+                seen_unstripped_paths.add(unstripped_path)
+                device_test_debug_manifests.append(
+                    _debug_manifest_entry(
+                        bazel_paths,
+                        label,
+                        cquery_test["cpu"],
+                        cquery_test["os"],
+                        unstripped_path,
+                    )
+                )
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaTestInfo.cquery:cquery_output_schema)
         all_tests_json.extend(target_tests_json)
         tests_by_label[normalized_label] = target_tests_json
@@ -502,6 +530,10 @@ def _generate_device_tests_json(
             f"{targets_list}\n"
             f"Wrap them with fx_test()."
         )
+
+    bazel_device_tests_debug_manifest.write_text(
+        json.dumps(device_test_debug_manifests, indent=2) + "\n"
+    )
 
     write_bazel_test_packages_list(
         bazel_paths.ninja_build_dir, sorted(set(package_manifests))

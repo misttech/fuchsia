@@ -21,20 +21,28 @@ def main() -> int:
     parser.add_argument("build_dir", type=str, help="The build directory.")
     args = parser.parse_args()
     build_dir = Path(args.build_dir).resolve()
-    manifest_file = build_dir / "bazel_host_tests.debug_symbols.json"
-    if not manifest_file.exists():
+    # LINT.IfChange(bazel_device_tests_debug_symbols_json)
+    manifest_files = [
+        build_dir / "bazel_host_tests.debug_symbols.json",
+        build_dir / "bazel_device_tests.debug_symbols.json",
+    ]
+    # LINT.ThenChange(//build/bazel/scripts/bazel_tests_utils.py:bazel_device_tests_debug_symbols_json)
+    existing_manifests = [f for f in manifest_files if f.exists()]
+    if not existing_manifests:
         print("Manifest file not found", file=sys.stderr)
         return 1
 
     manifest_parser = DebugSymbolsManifestParser(build_dir)
     manifest_parser.enable_build_id_resolution()
-    try:
-        manifest_parser.parse_manifest_file(manifest_file)
-    except Exception as e:
-        print(
-            f"Error parsing debug symbols manifest file: {e}", file=sys.stderr
-        )
-        return 1
+    for manifest_file in existing_manifests:
+        try:
+            manifest_parser.parse_manifest_file(manifest_file)
+        except Exception as e:
+            print(
+                f"Error parsing debug symbols manifest file {manifest_file}: {e}",
+                file=sys.stderr,
+            )
+            return 1
 
     if not manifest_parser.entries:
         return 0
