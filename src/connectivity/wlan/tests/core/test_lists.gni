@@ -51,6 +51,8 @@ core_tests_for_postsubmit = [
 # above.
 core_tests_for_fyi = [
   "//src/connectivity/wlan/tests/core:association_rejection_test",
+  "//src/connectivity/wlan/tests/core:phy_reset_test",  # Note: no shield box
+                                                        # needed
   "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
 ]
 
