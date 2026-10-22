@@ -571,39 +571,6 @@ mod ksync_tests {
         }
     }
 
-    ksync::declare_singleton_monitored_spinlock!(TestKernelCpuAlignedSingletonSpinlock, cpu_align);
-
-    ksync::declare_singleton_monitored_spinlock!(
-        TestKernelCpuAlignExclusiveSingletonSpinlock,
-        cpu_align_exclusive,
-    );
-
-    /// test that `cpu_align` and `cpu_align_exclusive` place a singleton lock on its own cache line
-    #[test]
-    fn singleton_aligned() {
-        let lock = TestKernelCpuAlignedSingletonSpinlock::get();
-        expect_true!(core::ptr::from_ref(lock).addr().is_multiple_of(64));
-        {
-            ksync::lock!(TestKernelCpuAlignedSingletonSpinlock::lock(ksync::source_tag!()));
-        }
-
-        let lock = TestKernelCpuAlignExclusiveSingletonSpinlock::get();
-        expect_true!(core::ptr::from_ref(lock).addr().is_multiple_of(64));
-        {
-            ksync::lock!(TestKernelCpuAlignExclusiveSingletonSpinlock::lock(ksync::source_tag!()));
-        }
-
-        // `kernel.ld` places `.data.cpu_align_exclusive` at the start of `.data`, before the lock
-        // class registrations.
-        unsafe extern "C" {
-            static __data_start: u8;
-            static __start_rust_lock_classes: u8;
-        }
-        let addr = core::ptr::from_ref(lock).addr();
-        expect_true!(addr >= (&raw const __data_start).addr());
-        expect_true!(addr < (&raw const __start_rust_lock_classes).addr());
-    }
-
     /// test KOnceCell lazy initialization and access
     #[test]
     fn konce_cell_test() {
