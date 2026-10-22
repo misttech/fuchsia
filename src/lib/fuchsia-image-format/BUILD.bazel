@@ -19,6 +19,7 @@ rustc_library(
     visibility = [
         "//src/graphics/display/bin/display-tool:__pkg__",
         "//src/media/stream_processors/test:__pkg__",
+        "//vendor/google:__subpackages__",
     ],
     deps = [
         "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",

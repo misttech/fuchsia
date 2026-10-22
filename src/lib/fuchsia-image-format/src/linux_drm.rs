@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
-use {fidl_fuchsia_images2 as fimages2, fidl_fuchsia_sysmem as fsysmem, vk_sys as vk};
+use anyhow::{Error, anyhow};
+use fidl_fuchsia_images2 as fimages2;
+use fidl_fuchsia_sysmem as fsysmem;
+use vk_sys as vk;
 
 pub fn drm_modifier_to_sysmem_modifier_2(
     modifier: u64,
@@ -15,6 +17,8 @@ pub fn drm_modifier_to_sysmem_modifier_2(
         I915_FORMAT_MOD_YF_TILED => Ok(fimages2::PixelFormatModifier::IntelI915YfTiled),
         I915_FORMAT_MOD_Y_TILED_CCS => Ok(fimages2::PixelFormatModifier::IntelI915YTiledCcs),
         I915_FORMAT_MOD_YF_TILED_CCS => Ok(fimages2::PixelFormatModifier::IntelI915YfTiledCcs),
+        DRM_FORMAT_MOD_PVR_FBCDC_8X8_V14 => Ok(fimages2::PixelFormatModifier::PvrFbcdc8X8V14),
+        DRM_FORMAT_MOD_PVR_FBCDC_16X4_V14 => Ok(fimages2::PixelFormatModifier::PvrFbcdc16X4V14),
         _ => Err(anyhow!("Unsupported modifier.")),
     }
 }
@@ -82,6 +86,8 @@ pub fn sysmem_modifier_to_drm_modifier_2(
         fimages2::PixelFormatModifier::IntelI915YfTiled => Ok(I915_FORMAT_MOD_YF_TILED),
         fimages2::PixelFormatModifier::IntelI915YTiledCcs => Ok(I915_FORMAT_MOD_Y_TILED_CCS),
         fimages2::PixelFormatModifier::IntelI915YfTiledCcs => Ok(I915_FORMAT_MOD_YF_TILED_CCS),
+        fimages2::PixelFormatModifier::PvrFbcdc8X8V14 => Ok(DRM_FORMAT_MOD_PVR_FBCDC_8X8_V14),
+        fimages2::PixelFormatModifier::PvrFbcdc16X4V14 => Ok(DRM_FORMAT_MOD_PVR_FBCDC_16X4_V14),
         _ => Err(anyhow!("Unsupported modifier.")),
     }
 }
@@ -113,6 +119,10 @@ const fn fourcc_mod_code(vendor: u64, value: u64) -> u64 {
 pub const DRM_FORMAT_MOD_VENDOR_NONE: u64 = 0;
 pub const DRM_FORMAT_MOD_VENDOR_INTEL: u64 = 0x01;
 
+// The value matches the preprocessor macro with the same name in:
+// https://fuchsia.googlesource.com/third_party/imgtec-pvr-rgx-km/+/refs/heads/main/include/public/powervr/img_drm_fourcc.h
+pub const DRM_FORMAT_MOD_VENDOR_PVR: u64 = 0x92;
+
 pub const DRM_FORMAT_MOD_INVALID: u64 =
     fourcc_mod_code(DRM_FORMAT_MOD_VENDOR_NONE, DRM_FORMAT_MOD_RESERVED);
 
@@ -123,6 +133,11 @@ pub const I915_FORMAT_MOD_Y_TILED: u64 = fourcc_mod_code(DRM_FORMAT_MOD_VENDOR_I
 pub const I915_FORMAT_MOD_YF_TILED: u64 = fourcc_mod_code(DRM_FORMAT_MOD_VENDOR_INTEL, 3);
 pub const I915_FORMAT_MOD_Y_TILED_CCS: u64 = fourcc_mod_code(DRM_FORMAT_MOD_VENDOR_INTEL, 4);
 pub const I915_FORMAT_MOD_YF_TILED_CCS: u64 = fourcc_mod_code(DRM_FORMAT_MOD_VENDOR_INTEL, 5);
+
+// The values match the preprocessor macro with the same name in:
+// https://fuchsia.googlesource.com/third_party/imgtec-pvr-rgx-km/+/refs/heads/main/include/public/powervr/img_drm_fourcc.h
+pub const DRM_FORMAT_MOD_PVR_FBCDC_8X8_V14: u64 = fourcc_mod_code(DRM_FORMAT_MOD_VENDOR_PVR, 34);
+pub const DRM_FORMAT_MOD_PVR_FBCDC_16X4_V14: u64 = fourcc_mod_code(DRM_FORMAT_MOD_VENDOR_PVR, 39);
 
 pub const DRM_FORMAT_XRGB8888: u32 = fourcc_code(b'X', b'R', b'2', b'4');
 pub const DRM_FORMAT_XBGR8888: u32 = fourcc_code(b'X', b'B', b'2', b'4');

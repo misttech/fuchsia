@@ -76,6 +76,41 @@ pub const BUFFER_COLLECTION_CONSTRAINTS_DEFAULT: fsysmem::BufferCollectionConstr
         image_format_constraints: [IMAGE_FORMAT_CONSTRAINTS_DEFAULT; 32],
     };
 
+const PVRIC_TILES_PLANE: u32 = 0;
+const PVRIC_HEADER_PLANE: u32 = 3;
+const PVRIC_HEADER_ALIGNMENT: u32 = 256;
+
+fn is_pvric_pixel_format_supported(pixel_format: fimages2::PixelFormat) -> bool {
+    matches!(
+        pixel_format,
+        fimages2::PixelFormat::R8G8B8A8
+            | fimages2::PixelFormat::R8G8B8X8
+            | fimages2::PixelFormat::B8G8R8A8
+            | fimages2::PixelFormat::B8G8R8X8
+            | fimages2::PixelFormat::A2R10G10B10
+            | fimages2::PixelFormat::A2B10G10R10
+            | fimages2::PixelFormat::R5G6B5
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PvricTilingData {
+    pub tile_rows: u32,
+    pub bytes_per_row_per_tile: u32,
+}
+
+pub fn pvric_tiling_data(modifier: fimages2::PixelFormatModifier) -> Option<PvricTilingData> {
+    match modifier {
+        fimages2::PixelFormatModifier::PvrFbcdc8X8V14 => {
+            Some(PvricTilingData { tile_rows: 8, bytes_per_row_per_tile: 32 })
+        }
+        fimages2::PixelFormatModifier::PvrFbcdc16X4V14 => {
+            Some(PvricTilingData { tile_rows: 4, bytes_per_row_per_tile: 64 })
+        }
+        _ => None,
+    }
+}
+
 /// Returns the number of bytes per row for a given plane.
 ///
 /// Returns an error if no such number of bytes can be found, either because a number can't be
@@ -88,6 +123,28 @@ pub fn get_plane_row_bytes_2(
         .bytes_per_row
         .as_ref()
         .ok_or_else(|| anyhow!("ImageFormat.bytes_per_row missing - tiled format?"))?;
+
+    // TODO(https://fxbug.dev/576739649): PVRIC is currently handled as a
+    // special case. Generalize.
+    if let Some(modifier) = image_format.pixel_format_modifier {
+        if let Some(tiling) = pvric_tiling_data(modifier) {
+            let pixel_format = *image_format
+                .pixel_format
+                .as_ref()
+                .ok_or_else(|| anyhow!("ImageFormat.pixel_format missing"))?;
+            if !is_pvric_pixel_format_supported(pixel_format) {
+                return Err(anyhow!("Invalid pixel format for PVRIC modifier."));
+            }
+            let width_in_tiles = bytes_per_row.div_ceil(tiling.bytes_per_row_per_tile);
+            return match plane {
+                PVRIC_TILES_PLANE => width_in_tiles
+                    .checked_mul(tiling.bytes_per_row_per_tile)
+                    .ok_or_else(|| anyhow!("Overflow calculating plane 0 row bytes.")),
+                PVRIC_HEADER_PLANE => Ok(width_in_tiles),
+                _ => Err(anyhow!("Invalid plane.")),
+            };
+        }
+    }
     match plane {
         0 => Ok(bytes_per_row),
         1 => {
@@ -141,6 +198,38 @@ pub fn image_format_plane_byte_offset_2(
     image_format: &fimages2::ImageFormat,
     plane: u32,
 ) -> Result<u32, Error> {
+    // TODO(https://fxbug.dev/576739649): PVRIC is currently handled as a
+    // special case. Generalize.
+    if let Some(modifier) = image_format.pixel_format_modifier {
+        if let Some(tiling) = pvric_tiling_data(modifier) {
+            let pixel_format = *image_format
+                .pixel_format
+                .as_ref()
+                .ok_or_else(|| anyhow!("ImageFormat.pixel_format missing"))?;
+            if !is_pvric_pixel_format_supported(pixel_format) {
+                return Err(anyhow!("Invalid pixel format for PVRIC modifier."));
+            }
+            let bytes_per_row = *image_format
+                .bytes_per_row
+                .as_ref()
+                .ok_or_else(|| anyhow!("ImageFormat.bytes_per_row missing"))?;
+            let size =
+                image_format.size.as_ref().ok_or_else(|| anyhow!("ImageFormat.size missing"))?;
+            let width_in_tiles = bytes_per_row.div_ceil(tiling.bytes_per_row_per_tile);
+            let height_in_tiles = size.height.div_ceil(tiling.tile_rows);
+            let num_tiles = width_in_tiles
+                .checked_mul(height_in_tiles)
+                .ok_or_else(|| anyhow!("Overflow calculating num_tiles."))?;
+            let header_size = num_tiles
+                .checked_next_multiple_of(PVRIC_HEADER_ALIGNMENT)
+                .ok_or_else(|| anyhow!("Overflow calculating header_size."))?;
+            return match plane {
+                PVRIC_TILES_PLANE => Ok(header_size),
+                PVRIC_HEADER_PLANE => Ok(0),
+                _ => Err(anyhow!("Invalid plane.")),
+            };
+        }
+    }
     match plane {
         0 => Ok(0),
         1 => match image_format.pixel_format.as_ref().expect("pixel_format") {
@@ -333,9 +422,20 @@ pub fn image_format_minimum_row_bytes_2(
     constraints: &fsysmem2::ImageFormatConstraints,
     width: u32,
 ) -> Result<u32, Error> {
-    if let Some(pixel_format_modifier) = constraints.pixel_format_modifier {
-        if pixel_format_modifier != fimages2::PixelFormatModifier::Linear {
-            return Err(anyhow!("Non-linear format modifier."));
+    // TODO(https://fxbug.dev/576739649): PVRIC is currently handled as a
+    // special case. Generalize.
+    let pvric_tiling = match constraints.pixel_format_modifier {
+        None | Some(fimages2::PixelFormatModifier::Linear) => None,
+        Some(modifier) => match pvric_tiling_data(modifier) {
+            Some(tiling) => Some(tiling),
+            None => return Err(anyhow!("Non-linear format modifier.")),
+        },
+    };
+    if pvric_tiling.is_some() {
+        let pixel_format =
+            *constraints.pixel_format.as_ref().ok_or_else(|| anyhow!("missing pixel_format"))?;
+        if !is_pvric_pixel_format_supported(pixel_format) {
+            return Err(anyhow!("Invalid pixel format for PVRIC modifier."));
         }
     }
     if let Some(min_size) = constraints.min_size {
@@ -361,6 +461,10 @@ pub fn image_format_minimum_row_bytes_2(
         let stride_bytes_per_width_pixel = *maybe_stride_bytes_per_width_pixel.as_ref().ok_or_else(|| format_err!("stride_bytes_per_width_pixel required when require_bytes_per_row_at_pixel_boundary true"))?;
         bytes_per_row_divisor =
             num_integer::lcm(bytes_per_row_divisor, stride_bytes_per_width_pixel);
+    }
+    if let Some(tiling) = pvric_tiling {
+        bytes_per_row_divisor =
+            num_integer::lcm(bytes_per_row_divisor, tiling.bytes_per_row_per_tile);
     }
     let bytes_per_row_divisor = bytes_per_row_divisor;
 
@@ -1028,5 +1132,146 @@ mod tests {
         );
         assert_eq!(None, images2_format.valid_size);
         assert_eq!(Some(fmath::SizeU { width: 2, height: 3 }), images2_format.pixel_aspect_ratio);
+    }
+
+    #[test]
+    fn test_pvric_tiling_data() {
+        assert_eq!(
+            pvric_tiling_data(fimages2::PixelFormatModifier::PvrFbcdc8X8V14),
+            Some(PvricTilingData { tile_rows: 8, bytes_per_row_per_tile: 32 })
+        );
+        assert_eq!(
+            pvric_tiling_data(fimages2::PixelFormatModifier::PvrFbcdc16X4V14),
+            Some(PvricTilingData { tile_rows: 4, bytes_per_row_per_tile: 64 })
+        );
+        assert_eq!(pvric_tiling_data(fimages2::PixelFormatModifier::Linear), None);
+    }
+
+    #[test]
+    fn test_pvric_16x4_row_bytes_and_planes() {
+        let supported_32bpp_formats = [
+            fimages2::PixelFormat::R8G8B8A8,
+            fimages2::PixelFormat::R8G8B8X8,
+            fimages2::PixelFormat::B8G8R8A8,
+            fimages2::PixelFormat::B8G8R8X8,
+            fimages2::PixelFormat::A2R10G10B10,
+            fimages2::PixelFormat::A2B10G10R10,
+        ];
+
+        for format in supported_32bpp_formats {
+            let constraints = fsysmem2::ImageFormatConstraints {
+                pixel_format: Some(format),
+                pixel_format_modifier: Some(fimages2::PixelFormatModifier::PvrFbcdc16X4V14),
+                min_size: Some(SizeU { width: 12, height: 12 }),
+                max_size: Some(SizeU { width: 100, height: 100 }),
+                bytes_per_row_divisor: Some(32),
+                max_bytes_per_row: Some(100000),
+                ..Default::default()
+            };
+
+            // For 18x17 with divisor 32: lcm(32, 64) = 64. 18 * 4 = 72 -> rounds up to 128 bytes/row.
+            // width_in_tiles = 128 / 64 = 2.
+            // height_in_tiles = ceil(17 / 4) = 5.
+            // num_tiles = 2 * 5 = 10.
+            // header_size = RoundUp(10, 256) = 256.
+            assert_eq!(image_format_minimum_row_bytes_2(&constraints, 18).unwrap(), 128);
+            assert!(image_format_minimum_row_bytes_2(&constraints, 11).is_err());
+            assert!(image_format_minimum_row_bytes_2(&constraints, 101).is_err());
+
+            let image_format = constraints_to_image_format(&constraints, 18, 17).unwrap();
+            assert_eq!(image_format.bytes_per_row, Some(128));
+
+            assert_eq!(image_format_plane_byte_offset_2(&image_format, 0).unwrap(), 256);
+            assert!(image_format_plane_byte_offset_2(&image_format, 1).is_err());
+            assert!(image_format_plane_byte_offset_2(&image_format, 2).is_err());
+            assert_eq!(image_format_plane_byte_offset_2(&image_format, 3).unwrap(), 0);
+            assert!(image_format_plane_byte_offset_2(&image_format, 4).is_err());
+
+            assert_eq!(get_plane_row_bytes_2(&image_format, 0).unwrap(), 128);
+            assert!(get_plane_row_bytes_2(&image_format, 1).is_err());
+            assert!(get_plane_row_bytes_2(&image_format, 2).is_err());
+            assert_eq!(get_plane_row_bytes_2(&image_format, 3).unwrap(), 2);
+            assert!(get_plane_row_bytes_2(&image_format, 4).is_err());
+        }
+
+        // Large resolution: 1280x2856 with 32-bpp B8G8R8A8 and PvrFbcdc16X4V14.
+        // bytes_per_row = 1280 * 4 = 5120.
+        // width_in_tiles = 5120 / 64 = 80, height_in_tiles = 2856 / 4 = 714.
+        // num_tiles = 80 * 714 = 57,120.
+        // header_size = RoundUp(57,120, 256) = 57,344.
+        let large_constraints = fsysmem2::ImageFormatConstraints {
+            pixel_format: Some(fimages2::PixelFormat::B8G8R8A8),
+            pixel_format_modifier: Some(fimages2::PixelFormatModifier::PvrFbcdc16X4V14),
+            min_size: Some(SizeU { width: 1, height: 1 }),
+            max_size: Some(SizeU { width: 4096, height: 4096 }),
+            bytes_per_row_divisor: Some(64),
+            ..Default::default()
+        };
+        assert_eq!(image_format_minimum_row_bytes_2(&large_constraints, 1280).unwrap(), 5120);
+        let large_format = constraints_to_image_format(&large_constraints, 1280, 2856).unwrap();
+        assert_eq!(large_format.bytes_per_row, Some(5120));
+        assert_eq!(image_format_plane_byte_offset_2(&large_format, 0).unwrap(), 57_344);
+        assert_eq!(image_format_plane_byte_offset_2(&large_format, 3).unwrap(), 0);
+        assert_eq!(get_plane_row_bytes_2(&large_format, 0).unwrap(), 5120);
+        assert_eq!(get_plane_row_bytes_2(&large_format, 3).unwrap(), 80);
+
+        // 16-bpp R5G6B5 with PvrFbcdc16X4V14 (bytes_per_row_per_tile = 64, tile_rows = 4).
+        // For width = 18 (36 bytes): rounds up to 64 bytes/row (1 tile wide).
+        // height = 17: ceil(17 / 4) = 5 tiles high.
+        // num_tiles = 1 * 5 = 5, header_size = 256.
+        let rgb565_constraints = fsysmem2::ImageFormatConstraints {
+            pixel_format: Some(fimages2::PixelFormat::R5G6B5),
+            pixel_format_modifier: Some(fimages2::PixelFormatModifier::PvrFbcdc16X4V14),
+            min_size: Some(SizeU { width: 1, height: 1 }),
+            max_size: Some(SizeU { width: 4096, height: 4096 }),
+            ..Default::default()
+        };
+        let rgb565_format = constraints_to_image_format(&rgb565_constraints, 18, 17).unwrap();
+        assert_eq!(rgb565_format.bytes_per_row, Some(64));
+        assert_eq!(image_format_plane_byte_offset_2(&rgb565_format, 0).unwrap(), 256);
+        assert_eq!(image_format_plane_byte_offset_2(&rgb565_format, 3).unwrap(), 0);
+        assert_eq!(get_plane_row_bytes_2(&rgb565_format, 0).unwrap(), 64);
+        assert_eq!(get_plane_row_bytes_2(&rgb565_format, 3).unwrap(), 1);
+
+        // Unsupported formats (Nv12, B8G8R8) must return Err.
+        for unsupported in [fimages2::PixelFormat::Nv12, fimages2::PixelFormat::B8G8R8] {
+            let bad_constraints = fsysmem2::ImageFormatConstraints {
+                pixel_format: Some(unsupported),
+                pixel_format_modifier: Some(fimages2::PixelFormatModifier::PvrFbcdc16X4V14),
+                ..Default::default()
+            };
+            assert!(image_format_minimum_row_bytes_2(&bad_constraints, 64).is_err());
+        }
+    }
+
+    #[test]
+    fn test_pvric_8x8_row_bytes_and_planes() {
+        // Test 8x8 V14 with 32-bpp at 1920x1080 (bytes_per_row_per_tile = 32, tile_rows = 8).
+        // bytes_per_row = 1920 * 4 = 7680.
+        // width_in_tiles = 7680 / 32 = 240.
+        // height_in_tiles = 1080 / 8 = 135.
+        // num_tiles = 240 * 135 = 32,400.
+        // header_size = RoundUp(32,400, 256) = 32,512.
+        let constraints = fsysmem2::ImageFormatConstraints {
+            pixel_format: Some(fimages2::PixelFormat::R8G8B8A8),
+            pixel_format_modifier: Some(fimages2::PixelFormatModifier::PvrFbcdc8X8V14),
+            min_size: Some(SizeU { width: 1, height: 1 }),
+            max_size: Some(SizeU { width: 4096, height: 4096 }),
+            ..Default::default()
+        };
+
+        let image_format = constraints_to_image_format(&constraints, 1920, 1080).unwrap();
+        assert_eq!(image_format.bytes_per_row, Some(7680));
+        assert_eq!(image_format_plane_byte_offset_2(&image_format, 0).unwrap(), 32_512);
+        assert!(image_format_plane_byte_offset_2(&image_format, 1).is_err());
+        assert!(image_format_plane_byte_offset_2(&image_format, 2).is_err());
+        assert_eq!(image_format_plane_byte_offset_2(&image_format, 3).unwrap(), 0);
+        assert!(image_format_plane_byte_offset_2(&image_format, 4).is_err());
+
+        assert_eq!(get_plane_row_bytes_2(&image_format, 0).unwrap(), 7680);
+        assert!(get_plane_row_bytes_2(&image_format, 1).is_err());
+        assert!(get_plane_row_bytes_2(&image_format, 2).is_err());
+        assert_eq!(get_plane_row_bytes_2(&image_format, 3).unwrap(), 240);
+        assert!(get_plane_row_bytes_2(&image_format, 4).is_err());
     }
 }
