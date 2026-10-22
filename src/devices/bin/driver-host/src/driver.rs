@@ -21,6 +21,7 @@ use fidl_fuchsia_power_broker::{
 };
 use fidl_next::ClientDispatcher;
 use fidl_next_fuchsia_driver_framework as fidl_next_fdf;
+use fuchsia_async::TimeoutExt;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::future::FusedFuture;
@@ -48,6 +49,14 @@ type DriverClient = fidl_next::Client<
     fidl_next_fuchsia_driver_framework::Driver,
     fdf_fidl::DriverChannel<fdf::AsyncDispatcher>,
 >;
+
+// Per-level deadlines for a driver to answer a HealthCheck. A check that misses its deadline
+// fails with TIMEOUT, which usually means the driver's dispatcher is wedged. These three
+// constants mirror the deadlines documented on
+// `fuchsia.driver.framework/HealthCheckRequest`; keep them in sync.
+const PING_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(250);
+const FAST_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
+const DEEP_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(120);
 
 struct LoadedDriver(u64);
 
@@ -748,6 +757,15 @@ impl Driver {
                                 break Driver::handle_stop_request(weak_self.clone(), resume_sender);
                             }
                             fdh::DriverRequest::HealthCheck { request, responder } => {
+                                let req_next = convert_health_check_request(request);
+                                let timeout = match req_next {
+                                    fidl_next_fdf::HealthCheckRequest::Ping => Some(PING_TIMEOUT),
+                                    fidl_next_fdf::HealthCheckRequest::Fast => Some(FAST_TIMEOUT),
+                                    fidl_next_fdf::HealthCheckRequest::Deep => Some(DEEP_TIMEOUT),
+                                    // A level this host does not know has no deadline to
+                                    // enforce, so it is not forwarded.
+                                    _ => None,
+                                };
                                 // A suspended driver's dispatchers are stopped by the runtime,
                                 // so forwarding the check to the driver's `fdf::Health` server
                                 // (via `client` below) would only time out and misreport a
@@ -755,7 +773,16 @@ impl Driver {
                                 // sole enforcement point for the protocol invariant that
                                 // `fdf::Health.HealthCheck` is never sent between `Suspend` and
                                 // the completion of `Resume`; the C++ and Rust SDK servers rely
-                                // on this and do not track suspend state themselves.
+                                // on this and do not track suspend state themselves. The same
+                                // gate is applied again when an in-flight check completes (see
+                                // the `health_checks` arm below): a check that was forwarded
+                                // while resumed but whose deadline ran out while the driver was
+                                // suspending is answered INVALID_STATE rather than TIMEOUT.
+                                let Some(timeout) = timeout else {
+                                    let _ = responder
+                                        .send(Err(fidl_fdf::HealthCheckError::NotSupported));
+                                    continue;
+                                };
                                 let power_state =
                                     weak_self.upgrade().map(|driver| driver.inner.lock().power_state);
                                 if power_state != Some(DriverPowerState::Resumed) {
@@ -771,28 +798,37 @@ impl Driver {
                                 next_health_check_id += 1;
                                 health_check_responders.insert(id, responder);
                                 let client_clone = client.clone();
-                                let req_next = convert_health_check_request(request);
                                 health_checks.push(async move {
-                                    let res = match client_clone.health_check(req_next).await {
-                                        Ok(Ok(resp)) => {
-                                            Ok(convert_health_check_response(resp))
+                                    let res = async move {
+                                        match client_clone.health_check(req_next).await {
+                                            Ok(Ok(resp)) => {
+                                                Ok(convert_health_check_response(resp))
+                                            }
+                                            Ok(Err(err)) => Err(convert_health_check_error(err)),
+                                            // A driver built against an SDK that predates
+                                            // HealthCheck answers the flexible method with
+                                            // UNKNOWN_METHOD. That is expected, not an error.
+                                            Err(fidl_next::Error::Protocol(
+                                                fidl_next::ProtocolError::FrameworkError(
+                                                    fidl_next::FrameworkError::UnknownMethod,
+                                                ),
+                                            )) => Err(fidl_fdf::HealthCheckError::NotSupported),
+                                            Err(e) => {
+                                                log::warn!(
+                                                    "Failed to forward HealthCheck to driver: {e:?}"
+                                                );
+                                                Err(fidl_fdf::HealthCheckError::InternalError)
+                                            }
                                         }
-                                        Ok(Err(err)) => Err(convert_health_check_error(err)),
-                                        // A driver built against an SDK that predates
-                                        // HealthCheck answers the flexible method with
-                                        // UNKNOWN_METHOD. That is expected, not an error.
-                                        Err(fidl_next::Error::Protocol(
-                                            fidl_next::ProtocolError::FrameworkError(
-                                                fidl_next::FrameworkError::UnknownMethod,
-                                            ),
-                                        )) => Err(fidl_fdf::HealthCheckError::NotSupported),
-                                        Err(e) => {
-                                            log::warn!(
-                                                "Failed to forward HealthCheck to driver: {e:?}"
-                                            );
-                                            Err(fidl_fdf::HealthCheckError::InternalError)
-                                        }
-                                    };
+                                    }
+                                    // On deadline the two-way future is dropped, which cancels
+                                    // the transaction so a late reply is discarded. The check
+                                    // itself keeps running inside the driver until it finishes
+                                    // or the driver stops.
+                                    .on_timeout(fuchsia_async::MonotonicInstant::after(timeout), || {
+                                        Err(fidl_fdf::HealthCheckError::Timeout)
+                                    })
+                                    .await;
                                     (id, res)
                                 });
                             }
@@ -809,6 +845,17 @@ impl Driver {
                 }
                 (id, res) = health_checks.select_next_some() => {
                     if let Some(responder) = health_check_responders.remove(&id) {
+                        // Re-check the gate from the request arm: if the driver left the
+                        // resumed state while this check was in flight, its result (typically
+                        // a TIMEOUT from stopped dispatchers) says nothing about its health.
+                        let resumed = weak_self.upgrade().is_some_and(|driver| {
+                            driver.inner.lock().power_state == DriverPowerState::Resumed
+                        });
+                        let res = if resumed {
+                            res
+                        } else {
+                            Err(fidl_fdf::HealthCheckError::InvalidState)
+                        };
                         // Generated Rust FIDL table responders take
                         // `Result<&HealthCheckResponse, HealthCheckError>`.
                         let _ = responder.send(res.as_ref().map_err(|e| *e));
@@ -1673,6 +1720,7 @@ mod health_check_tests {
     struct MockDriverServer {
         count_calls: AtomicBool,
         fidl_server: fidl_next::Server<fidl_next_fdf::Driver, Transport>,
+        hung_responders: Vec<Responder<driver::HealthCheck, Transport>>,
     }
 
     impl DriverServerHandler<Transport> for MockDriverServer {
@@ -1711,6 +1759,13 @@ mod health_check_tests {
                 SUSPEND_TEST_HEALTH_CHECK_CALLS.fetch_add(1, Ordering::SeqCst);
             }
             match request.payload().request {
+                fidl_next_fdf::HealthCheckRequest::Ping => {
+                    // Simulate a hung driver to exercise the Ping timeout in driver-host.
+                    // Hold onto the responder without replying so `ServerDispatcher` can still
+                    // process subsequent requests (such as `Stop`) and `Responder::drop` does not
+                    // close the channel early.
+                    self.hung_responders.push(responder);
+                }
                 fidl_next_fdf::HealthCheckRequest::Deep => {
                     let _ =
                         responder.respond_err(fidl_next_fdf::HealthCheckError::NotSupported).await;
@@ -1754,6 +1809,7 @@ mod health_check_tests {
         let handler = MockDriverServer {
             count_calls: AtomicBool::new(false),
             fidl_server: dispatcher.server(),
+            hung_responders: Vec::new(),
         };
         always_on.spawn(async move {
             let _ = dispatcher.run(handler).await;
@@ -1876,6 +1932,69 @@ mod health_check_tests {
         assert_eq!(conditions.len(), 1);
         assert_eq!(conditions[0].reason_code.as_deref(), Some("HOST_FORWARD_OK"));
         assert_eq!(SUSPEND_TEST_HEALTH_CHECK_CALLS.load(Ordering::SeqCst), 1);
+
+        driver_proxy.stop().unwrap();
+        drop(driver);
+        shutdown_rx.await.unwrap();
+        env.destroy_all_dispatchers();
+    }
+
+    #[fuchsia::test]
+    async fn test_run_termination_watcher_health_check_timeout_and_concurrent_stop() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, driver_proxy, shutdown_rx, _scope) = start_test_driver(&env).await;
+
+        // Ping level hangs in MockDriverServer and must time out after 250ms in driver-host.
+        let ping_res = driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Ping).await.unwrap();
+        assert_eq!(ping_res.unwrap_err(), fidl_fdf::HealthCheckError::Timeout);
+
+        // Start another hanging health check and immediately issue Stop to verify Stop is not
+        // blocked by an in-flight HealthCheck.
+        let inflight_fut = driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Ping);
+        driver_proxy.stop().unwrap();
+        drop(driver);
+        shutdown_rx.await.unwrap();
+        // The in-flight check is answered with INVALID_STATE, not cut short by the channel
+        // closing, so driver_manager never sees a two-way call end in a ZX_OK epitaph.
+        let inflight_res = inflight_fut.await.unwrap();
+        assert_eq!(inflight_res.unwrap_err(), fidl_fdf::HealthCheckError::InvalidState);
+        env.destroy_all_dispatchers();
+    }
+
+    #[fuchsia::test]
+    async fn test_run_termination_watcher_in_flight_health_check_answers_invalid_state_on_suspend()
+    {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, driver_proxy, shutdown_rx, _scope) = start_test_driver(&env).await;
+
+        // Ping level hangs in MockDriverServer. Forward it while resumed, then suspend the driver
+        // while the check is in flight: when its 250ms deadline runs out, the completion must be
+        // answered INVALID_STATE (the driver is not resumed) rather than TIMEOUT.
+        let inflight_fut = driver_proxy.health_check(fidl_fdf::HealthCheckRequest::Ping);
+        fuchsia_async::Timer::new(fuchsia_async::MonotonicInstant::after(
+            zx::MonotonicDuration::from_millis(50),
+        ))
+        .await;
+        driver.inner.lock().power_state = DriverPowerState::Suspended;
+        let inflight_res = inflight_fut.await.unwrap();
+        assert_eq!(inflight_res.unwrap_err(), fidl_fdf::HealthCheckError::InvalidState);
+
+        driver.inner.lock().power_state = DriverPowerState::Resumed;
+        driver_proxy.stop().unwrap();
+        drop(driver);
+        shutdown_rx.await.unwrap();
+        env.destroy_all_dispatchers();
+    }
+
+    #[fuchsia::test]
+    async fn test_run_termination_watcher_rejects_unknown_health_check_level() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (driver, driver_proxy, shutdown_rx, _scope) = start_test_driver(&env).await;
+
+        // A level this host does not know is answered locally rather than forwarded.
+        let unknown = fidl_fdf::HealthCheckRequest::from_primitive_allow_unknown(0xdead);
+        let res = driver_proxy.health_check(unknown).await.unwrap();
+        assert_eq!(res.unwrap_err(), fidl_fdf::HealthCheckError::NotSupported);
 
         driver_proxy.stop().unwrap();
         drop(driver);
