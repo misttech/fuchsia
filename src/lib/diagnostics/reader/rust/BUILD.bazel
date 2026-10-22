@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_build_info//:args.bzl", "current_build_target_api_level")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "rust",
+    actual = ":lib",
+    visibility = ["//:__subpackages__"],
+)
+
+# NOTE: `lib_test` and `diagnostics-reader-tests` remain in BUILD.gn above the
+# sentinel because `diagnostics-reader-tests` packages
+# `//src/diagnostics/archivist:archivist-for-embedding-bundle` and
+# `//src/lib/diagnostics/inspect/runtime/rust:inspect_test_component_default`,
+# which do not have Bazel targets yet.
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "diagnostics_reader",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/devices/usb/bin/usb-cli:__pkg__",
+        "//src/sys/component_manager/tests/boot:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/data/rust",
+        "//src/lib/diagnostics/hierarchy/rust:diagnostics-hierarchy",  # @bazel2gn:path_overwrite://src/lib/diagnostics/hierarchy/rust
+        "//src/lib/diagnostics/log/message/rust",
+        "//src/lib/diagnostics/selectors",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:async-stream",
+        "//third_party/rust_crates/vendor:ciborium",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:pin-project",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+    ] + ([
+        "//src/lib/fuchsia-sync",
+    ] if current_build_target_api_level == "PLATFORM" or current_build_target_api_level == "HEAD" else []),
+)
