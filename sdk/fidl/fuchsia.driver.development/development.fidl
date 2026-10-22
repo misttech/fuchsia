@@ -207,4 +207,16 @@ open protocol Manager {
     }) -> (struct {
         count uint32;
     }) error zx.Status;
+
+    /// Requests the driver bound to the node identified by |moniker| to perform a self-diagnostic
+    /// check.
+    ///
+    /// |moniker| must exactly match either the node's component moniker (as reported in
+    /// `NodeInfo.moniker`) or its topological path. If no node matches, the call fails with
+    /// `NOT_FOUND`; if the matching node does not have a running driver, it fails with
+    /// `INVALID_STATE`.
+    flexible RunHealthCheck(struct {
+        moniker string:NODE_MONIKER_MAX;
+        request fuchsia.driver.framework.HealthCheckRequest;
+    }) -> (fuchsia.driver.framework.HealthCheckResponse) error fuchsia.driver.framework.HealthCheckError;
 };

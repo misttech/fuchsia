@@ -3239,4 +3239,31 @@ Devnode::Target Node::CreateDevfsPassthrough(
       });
 }
 
+void Node::RunHealthCheck(
+    fuchsia_driver_framework::HealthCheckRequest request,
+    fit::callback<void(fit::result<fuchsia_driver_framework::HealthCheckError,
+                                   fuchsia_driver_framework::HealthCheckResponse>)>
+        cb) {
+  auto* driver_component = std::get_if<DriverComponent>(&state_);
+  if (!driver_component || driver_component->state != DriverState::kRunning ||
+      !driver_component->driver.is_valid()) {
+    cb(fit::error(fuchsia_driver_framework::HealthCheckError::kInvalidState));
+    return;
+  }
+
+  driver_component->driver->HealthCheck(request).ThenExactlyOnce(
+      [cb = std::move(cb)](
+          fidl::WireUnownedResult<fuchsia_driver_host::Driver::HealthCheck>& result) mutable {
+        if (!result.ok()) {
+          cb(fit::error(fuchsia_driver_framework::HealthCheckError::kInternalError));
+          return;
+        }
+        if (result->is_error()) {
+          cb(fit::error(result->error_value()));
+          return;
+        }
+        cb(fit::ok(fidl::ToNatural(*result->value())));
+      });
+}
+
 }  // namespace driver_manager

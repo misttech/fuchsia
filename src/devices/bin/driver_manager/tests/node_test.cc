@@ -356,6 +356,10 @@ void TestController::Start(StartRequestView request, StartCompleter::Sync& compl
 class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
  public:
   using StopCallback = fit::function<void()>;
+  using HealthCheckCallback =
+      fit::function<fit::result<fuchsia_driver_framework::HealthCheckError,
+                                fuchsia_driver_framework::HealthCheckResponse>(
+          const fuchsia_driver_framework::HealthCheckRequest&)>;
 
   FakeDriver(
       async_dispatcher_t* dispatcher, fidl::ServerEnd<fuchsia_driver_host::Driver> server_end,
@@ -365,10 +369,20 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
         node_(std::move(node)),
         stop_callback_(std::move(stop_callback)) {}
 
+  void SetHealthCheckCallback(HealthCheckCallback cb) { health_check_callback_ = std::move(cb); }
+
   void Stop(StopCompleter::Sync& completer) override {
     stop_callback_();
     node_.reset();
     binding_.Close(ZX_OK);
+  }
+
+  void HealthCheck(HealthCheckRequest& request, HealthCheckCompleter::Sync& completer) override {
+    if (health_check_callback_) {
+      completer.Reply(health_check_callback_(request.request()));
+      return;
+    }
+    completer.Reply(fit::ok(fuchsia_driver_framework::HealthCheckResponse{}));
   }
 
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
@@ -379,6 +393,7 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
   fidl::ServerBinding<fuchsia_driver_host::Driver> binding_;
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
   StopCallback stop_callback_;
+  HealthCheckCallback health_check_callback_;
 };
 
 class Dfv2NodeTest : public DriverManagerTestBase {
@@ -1626,4 +1641,59 @@ TEST_F(Dfv2NodeTest, PrepDictCompFreeBeforeCreateDictReply) {
   auto cb = std::move(fake_util.pending_create_dictionary_);
   cb(zx::error(ZX_ERR_INTERNAL));
   RunLoopUntilIdle();
+}
+
+TEST_F(Dfv2NodeTest, RunHealthCheckUnboundAndBound) {
+  auto node = CreateNode("test-hc");
+
+  // 1. Unbound node returns kInvalidState.
+  auto unbound_req = fuchsia_driver_framework::HealthCheckRequest::kFast;
+  bool unbound_called = false;
+  node->RunHealthCheck(unbound_req, [&unbound_called](auto result) {
+    ASSERT_TRUE(result.is_error());
+    EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kInvalidState, result.error_value());
+    unbound_called = true;
+  });
+  EXPECT_TRUE(unbound_called);
+
+  // 2. Start driver and bind FakeDriver to handle HealthCheck RPCs.
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] = node_manager->driver_host().TakeDriver("test-hc");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        if (req == fuchsia_driver_framework::HealthCheckRequest::kDeep) {
+          return fit::error(fuchsia_driver_framework::HealthCheckError::kNotSupported);
+        }
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{{
+            .conditions = {{{{
+                .status = fuchsia_driver_framework::HealthStatus::kDegraded,
+                .reason_code = "NODE_TEST_WARN",
+            }}}},
+        }});
+      });
+
+  bool fast_called = false;
+  node->RunHealthCheck(unbound_req, [&fast_called](auto result) {
+    ASSERT_TRUE(result.is_ok());
+    ASSERT_EQ(1u, result.value().conditions()->size());
+    EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kDegraded,
+              result.value().conditions()->at(0).status());
+    EXPECT_EQ("NODE_TEST_WARN", result.value().conditions()->at(0).reason_code());
+    fast_called = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(fast_called);
+
+  auto deep_req = fuchsia_driver_framework::HealthCheckRequest::kDeep;
+  bool deep_called = false;
+  node->RunHealthCheck(deep_req, [&deep_called](auto result) {
+    ASSERT_TRUE(result.is_error());
+    EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kNotSupported, result.error_value());
+    deep_called = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(deep_called);
 }

@@ -467,9 +467,24 @@ class TestDriver : public fidl::testing::TestBase<fdh::Driver> {
   using StopHandler = fit::function<void()>;
   void SetStopHandler(StopHandler handler) { stop_handler_ = std::move(handler); }
 
+  using HealthCheckHandler =
+      fit::function<fit::result<fdfw::HealthCheckError, fdfw::HealthCheckResponse>(
+          const fdfw::HealthCheckRequest&)>;
+  void SetHealthCheckHandler(HealthCheckHandler handler) {
+    health_check_handler_ = std::move(handler);
+  }
+
   void SetDontCloseBindingInStop() { dont_close_binding_in_stop_ = true; }
 
   void Stop(StopCompleter::Sync& completer) override;
+
+  void HealthCheck(HealthCheckRequest& request, HealthCheckCompleter::Sync& completer) override {
+    if (health_check_handler_) {
+      completer.Reply(health_check_handler_(request.request()));
+      return;
+    }
+    completer.Reply(fit::ok(fdfw::HealthCheckResponse{}));
+  }
 
   void DropNode() { node_ = {}; }
   void CloseBinding() { driver_binding_.Close(ZX_OK); }
@@ -483,6 +498,7 @@ class TestDriver : public fidl::testing::TestBase<fdh::Driver> {
  private:
   async_dispatcher_t* dispatcher_;
   StopHandler stop_handler_;
+  HealthCheckHandler health_check_handler_;
   fidl::Client<fdfw::Node> node_;
   std::optional<zx::event> node_token_;
   fidl::ServerBinding<fdh::Driver> driver_binding_;

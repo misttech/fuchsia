@@ -59,6 +59,7 @@ test("driver_runner_test") {
   deps = [
     ":driver_runner_test_fixture",
     "//sdk/lib/driver/component/cpp",
+    "//src/devices/bin/driver_manager:driver_development_service",
   ]
 }
 

@@ -610,6 +610,56 @@ void DriverDevelopmentService::RebindCompositesWithDriver(
       });
 }
 
+void DriverDevelopmentService::RunHealthCheck(RunHealthCheckRequestView request,
+                                              RunHealthCheckCompleter::Sync& completer) {
+  std::string target_moniker(request->moniker.get());
+  std::shared_ptr<driver_manager::Node> matched_node;
+
+  std::unordered_set<const driver_manager::Node*> unique_nodes;
+  std::queue<std::shared_ptr<driver_manager::Node>> remaining_nodes;
+  if (driver_runner_.root_node()) {
+    remaining_nodes.push(driver_runner_.root_node());
+  }
+
+  while (!remaining_nodes.empty()) {
+    auto node = remaining_nodes.front();
+    remaining_nodes.pop();
+    if (!unique_nodes.insert(node.get()).second) {
+      continue;
+    }
+    // Only exact matches are accepted so that a request can never resolve to an unintended node.
+    // If multiple nodes share a topological path, prefer a bound node.
+    if (node->MakeComponentMoniker() == target_moniker ||
+        node->MakeTopologicalPath() == target_moniker) {
+      matched_node = node;
+      if (node->is_bound()) {
+        break;
+      }
+    }
+    for (const auto& child : node->children()) {
+      remaining_nodes.push(child);
+    }
+  }
+
+  if (!matched_node) {
+    completer.ReplyError(fuchsia_driver_framework::wire::HealthCheckError::kNotFound);
+    return;
+  }
+
+  matched_node->RunHealthCheck(
+      request->request,
+      [completer = completer.ToAsync()](fit::result<fuchsia_driver_framework::HealthCheckError,
+                                                    fuchsia_driver_framework::HealthCheckResponse>
+                                            result) mutable {
+        if (result.is_error()) {
+          completer.ReplyError(result.error_value());
+          return;
+        }
+        fidl::Arena arena;
+        completer.ReplySuccess(fidl::ToWire(arena, result.value()));
+      });
+}
+
 void DriverDevelopmentService::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_driver_development::Manager> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {

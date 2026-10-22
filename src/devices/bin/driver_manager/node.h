@@ -579,6 +579,12 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Exposed for testing.
   void set_bound_for_testing(bool bound) { is_bound_override_ = bound; }
 
+  void RunHealthCheck(
+      fuchsia_driver_framework::HealthCheckRequest request,
+      fit::callback<void(fit::result<fuchsia_driver_framework::HealthCheckError,
+                                     fuchsia_driver_framework::HealthCheckResponse>)>
+          cb);
+
  private:
   struct DriverComponent {
     DriverComponent(

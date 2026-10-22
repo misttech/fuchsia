@@ -23,6 +23,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
+#include "src/devices/bin/driver_manager/driver_development/driver_development_service.h"
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/testing/fake_driver_index.h"
 #include "src/devices/bin/driver_manager/tests/driver_runner_test_fixture.h"
@@ -2967,6 +2968,83 @@ TEST_P(DriverRunnerTest, LeaseAllDriversForShutdown) {
 
   // Clean up.
   ServeStopListener(std::move(controller));
+  StopDriverComponent(std::move(root_driver->controller));
+}
+
+TEST_P(DriverRunnerTest, DriverDevelopmentRunHealthCheck) {
+  SetupDriverRunner();
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+  root_driver->driver->SetHealthCheckHandler(
+      [](const fdfw::HealthCheckRequest& req)
+          -> fit::result<fdfw::HealthCheckError, fdfw::HealthCheckResponse> {
+        return fit::ok(fdfw::HealthCheckResponse{{
+            .conditions = {{{{
+                .status = fdfw::HealthStatus::kDegraded,
+                .reason_code = "DEV_SERVICE_OK",
+            }}}},
+        }});
+      });
+  auto unbound_child = root_driver->driver->AddChild("unbound_child", false, false);
+
+  driver_manager::DriverDevelopmentService service(driver_runner(), dispatcher());
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_driver_development::Manager>::Create();
+  fidl::BindServer(dispatcher(), std::move(server_end), &service);
+  fidl::WireClient<fuchsia_driver_development::Manager> client(std::move(client_end), dispatcher());
+
+  auto req = fuchsia_driver_framework::wire::HealthCheckRequest::kFast;
+
+  auto expect_ok = [&](std::string_view target) {
+    SCOPED_TRACE(target);
+    bool called = false;
+    client->RunHealthCheck(fidl::StringView::FromExternal(target), req)
+        .ThenExactlyOnce(
+            [&called](fidl::WireUnownedResult<fuchsia_driver_development::Manager::RunHealthCheck>&
+                          result) {
+              ASSERT_TRUE(result.ok());
+              ASSERT_TRUE(result->is_ok());
+              ASSERT_EQ(1u, result->value()->conditions().size());
+              EXPECT_EQ(fuchsia_driver_framework::wire::HealthStatus::kDegraded,
+                        result->value()->conditions()[0].status());
+              EXPECT_EQ("DEV_SERVICE_OK", result->value()->conditions()[0].reason_code().get());
+              called = true;
+            });
+    EXPECT_TRUE(RunLoopUntilIdle());
+    EXPECT_TRUE(called);
+  };
+  auto expect_error = [&](std::string_view target,
+                          fuchsia_driver_framework::wire::HealthCheckError expected) {
+    SCOPED_TRACE(target);
+    bool called = false;
+    client->RunHealthCheck(fidl::StringView::FromExternal(target), req)
+        .ThenExactlyOnce(
+            [&called,
+             expected](fidl::WireUnownedResult<fuchsia_driver_development::Manager::RunHealthCheck>&
+                           result) {
+              ASSERT_TRUE(result.ok());
+              ASSERT_TRUE(result->is_error());
+              EXPECT_EQ(expected, result->error_value());
+              called = true;
+            });
+    EXPECT_TRUE(RunLoopUntilIdle());
+    EXPECT_TRUE(called);
+  };
+
+  // The root node's component moniker is "root" and its topological path is "dev".
+  expect_ok("root");
+  expect_ok("dev");
+
+  // An unbound node exists in the topology but has no running driver, so it returns INVALID_STATE.
+  expect_error("dev.unbound_child",
+               fuchsia_driver_framework::wire::HealthCheckError::kInvalidState);
+  expect_error("dev/unbound_child",
+               fuchsia_driver_framework::wire::HealthCheckError::kInvalidState);
+
+  // Unknown monikers and partial matches (such as a driver URL substring) return NOT_FOUND.
+  expect_error("root-driver.cm", fuchsia_driver_framework::wire::HealthCheckError::kNotFound);
+  expect_error("nonexistent_node", fuchsia_driver_framework::wire::HealthCheckError::kNotFound);
+
   StopDriverComponent(std::move(root_driver->controller));
 }
 
