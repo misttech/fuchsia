@@ -13831,7 +13831,7 @@ rustc_library("mesa3d_util-v0_1_75") {
   deps += [ ":libc-v0_2_190" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":log-v0_4_29" ]
-  deps += [ ":remain-v0_2_15($host_toolchain)" ]
+  deps += [ ":remain-v0_2_16($host_toolchain)" ]
   deps += [ ":rustix-v1_1_4" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":zerocopy-v0_8_48" ]
@@ -18911,18 +18911,18 @@ rustc_library("regex-syntax-v0_8_11") {
   applicable_licenses = [ ":regex-syntax-v0_8_11.license" ]
 }
 
-license("remain-v0_2_15.license") {
+license("remain-v0_2_16.license") {
   public_package_name = "remain"
   license_files = [
-    "//third_party/rust_crates/vendor/remain-0.2.15/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/remain-0.2.15/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/remain-0.2.16/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/remain-0.2.16/LICENSE-MIT",
   ]
 }
 
-rustc_macro("remain-v0_2_15") {
+rustc_macro("remain-v0_2_16") {
   crate_name = "remain"
-  source_root = "//third_party/rust_crates/vendor/remain-0.2.15/src/lib.rs"
-  output_name = "remain-a5d825dde561d130"
+  source_root = "//third_party/rust_crates/vendor/remain-0.2.16/src/lib.rs"
+  output_name = "remain-7541930c9f1aaa7a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18931,19 +18931,19 @@ rustc_macro("remain-v0_2_15") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_6" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a5d825dde561d130",
-    "-Cextra-filename=-a5d825dde561d130",
+    "-Cmetadata=7541930c9f1aaa7a",
+    "-Cextra-filename=-7541930c9f1aaa7a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":remain-v0_2_15.license" ]
+  applicable_licenses = [ ":remain-v0_2_16.license" ]
 }
 
 license("rend-v0_5_3.license") {
@@ -20152,7 +20152,7 @@ rustc_library("rutabaga_gfx-v0_1_75") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":mesa3d_util-v0_1_75" ]
-  deps += [ ":remain-v0_2_15($host_toolchain)" ]
+  deps += [ ":remain-v0_2_16($host_toolchain)" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_151" ]
   deps += [ ":thiserror-v1_0_69" ]

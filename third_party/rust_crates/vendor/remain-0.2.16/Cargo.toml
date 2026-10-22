@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.56"
+rust-version = "1.71"
 name = "remain"
-version = "0.2.15"
+version = "0.2.16"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 build = false
 exclude = ["build.rs"]
@@ -34,14 +34,15 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/remain"
 
 [package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = [
     "--generate-link-to-definition",
+    "--generate-macro-expansion",
     "--extern-html-root-url=core=https://doc.rust-lang.org",
     "--extern-html-root-url=alloc=https://doc.rust-lang.org",
     "--extern-html-root-url=std=https://doc.rust-lang.org",
     "--extern-html-root-url=proc_macro=https://doc.rust-lang.org",
 ]
-targets = ["x86_64-unknown-linux-gnu"]
 
 [lib]
 name = "remain"
@@ -71,7 +72,7 @@ version = "1.0.74"
 version = "1.0.35"
 
 [dependencies.syn]
-version = "2.0.46"
+version = "3"
 features = [
     "full",
     "visit-mut",
@@ -81,5 +82,5 @@ features = [
 version = "1.0.13"
 
 [dev-dependencies.trybuild]
-version = "1.0.81"
+version = "1.0.108"
 features = ["diff"]

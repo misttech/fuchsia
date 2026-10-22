@@ -143,7 +143,7 @@
 //! # fn main() {}
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/remain/0.2.15")]
+#![doc(html_root_url = "https://docs.rs/remain/0.2.16")]
 #![allow(
     clippy::derive_partial_eq_without_eq,
     clippy::enum_glob_use,
@@ -152,8 +152,10 @@
     clippy::match_same_arms,
     clippy::module_name_repetitions,
     clippy::needless_doctest_main,
-    clippy::similar_names
+    clippy::similar_names,
+    clippy::uninlined_format_args
 )]
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 
 extern crate proc_macro;
 
