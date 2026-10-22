@@ -756,26 +756,17 @@ mod tests {
 
         let object_id = {
             let mut transaction = handle.new_transaction().await.expect("new_transaction failed");
-            transaction.add(
-                root_store.store_object_id(),
-                Mutation::replace_or_insert_object(
-                    ObjectKey::graveyard_attribute_entry(
-                        root_store.graveyard_directory_object_id(),
-                        handle.object_id(),
-                        AttributeId::TEST_ID,
-                    ),
-                    ObjectValue::Some,
-                ),
-            );
 
-            // This write should span three transactions. This test mimics the behavior when the
-            // last transaction gets interrupted by a filesystem.close().
+            // `write_new_attr` splits writes exceeding `WRITE_ATTR_BATCH_SIZE` into batches across
+            // multiple transactions, adding the attribute to the graveyard in the first
+            // transaction and removing it in the final (uncommitted) transaction. This write spans
+            // three transactions; dropping the final transaction below mimics the write being
+            // interrupted by `filesystem.close()`.
             handle
-                .write_new_attr_in_batches(
+                .write_new_attr(
                     &mut transaction,
                     AttributeId::TEST_ID,
                     &vec![0; 3 * WRITE_ATTR_BATCH_SIZE],
-                    WRITE_ATTR_BATCH_SIZE,
                 )
                 .await
                 .expect("failed to write attribute");

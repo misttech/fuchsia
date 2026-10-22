@@ -316,7 +316,9 @@ impl FuseFs {
                 ObjectValue::Object { kind, .. } => match kind {
                     ObjectKind::Directory { .. } => Ok(ObjectDescriptor::Directory),
                     ObjectKind::File { .. } => Ok(ObjectDescriptor::File),
-                    ObjectKind::Symlink { .. } => Ok(ObjectDescriptor::Symlink),
+                    ObjectKind::Symlink { .. }
+                    | ObjectKind::EncryptedSymlink { .. }
+                    | ObjectKind::NonInlineSymlink { .. } => Ok(ObjectDescriptor::Symlink),
                     _ => Err(FxfsError::Inconsistent.into()),
                 },
                 _ => Err(FxfsError::Inconsistent.into()),

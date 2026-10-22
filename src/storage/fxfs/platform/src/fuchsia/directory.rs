@@ -6175,4 +6175,89 @@ mod tests {
         drop(node);
         fixture.close().await;
     }
+
+    #[fuchsia::test]
+    async fn test_large_symlink_attributes_and_target() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+        let block_size = fixture.fs().block_size();
+
+        assert_eq!(
+            root.create_symlink("too_big", &vec![b'a'; 4094], None)
+                .await
+                .expect("FIDL call failed")
+                .expect_err("too big symlink target should fail"),
+            zx::Status::BAD_PATH.into_raw(),
+        );
+
+        let inline_target = vec![b'i'; 256];
+        let spilled_target = vec![b's'; 4093];
+
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
+        let fscrypt_dir = open_dir_checked(
+            &root,
+            "fscrypt_dir",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        fscrypt_dir
+            .update_attributes(&fio::MutableNodeAttributes {
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
+                ..Default::default()
+            })
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::ok)
+            .expect("update_attributes failed");
+
+        for dir in [&root, &fscrypt_dir] {
+            let (inline_proxy, inline_server) = create_proxy::<fio::SymlinkMarker>();
+            dir.create_symlink("inline_symlink", &inline_target, Some(inline_server))
+                .await
+                .expect("FIDL call failed")
+                .expect("create_symlink failed");
+
+            let (spilled_proxy, spilled_server) = create_proxy::<fio::SymlinkMarker>();
+            dir.create_symlink("spilled_symlink", &spilled_target, Some(spilled_server))
+                .await
+                .expect("FIDL call failed")
+                .expect("create_symlink failed");
+
+            let inline_info = inline_proxy.describe().await.expect("describe failed");
+            assert_eq!(inline_info.target.as_deref(), Some(inline_target.as_slice()));
+            let (_, inline_immutable) = inline_proxy
+                .get_attributes(
+                    fio::NodeAttributesQuery::CONTENT_SIZE | fio::NodeAttributesQuery::STORAGE_SIZE,
+                )
+                .await
+                .expect("FIDL call failed")
+                .expect("get_attributes failed");
+            assert_eq!(inline_immutable.content_size, Some(256));
+            assert_eq!(inline_immutable.storage_size, Some(0));
+
+            let spilled_info = spilled_proxy.describe().await.expect("describe failed");
+            assert_eq!(spilled_info.target.as_deref(), Some(spilled_target.as_slice()));
+            let (_, spilled_immutable) = spilled_proxy
+                .get_attributes(
+                    fio::NodeAttributesQuery::CONTENT_SIZE | fio::NodeAttributesQuery::STORAGE_SIZE,
+                )
+                .await
+                .expect("FIDL call failed")
+                .expect("get_attributes failed");
+            assert_eq!(spilled_immutable.content_size, Some(4093));
+            assert_eq!(spilled_immutable.storage_size, Some(block_size.get()));
+        }
+
+        fixture.close().await;
+    }
 }

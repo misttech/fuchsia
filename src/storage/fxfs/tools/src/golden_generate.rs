@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use crate::golden_common::{
-    BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT, IMAGE_BLOCK_SIZE,
-    LARGE_ATTR_COUNT, LARGE_ATTR_PREFIX, MAX_INLINE_XATTR_SIZE, REGULAR_DIRECTORY_PATH,
-    REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH, WRAPPING_KEY_ID,
-    latest_image_filename,
+    BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT,
+    FSCRYPT_NON_INLINE_SYMLINK_PATH, IMAGE_BLOCK_SIZE, LARGE_ATTR_COUNT, LARGE_ATTR_PREFIX,
+    MAX_INLINE_XATTR_SIZE, NON_INLINE_SYMLINK_PATH, NON_INLINE_SYMLINK_TARGET,
+    REGULAR_DIRECTORY_PATH, REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH,
+    WRAPPING_KEY_ID, latest_image_filename,
 };
 use crate::ops;
 use anyhow::{Context, Error, bail};
@@ -79,6 +80,7 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
     ops::unlink(fs, vol, &Path::new(DELETED_FILE_PATH)).await?;
     ops::put(fs, vol, &Path::new(VERITY_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
     ops::enable_verity(vol, &Path::new(VERITY_FILE_PATH)).await?;
+    ops::symlink(fs, vol, &Path::new(NON_INLINE_SYMLINK_PATH), NON_INLINE_SYMLINK_TARGET).await?;
 
     fs.journal().force_compact().await?;
 
@@ -123,6 +125,13 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
         ops::enable_casefold(vol, fscrypt_dir_path.as_path()).await?;
         ops::put(fs, vol, &Path::new(FSCRYPT_UNICODE_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec())
             .await?;
+        ops::symlink(
+            fs,
+            vol,
+            &Path::new(FSCRYPT_NON_INLINE_SYMLINK_PATH),
+            NON_INLINE_SYMLINK_TARGET,
+        )
+        .await?;
     }
 
     Ok(())

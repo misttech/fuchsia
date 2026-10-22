@@ -17,9 +17,9 @@ use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, l
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
     AttributeId, AttributeKey, DataObjectHandle, DirType, Directory, ExtentValue, FSCRYPT_KEY_ID,
-    FscryptDirInfo, FscryptPolicyFlags, FsverityMetadata, HandleOptions, NewChildStoreOptions,
-    ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectValue,
-    PosixAttributes, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
+    FscryptDirInfo, FscryptPolicyFlags, FsverityMetadata, HandleOptions, MAX_INLINE_SYMLINK_SIZE,
+    NewChildStoreOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore,
+    ObjectValue, PosixAttributes, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use fxfs_crypto::{Crypt, EncryptionKey};
 use std::collections::HashSet;
@@ -528,7 +528,6 @@ pub async fn migrate(
                     };
                     let mut filename = filename.to_vec();
 
-                    let object_attributes = inode_to_object_attributes(&inode, 0);
                     if dir.dir_type().is_encrypted() {
                         // Redundant 2-byte length prefix on encrypted symlinks (use
                         // inline_data.len()).
@@ -548,18 +547,6 @@ pub async fn migrate(
                                 ObjectValue::child(object_id, ObjectDescriptor::Symlink),
                             ),
                         );
-                        transaction.add(
-                            dir.owner().store_object_id(),
-                            Mutation::insert_object(
-                                ObjectKey::object(object_id),
-                                ObjectValue::encrypted_symlink(
-                                    filename,
-                                    object_attributes.creation_time,
-                                    object_attributes.modification_time,
-                                    object_attributes.project_id,
-                                ),
-                            ),
-                        );
                     } else {
                         transaction.add(
                             dir.owner().store_object_id(),
@@ -568,16 +555,52 @@ pub async fn migrate(
                                 ObjectValue::child(object_id, ObjectDescriptor::Symlink),
                             ),
                         );
+                    }
+
+                    if filename.len() <= MAX_INLINE_SYMLINK_SIZE {
+                        let object_attributes = inode_to_object_attributes(&inode, 0);
+                        let value = if dir.dir_type().is_encrypted() {
+                            ObjectValue::encrypted_symlink(
+                                filename,
+                                object_attributes.creation_time,
+                                object_attributes.modification_time,
+                                object_attributes.project_id,
+                            )
+                        } else {
+                            ObjectValue::symlink(
+                                filename,
+                                object_attributes.creation_time,
+                                object_attributes.modification_time,
+                                object_attributes.project_id,
+                            )
+                        };
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::insert_object(ObjectKey::object(object_id), value),
+                        );
+                    } else {
+                        files_to_copy.insert(object_id);
+                        let object_attributes =
+                            inode_to_object_attributes(&inode, F2FS_BLOCK_SIZE as u64);
                         transaction.add(
                             dir.owner().store_object_id(),
                             Mutation::insert_object(
                                 ObjectKey::object(object_id),
-                                ObjectValue::symlink(
-                                    filename,
-                                    object_attributes.creation_time,
-                                    object_attributes.modification_time,
-                                    object_attributes.project_id,
+                                ObjectValue::Object {
+                                    kind: ObjectKind::NonInlineSymlink { refs: 1 },
+                                    attributes: object_attributes,
+                                },
+                            ),
+                        );
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::insert_object(
+                                ObjectKey::attribute(
+                                    object_id,
+                                    AttributeId::DATA,
+                                    AttributeKey::Attribute,
                                 ),
+                                ObjectValue::attribute(filename.len() as u64, false),
                             ),
                         );
                     }
@@ -910,7 +933,13 @@ pub async fn deep_copy_files(
         )
         .await?;
         if inode.header.inline_flags.contains(InlineFlags::Data) {
-            let len = inode.inline_data.as_ref().unwrap().len();
+            let inline_data = inode.inline_data.as_ref().unwrap();
+            let (data, key_id, encrypt) =
+                if inode.header.advise_flags.contains(AdviseFlags::Encrypted) {
+                    (&inline_data[2..], FSCRYPT_KEY_ID, false)
+                } else {
+                    (&inline_data[..], VOLUME_DATA_KEY_ID, true)
+                };
             let mut buffer = object.allocate_buffer(FXFS_BLOCK_SIZE.get() as usize).await;
             let mut transaction = fxfs
                 .root_store()
@@ -920,12 +949,13 @@ pub async fn deep_copy_files(
                 )
                 .await
                 .expect("new default encrypted file transaction");
-            buffer.subslice_mut(..len).copy_from_slice(&inode.inline_data.as_ref().unwrap());
+            buffer.subslice_mut(..data.len()).copy_from_slice(data);
             object
                 .raw_multi_write(
                     &mut transaction,
                     AttributeId::DATA,
-                    Some(VOLUME_DATA_KEY_ID),
+                    Some(key_id),
+                    encrypt,
                     &[0..FXFS_BLOCK_SIZE.get()],
                     buffer.as_mut(),
                 )
@@ -998,6 +1028,7 @@ pub async fn deep_copy_files(
                             &mut transaction,
                             AttributeId::DATA,
                             Some(VOLUME_DATA_KEY_ID),
+                            /* encrypt: */ true,
                             &[current_block_offset as u64 * FXFS_BLOCK_SIZE
                                 ..(current_block_offset + chunk_len) as u64 * FXFS_BLOCK_SIZE],
                             buffer.subslice_mut(0..byte_len),

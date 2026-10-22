@@ -8,9 +8,9 @@ use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties};
 use crate::object_store::object_record::{
-    BytesAndNodes, ChildValue, DirType, EncryptedCasefoldChild, EncryptedChild, FscryptDirInfo,
-    ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
-    Timestamp,
+    BytesAndNodes, ChildValue, DirType, EncryptedCasefoldChild, EncryptedChild, EncryptionKey,
+    FscryptDirInfo, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind,
+    ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
     LockKey, LockKeys, Mutation, Options, ReservationOptions, Transaction, lock_keys,
@@ -23,14 +23,21 @@ use anyhow::{Error, anyhow, bail, ensure};
 use fidl_fuchsia_io as fio;
 use fscrypt::proxy_filename::ProxyFilename;
 use fuchsia_sync::Mutex;
-use fxfs_crypto::{Cipher, CipherHolder, ObjectType, WrappingKeyId, key_to_cipher};
+use fxfs_crypto::{
+    Cipher, CipherHolder, CipherSet, KeyPurpose, MAX_SYMLINK_LEN, ObjectType, WrappingKeyId,
+    key_to_cipher,
+};
 use std::fmt;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use zerocopy::IntoBytes;
 
-use super::FSCRYPT_KEY_ID;
+use super::{FSCRYPT_KEY_ID, VOLUME_DATA_KEY_ID};
+
+/// The maximum size for a symlink target to be stored inline in an object's tree record. Beyond
+/// this size, the target is stored in `AttributeId::DATA`.
+pub const MAX_INLINE_SYMLINK_SIZE: usize = 256;
 
 type BoxPredicate<'a> = Box<dyn Fn(&ObjectKey) -> ControlFlow<bool> + Send + 'a>;
 
@@ -937,17 +944,17 @@ impl<S: HandleOwner> Directory<S> {
         name: &str,
     ) -> Result<u64, Error> {
         ensure!(!self.is_deleted(), FxfsError::Deleted);
-        // Limit the length of link that might be too big to put in the tree.
-        // https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/limits.h.html.
-        // See _POSIX_SYMLINK_MAX.
-        ensure!(link.len() <= 256, FxfsError::BadPath);
-        let reserved_symlink_id = self.store().get_next_object_id(transaction).await?;
+        ensure!(link.len() <= MAX_SYMLINK_LEN, FxfsError::BadPath);
+        let store = self.store();
+        let store_id = store.store_object_id();
+        let reserved_symlink_id = store.get_next_object_id(transaction).await?;
         let symlink_id = reserved_symlink_id.get();
         let mut link = link.to_vec();
+        let inline = link.len() <= MAX_INLINE_SYMLINK_SIZE;
 
-        match self.dir_type() {
+        let cipher_set: Option<Arc<CipherSet>> = match self.dir_type() {
             DirType::Encrypted(info) | DirType::EncryptedCasefold(info) => {
-                if let Some(crypt) = self.store().crypt() {
+                if let Some(crypt) = store.crypt() {
                     let (key, unwrapped_key) = crypt
                         .create_key_with_id(
                             symlink_id,
@@ -957,18 +964,9 @@ impl<S: HandleOwner> Directory<S> {
                         )
                         .await?;
 
-                    // Note that it's possible that this entry gets inserted into the key manager but
-                    // this transaction doesn't get committed. This shouldn't be a problem because
-                    // unused keys get purged on a standard timeout interval and this key shouldn't
-                    // conflict with any other keys.
                     let cipher = key_to_cipher(&key, &unwrapped_key)?;
-                    self.store().key_manager.insert(
-                        symlink_id,
-                        Arc::new(
-                            vec![(FSCRYPT_KEY_ID, CipherHolder::Cipher(cipher.clone()))].into(),
-                        ),
-                        false,
-                    );
+                    let keys = vec![(FSCRYPT_KEY_ID, key)];
+                    let ciphers = vec![(FSCRYPT_KEY_ID, CipherHolder::Cipher(cipher.clone()))];
 
                     let dir_key =
                         self.get_fscrypt_key().await?.into_cipher().ok_or(FxfsError::NoKey)?;
@@ -980,52 +978,132 @@ impl<S: HandleOwner> Directory<S> {
                     };
                     cipher.encrypt_symlink(symlink_id, &mut link)?;
 
+                    let object_value = if inline {
+                        ObjectValue::encrypted_symlink(
+                            std::mem::take(&mut link),
+                            Timestamp::now(),
+                            Timestamp::now(),
+                            None,
+                        )
+                    } else {
+                        ObjectValue::non_inline_symlink(Timestamp::now(), Timestamp::now(), None)
+                    };
                     transaction.add(
-                        self.store().store_object_id(),
+                        store_id,
                         Mutation::insert_object(
                             ObjectKey::object(reserved_symlink_id.release().get()),
-                            ObjectValue::encrypted_symlink(
-                                link,
-                                Timestamp::now(),
-                                Timestamp::now(),
-                                None,
-                            ),
+                            object_value,
                         ),
                     );
                     transaction.add(
-                        self.store().store_object_id(),
+                        store_id,
                         Mutation::insert_object(
                             ObjectKey::keys(symlink_id),
-                            ObjectValue::keys(vec![(FSCRYPT_KEY_ID, key)].into()),
+                            ObjectValue::keys(keys.into()),
                         ),
                     );
+                    if !inline {
+                        // Write the fscrypt symlink ciphertext to `AttributeId::DATA` with
+                        // `FSCRYPT_KEY_ID` via `write_new_attr_pre_encrypted` rather than
+                        // `write_new_attr`, because `link` is already encrypted in fscrypt symlink
+                        // mode and the fscrypt symlink cipher does not support data-mode
+                        // encryption.
+                        let handle = StoreObjectHandle::new(
+                            self.owner().clone(),
+                            symlink_id,
+                            /* permanent_keys: */ false,
+                            HandleOptions::default(),
+                            /* trace: */ false,
+                        );
+                        handle
+                            .write_new_attr_pre_encrypted(
+                                transaction,
+                                AttributeId::DATA,
+                                FSCRYPT_KEY_ID,
+                                &link,
+                            )
+                            .await?;
+                    }
                     transaction.add(
-                        self.store().store_object_id(),
+                        store_id,
                         Mutation::replace_or_insert_object(
                             ObjectKey::encrypted_child(self.object_id(), encrypted_name, hash_code),
                             ObjectValue::child(symlink_id, ObjectDescriptor::Symlink),
                         ),
                     );
+                    Some(Arc::new(ciphers.into()))
                 } else {
                     return Err(anyhow!("No crypt"));
                 }
             }
             _ => {
+                let object_value = if inline {
+                    ObjectValue::symlink(
+                        std::mem::take(&mut link),
+                        Timestamp::now(),
+                        Timestamp::now(),
+                        None,
+                    )
+                } else {
+                    ObjectValue::non_inline_symlink(Timestamp::now(), Timestamp::now(), None)
+                };
                 transaction.add(
-                    self.store().store_object_id(),
+                    store_id,
                     Mutation::insert_object(
                         ObjectKey::object(reserved_symlink_id.release().get()),
-                        ObjectValue::symlink(link, Timestamp::now(), Timestamp::now(), None),
+                        object_value,
                     ),
                 );
+                let cipher_set = if !inline {
+                    let cipher_set = if let Some(crypt) = store.crypt() {
+                        let (fxfs_key, unwrapped_fxfs_key) =
+                            crypt.create_key(symlink_id, KeyPurpose::Data).await?;
+                        let fxfs_key = EncryptionKey::Fxfs(fxfs_key);
+                        let fxfs_cipher = key_to_cipher(&fxfs_key, &unwrapped_fxfs_key)?;
+                        transaction.add(
+                            store_id,
+                            Mutation::insert_object(
+                                ObjectKey::keys(symlink_id),
+                                ObjectValue::keys(vec![(VOLUME_DATA_KEY_ID, fxfs_key)].into()),
+                            ),
+                        );
+                        let cipher_set: Arc<CipherSet> = Arc::new(
+                            vec![(VOLUME_DATA_KEY_ID, CipherHolder::Cipher(fxfs_cipher))].into(),
+                        );
+                        store.key_manager.insert(symlink_id, cipher_set.clone(), false);
+                        Some(cipher_set)
+                    } else {
+                        None
+                    };
+                    let handle = StoreObjectHandle::new(
+                        self.owner().clone(),
+                        symlink_id,
+                        /* permanent_keys: */ false,
+                        HandleOptions::default(),
+                        /* trace: */ false,
+                    );
+                    handle.write_new_attr(transaction, AttributeId::DATA, &link).await?;
+                    cipher_set
+                } else {
+                    None
+                };
                 transaction.add(
-                    self.store().store_object_id(),
+                    store_id,
                     Mutation::replace_or_insert_object(
                         ObjectKey::child(self.object_id(), &name, self.dir_type()),
                         ObjectValue::child(symlink_id, ObjectDescriptor::Symlink),
                     ),
                 );
+                cipher_set
             }
+        };
+
+        if let Some(cipher_set) = cipher_set {
+            // Note that it's possible that this entry gets inserted into the key manager but this
+            // transaction doesn't get committed. This shouldn't be a problem because unused keys
+            // get purged on a standard timeout interval and this key shouldn't conflict with any
+            // other keys.
+            store.key_manager.insert(symlink_id, cipher_set, false);
         }
 
         let now = Timestamp::now();
@@ -2013,16 +2091,20 @@ async fn replace_child_with_object_impl<'a, S: HandleOwner>(
 
 #[cfg(test)]
 mod tests {
-    use super::{ProxyFilename, encrypt_filename, replace_child_with_object};
+    use super::{
+        MAX_INLINE_SYMLINK_SIZE, MAX_SYMLINK_LEN, ProxyFilename, encrypt_filename,
+        replace_child_with_object,
+    };
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, SyncOptions};
     use crate::fsck::{fsck, fsck_volume};
+    use crate::lsm_tree::Query;
     use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::{
         Directory, MutableAttributesInternal, ReplacedChild, replace_child,
         replace_child_with_purge,
     };
-    use crate::object_store::object_record::{ObjectKey, ObjectValue, Timestamp};
+    use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectValue, Timestamp};
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
@@ -5528,5 +5610,234 @@ mod tests {
             .expect("fsck_volume failed");
 
         filesystem.close().await.expect("close failed");
+    }
+
+    #[test_case(false, false; "unencrypted_store")]
+    #[test_case(true, false; "encrypted_store_normal_dir")]
+    #[test_case(true, true; "encrypted_store_fscrypt_dir")]
+    #[fuchsia::test]
+    async fn test_large_symlinks(encrypted_store: bool, fscrypt_dir: bool) {
+        let device = DeviceHolder::new(FakeDevice::new(16384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let crypt: Option<Arc<CryptBase>> = if encrypted_store {
+            let crypt = Arc::new(new_insecure_crypt());
+            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key");
+            Some(crypt)
+        } else {
+            None
+        };
+
+        let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_vol
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: crypt.clone().map(|c| c as Arc<dyn Crypt>),
+                        ..StoreOptions::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        if fscrypt_dir {
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir.set_wrapping_key(&mut transaction, WRAPPING_KEY_ID).await.unwrap();
+            transaction.commit().await.unwrap();
+        }
+
+        let root_dir =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // Overly long symlink targets must fail with BadPath.
+        {
+            let target = vec![b'a'; MAX_SYMLINK_LEN + 1];
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let err = root_dir
+                .create_symlink(&mut transaction, &target, "bad_symlink")
+                .await
+                .expect_err("create_symlink should fail");
+            assert_eq!(err.downcast::<FxfsError>().expect("wrong error"), FxfsError::BadPath);
+        }
+
+        let inline_target = vec![b'x'; MAX_INLINE_SYMLINK_SIZE];
+        let spilled_min_target = vec![b'y'; MAX_INLINE_SYMLINK_SIZE + 1];
+        let spilled_max_target = vec![b'z'; MAX_SYMLINK_LEN];
+
+        let mut created = Vec::new();
+        for (name, target) in [
+            ("inline_256", &inline_target),
+            ("spilled_257", &spilled_min_target),
+            ("spilled_4093", &spilled_max_target),
+        ] {
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let id = root_dir
+                .create_symlink(&mut transaction, target, name)
+                .await
+                .expect("create_symlink failed");
+            transaction.commit().await.expect("commit failed");
+            created.push((name, id, target.clone()));
+        }
+
+        for (name, id, expected_target) in &created {
+            let actual = store.read_symlink(*id).await.expect("read_symlink failed");
+            assert_eq!(&actual, expected_target, "mismatch for {name}");
+
+            let value = store
+                .tree()
+                .find_value(&ObjectKey::object(*id))
+                .await
+                .expect("find_value failed")
+                .expect("missing object");
+            match value {
+                ObjectValue::Object {
+                    kind: ObjectKind::Symlink { .. } | ObjectKind::EncryptedSymlink { .. },
+                    attributes,
+                } => {
+                    assert!(expected_target.len() <= MAX_INLINE_SYMLINK_SIZE);
+                    assert_eq!(attributes.allocated_size, 0);
+                }
+                ObjectValue::Object { kind: ObjectKind::NonInlineSymlink { .. }, attributes } => {
+                    assert!(expected_target.len() > MAX_INLINE_SYMLINK_SIZE);
+                    assert_eq!(attributes.allocated_size, fs.block_size());
+                }
+                _ => panic!("unexpected object value: {value:?}"),
+            }
+        }
+
+        fsck(fs.clone()).await.expect("fsck failed");
+        fsck_volume(
+            fs.as_ref(),
+            store.store_object_id(),
+            crypt.clone().map(|c| c as Arc<dyn Crypt>),
+        )
+        .await
+        .expect("fsck_volume failed");
+
+        // Test single-transaction purge of a spilled symlink.
+        let (_, spilled_257_id, _) = created[1];
+        let alloc_before = fs.allocator().get_allocated_bytes();
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![
+                    LockKey::object(store.store_object_id(), root_dir.object_id()),
+                    LockKey::object(store.store_object_id(), spilled_257_id),
+                ],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        assert_matches!(
+            replace_child_with_purge(&mut transaction, None, (&root_dir, "spilled_257"), true)
+                .await
+                .expect("replace_child_with_purge failed"),
+            ReplacedChild::Purged(id) if id == spilled_257_id
+        );
+        transaction.commit().await.expect("commit failed");
+        assert_eq!(fs.allocator().get_allocated_bytes(), alloc_before - fs.block_size());
+
+        fsck(fs.clone()).await.expect("fsck failed");
+        fsck_volume(
+            fs.as_ref(),
+            store.store_object_id(),
+            crypt.clone().map(|c| c as Arc<dyn Crypt>),
+        )
+        .await
+        .expect("fsck_volume failed");
+
+        drop(root_dir);
+        drop(store);
+        drop(root_vol);
+        fs.close().await.expect("close failed");
+
+        if fscrypt_dir {
+            let device = fs.take_device().await;
+            device.reopen(false);
+            let fs = FxFilesystem::open(device).await.expect("open failed");
+            let locked_crypt = Arc::new(new_insecure_crypt());
+            let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_volume
+                .volume(
+                    "vol",
+                    StoreOptions {
+                        crypt: Some(locked_crypt.clone() as Arc<dyn Crypt>),
+                        ..StoreOptions::default()
+                    },
+                )
+                .await
+                .expect("volume failed");
+
+            let (_, spilled_4093_id, expected_4093) = &created[2];
+            let handle = StoreObjectHandle::new(
+                store.clone(),
+                *spilled_4093_id,
+                /* permanent_keys: */ false,
+                HandleOptions::default(),
+                /* trace: */ false,
+            );
+            let layer_set = store.tree().layer_set();
+            let mut merger = layer_set.merger();
+            let iter = merger
+                .query(Query::FullRange(&ObjectKey::attribute(
+                    *spilled_4093_id,
+                    AttributeId::DATA,
+                    AttributeKey::Attribute,
+                )))
+                .await
+                .expect("query failed");
+            let raw_encrypted =
+                handle.read_raw_attr_from_iter(iter).await.expect("read_raw_attr_from_iter failed");
+            let expected_proxy: String =
+                ProxyFilename::new_with_hash_code(0, &raw_encrypted).into();
+            let locked_target =
+                store.read_symlink(*spilled_4093_id).await.expect("read_symlink locked failed");
+            assert_eq!(locked_target, expected_proxy.as_bytes());
+
+            // Unlock the wrapping key and verify reading the spilled symlink returns plaintext.
+            locked_crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add_wrapping_key");
+            let unlocked_target =
+                store.read_symlink(*spilled_4093_id).await.expect("read_symlink unlocked failed");
+            assert_eq!(&unlocked_target, expected_4093);
+
+            fs.close().await.expect("close failed");
+        }
     }
 }

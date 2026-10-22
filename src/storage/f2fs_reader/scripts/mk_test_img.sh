@@ -50,6 +50,8 @@ dd if=/dev/zero bs=4096 count=8 of=${REGULAR_PATH}/regular
 echo -n "01234567" >> ${REGULAR_PATH}/regular
 
 ln -s regular ${REGULAR_PATH}/symlink
+LONG_SYMLINK_TARGET=$(printf 'x%.0s' {1..300})
+ln -s "${LONG_SYMLINK_TARGET}" ${REGULAR_PATH}/long_symlink
 ln ${REGULAR_PATH}/regular ${REGULAR_PATH}/hardlink
 touch ${REGULAR_PATH}/chowned
 chown 999:999 ${REGULAR_PATH}/chowned
@@ -143,6 +145,8 @@ echo "asdf" >> ${MOUNT_PATH}/fscrypt/a/b/regular
 fsverity enable ${MOUNT_PATH}/fscrypt/a/b/regular
 ln -s "inlined" ${MOUNT_PATH}/fscrypt/a/b/symlink
 INODES["$(stat -c "%i" ${MOUNT_PATH}/fscrypt/a/b/symlink)"]="symlink"
+ln -s "${LONG_SYMLINK_TARGET}" ${MOUNT_PATH}/fscrypt/a/b/long_symlink
+INODES["$(stat -c "%i" ${MOUNT_PATH}/fscrypt/a/b/long_symlink)"]="long_symlink"
 
 # Test filenames of different lengths to ensure we use a compatible proxy
 # filename scheme.
@@ -205,6 +209,11 @@ echo "let str_symlink = \"${str_symlink}\";"
 echo -n "let bytes_symlink_content = "
 echo "b\"$(readlink ${MOUNT_PATH}/fscrypt/${str_a}/${str_b}/${str_symlink})\";"
 
+str_long_symlink=$(lookup_inode "long_symlink" ${MOUNT_PATH}/fscrypt/${str_a}/${str_b}/*)
+echo "let str_long_symlink = \"${str_long_symlink}\";"
+echo -n "let bytes_long_symlink_content = "
+echo "b\"$(readlink ${MOUNT_PATH}/fscrypt/${str_a}/${str_b}/${str_long_symlink})\";"
+
 echo "Expected:"
 for f in ${MOUNT_PATH}/fscrypt/*
 do
@@ -223,6 +232,9 @@ sync
 cp /tmp/f2fs.img /tmp/f2fs_snapshot.img
 
 zstd -f /tmp/f2fs_snapshot.img -o ../testdata/f2fs.img.zst
+if [[ -n "${SUDO_UID}" && -n "${SUDO_GID}" ]]; then
+  chown "${SUDO_UID}:${SUDO_GID}" ../testdata/f2fs.img.zst
+fi
 
 echo "Done!"
 

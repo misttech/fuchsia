@@ -28,7 +28,7 @@ pub mod volume;
 pub use data_object_handle::{
     DataObjectHandle, DataObjectState, DirectWriter, FileExtent, FsverityStateInner, RangeType,
 };
-pub use directory::Directory;
+pub use directory::{Directory, MAX_INLINE_SYMLINK_SIZE};
 pub use object_record::{
     ChildValue, DirType, FscryptDirInfo, FscryptPolicyFlags, LEGACY_FSCRYPT_FLAGS,
     ObjectDescriptor, PosixAttributes, Timestamp,
@@ -50,7 +50,7 @@ use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, JournaledTransaction};
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
-    AssocObj, AssociatedObject, LockKey, LockKeys, MutationV59, MutationV61,
+    AssocObj, AssociatedObject, LockKey, LockKeys, MutationV59, MutationV61, MutationV62,
     ObjectMutationIterator, ObjectStoreMutation, Operation, Options, ReservationOptions,
     Transaction, WriteGuard, lock_keys,
 };
@@ -62,6 +62,7 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use fprint::TypeFingerprint;
+use fscrypt::proxy_filename::ProxyFilename;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::ff1::Ff1;
 use fxfs_crypto::{
@@ -1445,7 +1446,8 @@ impl ObjectStore {
             kind:
                 ObjectKind::File { refs, .. }
                 | ObjectKind::Symlink { refs, .. }
-                | ObjectKind::EncryptedSymlink { refs, .. },
+                | ObjectKind::EncryptedSymlink { refs, .. }
+                | ObjectKind::NonInlineSymlink { refs, .. },
             ..
         } = &mut mutation.item.value
         {
@@ -2749,11 +2751,10 @@ impl ObjectStore {
     pub async fn read_encrypted_symlink(
         &self,
         object_id: u64,
-        link: Vec<u8>,
+        mut link: Vec<u8>,
     ) -> Result<Vec<u8>, Error> {
-        let mut link = link;
         let key = self
-            .key_manager()
+            .key_manager
             .get_fscrypt_key(object_id, self.crypt().unwrap().as_ref(), async || {
                 self.get_keys(object_id).await
             })
@@ -2763,8 +2764,7 @@ impl ObjectStore {
             Ok(link)
         } else {
             // Locked symlinks are encoded using a hash_code of 0.
-            let proxy_filename =
-                fscrypt::proxy_filename::ProxyFilename::new_with_hash_code(0, &link);
+            let proxy_filename = ProxyFilename::new_with_hash_code(0, &link);
             let proxy_filename_str: String = proxy_filename.into();
             Ok(proxy_filename_str.into_bytes())
         }
@@ -2772,16 +2772,37 @@ impl ObjectStore {
 
     /// Returns the link of a symlink object.
     pub async fn read_symlink(&self, object_id: u64) -> Result<Vec<u8>, Error> {
-        match self.tree.find_value(&ObjectKey::object(object_id)).await? {
-            None => bail!(FxfsError::NotFound),
-            Some(ObjectValue::Object {
-                kind: ObjectKind::EncryptedSymlink { link, .. }, ..
+        match self.tree.find(&ObjectKey::object(object_id)).await? {
+            None | Some(Item { value: ObjectValue::None, .. }) => bail!(FxfsError::NotFound),
+            Some(Item {
+                value: ObjectValue::Object { kind: ObjectKind::EncryptedSymlink { link, .. }, .. },
+                ..
             }) => self.read_encrypted_symlink(object_id, link.into_vec()).await,
-            Some(ObjectValue::Object { kind: ObjectKind::Symlink { link, .. }, .. }) => {
-                Ok(link.into_vec())
+            Some(Item {
+                value: ObjectValue::Object { kind: ObjectKind::Symlink { link, .. }, .. },
+                ..
+            }) => Ok(link.into_vec()),
+            Some(Item {
+                value: ObjectValue::Object { kind: ObjectKind::NonInlineSymlink { .. }, .. },
+                ..
+            }) => {
+                let store = self
+                    .filesystem()
+                    .ensure_local()
+                    .object_manager()
+                    .store(self.store_object_id)
+                    .unwrap();
+                let handle = StoreObjectHandle::new(
+                    store,
+                    object_id,
+                    /* permanent_keys: */ false,
+                    HandleOptions::default(),
+                    /* trace: */ false,
+                );
+                handle.read_non_inline_symlink().await
             }
-            Some(value) => Err(anyhow!(FxfsError::Inconsistent)
-                .context(format!("Unexpected value in symlink lookup: {value:?}"))),
+            Some(item) => Err(anyhow!(FxfsError::Inconsistent)
+                .context(format!("Unexpected item in symlink lookup: {item:?}"))),
         }
     }
 
@@ -3287,7 +3308,7 @@ impl JournalingObject for ObjectStore {
 
 /// The plaintext serialization of the mutations for a transaction that are encrypted then wrapped
 /// in `Mutation::EncryptedObjectStore`.
-pub type EncryptedTransaction = EncryptedTransactionV61;
+pub type EncryptedTransaction = EncryptedTransactionV62;
 
 static_assertions::const_assert!(EncryptedTransaction::MAX_CHUNK_SIZE % 16 == 0);
 impl EncryptedTransaction {
@@ -3337,24 +3358,49 @@ impl EncryptedTransaction {
 // wrapped in Mutation and the version associated with it will come from some parent type above
 // Mutation.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct EncryptedTransactionV62(pub Vec<MutationV62>);
+
+impl TypeFingerprint for EncryptedTransactionV62 {
+    fn fingerprint() -> String {
+        format!(
+            "struct{{MAX_CHUNK_SIZE: {}, {}}}",
+            // The MAX_CHUNK_SIZE is an important part of the format.
+            Self::MAX_CHUNK_SIZE,
+            Vec::<MutationV62>::fingerprint()
+        )
+    }
+}
+
+impl Versioned for EncryptedTransactionV62 {
+    // This can serialize much larger sizes. They will be broken up before being wrapped in
+    // EncryptedObjectStore.
+    fn max_serialized_size() -> Option<u64> {
+        None
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EncryptedTransactionV61(pub Vec<MutationV61>);
 
 impl TypeFingerprint for EncryptedTransactionV61 {
     fn fingerprint() -> String {
         format!(
             "struct{{MAX_CHUNK_SIZE: {}, {}}}",
-            // The MAX_CHUNK_SIZE is an important part of the format.
-            Self::MAX_CHUNK_SIZE,
+            EncryptedTransaction::MAX_CHUNK_SIZE,
             Vec::<MutationV61>::fingerprint()
         )
     }
 }
 
 impl Versioned for EncryptedTransactionV61 {
-    // This can serialize much larger sizes. They will be broken up before being wrapped in
-    // EncryptedObjectStore.
     fn max_serialized_size() -> Option<u64> {
         None
+    }
+}
+
+impl From<EncryptedTransactionV61> for EncryptedTransactionV62 {
+    fn from(old: EncryptedTransactionV61) -> Self {
+        Self(old.0.into_iter().map(Into::into).collect())
     }
 }
 

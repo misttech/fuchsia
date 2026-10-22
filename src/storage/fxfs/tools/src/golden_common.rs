@@ -17,6 +17,9 @@ pub const REGULAR_DIRECTORY_PATH: &str = "some";
 pub const REGULAR_FILE_PATH: &str = "some/file.txt";
 pub const UNENCRYPTED_VOLUME: &str = "unencrypted";
 pub const VERITY_FILE_PATH: &str = "some/fsverity.txt";
+pub const NON_INLINE_SYMLINK_PATH: &str = "some/non_inline_symlink";
+pub const FSCRYPT_NON_INLINE_SYMLINK_PATH: &str = "fscrypt/non_inline_symlink";
+pub const NON_INLINE_SYMLINK_TARGET: &[u8; 300] = &[b'a'; 300];
 pub const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 pub const LARGE_ATTR_PREFIX: &str = "user.large_attr";
 

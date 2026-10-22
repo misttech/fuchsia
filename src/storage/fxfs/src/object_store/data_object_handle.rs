@@ -680,20 +680,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         // The merkle tree attribute should not require trimming because it should not
         // exist.
         self.handle
-            .write_new_attr_in_batches(
-                &mut transaction,
-                AttributeId::FSVERITY_MERKLE,
-                &merkle_tree,
-                WRITE_ATTR_BATCH_SIZE,
-            )
+            .write_new_attr(&mut transaction, AttributeId::FSVERITY_MERKLE, &merkle_tree)
             .await?;
-        if merkle_tree.len() > WRITE_ATTR_BATCH_SIZE {
-            self.store().remove_attribute_from_graveyard(
-                &mut transaction,
-                self.object_id(),
-                AttributeId::FSVERITY_MERKLE,
-            );
-        };
         let descriptor_decoded =
             FsVerityDescriptor::new(&merkle_tree[..], self.block_size().get() as usize)?;
         let descriptor = FsverityStateInner {
@@ -3333,11 +3321,10 @@ mod tests {
             // This write should span three transactions. This test mimics the behavior when the
             // last transaction gets interrupted by a filesystem.close().
             handle
-                .write_new_attr_in_batches(
+                .write_new_attr(
                     &mut transaction,
                     AttributeId::FSVERITY_MERKLE,
                     &vec![0; 2 * WRITE_ATTR_BATCH_SIZE],
-                    WRITE_ATTR_BATCH_SIZE,
                 )
                 .await
                 .expect("failed to write merkle attribute");

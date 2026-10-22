@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 mod legacy;
-pub use legacy::{EncryptionKeyV56, EncryptionKeysV56, ObjectItemV56, ObjectValueV56};
+pub use legacy::{
+    EncryptionKeyV56, EncryptionKeysV56, ObjectItemV56, ObjectItemV59, ObjectKindV59,
+    ObjectValueV56, ObjectValueV59,
+};
 
 // TODO(https://fxbug.dev/42178223): need validation after deserialization.
 use crate::checksum::Checksums;
@@ -574,7 +577,7 @@ impl From<Timestamp> for std::time::Duration {
     }
 }
 
-pub type ObjectKind = ObjectKindV59;
+pub type ObjectKind = ObjectKindV62;
 pub type DirType = DirTypeV59;
 
 /// The default fscrypt policy flags implied for legacy fscrypt-encrypted nodes in Fxfs: 16-byte
@@ -835,7 +838,7 @@ impl Default for DirType {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectKindV59 {
+pub enum ObjectKindV62 {
     File {
         /// The number of references to this file.
         refs: u64,
@@ -864,6 +867,10 @@ pub enum ObjectKindV59 {
         /// volume's data key.
         #[serde(with = "crate::zerocopy_serialization")]
         link: Box<[u8]>,
+    },
+    NonInlineSymlink {
+        /// The number of references to this symbolic link.
+        refs: u64,
     },
 }
 
@@ -1043,14 +1050,14 @@ impl std::ops::Deref for EncryptionKeys {
 /// ObjectValue is the value of an item in the object store.
 /// Note that the tree stores deltas on objects, so these values describe deltas. Unless specified
 /// otherwise, a value indicates an insert/replace mutation.
-pub type ObjectValue = ObjectValueV59;
+pub type ObjectValue = ObjectValueV62;
 impl Value for ObjectValue {
     const DELETED_MARKER: Self = Self::None;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectValueV59 {
+pub enum ObjectValueV62 {
     /// Some keys have no value (this often indicates a tombstone of some sort).  Records with this
     /// value are always filtered when a major compaction is performed, so the meaning must be the
     /// same as if the item was not present.
@@ -1059,7 +1066,7 @@ pub enum ObjectValueV59 {
     /// (None) i.e. their value is really a boolean: None => false, Some => true.
     Some,
     /// The value for an ObjectKey::Object record.
-    Object { kind: ObjectKindV59, attributes: ObjectAttributesV49 },
+    Object { kind: ObjectKindV62, attributes: ObjectAttributesV49 },
     /// Specifies encryption keys to use for an object.
     Keys(EncryptionKeysV59),
     /// An attribute associated with a file object. |size| is the size of the attribute in bytes.
@@ -1217,6 +1224,23 @@ impl ObjectValue {
             },
         }
     }
+    /// Creates an ObjectValue for a non-inline symlink object whose target is stored in
+    /// `AttributeId::DATA`.
+    pub fn non_inline_symlink(
+        creation_time: Timestamp,
+        modification_time: Timestamp,
+        project_id: Option<ProjectId>,
+    ) -> ObjectValue {
+        ObjectValue::Object {
+            kind: ObjectKind::NonInlineSymlink { refs: 1 },
+            attributes: ObjectAttributes {
+                creation_time,
+                modification_time,
+                project_id,
+                ..Default::default()
+            },
+        }
+    }
     pub fn inline_extended_attribute(value: impl Into<Vec<u8>>) -> ObjectValue {
         ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(value.into()))
     }
@@ -1225,9 +1249,9 @@ impl ObjectValue {
     }
 }
 
-pub type ObjectItem = ObjectItemV59;
+pub type ObjectItem = ObjectItemV62;
 
-pub type ObjectItemV59 = Item<ObjectKeyV54, ObjectValueV59>;
+pub type ObjectItemV62 = Item<ObjectKeyV54, ObjectValueV62>;
 
 impl ObjectItem {
     pub fn is_tombstone(&self) -> bool {

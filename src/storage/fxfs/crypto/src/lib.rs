@@ -34,7 +34,7 @@ pub use fidl_fuchsia_fxfs::{
     EmptyStruct, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, ObjectType, WrappedKey,
 };
 
-pub use cipher::FSCRYPT_PADDING;
+pub use cipher::{FSCRYPT_PADDING, MAX_SYMLINK_LEN};
 pub const FXFS_KEY_SIZE: usize = 256 / 8;
 pub const FXFS_WRAPPED_KEY_SIZE: usize = FXFS_KEY_SIZE + 16;
 

@@ -13,9 +13,9 @@ use crate::object_store::graveyard::Graveyard;
 use crate::object_store::object_record::EncryptedCasefoldChild;
 use crate::object_store::{
     AttributeId, AttributeKey, ChildValue, DirType, ExtendedAttributeValue, Extent, ExtentMode,
-    ExtentValue, FSCRYPT_KEY_ID, FsverityMetadata, ObjectAttributes, ObjectDescriptor, ObjectKey,
-    ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId, ProjectProperty, RootDigest,
-    VOLUME_DATA_KEY_ID,
+    ExtentValue, FSCRYPT_KEY_ID, FsverityMetadata, MAX_INLINE_SYMLINK_SIZE, ObjectAttributes,
+    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
+    ProjectProperty, RootDigest, VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use anyhow::{Error, bail};
@@ -113,6 +113,7 @@ struct ScannedSymlink {
     stored_refs: u64,
     // Attributes for this symlink
     attributes: ScannedAttributes,
+    has_inline_target: bool,
     encrypted: bool,
     wrapping_key_id: Option<WrappingKeyId>,
 }
@@ -298,13 +299,19 @@ impl<'a> ScannedStore<'a> {
                         }
                     }
                     ObjectValue::Object {
-                        kind: ObjectKind::Symlink { refs, .. },
+                        kind: ObjectKind::Symlink { refs, link },
                         attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
+                        if link.len() > MAX_INLINE_SYMLINK_SIZE {
+                            self.fsck.warning(FsckWarning::OversizedInlineSymlink(
+                                self.store_id,
+                                key.object_id,
+                            ))?;
+                        }
                         if let Some(project_id) = project_id {
                             self.used_project_ids.insert(*project_id, key.object_id);
                             let entry = self.total_project_usages.entry(*project_id).or_default();
-                            // Increment only nodes.
+                            entry.0 += i64::try_from(*allocated_size).unwrap();
                             entry.1 += 1;
                         }
                         self.current_object = Some(CurrentObject {
@@ -317,6 +324,7 @@ impl<'a> ScannedStore<'a> {
                             ScannedObject::Symlink(ScannedSymlink {
                                 parents: vec![],
                                 stored_refs: *refs,
+                                has_inline_target: true,
                                 encrypted: false,
                                 attributes: ScannedAttributes {
                                     attributes: Vec::new(),
@@ -331,13 +339,19 @@ impl<'a> ScannedStore<'a> {
                         );
                     }
                     ObjectValue::Object {
-                        kind: ObjectKind::EncryptedSymlink { refs, .. },
+                        kind: ObjectKind::EncryptedSymlink { refs, link },
                         attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
+                        if link.len() > MAX_INLINE_SYMLINK_SIZE {
+                            self.fsck.warning(FsckWarning::OversizedInlineSymlink(
+                                self.store_id,
+                                key.object_id,
+                            ))?;
+                        }
                         if let Some(project_id) = project_id {
                             self.used_project_ids.insert(*project_id, key.object_id);
                             let entry = self.total_project_usages.entry(*project_id).or_default();
-                            // Increment only nodes.
+                            entry.0 += i64::try_from(*allocated_size).unwrap();
                             entry.1 += 1;
                         }
                         self.current_object = Some(CurrentObject {
@@ -350,7 +364,42 @@ impl<'a> ScannedStore<'a> {
                             ScannedObject::Symlink(ScannedSymlink {
                                 parents: vec![],
                                 stored_refs: *refs,
+                                has_inline_target: true,
                                 encrypted: true,
+                                attributes: ScannedAttributes {
+                                    attributes: Vec::new(),
+                                    tombstoned_attributes: Vec::new(),
+                                    stored_allocated_size: *allocated_size,
+                                    observed_allocated_size: 0,
+                                    in_graveyard: false,
+                                    extended_attributes: Vec::new(),
+                                },
+                                wrapping_key_id: None,
+                            }),
+                        );
+                    }
+                    ObjectValue::Object {
+                        kind: ObjectKind::NonInlineSymlink { refs },
+                        attributes: ObjectAttributes { project_id, allocated_size, .. },
+                    } => {
+                        if let Some(project_id) = project_id {
+                            self.used_project_ids.insert(*project_id, key.object_id);
+                            let entry = self.total_project_usages.entry(*project_id).or_default();
+                            entry.0 += i64::try_from(*allocated_size).unwrap();
+                            entry.1 += 1;
+                        }
+                        self.current_object = Some(CurrentObject {
+                            object_id: key.object_id,
+                            key_ids: HashMap::default(),
+                            lazy_keys: false,
+                        });
+                        self.objects.insert(
+                            key.object_id,
+                            ScannedObject::Symlink(ScannedSymlink {
+                                parents: vec![],
+                                stored_refs: *refs,
+                                has_inline_target: false,
+                                encrypted: false,
                                 attributes: ScannedAttributes {
                                     attributes: Vec::new(),
                                     tombstoned_attributes: Vec::new(),
@@ -1131,7 +1180,18 @@ impl<'a> ScannedStore<'a> {
                             }
                         }
                     }
-                    Some(ScannedObject::Symlink(ScannedSymlink { encrypted, .. })) => {
+                    Some(ScannedObject::Symlink(ScannedSymlink {
+                        encrypted, attributes, ..
+                    })) => {
+                        if !attributes.extended_attributes.is_empty()
+                            && !key_ids.contains(&VOLUME_DATA_KEY_ID)
+                        {
+                            self.fsck.error(FsckError::MissingKey(
+                                self.store_id,
+                                current_file.object_id,
+                                VOLUME_DATA_KEY_ID,
+                            ))?;
+                        }
                         if *encrypted {
                             if !key_ids.contains(&FSCRYPT_KEY_ID) {
                                 self.fsck.error(FsckError::MissingKey(
@@ -1668,7 +1728,13 @@ pub(super) async fn scan_store(
                 }
             }
             ScannedObject::Graveyard => other += 1,
-            ScannedObject::Symlink(ScannedSymlink { parents, stored_refs, attributes, .. }) => {
+            ScannedObject::Symlink(ScannedSymlink {
+                parents,
+                stored_refs,
+                attributes,
+                has_inline_target,
+                ..
+            }) => {
                 symlinks += 1;
                 let observed_refs = parents.len().try_into().unwrap();
                 // observed_refs == 0 is handled separately to distinguish orphaned objects
@@ -1684,7 +1750,7 @@ pub(super) async fn scan_store(
                     store_id,
                     *object_id,
                     attributes,
-                    false,
+                    !has_inline_target,
                     VerifiedType::None,
                     store.block_size(),
                 )?;

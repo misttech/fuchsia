@@ -11,8 +11,8 @@ use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{AllocatorItem, Hold, Reservation};
 use crate::object_store::object_manager::{ObjectManager, reserved_space_from_journal_usage};
 use crate::object_store::object_record::{
-    BytesAndNodes, FxfsKey, FxfsKeyV49, ObjectItem, ObjectItemV56, ObjectItemV59, ObjectKey,
-    ObjectKeyData, ObjectValue, ProjectProperty,
+    BytesAndNodes, FxfsKey, FxfsKeyV49, ObjectItem, ObjectItemV56, ObjectItemV59, ObjectItemV62,
+    ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty,
 };
 use crate::object_store::{AttributeId, AttributeKey, ProjectId};
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
@@ -237,14 +237,14 @@ pub trait TransactionSink: Send + Sync + 'static {
 /// transaction, these are stored as a set which allows some mutations to be deduplicated and found
 /// (and we require custom comparison functions below).  For example, we need to be able to find
 /// object size changes.
-pub type Mutation = MutationV61;
+pub type Mutation = MutationV62;
 
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint, Versioned,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum MutationV61 {
-    ObjectStore(ObjectStoreMutationV59),
+pub enum MutationV62 {
+    ObjectStore(ObjectStoreMutationV62),
     EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
     Allocator(AllocatorMutationV32),
 
@@ -268,6 +268,21 @@ pub enum MutationV61 {
     /// when it is removed.
     #[serde(skip)]
     #[cfg_attr(fuzz, arbitrary(skip))]
+    UpdateBorrowed(u64),
+}
+
+#[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(MutationV62)]
+pub enum MutationV61 {
+    ObjectStore(ObjectStoreMutationV59),
+    EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
+    Allocator(AllocatorMutationV32),
+    BeginFlush,
+    EndFlush(u64),
+    DeleteVolume,
+    UpdateMutationsKey(UpdateMutationsKey),
+    CreateInternalDir(u64),
+    #[serde(skip)]
     UpdateBorrowed(u64),
 }
 
@@ -371,10 +386,18 @@ impl Mutation {
 // We have custom comparison functions for mutations that just use the key, rather than the key and
 // value that would be used by default so that we can deduplicate and find mutations (see
 // get_object_mutation below).
-pub type ObjectStoreMutation = ObjectStoreMutationV59;
+pub type ObjectStoreMutation = ObjectStoreMutationV62;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct ObjectStoreMutationV62 {
+    pub item: ObjectItemV62,
+    pub op: Operation,
+}
+
+#[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectStoreMutationV62)]
+#[migrate_nodefault]
 pub struct ObjectStoreMutationV59 {
     pub item: ObjectItemV59,
     pub op: Operation,

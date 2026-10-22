@@ -540,6 +540,7 @@ async fn test_fxfs_verify_encrypted_data() {
     .expect("verify");
     fxfs.close().await.expect("close ok");
 }
+
 // Verifies that the directory tree in fxfs matches f2fs.
 // If check_file_contents is true, opens f2fs and verifies file contents.
 async fn verify(

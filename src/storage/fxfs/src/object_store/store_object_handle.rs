@@ -9,21 +9,22 @@ use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
+use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
 use crate::object_store::extent_record::{
     ExtentMode, ExtentValue, JOURNAL_CHECKSUM_BYTES_PER_BLOCK, MAX_JOURNAL_BYTES_PER_RANGE,
 };
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
-    AttributeKey, BytesAndNodes, ExtendedAttributeValue, ObjectAttributes, ObjectKey,
-    ObjectKeyData, ObjectValue, Timestamp,
+    AttributeKey, BytesAndNodes, ExtendedAttributeValue, ObjectAttributes, ObjectItem, ObjectKey,
+    ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options, ReadGuard,
     TRANSACTION_MAX_JOURNAL_USAGE, Transaction, lock_keys,
 };
 use crate::object_store::{
-    AttributeId, Extent, FileExtent, HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult,
-    VOLUME_DATA_KEY_ID,
+    AttributeId, Extent, FSCRYPT_KEY_ID, FileExtent, HandleOptions, HandleOwner, ObjectStore,
+    TrimMode, TrimResult, VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use anyhow::{Context, Error, anyhow, bail, ensure};
@@ -1068,7 +1069,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 offset..end_offset,
             )))
             .await?;
-        self.read_aligned_impl(attribute_id, offset, buf, iter).await
+        self.read_aligned_impl(attribute_id, offset, buf, iter, /* decrypt: */ true).await
     }
 
     /// Reads an entire attribute.
@@ -1094,7 +1095,24 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     /// `AttributeKey::Attribute` of the attribute.
     pub async fn read_attr_from_iter(
         &self,
+        iter: MergerIterator<'_, '_, ObjectKey, ObjectValue>,
+    ) -> Result<Box<[u8]>, Error> {
+        self.read_attr_from_iter_impl(iter, /* decrypt: */ true).await
+    }
+
+    /// Reads an entire attribute pointed to by `iter` without decrypting it. `iter` must be
+    /// pointing to the `AttributeKey::Attribute` of the attribute.
+    pub async fn read_raw_attr_from_iter(
+        &self,
+        iter: MergerIterator<'_, '_, ObjectKey, ObjectValue>,
+    ) -> Result<Box<[u8]>, Error> {
+        self.read_attr_from_iter_impl(iter, /* decrypt: */ false).await
+    }
+
+    async fn read_attr_from_iter_impl(
+        &self,
         mut iter: MergerIterator<'_, '_, ObjectKey, ObjectValue>,
+        decrypt: bool,
     ) -> Result<Box<[u8]>, Error> {
         let (mut buffer, size, attribute_id) = match iter.get() {
             Some(ItemRef {
@@ -1119,7 +1137,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             _ => bail!(FxfsError::InvalidArgs),
         };
         iter.advance().await?;
-        self.read_aligned_impl(attribute_id, 0, buffer.as_mut(), iter).await?;
+        self.read_aligned_impl(attribute_id, 0, buffer.as_mut(), iter, decrypt).await?;
         Ok(buffer.as_ref().subslice(0..size).to_vec().into_boxed_slice())
     }
 
@@ -1128,14 +1146,15 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     /// Both `offset` and `buf.len()` must be aligned to the object's `block_size()`, and `buf`'s
     /// memory buffer range start must be aligned to the device block size.
     ///
-    /// Extents from `iter` are read and decrypted in parallel. Holes and any unallocated portions
-    /// within `buf` are zero-filled.
+    /// Extents from `iter` are read (and decrypted if `decrypt` is true) in parallel. Holes and any
+    /// unallocated portions within `buf` are zero-filled.
     async fn read_aligned_impl(
         &self,
         attribute_id: AttributeId,
         mut offset: u64,
         mut buf: MutableBufferRef<'_>,
         mut iter: MergerIterator<'_, '_, ObjectKey, ObjectValue>,
+        decrypt: bool,
     ) -> Result<(), Error> {
         if buf.is_empty() {
             return Ok(());
@@ -1217,14 +1236,23 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 _ => None,
             };
             reads.push(async move {
-                self.read_and_decrypt(
-                    attribute_id,
-                    device_offset,
-                    extent_key.start,
-                    to_read.reborrow(),
-                    key_id,
-                )
-                .await?;
+                if decrypt {
+                    self.read_and_decrypt(
+                        attribute_id,
+                        device_offset,
+                        extent_key.start,
+                        to_read.reborrow(),
+                        key_id,
+                    )
+                    .await?;
+                } else {
+                    let store = self.store();
+                    store.device_read_ops.fetch_add(1, Ordering::Relaxed);
+                    let _watchdog = Watchdog::new(10, |count| {
+                        warn!("Read I/O request blocked for {} seconds", count * 10);
+                    });
+                    store.device.read(device_offset, to_read.reborrow()).await?;
+                }
                 if let Some(bitmap) = maybe_bitmap {
                     apply_bitmap_zeroing(block_size, &bitmap, to_read);
                 }
@@ -1323,10 +1351,11 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         transaction: &mut Transaction<'_>,
         attribute_id: AttributeId,
         key_id: Option<u64>,
+        encrypt: bool,
         ranges: &[Range<u64>],
         buf: MutableBufferRef<'_>,
     ) -> Result<(), Error> {
-        self.multi_write_internal(transaction, attribute_id, key_id, ranges, buf).await?;
+        self.multi_write_internal(transaction, attribute_id, key_id, encrypt, ranges, buf).await?;
         Ok(())
     }
 
@@ -1340,6 +1369,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         transaction: &mut Transaction<'_>,
         attribute_id: AttributeId,
         key_id: Option<u64>,
+        encrypt: bool,
         ranges: &[Range<u64>],
         mut buf: MutableBufferRef<'_>,
     ) -> Result<(u64, u64), Error> {
@@ -1359,7 +1389,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         // The only key we allow to be created on-the-fly is a non permanent key wrapped with the
         // volume data key.
-        let (key_id, key) = if key_id == Some(VOLUME_DATA_KEY_ID)
+        let (key_id, key) = if !encrypt {
+            (key_id.unwrap_or(VOLUME_DATA_KEY_ID), None)
+        } else if key_id == Some(VOLUME_DATA_KEY_ID)
             && matches!(self.encryption, Encryption::CachedKeys)
         {
             (
@@ -1537,8 +1569,16 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         ranges: &[Range<u64>],
         buf: MutableBufferRef<'_>,
     ) -> Result<(), Error> {
-        let (allocated, deallocated) =
-            self.multi_write_internal(transaction, attribute_id, key_id, ranges, buf).await?;
+        let (allocated, deallocated) = self
+            .multi_write_internal(
+                transaction,
+                attribute_id,
+                key_id,
+                /* encrypt: */ true,
+                ranges,
+                buf,
+            )
+            .await?;
         if allocated == 0 && deallocated == 0 {
             return Ok(());
         }
@@ -1764,18 +1804,45 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     }
 
     /// Writes an attribute that should not already exist and therefore does not require trimming.
-    /// Breaks up the write into multiple transactions if `data.len()` is larger than `batch_size`.
-    /// If writing the attribute requires multiple transactions, adds the attribute to the
-    /// graveyard. The caller is responsible for removing the attribute from the graveyard when it
-    /// commits the last transaction.  This always writes using a key wrapped with the volume data
-    /// key.
+    /// Breaks up the write into multiple transactions if `data.len()` is larger than
+    /// `WRITE_ATTR_BATCH_SIZE`. This always writes using a key wrapped with the volume data key.
     #[trace]
-    pub async fn write_new_attr_in_batches<'a>(
-        &'a self,
-        transaction: &mut Transaction<'a>,
+    pub async fn write_new_attr(
+        &self,
+        transaction: &mut Transaction<'_>,
         attribute_id: AttributeId,
         data: &[u8],
-        batch_size: usize,
+    ) -> Result<(), Error> {
+        self.write_new_attr_impl(
+            transaction,
+            attribute_id,
+            VOLUME_DATA_KEY_ID,
+            /* encrypt: */ true,
+            data,
+        )
+        .await
+    }
+
+    /// Writes a new attribute that has already been encrypted with `key_id`, without performing
+    /// encryption again.
+    pub async fn write_new_attr_pre_encrypted(
+        &self,
+        transaction: &mut Transaction<'_>,
+        attribute_id: AttributeId,
+        key_id: u64,
+        data: &[u8],
+    ) -> Result<(), Error> {
+        self.write_new_attr_impl(transaction, attribute_id, key_id, /* encrypt: */ false, data)
+            .await
+    }
+
+    async fn write_new_attr_impl(
+        &self,
+        transaction: &mut Transaction<'_>,
+        attribute_id: AttributeId,
+        key_id: u64,
+        encrypt: bool,
+        data: &[u8],
     ) -> Result<(), Error> {
         transaction.add(
             self.store().store_object_id,
@@ -1784,7 +1851,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 ObjectValue::attribute(data.len() as u64, false),
             ),
         );
-        let chunks = data.chunks(batch_size);
+        let chunks = data.chunks(WRITE_ATTR_BATCH_SIZE);
         let num_chunks = chunks.len();
         if num_chunks > 1 {
             transaction.add(
@@ -1806,19 +1873,31 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             let mut slice = buffer.as_mut_ptr_slice();
             slice.subslice_mut(0..chunk.len()).copy_from_slice(chunk);
             slice.subslice_mut(chunk.len()..slice.len()).fill(0);
-            self.multi_write(
-                transaction,
-                attribute_id,
-                Some(VOLUME_DATA_KEY_ID),
-                &[start_offset..start_offset + rounded_len],
-                buffer.as_mut(),
-            )
-            .await?;
+            let (allocated, deallocated) = self
+                .multi_write_internal(
+                    transaction,
+                    attribute_id,
+                    Some(key_id),
+                    encrypt,
+                    &[start_offset..start_offset + rounded_len],
+                    buffer.as_mut(),
+                )
+                .await?;
+            if allocated != 0 || deallocated != 0 {
+                self.update_allocated_size(transaction, allocated, deallocated).await?;
+            }
             start_offset += rounded_len;
             // Do not commit the last chunk.
             if i < num_chunks - 1 {
                 transaction.commit_and_continue().await?;
             }
+        }
+        if num_chunks > 1 {
+            self.store().remove_attribute_from_graveyard(
+                transaction,
+                self.object_id(),
+                attribute_id,
+            );
         }
         Ok(())
     }
@@ -2174,6 +2253,85 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             })
         } else {
             None
+        }
+    }
+
+    /// When the symlink is unlocked, this function decrypts `link` and returns a bag of bytes that
+    /// is identical to that which was passed in as the target on `create_symlink`.
+    /// If the symlink is locked, this function hashes the encrypted `link` with Sha256 in order to
+    /// get a standard length and then base64 encodes the hash and returns that to the caller.
+    pub async fn read_encrypted_symlink(&self, link: Vec<u8>) -> Result<Vec<u8>, Error> {
+        self.store().read_encrypted_symlink(self.object_id, link).await
+    }
+
+    /// Returns the link of a symlink object.
+    pub async fn read_symlink(&self) -> Result<Vec<u8>, Error> {
+        let store = self.store();
+        match store.tree.find(&ObjectKey::object(self.object_id)).await? {
+            None | Some(ObjectItem { value: ObjectValue::None, .. }) => bail!(FxfsError::NotFound),
+            Some(ObjectItem {
+                value: ObjectValue::Object { kind: ObjectKind::EncryptedSymlink { link, .. }, .. },
+                ..
+            }) => store.read_encrypted_symlink(self.object_id, link.into_vec()).await,
+            Some(ObjectItem {
+                value: ObjectValue::Object { kind: ObjectKind::Symlink { link, .. }, .. },
+                ..
+            }) => Ok(link.into_vec()),
+            Some(ObjectItem {
+                value: ObjectValue::Object { kind: ObjectKind::NonInlineSymlink { .. }, .. },
+                ..
+            }) => self.read_non_inline_symlink().await,
+            Some(item) => Err(anyhow!(FxfsError::Inconsistent)
+                .context(format!("Unexpected item in symlink lookup: {item:?}"))),
+        }
+    }
+
+    pub(crate) async fn read_non_inline_symlink(&self) -> Result<Vec<u8>, Error> {
+        // Both fscrypt and non-fscrypt spilled symlinks use `NonInlineSymlink`. In LSM-tree key
+        // order, `ObjectKeyData::Keys` (if present) immediately follows `ObjectKeyData::Object`
+        // and precedes `AttributeId::DATA`. We check whether `FSCRYPT_KEY_ID` is present to
+        // determine how `AttributeId::DATA` was encrypted:
+        // - If `FSCRYPT_KEY_ID` is present, the target was encrypted in fscrypt symlink mode
+        //   (`encrypt_symlink`) and written pre-encrypted to `AttributeId::DATA`. Normal attribute
+        //   reads (`read_attr_from_iter`) use data-mode decryption (`Cipher::decrypt`), which is
+        //   unsupported for the fscrypt symlink cipher and would also fail when the key is locked,
+        //   so we read the raw ciphertext without decrypting and let `read_encrypted_symlink`
+        //   decrypt it (or return a `ProxyFilename` if locked).
+        // - Otherwise, the attribute uses standard Fxfs volume data key encryption
+        //   (`VOLUME_DATA_KEY_ID`), which `read_attr_from_iter` decrypts directly.
+        let tree = &self.store().tree;
+        let layer_set = tree.layer_set();
+        let mut merger = layer_set.merger();
+        let mut iter = merger.query(Query::FullRange(&ObjectKey::keys(self.object_id))).await?;
+        let mut is_fscrypt = false;
+        loop {
+            match iter.get() {
+                Some(ItemRef {
+                    key: ObjectKey { object_id, data: ObjectKeyData::Keys },
+                    value: ObjectValue::Keys(keys),
+                    ..
+                }) if *object_id == self.object_id => {
+                    is_fscrypt = keys.get(FSCRYPT_KEY_ID).is_some();
+                }
+                Some(ItemRef {
+                    key:
+                        ObjectKey {
+                            object_id,
+                            data:
+                                ObjectKeyData::Attribute(AttributeId::DATA, AttributeKey::Attribute),
+                        },
+                    value: ObjectValue::Attribute { .. },
+                    ..
+                }) if *object_id == self.object_id => break,
+                _ => bail!(FxfsError::Inconsistent),
+            }
+            iter.advance().await?;
+        }
+        if is_fscrypt {
+            let link = self.read_attr_from_iter_impl(iter, /* decrypt: */ false).await?.into_vec();
+            self.read_encrypted_symlink(link).await
+        } else {
+            Ok(self.read_attr_from_iter(iter).await?.into_vec())
         }
     }
 }
@@ -2976,31 +3134,14 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn write_new_attr_in_batches_multiple_txns() {
+    async fn write_new_attr_multiple_txns() {
         let (fs, object) = test_filesystem_and_empty_object().await;
         let merkle_tree = vec![1; 3 * WRITE_ATTR_BATCH_SIZE];
         let mut transaction = (*object).new_transaction(AttributeId::TEST_ID).await.unwrap();
         object
-            .write_new_attr_in_batches(
-                &mut transaction,
-                AttributeId::TEST_ID,
-                &merkle_tree,
-                WRITE_ATTR_BATCH_SIZE,
-            )
+            .write_new_attr(&mut transaction, AttributeId::TEST_ID, &merkle_tree)
             .await
             .expect("failed to write merkle attribute");
-
-        transaction.add(
-            object.store().store_object_id,
-            Mutation::replace_or_insert_object(
-                ObjectKey::graveyard_attribute_entry(
-                    object.store().graveyard_directory_object_id(),
-                    object.object_id(),
-                    AttributeId::TEST_ID,
-                ),
-                ObjectValue::None,
-            ),
-        );
         transaction.commit().await.unwrap();
         assert_eq!(
             object.read_attr(AttributeId::TEST_ID).await.expect("read_attr failed"),

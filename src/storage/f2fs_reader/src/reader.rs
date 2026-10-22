@@ -616,6 +616,11 @@ mod test {
         let inode = Inode::try_load(&f2fs, symlink_ino).await.expect("load inode");
         assert_eq!(f2fs.read_symlink(&inode).expect("read_symlink").as_ref(), b"regular");
 
+        let long_symlink_ino =
+            resolve_inode_path(&f2fs, "/a/b/c/long_symlink").await.expect("resolve long_symlink");
+        let inode = Inode::try_load(&f2fs, long_symlink_ino).await.expect("load inode");
+        assert_eq!(f2fs.read_symlink(&inode).expect("read_symlink").as_ref(), &[b'x'; 300]);
+
         let hardlink_ino =
             resolve_inode_path(&f2fs, "/a/b/c/hardlink").await.expect("resolve hardlink");
         let inode = Inode::try_load(&f2fs, hardlink_ino).await.expect("load inode");
@@ -755,22 +760,24 @@ mod test {
         //   $ ls /mnt/fscrypt -lR
 
         // /fscrypt/<a>/<b>/<symlink>
-        let str_a = "AlHTPgAAAAATu-OD4ljvFNw4Xpas_OeI";
-        let str_b = "GeiwsgAAAADc8JQtaJ7UbZ0GcT5yeHTZ";
-        let str_symlink = "QL5PAgAAAAAZjFRhVvAC80KXi6rlzmfr";
-        let bytes_symlink_content = b"AAAAAAAAAACavudfzv7yT0fMluSoe0NC";
+        let str_a = "IdmyUwAAAAAOl9HVqpdKN-_ywDMHOSfZ";
+        let str_b = "6R9bhwAAAACuLmcnL6xBt0P_vJJWp6YQ";
+        let str_symlink = "dF7k0gAAAABvEtw674aBPXfc_rHCsbV3";
+        let bytes_symlink_content = b"AAAAAAAAAACM6IekII-E3vHJzm33J1eL";
+        let str_long_symlink = "HnM4mwAAAABB7HRvWKIya-FksqTgbolc";
+        let bytes_long_symlink_content = b"AAAAAAAAAABIogZHvapivztsoT9mN6MBAf9URUlS264FcBSgrLnakF1jGg4gDK50pBlSOsQm5Vun-EkR6Ze8uBYtsFYRY3z8sGiEGafUvLup33UsEYST44YRH70m-TXq6XnDRb2L5UOlNqn1Uvdsl9l_ntXyhVWvvUL4mJKkkPRjup9hxK4WrnjMvPqbDplThe5cIFvbZmXfKdPGajdlejOzm6eLxuEuFq_8YHF0yYhZSNXchwH5_wbvW6uV";
 
         let mut expected: HashSet<_> = [
             // files in fscrypt/ dir.
-            "0KaBCgAAAADG-AqRst0R8y9D-kCCD14F",
-            "9g1xNQAAAAC2nhbquKF00IMYQ7Rbv25_",
-            "a5gOXwAAAADZWT1MUGPQdgNHBaXlkhT7",
-            "AlHTPgAAAAATu-OD4ljvFNw4Xpas_OeI",
-            "Jn1pZAAAAAB3bJB-bzY1dlQxj0NSkyU_u0-fevU6zycmvnjbTtHRwm3od3n2wl621OGeZhjQSYn2HlSwshPGwIzUQVeCv0Zb247T_qPD0EiM4PcaKLrr6gSt7-PrSVC2R9EsCKj8yAnwvi2bJKJvnghFE8wLV6pLN11nmbOI9q6yDB1ELRj2l2yke4iH_9zOSD-8PvBySzdx3L-h-V79-T0EFAOvlVLlqVfMIR9xgsXwe_xpjgHsFculb9Le",
-            "qHmmggAAAAAwObeaSgYbdMa0L9iXDYIN",
-            "UJqOTwAAAACAFLttEsV6RiVStfTM6q94",
-            "VERkwQAAAADytl0b_Ou0EoBXyYA9e_qI",
-            "WPM5KgAAAACfvfszUbrR943loZZ-__gO",
+            "2eIT3gAAAAB4VWj2e6Ttqy351BEKgjWh6VMD0Du2PIcAmw64p-Jl4e0N8GO-qpkZ6yylR1gJ1b3cFiSwDKC-5inhP7pSKDQhb8Izgn0gtuBi0OkUPKqpbWz1JV-SSSNoX3M2jSZz1oQIFABDnIcWvcOZEbVGWhqIWtp1JBeEu6eKMgq5WgkfedreuB1yEWDiItOtTK2MO78Rxj9t23IV9mH5W3zsy8_IEVPuSJhe23Nm3LzhRKgVfnl9NvLi",
+            "5H-TUQAAAAA_ZP9GIVB-Yh07PbvrA8jZ",
+            "_9AbYAAAAACSHvhXF6DHRDaTDBqVfxi5",
+            "GGC5dQAAAACoZpLjiq0H1YuOypnN-WfU",
+            "IdmyUwAAAAAOl9HVqpdKN-_ywDMHOSfZ",
+            "pSNicgAAAAAKFA6NB4I2BvU2Du-8yEuN",
+            "t_E37gAAAABmG6LbvEwWbUj0bLD9Xr-O",
+            "wN4ItwAAAAALP7zB9V1lT6R-8lZHva6s",
+            "yq8v_gAAAABSE8ierS0NjTfx6x6U-XeC",
         ]
         .into_iter()
         .collect();
@@ -808,6 +815,16 @@ mod test {
             &*f2fs.read_symlink(&symlink_inode).expect("read_symlink"),
             bytes_symlink_content
         );
+        let enc_long_symlink_ino =
+            resolve_inode_path(&f2fs, &format!("/fscrypt/{str_a}/{str_b}/{str_long_symlink}"))
+                .await
+                .expect("resolve encrypted long_symlink");
+        let long_symlink_inode =
+            Inode::try_load(&f2fs, enc_long_symlink_ino).await.expect("load long_symlink inode");
+        assert_eq!(
+            &*f2fs.read_symlink(&long_symlink_inode).expect("read_symlink"),
+            bytes_long_symlink_content
+        );
 
         // ...now try with the key
         f2fs.add_key(&[0u8; 64]);
@@ -832,6 +849,16 @@ mod test {
         let symlink_inode = Inode::try_load(&f2fs, symlink_ino).await.expect("load symlink inode");
         let symlink = f2fs.read_symlink(&symlink_inode).expect("read_symlink");
         assert_eq!(*symlink, *b"inlined");
+
+        let long_symlink_ino = resolve_inode_path(&f2fs, "/fscrypt/a/b/long_symlink")
+            .await
+            .expect("resolve fscrypt long_symlink");
+        assert_eq!(long_symlink_ino, enc_long_symlink_ino);
+
+        let long_symlink_inode =
+            Inode::try_load(&f2fs, long_symlink_ino).await.expect("load long_symlink inode");
+        let long_symlink = f2fs.read_symlink(&long_symlink_inode).expect("read_symlink");
+        assert_eq!(&*long_symlink, &[b'x'; 300]);
     }
 
     #[fuchsia::test]

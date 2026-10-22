@@ -30,7 +30,7 @@ pub const FSCRYPT_PADDING: usize = 16;
 const SECTOR_SIZE: u64 = 512;
 const BLOCK_SIZE: usize = 4096;
 const MAX_FILENAME_LEN: usize = 255;
-const MAX_SYMLINK_LEN: usize = 4093;
+pub const MAX_SYMLINK_LEN: usize = 4093;
 
 fn encrypt_filename_cts(
     cts_key: &[u8; 32],

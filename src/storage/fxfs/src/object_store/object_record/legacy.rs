@@ -7,8 +7,8 @@
 
 use super::{
     ChildValue, DirTypeV59, EncryptionKeyV59, EncryptionKeysV59, ExtendedAttributeValueV32,
-    ExtentValueV38, FsverityMetadataV50, Item, ObjectAttributesV49, ObjectKeyV54, ObjectKindV59,
-    ObjectValueV59,
+    ExtentValueV38, FsverityMetadataV50, Item, ObjectAttributesV49, ObjectKeyV54, ObjectKindV62,
+    ObjectValueV62,
 };
 use crate::serialized_types::{Migrate, Versioned, migrate_to_version};
 use fprint::TypeFingerprint;
@@ -38,6 +38,30 @@ impl From<DirTypeV54> for DirTypeV59 {
             }
         }
     }
+}
+
+#[derive(Migrate, Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[migrate_to_version(ObjectKindV62)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum ObjectKindV59 {
+    File {
+        refs: u64,
+    },
+    Directory {
+        sub_dirs: u64,
+        dir_type: DirTypeV59,
+    },
+    Graveyard,
+    Symlink {
+        refs: u64,
+        #[serde(with = "crate::zerocopy_serialization")]
+        link: Box<[u8]>,
+    },
+    EncryptedSymlink {
+        refs: u64,
+        #[serde(with = "crate::zerocopy_serialization")]
+        link: Box<[u8]>,
+    },
 }
 
 #[derive(Migrate, Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
@@ -103,6 +127,31 @@ impl From<EncryptionKeysV56> for EncryptionKeysV59 {
 }
 
 #[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectValueV62)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum ObjectValueV59 {
+    None,
+    Some,
+    Object { kind: ObjectKindV59, attributes: ObjectAttributesV49 },
+    Keys(EncryptionKeysV59),
+    Attribute { size: u64, has_overwrite_extents: bool },
+    Extent(ExtentValueV38),
+    Child(ChildValue),
+    Trim,
+    BytesAndNodes { bytes: i64, nodes: i64 },
+    ExtendedAttribute(ExtendedAttributeValueV32),
+    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV50 },
+}
+
+pub type ObjectItemV59 = Item<ObjectKeyV54, ObjectValueV59>;
+
+impl From<ObjectItemV59> for super::ObjectItemV62 {
+    fn from(item: ObjectItemV59) -> Self {
+        Self { key: item.key, value: item.value.into() }
+    }
+}
+
+#[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectValueV59)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ObjectValueV56 {
@@ -121,7 +170,7 @@ pub enum ObjectValueV56 {
 
 pub type ObjectItemV56 = Item<ObjectKeyV54, ObjectValueV56>;
 
-impl From<ObjectItemV56> for super::ObjectItemV59 {
+impl From<ObjectItemV56> for ObjectItemV59 {
     fn from(item: ObjectItemV56) -> Self {
         Self { key: item.key, value: item.value.into() }
     }

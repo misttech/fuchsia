@@ -46,7 +46,7 @@ use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::transaction::{
     AllocatorMutation, LockKey, Mutation, MutationV56, MutationV57, MutationV59, MutationV61,
-    ObjectMutationIterator, ObjectStoreMutation, Options, ReservationOptions,
+    MutationV62, ObjectMutationIterator, ObjectStoreMutation, Options, ReservationOptions,
     TRANSACTION_MAX_JOURNAL_USAGE, Transaction, lock_keys,
 };
 use crate::object_store::{
@@ -117,16 +117,16 @@ pub struct JournalCheckpointV32 {
     pub version: Version,
 }
 
-pub type JournalRecord = JournalRecordV61;
+pub type JournalRecord = JournalRecordV62;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum JournalRecordV61 {
+pub enum JournalRecordV62 {
     EndBlock,
     Mutation {
         object_id: u64,
-        mutation: MutationV61,
+        mutation: MutationV62,
     },
 
     /// Commits records in the transaction.
@@ -158,6 +158,19 @@ pub enum JournalRecordV61 {
 
     /// Commits records in a transaction that borrows metadata space, recording the total bytes
     /// currently held in `ObjectManager::metadata_reservation` (`M_total`).
+    CommitBorrowed(u64),
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Migrate, Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(JournalRecordV62)]
+pub enum JournalRecordV61 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: MutationV61 },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
+    DataChecksums(u64, Range<u64>, crate::checksum::ChecksumsV38, bool),
     CommitBorrowed(u64),
 }
 

@@ -287,6 +287,30 @@ pub async fn mkdir(
     Ok(())
 }
 
+/// Create a symlink.
+pub async fn symlink(
+    fs: &OpenFxFilesystem,
+    vol: &Arc<ObjectStore>,
+    path: &Path,
+    target: &[u8],
+) -> Result<(), Error> {
+    let dir = walk_dir(vol, path.parent().unwrap()).await?;
+    let filename = path.file_name().unwrap().to_str().unwrap();
+    let mut transaction = fs
+        .root_store()
+        .new_transaction(
+            lock_keys![LockKey::object(vol.store_object_id(), dir.object_id())],
+            Options::default(),
+        )
+        .await?;
+    if dir.lookup(filename).await?.is_some() {
+        bail!("{} already exists", filename);
+    }
+    dir.create_symlink(&mut transaction, target, filename).await?;
+    transaction.commit().await?;
+    Ok(())
+}
+
 pub async fn set_project_limit(
     vol: &Arc<ObjectStore>,
     project_id: ProjectId,

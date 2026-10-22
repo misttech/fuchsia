@@ -95,9 +95,11 @@ impl ObjectStore {
         // Make sure the object kind makes sense.
         match kind {
             ObjectKind::File { .. } | ObjectKind::Directory { .. } => (),
-            // For now, we don't support attributes on symlink objects, so setting a project id
-            // doesn't make sense.
-            ObjectKind::Symlink { .. } | ObjectKind::EncryptedSymlink { .. } => {
+
+            // Setting a project id on symlink objects is not currently supported.
+            ObjectKind::Symlink { .. }
+            | ObjectKind::EncryptedSymlink { .. }
+            | ObjectKind::NonInlineSymlink { .. } => {
                 return Err(FxfsError::NotSupported.into());
             }
             ObjectKind::Graveyard => return Err(FxfsError::Inconsistent.into()),
@@ -168,9 +170,11 @@ impl ObjectStore {
         // Make sure the object kind makes sense.
         match kind {
             ObjectKind::File { .. } | ObjectKind::Directory { .. } => (),
-            // For now, we don't support attributes on symlink objects, so setting a project id
-            // doesn't make sense.
-            ObjectKind::Symlink { .. } | ObjectKind::EncryptedSymlink { .. } => {
+
+            // Setting a project id on symlink objects is not currently supported.
+            ObjectKind::Symlink { .. }
+            | ObjectKind::EncryptedSymlink { .. }
+            | ObjectKind::NonInlineSymlink { .. } => {
                 return Err(FxfsError::NotSupported.into());
             }
             ObjectKind::Graveyard => return Err(FxfsError::Inconsistent.into()),

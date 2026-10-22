@@ -51,7 +51,7 @@ async fn test_symlink() {
         );
         assert_eq!(
             dir_zxio
-                .create_symlink("symlink2", &vec![65; 300])
+                .create_symlink("symlink2", &vec![65; 4094])
                 .expect_err("create symlink succeeded"),
             zx::Status::BAD_PATH
         );

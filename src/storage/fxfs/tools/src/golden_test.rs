@@ -7,10 +7,11 @@
 mod golden_common;
 
 use crate::golden_common::{
-    BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT, IMAGE_BLOCK_SIZE,
-    LARGE_ATTR_COUNT, LARGE_ATTR_PREFIX, MAX_INLINE_XATTR_SIZE, REGULAR_DIRECTORY_PATH,
-    REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH, WRAPPING_KEY_ID,
-    latest_image_filename,
+    BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT,
+    FSCRYPT_NON_INLINE_SYMLINK_PATH, IMAGE_BLOCK_SIZE, LARGE_ATTR_COUNT, LARGE_ATTR_PREFIX,
+    MAX_INLINE_XATTR_SIZE, NON_INLINE_SYMLINK_PATH, NON_INLINE_SYMLINK_TARGET,
+    REGULAR_DIRECTORY_PATH, REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH,
+    WRAPPING_KEY_ID, latest_image_filename,
 };
 use anyhow::{Context, Error, ensure};
 use fidl::endpoints::create_proxy;
@@ -47,6 +48,7 @@ const FSCRYPT_VERSION_START: Version = Version { major: 51, minor: 0 };
 // Version of first image with blobs included.
 const BLOB_IN_GOLDEN_START: Version = Version { major: 52, minor: 0 };
 const SECOND_VOLUME_VERSION: Version = Version { major: 38, minor: 0 };
+const NON_INLINE_SYMLINK_VERSION: Version = Version { major: 62, minor: 0 };
 
 /// Decompresses a zstd compressed local image into a RAM backed FakeDevice.
 fn load_device(path: &Path) -> Result<FakeDevice, Error> {
@@ -217,7 +219,58 @@ async fn check_data_volume(
         "Found deleted file."
     );
 
+    if version >= NON_INLINE_SYMLINK_VERSION {
+        let (symlink, server_end) = create_proxy::<fio::SymlinkMarker>();
+        dir.open(
+            NON_INLINE_SYMLINK_PATH,
+            fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE,
+            &fio::Options::default(),
+            server_end.into_channel(),
+        )
+        .context("open non_inline_symlink")?;
+        let info = symlink.describe().await.context("describe non_inline_symlink")?;
+        ensure!(
+            info.target.as_deref() == Some(NON_INLINE_SYMLINK_TARGET),
+            "Unexpected target for non_inline_symlink"
+        );
+        let (_, imm_attrs) = symlink
+            .get_attributes(all_attributes)
+            .await
+            .context("get_attributes FIDL call on non_inline_symlink")?
+            .map_err(Status::err_from_raw)
+            .context("get_attributes on non_inline_symlink")?;
+        ensure!(
+            imm_attrs.content_size == Some(NON_INLINE_SYMLINK_TARGET.len() as u64),
+            "Unexpected content_size for non_inline_symlink"
+        );
+    }
+
     if check_fscrypt {
+        if version >= NON_INLINE_SYMLINK_VERSION {
+            let (symlink, server_end) = create_proxy::<fio::SymlinkMarker>();
+            dir.open(
+                FSCRYPT_NON_INLINE_SYMLINK_PATH,
+                fio::Flags::PROTOCOL_SYMLINK | fio::PERM_READABLE,
+                &fio::Options::default(),
+                server_end.into_channel(),
+            )
+            .context("open fscrypt non_inline_symlink")?;
+            let info = symlink.describe().await.context("describe fscrypt non_inline_symlink")?;
+            ensure!(
+                info.target.as_deref() == Some(NON_INLINE_SYMLINK_TARGET),
+                "Unexpected target for fscrypt non_inline_symlink"
+            );
+            let (_, imm_attrs) = symlink
+                .get_attributes(all_attributes)
+                .await
+                .context("get_attributes FIDL call on fscrypt non_inline_symlink")?
+                .map_err(Status::err_from_raw)
+                .context("get_attributes on fscrypt non_inline_symlink")?;
+            ensure!(
+                imm_attrs.content_size == Some(NON_INLINE_SYMLINK_TARGET.len() as u64),
+                "Unexpected content_size for fscrypt non_inline_symlink"
+            );
+        }
         let file = open_file(&dir, FSCRYPT_FILE_PATH, fio::PERM_READABLE).await?;
         let (mut_attrs, imm_attrs) = file
             .get_attributes(all_attributes)

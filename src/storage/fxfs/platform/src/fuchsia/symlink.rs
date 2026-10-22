@@ -9,11 +9,13 @@ use crate::fuchsia::volume::FxVolume;
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
 use fxfs::errors::FxfsError;
+use fxfs::lsm_tree::Query;
+use fxfs::lsm_tree::types::{ItemRef, LayerIterator};
 use fxfs::object_handle::{ObjectHandle, ObjectProperties};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{
-    DirType, HandleOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectValue,
-    StoreObjectHandle,
+    AttributeId, AttributeKey, DirType, FSCRYPT_KEY_ID, HandleOptions, ObjectAttributes,
+    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue, StoreObjectHandle,
 };
 use fxfs_macros::ToWeakNode;
 use std::sync::Arc;
@@ -50,10 +52,6 @@ impl FxSymlink {
 
     async fn get_properties(&self) -> Result<ObjectProperties, Error> {
         let store = self.handle.store();
-        // We don't take a transaction lock here because the lifetime of the symlink object
-        // (and its records in the LSM tree) is guaranteed for as long as this FxSymlink
-        // handle is open. Even if the symlink is unlinked, it is kept in the graveyard
-        // until the handle is closed, meaning its object ID and records are stable.
         let item = store
             .tree()
             .find(&ObjectKey::object(self.object_id()))
@@ -67,13 +65,15 @@ impl FxSymlink {
                         creation_time,
                         modification_time,
                         posix_attributes,
+                        allocated_size,
                         access_time,
                         change_time,
                         ..
                     },
             } => Ok(ObjectProperties {
                 refs,
-                allocated_size: 0,
+                allocated_size,
+
                 // For POSIX compatibility we report the target length as file size.
                 data_attribute_size: link.len() as u64,
                 creation_time,
@@ -91,18 +91,100 @@ impl FxSymlink {
                         creation_time,
                         modification_time,
                         posix_attributes,
+                        allocated_size,
                         access_time,
                         change_time,
                         ..
                     },
             } => {
-                let link_len =
-                    store.read_encrypted_symlink(self.object_id(), link.into_vec()).await?.len();
+                let link_len = self.handle.read_encrypted_symlink(link.into_vec()).await?.len();
                 Ok(ObjectProperties {
                     refs,
-                    allocated_size: 0,
+                    allocated_size,
+
                     // For POSIX compatibility we report the target length as file size.
                     data_attribute_size: link_len as u64,
+                    creation_time,
+                    modification_time,
+                    access_time,
+                    change_time,
+                    sub_dirs: 0,
+                    posix_attributes,
+                    dir_type: DirType::Normal,
+                })
+            }
+            ObjectValue::Object {
+                kind: ObjectKind::NonInlineSymlink { refs },
+                attributes:
+                    ObjectAttributes {
+                        creation_time,
+                        modification_time,
+                        posix_attributes,
+                        allocated_size,
+                        access_time,
+                        change_time,
+                        ..
+                    },
+            } => {
+                // We don't take a transaction lock here because the lifetime of the symlink object
+                // (and its records in the LSM tree) is guaranteed for as long as this FxSymlink
+                // handle is open. Even if the symlink is unlinked, it is kept in the graveyard
+                // until the handle is closed, meaning its object ID and records are stable.
+                //
+                // Both fscrypt and non-fscrypt spilled symlinks use `NonInlineSymlink`. Advance
+                // through `ObjectKeyData::Keys` (which sorts between `Object` and `Attribute`) to
+                // check whether `FSCRYPT_KEY_ID` is present:
+                // - For non-fscrypt symlinks, `ObjectValue::Attribute { size }` is the exact
+                //   plaintext target length, avoiding any disk read for `get_properties`.
+                // - For fscrypt symlinks, `AttributeId::DATA` holds the padded fscrypt symlink
+                //   ciphertext written raw. We must read the raw ciphertext via
+                //   `read_raw_attr_from_iter` (avoiding data-mode `Cipher::decrypt`) and pass it
+                //   to `read_encrypted_symlink` so that `get_properties` reports either the
+                //   unpadded decrypted length (when unlocked) or the `ProxyFilename` length (when
+                //   locked).
+                let layer_set = store.tree().layer_set();
+                let mut merger = layer_set.merger();
+                let mut iter =
+                    merger.query(Query::FullRange(&ObjectKey::keys(self.object_id()))).await?;
+                let mut is_fscrypt = false;
+                let size = loop {
+                    match iter.get() {
+                        Some(ItemRef {
+                            key: ObjectKey { object_id, data: ObjectKeyData::Keys },
+                            value: ObjectValue::Keys(keys),
+                            ..
+                        }) if *object_id == self.object_id() => {
+                            is_fscrypt = keys.get(FSCRYPT_KEY_ID).is_some();
+                        }
+                        Some(ItemRef {
+                            key:
+                                ObjectKey {
+                                    object_id,
+                                    data:
+                                        ObjectKeyData::Attribute(
+                                            AttributeId::DATA,
+                                            AttributeKey::Attribute,
+                                        ),
+                                },
+                            value: ObjectValue::Attribute { size, .. },
+                            ..
+                        }) if *object_id == self.object_id() => break *size,
+                        _ => return Err(FxfsError::Inconsistent.into()),
+                    }
+                    iter.advance().await?;
+                };
+                let data_attribute_size = if is_fscrypt {
+                    let link = self.handle.read_raw_attr_from_iter(iter).await?.into_vec();
+                    self.handle.read_encrypted_symlink(link).await?.len() as u64
+                } else {
+                    size
+                };
+                Ok(ObjectProperties {
+                    refs,
+                    allocated_size,
+
+                    // For POSIX compatibility we report the target length as file size.
+                    data_attribute_size,
                     creation_time,
                     modification_time,
                     access_time,
@@ -123,7 +205,7 @@ impl FxSymlink {
 
 impl Symlink for FxSymlink {
     async fn read_target(&self) -> Result<Vec<u8>, zx::Status> {
-        self.handle.store().read_symlink(self.object_id()).await.map_err(map_to_status)
+        self.handle.read_symlink().await.map_err(map_to_status)
     }
 }
 

@@ -5084,3 +5084,150 @@ async fn test_illegal_key_in_root_store() {
         test.errors()
     );
 }
+
+#[fuchsia::test]
+async fn test_spilled_symlink_missing_data_attribute() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, symlink_id) = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(test.get_crypt()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .unwrap();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let symlink_id = root_directory
+            .create_symlink(&mut transaction, &vec![b'a'; 300], "spilled_symlink")
+            .await
+            .expect("create_symlink failed");
+
+        // Remove the AttributeId::DATA attribute record to simulate corruption.
+        let attr_mutation = transaction
+            .mutations()
+            .iter()
+            .find(|m| {
+                matches!(
+                    m.mutation,
+                    Mutation::ObjectStore(ObjectStoreMutation {
+                        item: Item {
+                            key: ObjectKey {
+                                object_id,
+                                data: ObjectKeyData::Attribute(
+                                    AttributeId::DATA,
+                                    AttributeKey::Attribute,
+                                ),
+                            },
+                            ..
+                        },
+                        ..
+                    }) if object_id == symlink_id
+                )
+            })
+            .expect("find attr_mutation failed")
+            .mutation
+            .clone();
+        transaction.remove(store.store_object_id(), attr_mutation);
+        transaction.commit().await.expect("commit failed");
+        (store.store_object_id(), symlink_id)
+    };
+
+    test.remount().await.expect("remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("fsck should fail");
+    assert!(
+        test.errors().iter().any(|e| matches!(
+            e,
+            FsckIssue::Error(FsckError::MissingDataAttribute(err_store_id, err_object_id))
+                if *err_store_id == store_id && *err_object_id == symlink_id
+        )),
+        "errors: {:?}",
+        test.errors()
+    );
+}
+
+#[fuchsia::test]
+async fn test_oversized_inline_symlink_warning() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, symlink_id) = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(test.get_crypt()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .unwrap();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let symlink_id = root_directory
+            .create_symlink(&mut transaction, b"short", "inline_symlink")
+            .await
+            .expect("create_symlink failed");
+
+        // Replace the inline symlink record with one whose target exceeds MAX_INLINE_SYMLINK_SIZE.
+        transaction.add(
+            store.store_object_id(),
+            Mutation::insert_object(
+                ObjectKey::object(symlink_id),
+                ObjectValue::symlink(
+                    vec![b'a'; crate::object_store::MAX_INLINE_SYMLINK_SIZE + 1],
+                    Timestamp::now(),
+                    Timestamp::now(),
+                    None,
+                ),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+        (store.store_object_id(), symlink_id)
+    };
+
+    test.remount().await.expect("remount failed");
+    test.run(TestOptions {
+        volume_store_id: Some(store_id),
+        halt_on_error: false,
+        ..Default::default()
+    })
+    .await
+    .expect_err("fsck should fail on warning");
+    assert_matches!(
+        &test.errors()[..],
+        [FsckIssue::Warning(FsckWarning::OversizedInlineSymlink(warn_store_id, warn_object_id))]
+            if *warn_store_id == store_id && *warn_object_id == symlink_id
+    );
+}

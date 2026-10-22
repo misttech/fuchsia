@@ -113,6 +113,7 @@ pub enum FsckWarning {
     OrphanedKeys(u64, u64),
     OrphanedExtendedAttribute(u64, u64, AttributeId),
     OrphanedExtendedAttributeRecord(u64, u64),
+    OversizedInlineSymlink(u64, u64),
     ProjectUsageInconsistent(u64, ProjectId, (i64, i64), (i64, i64)),
 }
 
@@ -164,6 +165,11 @@ impl FsckWarning {
                     {store_id}"
                 )
             }
+            FsckWarning::OversizedInlineSymlink(store_id, object_id) => {
+                format!(
+                    "Inline symlink {object_id} in store {store_id} exceeds maximum inline size"
+                )
+            }
             FsckWarning::ProjectUsageInconsistent(
                 store_id,
                 project_id,
@@ -209,6 +215,9 @@ impl FsckWarning {
             }
             FsckWarning::OrphanedExtendedAttributeRecord(store_id, oid) => {
                 warn!(oid, store_id; "Orphaned extended attribute record");
+            }
+            FsckWarning::OversizedInlineSymlink(store_id, oid) => {
+                warn!(oid, store_id; "Oversized inline symlink");
             }
             FsckWarning::ProjectUsageInconsistent(store_id, project_id, stored, used) => {
                 warn!(project_id, store_id, stored:?, used:?; "Project Inconsistent");
@@ -912,6 +921,7 @@ mod tests {
             FsckWarning::OrphanedKeys(10, 20),
             FsckWarning::OrphanedExtendedAttribute(10, 20, attr_id),
             FsckWarning::OrphanedExtendedAttributeRecord(10, 20),
+            FsckWarning::OversizedInlineSymlink(10, 20),
             FsckWarning::ProjectUsageInconsistent(10, proj_id, (10, 1), (20, 2)),
         ];
         assert!(
