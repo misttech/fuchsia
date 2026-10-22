@@ -197,12 +197,23 @@ pub fn do_mmap(
     security::mmap_file(current_task, file.as_ref(), prot_flags, options)?;
 
     if flags & MAP_ANONYMOUS != 0 {
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "AnonymousMmap");
+        fuchsia_trace::duration!(
+            CATEGORY_STARNIX_MM,
+            "AnonymousMmap",
+            "prot" => prot,
+            "map_fixed" => (flags & (MAP_FIXED | MAP_FIXED_NOREPLACE)) != 0,
+        );
         current_task.mm()?.map_anonymous(addr, length, prot_flags, options, MappingName::None)
     } else {
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileBackedMmap");
-        // TODO(tbodt): maximize protection flags so that mprotect works
         let file = file.expect("file retrieved above for file-backed mapping");
+        fuchsia_trace::duration!(
+            CATEGORY_STARNIX_MM,
+            "FileBackedMmap",
+            "fs" => std::str::from_utf8(file.fs.name()).unwrap_or("<non-utf8>"),
+            "prot" => prot,
+            "map_fixed" => (flags & (MAP_FIXED | MAP_FIXED_NOREPLACE)) != 0,
+        );
+        // TODO(tbodt): maximize protection flags so that mprotect works
         file.mmap(current_task, addr, memory_offset, length, prot_flags, options)
     }
 }

@@ -690,6 +690,18 @@ impl<I> RemoteNode<I> {
     }
 }
 
+impl<I: SyncIo> RemoteNode<I> {
+    fn get_memory(
+        &self,
+        file: &FileObject,
+        prot: ProtectionFlags,
+    ) -> Result<Arc<MemoryObject>, Errno> {
+        get_or_init_remote_memory(file, &self.read_only_memory, &self.read_exec_memory, prot, |p| {
+            self.node.io.fetch_remote_memory(p)
+        })
+    }
+}
+
 /// Creates a file handle from a zx::NullableHandle.
 ///
 /// The handle must be a channel, socket, vmo or debuglog object.  If the handle is a channel, then
@@ -1679,6 +1691,54 @@ impl<D: SyncIoDirectory> FileOps for RemoteDirectoryObject<D> {
     }
 }
 
+fn get_or_init_remote_memory(
+    file: &FileObject,
+    read_only_memory: &OnceCell<Arc<MemoryObject>>,
+    read_exec_memory: &OnceCell<Arc<MemoryObject>>,
+    prot: ProtectionFlags,
+    fetch: impl Fn(ProtectionFlags) -> Result<Arc<MemoryObject>, Errno>,
+) -> Result<Arc<MemoryObject>, Errno> {
+    fuchsia_trace::duration!(
+        CATEGORY_STARNIX_MM,
+        "RemoteFileGetVmo",
+        "fs" => std::str::from_utf8(file.fs.name()).unwrap_or("<non-utf8>"),
+        "source" => std::str::from_utf8(file.fs.options.source_for_display()).unwrap_or("<non-utf8>"),
+        "ino" => file.node().ino,
+        "prot" => prot.bits(),
+        "cached" => if prot == ProtectionFlags::READ {
+            read_only_memory.get().is_some()
+        } else if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
+            // The executable handle can be derived locally from a cached read-only handle, so
+            // either cache being populated means the FIDL round-trip is avoided.
+            read_exec_memory.get().is_some() || read_only_memory.get().is_some()
+        } else {
+            false
+        },
+    );
+    if prot == ProtectionFlags::READ {
+        read_only_memory.get_or_try_init(|| fetch(ProtectionFlags::READ)).cloned()
+    } else if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
+        read_exec_memory
+            .get_or_try_init(|| {
+                // If a read-only handle has already been fetched, derive the executable handle
+                // from it rather than making another GetBackingMemory round-trip. The server is
+                // not required to grant ZX_RIGHT_DUPLICATE on the returned VMO, so fall back to
+                // fetching if the handle cannot be duplicated.
+                if let Some(read_only) = read_only_memory.get()
+                    && let Ok(exec_mem) = read_only
+                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                        .and_then(|m| m.replace_as_executable(&VMEX_RESOURCE))
+                {
+                    return Ok(Arc::new(exec_mem));
+                }
+                fetch(prot)
+            })
+            .cloned()
+    } else {
+        fetch(prot)
+    }
+}
+
 struct RemoteFileObject<I> {
     _phantom: std::marker::PhantomData<fn() -> I>,
 }
@@ -1694,8 +1754,12 @@ impl<I: SyncIo> RemoteFileObject<I> {
     ///
     /// This will panic if the node's ops are not `RemoteNode`; `AnonymousRemoteFileObject` should
     /// be used if this won't be the case.
+    fn remote_node(file: &FileObject) -> &RemoteNode<I> {
+        file.node().downcast_ops::<RemoteNode<I>>().unwrap()
+    }
+
     fn io(file: &FileObject) -> &I {
-        &file.node().downcast_ops::<RemoteNode<I>>().unwrap().node.io
+        &Self::remote_node(file).node.io
     }
 }
 
@@ -1817,31 +1881,7 @@ impl<I: SyncIo> FileOps for RemoteFileObject<I> {
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
-        let remote_node = file.node().downcast_ops::<RemoteNode<I>>().unwrap();
-        let io = &remote_node.node.io;
-
-        if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
-            remote_node
-                .read_exec_memory
-                .get_or_try_init(|| {
-                    if let Some(ro_memory) = remote_node.read_only_memory.get() {
-                        ro_memory
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .map_err(|status| from_status_like_fdio!(status))?
-                            .replace_as_executable(&VMEX_RESOURCE)
-                            .map_err(impossible_error)
-                            .map(Arc::new)
-                    } else {
-                        io.fetch_remote_memory(prot)
-                    }
-                })
-                .cloned()
-        } else if prot == ProtectionFlags::READ {
-            remote_node.read_only_memory.get_or_try_init(|| io.fetch_remote_memory(prot)).cloned()
-        } else {
-            io.fetch_remote_memory(prot)
-        }
+        Self::remote_node(file).get_memory(file, prot)
     }
 
     fn to_handle(
@@ -1900,23 +1940,14 @@ impl FileOps for AnonymousRemoteFileObject {
 
     fn get_memory(
         &self,
-        _file: &FileObject,
+        file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
-        let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
-            Some(&self.read_exec_memory)
-        } else if prot == ProtectionFlags::READ {
-            Some(&self.read_only_memory)
-        } else {
-            None
-        };
-
-        memory_cache
-            .map(|c| c.get_or_try_init(|| self.io.fetch_remote_memory(prot)).cloned())
-            .unwrap_or_else(|| self.io.fetch_remote_memory(prot))
+        get_or_init_remote_memory(file, &self.read_only_memory, &self.read_exec_memory, prot, |p| {
+            self.io.fetch_remote_memory(p)
+        })
     }
 
     fn to_handle(
@@ -2043,23 +2074,14 @@ impl FileOps for RemoteZxioFileObject {
 
     fn get_memory(
         &self,
-        _file: &FileObject,
+        file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
-        let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
-            Some(&self.read_exec_memory)
-        } else if prot == ProtectionFlags::READ {
-            Some(&self.read_only_memory)
-        } else {
-            None
-        };
-
-        memory_cache
-            .map(|c| c.get_or_try_init(|| self.fetch_remote_memory(prot)).cloned())
-            .unwrap_or_else(|| self.fetch_remote_memory(prot))
+        get_or_init_remote_memory(file, &self.read_only_memory, &self.read_exec_memory, prot, |p| {
+            self.fetch_remote_memory(p)
+        })
     }
 
     fn to_handle(
@@ -4078,6 +4100,7 @@ mod test {
     #[derive(Default)]
     struct MockRemoteFs {
         get_attrs_count: AtomicU32,
+        get_backing_memory_count: AtomicU32,
         file_size: AtomicUsize,
         write_offsets: Mutex<Vec<u64>>,
         open_paths: Mutex<Vec<String>>,
@@ -4189,6 +4212,17 @@ mod test {
                     }
                     fio::FileRequest::GetExtendedAttribute { responder, .. } => {
                         responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap();
+                    }
+                    fio::FileRequest::GetBackingMemory { flags, responder } => {
+                        self.get_backing_memory_count.fetch_add(1, Ordering::SeqCst);
+                        let vmo = zx::Vmo::create(4096).unwrap();
+                        // Mirror fuchsia.io servers: only grant WRITE if it was requested.
+                        let vmo = if flags.contains(fio::VmoFlags::WRITE) {
+                            vmo
+                        } else {
+                            vmo.replace_handle(zx::Rights::VMO_DEFAULT - zx::Rights::WRITE).unwrap()
+                        };
+                        responder.send(Ok(vmo)).unwrap();
                     }
                     fio::FileRequest::Close { responder } => {
                         responder.send(Ok(())).unwrap();
@@ -5317,5 +5351,121 @@ mod test {
             assert!(handle.is_some());
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_memory_cached_across_opens_and_exec() {
+        let (client, stream) = create_request_stream::<fio::DirectoryMarker>();
+        let state = Arc::new(MockRemoteFs::default());
+
+        let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
+
+        spawn_kernel_and_run(async move |current_task| {
+            let fs = RemoteFs::new_fs(
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
+
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let mut context = LookupContext::default();
+            let file_node = root
+                .lookup_child(current_task, &mut context, "file".into())
+                .expect("lookup failed");
+
+            let file1 = file_node.open(current_task, OpenFlags::RDONLY).expect("open 1 failed");
+            assert_eq!(state.get_backing_memory_count.load(Ordering::SeqCst), 0);
+
+            let ro_mem1 = file1
+                .get_memory(current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ failed");
+            assert_eq!(state.get_backing_memory_count.load(Ordering::SeqCst), 1);
+
+            // Requesting READ | EXEC should derive the executable VMO from the cached READ VMO
+            // without making another GetBackingMemory FIDL call.
+            let rx_mem1 = file1
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC failed");
+            assert_eq!(state.get_backing_memory_count.load(Ordering::SeqCst), 1);
+            assert!(rx_mem1.get_rights().contains(zx::Rights::EXECUTE));
+            assert!(!rx_mem1.get_rights().contains(zx::Rights::WRITE));
+
+            drop(file1);
+
+            // Opening the same file node again should reuse the cached VMOs on RemoteNode.
+            let file2 = file_node.open(current_task, OpenFlags::RDONLY).expect("open 2 failed");
+            let ro_mem2 = file2
+                .get_memory(current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ 2 failed");
+            let rx_mem2 = file2
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC 2 failed");
+            assert_eq!(state.get_backing_memory_count.load(Ordering::SeqCst), 1);
+            assert!(Arc::ptr_eq(&ro_mem1, &ro_mem2));
+            assert!(Arc::ptr_eq(&rx_mem1, &rx_mem2));
+        })
+        .await;
+
+        server_task.await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_memory_exec_first_fetches_directly() {
+        let (client, stream) = create_request_stream::<fio::DirectoryMarker>();
+        let state = Arc::new(MockRemoteFs::default());
+
+        let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
+
+        spawn_kernel_and_run(async move |current_task| {
+            let fs = RemoteFs::new_fs(
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
+
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let mut context = LookupContext::default();
+            let file_node = root
+                .lookup_child(current_task, &mut context, "file".into())
+                .expect("lookup failed");
+            let file = file_node.open(current_task, OpenFlags::RDONLY).expect("open failed");
+
+            // With no cached READ VMO to derive from, READ | EXEC is fetched directly and does
+            // not populate the READ cache (so exec-only files hold a single VMO handle).
+            let rx_mem = file
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC failed");
+            assert_eq!(state.get_backing_memory_count.load(Ordering::SeqCst), 1);
+            assert!(rx_mem.get_rights().contains(zx::Rights::EXECUTE));
+            assert!(!rx_mem.get_rights().contains(zx::Rights::WRITE));
+
+            let ro_mem = file
+                .get_memory(current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ failed");
+            assert_eq!(state.get_backing_memory_count.load(Ordering::SeqCst), 2);
+            assert!(!ro_mem.get_rights().contains(zx::Rights::EXECUTE));
+
+            // Both handles are now cached on the node.
+            let rx_mem2 = file
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC 2 failed");
+            let ro_mem2 = file
+                .get_memory(current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ 2 failed");
+            assert_eq!(state.get_backing_memory_count.load(Ordering::SeqCst), 2);
+            assert!(Arc::ptr_eq(&rx_mem, &rx_mem2));
+            assert!(Arc::ptr_eq(&ro_mem, &ro_mem2));
+        })
+        .await;
+
+        server_task.await;
     }
 }

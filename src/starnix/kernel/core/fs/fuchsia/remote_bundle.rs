@@ -18,6 +18,7 @@ use crate::vfs::{
 use anyhow::{Error, anyhow, ensure};
 use ext4_metadata::{Metadata, Node, NodeInfo};
 use fidl_fuchsia_io as fio;
+use once_cell::sync::OnceCell;
 use starnix_logging::{impossible_error, log_warn, track_stub};
 use starnix_sync::{
     DynamicLockDepRwLock, LockDepMutex, LockDepReadGuard, LockDepWriteGuard, RemoteBundleInnerLock,
@@ -182,6 +183,7 @@ impl FileSystemOps for RemoteBundle {
 
 struct File {
     inner: LockDepMutex<Inner, RemoteBundleInnerLock>,
+    exec_memory: OnceCell<Arc<MemoryObject>>,
 }
 
 enum Inner {
@@ -323,22 +325,26 @@ impl FileOps for MemoryFile {
 
     fn get_memory(
         &self,
-        _file: &FileObject,
+        file: &FileObject,
         _current_task: &CurrentTask,
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        Ok(if prot.contains(ProtectionFlags::EXEC) {
-            Arc::new(
-                self.memory
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .map_err(impossible_error)?
-                    .replace_as_executable(&VMEX_RESOURCE)
-                    .map_err(impossible_error)?,
-            )
+        if prot.contains(ProtectionFlags::EXEC) {
+            let file_node = file.node().downcast_ops::<File>().unwrap();
+            file_node
+                .exec_memory
+                .get_or_try_init(|| {
+                    self.memory
+                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                        .and_then(|m| m.replace_as_executable(&VMEX_RESOURCE))
+                        .map(Arc::new)
+                        .map_err(impossible_error)
+                })
+                .cloned()
         } else {
-            self.memory.clone()
-        })
+            Ok(self.memory.clone())
+        }
     }
 
     fn get_file_token(
@@ -473,7 +479,11 @@ impl FsNodeOps for DirectoryObject {
                         server_end.into_channel(),
                     )
                     .map_err(|_| errno!(EIO))?;
-                Ok(fs.create_node(ino, File { inner: Inner::NeedsVmo(file).into() }, info))
+                Ok(fs.create_node(
+                    ino,
+                    File { inner: Inner::NeedsVmo(file).into(), exec_memory: OnceCell::new() },
+                    info,
+                ))
             }
         }
     }
@@ -555,6 +565,7 @@ fn to_fs_node_info(metadata_node: &ext4_metadata::Node) -> FsNodeInfo {
 #[cfg(test)]
 mod test {
     use crate::fs::fuchsia::RemoteBundle;
+    use crate::mm::ProtectionFlags;
     use crate::testing::spawn_kernel_and_run_with_pkgfs;
     use crate::vfs::buffers::VecOutputBuffer;
     use crate::vfs::{
@@ -567,6 +578,7 @@ mod test {
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::{ino_t, off_t};
     use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
     use zx;
 
     #[::fuchsia::test]
@@ -591,11 +603,30 @@ mod test {
                 .lookup_child(&current_task, &mut context, "foo".into())
                 .expect("lookup failed");
 
-            let test_file = test_dir
+            let test_file_node = test_dir
                 .lookup_child(&current_task, &mut context, "file".into())
-                .expect("lookup failed")
-                .open(&current_task, OpenFlags::RDONLY)
-                .expect("open failed");
+                .expect("lookup failed");
+            let test_file =
+                test_file_node.open(&current_task, OpenFlags::RDONLY).expect("open failed");
+
+            let ro_mem1 = test_file
+                .get_memory(&current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ failed");
+            let rx_mem1 = test_file
+                .get_memory(&current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC failed");
+            assert!(rx_mem1.get_rights().contains(zx::Rights::EXECUTE));
+
+            let test_file2 =
+                test_file_node.open(&current_task, OpenFlags::RDONLY).expect("open 2 failed");
+            let ro_mem2 = test_file2
+                .get_memory(&current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ 2 failed");
+            let rx_mem2 = test_file2
+                .get_memory(&current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC 2 failed");
+            assert!(Arc::ptr_eq(&ro_mem1, &ro_mem2));
+            assert!(Arc::ptr_eq(&rx_mem1, &rx_mem2));
 
             let mut buffer = VecOutputBuffer::new(64);
             assert_eq!(test_file.read(&current_task, &mut buffer).expect("read failed"), 6);

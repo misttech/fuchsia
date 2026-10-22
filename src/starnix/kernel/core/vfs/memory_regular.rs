@@ -16,6 +16,7 @@ use crate::vfs::{
     XattrStorage as _, fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
 };
 use linux_uapi::{ASHMEM_GET_SIZE, ASHMEM_SET_SIZE};
+use once_cell::sync::OnceCell;
 use starnix_logging::{impossible_error, track_stub};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::math::round_up_to_system_page_size;
@@ -31,6 +32,12 @@ use std::sync::Arc;
 pub struct MemoryRegularNode {
     /// The memory that backs this file.
     memory: Arc<MemoryObject>,
+    /// Cached read-only VMO handle (without WRITE or RESIZE rights).
+    read_only_memory: OnceCell<Arc<MemoryObject>>,
+    /// Cached read/exec VMO handle (without WRITE or RESIZE rights, with EXECUTE right).
+    read_exec_memory: OnceCell<Arc<MemoryObject>>,
+    /// Cached read/write/exec VMO handle (with WRITE, RESIZE, and EXECUTE rights).
+    write_exec_memory: OnceCell<Arc<MemoryObject>>,
     xattrs: MemoryXattrStorage,
 }
 
@@ -41,6 +48,9 @@ impl MemoryRegularNode {
             zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0).map_err(|_| errno!(ENOMEM))?;
         Ok(Self {
             memory: Arc::new(MemoryObject::from(vmo).with_zx_name(b"starnix:vfs")),
+            read_only_memory: OnceCell::new(),
+            read_exec_memory: OnceCell::new(),
+            write_exec_memory: OnceCell::new(),
             xattrs: MemoryXattrStorage::default(),
         })
     }
@@ -49,7 +59,49 @@ impl MemoryRegularNode {
     /// Attempts to open the file for writing will fail unless [`memory`] has both
     /// the `WRITE` and `RESIZE` rights.
     pub fn from_memory(memory: Arc<MemoryObject>) -> Self {
-        Self { memory, xattrs: MemoryXattrStorage::default() }
+        Self {
+            memory,
+            read_only_memory: OnceCell::new(),
+            read_exec_memory: OnceCell::new(),
+            write_exec_memory: OnceCell::new(),
+            xattrs: MemoryXattrStorage::default(),
+        }
+    }
+
+    /// Returns the cached read-only handle (without WRITE or RESIZE rights) to the backing
+    /// memory, shared by all read-only opens of this node.
+    fn read_only_memory(&self) -> Result<&Arc<MemoryObject>, Errno> {
+        self.read_only_memory.get_or_try_init(|| {
+            self.memory
+                .duplicate_handle(zx::Rights::VMO_DEFAULT - zx::Rights::WRITE)
+                .map(Arc::new)
+                .map_err(|_e| errno!(EIO))
+        })
+    }
+
+    /// Returns the cached executable handle to the backing memory. The handle carries exactly
+    /// the rights that `create_file_ops` grants to a readable open: `writable` selects between
+    /// the rights of an `O_RDWR` open (with WRITE and RESIZE) and an `O_RDONLY` open (without).
+    fn exec_memory(&self, writable: bool) -> Result<Arc<MemoryObject>, Errno> {
+        if writable {
+            self.write_exec_memory.get_or_try_init(|| {
+                self.memory
+                    .duplicate_handle(zx::Rights::VMO_DEFAULT | zx::Rights::RESIZE)
+                    .map_err(|_e| errno!(EIO))?
+                    .replace_as_executable(&VMEX_RESOURCE)
+                    .map(Arc::new)
+                    .map_err(impossible_error)
+            })
+        } else {
+            self.read_exec_memory.get_or_try_init(|| {
+                self.read_only_memory()?
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .and_then(|m| m.replace_as_executable(&VMEX_RESOURCE))
+                    .map(Arc::new)
+                    .map_err(impossible_error)
+            })
+        }
+        .cloned()
     }
 }
 
@@ -73,15 +125,18 @@ impl FsNodeOps for MemoryRegularNode {
         }
 
         // Produce a VMO handle with rights reduced to those requested in |flags|.
-        let mut desired_rights = zx::Rights::VMO_DEFAULT | zx::Rights::RESIZE;
-        if !flags.can_read() {
-            desired_rights.remove(zx::Rights::READ);
-        }
-        if !flags.can_write() {
-            desired_rights.remove(zx::Rights::WRITE | zx::Rights::RESIZE);
-        }
-        let scoped_memory =
-            Arc::new(self.memory.duplicate_handle(desired_rights).map_err(|_e| errno!(EIO))?);
+        let scoped_memory = if flags.can_read() && !flags.can_write() {
+            self.read_only_memory()?.clone()
+        } else {
+            let mut desired_rights = zx::Rights::VMO_DEFAULT | zx::Rights::RESIZE;
+            if !flags.can_read() {
+                desired_rights.remove(zx::Rights::READ);
+            }
+            if !flags.can_write() {
+                desired_rights.remove(zx::Rights::WRITE | zx::Rights::RESIZE);
+            }
+            Arc::new(self.memory.duplicate_handle(desired_rights).map_err(|_e| errno!(EIO))?)
+        };
         let file_object = MemoryRegularFile::new(scoped_memory);
 
         Ok(Box::new(file_object))
@@ -337,6 +392,15 @@ impl MemoryRegularFile {
         }
         let mut memory = Arc::clone(memory);
         if prot.contains(ProtectionFlags::EXEC) {
+            // Readable opens of a `MemoryRegularNode` receive handles with a fixed set of rights
+            // determined by `create_file_ops`, so the executable handle can be shared across all
+            // such opens via the node. Write-only opens get a bespoke handle without READ, so
+            // they derive their own executable handle below rather than polluting the cache.
+            if file.can_read()
+                && let Some(node) = file.node().downcast_ops::<MemoryRegularNode>()
+            {
+                return node.exec_memory(file.can_write());
+            }
             memory = Arc::new(
                 memory
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -491,4 +555,118 @@ fn update_memory_file_size(
     })?;
     node_info.blocks = size / node_info.blksize;
     Ok(size)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::testing::spawn_kernel_and_run;
+    use crate::vfs::{LookupContext, Namespace};
+    use starnix_uapi::device_id::DeviceId;
+
+    #[::fuchsia::test]
+    async fn test_get_memory_cached_across_opens_and_exec() {
+        spawn_kernel_and_run(async |current_task| {
+            let fs = TmpFs::new_fs(current_task.kernel());
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            root.create_node(current_task, "file".into(), mode!(IFREG, 0o755), DeviceId::NONE)
+                .expect("create_node failed");
+
+            let mut context = LookupContext::default();
+            let file_node =
+                root.lookup_child(current_task, &mut context, "file".into()).expect("lookup");
+
+            let file1 = file_node.open(current_task, OpenFlags::RDONLY).expect("open 1 failed");
+            let ro_mem1 = file1
+                .get_memory(current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ 1 failed");
+            let rx_mem1 = file1
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC 1 failed");
+            assert!(rx_mem1.get_rights().contains(zx::Rights::EXECUTE));
+            assert!(!rx_mem1.get_rights().contains(zx::Rights::WRITE));
+
+            let file2 = file_node.open(current_task, OpenFlags::RDONLY).expect("open 2 failed");
+            let ro_mem2 = file2
+                .get_memory(current_task, None, ProtectionFlags::READ)
+                .expect("get_memory READ 2 failed");
+            let rx_mem2 = file2
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC 2 failed");
+            assert!(Arc::ptr_eq(&ro_mem1, &ro_mem2));
+            assert!(Arc::ptr_eq(&rx_mem1, &rx_mem2));
+
+            // Read/write opens share a separate executable handle that retains WRITE.
+            let file_rw1 = file_node.open(current_task, OpenFlags::RDWR).expect("open rw1 failed");
+            let rwx_mem1 = file_rw1
+                .get_memory(
+                    current_task,
+                    None,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE | ProtectionFlags::EXEC,
+                )
+                .expect("get_memory READ|WRITE|EXEC 1 failed");
+            assert!(rwx_mem1.get_rights().contains(
+                zx::Rights::READ | zx::Rights::WRITE | zx::Rights::RESIZE | zx::Rights::EXECUTE
+            ));
+            assert!(!Arc::ptr_eq(&rwx_mem1, &rx_mem1));
+
+            let file_rw2 = file_node.open(current_task, OpenFlags::RDWR).expect("open rw2 failed");
+            let rwx_mem2 = file_rw2
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC rw2 failed");
+            assert!(Arc::ptr_eq(&rwx_mem1, &rwx_mem2));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_get_memory_write_only_exec_does_not_pollute_cache() {
+        spawn_kernel_and_run(async |current_task| {
+            let fs = TmpFs::new_fs(current_task.kernel());
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            root.create_node(current_task, "file".into(), mode!(IFREG, 0o755), DeviceId::NONE)
+                .expect("create_node failed");
+
+            let mut context = LookupContext::default();
+            let file_node =
+                root.lookup_child(current_task, &mut context, "file".into()).expect("lookup");
+
+            // A write-only open gets an executable handle without READ...
+            let file_wo = file_node.open(current_task, OpenFlags::WRONLY).expect("open wo failed");
+            let wx_mem = file_wo
+                .get_memory(current_task, None, ProtectionFlags::WRITE | ProtectionFlags::EXEC)
+                .expect("get_memory WRITE|EXEC failed");
+            assert!(wx_mem.get_rights().contains(zx::Rights::WRITE | zx::Rights::EXECUTE));
+            assert!(!wx_mem.get_rights().contains(zx::Rights::READ));
+
+            // ...and must not be handed to a subsequent read/write open.
+            let file_rw = file_node.open(current_task, OpenFlags::RDWR).expect("open rw failed");
+            let rwx_mem = file_rw
+                .get_memory(
+                    current_task,
+                    None,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE | ProtectionFlags::EXEC,
+                )
+                .expect("get_memory READ|WRITE|EXEC failed");
+            assert!(!Arc::ptr_eq(&wx_mem, &rwx_mem));
+            assert!(rwx_mem.get_rights().contains(
+                zx::Rights::READ | zx::Rights::WRITE | zx::Rights::RESIZE | zx::Rights::EXECUTE
+            ));
+
+            // Nor to a read-only open.
+            let file_ro = file_node.open(current_task, OpenFlags::RDONLY).expect("open ro failed");
+            let rx_mem = file_ro
+                .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                .expect("get_memory READ|EXEC failed");
+            assert!(!Arc::ptr_eq(&wx_mem, &rx_mem));
+            assert!(!Arc::ptr_eq(&rwx_mem, &rx_mem));
+            assert!(rx_mem.get_rights().contains(zx::Rights::READ | zx::Rights::EXECUTE));
+            assert!(!rx_mem.get_rights().contains(zx::Rights::WRITE));
+        })
+        .await;
+    }
 }
