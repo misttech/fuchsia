@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "zr",
+    srcs = [
+        "src/defer.rs",
+        "src/inline_fn.rs",
+        "src/lib.rs",
+        "src/lossy_utf8.rs",
+        "src/opaque.rs",
+        "src/opaque_bytes.rs",
+        "src/pin_init.rs",
+        "src/ptr.rs",
+        "src/static_assert.rs",
+        "src/string.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/lib/ksync:__pkg__",
+        "//src/lib/lockdep/rust:__pkg__",
+        "//zircon/kernel:__subpackages__",
+        "//zircon/system:__subpackages__",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "zr_test",
+    crate = ":zr",
+    edition = "2024",
+)
+
+# @bazel2gn:skip
+wrap_host_rust_test(
+    name = "zr_host_test",
+    binary_name = "zr_test",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "zr-test",
+    unit_tests = [":zr_test"],
+)
