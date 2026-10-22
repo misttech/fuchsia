@@ -4,6 +4,10 @@
 
 #include "src/ui/lib/escher/base/ownable.h"
 
+#include <atomic>
+#include <thread>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "src/lib/fxl/memory/ref_ptr.h"
@@ -144,6 +148,101 @@ TEST(Ownable, ReceiveOwnables) {
   EXPECT_EQ(0U, owner->ownable_count());
   EXPECT_EQ(0U, owner->GetUnreffedCount());
   EXPECT_EQ(2U, destroyed_count);
+}
+
+class ThreadSafeImmediateOwner : public escher::Owner<OwnableBaseClassForTest, OwnableTypeInfo> {
+ public:
+  class AtomicOwnable : public OwnableBaseClassForTest {
+   public:
+    static const TypeInfo kTypeInfo;
+    const TypeInfo& type_info() const override { return kTypeInfo; }
+
+    explicit AtomicOwnable(std::atomic<size_t>& destroyed_count)
+        : destroyed_count_(destroyed_count) {}
+    ~AtomicOwnable() override { destroyed_count_.fetch_add(1, std::memory_order_relaxed); }
+
+   private:
+    std::atomic<size_t>& destroyed_count_;
+  };
+
+  explicit ThreadSafeImmediateOwner(std::atomic<size_t>& destroyed_count)
+      : destroyed_count_(destroyed_count) {}
+
+  fxl::RefPtr<AtomicOwnable> NewOwnable() {
+    auto result = escher::Make<AtomicOwnable>(destroyed_count_);
+    BecomeOwnerOf(result.get());
+    return result;
+  }
+
+  void Relinquish(AtomicOwnable* ownable) { RelinquishOwnershipOf(ownable); }
+
+  void OnReceiveOwnable(std::unique_ptr<OwnableBaseClassForTest> unreffed) override {
+    // Let `unreffed` go out of scope immediately so `~Ownable()` decrements `ownable_count_`
+    // on the releasing thread.
+  }
+
+ private:
+  std::atomic<size_t>& destroyed_count_;
+};
+
+const OwnableTypeInfo ThreadSafeImmediateOwner::AtomicOwnable::kTypeInfo(
+    "AtomicOwnable", OwnableTypes::kOwnableBaseClassForTest);
+
+TEST(Ownable, ConcurrentCreateDestroyAndRelinquishUpdatesOwnableCountAtomically) {
+  std::atomic<size_t> destroyed_count{0};
+  auto owner = std::make_unique<ThreadSafeImmediateOwner>(destroyed_count);
+
+  constexpr size_t kNumThreads = 4;
+  constexpr size_t kIterationsPerThread = 250;
+
+  // Pre-create a batch on the main thread to be released across worker threads.
+  std::vector<std::vector<fxl::RefPtr<ThreadSafeImmediateOwner::AtomicOwnable>>> precreated(
+      kNumThreads);
+  for (size_t t = 0; t < kNumThreads; ++t) {
+    precreated[t].reserve(kIterationsPerThread);
+    for (size_t i = 0; i < kIterationsPerThread; ++i) {
+      precreated[t].push_back(owner->NewOwnable());
+    }
+  }
+  EXPECT_EQ(kNumThreads * kIterationsPerThread, owner->ownable_count());
+
+  std::atomic<size_t> ready_workers{0};
+  std::atomic<bool> start{false};
+  std::vector<std::thread> workers;
+  workers.reserve(kNumThreads);
+  for (size_t t = 0; t < kNumThreads; ++t) {
+    workers.emplace_back([&, t]() {
+      ready_workers.fetch_add(1, std::memory_order_release);
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      for (size_t i = 0; i < kIterationsPerThread; ++i) {
+        // Release pre-created ownable, triggering `OnReceiveOwnable()` and `~Ownable()`.
+        precreated[t][i] = nullptr;
+
+        // Create and destroy an ownable on this thread.
+        auto transient = owner->NewOwnable();
+        transient = nullptr;
+
+        // Create an ownable and explicitly relinquish ownership before dropping it.
+        auto relinquished = owner->NewOwnable();
+        owner->Relinquish(relinquished.get());
+        relinquished = nullptr;
+      }
+    });
+  }
+
+  while (ready_workers.load(std::memory_order_acquire) < kNumThreads) {
+    std::this_thread::yield();
+  }
+  start.store(true, std::memory_order_release);
+  for (auto& worker : workers) {
+    worker.join();
+  }
+
+  EXPECT_EQ(0U, owner->ownable_count());
+  EXPECT_EQ(3 * kNumThreads * kIterationsPerThread,
+            destroyed_count.load(std::memory_order_relaxed));
 }
 
 }  // namespace

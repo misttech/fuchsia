@@ -5,6 +5,8 @@
 #ifndef SRC_UI_LIB_ESCHER_BASE_OWNER_H_
 #define SRC_UI_LIB_ESCHER_BASE_OWNER_H_
 
+#include <atomic>
+
 #include "src/lib/fxl/memory/ref_counted.h"
 #include "src/ui/lib/escher/base/ownable.h"
 
@@ -18,11 +20,11 @@ namespace escher {
 template <typename OwnableT, typename TypeInfoT>
 class Owner {
  public:
-  virtual ~Owner() { FX_DCHECK(ownable_count_ == 0); }
+  virtual ~Owner() { FX_DCHECK(ownable_count_.load(std::memory_order_acquire) == 0); }
 
-  // Return the number of Ownables currently owned by this owner.  Must be
-  // zero when the Owner is destroyed.
-  uint32_t ownable_count() const { return ownable_count_; }
+  // Return the number of `Ownable`s currently owned by this owner. Must be
+  // zero when the `Owner` is destroyed.
+  uint32_t ownable_count() const { return ownable_count_.load(std::memory_order_relaxed); }
 
  protected:
   // Allow subclasses of Owner to take ownership of |unowned_ownable|, which
@@ -62,11 +64,16 @@ class Owner {
   // that the checks in ReceiveOwnable() always take place.
   virtual void OnReceiveOwnable(std::unique_ptr<OwnableT> unreffed) = 0;
 
-  // Ownables hold a raw pointer to their owner.  This ref-count allows us to
-  // detect programming errors that cause an Ownable to outlive its Owner.
-  void IncrementOwnableCount() { ++ownable_count_; }
-  void DecrementOwnableCount() { --ownable_count_; }
-  uint32_t ownable_count_ = 0;
+  // `Ownable`s hold a raw pointer to their owner. This count detects programming errors that
+  // cause an `Ownable` to outlive its `Owner`. It is atomic because `Ownable` subclasses (for
+  // example, `Resource`s managed by `ResourceRecycler`) may be constructed or destroyed across
+  // threads.
+  void IncrementOwnableCount() { ownable_count_.fetch_add(1, std::memory_order_relaxed); }
+  void DecrementOwnableCount() {
+    uint32_t prev = ownable_count_.fetch_sub(1, std::memory_order_release);
+    FX_DCHECK(prev > 0);
+  }
+  std::atomic<uint32_t> ownable_count_{0};
 };
 
 }  // namespace escher
