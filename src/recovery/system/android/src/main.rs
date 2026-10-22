@@ -545,10 +545,17 @@ impl ViewAssistant for RecoveryViewAssistant {
                 self.request_render();
             }
             input::consumer_control::Event {
-                button: ConsumerControlButton::Function,
+                button: ConsumerControlButton::Function | ConsumerControlButton::VolumeDown,
                 phase: input::consumer_control::Phase::Up,
             } => {
                 self.menu.move_down();
+                self.request_render();
+            }
+            input::consumer_control::Event {
+                button: ConsumerControlButton::VolumeUp,
+                phase: input::consumer_control::Phase::Up,
+            } => {
+                self.menu.move_up();
                 self.request_render();
             }
             input::consumer_control::Event {
