@@ -951,16 +951,16 @@ TEST(VmoTestCase, PhysicalVmoOobMapping) {
     // The kernel should have filled in the value by now.
     ASSERT_TRUE(ram.paddr);
     mmio_base = *ram.paddr.to_std();
-    mmio_size = ram.size;
+    mmio_size = fbl::round_up(ram.size, static_cast<size_t>(zx_system_get_page_size()));
   }
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create_physical(*mmio, mmio_base, zx_system_get_page_size(), &vmo));
+  ASSERT_OK(zx::vmo::create_physical(*mmio, mmio_base, mmio_size, &vmo));
 
   // Map should reject a mapping larger than the VMO size.
   zx_vaddr_t vaddr;
   EXPECT_EQ(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_MAP_RANGE, 0, vmo, 0,
-                                       zx_system_get_page_size() * 2, &vaddr),
+                                       mmio_size + zx_system_get_page_size(), &vaddr),
             ZX_ERR_OUT_OF_RANGE);
 }
 
