@@ -5,15 +5,17 @@
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 
-go_library("expect") {
-  sources = [
-    "expect.go",
-    "expect_test.go",
-  ]
-}
+if (is_host) {
+  go_library("expect") {
+    sources = [
+      "expect.go",
+      "expect_test.go",
+    ]
+  }
 
-go_test("expect_test") {
-  embed = [ ":expect" ]
+  go_test("expect_test") {
+    embed = [ ":expect" ]
+  }
 }
 
 group("tests") {

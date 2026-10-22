@@ -3,10 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/clang/clang.gni")
-import("//build/config/fuchsia/target_api_level.gni")
 import("//build/config/sysroot.gni")
-import("//build/host.gni")
-import("//build/toolchain/breakpad.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 
 declare_args() {
@@ -80,6 +77,9 @@ declare_args() {
 #   Deprecated: gopackages
 #
 template("go_build") {
+  assert(
+      is_host,
+      "go_build should only be used on host, to fix this, wrap your target with `if (is_host) { ... }`")
   main_target_name = target_name
   is_test = defined(invoker.test) && invoker.test
 
@@ -97,26 +97,8 @@ template("go_build") {
     output_dir = root_out_dir
   }
 
-  # Strip target binaries.
-  use_strip = is_fuchsia
-
   output_path = "${output_dir}/${output_name}"
-  if (use_strip) {
-    output_path = "${output_dir}/exe.unstripped/${output_name}"
-    stripped_output_path = "${output_dir}/${output_name}"
-  }
-
-  # Hardcoding the use of prebuilt go as a test. If this causes issues, it can
-  # be reverted by just setting this value back to '!is_fuchsia'.
-  use_prebuilt_go = true  # !is_fuchsia
-
-  goroot_deps = []
-  if (use_prebuilt_go) {
-    goroot = rebase_path(prebuilt_go_dir, root_build_dir)
-  } else {
-    goroot = rebase_path("$host_tools_dir/goroot", root_build_dir)
-    goroot_deps = [ "//third_party/go:go_runtime" ]
-  }
+  goroot = rebase_path(prebuilt_go_dir, root_build_dir)
 
   go_deps = []
   if (defined(invoker.deps)) {
@@ -165,7 +147,7 @@ template("go_build") {
       goroot,
     ]
 
-    deps = goroot_deps
+    deps = []
     if (go_deps != []) {
       deps += go_deps
       args += [ "--go-dep-files" ]
@@ -193,22 +175,12 @@ template("go_build") {
                            ])
     forward_variables_from(concurrent_jobs.local, "*")
 
-    deps = goroot_deps
+    deps = []
     if (defined(invoker.non_go_deps)) {
       deps += invoker.non_go_deps
     }
 
-    if (use_strip) {
-      # Ensure that the 'canonical' output path of $root_out_dir/$output_name
-      # always first among outputs, as this path has to be reconstructed within
-      # go_test.gni and it can canonically compare that with outputs[0].
-      outputs = [
-        stripped_output_path,
-        output_path,
-      ]
-    } else {
-      outputs = [ output_path ]
-    }
+    outputs = [ output_path ]
 
     output_name = output_name
 
@@ -242,8 +214,6 @@ template("go_build") {
       "$rebased_clang_prefix/clang",
       "--cxx",
       "$rebased_clang_prefix/clang++",
-      "--objcopy",
-      "$rebased_clang_prefix/llvm-objcopy",
       "--ar",
       "$rebased_clang_prefix/llvm-ar",
       "--target",
@@ -284,36 +254,6 @@ template("go_build") {
 
     if (!defined(invoker.cgo) || invoker.cgo) {
       args += [ "--cgo" ]
-
-      if (is_fuchsia) {
-        # Inject a dependency to libfdio.so. Note that as a special case,
-        # when building fuzzing binaries, this library should be built in
-        # a non-fuzzing variant (because the fuzzing runtime depends on it).
-        # So compute the correct toolchain for it directly here.
-        _fdio_toolchain =
-            string_replace(current_toolchain, "-fuzzer", "") + "-shared"
-        _fdio_label_with_toolchain = "//sdk/lib/fdio($_fdio_toolchain)"
-
-        deps += [
-          "//build/config/fuchsia:executable_deps",
-          "//build/config/fuchsia:link_deps",
-          "//build/config/fuchsia:source_deps",
-          _fdio_label_with_toolchain,
-        ]
-
-        lib_dirs += [ rebase_path(
-                get_label_info(_fdio_label_with_toolchain, "root_out_dir"),
-                root_build_dir) ]
-
-        include_dirs +=
-            [ rebase_path("//sdk/lib/fdio/include", root_build_dir) ]
-
-        # See //build/config/fuchsia:fdio_config.
-        lib_dirs +=
-            [ rebase_path(get_label_info("//build/config/fuchsia:fdio_config",
-                                         "target_gen_dir"),
-                          root_build_dir) ]
-      }
     }
 
     foreach(include_dir, include_dirs) {
@@ -326,13 +266,6 @@ template("go_build") {
       args += [
         "--lib-dir",
         lib_dir,
-      ]
-    }
-
-    if (use_strip) {
-      args += [
-        "--stripped-output-path",
-        rebase_path(stripped_output_path, root_build_dir),
       ]
     }
 
@@ -357,16 +290,6 @@ template("go_build") {
       }
     }
 
-    if (is_fuchsia) {
-      args += [ "--clang-fuchsia-api-level=${current_build_target_api_level_as_integer}" ]
-
-      # When building with an instrumented variant, ensure the binary embeds a
-      # reference to the right dynamic linker path.
-      if (toolchain_variant.libprefix != "") {
-        args += [ "--ldflag=-linkmode=external \"-extldflags=-Wl,--dynamic-linker=${toolchain_variant.libprefix}ld.so.1\"" ]
-      }
-    }
-
     if (defined(invoker.ldflags)) {
       foreach(ldflag, invoker.ldflags) {
         args += [ "--ldflag=${ldflag}" ]
@@ -377,9 +300,9 @@ template("go_build") {
 
     # Add needed arguments for the buildidtool. We should add the stamp file
     # output by buildidtool to the list of outputs for this action but because
-    # Ninja (and by consequence GN) limits us to one depfile where that depfile
-    # has only one output and we need the depfile for other things we don't
-    # list it as an output.
+    # Ninja (and by consequence GN) limits us to one depfile where that
+    # depfile has only one output and we need the depfile for other things we
+    # don't list it as an output.
     args += [
       "--buildidtool",
       rebase_path("//prebuilt/tools/buildidtool/${host_platform}/buildidtool",
@@ -407,7 +330,8 @@ template("go_build") {
       deps += [ "//build/go:allow_gopackages" ]
       gopackages = invoker.gopackages
 
-      # Multi-package support was never implemented and is no longer planned as
+      # Multi-package support was never implemented and is no longer planned
+      # as
       # `gopackages` is slated for deletion as part of https://fxbug.dev/42136747.
       assert(gopackages == [ gopackages[0] ],
              "gopackages only supports one package")
@@ -454,11 +378,7 @@ template("go_build") {
           cpu = current_cpu
           os = current_os
           debug = rebase_path(output_path, root_build_dir)
-          if (use_strip) {
-            dist = rebase_path(stripped_output_path, root_build_dir)
-          } else {
-            dist = debug
-          }
+          dist = debug
         },
       ]
 
@@ -468,42 +388,8 @@ template("go_build") {
           debug = rebase_path(output_path, root_build_dir)
           os = current_os
           cpu = current_cpu
-          if (is_fuchsia) {
-            dest_path = "bin/$output_name"
-          }
         },
       ]
-
-      # Used by the distribution_manifest template.
-      if (is_fuchsia) {
-        distribution_entries = [
-          {
-            source = rebase_path(output_path, root_build_dir)
-            if (use_strip) {
-              source = rebase_path(stripped_output_path, root_build_dir)
-            }
-            destination = "bin/$output_name"
-            if (is_test) {
-              destination = "test/$output_name"
-            }
-            label = get_label_info(":$target_name", "label_with_toolchain")
-            elf_runtime_dir = "lib/${toolchain_variant.libprefix}"
-          },
-        ]
-
-        # Used by the fuchsia_test_component_manifest() template.
-        test_component_manifest_program = [
-          {
-            program = {
-              binary = "bin/$output_name"
-              if (is_test) {
-                binary = "test/$output_name"
-              }
-            }
-          },
-        ]
-        test_component_manifest_program_barrier = []
-      }
     }
 
     # The binaries embed absolute paths to the source file,

@@ -23,6 +23,9 @@ import("//build/go/go_library.gni")
 #     Same meaning as defined in go_library.gni.
 #
 template("go_binary") {
+  assert(
+      is_host,
+      "go_binary should only be used on host, to fix this, wrap your target with `if (is_host) { ... }`")
   if (defined(invoker.sources)) {
     assert(
         !defined(invoker.gopackage) && !defined(invoker.embed),

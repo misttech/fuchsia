@@ -174,19 +174,8 @@ template("zither_golden_test") {
     zither = extra_backend_parameters
   }
 
-  all_cases = []
-  foreach(case, invoker.cases) {
-    if (case.backend == "go" && current_cpu == "riscv64") {
-      # Go builds are not supported for RISC-V.
-      case = false
-    }
-    if (case != false) {
-      all_cases += [ case ]
-    }
-  }
-
   case_deps = []
-  foreach(case, all_cases) {
+  foreach(case, invoker.cases) {
     assert(defined(case.backend), "`${case}` must provide `backend`")
     assert(defined(case.files) && case.files != [],
            "`${case}` must provide `files`")
@@ -298,49 +287,61 @@ template("zither_golden_test") {
         ]
       }
     } else if (case.backend == "go") {
-      # We create a simple main file that imports the generated package, which
-      # will feed into our compilation check. There is unfortunately no real
-      # equivalent of `source_set()` in our go build.
-      create_main_target = "${compilation_check_target}.create_main"
-      main_file = "$case_output_dir/main.go"
+      if (is_host) {
+        # We create a simple main file that imports the generated package, which
+        # will feed into our compilation check. There is unfortunately no real
+        # equivalent of `source_set()` in our go build.
+        create_main_target = "${compilation_check_target}.create_main"
+        main_file = "$case_output_dir/main.go"
 
-      generated_file(create_main_target) {
-        visibility = [ ":*" ]
-        testonly = true
+        generated_file(create_main_target) {
+          visibility = [ ":*" ]
+          testonly = true
 
-        contents = [
-          "package main",
-          "",
-          "import (",
-          "  _ \"${output_namespace}\"",  # `_` to avoid usage complaints
-          "  _ \"syscall/zx\"",  # Required by fuchsia support quirks.
-          ")",
-          "",
-          "func main() {}",
-          "",
-        ]
-        outputs = [ main_file ]
-      }
+          contents = [
+            "package main",
+            "",
+            "import (",
+            "  _ \"${output_namespace}\"",  # `_` to avoid usage complaints
+            ")",
+            "",
+            "func main() {}",
+            "",
+          ]
+          outputs = [ main_file ]
+        }
 
-      # The generated main file now needs to be declared in a package/library.
-      main_library_target = "${compilation_check_target}.main_library"
-      main_pkg_name = rebase_path(case_output_dir, root_build_dir)
+        # The generated main file now needs to be declared in a package/library.
+        main_library_target = "${compilation_check_target}.main_library"
+        main_pkg_name = rebase_path(case_output_dir, root_build_dir)
 
-      go_library(main_library_target) {
-        visibility = [ ":*" ]
-        testonly = true
+        go_library(main_library_target) {
+          visibility = [ ":*" ]
+          testonly = true
 
-        name = main_pkg_name
-        source_dir = case_output_dir
-        sources = [ rebase_path(main_file, source_dir) ]
-        deps = [ backend_label ]
-        non_go_deps = [ ":$create_main_target" ]
-      }
+          name = main_pkg_name
+          source_dir = case_output_dir
+          sources = [ rebase_path(main_file, source_dir) ]
+          deps = [ backend_label ]
+          non_go_deps = [ ":$create_main_target" ]
+        }
 
-      go_binary(compilation_check_target) {
-        embed = [ ":$main_library_target" ]
-        visibility = [ ":*" ]
-        testonly = true
+        go_binary(compilation_check_target) {
+          embed = [ ":$main_library_target" ]
+          visibility = [ ":*" ]
+          testonly = true
+        }
+      } else {
+        group(compilation_check_target) {
+          visibility = [ ":*" ]
+          testonly = true
+          deps = [ ":$compilation_check_target($host_toolchain)" ]
+        }
+        not_needed([
+                     "backend_label",
+                     "case_output_dir",
+                     "output_namespace",
+                   ])
       }
     } else if (case.backend == "zircon_ifs") {
       if (current_toolchain == default_toolchain) {

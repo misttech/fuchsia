@@ -46,18 +46,7 @@ def main() -> int:
         "--cxx", help="The C++ compiler to use", required=False, default="c++"
     )
     parser.add_argument(
-        "--clang-fuchsia-api-level",
-        help='The target Fuchsia API level. Required iff "--current-os" is "fuchsia"',
-        type=int,
-    )
-    parser.add_argument(
         "--ar", help="The archive linker to use", required=False, default="ar"
-    )
-    parser.add_argument(
-        "--objcopy",
-        help="The objcopy tool to use",
-        required=False,
-        default="objcopy",
     )
     parser.add_argument("--sysroot", help="The sysroot to use", required=False)
     parser.add_argument(
@@ -72,7 +61,7 @@ def main() -> int:
     parser.add_argument(
         "--current-os",
         help="Target operating system.",
-        choices=["fuchsia", "linux", "mac", "win"],
+        choices=["linux", "mac", "win"],
         required=True,
     )
     parser.add_argument("--buildidtool", help="The path to the buildidtool.")
@@ -135,10 +124,6 @@ def main() -> int:
         required=True,
     )
     parser.add_argument(
-        "--stripped-output-path",
-        help="Where to output a stripped binary, if supplied",
-    )
-    parser.add_argument(
         "--verbose",
         help="Tell the go tool to be verbose about what it is doing",
         action="store_true",
@@ -185,13 +170,10 @@ def main() -> int:
         "arm64": "arm64",
     }[args.current_cpu]
     goos = {
-        "fuchsia": "fuchsia",
         "linux": "linux",
         "mac": "darwin",
         "win": "windows",
     }[args.current_os]
-
-    dist = args.stripped_output_path or args.output_path
 
     # Project path is a package specific gopath, also known as a "project" in go parlance.
     project_path = os.path.join(
@@ -324,20 +306,6 @@ def main() -> int:
         cflags.extend(["--sysroot", os.path.abspath(args.sysroot)])
     if args.target:
         cflags.extend(["-target", args.target])
-
-    if (args.clang_fuchsia_api_level is None) != (args.current_os != "fuchsia"):
-        parser.error(
-            '--clang-fuchsia-api-level must be specified if and only if the target OS is "fuchsia".'
-        )
-    if args.current_os == "fuchsia":
-        if args.clang_fuchsia_api_level <= 0:
-            parser.error(
-                "--clang-fuchsia-api-level must specify a positive integer. Value specified: "
-                + str(args.clang_fuchsia_api_level)
-            )
-        cflags.extend(
-            ["-ffuchsia-api-level=" + str(args.clang_fuchsia_api_level)]
-        )
 
     ldflags = cflags[:]
     if args.current_os == "linux":
@@ -507,30 +475,6 @@ def main() -> int:
         if proc.stdout.strip():
             raise Exception("go build printed unexpected output")
 
-        if args.stripped_output_path:
-            if args.current_os == "mac":
-                subprocess.run(
-                    [
-                        "xcrun",
-                        "strip",
-                        "-x",
-                        args.output_path,
-                        "-o",
-                        args.stripped_output_path,
-                    ],
-                    env=env,
-                ).check_returncode()
-            else:
-                subprocess.run(
-                    [
-                        args.objcopy,
-                        "--strip-sections",
-                        args.output_path,
-                        args.stripped_output_path,
-                    ],
-                    env=env,
-                ).check_returncode()
-
         if args.buildidtool:
             if not args.build_id_dir:
                 raise ValueError("Using --buildidtool requires --build-id-dir")
@@ -540,11 +484,11 @@ def main() -> int:
                     "-build-id-dir",
                     args.build_id_dir,
                     "-stamp",
-                    dist + ".build-id.stamp",
+                    args.output_path + ".build-id.stamp",
                     "-entry",
                     ".debug=" + args.output_path,
                     "-entry",
-                    "=" + dist,
+                    "=" + args.output_path,
                 ]
             ).check_returncode()
 

@@ -279,9 +279,11 @@ input_test("zbi-deduplication-test") {
 }
 
 # Used by `zbi_item.gni`.
-go_binary("make_single_item_zbi") {
-  sources = [ "make_single_item_zbi.go" ]
-  deps = [ "//sdk/fidl/zbi:zbi_zither.go" ]
+if (is_host) {
+  go_binary("make_single_item_zbi") {
+    sources = [ "make_single_item_zbi.go" ]
+    deps = [ "//sdk/fidl/zbi:zbi_zither.go" ]
+  }
 }
 
 zbi_item("zbi-test-single-item") {

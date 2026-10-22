@@ -18,9 +18,6 @@ group("allow_gopackages") {
   # WARNING: Only third-party libraries should be added here.
   visibility = [
     "//src/testing/fuzzing/syzkaller:syz-sysgen",
-    "//third_party/go:*",
-    "//third_party/go/makefuchsia:*",
-    "//third_party/go/makeroot:*",
     "//third_party/golibs/*",
   ]
 }
