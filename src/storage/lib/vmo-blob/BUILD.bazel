@@ -26,7 +26,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 rustc_test(
     name = "vmo-blob_test",
     crate = ":vmo-blob",
@@ -38,7 +37,6 @@ rustc_test(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "vmo-blob-tests",
     max_log_severity = "ERROR",

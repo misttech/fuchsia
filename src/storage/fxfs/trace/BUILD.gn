@@ -38,3 +38,21 @@ rustc_library("trace") {
   ]
   deps = [ "//src/storage/lib/trace" ]
 }
+rustc_test("fxfs-trace-tests") {
+  sources = [ "tests/compile_tests.rs" ]
+  source_root = "tests/compile_tests.rs"
+  edition = "2024"
+  deps = [
+    ":trace",
+    "//src/lib/fuchsia",
+  ]
+}
+fuchsia_unittest_package("fxfs-trace-tests-package") {
+  package_name = "fxfs-trace-tests-gn"
+  component_name = "fxfs-trace-tests"
+  deps = [ ":fxfs-trace-tests" ]
+  visibility = [
+    ":*",
+    "//src/storage:*",
+  ]
+}

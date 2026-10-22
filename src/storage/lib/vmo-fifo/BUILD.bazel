@@ -15,7 +15,6 @@ rustc_library(
         "src/signal.rs",
     ],
     edition = "2024",
-    # @bazel2gn:skip
     test_deps = [
         "//src/lib/fuchsia",
         "//third_party/rust_crates/vendor:futures",
@@ -29,7 +28,6 @@ rustc_library(
         "//src/storage/lib/block_server:__pkg__",
         "//src/storage/lib/mapping:__pkg__",
     ],
-    # @bazel2gn:skip
     with_unit_tests = True,
     deps = [
         "//sdk/rust/zx",
@@ -41,7 +39,6 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
     name = "vmo-fifo-tests",
     package_name = "vmo-fifo-tests",

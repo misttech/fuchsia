@@ -45,3 +45,30 @@ rustc_library("units") {
     deps = []
   }
 }
+rustc_test("units_test") {
+  sources = []
+  sources += [ "src/lib.rs" ]
+  if (is_fuchsia) {
+    sources += [ "src/page.rs" ]
+  }
+  edition = "2024"
+  deps = []
+  if (is_fuchsia) {
+    deps += [ "//sdk/rust/zx" ]
+  }
+  deps += [ "//src/lib/fuchsia" ]
+}
+fuchsia_unittest_package("storage-units-tests") {
+  package_name = "storage-units-tests-gn"
+  component_name = "storage-units-tests"
+  deps = [ ":units_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  visibility = [
+    ":*",
+    "//src/storage:*",
+  ]
+}
