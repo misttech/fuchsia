@@ -378,6 +378,13 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
   }
 
   void HealthCheck(HealthCheckRequest& request, HealthCheckCompleter::Sync& completer) override {
+    if (close_on_health_check_.has_value()) {
+      // Simulates the driver host crashing while the check is in flight: the channel is closed
+      // through the binding and the detached completer is dropped without a reply.
+      [[maybe_unused]] auto async_completer = completer.ToAsync();
+      binding_.Close(*close_on_health_check_);
+      return;
+    }
     if (health_check_callback_) {
       completer.Reply(health_check_callback_(request.request()));
       return;
@@ -389,11 +396,16 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
     printf("Not implemented: Driver::%s\n", name.c_str());
   }
 
+  // Makes the next HealthCheck close the Driver channel with the error |epitaph| instead of
+  // replying, as the driver host would on a crash.
+  void SetCloseOnHealthCheck(zx_status_t epitaph) { close_on_health_check_ = epitaph; }
+
  private:
   fidl::ServerBinding<fuchsia_driver_host::Driver> binding_;
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
   StopCallback stop_callback_;
   HealthCheckCallback health_check_callback_;
+  std::optional<zx_status_t> close_on_health_check_;
 };
 
 class Dfv2NodeTest : public DriverManagerTestBase {
@@ -1696,4 +1708,263 @@ TEST_F(Dfv2NodeTest, RunHealthCheckUnboundAndBound) {
   });
   RunLoopUntilIdle();
   EXPECT_TRUE(deep_called);
+}
+
+TEST_F(Dfv2NodeTest, RunHealthCheckCachesRecordAndTimeout) {
+  auto node = CreateNode("test-hc-cache");
+  EXPECT_FALSE(node->last_health_check().has_value());
+
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-cache");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        if (req == fuchsia_driver_framework::HealthCheckRequest::kPing) {
+          return fit::error(fuchsia_driver_framework::HealthCheckError::kTimeout);
+        }
+        if (req == fuchsia_driver_framework::HealthCheckRequest::kDeep) {
+          return fit::error(fuchsia_driver_framework::HealthCheckError::kNotSupported);
+        }
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{{
+            .diagnostics =
+                std::vector<fuchsia_driver_framework::HealthDiagnosticItem>{
+                    {{.key = "str_k",
+                      .value =
+                          fuchsia_driver_framework::HealthDiagnosticValue::WithStringValue("val")}},
+                    {{.key = "int_k",
+                      .value = fuchsia_driver_framework::HealthDiagnosticValue::WithIntValue(-3)}},
+                    {{.key = "uint_k",
+                      .value = fuchsia_driver_framework::HealthDiagnosticValue::WithUintValue(7u)}},
+                    {{.key = "bool_k",
+                      .value =
+                          fuchsia_driver_framework::HealthDiagnosticValue::WithBoolValue(true)}},
+                    {{.key = "ts_k",
+                      .value = fuchsia_driver_framework::HealthDiagnosticValue::WithTimestamp(
+                          zx::time_boot(1234))}},
+                },
+            .conditions =
+                std::vector<fuchsia_driver_framework::HealthCondition>{
+                    {{
+                        .status = fuchsia_driver_framework::HealthStatus::kDegraded,
+                        .reason_code = "CACHE_WARN",
+                        .message = "Cached warning",
+                        .first_observed = zx::time_boot(10),
+                        .last_observed = zx::time_boot(20),
+                        .occurrence_count = 2,
+                    }},
+                    {{
+                        .status = fuchsia_driver_framework::HealthStatus::kOk,
+                        .reason_code = "CACHE_INFO",
+                    }},
+                },
+        }});
+      });
+
+  auto fast_req = fuchsia_driver_framework::HealthCheckRequest::kFast;
+  bool fast_done = false;
+  node->RunHealthCheck(fast_req, [&fast_done](auto result) {
+    ASSERT_TRUE(result.is_ok());
+    fast_done = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(fast_done);
+
+  ASSERT_TRUE(node->last_health_check().has_value());
+  const auto& rec = node->last_health_check().value();
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kDegraded, rec.status);
+  EXPECT_FALSE(rec.error.has_value());
+  EXPECT_EQ(Now(), rec.timestamp);
+  ASSERT_EQ(5u, rec.diagnostics.size());
+  EXPECT_EQ("str_k", rec.diagnostics[0].key());
+  EXPECT_EQ("val", rec.diagnostics[0].value().string_value().value());
+  EXPECT_EQ(-3, rec.diagnostics[1].value().int_value().value());
+  EXPECT_EQ(7u, rec.diagnostics[2].value().uint_value().value());
+  EXPECT_EQ(true, rec.diagnostics[3].value().bool_value().value());
+  EXPECT_EQ(1234, rec.diagnostics[4].value().timestamp().value().get());
+  // Both conditions are cached verbatim.
+  ASSERT_EQ(2u, rec.conditions.size());
+  EXPECT_EQ("CACHE_WARN", rec.conditions[0].reason_code());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kDegraded, rec.conditions[0].status());
+  EXPECT_EQ("Cached warning", rec.conditions[0].message());
+  EXPECT_EQ(10, rec.conditions[0].first_observed().value().get());
+  EXPECT_EQ(20, rec.conditions[0].last_observed().value().get());
+  EXPECT_EQ(2u, rec.conditions[0].occurrence_count());
+  EXPECT_EQ("CACHE_INFO", rec.conditions[1].reason_code());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, rec.conditions[1].status());
+
+  // A timeout error is cached with a synthetic DISPATCHER_TIMEOUT condition.
+  auto ping_req = fuchsia_driver_framework::HealthCheckRequest::kPing;
+  bool ping_done = false;
+  node->RunHealthCheck(ping_req, [&ping_done](auto result) {
+    ASSERT_TRUE(result.is_error());
+    EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, result.error_value());
+    ping_done = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(ping_done);
+
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_FALSE(node->last_health_check()->status.has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, node->last_health_check()->error);
+  ASSERT_EQ(1u, node->last_health_check()->conditions.size());
+  EXPECT_EQ("DISPATCHER_TIMEOUT", node->last_health_check()->conditions[0].reason_code());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy,
+            node->last_health_check()->conditions[0].status());
+  EXPECT_EQ("Driver dispatcher timed out responding to HealthCheck",
+            node->last_health_check()->conditions[0].message());
+  EXPECT_TRUE(node->last_health_check()->diagnostics.empty());
+
+  // A NotSupported error (e.g. from legacy DFv1 compat drivers) carries no information about the
+  // driver's health, so it does not replace the informative TIMEOUT record.
+  auto deep_req = fuchsia_driver_framework::HealthCheckRequest::kDeep;
+  bool deep_done = false;
+  node->RunHealthCheck(deep_req, [&deep_done](auto result) {
+    ASSERT_TRUE(result.is_error());
+    EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kNotSupported, result.error_value());
+    deep_done = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(deep_done);
+
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, node->last_health_check()->error);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
+  EXPECT_EQ("DISPATCHER_TIMEOUT", node->last_health_check()->conditions[0].reason_code());
+
+  // A DEGRADED FAST result replaces the TIMEOUT, and an OK PING afterwards does not clear it: a
+  // liveness ping says nothing about the hardware.
+  fast_done = false;
+  node->RunHealthCheck(fast_req, [&fast_done](auto result) {
+    ASSERT_TRUE(result.is_ok());
+    fast_done = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(fast_done);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kDegraded, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
+
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+  ping_done = false;
+  node->RunHealthCheck(ping_req, [&ping_done](auto result) {
+    ASSERT_TRUE(result.is_ok());
+    ping_done = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(ping_done);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kDegraded, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
+  EXPECT_EQ("CACHE_WARN", node->last_health_check()->conditions[0].reason_code());
+
+  // Starting a new driver component on the node resets its cached health check record.
+  node_manager->RemoveController("test-hc-cache");
+  RunLoopUntilIdle();
+  StartTestDriver(node);
+  EXPECT_FALSE(node->last_health_check().has_value());
+}
+
+TEST_F(Dfv2NodeTest, RunHealthCheckDriverHostCrashWhileInFlight) {
+  auto node = CreateNode("test-hc-crash");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-crash");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+  // The driver host crashes (error epitaph) with the check in flight.
+  fake_driver.SetCloseOnHealthCheck(ZX_ERR_INTERNAL);
+
+  bool done = false;
+  node->RunHealthCheck(fuchsia_driver_framework::HealthCheckRequest::kFast, [&done](auto result) {
+    ASSERT_TRUE(result.is_error());
+    EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kInternalError, result.error_value());
+    done = true;
+  });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(done);
+
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
+  EXPECT_EQ("DRIVER_HOST_PEER_CLOSED", node->last_health_check()->conditions[0].reason_code());
+}
+
+// A clean ZX_OK close while a check is in flight is deliberately not tested: the C++ FIDL client
+// cannot represent a two-way call cut short by a ZX_OK epitaph (IncomingHeaderAndMessage asserts
+// on a ZX_OK failure status in debug builds), which is why driver-host answers every in-flight
+// check with INVALID_STATE before it closes the channel. The branch in Node::RunHealthCheck that
+// skips caching for a clean close is only a defensive fallback.
+
+TEST_F(Dfv2NodeTest, RunHealthCheckPingFailureDoesNotLaunderHardwareFault) {
+  auto node = CreateNode("test-hc-launder");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-launder");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+
+  // FAST reports a hardware fault; PING is driven by |ping_result| below.
+  fit::result<fuchsia_driver_framework::HealthCheckError,
+              fuchsia_driver_framework::HealthCheckResponse>
+      ping_result = fit::error(fuchsia_driver_framework::HealthCheckError::kTimeout);
+  fake_driver.SetHealthCheckCallback(
+      [&ping_result](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        if (req == fuchsia_driver_framework::HealthCheckRequest::kPing) {
+          return ping_result;
+        }
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{{
+            .conditions = {{{{
+                .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+                .reason_code = "PHY_UNLOCKED",
+            }}}},
+        }});
+      });
+
+  auto run = [&](fuchsia_driver_framework::HealthCheckRequest level) {
+    bool done = false;
+    node->RunHealthCheck(level, [&done](auto) { done = true; });
+    RunLoopUntilIdle();
+    EXPECT_TRUE(done);
+  };
+
+  run(fuchsia_driver_framework::HealthCheckRequest::kFast);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, node->last_health_check()->status);
+
+  // A PING timeout is the more urgent news, so it is published...
+  run(fuchsia_driver_framework::HealthCheckRequest::kPing);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, node->last_health_check()->error);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
+
+  // ...but once the dispatcher answers again, the hardware fault from the FAST check is published
+  // again rather than being replaced by the OK liveness ping.
+  ping_result = fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+  run(fuchsia_driver_framework::HealthCheckRequest::kPing);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
+  ASSERT_EQ(1u, node->last_health_check()->conditions.size());
+  EXPECT_EQ("PHY_UNLOCKED", node->last_health_check()->conditions[0].reason_code());
+
+  // A later OK FAST check clears it, after which an OK PING is published as-is.
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+  run(fuchsia_driver_framework::HealthCheckRequest::kFast);
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
+  run(fuchsia_driver_framework::HealthCheckRequest::kPing);
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
 }

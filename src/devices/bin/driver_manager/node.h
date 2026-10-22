@@ -12,6 +12,7 @@
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/zx/event.h>
+#include <lib/zx/time.h>
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
@@ -579,13 +580,88 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Exposed for testing.
   void set_bound_for_testing(bool bound) { is_bound_override_ = bound; }
 
+  // The latest health check outcome for a node. driver_manager caches it so that failures such
+  // as a wedged driver dispatcher or a crashed driver host are preserved out-of-process.
+  //
+  // Lifetime: the record belongs to one driver instance. It is cleared, along with the alert
+  // probe timestamps, whenever a new driver is started on the node (first bind, rebind or
+  // restart), so a stale TIMEOUT or UNHEALTHY from the previous instance never outlives it.
+  //
+  // Replacement policy (see MaybeStoreHealthCheckRecord):
+  //  (a) A result that carries no health information (NOT_SUPPORTED, UNAVAILABLE,
+  //      COMMUNICATION_ERROR, INVALID_STATE, NOT_FOUND) never replaces a record that does carry
+  //      some (a status, or a synthetic TIMEOUT / host-closed / transport-failure condition). It is
+  //      only cached while there is no informative record yet.
+  //  (b) An OK PING result does not hide a non-OK record from a FAST or DEEP check or a
+  //      self_fault alert: a liveness ping says nothing about the hardware. The most recent
+  //      informative non-PING record is retained separately for this purpose, so a PING failure
+  //      (TIMEOUT, crashed host) in between does not launder the hardware fault away: once the
+  //      PING succeeds again the retained non-PING record is published again.
+  //  All other results replace the existing record.
+  struct HealthCheckRecord {
+    // Builds a record from a response returned by (or synthesized for) the driver. |level| is the
+    // level of the check that produced it, or nullopt for a SELF_FAULT alert.
+    static HealthCheckRecord FromResponse(
+        const fuchsia_driver_framework::HealthCheckResponse& response,
+        std::optional<fuchsia_driver_framework::HealthCheckRequest> level, zx::time timestamp);
+    // Builds a record for a check that failed with |error|. TIMEOUT and other errors that
+    // indicate a problem add a single synthetic UNHEALTHY condition; NOT_SUPPORTED, UNAVAILABLE,
+    // COMMUNICATION_ERROR, INVALID_STATE and NOT_FOUND carry no health information and add none.
+    static HealthCheckRecord FromError(
+        fuchsia_driver_framework::HealthCheckError error,
+        std::optional<fuchsia_driver_framework::HealthCheckRequest> level, zx::time timestamp);
+    // Builds an UNHEALTHY condition that driver_manager synthesizes for failures it detects
+    // itself (e.g. a crashed driver host), as opposed to conditions reported by the driver.
+    static fuchsia_driver_framework::HealthCondition SyntheticCondition(std::string reason_code,
+                                                                        std::string message);
+
+    // True if the record says something about the driver's health: it has a status, or a
+    // synthetic condition for a failure driver_manager detected. False for the bare errors listed
+    // under replacement policy (a).
+    bool is_informative() const;
+
+    // True if the record came from a PING, i.e. it only measures dispatcher liveness.
+    bool is_ping() const { return level == fuchsia_driver_framework::HealthCheckRequest::kPing; }
+
+    // Set when the check produced a response (derived from conditions; kOk when conditions is
+    // empty).
+    std::optional<fuchsia_driver_framework::HealthStatus> status;
+    // Set when the check failed with an error instead of producing a response.
+    std::optional<fuchsia_driver_framework::HealthCheckError> error;
+    // The level of the check that produced this record; unset for a SELF_FAULT alert.
+    std::optional<fuchsia_driver_framework::HealthCheckRequest> level;
+    // Monotonic time (async::Now on driver_manager's dispatcher) at which the result arrived.
+    zx::time timestamp;
+    // Diagnostics describing the whole check.
+    std::vector<fuchsia_driver_framework::HealthDiagnosticItem> diagnostics;
+    // Conditions reported by the driver, or a single synthetic condition for failures detected by
+    // driver_manager.
+    std::vector<fuchsia_driver_framework::HealthCondition> conditions;
+  };
+
+  // Forwards |request| to this node's driver if, and only if, it is running. A node that is
+  // unbound, still binding, stopped or whose driver host is gone is not forwarded to; |cb| is
+  // invoked synchronously with INVALID_STATE instead, and nothing is cached.
+  //
+  // TODO(https://fxbug.dev/576273182): driver_host applies the per-level deadline to the driver's
+  // dispatcher, but there is no backstop deadline here, so if the driver host process itself is
+  // wedged the check only completes when the host's channel closes.
   void RunHealthCheck(
       fuchsia_driver_framework::HealthCheckRequest request,
       fit::callback<void(fit::result<fuchsia_driver_framework::HealthCheckError,
                                      fuchsia_driver_framework::HealthCheckResponse>)>
           cb);
 
+  const std::optional<HealthCheckRecord>& last_health_check() const { return last_health_check_; }
+
  private:
+  // Caches |record| as the latest health check outcome for this node, subject to the replacement
+  // policy documented on HealthCheckRecord. Every cache write goes through here.
+  void MaybeStoreHealthCheckRecord(HealthCheckRecord record);
+
+  // Clears the cached records and alert probe timestamps. Called when a new driver is started.
+  void ResetHealthCheckState();
+
   struct DriverComponent {
     DriverComponent(
         Node& node, std::string url,
@@ -881,6 +957,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   std::optional<PowerElementHandles> pe_handles_;
   std::optional<zx::eventpair> startup_lease_;
   std::optional<bool> is_bound_override_;
+  std::optional<HealthCheckRecord> last_health_check_;
+  // The most recent informative record that did not come from a PING (FAST, DEEP or a self_fault
+  // alert). See replacement policy (b) on HealthCheckRecord.
+  std::optional<HealthCheckRecord> last_non_ping_health_check_;
 };
 
 }  // namespace driver_manager

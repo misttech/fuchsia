@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.component/cpp/common_types_format.h>
 #include <fidl/fuchsia.driver.framework/cpp/common_types_format.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
+#include <lib/async/cpp/time.h>
 #include <lib/component/incoming/cpp/directory_watcher.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
 #include <lib/driver/component/cpp/node_add_args.h>
@@ -2390,6 +2391,7 @@ void Node::StartDriver(
                             *self, std::string(url), std::move(component_controller),
                             std::move(server_end), std::move(driver_endpoints.client),
                             std::move(node_token_dup));
+                        self->ResetHealthCheckState();
 
                         fidl::Arena arena;
                         auto properties = fidl::ToWire(arena, normal_start_args.node_properties_);
@@ -2639,6 +2641,7 @@ void Node::StartDriverWithDynamicLinker(
   state_.emplace<DriverComponent>(*this, std::string(url), std::move(component_controller),
                                   std::move(server_end), std::move(driver_endpoints.client),
                                   std::move(node_token_dup));
+  ResetHealthCheckState();
   driver_host()->StartWithDynamicLinker(std::move(client_end), name_, std::move(load_args),
                                         std::move(start_args), std::move(node_token),
                                         std::move(driver_endpoints.server),
@@ -3252,18 +3255,173 @@ void Node::RunHealthCheck(
   }
 
   driver_component->driver->HealthCheck(request).ThenExactlyOnce(
-      [cb = std::move(cb)](
+      [weak_self = weak_from_this(), level = request, cb = std::move(cb)](
           fidl::WireUnownedResult<fuchsia_driver_host::Driver::HealthCheck>& result) mutable {
+        auto self = weak_self.lock();
         if (!result.ok()) {
+          if (self && result.reason() != fidl::Reason::kUnbind) {
+            zx::time now = async::Now(self->dispatcher_);
+            if (result.is_peer_closed() && result.status() != ZX_OK) {
+              // The driver host went away (crashed, or closed the channel with an error
+              // epitaph) while the check was in flight. Record this with status=kUnhealthy
+              // rather than error=kInternalError so Inspect and triage rules surface a
+              // crashed driver host directly as UNHEALTHY.
+              self->MaybeStoreHealthCheckRecord(HealthCheckRecord{
+                  .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+                  .level = level,
+                  .timestamp = now,
+                  .conditions = {HealthCheckRecord::SyntheticCondition("DRIVER_HOST_PEER_CLOSED",
+                                                                       result.FormatDescription())},
+              });
+            } else if (result.is_peer_closed()) {
+              // A ZX_OK epitaph is the driver host closing the channel cleanly after a normal
+              // Stop. The host answers every in-flight check with INVALID_STATE before it closes,
+              // so this is not expected; it is kept because, like a local unbind, a clean close
+              // says nothing about the driver's health and must not be cached.
+            } else {
+              self->MaybeStoreHealthCheckRecord(HealthCheckRecord{
+                  .error = fuchsia_driver_framework::HealthCheckError::kInternalError,
+                  .level = level,
+                  .timestamp = now,
+                  .conditions = {HealthCheckRecord::SyntheticCondition("TRANSPORT_ERROR",
+                                                                       result.FormatDescription())},
+              });
+            }
+          }
+          // A local unbind means driver_manager itself is tearing down the connection, which
+          // says nothing about the driver's health, so nothing is cached.
           cb(fit::error(fuchsia_driver_framework::HealthCheckError::kInternalError));
           return;
         }
+
         if (result->is_error()) {
-          cb(fit::error(result->error_value()));
+          auto err = result->error_value();
+          if (self) {
+            self->MaybeStoreHealthCheckRecord(
+                HealthCheckRecord::FromError(err, level, async::Now(self->dispatcher_)));
+          }
+          cb(fit::error(err));
           return;
         }
-        cb(fit::ok(fidl::ToNatural(*result->value())));
+
+        auto natural_resp = fidl::ToNatural(*result->value());
+        if (self) {
+          self->MaybeStoreHealthCheckRecord(
+              HealthCheckRecord::FromResponse(natural_resp, level, async::Now(self->dispatcher_)));
+        }
+        cb(fit::ok(std::move(natural_resp)));
       });
+}
+
+fuchsia_driver_framework::HealthCondition Node::HealthCheckRecord::SyntheticCondition(
+    std::string reason_code, std::string message) {
+  return fuchsia_driver_framework::HealthCondition{{
+      .status = fuchsia_driver_framework::HealthStatus::kUnhealthy,
+      .reason_code = std::move(reason_code),
+      .message = std::move(message),
+  }};
+}
+
+bool Node::HealthCheckRecord::is_informative() const {
+  // A status is set for every response (or self_fault alert) and for a closed driver host. A record
+  // with no status but with a condition is one driver_manager synthesized for TIMEOUT or a
+  // transport failure. Only the bare "no information" errors have neither.
+  return status.has_value() || !conditions.empty();
+}
+
+namespace {
+
+fuchsia_driver_framework::HealthStatus DeriveHealthStatus(
+    const fuchsia_driver_framework::HealthCheckResponse& response) {
+  auto overall = fuchsia_driver_framework::HealthStatus::kOk;
+  if (response.conditions().has_value()) {
+    for (const auto& condition : response.conditions().value()) {
+      auto status = condition.status().value_or(fuchsia_driver_framework::HealthStatus::kUnhealthy);
+      if (status == fuchsia_driver_framework::HealthStatus::kDegraded) {
+        overall = fuchsia_driver_framework::HealthStatus::kDegraded;
+      } else if (status != fuchsia_driver_framework::HealthStatus::kOk) {
+        return fuchsia_driver_framework::HealthStatus::kUnhealthy;
+      }
+    }
+  }
+  return overall;
+}
+
+}  // namespace
+
+Node::HealthCheckRecord Node::HealthCheckRecord::FromResponse(
+    const fuchsia_driver_framework::HealthCheckResponse& response,
+    std::optional<fuchsia_driver_framework::HealthCheckRequest> level, zx::time timestamp) {
+  return HealthCheckRecord{
+      .status = DeriveHealthStatus(response),
+      .level = level,
+      .timestamp = timestamp,
+      .diagnostics = response.diagnostics().value_or(
+          std::vector<fuchsia_driver_framework::HealthDiagnosticItem>{}),
+      .conditions =
+          response.conditions().value_or(std::vector<fuchsia_driver_framework::HealthCondition>{}),
+  };
+}
+
+Node::HealthCheckRecord Node::HealthCheckRecord::FromError(
+    fuchsia_driver_framework::HealthCheckError error,
+    std::optional<fuchsia_driver_framework::HealthCheckRequest> level, zx::time timestamp) {
+  HealthCheckRecord record{
+      .error = error,
+      .level = level,
+      .timestamp = timestamp,
+  };
+  switch (error) {
+    case fuchsia_driver_framework::HealthCheckError::kTimeout:
+      record.conditions.push_back(SyntheticCondition(
+          "DISPATCHER_TIMEOUT", "Driver dispatcher timed out responding to HealthCheck"));
+      break;
+    case fuchsia_driver_framework::HealthCheckError::kNotSupported:
+    case fuchsia_driver_framework::HealthCheckError::kUnavailable:
+    case fuchsia_driver_framework::HealthCheckError::kCommunicationError:
+    case fuchsia_driver_framework::HealthCheckError::kInvalidState:
+    case fuchsia_driver_framework::HealthCheckError::kNotFound:
+      // These errors carry no information about the driver's health (INVALID_STATE only means the
+      // driver was not running), so no condition is synthesized; only the error itself is
+      // recorded.
+      break;
+    default:
+      record.conditions.push_back(
+          SyntheticCondition("HEALTH_CHECK_ERROR", "Driver returned HealthCheckError"));
+      break;
+  }
+  return record;
+}
+
+void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
+  // (a) A result that carries no health information never hides one that does.
+  if (!record.is_informative()) {
+    if (!last_health_check_.has_value() || !last_health_check_->is_informative()) {
+      last_health_check_ = std::move(record);
+    }
+    return;
+  }
+  if (!record.is_ping()) {
+    last_non_ping_health_check_ = record;
+    last_health_check_ = std::move(record);
+    return;
+  }
+  // (b) A liveness ping says nothing about the hardware, so an OK PING does not hide a non-OK
+  // result from a FAST or DEEP check or a self_fault alert. The non-PING record is kept separately
+  // so that a failed PING in between (which does replace the published record, since a wedged
+  // dispatcher or crashed host is the more urgent news) cannot launder the hardware fault away.
+  if (record.status == fuchsia_driver_framework::HealthStatus::kOk &&
+      last_non_ping_health_check_.has_value() &&
+      last_non_ping_health_check_->status != fuchsia_driver_framework::HealthStatus::kOk) {
+    last_health_check_ = last_non_ping_health_check_;
+    return;
+  }
+  last_health_check_ = std::move(record);
+}
+
+void Node::ResetHealthCheckState() {
+  last_health_check_.reset();
+  last_non_ping_health_check_.reset();
 }
 
 }  // namespace driver_manager
