@@ -27,18 +27,6 @@
 
 #define LOCAL_TRACE 0
 
-// There are a limited number of operations which should never be done on a
-// WaitQueue which happens to be an OwnedWaitQueue.  Specifically, blocking.
-// Blocking on an OWQ should always go through the OWQ specific
-// BlockAndAssignOwner.  Add a macro to check for that as well.
-#define DEBUG_ASSERT_MAGIC_AND_NOT_OWQ(_queue)                                                     \
-  do {                                                                                             \
-    DEBUG_ASSERT_MSG(((_queue)->magic_ != OwnedWaitQueue::kOwnedMagic),                            \
-                     "This operation should not be performed against the WaitQueue "               \
-                     "API, use the OwnedWaitQueue API intead.");                                   \
-    DEBUG_ASSERT_MSG(((_queue)->magic_ == WaitQueue::kMagic), "magic 0x%08x", ((_queue)->magic_)); \
-  } while (false)
-
 // Wait queues are building blocks that other locking primitives use to handle
 // blocking threads.
 void WaitQueueBase::TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
@@ -192,119 +180,34 @@ void WaitQueueBase::UpdateBlockedThreadEffectiveProfile(Thread& t) {
 
 ktl::optional<BrwLockOps::LockForWakeResult> BrwLockOps::LockForWake(WaitQueue& queue,
                                                                      zx_instant_mono_t now) {
-  DEBUG_ASSERT_MAGIC_AND_NOT_OWQ(&queue);
-  LockForWakeResult result;
-  Thread* t;
-
-  while ((t = queue.collection_.PeekFront()) != nullptr) {
-    // Figure out of this thread a reader or a writer.  Note; the odd use of a
-    // lambda here is to work around issues with the static analyzer.  We cannot
-    // assert that we have read access to a capability in a function, and later
-    // on assert that we have exclusive access (after having obtained the
-    // capability exclusively).
-    const bool is_reader = [&]() TA_REQ(queue.get_lock()) {
-      AssertInWaitQueue(*t, queue);
-      DEBUG_ASSERT((t->state() == THREAD_BLOCKED) || (t->state() == THREAD_BLOCKED_READ_LOCK));
-      return (t->state() == THREAD_BLOCKED_READ_LOCK);
-    }();
-
-    // We should stop if we have already selected threads (meaning we are waking
-    // readers), and this thread is not a reader.
-    if ((result.count != 0) && (is_reader == false)) {
-      return result;
-    }
-
-    // Looks like we want to wake this thread.  Try to lock it.
-    if (!t->get_lock().AcquireOrBackoff()) {
-      // Put each of the threads back where they belong before returning
-      // nothing, unlocking them as we go.  Make sure to set the thread's
-      // blocking wait queue pointer back to ourselves.
-      while (!result.list.is_empty()) {
-        Thread* return_to_queue = result.list.pop_front();
-        return_to_queue->get_lock().AssertAcquired();
-        DEBUG_ASSERT(return_to_queue->wait_queue_state().blocking_wait_queue_ == nullptr);
-        return_to_queue->wait_queue_state().blocking_wait_queue_ = &queue;
-        queue.collection_.Insert(return_to_queue);
-        return_to_queue->get_lock().Release();
-      }
-      return ktl::nullopt;
-    }
-
-    // We got the thread's lock.  Move it from the collection to our list of
-    // threads to wake, clearing the blocking queue and setting the block result
-    // as we go.
-    queue.DequeueThread(t, ZX_OK);
-    result.list.push_back(t);
-    ++result.count;
-
-    t->get_lock().MarkReleased();
-
-    // If we just locked a writer for wake, we are done.  We can only wake one writer at a time.
-    if (is_reader == false) {
-      DEBUG_ASSERT(result.count == 1);
-      return result;
-    }
+  ktl::optional<LockForWakeResult> res{ktl::in_place};
+  if (!rust_brw_lock_ops_lock_for_wake(&queue, now, &res->list, &res->count)) {
+    res.reset();
   }
-
-  // Out of threads to lock.  Whatever we have so far is our result.
-  return result;
+  return res;
 }
 
 ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeAllInPlace(WaitQueue& queue) {
-  DEBUG_ASSERT_MAGIC_AND_NOT_OWQ(&queue);
-
-  // Try to lock all of the threads, backing off if we have to.
-  if (const ChainLock::Result res = queue.collection_.LockAll();
-      res == ChainLock::Result::Backoff) {
-    return ktl::nullopt;
+  ktl::optional<Thread::UnblockList> res{ktl::in_place};
+  if (!rust_wait_queue_lock_ops_lock_for_wake_all_in_place(&queue, &*res)) {
+    res.reset();
   }
-
-  // Now that we have all of the threads locked, we are committed to the
-  // WakeAll operation, and we can add the threads to an UnblockList.
-  //
-  // TODO(https://fxbug.dev/473385363): The in-place operations prevent us from collapsing the
-  // storage requirements of an UnblockList and WaitQueueCollection.
-  Thread::UnblockList unblock_list;
-  for (Thread& t : queue.collection_.threads()) {
-    t.get_lock().AssertHeld();
-    unblock_list.push_back(&t);
-  }
-
-  return unblock_list;
+  return res;
 }
 
 ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeAllInQueue(
     WaitQueue& queue, zx_status_t wait_queue_error) {
-  // TODO(johngro): Optimize this.  By removing all of the elements of the
-  // collection one at a time, we are paying a rebalancing price we really
-  // should not have to pay, since we are going to eventually remove all of
-  // the elements, so maintaining balance is not really important.
-  ktl::optional<Thread::UnblockList> unblock_list = LockForWakeAllInPlace(queue);
-  if (unblock_list.has_value()) {
-    for (Thread& t : *unblock_list) {
-      t.get_lock().AssertHeld();
-      queue.Dequeue(&t, wait_queue_error);
-    }
+  ktl::optional<Thread::UnblockList> res{ktl::in_place};
+  if (!rust_wait_queue_lock_ops_lock_for_wake_all_in_queue(&queue, wait_queue_error, &*res)) {
+    res.reset();
   }
-  return unblock_list;
+  return res;
 }
 
 ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeOneInPlace(WaitQueue& queue) {
-  DEBUG_ASSERT_MAGIC_AND_NOT_OWQ(&queue);
-
-  if (Thread* t = queue.collection_.PeekFront(); t != nullptr) {
-    if (!t->get_lock().AcquireOrBackoff()) {
-      return ktl::nullopt;
-    }
-
-    // TODO(https://fxbug.dev/473385363): The in-place operations prevent us from collapsing the
-    // storage requirements of an UnblockList and WaitQueueCollection.
-    Thread::UnblockList unblock_list;
-    unblock_list.push_back(t);
-    t->get_lock().MarkReleased();
-
-    return unblock_list;
+  ktl::optional<Thread::UnblockList> res{ktl::in_place};
+  if (!rust_wait_queue_lock_ops_lock_for_wake_one_in_place(&queue, &*res)) {
+    res.reset();
   }
-
-  return Thread::UnblockList{};
+  return res;
 }

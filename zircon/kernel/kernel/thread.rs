@@ -791,6 +791,22 @@ impl Thread {
         Ok(())
     }
 
+    /// Raw read of the thread's scheduling state without its lock.
+    ///
+    /// # Safety
+    ///
+    /// The thread must currently be a member of a wait queue whose lock the caller holds: a queued
+    /// thread's state is set under both locks when it enqueues and only changes again after it
+    /// has been removed under the queue's lock, so the queue lock alone makes this read race-free.
+    #[inline]
+    pub(super) unsafe fn state_in_wait_queue(&self) -> ThreadStateKind {
+        let p = self.scheduler_state.get().cast::<scheduler::SchedulerState>();
+        // SAFETY: `p` points at the live storage of the thread's `scheduler::SchedulerState`;
+        // only the `state` place is read (the caller excludes concurrent writers of it) and no
+        // reference to the surrounding struct is formed.
+        unsafe { (&raw const (*p).state).read() }
+    }
+
     /// Returns the [`SchedulerState`] facade over this thread's `scheduler_state` member.
     ///
     /// # Safety

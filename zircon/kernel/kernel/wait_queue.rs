@@ -383,6 +383,24 @@ impl ThreadState {
         *unsafe { self.blocking_wait_queue.get(token) }
     }
 
+    /// Raw read of `blocking_wait_queue` without the thread's lock.
+    ///
+    /// # Safety
+    ///
+    /// The owning thread must currently be a member of a wait queue whose lock the caller holds:
+    /// `blocking_wait_queue` is set under both locks when the thread enqueues and only changes
+    /// again when it is removed under the queue's lock.
+    #[inline]
+    unsafe fn blocking_wait_queue_in_queue(&self) -> Option<NonNull<WaitQueueBase>> {
+        // SAFETY: `KCell` is `repr(transparent)` over `UnsafeCell<T>`, so the cell's address is
+        // the value's; the caller excludes concurrent writers and no reference is formed.
+        unsafe {
+            core::ptr::from_ref(&self.blocking_wait_queue)
+                .cast::<Option<NonNull<WaitQueueBase>>>()
+                .read()
+        }
+    }
+
     /// Sets the wait queue the thread is currently blocked on.
     ///
     /// # Safety
@@ -1759,6 +1777,31 @@ impl ChainLockProof<'_, WaitQueue> {
         }
     }
 
+    /// Returns the scheduling state of `t`, a thread blocked in this queue whose own lock the
+    /// caller does *not* hold. A queued thread's `state`, tree membership and
+    /// `blocking_wait_queue` are set under both locks when it enqueues and only change again
+    /// after it has been removed under its queue's lock (every exit path removes it first), so
+    /// holding that lock, which `self` proves, makes these raw reads race-free. No thread-lock
+    /// proof is minted.
+    ///
+    /// # Safety
+    ///
+    /// `t` must currently be a member of `self.owner()`'s collection.
+    unsafe fn queued_thread_state(&self, t: &Thread) -> ThreadStateKind {
+        // The `assert_in_wait_queue` checks, read raw under the queue lock.
+        //
+        // SAFETY: `t` is queued in `self.owner()` (caller's contract), whose lock `self` proves
+        // held, which is exactly what the two raw readers require.
+        let (state, blocking_wait_queue) =
+            unsafe { (t.state_in_wait_queue(), t.wait_queue_state.blocking_wait_queue_in_queue()) };
+        debug_assert!(t.wait_queue_state.blocked_threads_tree_node.in_container());
+        debug_assert!(
+            state == ThreadStateKind::Blocked || state == ThreadStateKind::BlockedReadLock
+        );
+        debug_assert!(blocking_wait_queue == Some(NonNull::from(&self.owner().base)));
+        state
+    }
+
     /// Dequeues the specified thread `t` and sets its `blocked_status`. Does not actually schedule
     /// the thread to run.
     ///
@@ -1786,6 +1829,13 @@ impl ChainLockProof<'_, WaitQueue> {
 }
 
 /// Operations for locking threads in a [`WaitQueue`] for waking.
+///
+/// The `ktl::optional<Thread::UnblockList>` results of the C++ API become a `bool` plus the
+/// `unblock_list` out-parameter (a [`ThreadUnblockList`] is pinned, so it cannot be returned by
+/// value): `unblock_list` must be empty on entry; on `true` it holds the threads to wake, each
+/// with its lock held by the active transaction and no guard or proof left for it, so the caller
+/// must eventually release those locks (normally via [`scheduler::unblock_list`]); on `false` (a
+/// backoff condition was encountered) it is left empty and no thread lock is held.
 pub struct WaitQueueLockOps;
 
 impl WaitQueueLockOps {
@@ -1812,20 +1862,391 @@ impl WaitQueueLockOps {
     pub unsafe fn lock_for_wake_all_in_queue(
         queue: &mut ChainLockProof<'_, WaitQueue>,
         wait_queue_error: impl Into<Result<(), Status>>,
+        mut unblock_list: Pin<&mut ThreadUnblockList>,
+        clt_token: &ChainLockTransactionToken,
+    ) -> bool {
+        // TODO: Optimize this.  By removing all of the elements of the
+        // collection one at a time, we are paying a rebalancing price we really
+        // should not have to pay, since we are going to eventually remove all of
+        // the elements, so maintaining balance is not really important.
+        //
+        // SAFETY: Forwarded from the caller.
+        let locked =
+            unsafe { Self::lock_for_wake_all_in_place(queue, unblock_list.as_mut(), clt_token) };
+        if locked {
+            let wait_queue_error = wait_queue_error.into();
+            for t in unblock_list.as_list_ref().iter() {
+                debug_assert!(t.lock().is_held(clt_token));
+                // SAFETY: `lock_for_wake_all_in_place` acquired `t`'s lock in this transaction
+                // (checked above in debug builds) and no proof for it is live.
+                let mut t_proof = unsafe { ChainLockProof::assume_held_unchecked(t) };
+                // SAFETY: `t` is blocked in `queue` (it came from its collection), a plain
+                // `WaitQueue`.
+                unsafe { queue.as_base().dequeue(&mut t_proof, wait_queue_error) };
+            }
+        }
+        locked
+    }
+
+    /// Same as [`Self::lock_for_wake_all_in_queue`], but does not dequeue the threads from the
+    /// wait queue.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `unblock_list` is empty.
+    /// - If this call returns `true`, the caller must eventually release every thread lock in
+    ///   `unblock_list` (normally by dequeuing the threads and passing the list to
+    ///   [`scheduler::unblock_list`] in the finalized transaction), and must not drop
+    ///   `unblock_list` while non-empty.
+    #[must_use]
+    #[inline]
+    pub unsafe fn lock_for_wake_all_in_place(
+        queue: &mut ChainLockProof<'_, WaitQueue>,
         unblock_list: Pin<&mut ThreadUnblockList>,
         clt_token: &ChainLockTransactionToken,
     ) -> bool {
         assert_transaction_active(clt_token);
-        // SAFETY: `queue` proves `queue.owner().lock()` is exclusively held in the active
-        // transaction, `unblock_list.as_raw()` points to a valid empty `Thread::UnblockList`, and
-        // the caller upholds the preconditions above.
-        unsafe {
-            bindings::cpp_wait_queue_lock_ops_lock_for_wake_all_in_queue(
-                queue.owner().as_raw(),
-                Status::result_into_raw(wait_queue_error.into()),
-                unblock_list.as_raw().cast(),
-            )
+        queue.owner().debug_assert_magic_and_not_owq();
+        debug_assert!(unblock_list.is_empty());
+
+        // Try to lock all of the threads, backing off if we have to.
+        if queue.collection().lock_all(clt_token) == ChainLockResult::Backoff {
+            return false;
         }
+
+        // Now that we have all of the threads locked, we are committed to the
+        // WakeAll operation, and we can add the threads to an UnblockList.
+        //
+        // TODO(https://fxbug.dev/473385363): The in-place operations prevent us from collapsing the
+        // storage requirements of an UnblockList and WaitQueueCollection.
+        let mut list = unblock_list.as_list();
+        for t in queue.collection().iter() {
+            debug_assert!(t.lock().is_held(clt_token));
+            // SAFETY: `t` is blocked in `queue` (so live) and in no unblock list.
+            unsafe { list.as_mut().push_back_raw(NonNull::from(t)) };
+        }
+
+        true
+    }
+
+    /// Same as [`Self::lock_for_wake_all_in_place`], but only locks the first thread.
+    ///
+    /// # Safety
+    ///
+    /// As [`Self::lock_for_wake_all_in_place`].
+    #[must_use]
+    #[inline]
+    pub unsafe fn lock_for_wake_one_in_place(
+        queue: &mut ChainLockProof<'_, WaitQueue>,
+        unblock_list: Pin<&mut ThreadUnblockList>,
+        clt_token: &ChainLockTransactionToken,
+    ) -> bool {
+        assert_transaction_active(clt_token);
+        queue.owner().debug_assert_magic_and_not_owq();
+        debug_assert!(unblock_list.is_empty());
+
+        if let Some(t_ptr) = queue.peek_front() {
+            // SAFETY: `t_ptr` is currently blocked in `queue.owner()` and cannot exit while
+            // `queue.owner().lock()` is held.
+            let t: &Thread = unsafe { t_ptr.as_ref() };
+            // SAFETY: Only `t`'s lock is acquired, and it stays held for the list's consumer
+            // with no `ChainLockProof` minted for it here.
+            if !unsafe { t.lock().as_chain_lock() }.acquire_or_backoff(clt_token) {
+                return false;
+            }
+
+            // TODO(https://fxbug.dev/473385363): The in-place operations prevent us from
+            // collapsing the storage requirements of an UnblockList and WaitQueueCollection.
+            //
+            // SAFETY: `t` is live (its lock is held) and in no unblock list.
+            unsafe { unblock_list.as_list().push_back_raw(NonNull::from(t)) };
+
+            return true;
+        }
+
+        true
+    }
+}
+
+/// Operations for locking threads in a [`WaitQueue`] for a `BrwLock` wake.
+pub struct BrwLockOps;
+
+impl BrwLockOps {
+    /// Attempts to lock the set of threads needed for a `BrwLock` wake operation.  If
+    /// the first thread to wake is a writer, the set consists of just this thread.
+    /// If the first thread to wake is a reader, then the set to wake is all of the
+    /// readers we encounter until we hit another writer, or run out of threads to
+    /// wake.
+    ///
+    /// On success, the list of threads to wake is returned with each thread
+    /// locked, and with each thread prepared to unblock as if `dequeue` had been
+    /// called (`blocked_status` has been set to OK, and `blocking_wait_queue` has been
+    /// cleared).
+    ///
+    /// On failure, no list is returned, and all threads will be unlocked and
+    /// waiting in the collection.
+    ///
+    /// The `ktl::optional<LockForWakeResult>` of the C++ API becomes `Some(count)` plus the
+    /// `unblock_list` out-parameter, with the same conventions as [`WaitQueueLockOps`]. The active
+    /// transaction must not yet be finalized. `now` is unused, as in C++.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `unblock_list` is empty.
+    /// - If this call returns `Some(_)`, the caller must finalize the transaction and pass
+    ///   `unblock_list` to [`scheduler::unblock_list`] before ending the transaction (and must not
+    ///   drop `unblock_list` while non-empty).
+    #[must_use]
+    pub unsafe fn lock_for_wake(
+        queue: &mut ChainLockProof<'_, WaitQueue>,
+        _now: InstantMono,
+        unblock_list: Pin<&mut ThreadUnblockList>,
+        clt_token: &ChainLockTransactionToken,
+    ) -> Option<u32> {
+        assert_transaction_active(clt_token);
+        queue.owner().debug_assert_magic_and_not_owq();
+        debug_assert!(unblock_list.is_empty());
+        let mut list = unblock_list.as_list();
+        let mut count: u32 = 0;
+
+        while let Some(t_ptr) = queue.peek_front() {
+            // SAFETY: `t_ptr` is currently blocked in `queue.owner()` and cannot exit while
+            // `queue.owner().lock()` is held.
+            let t: &Thread = unsafe { t_ptr.as_ref() };
+            // Figure out of this thread a reader or a writer.  (`queued_thread_state` carries the
+            // `assert_in_wait_queue` checks for a thread whose lock is not held yet.)
+            //
+            // SAFETY: `t` was just peeked from `queue`'s collection under its lock.
+            let is_reader =
+                unsafe { queue.queued_thread_state(t) } == ThreadStateKind::BlockedReadLock;
+
+            // We should stop if we have already selected threads (meaning we are waking
+            // readers), and this thread is not a reader.
+            if (count != 0) && !is_reader {
+                return Some(count);
+            }
+
+            // Looks like we want to wake this thread.  Try to lock it.
+            //
+            // SAFETY: Only `t`'s lock is acquired; it is released below on backoff or stays held
+            // for the list's consumer, and every proof minted for it is dropped before then.
+            if !unsafe { t.lock().as_chain_lock() }.acquire_or_backoff(clt_token) {
+                // Put each of the threads back where they belong before returning
+                // nothing, unlocking them as we go.  Make sure to set the thread's
+                // blocking wait queue pointer back to ourselves.
+                while let Some(return_to_queue) = list.as_mut().pop_front() {
+                    // SAFETY: Every thread in `list` was dequeued from `queue` below with its
+                    // lock held, so it is live.
+                    let return_to_queue: &Thread = unsafe { return_to_queue.as_ref() };
+                    debug_assert!(return_to_queue.lock().is_held(clt_token));
+                    // SAFETY: `return_to_queue`'s lock was acquired below in this transaction
+                    // (checked above in debug builds) and no proof for it is live.
+                    let mut rtq_proof =
+                        unsafe { ChainLockProof::assume_held_unchecked(return_to_queue) };
+                    debug_assert!(
+                        rtq_proof
+                            .wait_queue_state()
+                            .blocking_wait_queue(rtq_proof.token())
+                            .is_none()
+                    );
+                    // SAFETY: `return_to_queue` is about to be re-inserted into `queue`'s
+                    // collection, and `queue.owner()` is a plain `WaitQueue` (asserted above) that
+                    // remains live while threads are blocked in it.
+                    unsafe {
+                        rtq_proof.wait_queue_state().set_blocking_wait_queue(
+                            Some(NonNull::from(&queue.owner().base)),
+                            rtq_proof.token_mut(),
+                        );
+                    }
+                    // SAFETY: `return_to_queue` is in no wait queue (it was dequeued below) and
+                    // stays live while blocked.
+                    unsafe { queue.collection_mut().insert(&mut rtq_proof) };
+                    drop(rtq_proof);
+                    // SAFETY: The lock was acquired by this loop in this transaction and no proof
+                    // for it is live.
+                    unsafe { return_to_queue.lock().as_chain_lock() }.release(clt_token);
+                }
+                return None;
+            }
+
+            // We got the thread's lock.  Move it from the collection to our list of
+            // threads to wake, clearing the blocking queue and setting the block result
+            // as we go.
+            //
+            // SAFETY: `t`'s lock was just acquired in this transaction and no proof for it is
+            // live.
+            let mut t_proof = unsafe { ChainLockProof::assume_held_unchecked(t) };
+            // SAFETY: `t` is blocked in `queue`, a plain `WaitQueue`.
+            unsafe { queue.dequeue_thread(&mut t_proof, Ok(())) };
+            drop(t_proof);
+            // SAFETY: `t` is live (its lock is held) and in no unblock list.
+            unsafe { list.as_mut().push_back_raw(NonNull::from(t)) };
+            count += 1;
+
+            // The lock stays held: releasing it is now the list consumer's job.
+
+            // If we just locked a writer for wake, we are done.  We can only wake one writer at a
+            // time.
+            if !is_reader {
+                debug_assert!(count == 1);
+                return Some(count);
+            }
+        }
+
+        // Out of threads to lock.  Whatever we have so far is our result.
+        Some(count)
+    }
+}
+
+// FFI entries for the C++ `WaitQueueLockOps` / `BrwLockOps` forwarders in `kernel/wait.cc`.
+//
+// Shared preconditions for every `rust_wait_queue_lock_ops_*` / `rust_brw_lock_ops_*` entry below:
+// - A `ChainLockTransaction` must be active on this CPU and not finalized (`assert_active` is
+//   debug-only; calling with no active transaction is UB in release).
+// - `queue` must be a valid `WaitQueue` whose lock is held by the active transaction's *current*
+//   token; this is checked only in debug builds (`debug_assert!`), so inside a reserved-token
+//   window the lock must have been `sync_token`ed. No Rust `ChainLockProof` for `queue` may be
+//   live.
+// - `unblock_list` must point to a valid, empty, pinned `Thread::UnblockList` (a nested type, so
+//   passed as `void*`) that is not otherwise accessed during the call. On success it receives the
+//   threads to wake, each with its lock held by the active transaction; the caller must
+//   eventually release those locks (normally via `Scheduler::Unblock`).
+
+/// Reborrows a C++-provided, empty `Thread::UnblockList` as a pinned [`ThreadUnblockList`].
+///
+/// # Safety
+///
+/// `list` must point to a valid, empty, properly constructed `Thread::UnblockList` that stays
+/// pinned and is not otherwise accessed for `'a`.
+unsafe fn unblock_list_out_param<'a>(list: *mut c_void) -> Pin<&'a mut ThreadUnblockList> {
+    // SAFETY: `ThreadUnblockList` is `repr(C)` over the opaque `Thread::UnblockList` storage, and
+    // the caller guarantees validity, emptiness, exclusivity and pinning.
+    let list = unsafe { Pin::new_unchecked(&mut *list.cast::<ThreadUnblockList>()) };
+    debug_assert!(list.is_empty());
+    list
+}
+
+/// Attempts to lock all threads in `queue` for waking and dequeues them with `wait_queue_error`;
+/// `false` on backoff.
+///
+/// # Safety
+///
+/// The shared preconditions above hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_wait_queue_lock_ops_lock_for_wake_all_in_queue(
+    queue: *const WaitQueue,
+    wait_queue_error: zx_status_t,
+    unblock_list: *mut c_void,
+) -> bool {
+    // SAFETY: A transaction is active by precondition.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    // SAFETY: The caller guarantees `queue` is a valid `WaitQueue`; only a shared reference is
+    // formed, all mutation goes through locked cells.
+    let queue = unsafe { &*queue };
+    debug_assert!(queue.lock().is_held(&token));
+    // SAFETY: The caller guarantees the active transaction holds `queue`'s lock for the call
+    // (checked above in debug builds) and that no live proof exists for it.
+    let mut proof = unsafe { ChainLockProof::assume_held_unchecked(queue) };
+    // SAFETY: `unblock_list` is a valid, empty, pinned `Thread::UnblockList` (precondition).
+    let unblock_list = unsafe { unblock_list_out_param(unblock_list) };
+    // SAFETY: `unblock_list` is empty, and the C++ caller takes over the locked threads.
+    unsafe {
+        WaitQueueLockOps::lock_for_wake_all_in_queue(
+            &mut proof,
+            Status::ok(wait_queue_error),
+            unblock_list,
+            &token,
+        )
+    }
+}
+
+/// Attempts to lock all threads in `queue` for waking without dequeuing them; `false` on backoff.
+///
+/// # Safety
+///
+/// The shared preconditions above hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_wait_queue_lock_ops_lock_for_wake_all_in_place(
+    queue: *const WaitQueue,
+    unblock_list: *mut c_void,
+) -> bool {
+    // SAFETY: A transaction is active by precondition.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    // SAFETY: The caller guarantees `queue` is a valid `WaitQueue`; only a shared reference is
+    // formed, all mutation goes through locked cells.
+    let queue = unsafe { &*queue };
+    debug_assert!(queue.lock().is_held(&token));
+    // SAFETY: The caller guarantees the active transaction holds `queue`'s lock for the call
+    // (checked above in debug builds) and that no live proof exists for it.
+    let mut proof = unsafe { ChainLockProof::assume_held_unchecked(queue) };
+    // SAFETY: `unblock_list` is a valid, empty, pinned `Thread::UnblockList` (precondition).
+    let unblock_list = unsafe { unblock_list_out_param(unblock_list) };
+    // SAFETY: `unblock_list` is empty, and the C++ caller takes over the locked threads.
+    unsafe { WaitQueueLockOps::lock_for_wake_all_in_place(&mut proof, unblock_list, &token) }
+}
+
+/// Attempts to lock the first thread in `queue` for waking without dequeuing it; `false` on
+/// backoff.
+///
+/// # Safety
+///
+/// The shared preconditions above hold.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_wait_queue_lock_ops_lock_for_wake_one_in_place(
+    queue: *const WaitQueue,
+    unblock_list: *mut c_void,
+) -> bool {
+    // SAFETY: A transaction is active by precondition.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    // SAFETY: The caller guarantees `queue` is a valid `WaitQueue`; only a shared reference is
+    // formed, all mutation goes through locked cells.
+    let queue = unsafe { &*queue };
+    debug_assert!(queue.lock().is_held(&token));
+    // SAFETY: The caller guarantees the active transaction holds `queue`'s lock for the call
+    // (checked above in debug builds) and that no live proof exists for it.
+    let mut proof = unsafe { ChainLockProof::assume_held_unchecked(queue) };
+    // SAFETY: `unblock_list` is a valid, empty, pinned `Thread::UnblockList` (precondition).
+    let unblock_list = unsafe { unblock_list_out_param(unblock_list) };
+    // SAFETY: `unblock_list` is empty, and the C++ caller takes over the locked threads.
+    unsafe { WaitQueueLockOps::lock_for_wake_one_in_place(&mut proof, unblock_list, &token) }
+}
+
+/// Attempts to lock the set of threads for a `BrwLock` wake; `false` on backoff, else `*count` is
+/// set.
+///
+/// # Safety
+///
+/// The shared preconditions above hold, and `count` is a valid pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_brw_lock_ops_lock_for_wake(
+    queue: *const WaitQueue,
+    now: zx_instant_mono_t,
+    unblock_list: *mut c_void,
+    count: *mut u32,
+) -> bool {
+    // SAFETY: A transaction is active by precondition.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    // SAFETY: The caller guarantees `queue` is a valid `WaitQueue`; only a shared reference is
+    // formed, all mutation goes through locked cells.
+    let queue = unsafe { &*queue };
+    debug_assert!(queue.lock().is_held(&token));
+    // SAFETY: The caller guarantees the active transaction holds `queue`'s lock for the call
+    // (checked above in debug builds) and that no live proof exists for it.
+    let mut proof = unsafe { ChainLockProof::assume_held_unchecked(queue) };
+    // SAFETY: `unblock_list` is a valid, empty, pinned `Thread::UnblockList` (precondition).
+    let unblock_list = unsafe { unblock_list_out_param(unblock_list) };
+    // SAFETY: `unblock_list` is empty, and the C++ caller takes over the locked threads.
+    let res =
+        unsafe { BrwLockOps::lock_for_wake(&mut proof, InstantMono(now), unblock_list, &token) };
+    match res {
+        Some(c) => {
+            // SAFETY: `count` is valid (precondition).
+            unsafe { *count = c };
+            true
+        }
+        None => false,
     }
 }
 
@@ -2878,6 +3299,9 @@ mod tests {
         CallsiteInfo, ChainLockTransaction, DONE, IRQ_SAVE_OPTION, OwnerGuard,
         PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION, clt_tag, single_chain_lock_guard_owned,
     };
+    use crate::kernel::thread;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use zx_types::{ZX_ERR_BAD_STATE, ZX_ERR_CANCELED, ZX_OK, ZX_TIME_INFINITE};
 
     /// Verifies `WaitQueue` and `WaitQueueBase` lock proofs, accessors, and empty ops.
     #[test]
@@ -3613,5 +4037,543 @@ mod tests {
         }
         expect_true!(cpp_nth[3].is_null());
         expect_true!(rust_nth[3].is_none());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Lock-for-wake tests, with real threads blocked in the queue.
+    // ---------------------------------------------------------------------------------------------
+
+    /// Shared with a blocker thread: the queue to block in and how to block.
+    struct BlockCtx<'a> {
+        wq: &'a WaitQueue,
+        reason: ResourceOwnership,
+        started: AtomicBool,
+    }
+
+    impl<'a> BlockCtx<'a> {
+        fn new(wq: &'a WaitQueue, reason: ResourceOwnership) -> Self {
+            Self { wq, reason, started: AtomicBool::new(false) }
+        }
+    }
+
+    /// Blocks in `ctx.wq` with `ctx.reason` and exits with the raw status `block_etc` returned.
+    extern "C" fn block_entry(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` points to a `BlockCtx` which outlives this thread, since the test joins
+        // the thread before the context is destroyed.
+        let ctx = unsafe { &*arg.cast::<BlockCtx<'_>>() };
+        ctx.started.store(true, Ordering::SeqCst);
+        // SAFETY: Called from a running kernel thread.
+        let current = unsafe { ThreadPtr::current().as_ref() };
+        let res = ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("wait_queue_rust_block_entry"),
+            |token| {
+                let wq_guard = OwnerGuard::new(ctx.wq, token);
+                let Some(mut current_guard) = OwnerGuard::acquire_or_backoff(current, token) else {
+                    // Returning drops `wq_guard`, releasing the queue lock before the backoff.
+                    return TransactionResult::BACKOFF;
+                };
+                ChainLockTransaction::finalize(token);
+                // SAFETY: `current` is the running thread and is in no wait queue; the
+                // transaction is finalized and these are the only two chain locks held; the
+                // deadline is infinite; `ctx.wq` is kept alive by the spawning test.
+                let res = unsafe {
+                    WaitQueue::block_etc(
+                        wq_guard,
+                        &mut current_guard.proof(),
+                        &Deadline::infinite(),
+                        0,
+                        ctx.reason,
+                        Interruptible::No,
+                        token,
+                    )
+                };
+                // Dropping `current_guard` releases the thread lock the scheduler re-acquired.
+                TransactionResult::Value(res)
+            },
+        );
+        Status::result_into_raw(res)
+    }
+
+    /// Spawns a thread which blocks in `ctx.wq`, and waits until it has blocked.
+    ///
+    /// # Safety
+    ///
+    /// The caller must join the returned thread before `ctx` is destroyed.
+    unsafe fn spawn_blocker(ctx: &BlockCtx<'_>) -> Result<ThreadPtr, Status> {
+        let arg = core::ptr::from_ref(ctx).cast_mut().cast::<c_void>();
+        // SAFETY: The caller joins the thread before `ctx` is destroyed.
+        let blocker =
+            unsafe { thread::spawn(c"wait_queue_rust_blocker".as_ptr(), block_entry, arg)? };
+        while !ctx.started.load(Ordering::SeqCst) {
+            thread::r#yield();
+        }
+        // Nothing else blocks the blocker between setting `started` and blocking in `ctx.wq`.
+        // SAFETY: `blocker` has not been joined yet.
+        while !unsafe { blocker.is_blocked() } {
+            thread::r#yield();
+        }
+        Ok(blocker)
+    }
+
+    /// Joins `blocker` and returns its raw exit status (`block_etc`'s result).
+    ///
+    /// # Safety
+    ///
+    /// `blocker` must not have been joined yet.
+    unsafe fn join_blocker(blocker: ThreadPtr) -> zx_status_t {
+        // SAFETY: The caller has not joined `blocker` yet.
+        unsafe { blocker.join(InstantMono(ZX_TIME_INFINITE)) }.unwrap_or(ZX_ERR_BAD_STATE)
+    }
+
+    /// `N` blockers, joined on drop so that an early test return (a failed `assert_*!`) cannot
+    /// drop the queue or the context under a live blocker. Blockers handed out through `join`
+    /// are joined exactly once.
+    struct Blockers<const N: usize>([Option<ThreadPtr>; N]);
+
+    impl<const N: usize> Blockers<N> {
+        /// Spawns one blocker per context.
+        fn spawn_each(ctxs: [&BlockCtx<'_>; N]) -> Self {
+            // SAFETY: Every blocker is joined (by `join` or `drop`) before the test returns, and
+            // the contexts outlive the test body.
+            Self(ctxs.map(|ctx| unsafe { spawn_blocker(ctx) }.ok()))
+        }
+
+        fn all_spawned(&self) -> bool {
+            self.0.iter().all(Option::is_some)
+        }
+
+        fn get(&self, i: usize) -> ThreadPtr {
+            self.0[i].expect("blocker was not spawned or was already joined")
+        }
+
+        /// Joins `blocker` (one of ours) and returns its raw exit status.
+        fn join(&mut self, blocker: ThreadPtr) -> zx_status_t {
+            let slot = self.0.iter_mut().find(|b| **b == Some(blocker));
+            match slot.and_then(Option::take) {
+                // SAFETY: `Option::take` ensures each blocker in `self.0` is joined at most once.
+                Some(blocker) => unsafe { join_blocker(blocker) },
+                None => ZX_ERR_BAD_STATE,
+            }
+        }
+    }
+
+    impl<const N: usize> Drop for Blockers<N> {
+        fn drop(&mut self) {
+            for blocker in self.0.iter_mut().filter_map(Option::take) {
+                // SAFETY: `Option::take` ensures each blocker in `self.0` is joined at most once.
+                unsafe { join_blocker(blocker) };
+            }
+        }
+    }
+
+    fn queue_count(wq: &WaitQueue) -> u32 {
+        single_chain_lock_guard_owned!(scope, wq, IRQ_SAVE_OPTION, clt_tag!("wq_count"));
+        scope.proof().count()
+    }
+
+    /// The first two threads of the locked queue's collection, in queue order.
+    fn front_two(proof: &ChainLockProof<'_, WaitQueue>) -> [Option<ThreadPtr>; 2] {
+        let mut it = proof.collection().iter().map(ThreadPtr::from);
+        [it.next(), it.next()]
+    }
+
+    /// The first two threads of `wq`'s collection, in queue order.
+    fn queue_front_two(wq: &WaitQueue) -> [Option<ThreadPtr>; 2] {
+        single_chain_lock_guard_owned!(scope, wq, IRQ_SAVE_OPTION, clt_tag!("wq_front_two"));
+        front_two(&scope.proof())
+    }
+
+    /// Orders the two blockers `[a, b]` by their position in `wq`.
+    fn in_queue_order(wq: &WaitQueue, a: ThreadPtr, b: ThreadPtr) -> (ThreadPtr, ThreadPtr) {
+        if queue_front_two(wq)[0] == Some(a) { (a, b) } else { (b, a) }
+    }
+
+    /// Holds `t`'s lock on an older, unregistered transaction for the duration of the returned
+    /// guard, so that a younger transaction reaching `t` must back off rather than spin (see
+    /// `test_lock_all`).
+    struct ForeignLockHolder<'a> {
+        t: &'a Thread,
+        tx: core::mem::ManuallyDrop<ChainLockTransaction>,
+    }
+
+    impl<'a> ForeignLockHolder<'a> {
+        fn new(t: &'a Thread) -> Self {
+            let tx = core::mem::ManuallyDrop::new(ChainLockTransaction::new_unregistered(
+                clt_tag!("owner_tx"),
+                0,
+                false,
+            ));
+            {
+                let _irq = InterruptDisableGuard::new();
+                // SAFETY: `tx` lives at its original stack location inside `Self` for the whole
+                // holder lifetime and interrupts are disabled; it is registered only for the
+                // duration of this block, and `t`'s lock is taken on it with no `ChainLockProof`
+                // live. The lock stays held (by `tx`) until `drop`.
+                unsafe {
+                    let token = tx.register();
+                    t.lock().as_chain_lock().acquire_first_in_chain(&token);
+                    ChainLockTransaction::finalize(&token);
+                    tx.unregister();
+                }
+            }
+            Self { t, tx }
+        }
+    }
+
+    impl Drop for ForeignLockHolder<'_> {
+        fn drop(&mut self) {
+            let _irq = InterruptDisableGuard::new();
+            // SAFETY: `tx` is still alive at its original location and interrupts are disabled;
+            // we re-register it to release `t`'s lock (acquired by it in `new`) and then drop it
+            // in-place while still registered so `ChainLockTransaction::drop` unregisters it
+            // cleanly.
+            unsafe {
+                let token = self.tx.register();
+                self.t.lock().as_chain_lock().release(&token);
+                core::mem::ManuallyDrop::drop(&mut self.tx);
+            }
+        }
+    }
+
+    /// Runs `BrwLockOps::lock_for_wake` on `wq`, retrying on backoff, and unblocks the locked
+    /// threads.
+    fn lock_for_wake_and_unblock(wq: &WaitQueue) -> u32 {
+        ChainLockTransaction::until_done(
+            PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION,
+            clt_tag!("wait_queue_rust_lock_for_wake"),
+            |token| {
+                let mut guard = OwnerGuard::new(wq, token);
+                pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+                // SAFETY: `list` is newly initialized and empty; on success the transaction is
+                // finalized and `list` is passed to `scheduler::unblock_list` below.
+                let res = unsafe {
+                    BrwLockOps::lock_for_wake(
+                        &mut guard.proof(),
+                        current_mono_time(),
+                        list.as_mut(),
+                        token,
+                    )
+                };
+                let Some(count) = res else {
+                    // `lock_for_wake` put every thread back and released its lock; returning
+                    // drops `guard`, releasing the queue lock before the backoff.
+                    return TransactionResult::BACKOFF;
+                };
+                ChainLockTransaction::finalize(token);
+                guard.release();
+                // SAFETY: The transaction is finalized; `lock_for_wake` locked every thread in
+                // the list for this transaction, dequeued it with its status set, and left no
+                // guard or proof live.
+                unsafe { scheduler::unblock_list(list, token) };
+                TransactionResult::Value(count)
+            },
+        )
+    }
+
+    /// `BrwLockOps::lock_for_wake`: a run of readers, a single writer, and the unwind on backoff.
+    #[test]
+    fn test_lock_for_wake() {
+        pin_init::stack_pin_init!(let wq = WaitQueue::init());
+        let reader_ctx = BlockCtx::new(&wq, ResourceOwnership::Reader);
+        let writer_ctx = BlockCtx::new(&wq, ResourceOwnership::Normal);
+
+        // Two readers wake together.
+        {
+            let mut readers = Blockers::spawn_each([&reader_ctx, &reader_ctx]);
+            unittest::assert_true!(readers.all_spawned());
+            expect_eq!(lock_for_wake_and_unblock(&wq), 2);
+            expect_eq!(readers.join(readers.get(0)), ZX_OK);
+            expect_eq!(readers.join(readers.get(1)), ZX_OK);
+            expect_eq!(queue_count(&wq), 0);
+        }
+
+        // A writer wakes alone, whether it is in front of a reader or behind one.
+        {
+            let mut pair = Blockers::spawn_each([&writer_ctx, &reader_ctx]);
+            unittest::assert_true!(pair.all_spawned());
+            let (first, second) = in_queue_order(&wq, pair.get(0), pair.get(1));
+            expect_eq!(lock_for_wake_and_unblock(&wq), 1);
+            expect_eq!(pair.join(first), ZX_OK);
+            expect_eq!(queue_count(&wq), 1);
+            expect_eq!(lock_for_wake_and_unblock(&wq), 1);
+            expect_eq!(pair.join(second), ZX_OK);
+            expect_eq!(queue_count(&wq), 0);
+        }
+
+        // Backoff on the second reader puts the first one back and leaves the queue intact.
+        let mut readers = Blockers::spawn_each([&reader_ctx, &reader_ctx]);
+        unittest::assert_true!(readers.all_spawned());
+        let (first, second) = in_queue_order(&wq, readers.get(0), readers.get(1));
+        // SAFETY: Both are blocked in `wq` until woken below, after they are no longer used.
+        let (first_ref, second_ref) = unsafe { (first.as_ref(), second.as_ref()) };
+
+        let holder = ForeignLockHolder::new(second_ref);
+        let mut res = Some(u32::MAX);
+        let mut list_empty = false;
+        let mut first_unlocked = false;
+        let mut count = u32::MAX;
+        let mut front = None;
+        ChainLockTransaction::until_done(
+            PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION,
+            clt_tag!("test_lock_for_wake_backoff"),
+            |token| {
+                let mut guard = OwnerGuard::new(&*wq, token);
+                pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+                // This must not back off after the simulated holder makes `lock_for_wake` fail,
+                // or the transaction loops forever: the holder never lets go.
+                //
+                // SAFETY: `list` is newly initialized and empty; the call is expected to fail and
+                // leave it empty, which is checked below before it is dropped.
+                res = unsafe {
+                    BrwLockOps::lock_for_wake(
+                        &mut guard.proof(),
+                        current_mono_time(),
+                        list.as_mut(),
+                        token,
+                    )
+                };
+                list_empty = list.is_empty();
+                first_unlocked = first_ref.lock().is_unlocked();
+                count = guard.proof().count();
+                front = guard.proof().peek_front();
+                guard.release();
+                ChainLockTransaction::finalize(token);
+                DONE
+            },
+        );
+        expect_true!(res.is_none());
+        expect_true!(list_empty);
+        expect_true!(first_unlocked);
+        expect_eq!(count, 2);
+        expect_true!(front == Some(first));
+        drop(holder);
+
+        wq.wake_all(Ok(()));
+        expect_eq!(readers.join(first), ZX_OK);
+        expect_eq!(readers.join(second), ZX_OK);
+        expect_eq!(queue_count(&wq), 0);
+    }
+
+    /// `lock_for_wake_all_in_place` leaves the queue intact; `..._in_queue` also dequeues.
+    #[test]
+    fn test_lock_for_wake_all_in_place_and_in_queue() {
+        pin_init::stack_pin_init!(let wq = WaitQueue::init());
+        let ctx = BlockCtx::new(&wq, ResourceOwnership::Normal);
+        let mut blockers = Blockers::spawn_each([&ctx, &ctx]);
+        unittest::assert_true!(blockers.all_spawned());
+        let (b0, b1) = (blockers.get(0), blockers.get(1));
+        // SAFETY: Both are blocked in `wq` until woken below, after they are no longer used.
+        let (b0_ref, b1_ref) = unsafe { (b0.as_ref(), b1.as_ref()) };
+
+        // In place: both locked by this transaction, both still queued, list holds both in queue
+        // order. The locks are released by hand afterwards, since nothing is dequeued.
+        let mut in_place = (false, [false; 2], u32::MAX, [None; 2], [None; 2]);
+        ChainLockTransaction::until_done(IRQ_SAVE_OPTION, clt_tag!("test_lfw_in_place"), |token| {
+            let mut guard = OwnerGuard::new(&*wq, token);
+            pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+            // SAFETY: `list` is newly initialized and empty; every lock it holds is released
+            // below before the list is dropped (nothing is dequeued).
+            let locked = unsafe {
+                WaitQueueLockOps::lock_for_wake_all_in_place(
+                    &mut guard.proof(),
+                    list.as_mut(),
+                    token,
+                )
+            };
+            let held = [b0_ref, b1_ref].map(|t| t.lock().is_held(token));
+            let mut listed = list.as_list_ref().iter().map(ThreadPtr::from);
+            let listed = [listed.next(), listed.next()];
+            in_place = (locked, held, guard.proof().count(), listed, front_two(&guard.proof()));
+            for t in [b0_ref, b1_ref] {
+                if t.lock().is_held(token) {
+                    // SAFETY: The lock was acquired by `lock_for_wake_all_in_place` in this
+                    // transaction and no `ChainLockProof` for `t` is live.
+                    unsafe { t.lock().as_chain_lock() }.release(token);
+                }
+            }
+            list.as_mut().as_list().clear();
+            guard.release();
+            ChainLockTransaction::finalize(token);
+            DONE
+        });
+        let (locked, held, count, listed, queued) = in_place;
+        expect_true!(locked);
+        expect_true!(held == [true; 2]);
+        expect_eq!(count, 2);
+        expect_true!(listed == queued);
+        expect_true!(b0_ref.lock().is_unlocked());
+        expect_true!(b1_ref.lock().is_unlocked());
+
+        // In place, backing off: a foreign holder of one lock makes the call fail and leave
+        // nothing locked or listed.
+        let holder = ForeignLockHolder::new(b1_ref);
+        let mut backoff = (true, true, false);
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("test_lfw_in_place_bo"),
+            |token| {
+                let mut guard = OwnerGuard::new(&*wq, token);
+                pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+                // SAFETY: `list` is newly initialized and empty; the call is expected to fail and
+                // leave it empty, which is checked below before it is dropped.
+                let locked = unsafe {
+                    WaitQueueLockOps::lock_for_wake_all_in_place(
+                        &mut guard.proof(),
+                        list.as_mut(),
+                        token,
+                    )
+                };
+                backoff = (locked, b0_ref.lock().is_held(token), list.is_empty());
+                guard.release();
+                ChainLockTransaction::finalize(token);
+                DONE
+            },
+        );
+        drop(holder);
+        let (locked, b0_held, list_empty) = backoff;
+        expect_false!(locked);
+        expect_false!(b0_held);
+        expect_true!(list_empty);
+
+        // In queue: both dequeued with the status and unblocked.
+        let mut in_queue = (false, u32::MAX);
+        ChainLockTransaction::until_done(
+            PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION,
+            clt_tag!("test_lfw_in_queue"),
+            |token| {
+                let mut guard = OwnerGuard::new(&*wq, token);
+                pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+                // SAFETY: `list` is newly initialized and empty; on success the transaction is
+                // finalized and `list` is passed to `scheduler::unblock_list` below.
+                let locked = unsafe {
+                    WaitQueueLockOps::lock_for_wake_all_in_queue(
+                        &mut guard.proof(),
+                        Err(Status::CANCELED),
+                        list.as_mut(),
+                        token,
+                    )
+                };
+                if !locked {
+                    return TransactionResult::BACKOFF;
+                }
+                in_queue = (locked, guard.proof().count());
+                ChainLockTransaction::finalize(token);
+                guard.release();
+                // SAFETY: The transaction is finalized; every thread in the list was locked and
+                // dequeued by `lock_for_wake_all_in_queue` with no guard or proof left live.
+                unsafe { scheduler::unblock_list(list, token) };
+                TransactionResult::DONE
+            },
+        );
+        let (locked, count) = in_queue;
+        expect_true!(locked);
+        expect_eq!(count, 0);
+        expect_eq!(blockers.join(b0), ZX_ERR_CANCELED);
+        expect_eq!(blockers.join(b1), ZX_ERR_CANCELED);
+        expect_eq!(queue_count(&wq), 0);
+    }
+
+    /// `lock_for_wake_one_in_place`: front thread only, empty queue, and backoff.
+    #[test]
+    fn test_lock_for_wake_one_in_place() {
+        pin_init::stack_pin_init!(let wq = WaitQueue::init());
+
+        // Empty queue: success with an empty list.
+        let mut empty = (false, false);
+        ChainLockTransaction::until_done(
+            IRQ_SAVE_OPTION,
+            clt_tag!("test_lfw_one_empty"),
+            |token| {
+                let mut guard = OwnerGuard::new(&*wq, token);
+                pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+                // SAFETY: `list` is newly initialized and empty, and the queue is empty, so no lock
+                // is taken.
+                let locked = unsafe {
+                    WaitQueueLockOps::lock_for_wake_one_in_place(
+                        &mut guard.proof(),
+                        list.as_mut(),
+                        token,
+                    )
+                };
+                empty = (locked, list.is_empty());
+                guard.release();
+                ChainLockTransaction::finalize(token);
+                DONE
+            },
+        );
+        expect_true!(empty.0);
+        expect_true!(empty.1);
+
+        let ctx = BlockCtx::new(&wq, ResourceOwnership::Normal);
+        let mut blockers = Blockers::spawn_each([&ctx, &ctx]);
+        unittest::assert_true!(blockers.all_spawned());
+        let (first, second) = in_queue_order(&wq, blockers.get(0), blockers.get(1));
+        // SAFETY: Both are blocked in `wq` until woken below, after they are no longer used.
+        let (first_ref, second_ref) = unsafe { (first.as_ref(), second.as_ref()) };
+
+        // Only the front thread is locked and listed; both stay queued.
+        let mut one = (false, [false; 2], u32::MAX, [None; 2]);
+        ChainLockTransaction::until_done(IRQ_SAVE_OPTION, clt_tag!("test_lfw_one"), |token| {
+            let mut guard = OwnerGuard::new(&*wq, token);
+            pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+            // SAFETY: `list` is newly initialized and empty; the lock it holds is released below
+            // before the list is dropped (nothing is dequeued).
+            let locked = unsafe {
+                WaitQueueLockOps::lock_for_wake_one_in_place(
+                    &mut guard.proof(),
+                    list.as_mut(),
+                    token,
+                )
+            };
+            let held = [first_ref, second_ref].map(|t| t.lock().is_held(token));
+            let mut listed = list.as_list_ref().iter().map(ThreadPtr::from);
+            let listed = [listed.next(), listed.next()];
+            one = (locked, held, guard.proof().count(), listed);
+            if first_ref.lock().is_held(token) {
+                // SAFETY: The lock was acquired by `lock_for_wake_one_in_place` in this
+                // transaction and no `ChainLockProof` for `first` is live.
+                unsafe { first_ref.lock().as_chain_lock() }.release(token);
+            }
+            list.as_mut().as_list().clear();
+            guard.release();
+            ChainLockTransaction::finalize(token);
+            DONE
+        });
+        let (locked, held, count, listed) = one;
+        expect_true!(locked);
+        expect_true!(held == [true, false]);
+        expect_eq!(count, 2);
+        expect_true!(listed == [Some(first), None]);
+        expect_true!(first_ref.lock().is_unlocked());
+
+        // Backing off: a foreign holder of the front thread's lock makes the call fail.
+        let holder = ForeignLockHolder::new(first_ref);
+        let mut backoff = (true, false);
+        ChainLockTransaction::until_done(IRQ_SAVE_OPTION, clt_tag!("test_lfw_one_bo"), |token| {
+            let mut guard = OwnerGuard::new(&*wq, token);
+            pin_init::stack_pin_init!(let list = ThreadUnblockList::init());
+            // SAFETY: `list` is newly initialized and empty; the call is expected to fail and
+            // leave it empty, which is checked below before it is dropped.
+            let locked = unsafe {
+                WaitQueueLockOps::lock_for_wake_one_in_place(
+                    &mut guard.proof(),
+                    list.as_mut(),
+                    token,
+                )
+            };
+            backoff = (locked, list.is_empty());
+            guard.release();
+            ChainLockTransaction::finalize(token);
+            DONE
+        });
+        drop(holder);
+        expect_false!(backoff.0);
+        expect_true!(backoff.1);
+
+        wq.wake_all(Ok(()));
+        expect_eq!(blockers.join(first), ZX_OK);
+        expect_eq!(blockers.join(second), ZX_OK);
+        expect_eq!(queue_count(&wq), 0);
     }
 }

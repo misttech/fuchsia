@@ -40,10 +40,6 @@ enum class Interruptible : bool { No, Yes };
 enum class ForceInheritance : bool { No, Yes };
 
 extern "C" {
-bool cpp_wait_queue_lock_ops_lock_for_wake_all_in_queue(WaitQueue* queue,
-                                                        zx_status_t wait_queue_error,
-                                                        void* unblock_list_out);
-
 void rust_wait_queue_base_destroy(WaitQueueBase* wait_queue);
 uint32_t rust_wait_queue_base_magic(const WaitQueueBase* wait_queue);
 bool rust_wait_queue_base_is_empty(const WaitQueueBase* wait_queue);
@@ -126,7 +122,6 @@ class WaitQueueCollection {
    private:
     // WaitQueues, WaitQueueCollections, and their List types, can
     // directly manipulate the contents of the per-thread state, for now.
-    friend struct BrwLockOps;
     friend class OwnedWaitQueue;
     friend class Scheduler;
     friend class WaitQueue;
@@ -264,8 +259,6 @@ class WaitQueueBase : public ChainLockable {
           TA_REQ(chainlock_transaction_token, preempt_disabled_token);
 
  protected:
-  friend struct BrwLockOps;
-  friend struct WaitQueueLockOps;
   friend class Scheduler;
 
   explicit constexpr WaitQueueBase(uint32_t magic) : magic_(magic) {}

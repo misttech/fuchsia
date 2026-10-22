@@ -12,6 +12,7 @@
 
 #include <kernel/ffi.h>
 
+class WaitQueue;
 class WaitQueueCollection;
 struct Thread;
 
@@ -30,6 +31,20 @@ zx_duration_mono_t rust_wait_queue_collection_min_inheritable_relative_deadline(
 // empty.
 void* rust_wait_queue_collection_find_inherited_scheduler_state_storage(
     const WaitQueueCollection* collection);
+
+// Rust implementations of WaitQueueLockOps and BrwLockOps. The C++ methods of the same name in
+// wait.cc are thin forwarders to these and carry the lock annotations; each entry requires an
+// active, non-finalized ChainLockTransaction which holds |queue|'s lock.
+//
+// The ktl::optional results become a bool return (false on backoff) plus out-parameters. |list| is
+// a Thread::UnblockList* (a nested type, so passed as void*); it must be empty on entry and, on
+// success, receives the threads to wake, each with its lock held.
+bool rust_wait_queue_lock_ops_lock_for_wake_all_in_queue(const WaitQueue* queue,
+                                                         zx_status_t wait_queue_error, void* list);
+bool rust_wait_queue_lock_ops_lock_for_wake_all_in_place(const WaitQueue* queue, void* list);
+bool rust_wait_queue_lock_ops_lock_for_wake_one_in_place(const WaitQueue* queue, void* list);
+bool rust_brw_lock_ops_lock_for_wake(const WaitQueue* queue, zx_instant_mono_t now, void* list,
+                                     uint32_t* count);
 
 // C++ side of WqTraceDepth, called by the Rust Insert/Remove.
 FFI_ALWAYS_INLINE void cpp_wq_trace_depth(const WaitQueueCollection* collection, uint32_t depth);

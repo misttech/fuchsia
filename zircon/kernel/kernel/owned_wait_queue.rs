@@ -12,7 +12,7 @@ use crate::kernel::deadline::Deadline;
 use crate::kernel::scheduler::WaitQueueInheritedSchedulerState;
 use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
 pub use crate::kernel::scheduler_state::SchedulerStateEffectiveProfile;
-use crate::kernel::thread::{PreemptDisabledToken, Thread, ThreadPtr};
+use crate::kernel::thread::{PreemptDisabledToken, Thread, ThreadPtr, UnblockList};
 use crate::kernel::wait_queue::{
     ForceInheritance, Interruptible, ResourceOwnership, WaitQueueBase, WaitQueueCollection,
     WaitQueueLockClass,
@@ -368,6 +368,11 @@ pub struct ThreadUnblockList {
 
 static_assert!(size_of::<ThreadUnblockList>() == size_of::<bindings::Thread_UnblockList>());
 static_assert!(align_of::<ThreadUnblockList>() == align_of::<bindings::Thread_UnblockList>());
+// `Thread::UnblockList` and the Rust `UnblockList` are two views of one list: both are a single
+// sentinel-encoded head pointer over the same `unblock_list_node` of `Thread` (whose offset is
+// asserted in `thread.rs`), which is what lets `as_list` reinterpret the storage.
+static_assert!(size_of::<UnblockList>() == size_of::<bindings::Thread_UnblockList>());
+static_assert!(align_of::<UnblockList>() == align_of::<bindings::Thread_UnblockList>());
 
 impl ThreadUnblockList {
     /// Returns an in-place pinned initializer for a new, empty `ThreadUnblockList`.
@@ -382,6 +387,53 @@ impl ThreadUnblockList {
     #[inline]
     pub fn as_raw(&self) -> *mut bindings::Thread_UnblockList {
         self.raw.get()
+    }
+
+    /// Views the list as the Rust [`UnblockList`] over the same storage.
+    #[inline]
+    pub fn as_list(self: Pin<&mut Self>) -> Pin<&mut UnblockList> {
+        // SAFETY: `Self::init` constructed a valid `Thread::UnblockList` in `raw`, which shares
+        // its layout and sentinel encoding with `UnblockList` (asserted above); the projection
+        // keeps the list pinned and the `&mut` borrow of `self` makes it unique.
+        unsafe { self.map_unchecked_mut(|list| &mut *list.raw.get().cast::<UnblockList>()) }
+    }
+
+    /// Views the list as the Rust [`UnblockList`] over the same storage, shared.
+    #[inline]
+    pub fn as_list_ref(&self) -> &UnblockList {
+        // SAFETY: As in `as_list`; only shared access is handed out.
+        unsafe { &*self.raw.get().cast::<UnblockList>() }
+    }
+
+    /// Returns whether the list is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.as_list_ref().is_empty()
+    }
+
+    /// Adds `thread` to the back of the list.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `thread` is not currently a member of any unblock list, and
+    /// that it remains alive while it is a member of this list.
+    #[inline]
+    pub unsafe fn push_back(self: Pin<&mut Self>, thread: &Thread) {
+        // SAFETY: Forwarded from the caller.
+        unsafe { self.as_list().push_back_raw(NonNull::from(thread)) }
+    }
+
+    /// Removes and returns the [`Thread`] at the front of the list, if any.
+    #[inline]
+    pub fn pop_front(self: Pin<&mut Self>) -> Option<ThreadPtr> {
+        // SAFETY: Every member of the list is a live `Thread`.
+        self.as_list().pop_front().and_then(|p| unsafe { ThreadPtr::from_raw(p.as_ptr()) })
+    }
+
+    /// Returns an iterator over the [`Thread`]s in the list.
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = ThreadPtr> + '_ {
+        self.as_list_ref().iter().map(ThreadPtr::from)
     }
 }
 
