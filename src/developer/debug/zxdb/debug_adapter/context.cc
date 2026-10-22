@@ -22,6 +22,7 @@
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_async_backtrace.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_attach.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_breakpoint.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_console_command.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_continue.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_data_breakpoint.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_evaluate.h"
@@ -293,6 +294,13 @@ void DebugAdapterContext::Init() {
              std::function<void(dap::ResponseOrError<dap::ZxdbAsyncBacktraceResponse>)> callback) {
         DEBUG_LOG(DebugAdapter) << "ZxdbAsyncBacktraceRequest received";
         OnRequestZxdbAsyncBacktrace(this, req, std::move(callback));
+      });
+
+  dap_->registerHandler(
+      [this](const dap::ZxdbConsoleCommandRequest& req,
+             std::function<void(dap::ResponseOrError<dap::ZxdbConsoleCommandResponse>)> callback) {
+        DEBUG_LOG(DebugAdapter) << "ZxdbConsoleCommandRequest received";
+        OnRequestZxdbConsoleCommand(this, req, std::move(callback));
       });
 
   dap_->registerHandler([this](const dap::DisconnectRequest& req) {

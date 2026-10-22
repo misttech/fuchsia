@@ -1,4 +1,4 @@
-<!--* freshness: { reviewed: '2026-10-12' } *-->
+<!--* freshness: { reviewed: '2026-10-20' } *-->
 
 # Zxdb Debug Adapter Request Handlers (`zxdb/debug_adapter/handlers`)
 
@@ -7,7 +7,8 @@
 `//src/developer/debug/zxdb/debug_adapter/handlers` implements Debug Adapter
 Protocol (DAP) request handlers and custom `zxdb` extensions. These handlers
 manage target attach and launch, thread stepping, breakpoints and watchpoints,
-stack and async backtraces, variable scopes, and REPL evaluation.
+stack and async backtraces, variable scopes, expression evaluation, and raw
+console command execution.
 
 ## Interface
 
@@ -40,9 +41,12 @@ Public headers group DAP request records and handlers into these areas:
   `request_async_backtrace.h`): `dap::StackTraceRequestZxdb`,
   `zxdb::OnRequestStackTrace`, `dap::ZxdbAsyncBacktraceRequest`,
   `dap::ZxdbAsyncBacktraceResponse`, and `zxdb::OnRequestZxdbAsyncBacktrace`.
-- Scopes, variables, and REPL evaluation (`request_scopes.h`,
-  `request_variables.h`, `request_evaluate.h`): `zxdb::OnRequestScopes`,
-  `zxdb::OnRequestVariables`, and `zxdb::OnRequestEvaluate`.
+- Scopes, variables, expression evaluation, and console command execution
+  (`request_scopes.h`, `request_variables.h`, `request_evaluate.h`,
+  `request_console_command.h`): `zxdb::OnRequestScopes`,
+  `zxdb::OnRequestVariables`, `zxdb::OnRequestEvaluate`,
+  `dap::ZxdbConsoleCommandRequest`, `dap::ZxdbConsoleCommandResponse`, and
+  `zxdb::OnRequestZxdbConsoleCommand`.
 
 ## Invariants
 
@@ -73,6 +77,9 @@ Handler implementations must preserve these invariants:
 - `OnRequestPause` rejects requests that set both `processId` and `threadId`,
   and requires `processId > 0` when present.
 - `OnRequestZxdbProcess` requires `req.pid > 0` when present.
+- `OnRequestZxdbConsoleCommand` validates `req.frameId` via
+  `DebugAdapterContext::FrameforId` when present, and returns a DAP error if
+  `OfflineCommandContext` reports any command errors.
 - `OnRequestEvaluate` accepts only requests where `req.context` equals `repl`.
 - Per the DAP specification, handlers must send the command `Response` (such as
   `PauseResponse`) **before** any resulting `Event` (such as `StoppedEvent` or
@@ -102,7 +109,8 @@ Executing DAP request handlers produces these session and IPC side effects:
 - Sends `RemoteAPI::RunComponent` IPC requests when launching components without
   `RunInTerminal` support.
 - Updates `ConsoleContext` active selections and runs console commands via
-  `Console::ProcessInputLine` during `repl` `OnRequestEvaluate` calls.
+  `Console::ProcessInputLine` during `OnRequestZxdbConsoleCommand` and `repl`
+  `OnRequestEvaluate` calls.
 - Triggers asynchronous stack syncing (`Stack::EnsureFrames`), async task tree
   syncing (`AsyncTaskTree::Sync`), and expression evaluation (`EvalExpression`,
   `FillFormatNodeValue`, `FillFormatNodeDescription`).
