@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "mpmc",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/media/sessions:__pkg__",
+        "//src/starnix/modules/thermal:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:crossbeam",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_test(
+    name = "mpmc_lib_test",
+    srcs = ["src/test.rs"],
+    crate_root = "src/test.rs",
+    edition = "2024",
+    deps = [
+        ":mpmc",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fx_unittest_package(
+    name = "mpmc_tests",
+    unit_tests = [":mpmc_lib_test"],
+)
