@@ -142,6 +142,7 @@ class PipelineManager {
     std::queue<ConfigureStreamPipelineParams> configure_stream_pipeline;
   } pending_requests_;
   bool pipeline_changing_ = false;
+  uint32_t num_nodes_shutting_down_ = 0;
   bool streaming_enabled_ = true;
 
   std::vector<InternalConfigNode> current_roots_;

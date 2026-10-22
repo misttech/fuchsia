@@ -57,4 +57,9 @@ fuchsia_unittest_package("controller_unittest") {
   manifest = "meta/controller_unittest.cml"
   deps = [ ":controller_unittest_bin" ]
   test_type = "system"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

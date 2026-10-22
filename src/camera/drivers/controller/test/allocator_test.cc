@@ -4,6 +4,8 @@
 
 #include <lib/sys/cpp/component_context.h>
 
+#include <list>
+
 #include "src/camera/drivers/controller/memory_allocation.h"
 #include "src/camera/drivers/controller/pipeline_manager.h"
 #include "src/camera/drivers/controller/sherlock/common_util.h"
@@ -232,6 +234,43 @@ TEST_F(ControllerMemoryAllocatorTest, ConvertImageFormat2TypeTest) {
   EXPECT_EQ(c_image_format.pixel_aspect_ratio_width, hlcpp_image_format.pixel_aspect_ratio().width);
   EXPECT_EQ(c_image_format.pixel_aspect_ratio_height,
             hlcpp_image_format.pixel_aspect_ratio().height);
+}
+
+std::list<std::reference_wrapper<const InternalConfigNode>> GetPathICNodes(
+    const std::vector<InternalConfigNode>& roots, const std::vector<uint8_t>& path);
+
+TEST_F(ControllerMemoryAllocatorTest, GetPathICNodesOutOfBounds) {
+  auto internal_config = MonitorConfigFullRes();
+  std::vector<InternalConfigNode> roots;
+  roots.push_back(internal_config);
+
+  // Valid path (size 1)
+  std::vector<uint8_t> valid_path = {0};
+  auto valid_nodes = GetPathICNodes(roots, valid_path);
+  EXPECT_EQ(valid_nodes.size(), 1u);
+
+  // Out of bounds root index
+  std::vector<uint8_t> oob_root_path = {1};
+  auto oob_root_nodes = GetPathICNodes(roots, oob_root_path);
+  EXPECT_TRUE(oob_root_nodes.empty());
+
+  // Out of bounds child index
+  // Assuming roots[0] has fewer than 10 children
+  std::vector<uint8_t> oob_child_path = {0, 10};
+  auto oob_child_nodes = GetPathICNodes(roots, oob_child_path);
+  EXPECT_TRUE(oob_child_nodes.empty());
+}
+
+TEST_F(ControllerMemoryAllocatorTest, PipelineManagerShutdownSyncTest) {
+  auto internal_config = MonitorConfigFullRes();
+  std::vector<InternalConfigNode> roots;
+  roots.push_back(internal_config);
+  pipeline_manager_->SetRoots(roots);
+
+  bool shutdown_complete = false;
+  pipeline_manager_->Shutdown([&]() { shutdown_complete = true; });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(shutdown_complete);
 }
 
 }  // namespace camera

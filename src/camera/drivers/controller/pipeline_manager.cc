@@ -244,7 +244,19 @@ void PipelineManager::UpdateInputNodeStreamingState() {
 void PipelineManager::ShutdownAndRemoveNode(const std::vector<uint8_t>& path) {
   TRACE_DURATION("camera", "PipelineManager::ShutdownAndRemoveNode", "path", Format(path));
   ZX_ASSERT(pipeline_changing_);
-  graph_.nodes.at(path).process_node->Shutdown([this, path = path] {
+  auto it = graph_.nodes.find(path);
+  if (it == graph_.nodes.end()) {
+    zxlogf(WARNING, "ShutdownAndRemoveNode: path not found in graph");
+    Prune();
+    return;
+  }
+  num_nodes_shutting_down_++;
+  it->second.process_node->Shutdown([this, path = path] {
+    if (num_nodes_shutting_down_ > 0) {
+      num_nodes_shutting_down_--;
+    } else {
+      zxlogf(ERROR, "num_nodes_shutting_down_ underflow prevented");
+    }
     auto target = graph_.nodes.extract(path);
     auto parent = path;
     parent.pop_back();
@@ -267,8 +279,13 @@ void PipelineManager::Prune() {
       return;
     }
   }
-  zxlogf(INFO, "Prune() - no prune targets found");
-  SetPipelineChanging(false);
+  if (num_nodes_shutting_down_ == 0) {
+    zxlogf(INFO, "Prune() - no prune targets found");
+    SetPipelineChanging(false);
+  } else {
+    zxlogf(INFO, "Prune() - no prune targets found, but %u nodes still shutting down",
+           num_nodes_shutting_down_);
+  }
 }
 
 std::vector<fuchsia::sysmem2::BufferCollectionConstraints> PipelineManager::GatherOutputConstraints(
@@ -323,12 +340,22 @@ std::string PipelineManager::Dump(bool log, cpp20::source_location location) con
 // TODO(100525): Ideally the controller would just create a bidirectionally traversible
 // representation of the product config when first loaded.
 std::list<std::reference_wrapper<const InternalConfigNode>> GetPathICNodes(
-    const std::vector<InternalConfigNode>& roots, std::vector<uint8_t> path) {
+    const std::vector<InternalConfigNode>& roots, const std::vector<uint8_t>& path) {
   if (path.empty()) {
+    return {};
+  }
+  if (path[0] >= roots.size()) {
+    zxlogf(ERROR, "GetPathICNodes: root index %u out of bounds for %zu roots", path[0],
+           roots.size());
     return {};
   }
   std::list<std::reference_wrapper<const InternalConfigNode>> nodes{roots[path[0]]};
   for (size_t i = 1; i < path.size(); ++i) {
+    if (path[i] >= nodes.back().get().child_nodes.size()) {
+      zxlogf(ERROR, "GetPathICNodes: child index %u out of bounds for %zu children", path[i],
+             nodes.back().get().child_nodes.size());
+      return {};
+    }
     nodes.push_back(nodes.back().get().child_nodes[path[i]]);
   }
   return nodes;
@@ -495,12 +522,20 @@ void PipelineManager::SetRegionOfInterest(
     fuchsia::camera2::Stream::SetRegionOfInterestCallback callback) {
   auto local_path = origin;
   auto path_icnodes = GetPathICNodes(current_roots_, local_path);
+  if (path_icnodes.size() != origin.size() || origin.empty()) {
+    callback(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   while (!local_path.empty()) {
     auto& icnode = path_icnodes.back().get();
-    auto& fgnode = graph_.nodes.at(local_path);
-    if (icnode.type == kGe2d && icnode.ge2d_info.config_type == GE2D_RESIZE) {
-      BindPolyMethod(fgnode.process_node.get(), &Ge2dNode::SetCropRect);
-      static_cast<Ge2dNode*>(fgnode.process_node.get())->SetCropRect(x_min, y_min, x_max, y_max);
+    auto it = graph_.nodes.find(local_path);
+    if (it != graph_.nodes.end()) {
+      auto& fgnode = it->second;
+      if (fgnode.process_node->Type() == kGe2d && icnode.type == kGe2d &&
+          icnode.ge2d_info.config_type == GE2D_RESIZE) {
+        BindPolyMethod(fgnode.process_node.get(), &Ge2dNode::SetCropRect);
+        static_cast<Ge2dNode*>(fgnode.process_node.get())->SetCropRect(x_min, y_min, x_max, y_max);
+      }
     }
     local_path.pop_back();
     path_icnodes.pop_back();
@@ -517,15 +552,22 @@ void PipelineManager::SetImageFormat(const std::vector<uint8_t>& origin,
   // the graph are notified. For most, the request does nothing.
   auto local_path = origin;
   auto path_icnodes = GetPathICNodes(current_roots_, local_path);
+  if (path_icnodes.size() != origin.size() || origin.empty()) {
+    callback(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   if (image_format_index >= path_icnodes.back().get().image_formats.size()) {
     callback(ZX_ERR_INVALID_ARGS);
     return;
   }
   while (!local_path.empty()) {
     auto& icnode = path_icnodes.back().get();
-    auto& fgnode = graph_.nodes.at(local_path);
-    if (icnode.image_formats.size() > 1) {
-      fgnode.process_node->SetOutputFormat(image_format_index, [] {});
+    auto it = graph_.nodes.find(local_path);
+    if (it != graph_.nodes.end()) {
+      auto& fgnode = it->second;
+      if (icnode.image_formats.size() > 1) {
+        fgnode.process_node->SetOutputFormat(image_format_index, [] {});
+      }
     }
     local_path.pop_back();
     path_icnodes.pop_back();
@@ -536,6 +578,10 @@ void PipelineManager::SetImageFormat(const std::vector<uint8_t>& origin,
 void PipelineManager::GetImageFormats(const std::vector<uint8_t>& origin,
                                       fuchsia::camera2::Stream::GetImageFormatsCallback callback) {
   auto path_icnodes = GetPathICNodes(current_roots_, origin);
+  if (path_icnodes.size() != origin.size() || origin.empty()) {
+    callback({});
+    return;
+  }
   auto& icnode = path_icnodes.back().get();
 
   std::vector<::fuchsia::sysmem::ImageFormat_2> v1_image_formats;
@@ -555,7 +601,11 @@ void PipelineManager::GetBuffers(const std::vector<uint8_t>& origin,
   // in_place nodes may not have bound buffer collection ptr, walk up to find the real collection.
   auto local_path = origin;
   local_path.pop_back();
-  while (!local_path.empty() && !graph_.nodes.at(local_path).output_buffers) {
+  while (!local_path.empty()) {
+    auto it = graph_.nodes.find(local_path);
+    if (it == graph_.nodes.end() || it->second.output_buffers) {
+      break;
+    }
     local_path.pop_back();
   }
   if (local_path.empty()) {
@@ -563,7 +613,13 @@ void PipelineManager::GetBuffers(const std::vector<uint8_t>& origin,
     fprintf(stderr, "no output buffers found in ancestors of %s", origin_str.c_str());
     abort();
   }
-  auto& fgnode = graph_.nodes.at(local_path);
+  auto it = graph_.nodes.find(local_path);
+  if (it == graph_.nodes.end()) {
+    zxlogf(ERROR, "GetBuffers: path node not found inside graph");
+    callback(nullptr);
+    return;
+  }
+  auto& fgnode = it->second;
   auto& input_buffer_collection = fgnode.output_buffers->ptr;
   ZX_ASSERT(input_buffer_collection);
   fuchsia::sysmem2::BufferCollectionTokenHandle token;
