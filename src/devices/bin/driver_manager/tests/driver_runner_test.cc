@@ -3048,6 +3048,181 @@ TEST_P(DriverRunnerTest, DriverDevelopmentRunHealthCheck) {
   StopDriverComponent(std::move(root_driver->controller));
 }
 
+TEST_P(DriverRunnerTest, InspectHealthChecks) {
+  SetupDriverRunner();
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+  root_driver->driver->SetHealthCheckHandler([](const fdfw::HealthCheckRequest& req)
+                                                 -> fit::result<fdfw::HealthCheckError,
+                                                                fdfw::HealthCheckResponse> {
+    return fit::ok(fdfw::HealthCheckResponse{{
+        .diagnostics =
+            std::vector<fdfw::HealthDiagnosticItem>{
+                {{.key = "pipe", .value = fdfw::HealthDiagnosticValue::WithStringValue("stalled")}},
+                {{.key = "drift", .value = fdfw::HealthDiagnosticValue::WithIntValue(-12)}},
+                {{.key = "frames", .value = fdfw::HealthDiagnosticValue::WithUintValue(42u)}},
+                {{.key = "locked", .value = fdfw::HealthDiagnosticValue::WithBoolValue(false)}},
+                {{.key = "last_vsync",
+                  .value = fdfw::HealthDiagnosticValue::WithTimestamp(zx::time_boot(123456789))}},
+            },
+        .conditions =
+            std::vector<fdfw::HealthCondition>{
+                {{
+                    .status = fdfw::HealthStatus::kUnhealthy,
+                    .reason_code = "VSYNC_STALLED",
+                    .message = "No VSYNC interrupt in 500ms",
+                    .diagnostics =
+                        std::vector<fdfw::HealthDiagnosticItem>{
+                            {{.key = "stall_ms",
+                              .value = fdfw::HealthDiagnosticValue::WithUintValue(500u)}},
+                        },
+                    .first_observed = zx::time_boot(1000),
+                    .last_observed = zx::time_boot(2000),
+                    .occurrence_count = 3,
+                }},
+                {{
+                    .status = fdfw::HealthStatus::kDegraded,
+                    .reason_code = "TE_JITTER",
+                }},
+            },
+    }});
+  });
+
+  auto read_hc_inspect = [this]() -> inspect::Hierarchy {
+    class FakeHcContext : public fpromise::context {
+     public:
+      fpromise::executor* executor() const override { return nullptr; }
+      fpromise::suspended_task suspend_task() override { return fpromise::suspended_task(); }
+    } context;
+    // Also verify the lazy "health_checks" node registered on the component inspector.
+    auto full = inspect::ReadFromInspector(inspector_.inspector())(context).take_value();
+    EXPECT_NE(nullptr, full.GetByPath({"health_checks"}));
+    auto inspector = driver_runner().InspectHealthChecks()(context).take_value();
+    return inspect::ReadFromInspector(inspector)(context).take_value();
+  };
+
+  // Before running a health check, InspectHealthChecks() has no child nodes.
+  {
+    auto hierarchy = read_hc_inspect();
+    EXPECT_TRUE(hierarchy.children().empty());
+  }
+
+  auto req = fuchsia_driver_framework::HealthCheckRequest::kFast;
+  bool hc_done = false;
+  driver_runner().root_node()->RunHealthCheck(req, [&hc_done](auto result) {
+    ASSERT_TRUE(result.is_ok());
+    hc_done = true;
+  });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  EXPECT_TRUE(hc_done);
+
+  {
+    auto hierarchy = read_hc_inspect();
+    const auto* root_node = hierarchy.GetByPath({"root"});
+    ASSERT_NE(nullptr, root_node);
+    EXPECT_EQ("UNHEALTHY",
+              root_node->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ(nullptr, root_node->node().get_property<inspect::StringPropertyValue>("error"));
+    EXPECT_EQ("FAST",
+              root_node->node().get_property<inspect::StringPropertyValue>("level")->value());
+    EXPECT_NE(nullptr,
+              root_node->node().get_property<inspect::IntPropertyValue>("last_check_monotonic_ns"));
+    EXPECT_EQ(root_driver_url,
+              root_node->node().get_property<inspect::StringPropertyValue>("driver_url")->value());
+
+    const auto* diag_node = hierarchy.GetByPath({"root", "diagnostics"});
+    ASSERT_NE(nullptr, diag_node);
+    EXPECT_EQ("stalled",
+              diag_node->node().get_property<inspect::StringPropertyValue>("pipe")->value());
+    EXPECT_EQ(-12, diag_node->node().get_property<inspect::IntPropertyValue>("drift")->value());
+    EXPECT_EQ(42u, diag_node->node().get_property<inspect::UintPropertyValue>("frames")->value());
+    EXPECT_EQ(false, diag_node->node().get_property<inspect::BoolPropertyValue>("locked")->value());
+    EXPECT_EQ(123456789,
+              diag_node->node().get_property<inspect::IntPropertyValue>("last_vsync")->value());
+
+    // Both conditions are published under "conditions", keyed by reason code.
+    const auto* vsync_node = hierarchy.GetByPath({"root", "conditions", "VSYNC_STALLED"});
+    ASSERT_NE(nullptr, vsync_node);
+    EXPECT_EQ("UNHEALTHY",
+              vsync_node->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ("No VSYNC interrupt in 500ms",
+              vsync_node->node().get_property<inspect::StringPropertyValue>("message")->value());
+    EXPECT_EQ(
+        1000,
+        vsync_node->node().get_property<inspect::IntPropertyValue>("first_observed")->value());
+    EXPECT_EQ(2000,
+              vsync_node->node().get_property<inspect::IntPropertyValue>("last_observed")->value());
+    EXPECT_EQ(
+        3u,
+        vsync_node->node().get_property<inspect::UintPropertyValue>("occurrence_count")->value());
+    const auto* vsync_diag =
+        hierarchy.GetByPath({"root", "conditions", "VSYNC_STALLED", "diagnostics"});
+    ASSERT_NE(nullptr, vsync_diag);
+    EXPECT_EQ(500u,
+              vsync_diag->node().get_property<inspect::UintPropertyValue>("stall_ms")->value());
+
+    const auto* jitter_node = hierarchy.GetByPath({"root", "conditions", "TE_JITTER"});
+    ASSERT_NE(nullptr, jitter_node);
+    EXPECT_EQ("DEGRADED",
+              jitter_node->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ(nullptr, jitter_node->node().get_property<inspect::StringPropertyValue>("message"));
+  }
+
+  // A "no information" error (UNAVAILABLE) does not replace the informative UNHEALTHY record.
+  root_driver->driver->SetHealthCheckHandler(
+      [](const fdfw::HealthCheckRequest& req)
+          -> fit::result<fdfw::HealthCheckError, fdfw::HealthCheckResponse> {
+        return fit::error(fdfw::HealthCheckError::kUnavailable);
+      });
+  hc_done = false;
+  driver_runner().root_node()->RunHealthCheck(req, [&hc_done](auto result) {
+    ASSERT_TRUE(result.is_error());
+    hc_done = true;
+  });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  EXPECT_TRUE(hc_done);
+  {
+    auto hierarchy = read_hc_inspect();
+    const auto* root_node = hierarchy.GetByPath({"root"});
+    ASSERT_NE(nullptr, root_node);
+    EXPECT_EQ("UNHEALTHY",
+              root_node->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ(nullptr, root_node->node().get_property<inspect::StringPropertyValue>("error"));
+    EXPECT_NE(nullptr, hierarchy.GetByPath({"root", "conditions", "VSYNC_STALLED"}));
+  }
+
+  // A TIMEOUT is informative, so it replaces the record and is encoded as status "ERROR" with
+  // the error named separately and a synthetic DISPATCHER_TIMEOUT condition.
+  root_driver->driver->SetHealthCheckHandler(
+      [](const fdfw::HealthCheckRequest& req)
+          -> fit::result<fdfw::HealthCheckError, fdfw::HealthCheckResponse> {
+        return fit::error(fdfw::HealthCheckError::kTimeout);
+      });
+  hc_done = false;
+  driver_runner().root_node()->RunHealthCheck(req, [&hc_done](auto result) {
+    ASSERT_TRUE(result.is_error());
+    hc_done = true;
+  });
+  EXPECT_TRUE(RunLoopUntilIdle());
+  EXPECT_TRUE(hc_done);
+  {
+    auto hierarchy = read_hc_inspect();
+    const auto* root_node = hierarchy.GetByPath({"root"});
+    ASSERT_NE(nullptr, root_node);
+    EXPECT_EQ("ERROR",
+              root_node->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ("TIMEOUT",
+              root_node->node().get_property<inspect::StringPropertyValue>("error")->value());
+    EXPECT_EQ("FAST",
+              root_node->node().get_property<inspect::StringPropertyValue>("level")->value());
+    EXPECT_NE(nullptr, hierarchy.GetByPath({"root", "conditions", "DISPATCHER_TIMEOUT"}));
+    EXPECT_EQ(nullptr, hierarchy.GetByPath({"root", "diagnostics"}));
+  }
+
+  StopDriverComponent(std::move(root_driver->controller));
+}
+
 // The tests are parameterized on whether to use the dynamic linker or not.
 INSTANTIATE_TEST_SUITE_P(/* no prefix */, DriverRunnerTest, testing::Values(true, false),
                          [](const testing::TestParamInfo<bool>& info) {

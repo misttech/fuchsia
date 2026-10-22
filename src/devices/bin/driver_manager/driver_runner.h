@@ -220,6 +220,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::unordered_set<DriverHost*> DriverHostsWithDriverUrl(std::string_view url);
 
   fpromise::promise<inspect::Inspector> Inspect() const;
+  fpromise::promise<inspect::Inspector> InspectHealthChecks() const;
 
   bool SuspendEnabled() override { return power_manager_ && power_manager_->SuspendEnabled(); }
 
