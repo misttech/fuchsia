@@ -18,7 +18,7 @@ use crate::object_store::object_record::{
 use crate::object_store::store_object_handle::{MaybeChecksums, NeedsTrim};
 use crate::object_store::transaction::{
     self, AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Operation, Options,
-    ReadGuard, Transaction, lock_keys,
+    ReadGuard, ReservationOptions, Transaction, lock_keys,
 };
 use crate::object_store::{
     AttributeId, Extent, HandleOptions, HandleOwner, RootDigest, StoreObjectHandle,
@@ -1692,10 +1692,24 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// to update the super block -- a case where we must borrow metadata space.
     pub async fn truncate_with_options(
         &self,
-        options: Options<'_>,
+        mut options: Options<'_>,
         size: u64,
     ) -> Result<(), Error> {
+        let borrowed_for_shrink =
+            size < self.get_size() && matches!(options.reservation, ReservationOptions::New);
+        if borrowed_for_shrink {
+            options.reservation = ReservationOptions::Borrowed;
+        }
         let mut transaction = self.new_transaction_with_options(options).await?;
+        let mut old_size = self.get_size();
+        if size > old_size && borrowed_for_shrink {
+            // The file shrank while we were waiting for the lock and we now need to grow it,
+            // which might require allocating space.
+            drop(transaction);
+            options.reservation = ReservationOptions::New;
+            transaction = self.new_transaction_with_options(options).await?;
+            old_size = self.get_size();
+        }
         {
             let state = self.state.lock();
             match &*state {
@@ -1703,7 +1717,6 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 _ => bail!(anyhow!(FxfsError::AccessDenied).context("Cannot truncate verity file")),
             }
         }
-        let old_size = self.get_size();
         if size == old_size {
             return Ok(());
         }
@@ -2131,7 +2144,7 @@ mod tests {
     use crate::object_store::data_object_handle::{OverwriteOptions, WRITE_ATTR_BATCH_SIZE};
     use crate::object_store::directory::replace_child;
     use crate::object_store::object_record::{FsverityMetadata, ObjectKey, ObjectValue, Timestamp};
-    use crate::object_store::transaction::{Mutation, Options, lock_keys};
+    use crate::object_store::transaction::{Mutation, Options, ReservationOptions, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
         AttributeId, AttributeKey, DataObjectHandle, DirType, Directory, Extent, ExtentMode,
@@ -5200,6 +5213,112 @@ mod tests {
         let before = skipped();
         object.truncate(block_size * 2).await.expect("grow failed");
         assert!(skipped() > before);
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_truncate_shrink_when_disk_full() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume("test", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let root_dir =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let (victim, filler) = {
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_txn");
+            let v = root_dir.create_child_file(&mut transaction, "victim").await.expect("create");
+            let f = root_dir.create_child_file(&mut transaction, "filler").await.expect("create");
+            transaction.commit().await.expect("commit");
+            (v, f)
+        };
+        {
+            let mut buf = victim.allocate_buffer(1_048_576).await;
+            buf.fill(0x55);
+            victim.write_or_append(Some(0), buf.as_ref()).await.expect("write victim");
+        }
+
+        fs.journal().force_compact().await.expect("compact");
+
+        let mut offset = 0;
+        for chunk_size in [65536usize, 4096, 512] {
+            let mut buf = filler.allocate_buffer(chunk_size).await;
+            buf.fill(0xAA);
+            while filler.write_or_append(Some(offset), buf.as_ref()).await.is_ok() {
+                offset += chunk_size as u64;
+            }
+        }
+        while let Ok(mut transaction) = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                Options::default(),
+            )
+            .await
+        {
+            root_dir
+                .create_child_file(&mut transaction, &format!("pad_{offset}"))
+                .await
+                .expect("pad");
+            transaction.commit().await.expect("commit pad");
+            offset += 1;
+        }
+
+        let free_when_full = fs.allocator().get_disk_bytes() - fs.allocator().get_used_bytes().0;
+        assert!(
+            free_when_full < crate::object_store::transaction::TRANSACTION_METADATA_MAX_AMOUNT,
+            "Remaining unallocated space ({free_when_full}) is less than \
+             TRANSACTION_METADATA_MAX_AMOUNT"
+        );
+
+        let sys_object = {
+            let root_store = fs.root_store();
+            let mut transaction = root_store
+                .new_transaction(
+                    lock_keys![],
+                    Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
+                )
+                .await
+                .expect("new_txn borrowed");
+            let obj = ObjectStore::create_object(
+                &root_store,
+                &mut transaction,
+                HandleOptions::default(),
+                None,
+            )
+            .await
+            .expect("create system store object");
+            root_store.add_to_graveyard(&mut transaction, obj.object_id());
+            transaction.commit().await.expect("commit system store object");
+            obj
+        };
+        // Growing a system store object with `ReservationOptions::Borrowed` must not overwrite the
+        // reservation to `ReservationOptions::New` and fail with `NoSpace` when the disk is full.
+        sys_object
+            .truncate_with_options(
+                Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
+                4096,
+            )
+            .await
+            .expect("Growing a system store object with Borrowed reservation should succeed");
+        assert_eq!(sys_object.get_size(), 4096);
+
+        // Shrinking `victim` via `DataObjectHandle::truncate(0)` must succeed even when the disk is
+        // 100% full because shrinking borrows metadata space.
+        victim.truncate(0).await.expect("DataObjectHandle::truncate(0) should succeed when full");
+        assert_eq!(victim.get_size(), 0);
+        let free_after_truncate =
+            fs.allocator().get_disk_bytes() - fs.allocator().get_used_bytes().0;
+        assert!(free_after_truncate >= free_when_full + 1_048_576);
 
         fs.close().await.expect("close failed");
     }
