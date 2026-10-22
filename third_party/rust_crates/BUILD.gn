@@ -6212,7 +6212,7 @@ rustc_library("clap_builder-v4_6_7") {
 
   deps = []
   deps += [ ":anstyle-v1_0_14" ]
-  deps += [ ":clap_lex-v1_1_0" ]
+  deps += [ ":clap_lex-v1_1_1" ]
   deps += [ ":strsim-v0_11_1" ]
 
   rustenv = []
@@ -6270,18 +6270,18 @@ rustc_macro("clap_derive-v4_6_7") {
   applicable_licenses = [ ":clap_derive-v4_6_7.license" ]
 }
 
-license("clap_lex-v1_1_0.license") {
+license("clap_lex-v1_1_1.license") {
   public_package_name = "clap_lex"
   license_files = [
-    "//third_party/rust_crates/vendor/clap_lex-1.1.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/clap_lex-1.1.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/clap_lex-1.1.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/clap_lex-1.1.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("clap_lex-v1_1_0") {
+rustc_library("clap_lex-v1_1_1") {
   crate_name = "clap_lex"
-  source_root = "//third_party/rust_crates/vendor/clap_lex-1.1.0/src/lib.rs"
-  output_name = "clap_lex-b8985ed23e0b744"
+  source_root = "//third_party/rust_crates/vendor/clap_lex-1.1.1/src/lib.rs"
+  output_name = "clap_lex-50bd9f75a488540c"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -6293,13 +6293,13 @@ rustc_library("clap_lex-v1_1_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b8985ed23e0b744",
-    "-Cextra-filename=-b8985ed23e0b744",
+    "-Cmetadata=50bd9f75a488540c",
+    "-Cextra-filename=-50bd9f75a488540c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":clap_lex-v1_1_0.license" ]
+  applicable_licenses = [ ":clap_lex-v1_1_1.license" ]
 }
 
 rustc_library("clipboard-win-v5_4_1") {
