@@ -32,6 +32,11 @@ build:_remote_common --remote_download_outputs={remote_download_outputs}
 # remote: will request remote execution on cache-misses
 build:remote --config=_remote_common
 build:remote --remote_executor=grpcs://remotebuildexecution.googleapis.com
+# Bazel waits on a single Execute stream with no deadline. Without keepalive
+# pings, a connection that dies silently (e.g. GCE dropping an idle TCP
+# connection) leaves the action hanging until the build times out. This
+# matches the Bazel 9 default.
+build:remote --grpc_keepalive_time=60s
 
 # remote_cache_only: will lookup cache, but on cache-miss, only spawn local execution
 build:remote_cache_only --config=_remote_common
