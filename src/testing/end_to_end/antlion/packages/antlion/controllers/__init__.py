@@ -16,7 +16,6 @@ from legacy_access_point import (
 
 from . import (
     fuchsia_device,
-    packet_capture,
     pdu,
 )
 
@@ -29,6 +28,5 @@ __all__ = [
     "fuchsia_device",
     "iperf_client",
     "iperf_server",
-    "packet_capture",
     "pdu",
 ]

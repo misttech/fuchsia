@@ -58,7 +58,6 @@ python_library("antlion") {
     "controllers/fuchsia_lib/lib_controllers/wlan_controller.py",
     "controllers/fuchsia_lib/lib_controllers/wlan_policy_controller.py",
     "controllers/fuchsia_lib/ssh.py",
-    "controllers/packet_capture.py",
     "controllers/pdu.py",
     "controllers/pdu_lib/__init__.py",
     "controllers/pdu_lib/synaccess/__init__.py",
@@ -66,9 +65,6 @@ python_library("antlion") {
     "decorators.py",
     "error.py",
     "keys.py",
-    "libs/__init__.py",
-    "libs/proc/__init__.py",
-    "libs/proc/process.py",
     "utils.py",
   ]
   library_deps = [
