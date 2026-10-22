@@ -10,6 +10,7 @@ group("psutils") {
   testonly = true
   deps = [
     ":handles",
+    ":memgraph",
     ":ps",
   ]
 }
@@ -38,6 +39,18 @@ test("handles") {
   ]
 }
 
+test("memgraph") {
+  output_name = "memgraph-test"
+  sources = [ "memgraph_test.cc" ]
+  deps = [
+    "//sdk/lib/fdio",
+    "//src/sys/bin/psutils:memgraph_internal",
+    "//zircon/system/ulib/task-utils",
+    "//zircon/system/ulib/zx",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
 bootfs_test("ps-bootfs-test") {
   name = "ps-test"
   deps = [ ":ps" ]
@@ -48,7 +61,16 @@ fuchsia_unittest_package("handles-test-pkg") {
   deps = [ ":handles" ]
 }
 
+fuchsia_unittest_package("memgraph-test-pkg") {
+  package_name = "memgraph-test"
+  manifest = "meta/memgraph_test.cml"
+  deps = [ ":memgraph" ]
+}
+
 group("tests") {
   testonly = true
-  deps = [ ":handles-test-pkg" ]
+  deps = [
+    ":handles-test-pkg",
+    ":memgraph-test-pkg",
+  ]
 }

@@ -118,16 +118,25 @@ source_set("resources") {
   ]
 }
 
-executable("memgraph") {
-  visibility = [ ":*" ]
+source_set("memgraph_internal") {
   sources = [
-    "memgraph.cc",
+    "memgraph_internal.cc",
     "object-utils.cc",
     "vmo-utils.c",
   ]
+  deps = [
+    "//sdk/lib/fdio",
+    "//zircon/system/ulib/task-utils",
+  ]
+}
+
+executable("memgraph") {
+  visibility = [ ":*" ]
+  sources = [ "memgraph.cc" ]
   include_dirs = [ target_gen_dir ]
   deps = [
     ":gen-memgraph-schema",
+    ":memgraph_internal",
     ":resources",
     "//sdk/lib/fdio",
     "//zircon/system/ulib/task-utils",
