@@ -62,7 +62,7 @@ def test_bug_urls_only_affected_lines():
     res = testing.run(bug_urls, files = {
         "foo.cc": testing.file(
             content = "%s1\nok\n" % _SHORT,
-            new_lines = {2: "ok"},
+            affected_lines = {2: "ok"},
         ),
     })
     asserts.eq(res.findings, ())

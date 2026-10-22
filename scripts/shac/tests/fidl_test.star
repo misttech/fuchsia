@@ -50,7 +50,7 @@ def test_fidl_comment_check():
 
 def test_fidl_comment_check_only_affected_lines():
     res = testing.run(_fidl_comment_check, files = {
-        "foo.fidl": testing.file(content = _FIDL, new_lines = {16: "// Should also be a doc comment,"}),
+        "foo.fidl": testing.file(content = _FIDL, affected_lines = {16: "// Should also be a doc comment,"}),
     })
     asserts.eq(res.findings, (_finding("foo.fidl", 16),))
 
