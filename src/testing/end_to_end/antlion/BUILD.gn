@@ -69,10 +69,6 @@ python_library("antlion") {
     "libs/__init__.py",
     "libs/proc/__init__.py",
     "libs/proc/process.py",
-    "test_utils/__init__.py",
-    "test_utils/abstract_devices/__init__.py",
-    "test_utils/abstract_devices/wlan_device.py",
-    "test_utils/fuchsia/__init__.py",
     "utils.py",
   ]
   library_deps = [
