@@ -2,7 +2,7 @@ Name: Scudo, GWP-ASan
 URL: https://github.com/llvm/llvm-project
 Original URL: https://llvm.org/docs/ScudoHardenedAllocator.html
 Upstream Git: https://github.com/llvm/llvm-project
-Revision: 253634e58aefd780a2612980a53c24c61e78c99c
+Revision: eb8cddbf1757653499264af4d701ebe8104002c9
 Security Critical: yes
 
 License File: gwp_asan/LICENSE.TXT
