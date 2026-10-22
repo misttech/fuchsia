@@ -5315,6 +5315,81 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
 
     assert_eq!(num_filed, 2);
 
+    // Drop the wake lease to allow a second suspend.
+    drop(wake_lease);
+
+    // Wait for second suspend to be attempted and resume.
+    assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
+    suspend_device
+        .resume(&tsc::DeviceResumeRequest::Result(tsc::SuspendResult {
+            suspend_duration: Some(1i64),
+            suspend_overhead: Some(1i64),
+            ..Default::default()
+        }))
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Take a new wake lease to prevent suspension while we cycle AA a third time.
+    let wake_lease =
+        activity_governor.acquire_wake_lease("prevent-suspend-third").await.unwrap().unwrap();
+
+    let prevent_suspend_third_koid =
+        wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+    let prevent_suspend_third_koid_str = prevent_suspend_third_koid.as_str();
+
+    // Wait for SAG to fully process the second resume.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            suppressed_no_suspend_reports: 0u64,
+            suspend_stats: contains {
+                ref fobs::SUSPEND_SUCCESS_COUNT: 2u64,
+            }
+        }
+    );
+
+    // Cycle Application Activity 6 times for a third burst (which should be suppressed by MAX_REPORTS = 2).
+    for _ in 0..6 {
+        let lease = activity_governor.take_application_activity_lease("cycle-lease-third").await?;
+        while aa_status.watch_power_level().await?.unwrap() != 1 {}
+        drop(lease);
+        while aa_status.watch_power_level().await?.unwrap() != 0 {}
+
+        block_until_inspect_matches!(
+            activity_governor_moniker,
+            root: contains {
+                ref fobs::WAKE_LEASES_NODE: {
+                    active_count: 1u64,
+                    oldest_active: {
+                        var prevent_suspend_third_koid_str: contains {
+                            ref fobs::WAKE_LEASE_ITEM_NAME: "prevent-suspend-third",
+                        }
+                    }
+                },
+            }
+        );
+    }
+
+    // Verify suppressed count incremented in Inspect and NO third crash report is filed.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            suppressed_no_suspend_reports: 1u64,
+        }
+    );
+
+    let mut watch_fut = Box::pin(querier.watch_file().fuse());
+    let mut timeout_fut4 =
+        Box::pin(fasync::Timer::new(fasync::MonotonicDuration::from_seconds(1).after_now()).fuse());
+
+    futures::select! {
+        num = watch_fut => return Err(anyhow::anyhow!("Unexpected third crash report filed: {}", num?)),
+        _ = timeout_fut4 => {
+            log::info!("Third crash report suppressed as expected.");
+        },
+    };
+
     drop(wake_lease);
     Ok(())
 }

@@ -1095,17 +1095,26 @@ enum ReportAction {
 
 /// Detects situations where the system repeatedly takes leases and drops them
 /// without entering suspend, potentially indicating a bug or an infinite loop.
-/// It reports when the lease is taken for the `CYCLE_THRESHOLD`th time.
+/// It reports when the lease is taken for the `CYCLE_THRESHOLD`th time,
+/// capped at `MAX_REPORTS` per boot.
 struct NoSuspendDetector {
     active_count: std::cell::Cell<u32>,
     cycle_count: std::cell::Cell<u32>,
+    report_count: std::cell::Cell<u32>,
+    suppressed_reports: IUint,
 }
 
 impl NoSuspendDetector {
     const CYCLE_THRESHOLD: u32 = 5;
+    const MAX_REPORTS: u32 = 2;
 
-    fn new() -> Self {
-        Self { active_count: std::cell::Cell::new(0), cycle_count: std::cell::Cell::new(0) }
+    fn new(suppressed_reports: IUint) -> Self {
+        Self {
+            active_count: std::cell::Cell::new(0),
+            cycle_count: std::cell::Cell::new(0),
+            report_count: std::cell::Cell::new(0),
+            suppressed_reports,
+        }
     }
 
     fn on_lease_taken(&self) -> ReportAction {
@@ -1114,7 +1123,14 @@ impl NoSuspendDetector {
         if active == 0 {
             let cycles = self.cycle_count.get();
             if cycles == Self::CYCLE_THRESHOLD {
-                action = ReportAction::ShouldReport;
+                let report_count = self.report_count.get();
+                if report_count < Self::MAX_REPORTS {
+                    self.report_count.set(report_count + 1);
+                    action = ReportAction::ShouldReport;
+                } else {
+                    log::info!("No-suspend loop detected; crash report suppressed");
+                    self.suppressed_reports.add(1);
+                }
             }
             self.cycle_count.set(cycles + 1);
         }
@@ -1579,7 +1595,9 @@ impl SystemActivityGovernor {
             inspect_root.create_lazy_child_with_thread_local("suspend_blockers", callback);
 
         let loop_detector = if config.use_suspender {
-            Some(std::rc::Rc::new(NoSuspendDetector::new()))
+            Some(std::rc::Rc::new(NoSuspendDetector::new(
+                inspect_root.create_uint("suppressed_no_suspend_reports", 0),
+            )))
         } else {
             None
         };
@@ -2682,20 +2700,52 @@ mod tests {
 
     #[fuchsia::test]
     fn test_no_suspend_detector() {
-        let detector = NoSuspendDetector::new();
+        let mut executor = fasync::TestExecutor::new();
+        let inspector = Inspector::default();
+        let detector = NoSuspendDetector::new(
+            inspector.root().create_uint("suppressed_no_suspend_reports", 0),
+        );
 
-        // Cycles from 0 to CYCLE_THRESHOLD - 1 should not file a report.
-        for _ in 0..NoSuspendDetector::CYCLE_THRESHOLD {
-            assert_eq!(detector.on_lease_taken(), ReportAction::DoNotReport);
+        let run_burst = || {
+            for _ in 0..NoSuspendDetector::CYCLE_THRESHOLD {
+                assert_eq!(detector.on_lease_taken(), ReportAction::DoNotReport);
+                detector.on_lease_dropped();
+            }
+            let action = detector.on_lease_taken();
             detector.on_lease_dropped();
-        }
+            action
+        };
 
-        // The next cycle start (representing the CYCLE_THRESHOLD + 1 lease taken) triggers the report.
-        assert_eq!(detector.on_lease_taken(), ReportAction::ShouldReport);
-        detector.on_lease_dropped();
+        // 1. First burst triggers report #1.
+        assert_eq!(run_burst(), ReportAction::ShouldReport);
 
-        // Subsequent cycles do not trigger the report.
+        // Subsequent cycles without suspend do not trigger the report or count as suppressed.
         assert_eq!(detector.on_lease_taken(), ReportAction::DoNotReport);
+        detector.on_lease_dropped();
+        assert_data_tree!(@executor executor, inspector, root: {
+            suppressed_no_suspend_reports: 0u64,
+        });
+
+        // 2. Suspend succeeds, resetting cycle_count; second burst triggers report #2.
+        detector.on_suspend_success();
+        assert_eq!(run_burst(), ReportAction::ShouldReport);
+        assert_data_tree!(@executor executor, inspector, root: {
+            suppressed_no_suspend_reports: 0u64,
+        });
+
+        // 3. Suspend succeeds again, but third burst exceeds MAX_REPORTS (2) and is suppressed.
+        detector.on_suspend_success();
+        assert_eq!(run_burst(), ReportAction::DoNotReport);
+        assert_data_tree!(@executor executor, inspector, root: {
+            suppressed_no_suspend_reports: 1u64,
+        });
+
+        // 4. Fourth burst after another suspend also increments suppressed count.
+        detector.on_suspend_success();
+        assert_eq!(run_burst(), ReportAction::DoNotReport);
+        assert_data_tree!(@executor executor, inspector, root: {
+            suppressed_no_suspend_reports: 2u64,
+        });
     }
 
     #[fuchsia::test]
