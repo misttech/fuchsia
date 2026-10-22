@@ -27,6 +27,7 @@ use starnix_core::vfs::pipe::register_pipe_fs;
 use starnix_logging::log_error;
 use starnix_modules_android_usb::usb_device_init;
 use starnix_modules_ashmem::ashmem_device_init;
+use starnix_modules_battery_manager::battery_manager_device_init;
 use starnix_modules_binderfs::BinderFs;
 use starnix_modules_cgroupfs::{CgroupV1Fs, cgroup2_fs};
 use starnix_modules_debugfs::debug_fs;
@@ -38,6 +39,7 @@ use starnix_modules_fastrpc::fastrpc_device_init;
 pub use starnix_modules_framebuffer::Framebuffer;
 use starnix_modules_functionfs::FunctionFs;
 use starnix_modules_fuse::{new_fuse_fs, new_fusectl_fs, open_fuse_device};
+use starnix_modules_goog_chip_info::goog_chip_info_device_init;
 use starnix_modules_gpu::gpu_device_init;
 use starnix_modules_gralloc::gralloc_device_init;
 use starnix_modules_hvdcp_opti::hvdcp_opti_init;
@@ -47,6 +49,7 @@ use starnix_modules_input::{EventProxyMode, StartRelaysArgs, new_input_relay};
 use starnix_modules_kgsl::kgsl_device_init;
 pub use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
+use starnix_modules_mmcblk_stub::mmcblk_stub_device_init;
 use starnix_modules_nanohub::nanohub_device_init;
 use starnix_modules_nmfs::nmfs_init;
 use starnix_modules_odpm::odpm_device_init;
@@ -71,8 +74,17 @@ use std::sync::Arc;
 
 /// Modules that are enabled by default for all containers unless explicitly disabled via
 /// `"-<module>"` in `program.modules`.
-const DEFAULT_MODULES: &[&str] =
-    &["device_mapper", "hw_random", "loop", "power_residency", "rtc", "tun", "zram"];
+const DEFAULT_MODULES: &[&str] = &[
+    "battery_manager",
+    "device_mapper",
+    "goog_chip_info",
+    "hw_random",
+    "loop",
+    "power_residency",
+    "rtc",
+    "tun",
+    "zram",
+];
 
 /// Validates that `name` is a known container module and that `args` (if `Some`) are valid for
 /// that module.
@@ -85,16 +97,19 @@ pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
         "thermal" => Some(starnix_modules_thermal::validate_args),
         "android_usb"
         | "ashmem"
+        | "battery_manager"
         | "data_collection_consent_sync"
         | "device_mapper"
         | "fastrpc"
         | "gfxstream"
+        | "goog_chip_info"
         | "google_odpm"
         | "gralloc"
         | "hvdcp_opti"
         | "hw_random"
         | "kgsl"
         | "loop"
+        | "mmcblk_stub"
         | "nanohub"
         | "network_manager"
         | "power_residency"
@@ -126,6 +141,7 @@ impl Modules {
                 usb_device_init(kernel).context("Failed to add android usb device nodes")?;
             }
             "ashmem" => ashmem_device_init(kernel),
+            "battery_manager" => battery_manager_device_init(kernel),
             "boot_notifier" => starnix_modules_boot::module_init(kernel, args)?,
             "data_collection_consent_sync" => consent_sync_init(kernel),
             "device_mapper" => {
@@ -150,6 +166,7 @@ impl Modules {
                 &self.initial_view_id_annotation,
             )?,
             "gfxstream" => gpu_device_init(kernel),
+            "goog_chip_info" => goog_chip_info_device_init(kernel),
             // Note: `google_odpm` and `hvdcp_opti` both statically register `iio:device0`;
             // `Modules::validate` rejects enabling both simultaneously.
             "google_odpm" => odpm_device_init(kernel),
@@ -186,6 +203,9 @@ impl Modules {
                 loop_device_init(kernel)?;
             }
             "magma" => starnix_modules_magma::module_init(kernel, args)?,
+            "mmcblk_stub" => {
+                mmcblk_stub_device_init(kernel).context("Failed to add stub mmcblk0 device")?;
+            }
             "nanohub" => nanohub_device_init(kernel),
             "network_manager" => {
                 if let Err(e) = nmfs_init(kernel) {
@@ -216,18 +236,27 @@ impl Modules {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ModuleState {
+    DefaultEnabled,
+    Enabled(Vec<String>),
+    Disabled,
+}
+
 /// Configuration and initialization registry for container kernel modules.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Modules {
-    entries: BTreeMap<String, Option<Vec<String>>>,
+    entries: BTreeMap<String, ModuleState>,
     enable_visual_debugging: bool,
     initial_view_id_annotation: String,
 }
 
 impl Default for Modules {
     fn default() -> Self {
-        let entries =
-            DEFAULT_MODULES.iter().map(|&module| (module.to_string(), Some(Vec::new()))).collect();
+        let entries = DEFAULT_MODULES
+            .iter()
+            .map(|&module| (module.to_string(), ModuleState::DefaultEnabled))
+            .collect();
         Self { entries, enable_visual_debugging: false, initial_view_id_annotation: String::new() }
     }
 }
@@ -278,7 +307,7 @@ impl Modules {
     /// Disables `module`, preventing it from being initialized even if enabled by default or in an
     /// included manifest shard.
     fn disable(&mut self, module: &str) {
-        self.entries.insert(module.to_string(), None);
+        self.entries.insert(module.to_string(), ModuleState::Disabled);
     }
 
     /// Enables `module` with no arguments, preserving any arguments or explicit disablement already
@@ -294,34 +323,51 @@ impl Modules {
     /// manifest shard) do not overwrite explicit module arguments.
     pub fn add_with_args(&mut self, module: &str, args: Vec<String>) {
         match self.entries.get_mut(module) {
-            Some(None) => {}
-            Some(Some(existing_args)) => {
+            Some(ModuleState::Disabled) => {}
+            Some(ModuleState::Enabled(existing_args)) => {
                 if !args.is_empty() {
                     *existing_args = args;
                 }
             }
-            None => {
-                self.entries.insert(module.to_string(), Some(args));
+            Some(ModuleState::DefaultEnabled) | None => {
+                self.entries.insert(module.to_string(), ModuleState::Enabled(args));
             }
         }
     }
 
     /// Returns whether `module` is enabled.
     pub fn is_enabled(&self, module: &str) -> bool {
-        matches!(self.entries.get(module), Some(Some(_)))
+        self.args(module).is_some()
     }
 
     /// Returns the normalized arguments configured for `module`, if enabled.
     pub fn args(&self, module: &str) -> Option<&[String]> {
-        self.entries.get(module).and_then(Option::as_deref)
+        match self.entries.get(module)? {
+            ModuleState::DefaultEnabled => {
+                // `hvdcp_opti` registers its own `power_supply/battery` device, superseding the
+                // default `battery_manager` module unless `battery_manager` was explicitly enabled.
+                if module == "battery_manager"
+                    && matches!(self.entries.get("hvdcp_opti"), Some(ModuleState::Enabled(_)))
+                {
+                    None
+                } else {
+                    Some(&[])
+                }
+            }
+            ModuleState::Enabled(args) => Some(args.as_slice()),
+            ModuleState::Disabled => None,
+        }
     }
 
     /// Validates all configured module names, module arguments, and cross-module constraints.
     pub fn validate(&self) -> Result<(), Error> {
-        for (module, args) in &self.entries {
+        for module in self.entries.keys() {
             let arg_refs: Option<Vec<&str>> =
-                args.as_ref().map(|a| a.iter().map(String::as_str).collect());
+                self.args(module).map(|a| a.iter().map(String::as_str).collect());
             validate_module(module, arg_refs.as_deref())?;
+        }
+        if self.is_enabled("battery_manager") && self.is_enabled("hvdcp_opti") {
+            bail!("modules 'battery_manager' and 'hvdcp_opti' cannot be enabled simultaneously");
         }
         if self.is_enabled("google_odpm") && self.is_enabled("hvdcp_opti") {
             bail!("modules 'google_odpm' and 'hvdcp_opti' cannot be enabled simultaneously");
@@ -341,8 +387,8 @@ impl Modules {
     /// Records the enabled modules and their arguments under a `"modules"` child Inspect node.
     pub fn record_inspect(&self, parent_node: &fuchsia_inspect::Node) {
         parent_node.record_child("modules", |inspect_node| {
-            for (module, args) in &self.entries {
-                if let Some(args) = args {
+            for module in self.entries.keys() {
+                if let Some(args) = self.args(module) {
                     inspect_node.record_string(module, args.join(" "));
                 }
             }
@@ -351,8 +397,8 @@ impl Modules {
 
     /// Initializes all enabled modules in `kernel`.
     pub fn init_modules(&self, kernel: &Arc<Kernel>) -> Result<(), Error> {
-        for (module, args) in &self.entries {
-            if let Some(args) = args {
+        for module in self.entries.keys() {
+            if let Some(args) = self.args(module) {
                 let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
                 self.init_module(module, kernel, &arg_refs)?;
             }

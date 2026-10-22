@@ -7,7 +7,6 @@ use crate::device::kobject::{Bus, Class, Device, DeviceMetadata, Subsystem};
 use crate::fs::sysfs::{build_device_directory, get_sysfs, register_cpu_devices};
 use crate::task::Kernel;
 use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
-use crate::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{FileSystemHandle, FsStr, FsString};
 use starnix_logging::bug_ref;
@@ -66,70 +65,6 @@ impl KObjectStore {
         // device configuration.
         // Eagerly create `/sys/devices/platform/soc` and `/sys/bus/platform/devices/soc`.
         let _ = self.soc_device();
-
-        registry.add_numberless_device(
-            "battery".into(),
-            /* parent = */ None,
-            self.get_or_create_class("power_supply".into()),
-            |device, dir| {
-                build_device_directory(device, dir);
-                dir.entry(
-                    "capacity",
-                    StubBytesFile::new_node_with_data(
-                        bug_ref!("https://fxbug.dev/573313995"),
-                        b"0",
-                    ),
-                    mode!(IFREG, 0o644),
-                );
-            },
-        );
-
-        registry.add_subsystemless_device(
-            "goog-chip-info".into(),
-            Some(self.system_device()),
-            |device, dir| {
-                build_device_directory(device, dir);
-                for name in ["device_table", "dvfs_table", "ids_table"] {
-                    dir.entry(
-                        name,
-                        StubBytesFile::new_node_with_data(
-                            bug_ref!("https://fxbug.dev/560212202"),
-                            b"Placeholder",
-                        ),
-                        mode!(IFREG, 0o444),
-                    );
-                }
-            },
-        );
-
-        // TODO(https://fxbug.dev/452096300): Stub eMMC host, card, and block device. The card's
-        // `block/mmcblk0` directory is left as a plain stub rather than a `block` class device,
-        // since there is no backing block device.
-        // TODO(https://fxbug.dev/425942145): Parent `mmc0` under the SoC's SDHCI controller
-        // platform device, once the product-specific controller address is known.
-        let mmc0 = registry.add_numberless_device(
-            "mmc0".into(),
-            /* parent = */ None,
-            self.get_or_create_class("mmc_host".into()),
-            build_device_directory,
-        );
-        registry.add_bus_device(
-            "mmc0:0001".into(),
-            Some(mmc0),
-            self.get_or_create_bus("mmc".into()),
-            |device, dir| {
-                build_device_directory(device, dir);
-                add_stub_attributes(
-                    dir,
-                    &["fwrev", "hwrev", "life_time", "manfid", "pre_eol_info", "serial"],
-                );
-                dir.subdir("block", 0o755, |dir| {
-                    dir.subdir("mmcblk0", 0o755, |dir| {
-                        add_stub_attributes(dir, &["size"]);
-                    });
-                });
-            },
-        );
 
         // TODO(https://fxbug.dev/452096300): Stub SoC identification device (`/sys/devices/soc0`),
         // attached to the `soc` bus.

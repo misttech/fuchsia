@@ -198,23 +198,9 @@ pub fn get_sysfs(kernel: &Kernel) -> FileSystemHandle {
 mod tests {
     use super::*;
     use crate::task::KernelFeatures;
-    use crate::testing::{
-        anon_test_file, spawn_kernel_and_run, spawn_kernel_with_features_and_run,
-    };
-    use crate::vfs::{MountInfo, VecInputBuffer, VecOutputBuffer};
-    use starnix_uapi::open_flags::OpenFlags;
+    use crate::testing::{spawn_kernel_and_run, spawn_kernel_with_features_and_run};
+    use crate::vfs::MountInfo;
     use std::sync::Arc;
-
-    fn read_sysfs_file(current_task: &CurrentTask, path: &str) -> Vec<u8> {
-        let root = &current_task.kernel().device_registry.objects.root;
-        let node = root.lookup(path.into()).unwrap_or_else(|| panic!("{path} should exist"));
-        assert_eq!(node.info().mode, mode!(IFREG, 0o444), "{path} mode");
-        let file_ops = node.create_file_ops(current_task, OpenFlags::RDONLY).unwrap();
-        let file = anon_test_file(current_task, file_ops, OpenFlags::RDONLY);
-        let mut buf = VecOutputBuffer::new(16);
-        let n = file.read(current_task, &mut buf).unwrap();
-        Vec::from(buf)[..n].to_vec()
-    }
 
     #[::fuchsia::test]
     async fn sysfs_registers_platform_and_soc_devices() {
@@ -272,18 +258,6 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let root = &current_task.kernel().device_registry.objects.root;
 
-            // eMMC host, card and block stub share a single device directory tree.
-            assert!(root.lookup("class/mmc_host/mmc0".into()).is_some());
-            assert!(root.lookup("bus/mmc/devices/mmc0:0001".into()).is_some());
-            assert!(root.lookup("devices/virtual/mmc_host/mmc0/uevent".into()).is_some());
-            assert!(
-                root.lookup("devices/virtual/mmc_host/mmc0/mmc0:0001/life_time".into()).is_some()
-            );
-            assert!(
-                root.lookup("devices/virtual/mmc_host/mmc0/mmc0:0001/block/mmcblk0/size".into())
-                    .is_some()
-            );
-
             // SoC identification device.
             assert!(root.lookup("bus/soc/devices/soc0".into()).is_some());
             assert!(root.lookup("devices/soc0/revision".into()).is_some());
@@ -292,24 +266,6 @@ mod tests {
             // Backing device info.
             assert!(root.lookup("class/bdi/0:80".into()).is_some());
             assert!(root.lookup("devices/virtual/bdi/0:80/read_ahead_kb".into()).is_some());
-
-            // Battery power supply.
-            assert!(root.lookup("class/power_supply/battery".into()).is_some());
-            let battery_capacity = root
-                .lookup("devices/virtual/power_supply/battery/capacity".into())
-                .expect("battery capacity node should exist");
-            assert_eq!(battery_capacity.info().mode, mode!(IFREG, 0o644));
-            let file_ops = battery_capacity.create_file_ops(current_task, OpenFlags::RDWR).unwrap();
-            let file = anon_test_file(current_task, file_ops, OpenFlags::RDWR);
-            let mut input = VecInputBuffer::new(b"77\n");
-            assert_eq!(file.write(current_task, &mut input).unwrap(), 3);
-
-            // Google SoC chip info.
-            assert!(root.lookup("devices/system/goog-chip-info/uevent".into()).is_some());
-            for name in ["device_table", "dvfs_table", "ids_table"] {
-                let path = format!("devices/system/goog-chip-info/{name}");
-                assert_eq!(read_sysfs_file(current_task, &path), b"Placeholder");
-            }
         })
         .await;
     }

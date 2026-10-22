@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use crate::ContainerStartInfo;
-use anyhow::{Context, Error, anyhow};
+use anyhow::{Error, anyhow};
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
-use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
 use starnix_core::task::{Kernel, KernelFeatures, OomWatermarksMb, SystemLimits};
 use starnix_features::Feature;
@@ -54,10 +53,6 @@ pub struct Features {
     pub android_bootreason: bool,
 
     pub additional_mounts: Option<Vec<String>>,
-
-    /// Add a stub block device entry for mmcblk0. This is required for certain containers that
-    /// query certain functionality based on block device naming.
-    pub mmcblk_stub: bool,
 
     /// Whether to initialize unified tracing with a Fuchsia trace observer.
     pub unified_tracing: bool,
@@ -112,7 +107,6 @@ impl Features {
                 enable_utc_time_adjustment,
                 android_bootreason,
                 additional_mounts,
-                mmcblk_stub,
                 unified_tracing,
                 initial_view_id_annotation,
             } => {
@@ -169,7 +163,6 @@ impl Features {
                     inspect_node
                         .record_string("additional_mounts", format!("{:?}", additional_mounts));
                     inspect_node.record_uint("dirent_cache_size", *dirent_cache_size as u64);
-                    inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
                     inspect_node.record_bool("fake_ion", *fake_ion);
                     inspect_node.record_bool("remotevol_in_process", *remotevol_in_process);
                     kernel_node.record_string(
@@ -244,6 +237,7 @@ pub fn parse_features(
                 | Feature::HvdcpOpti
                 | Feature::Kgsl
                 | Feature::Magma
+                | Feature::MmcblkStub
                 | Feature::Nanohub
                 | Feature::NetworkManager
                 | Feature::Thermal
@@ -317,7 +311,6 @@ pub fn parse_features(
             (Feature::AdditionalMounts, _) => {
                 features.additional_mounts = Some(additional_mounts.clone())
             }
-            (Feature::MmcblkStub, _) => features.mmcblk_stub = true,
             (Feature::FakeIon, _) => features.kernel.fake_ion = true,
             (Feature::RemotevolInProcess, _) => features.kernel.remotevol_in_process = true,
             (Feature::LogSysfsLookupMisses, _) => features.kernel.log_sysfs_lookup_misses = true,
@@ -391,9 +384,6 @@ pub fn parse_features(
 pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Result<(), Error> {
     if features.unified_tracing {
         kernel.trace_event_manager.init_trace_observer(kernel);
-    }
-    if features.mmcblk_stub {
-        let _device = add_mmc_block_device(kernel).context("Failed to add stub mmcblk0 device")?;
     }
     Ok(())
 }
@@ -492,6 +482,7 @@ mod tests {
                 "framebuffer".to_string(),
                 "aspect_ratio:16:9".to_string(),
                 "magma_supported_vendors:0x13B5,0x8086".to_string(),
+                "mmcblk_stub".to_string(),
                 "perfetto:/dev/socket/traced_consumer".to_string(),
                 "thermal".to_string(),
                 "cooling:cpu,fcc=8".to_string(),
@@ -502,6 +493,7 @@ mod tests {
         let (_features, modules) =
             parse_features(&start_info, &[]).expect("legacy features should translate");
         assert!(modules.is_enabled("ashmem"));
+        assert!(modules.is_enabled("mmcblk_stub"));
         assert_eq!(
             modules.args("boot_notifier"),
             Some(&["--cpu-boost-secs".to_string(), "45".to_string()][..])
@@ -540,6 +532,28 @@ mod tests {
         let mixed_info =
             test_start_info(vec!["google_odpm".to_string()], vec!["hvdcp_opti".to_string()]);
         assert!(parse_features(&mixed_info, &[]).is_err());
+    }
+
+    #[fuchsia::test]
+    fn hvdcp_opti_supersedes_default_battery_manager_and_rejects_explicit_conflict() {
+        let default_info = test_start_info(Vec::new(), Vec::new());
+        let (_features, default_modules) =
+            parse_features(&default_info, &[]).expect("default modules should parse");
+        assert!(default_modules.is_enabled("battery_manager"));
+        assert!(default_modules.is_enabled("goog_chip_info"));
+
+        let hvdcp_info = test_start_info(Vec::new(), vec!["hvdcp_opti".to_string()]);
+        let (_features, hvdcp_modules) =
+            parse_features(&hvdcp_info, &[]).expect("hvdcp_opti should supersede default battery");
+        assert!(hvdcp_modules.is_enabled("hvdcp_opti"));
+        assert!(!hvdcp_modules.is_enabled("battery_manager"));
+        assert_eq!(hvdcp_modules.args("battery_manager"), None);
+
+        let explicit_conflict = test_start_info(
+            Vec::new(),
+            vec!["battery_manager".to_string(), "hvdcp_opti".to_string()],
+        );
+        assert!(parse_features(&explicit_conflict, &[]).is_err());
     }
 
     #[fuchsia::test]
