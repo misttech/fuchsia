@@ -71,9 +71,127 @@ pub(crate) struct ExceptionRecord {
     info: fdh::DriverCrashInfo,
 }
 
+/// Decides when the driver host exits.
+///
+/// The driver host exits once a driver shutting down leaves it without drivers. A driver counts
+/// from the moment it has been loaded, which creates its driver runtime dispatchers, until its
+/// shutdown completed, which is when all of its dispatchers have been shut down. This includes
+/// drivers that are still starting and drivers whose start failed and that are still shutting
+/// down. Exiting destroys all dispatchers, which requires all of them to have been shut down, so
+/// the exit is also deferred while drivers are being loaded. Once the driver host decided to exit,
+/// it doesn't load drivers anymore.
+#[derive(Debug, Default)]
+struct ExitTracker {
+    /// The number of drivers that are being loaded.
+    pending_loads: usize,
+    /// The number of drivers that have been loaded and haven't completed their shutdown.
+    loaded_drivers: usize,
+    /// Whether an exit is pending. Set by `request_exit` once a driver shutting down left the
+    /// driver host without loaded drivers; the driver host then exits as soon as no drivers are
+    /// being loaded. Cleared when a driver is loaded, since that driver requests the exit again
+    /// when it shuts down.
+    exit_pending: bool,
+    /// Whether the driver host decided to exit. Set by `check_and_update_exit_state` when it
+    /// returns true, which happens once an exit is pending and no drivers are loaded or being
+    /// loaded. Once set, no more drivers are loaded.
+    exiting: bool,
+}
+
+impl ExitTracker {
+    /// Records that a driver is being loaded. Returns false if the driver host is exiting, in which
+    /// case the driver must not be loaded.
+    fn load_began(&mut self) -> bool {
+        if self.exiting {
+            return false;
+        }
+        self.pending_loads += 1;
+        true
+    }
+
+    /// Records that loading a driver finished. `loaded` is whether the driver was loaded, in which
+    /// case `driver_shut_down` must be called once the driver completed its shutdown. Returns true
+    /// if the driver host should exit now.
+    fn load_finished(&mut self, loaded: bool) -> bool {
+        self.pending_loads = self.pending_loads.checked_sub(1).expect("no driver is being loaded");
+        if loaded {
+            self.loaded_drivers += 1;
+            self.exit_pending = false;
+        }
+        self.check_and_update_exit_state()
+    }
+
+    /// Records that a loaded driver completed its shutdown. Returns true if no drivers are loaded
+    /// anymore, in which case the caller may call `request_exit`.
+    fn driver_shut_down(&mut self) -> bool {
+        self.loaded_drivers = self.loaded_drivers.checked_sub(1).expect("no driver is loaded");
+        self.loaded_drivers == 0
+    }
+
+    /// Requests that the driver host exits if no drivers are loaded. The exit is deferred while
+    /// drivers are being loaded. Returns true if the driver host should exit now.
+    fn request_exit(&mut self) -> bool {
+        if self.loaded_drivers == 0 {
+            self.exit_pending = true;
+        }
+        self.check_and_update_exit_state()
+    }
+
+    /// Checks whether the driver host should exit now and, if so, records that it is exiting. The
+    /// driver host exits once an exit is pending and no drivers are being loaded; the exit is
+    /// deferred while drivers are being loaded. Returns true exactly once.
+    fn check_and_update_exit_state(&mut self) -> bool {
+        if self.exiting || !self.exit_pending || self.loaded_drivers > 0 || self.pending_loads > 0 {
+            return false;
+        }
+        self.exiting = true;
+        true
+    }
+}
+
+/// Tracks a driver that is being loaded. The driver host doesn't exit while it exists.
+struct PendingLoad<'a> {
+    host: &'a DriverHost,
+    loaded: bool,
+}
+
+impl<'a> PendingLoad<'a> {
+    /// Returns `ZX_ERR_BAD_STATE` if the driver host is exiting.
+    fn new(host: &'a DriverHost) -> Result<Self, Status> {
+        if !host.exit_tracker.borrow_mut().load_began() {
+            log::warn!("Not starting driver because the driver host is exiting");
+            return Err(Status::BAD_STATE);
+        }
+        Ok(PendingLoad { host, loaded: false })
+    }
+
+    /// Marks the driver as loaded. This consumes the guard, and the load is recorded when the
+    /// guard is dropped at the end of this method. From now on, the driver counts until a shutdown
+    /// watcher observes that it completed its shutdown.
+    ///
+    /// If the start of the driver is cancelled after this, the driver is never shut down and keeps
+    /// counting, so the driver host doesn't exit because its drivers are gone. That's intended,
+    /// since the dispatchers of the driver remain.
+    fn loaded(mut self) {
+        self.loaded = true;
+    }
+}
+
+impl Drop for PendingLoad<'_> {
+    fn drop(&mut self) {
+        // If this was the last pending load, it didn't load a driver, and an exit is pending, the
+        // driver host exits now. The termination system state was already checked when the exit
+        // was requested, so it isn't checked again.
+        let should_exit = self.host.exit_tracker.borrow_mut().load_finished(self.loaded);
+        if should_exit {
+            self.host.signal_no_more_drivers();
+        }
+    }
+}
+
 pub(crate) struct DriverHost {
     env: fdf_env::Environment,
     drivers: RefCell<BTreeSet<WeakDriver>>,
+    exit_tracker: RefCell<ExitTracker>,
     no_more_drivers_signaler: RefCell<Option<oneshot::Sender<()>>>,
     exceptions: RefCell<Vec<ExceptionRecord>>,
     scope: fuchsia_async::Scope,
@@ -87,6 +205,7 @@ impl DriverHost {
         DriverHost {
             env,
             drivers: RefCell::new(BTreeSet::new()),
+            exit_tracker: RefCell::new(ExitTracker::default()),
             no_more_drivers_signaler: RefCell::new(Some(no_more_drivers_signaler)),
             exceptions: RefCell::new(Vec::new()),
             scope: fuchsia_async::Scope::new(),
@@ -273,40 +392,14 @@ impl DriverHost {
         request: ServerEnd<fdh::DriverMarker>,
         host_name: &str,
     ) -> Result<(), i32> {
+        let pending_load = PendingLoad::new(&self).map_err(Status::into_raw)?;
         let (driver, start_args) =
             Driver::load(&self.env, start_args).await.map_err(Status::into_raw)?;
+        // The driver has dispatchers now, so it counts until the shutdown watcher observes that it
+        // completed its shutdown. `Driver::start` shuts the driver down if it fails.
+        pending_load.loaded();
         let (shutdown_signaler, shutdown_event) = oneshot::channel();
-
-        // We carry a weak reference to avoid accidentally extending the lifetime of the
-        // driver_host.
-        let this = Rc::downgrade(&self);
-        self.scope.spawn_local(async move {
-            let driver = shutdown_event.await.unwrap();
-            if let Some(this) = this.upgrade() {
-                let is_empty = {
-                    let mut drivers = this.drivers.borrow_mut();
-                    drivers.remove(&WeakDriver(driver));
-                    drivers.is_empty()
-                };
-
-                // If this is the last driver instance running, we should exit.
-                if is_empty {
-                    // We only exit if we're not shutting down in order to match DFv1 behavior.
-                    // TODO(https://fxbug.dev/42075187): We should always exit driver hosts when we
-                    // get down to 0 drivers.
-                    let client = client::connect_to_protocol::<fss::SystemStateTransitionMarker>()
-                        .expect("Could not connect to SystemStateTransition protocol.");
-                    match client.get_termination_system_state().await {
-                        Err(_) | Ok(fss::SystemPowerState::FullyOn) => (),
-                        _ => return,
-                    };
-
-                    if let Some(signaler) = this.no_more_drivers_signaler.borrow_mut().take() {
-                        signaler.send(()).unwrap();
-                    }
-                }
-            }
-        });
+        self.spawn_shutdown_watcher(shutdown_event, /* check_termination_state= */ true);
 
         driver
             .start(start_args, request, shutdown_signaler, &self.scope)
@@ -324,31 +417,15 @@ impl DriverHost {
         dynamic_linking_abi: u64,
         request: ServerEnd<fdh::DriverMarker>,
     ) -> Result<(), i32> {
+        let pending_load = PendingLoad::new(&self).map_err(Status::into_raw)?;
         let (driver, start_args) = Driver::initialize(&self.env, start_args, dynamic_linking_abi)
             .await
             .map_err(Status::into_raw)?;
+        // The driver has dispatchers now, so it counts until the shutdown watcher observes that it
+        // completed its shutdown. `Driver::start` shuts the driver down if it fails.
+        pending_load.loaded();
         let (shutdown_signaler, shutdown_event) = oneshot::channel();
-
-        // We carry a weak reference to avoid accidentally extending the lifetime of the
-        // driver_host.
-        let this = Rc::downgrade(&self);
-        self.scope.spawn_local(async move {
-            let driver = shutdown_event.await.unwrap();
-            if let Some(this) = this.upgrade() {
-                let is_empty = {
-                    let mut drivers = this.drivers.borrow_mut();
-                    drivers.remove(&WeakDriver(driver));
-                    drivers.is_empty()
-                };
-
-                // If this is the last driver instance running, we should exit.
-                if is_empty
-                    && let Some(signaler) = this.no_more_drivers_signaler.borrow_mut().take()
-                {
-                    signaler.send(()).unwrap();
-                }
-            }
-        });
+        self.spawn_shutdown_watcher(shutdown_event, /* check_termination_state= */ false);
 
         driver
             .start(start_args, request, shutdown_signaler, &self.scope)
@@ -357,6 +434,65 @@ impl DriverHost {
         update_process_name("", driver.get_url(), self.drivers.borrow().len());
         self.drivers.borrow_mut().insert(WeakDriver(Arc::downgrade(&driver)));
         Ok(())
+    }
+
+    /// Spawns a task that waits until the driver completed its shutdown, removes it from the
+    /// running drivers, and exits the driver host if that was the last loaded driver.
+    ///
+    /// If `check_termination_state` is set, the driver host only exits if the system isn't
+    /// shutting down.
+    fn spawn_shutdown_watcher(
+        self: &Rc<Self>,
+        shutdown_event: oneshot::Receiver<Weak<Driver>>,
+        check_termination_state: bool,
+    ) {
+        // We carry a weak reference to avoid accidentally extending the lifetime of the
+        // driver_host.
+        let this = Rc::downgrade(self);
+        self.scope.spawn_local(async move {
+            // The signaler is only dropped without sending if the start was cancelled before
+            // `Driver::start` took it. The driver then keeps counting, like after any cancelled
+            // start.
+            let Ok(driver) = shutdown_event.await else {
+                return;
+            };
+            let Some(this) = this.upgrade() else {
+                return;
+            };
+            this.drivers.borrow_mut().remove(&WeakDriver(driver));
+            let no_drivers = this.exit_tracker.borrow_mut().driver_shut_down();
+
+            // If this is the last driver instance, we should exit.
+            if !no_drivers {
+                return;
+            }
+
+            if check_termination_state {
+                // We only exit if we're not shutting down in order to match DFv1 behavior.
+                // TODO(https://fxbug.dev/42075187): We should always exit driver hosts when we
+                // get down to 0 drivers.
+                let client = client::connect_to_protocol::<fss::SystemStateTransitionMarker>()
+                    .expect("Could not connect to SystemStateTransition protocol.");
+                match client.get_termination_system_state().await {
+                    Err(_) | Ok(fss::SystemPowerState::FullyOn) => (),
+                    _ => return,
+                };
+            }
+
+            // Drivers may have been loaded while waiting for the termination state, which
+            // `request_exit` accounts for. The exit is deferred while drivers are being loaded.
+            let should_exit = this.exit_tracker.borrow_mut().request_exit();
+            if should_exit {
+                this.signal_no_more_drivers();
+            }
+        });
+    }
+
+    fn signal_no_more_drivers(&self) {
+        if let Some(signaler) = self.no_more_drivers_signaler.borrow_mut().take() {
+            // The receiver is gone if the driver host is already exiting for another reason.
+            let _ = signaler.send(());
+        }
     }
 
     fn add_exception(&self, info: task_exceptions::ExceptionInfo) {
@@ -631,5 +767,195 @@ mod tests {
             let _ = shutdown_tx.send(());
         });
         shutdown_rx.await.unwrap();
+    }
+
+    #[fuchsia::test]
+    fn exit_tracker_exits_when_last_driver_shuts_down() {
+        let mut tracker = ExitTracker::default();
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        assert!(tracker.driver_shut_down());
+        assert!(tracker.request_exit());
+        // The driver host only exits once and doesn't load drivers anymore.
+        assert!(!tracker.request_exit());
+        assert!(!tracker.load_began());
+    }
+
+    #[fuchsia::test]
+    fn exit_tracker_does_not_exit_while_other_drivers_are_loaded() {
+        let mut tracker = ExitTracker::default();
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        assert!(!tracker.driver_shut_down());
+        assert!(!tracker.request_exit());
+        assert!(tracker.driver_shut_down());
+        assert!(tracker.request_exit());
+    }
+
+    #[fuchsia::test]
+    fn exit_tracker_does_not_exit_when_first_driver_fails_to_load() {
+        let mut tracker = ExitTracker::default();
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ false));
+        assert!(tracker.load_began());
+    }
+
+    // A driver that failed to start is shut down asynchronously, and the driver host must not exit
+    // before that completed, even if another driver requested the exit.
+    #[fuchsia::test]
+    fn exit_tracker_waits_for_driver_that_failed_to_start_to_shut_down() {
+        let mut tracker = ExitTracker::default();
+        // Drivers A and B are loaded and start.
+        assert!(tracker.load_began());
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        // A fails to start and completes its shutdown while B is starting.
+        assert!(!tracker.driver_shut_down());
+        assert!(!tracker.request_exit());
+        // B fails to start. Nothing happens until B completed its shutdown.
+        assert!(tracker.driver_shut_down());
+        assert!(tracker.request_exit());
+    }
+
+    #[fuchsia::test]
+    fn exit_tracker_defers_exit_while_load_is_pending_then_load_fails() {
+        let mut tracker = ExitTracker::default();
+        // Driver A is loaded and B is being loaded.
+        assert!(tracker.load_began());
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        // A fails to start and completes its shutdown, so the exit is deferred.
+        assert!(tracker.driver_shut_down());
+        assert!(!tracker.request_exit());
+        // B fails to load, so the deferred exit happens.
+        assert!(tracker.load_finished(/* loaded= */ false));
+        assert!(!tracker.load_began());
+    }
+
+    #[fuchsia::test]
+    fn exit_tracker_defers_exit_while_load_is_pending_then_load_succeeds() {
+        let mut tracker = ExitTracker::default();
+        // Driver A is loaded and B is being loaded.
+        assert!(tracker.load_began());
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        // A fails to start and completes its shutdown, so the exit is deferred.
+        assert!(tracker.driver_shut_down());
+        assert!(!tracker.request_exit());
+        // B is loaded, so the driver host doesn't exit.
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        // The driver host exits once B completed its shutdown.
+        assert!(tracker.driver_shut_down());
+        assert!(tracker.request_exit());
+    }
+
+    #[fuchsia::test]
+    fn exit_tracker_loaded_driver_cancels_deferred_exit() {
+        let mut tracker = ExitTracker::default();
+        // Driver A is loaded and B is being loaded. A shuts down, so the exit is deferred.
+        assert!(tracker.load_began());
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        assert!(tracker.driver_shut_down());
+        assert!(!tracker.request_exit());
+        // B is loaded, and C is being loaded.
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        assert!(tracker.load_began());
+        // B shuts down without requesting the exit, which happens when the system is shutting
+        // down. C failing to load mustn't exit the driver host because of A.
+        assert!(tracker.driver_shut_down());
+        assert!(!tracker.load_finished(/* loaded= */ false));
+    }
+
+    // If a start is cancelled after the driver was loaded, the driver is never shut down. Its
+    // dispatchers remain, so the driver host must not exit because its other drivers are gone.
+    #[fuchsia::test]
+    fn exit_tracker_cancelled_start_keeps_driver_loaded() {
+        let mut tracker = ExitTracker::default();
+        // Driver A is loaded, and its start is cancelled.
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        // Driver B is loaded and shuts down.
+        assert!(tracker.load_began());
+        assert!(!tracker.load_finished(/* loaded= */ true));
+        assert!(!tracker.driver_shut_down());
+        assert!(!tracker.request_exit());
+    }
+
+    /// Yields to the executor until `condition` holds.
+    async fn wait_until(mut condition: impl FnMut() -> bool) {
+        while !condition() {
+            Timer::new(zx::MonotonicDuration::from_millis(1)).await;
+        }
+    }
+
+    /// Marks a driver as loaded and spawns its shutdown watcher, like starting a driver does.
+    /// Returns the sender that signals that the driver completed its shutdown.
+    fn load_test_driver(driver_host: &Rc<DriverHost>) -> oneshot::Sender<Weak<Driver>> {
+        PendingLoad::new(driver_host).unwrap().loaded();
+        let (shutdown_signaler, shutdown_event) = oneshot::channel();
+        driver_host
+            .spawn_shutdown_watcher(shutdown_event, /* check_termination_state= */ false);
+        shutdown_signaler
+    }
+
+    // A driver that fails to start while another driver is being loaded in the same driver host
+    // must not make the driver host exit, since the driver runtime asserts that all dispatchers
+    // were shut down when the driver host exits.
+    #[fuchsia::test]
+    async fn driver_host_does_not_exit_while_load_is_pending() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (no_more_drivers_signaler, mut no_more_drivers) = oneshot::channel();
+        let driver_host = Rc::new(DriverHost::new(env, no_more_drivers_signaler));
+
+        // Driver B is being loaded.
+        let pending_load = PendingLoad::new(&driver_host).unwrap();
+
+        // Driver A failed to start, so it shuts down without having been added to the drivers.
+        load_test_driver(&driver_host).send(Weak::new()).unwrap();
+        wait_until(|| driver_host.exit_tracker.borrow().exit_pending).await;
+        assert_eq!(no_more_drivers.try_recv(), Ok(None));
+
+        // Driver B fails to load, so the driver host exits now.
+        drop(pending_load);
+        assert_eq!(no_more_drivers.try_recv(), Ok(Some(())));
+        assert_eq!(PendingLoad::new(&driver_host).err(), Some(Status::BAD_STATE));
+    }
+
+    // A driver that failed to start is shut down asynchronously, and the driver host must not exit
+    // before that completed, since the driver runtime asserts that all dispatchers were shut down
+    // when the driver host exits.
+    #[fuchsia::test]
+    async fn driver_host_waits_for_driver_that_failed_to_start_to_shut_down() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (no_more_drivers_signaler, mut no_more_drivers) = oneshot::channel();
+        let driver_host = Rc::new(DriverHost::new(env, no_more_drivers_signaler));
+
+        // Drivers A and B are loaded and start.
+        let shutdown_a = load_test_driver(&driver_host);
+        let shutdown_b = load_test_driver(&driver_host);
+
+        // A fails to start and completes its shutdown.
+        shutdown_a.send(Weak::new()).unwrap();
+        wait_until(|| driver_host.exit_tracker.borrow().loaded_drivers == 1).await;
+        assert_eq!(no_more_drivers.try_recv(), Ok(None));
+
+        // B fails to start, which shuts it down asynchronously. The driver host only exits once
+        // B completed its shutdown.
+        shutdown_b.send(Weak::new()).unwrap();
+        no_more_drivers.await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn driver_host_exits_when_last_driver_shuts_down() {
+        let env = fdf_env::Environment::start(0).unwrap();
+        let (no_more_drivers_signaler, no_more_drivers) = oneshot::channel();
+        let driver_host = Rc::new(DriverHost::new(env, no_more_drivers_signaler));
+
+        load_test_driver(&driver_host).send(Weak::new()).unwrap();
+        no_more_drivers.await.unwrap();
     }
 }
