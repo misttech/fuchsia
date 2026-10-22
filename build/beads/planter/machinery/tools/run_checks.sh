@@ -694,6 +694,32 @@ def downgrade_check_cfg_diff_findings(findings):
             f["severity"] = "INFO"
         elif (
             f["category"] == "dep_alignment"
+            and "unmatched in GN: [" in f["message"]
+            and "unmatched in Bazel: [" in f["message"]
+        ):
+            # Downgrade dep_alignment warnings when unmatched GN and Bazel labels
+            # differ only by redundant slashes (e.g. `////pkg/path` vs `//pkg/path`).
+            import re as _re
+            gn_m = _re.search(r"unmatched in GN: \[([^\]]+)\]", f["message"])
+            bz_m = _re.search(r"unmatched in Bazel: \[([^\]]+)\]", f["message"])
+            if gn_m and bz_m:
+                def _slash_norm_lbl(raw):
+                    s = raw.strip().strip('"')
+                    if s.startswith("/"):
+                        p, sep, t = s.partition(":")
+                        p = "//" + _re.sub(r"/+", "/", p.strip("/"))
+                        s = f"{p}:{t}" if sep else p
+                    if s.startswith("//") and ":" in s:
+                        p, t = s.split(":", 1)
+                        if t == p.rsplit("/", 1)[-1]:
+                            s = p
+                    return s.replace("-", "_")
+                gn_set = {_slash_norm_lbl(x) for x in gn_m.group(1).split(",") if x.strip()}
+                bz_set = {_slash_norm_lbl(x) for x in bz_m.group(1).split(",") if x.strip()}
+                if gn_set and gn_set == bz_set:
+                    f["severity"] = "INFO"
+        elif (
+            f["category"] == "dep_alignment"
             and "unmatched in Bazel:" in f["message"]
             and "unmatched in GN:" not in f["message"]
             and f["file"].endswith("BUILD.bazel")

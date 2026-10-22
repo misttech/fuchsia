@@ -199,6 +199,17 @@ def canonical_dep_label(pkg_dir, dep):
     return d
 
 
+# Collapse redundant slashes in a GN/Bazel label (e.g. `////pkg/path` -> `//pkg/path`)
+# before canonicalizing so non-canonical GN labels match canonical Bazel labels.
+def normalize_dep_slashes(pkg_dir, dep):
+    d = dep.strip().strip('"')
+    if d.startswith("/"):
+        pkg_part, sep, target_part = d.partition(":")
+        pkg_part = "//" + re.sub(r"/+", "/", pkg_part.strip("/"))
+        d = f"{pkg_part}:{target_part}" if sep else pkg_part
+    return canonical_dep_label(pkg_dir, d)
+
+
 def is_vendor_crate_match(gn_dep, bazel_dep):
     g = gn_dep.strip().strip('"')
     b = bazel_dep.strip().strip('"')
@@ -257,7 +268,8 @@ def check_output_name_alignment_info(bazel_rel, name, bt_rule, bt_line, bt_kws, 
 
 # Record non-blocking INFO dep_alignment when unmatched GN/Bazel deps are accounted for by
 # third_party_target_map.json (including googletest gtest+gmock), rustc_library_with_features
-# base feature_sets deps, or implicit GN //sdk/lib/fdio on C/C++ binaries.
+# base feature_sets deps, non-canonical extra-slash GN labels normalized in Bazel, or implicit
+# GN //sdk/lib/fdio on C/C++ binaries.
 def check_dep_alignment_info(
     pkg, bazel_rel, name, bt_rule, bt_line, bt_kws, top_vars, gn_top, base_fs_deps, tp_map
 ):
@@ -311,20 +323,40 @@ def check_dep_alignment_info(
     unmatched_bazel = [b for b_idx, b in enumerate(bazel_deps) if b_idx not in used_bazel]
     if not unmatched_gn and not unmatched_bazel:
         return None
-    base_fs_canons = {canonical_dep_label(pkg, d).replace("-", "_") for d in base_fs_deps}
-    unmatched_gn_canons = {canonical_dep_label(pkg, g) for g in unmatched_gn}
+    base_fs_canons = {
+        normalize_dep_slashes(pkg, d).replace("-", "_") for d in base_fs_deps
+    }
+    unmatched_gn_items = [
+        (g, canonical_dep_label(pkg, g), normalize_dep_slashes(pkg, g))
+        for g in unmatched_gn
+    ]
+    unmatched_gn_canons = {g_canon for _, g_canon, _ in unmatched_gn_items}
     covered_gn_canons = set()
     for b in unmatched_bazel:
-        b_canon = canonical_dep_label(pkg, b)
-        tp_cov = tp_map.get(b, set()) & unmatched_gn_canons
-        if tp_cov:
-            covered_gn_canons |= tp_cov
-        elif b_canon.replace("-", "_") in base_fs_canons:
+        b_norm = normalize_dep_slashes(pkg, b)
+        tp_targets = tp_map.get(b, set())
+        slash_or_tp_cov = {
+            g_canon
+            for _, g_canon, g_norm in unmatched_gn_items
+            if g_canon in tp_targets
+            or g_norm in tp_targets
+            or g_norm.replace("-", "_") == b_norm.replace("-", "_")
+            or is_vendor_crate_match(g_norm, b)
+        }
+        if slash_or_tp_cov:
+            covered_gn_canons |= slash_or_tp_cov
+        elif b_norm.replace("-", "_") in base_fs_canons:
             continue
-        elif bt_rule in ("fx_cc_binary", "cc_binary") and b_canon == "//sdk/lib/fdio":
+        elif bt_rule in ("fx_cc_binary", "cc_binary") and b_norm == "//sdk/lib/fdio":
             continue
         else:
             return None
+    all_bazel_norms = {
+        normalize_dep_slashes(pkg, b).replace("-", "_") for b in bazel_deps
+    }
+    for _, g_canon, g_norm in unmatched_gn_items:
+        if g_norm.replace("-", "_") in all_bazel_norms:
+            covered_gn_canons.add(g_canon)
     if unmatched_gn_canons - covered_gn_canons:
         return None
     dep_notes = []
