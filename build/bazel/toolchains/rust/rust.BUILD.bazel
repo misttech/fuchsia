@@ -60,28 +60,19 @@ exports_files(
     visibility = ["@//tools/cargo-gnaw/tests:__pkg__"],
 )
 
+# The debug info level follows //build/config:default_debuginfo (added through
+# rust_toolchain_with_build_flags(), see below), not --compilation_mode: its
+# -Cdebuginfo flag overrides the --codegen=debuginfo flag that rules_rust
+# derives from the compilation mode. The strip levels below ensure that
+# rules_rust does not strip these symbols when linking. For Fuchsia binaries,
+# fx_package later extracts them into a .build-id directory and strips the copy
+# that goes into the package, mirroring how GN handles Fuchsia binaries.
+#
 # LINT.IfChange
-_HOST_DEBUG_INFO = {
-    "dbg": "2",
-    "fastbuild": "1",  # default "0", i.e. no symbols.
-    "opt": "1",  # default "0", i.e. no symbols.
-}
-
 _HOST_STRIP_LEVEL = {
     "dbg": "none",
     "fastbuild": "none",
     "opt": "none",
-}
-
-# Fuchsia binaries are always built with debug info, which is later extracted
-# into a .build-id directory and strips the copy from the packaged ELF by fx_package.
-# This matches GN, where //build/config:default_debuginfo (which selects
-# //build/config:debuginfo_debug by default) is applied to every Fuchsia target
-# regardless of the optimization level.
-_TARGET_DEBUG_INFO = {
-    "dbg": "2",
-    "fastbuild": "2",
-    "opt": "2",
 }
 
 _TARGET_STRIP_LEVEL = {
@@ -91,11 +82,22 @@ _TARGET_STRIP_LEVEL = {
 }
 # LINT.ThenChange(//build/bazel/debug_symbols/README.md)
 
+# Default GN configs that have a build_flags() port (e.g.
+# //build/config/rust:default_debug_assertions or :panic_abort) are NOT listed
+# below. rust_toolchain_with_build_flags() adds their flags from the generated
+# @fuchsia_build_info//default_build_flags toolchains, which follow GN build
+# args. The lists below are appended after those flags, so a hardcoded flag
+# with a different value here would silently override the GN-derived one. Only
+# list flags whose GN config has no build_flags() port yet, or that have no GN
+# equivalent.
+#
+# Unlike the Clang toolchain (see the oot_only_* flags in cc_features.bzl),
+# these lists do not provide fallback values for when
+# @fuchsia_rules_common//build_flags:use_default_build_flags is False, because
+# the Rust toolchain is not supported in out-of-tree SDK workspaces. If Rust is
+# ever officially supported out of tree, flags that only come from default
+# build_flags() today will need such a fallback.
 _DEFAULT_COMMON_EXEC_RUST_FLAGS = [
-    # GN: //build/config/rust:next_solver
-    # TODO(https://fxbug.dev/556328773): Use next generation trait solver after compile time regression is addressed.
-    "-Znext-solver=coherence",
-
     # GN: //build/config:stack-size-section
     "-Zemit-stack-sizes",
     "-Clink-arg=-Wl,-mllvm=--stack-size-section",
@@ -103,35 +105,22 @@ _DEFAULT_COMMON_EXEC_RUST_FLAGS = [
     # GN: //build/config:rust-depinfo
     "-Zbinary-dep-depinfo",
 
-    # GN: //build/config/rust:default_debug_assertions
-    #
-    # TODO(jayzhuang): Enable debug-assertions for non-release builds.
-    "-Cdebug-assertions=no",
-
     # GN: //build/config:linker_gc.compiler
     # `-Zfunction-sections` flag controls both text and data sections.
     "-Zfunction-sections",
 
-    # GN: //build/config:relative_paths
-    #
-    # `-Zremap-cwd-prefix` ensures that absolute paths do not leak into
-    # outputs for universal reproducibility while keeping the command line
-    # free of absolute paths for remote caching benefit.
-    # Available since: https://github.com/rust-lang/rust/pull/87320
-    "-Zremap-cwd-prefix=.",
-
-    # GN: //build/config/rust:no_features
-    "-Zallow-features=",
+    # GN: //build/config/linux:compiler, which has no build_flags() port yet.
+    # GN only applies it on Linux, while Bazel also applies it to Fuchsia
+    # targets.
     "-Cdefault-linker-libraries",
 ]
 
-# Lint flags are excluded from _DEFAULT_COMMON_EXEC_RUST_FLAGS because
+# -Dwarnings is excluded from _DEFAULT_COMMON_EXEC_RUST_FLAGS because
 # @rules_rust builds internal exec tools (e.g. process_wrapper) without
-# --cap-lints=allow, which would fail under -Wrust-2018-idioms -Dwarnings.
+# --cap-lints=allow, and they do not build cleanly with warnings as errors.
+# Lint levels such as -Wrust-2018-idioms still reach exec flags through
+# build_flags().
 _DEFAULT_COMMON_RUST_FLAGS = _DEFAULT_COMMON_EXEC_RUST_FLAGS + [
-    # GN: //build/config/rust:2018_idioms
-    "-Wrust-2018-idioms",
-
     # GN: //build/config:werror
     "-Dwarnings",
 ]
@@ -149,36 +138,6 @@ _EXTRA_TARGET_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
     # GN: //build/config:frame_pointers
     "-Cforce-frame-pointers",
 
-    # GN: //build/config/rust:panic_abort
-    #
-    # The prebuilt Rust standard library for Fuchsia targets is built with
-    # panic=abort, so everything linked against it must agree. Without this,
-    # linking any Fuchsia executable or test fails with "the crate `std`
-    # requires panic strategy `abort`".
-    #
-    # -Zpanic_abort_tests is required for #[test] harnesses, which default to
-    # unwind even when the rest of the crate graph uses abort.
-    "-Cpanic=abort",
-    "-Cforce-unwind-tables=yes",
-    "-Zpanic_abort_tests",
-
-    # GN: //build/config/fuchsia:dynamic_rust_standard_library
-    #
-    # Fuchsia links the Rust standard library dynamically so a single copy of
-    # libstd is shared by all Rust components in a package set.
-    "-Cprefer-dynamic",
-
-    # GN: //build/config/fuchsia:large_rust_stack
-    #
-    # Rust's default main thread stack is too small for several in-tree
-    # components, so GN raises it to 2 MiB globally.
-    #
-    # GN spells this "-Clink-args=-zstack-size=0x200000" because it links Rust
-    # with -Clinker=.../bin/lld, passing raw linker flags. rules_rust links
-    # through the clang driver instead, which rejects the joined -z form, so
-    # the flag has to be routed with -Wl,.
-    "-Clink-arg=-Wl,-z,stack-size=0x200000",
-
     # No GN equivalent, as GN links Rust with lld directly.
     #
     # rustc passes -pie to the linker for Fuchsia executables, but clang's
@@ -189,13 +148,6 @@ _EXTRA_TARGET_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
     # TODO(https://fxbug.dev/567308599): Remove once the clang Fuchsia driver
     # claims -pie, or GN and Bazel converge on how Rust is linked.
     "-Clink-arg=-Wno-unused-command-line-argument",
-
-    # GN: //build/config/rust:v0_symbol_mangling
-    #
-    # TODO(https://fxbug.dev/421888626): GN gates this on the
-    # `rust_v0_symbol_mangling` build arg, which defaults to true. Propagate
-    # that setting instead of hardcoding the default here.
-    "-Csymbol-mangling-version=v0",
 ]
 
 filegroup(
@@ -218,14 +170,6 @@ rust_toolchain(
     name = "rust_linux_x64_toolchain_base",
     binary_ext = "",
     clippy_driver = "//:bin/clippy-driver",
-
-    # Ensure debug symbols are preserved even with --compilation_mode is
-    # set to 'fastbuild' or 'opt', as there are no separate actions to produce
-    # stripped and unstripped binaries in rules_rust.
-    #
-    # debug_info controls whether debug info is generated during compilation,
-    # and strip_level controls whether they are removed during linking.
-    debug_info = _HOST_DEBUG_INFO,
     dylib_ext = ".so",
     exec_triple = "x86_64-unknown-linux-gnu",
     extra_exec_rustc_flags = _EXTRA_HOST_EXEC_RUST_FLAGS,
@@ -278,14 +222,6 @@ rust_toolchain(
     name = "rust_linux_arm64_toolchain_base",
     binary_ext = "",
     clippy_driver = "//:bin/clippy-driver",
-
-    # Ensure debug symbols are preserved even with --compilation_mode is
-    # set to 'fastbuild' or 'opt', as there are no separate actions to produce
-    # stripped and unstripped binaries in rules_rust.
-    #
-    # debug_info controls whether debug info is generated during compilation,
-    # and strip_level controls whether they are removed during linking.
-    debug_info = _HOST_DEBUG_INFO,
     dylib_ext = ".so",
     exec_triple = "aarch64-unknown-linux-gnu",
     extra_exec_rustc_flags = _EXTRA_HOST_EXEC_RUST_FLAGS,
@@ -340,11 +276,6 @@ rust_toolchain(
     name = "rust_fuchsia_x64_toolchain_base",
     binary_ext = "",
     clippy_driver = "//:bin/clippy-driver",
-
-    # Keep debug symbols in the linked binary regardless of --compilation_mode.
-    # fx_package extracts them into a .build-id directory and strips the copy
-    # that goes into the package, mirroring how GN handles Fuchsia binaries.
-    debug_info = _TARGET_DEBUG_INFO,
     dylib_ext = ".so",
     exec_triple = "x86_64-unknown-fuchsia",
     extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS,
@@ -395,11 +326,6 @@ rust_toolchain(
     name = "rust_fuchsia_arm64_toolchain_base",
     binary_ext = "",
     clippy_driver = "//:bin/clippy-driver",
-
-    # Keep debug symbols in the linked binary regardless of --compilation_mode.
-    # fx_package extracts them into a .build-id directory and strips the copy
-    # that goes into the package, mirroring how GN handles Fuchsia binaries.
-    debug_info = _TARGET_DEBUG_INFO,
     dylib_ext = ".so",
     exec_triple = "aarch64-unknown-fuchsia",
     extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS + [
@@ -461,11 +387,6 @@ rust_toolchain(
     name = "rust_fuchsia_riscv64_toolchain_base",
     binary_ext = "",
     clippy_driver = "//:bin/clippy-driver",
-
-    # Keep debug symbols in the linked binary regardless of --compilation_mode.
-    # fx_package extracts them into a .build-id directory and strips the copy
-    # that goes into the package, mirroring how GN handles Fuchsia binaries.
-    debug_info = _TARGET_DEBUG_INFO,
     dylib_ext = ".so",
     exec_triple = "riscv64gc-unknown-fuchsia",
     extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS + [

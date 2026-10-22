@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_build_info//:args.bzl", "rust_debug_assertions")
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
@@ -89,6 +90,16 @@ host_rustc_test(
     srcs = ["check_rustc_test.rs"],
     build_flags = [":flags_rust"],
     edition = "2024",
+)
+
+# Verify that the default toolchain flags enable debug assertions exactly when
+# the GN `rust_debug_assertions` build arg is set, i.e. that no hardcoded
+# toolchain flag overrides //build/config/rust:default_debug_assertions.
+host_rustc_test(
+    name = "check_default_debug_assertions",
+    srcs = ["check_debug_assertions.rs"],
+    edition = "2024",
+    rustc_flags = ["--cfg=expect_debug_assertions"] if rust_debug_assertions else [],
 )
 
 # Verify compiler_build_flags() with configurable (select()) attributes in Rust.

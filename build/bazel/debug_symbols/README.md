@@ -236,29 +236,20 @@ These goals are achieved by doing the following:
   information for linker-generated code (e.g. trampolines or PLT stubs),
   something that is not performed by default Bazel C++ toolchains.
 
-- For Rust, the `rust_toolchain()` definition provides custom `debug_info` and
-  `strip_level` dictionaries to force debug symbol generation and prevent
-  stripping too (the latter being redundant with `--strip=never`). This looks
-  like:
+- For Rust, the debug info level comes from the `-Cdebuginfo` flag of
+  `//build/config:default_debuginfo`, which the Rust toolchains add through
+  `rust_toolchain_with_build_flags()`, rather than from `--compilation_mode`.
+  It overrides the `--codegen=debuginfo` flag that rules_rust derives from the
+  compilation mode. The `rust_toolchain()` definition also provides custom
+  `strip_level` dictionaries to prevent stripping (redundant with
+  `--strip=never`). This looks like:
 
   // LINT.IfChange
   ```py
-    _HOST_DEBUG_INFO = {
-        "dbg": "2",
-        "fastbuild": "1",  # default "0", i.e. no symbols.
-        "opt": "1",  # default "0", i.e. no symbols.
-    }
-
     _HOST_STRIP_LEVEL = {
         "dbg": "none",
         "fastbuild": "none",
         "opt": "none",
-    }
-
-    _TARGET_DEBUG_INFO = {
-        "dbg": "2",
-        "fastbuild": "2",
-        "opt": "2",
     }
 
     _TARGET_STRIP_LEVEL = {
