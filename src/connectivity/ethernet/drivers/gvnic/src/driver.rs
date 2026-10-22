@@ -21,9 +21,11 @@ use fdf_component::{
 };
 use fdf_fidl::{DriverChannel, create_channel};
 use fidl_next::fuchsia::create_channel as create_zircon_channel;
+use fidl_next::wire::Result as WireResult;
+use fidl_next::wire::fuchsia::Status as WireStatus;
 use fidl_next::{
-    Client, ClientDispatcher, ClientEnd, Error as FidlError, IgnoreEvents, ProtocolError, Request,
-    Responder, ServerEnd,
+    Client, ClientDispatcher, ClientEnd, Decoded, Error as FidlError, FromWireRef, IgnoreEvents,
+    IntoNatural, ProtocolError, Request, Responder, ServerEnd, Wire,
 };
 use fidl_next_fuchsia_hardware_network::{
     FRAME_FEATURES_RAW, FrameType, FrameTypeSupport, PortBaseInfo, PortClass, PortStatus,
@@ -39,13 +41,12 @@ use fidl_next_fuchsia_hardware_network_driver::network_port::{
 use fidl_next_fuchsia_hardware_network_driver::{
     BufferMetadata, DeviceImplInfo, Features, MAX_RX_BUFFERS, MAX_TX_RESULTS, MacAddr,
     MacAddrServerHandler, NetworkDeviceIfc, NetworkDeviceImpl, NetworkDeviceImplServerHandler,
-    NetworkPort, NetworkPortServerHandler, RxBuffer, RxBufferPart, RxSpaceBuffer,
+    NetworkPort, NetworkPortServerHandler, RxBufferPart, RxSpaceBuffer,
     Service as NetdevServiceMarker, ServiceHandler as NetdevServiceHandler, SupportedMacFilterMode,
     TxResult,
 };
-use fidl_next_fuchsia_hardware_pci::{
-    Bar, BarResult, Device as PciDevice, InterruptMode, Service as PciService,
-};
+use fidl_next_fuchsia_hardware_pci::wire::bar_result::Value as WireBarResultValue;
+use fidl_next_fuchsia_hardware_pci::{Device as PciDevice, InterruptMode, Service as PciService};
 use fidl_next_fuchsia_net::MacAddress;
 use fuchsia_async::{OnInterrupt, Scope, ScopeHandle, Timer};
 use fuchsia_component::server::ServiceFs;
@@ -329,21 +330,39 @@ impl Driver for GvnicDriver {
     }
 }
 
+type RxBuffer = fidl_next_fuchsia_hardware_network_driver::generic::RxBuffer<
+    BufferMetadata,
+    [RxBufferPart; 1],
+    u16,
+>;
+
 trait ResultExt<T> {
     fn domain_error_to_internal(self) -> Result<T, Status>;
 }
 
-impl<T> ResultExt<T> for Result<Result<T, Status>, FidlError> {
+impl<T, D> ResultExt<T> for Result<Decoded<WireResult<'static, T, WireStatus>, D>, FidlError>
+where
+    T: for<'de> Wire<Narrowed<'de> = T, Constraint = ()>,
+{
     fn domain_error_to_internal(self) -> Result<T, Status> {
         self.map_err(|_| Status::INTERNAL)?
+            .take_with(|res| res.into_result().map_err(WireStatus::to_status))
     }
 }
 
-fn extract_mmio_bar(bar: Bar) -> Result<MmioRegion<VmoMemory>, Status> {
-    let BarResult::Vmo(vmo) = bar.result else {
-        return Err(Status::WRONG_TYPE);
-    };
-    let size = usize::try_from(bar.size).map_err(|_| Status::OUT_OF_RANGE)?;
+async fn map_pci_bar(
+    pci: &Client<PciDevice>,
+    bar_id: u32,
+) -> Result<MmioRegion<VmoMemory>, Status> {
+    let (vmo, size) =
+        pci.get_bar(bar_id).wire().await.map_err(|_| Status::INTERNAL)?.take_with(|res| {
+            let bar = res.into_result().map_err(WireStatus::to_status)?.result;
+            let WireBarResultValue::Vmo(vmo) = bar.result.into_inner() else {
+                return Err(Status::WRONG_TYPE);
+            };
+            let size = usize::try_from(*bar.size).map_err(|_| Status::OUT_OF_RANGE)?;
+            Ok((vmo.into_natural(), size))
+        })?;
     VmoMapping::map(0, size, vmo)
 }
 
@@ -400,7 +419,7 @@ async fn complete_rx_batched(ifc: &Client<NetworkDeviceIfc, DriverChannel>, buff
 fn empty_rx_buffer(id: u32) -> RxBuffer {
     RxBuffer {
         meta: BufferMetadata { port: PORT_ID, frame_type: FrameType::Ethernet, flags: 0 },
-        data: vec![RxBufferPart { id, offset: 0, length: 0 }],
+        data: [RxBufferPart { id, offset: 0, length: 0 }],
         full_csums_verified: 0,
     }
 }
@@ -527,7 +546,7 @@ impl GvnicInner {
 
             rx_buffers.push(RxBuffer {
                 meta: BufferMetadata { port: PORT_ID, frame_type: FrameType::Ethernet, flags: 0 },
-                data: vec![RxBufferPart {
+                data: [RxBufferPart {
                     id: space.id,
                     offset: 0,
                     length: u32::try_from(payload_len).unwrap_or(0),
@@ -584,7 +603,7 @@ impl GvnicDriver {
                 continue;
             }
             let client = client_end.spawn();
-            match client.get_device_info().await {
+            match client.get_device_info().wire().await {
                 Ok(_) => return Ok(client),
                 Err(FidlError::Protocol(ProtocolError::PeerClosed)) => continue,
                 Err(err) => {
@@ -603,14 +622,11 @@ impl GvnicDriver {
         scope: ScopeHandle,
     ) -> Result<Arc<Mutex<GvnicInner>>, Status> {
         // Enable bus mastering, obtain BTI 0, and map BAR 0 (registers) and BAR 2 (doorbells).
-        pci.set_bus_mastering(true).await.domain_error_to_internal()?;
-        let bti = pci.get_bti(0).await.domain_error_to_internal()?.bti;
+        pci.set_bus_mastering(true).wire().await.domain_error_to_internal()?;
+        let bti = pci.get_bti(0).wire().await.domain_error_to_internal()?.bti.into_natural();
 
-        let bar0 = pci.get_bar(GVNIC_REGISTER_BAR).await.domain_error_to_internal()?.result;
-        let mut reg_mmio = extract_mmio_bar(bar0)?;
-
-        let bar2 = pci.get_bar(GVNIC_DOORBELL_BAR).await.domain_error_to_internal()?.result;
-        let doorbell_mmio = extract_mmio_bar(bar2)?;
+        let mut reg_mmio = map_pci_bar(&pci, GVNIC_REGISTER_BAR).await?;
+        let doorbell_mmio = map_pci_bar(&pci, GVNIC_DOORBELL_BAR).await?;
 
         // Reset card and write driver version string byte-by-byte to REG_DRIVER_VERSION_OFFSET.
         if let Some(reg_offset) = start_reset_mmio(&mut reg_mmio) {
@@ -647,17 +663,35 @@ impl GvnicDriver {
         }
 
         // Enable MSI-X interrupts (1 TX, 1 RX, 1 management = 3 total).
-        let irq_modes = pci.get_interrupt_modes().await.map_err(|_| Status::INTERNAL)?.modes;
-        if u32::from(irq_modes.msix_count) < REQUIRED_MSIX_COUNT {
+        let irq_modes = pci.get_interrupt_modes().wire().await.map_err(|_| Status::INTERNAL)?;
+        if u32::from(*irq_modes.modes.msix_count) < REQUIRED_MSIX_COUNT {
             return Err(Status::NOT_SUPPORTED);
         }
         pci.set_interrupt_mode(InterruptMode::MsiX, REQUIRED_MSIX_COUNT)
+            .wire()
             .await
             .domain_error_to_internal()?;
-        let tx_irq = pci.map_interrupt(TX_IRQ_INDEX).await.domain_error_to_internal()?.interrupt;
-        let rx_irq = pci.map_interrupt(RX_IRQ_INDEX).await.domain_error_to_internal()?.interrupt;
-        let mgmt_irq =
-            pci.map_interrupt(MGMT_IRQ_INDEX).await.domain_error_to_internal()?.interrupt;
+        let tx_irq = pci
+            .map_interrupt(TX_IRQ_INDEX)
+            .wire()
+            .await
+            .domain_error_to_internal()?
+            .interrupt
+            .into_natural();
+        let rx_irq = pci
+            .map_interrupt(RX_IRQ_INDEX)
+            .wire()
+            .await
+            .domain_error_to_internal()?
+            .interrupt
+            .into_natural();
+        let mgmt_irq = pci
+            .map_interrupt(MGMT_IRQ_INDEX)
+            .wire()
+            .await
+            .domain_error_to_internal()?
+            .interrupt
+            .into_natural();
 
         // Query device descriptor via Admin Queue using a temporary scratch page.
         let dev_descr: GvnicDeviceDescriptor = {
@@ -929,7 +963,8 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
             return;
         }
 
-        let ifc_dispatcher = ClientDispatcher::new(request.payload().iface);
+        let iface = request.wire_payload().take_with(|p| p.iface.into_natural());
+        let ifc_dispatcher = ClientDispatcher::new(iface);
         let ifc_client = ifc_dispatcher.client();
         self.scope.spawn(async move {
             let _ = ifc_dispatcher.run(IgnoreEvents).await;
@@ -943,8 +978,8 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
             NetworkPortServer { inner: Arc::clone(&self.inner), scope: self.scope.clone() };
         port_server.spawn_on(port_handler, &self.scope);
 
-        let status = match ifc_client.add_port(PORT_ID, port_client).await {
-            Ok(resp) => resp.status,
+        let status = match ifc_client.add_port(PORT_ID, port_client).wire().await {
+            Ok(resp) => resp.status.to_result(),
             Err(_) => Err(Status::INTERNAL),
         };
         if status.is_ok() {
@@ -1026,15 +1061,16 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
     }
 
     async fn queue_tx(&mut self, request: Request<QueueTx, DriverChannel>) {
-        let buffers = request.payload().buffers;
+        let payload = request.wire_payload();
+        let buffers = payload.buffers.as_slice();
         self.tx_results.clear();
         let ifc = {
             let inner = &mut *self.inner.lock();
             if !inner.netdev_started || inner.dma.is_none() {
                 self.tx_results.extend(
                     buffers
-                        .into_iter()
-                        .map(|b| TxResult { id: b.id, status: Err(Status::UNAVAILABLE) }),
+                        .iter()
+                        .map(|b| TxResult { id: *b.id, status: Err(Status::UNAVAILABLE) }),
                 );
                 inner.netdev_ifc.clone()
             } else {
@@ -1045,28 +1081,29 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
                     let mut queued_any = false;
 
                     for tx in buffers {
+                        let tx_id = *tx.id;
                         if tx.data.len() != 1 {
                             self.tx_results
-                                .push(TxResult { id: tx.id, status: Err(Status::INVALID_ARGS) });
+                                .push(TxResult { id: tx_id, status: Err(Status::INVALID_ARGS) });
                             continue;
                         }
                         if dma.tx_ring.pending_space.len() >= usize::from(tx_ring_len) {
                             self.tx_results
-                                .push(TxResult { id: tx.id, status: Err(Status::NO_RESOURCES) });
+                                .push(TxResult { id: tx_id, status: Err(Status::NO_RESOURCES) });
                             continue;
                         }
 
                         let region = &tx.data[0];
-                        let len = usize::try_from(region.length).unwrap_or(usize::MAX);
-                        let vmo_offset = usize::try_from(region.offset).unwrap_or(usize::MAX);
+                        let len = usize::try_from(*region.length).unwrap_or(usize::MAX);
+                        let vmo_offset = usize::try_from(*region.offset).unwrap_or(usize::MAX);
                         let Some(vmo) = inner.vmo_map[usize::from(region.vmo)].as_ref() else {
                             self.tx_results
-                                .push(TxResult { id: tx.id, status: Err(Status::NOT_FOUND) });
+                                .push(TxResult { id: tx_id, status: Err(Status::NOT_FOUND) });
                             continue;
                         };
                         if len > tx_buf_size {
                             self.tx_results
-                                .push(TxResult { id: tx.id, status: Err(Status::OUT_OF_RANGE) });
+                                .push(TxResult { id: tx_id, status: Err(Status::OUT_OF_RANGE) });
                             continue;
                         }
 
@@ -1075,7 +1112,7 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
                         if let Err(status) =
                             dma.tx_page_list.copy_from(qpl_offset, vmo, vmo_offset, len)
                         {
-                            self.tx_results.push(TxResult { id: tx.id, status: Err(status) });
+                            self.tx_results.push(TxResult { id: tx_id, status: Err(status) });
                             continue;
                         }
 
@@ -1093,7 +1130,7 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
 
                         dma.tx_ring.next_free = (dma.tx_ring.next_free + 1) % tx_ring_len;
                         dma.tx_ring.doorbell = dma.tx_ring.doorbell.wrapping_add(1);
-                        dma.tx_ring.pending_space.push_back(tx.id);
+                        dma.tx_ring.pending_space.push_back(tx_id);
                         queued_any = true;
                     }
 
@@ -1116,16 +1153,19 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
     }
 
     async fn queue_rx_space(&mut self, request: Request<QueueRxSpace, DriverChannel>) {
-        let buffers = request.payload().buffers;
+        let payload = request.wire_payload();
+        let buffers = payload.buffers.as_slice();
         self.rx_buffers.clear();
         let ifc = {
             let mut inner = self.inner.lock();
             if !inner.netdev_started || inner.dma.is_none() {
-                self.rx_buffers.extend(buffers.into_iter().map(|b| empty_rx_buffer(b.id)));
+                self.rx_buffers.extend(buffers.iter().map(|b| empty_rx_buffer(*b.id)));
                 inner.netdev_ifc.clone()
             } else {
                 if let Some(dma) = &mut inner.dma {
-                    dma.rx_ring.pending_space.extend(buffers);
+                    dma.rx_ring
+                        .pending_space
+                        .extend(buffers.iter().map(RxSpaceBuffer::from_wire_ref));
                 }
                 inner.process_rx_completions(&mut self.rx_buffers)
             }
@@ -1140,26 +1180,24 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
         request: Request<PrepareVmo, DriverChannel>,
         responder: Responder<PrepareVmo, DriverChannel>,
     ) {
-        let payload = request.payload();
+        let (id, vmo) = request.wire_payload().take_with(|p| (p.id, p.vmo.into_natural()));
         let status = {
             let mut inner = self.inner.lock();
-            if inner.vmo_map[usize::from(payload.id)].is_some() {
+            if inner.vmo_map[usize::from(id)].is_some() {
                 Err(Status::ALREADY_BOUND)
             } else {
-                payload
-                    .vmo
-                    .get_size()
+                vmo.get_size()
                     .and_then(|size| usize::try_from(size).map_err(|_| Status::OUT_OF_RANGE))
                     .and_then(|size| {
                         Mapping::create_from_vmo_with_vmar(
-                            &payload.vmo,
+                            &vmo,
                             &inner.vmar,
                             size,
                             VmarFlags::PERM_READ | VmarFlags::PERM_WRITE,
                         )
                     })
                     .map(|mapped| {
-                        inner.vmo_map[usize::from(payload.id)] = Some(mapped);
+                        inner.vmo_map[usize::from(id)] = Some(mapped);
                     })
             }
         };
@@ -1171,7 +1209,7 @@ impl NetworkDeviceImplServerHandler<DriverChannel> for NetworkDeviceImplServer {
         request: Request<ReleaseVmo, DriverChannel>,
         responder: Responder<ReleaseVmo, DriverChannel>,
     ) {
-        let id = request.payload().id;
+        let id = request.wire_payload().id;
         self.inner.lock().vmo_map[usize::from(id)] = None;
         let _ = responder.respond(()).await;
     }
