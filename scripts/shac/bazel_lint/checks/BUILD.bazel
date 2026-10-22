@@ -12,8 +12,12 @@ filegroup(
     testonly = True,
     srcs = [
         "__init__.py",
+        "visibility_utils.py",
         # LINT.IfChange(all_check_files)
+        "load_visibility.py",
+        "package_default_visibility.py",
         "root_package_labels.py",
+        "target_visibility.py",
         # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)
     ],
     visibility = [

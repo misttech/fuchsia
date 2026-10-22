@@ -59,7 +59,7 @@ list every path. Outside `third_party/` directories, these still need an
 entry in `build/bazel/shac/recursive_glob_allowlist.json`, which is separate from
 the `glob()` allowlist.
 
-## Visibility
+## Visibility {:#visibility}
 
 The following are general guidelines that apply to both `BUILD.bazel` and
 `.bzl` files. More specific details are provided on the page for each.
@@ -76,10 +76,20 @@ macros][specify-visibility-legacy-macros].
 ### Do not use public visibility {:#do-not-use-public-visibility}
 
 Do not use public visibility (`"//visibility:public"` or `visibility("public")`)
-outside `bazel_sdk/` directories. This level of access is
+_\[<span style="color:red">SHAC error</span>\]_ outside
+`//build/bazel_sdk/*rules*/...` directories. This level of access is
 [only appropriate if the code is used by external
 repositories][bazel-official-build-style-visibility]{:.external}, which is not
 applicable to non-SDK code in fuchsia.git.
+
+### Do not reference vendor subpaths {:#do-not-reference-vendor-subpaths}
+
+Do not include vendor subpaths or partner names in visibility declarations
+_\[<span style="color:red">SHAC error</span>\]_. Only `//vendor:__pkg__`,
+`//vendor:__subpackages__`, `//vendor/google:__pkg__`, and
+`//vendor/google:__subpackages__` (or `//vendor/...` and `//vendor/google/...`
+in `.bzl` load visibility declarations) may be referenced in public Fuchsia
+code.
 
 ### [Visibility should be scoped as tightly as possible, while still allowing access by tests and reverse dependencies][bazel-official-build-style-visibility]{:.external}
 

@@ -44,9 +44,9 @@ Load `visibility` uses a different syntax than target `visibility`:
 
 For very common targets truly meant to be used across the code base, `"//..."`
 may be used. [Do not use public visibility][do-not-use-public-visibility]
-(`visibility("public")`). In most cases, though, a set of top-level and/or
-second-level directories (e.g., `"//src/..."` and `"//sdk/lib/..."`) is
-sufficient.
+(`visibility("public")`) _\[<span style="color:red">SHAC error</span>\]_. In
+most cases, though, a set of top-level and/or second-level directories (e.g.,
+`"//src/..."` and `"//sdk/lib/..."`) is sufficient.
 
 ### Symbol visibility
 

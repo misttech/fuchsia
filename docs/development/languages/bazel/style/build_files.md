@@ -32,7 +32,7 @@ all need to be visible to the widget loader or widget tests in another package
 Do not use `default_visibility`
 [for `//visibility:public`][bazel-official-build-style-visibility]{:.external}
 and other broad visibility such as `//:__subpackages__` or
-`//src:__subpackages__`.
+`//src:__subpackages__` _\[<span style="color:red">SHAC error</span>\]_.
 
 In GN terms, using `default_visibility = [...]` in a `BUILD.bazel` file is the
 equivalent of putting `visibility = [...]` at the top of a `BUILD.gn` file. In
@@ -95,8 +95,9 @@ In Bazel:
 Each target's `visibility` should be scoped as tightly as possible.
 
 [Do not use public visibility][do-not-use-public-visibility]
-(`"//visibility:public"`). For very common targets that are truly intended to
-be used across the code base, `"//:__subpackages__"` is the appropriate string.
+(`"//visibility:public"`) _\[<span style="color:red">SHAC error</span>\]_. For
+very common targets that are truly intended to be used across the code base,
+`"//:__subpackages__"` is the appropriate string.
 However, prefer specifying a few top-level directories (e.g.,
 `["//sdk/lib:__subpackages__", "//src:__subpackages__"]`).
 

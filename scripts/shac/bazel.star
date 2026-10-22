@@ -459,6 +459,33 @@ _bazel_disallowed_workspace_root_package_labels = _make_bazel_lint_check(
     applies_to_globs = _ALL_BAZEL_FILES,
 )
 
+# Reports an error when visibility("public") is used and a warning when
+# visibility("//...") is used in .bzl files.
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_load_visibility = _make_bazel_lint_check(
+    "bazel_load_visibility",
+    applies_to_globs = _BZL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
+# Reports an error when default_visibility in package() uses broad visibility
+# and a warning when it uses narrower visibility.
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_package_default_visibility = _make_bazel_lint_check(
+    "bazel_package_default_visibility",
+    applies_to_globs = _BUILD_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
+# Reports an error when "//visibility:public" is used on targets outside
+# exempted directories.
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_target_visibility = _make_bazel_lint_check(
+    "bazel_target_visibility",
+    applies_to_globs = _BUILD_AND_BZL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
 def register_bazel_checks():
     """Registers all Bazel shac checks."""
     shac.register_check(shac.check(_bazel_default_applicable_licenses, formatter = False))
@@ -470,4 +497,7 @@ def register_bazel_checks():
     # with checks.
     # LINT.IfChange(register_all_checks)
     shac.register_check(_bazel_disallowed_workspace_root_package_labels)
+    shac.register_check(_bazel_load_visibility)
+    shac.register_check(_bazel_package_default_visibility)
+    shac.register_check(_bazel_target_visibility)
     # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)

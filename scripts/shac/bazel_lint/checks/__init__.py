@@ -7,7 +7,12 @@
 # Ensure shac check registration, Starlark tests, and test filegroups are
 # updated when adding or removing checks.
 # LINT.IfChange(all_checks)
-from . import root_package_labels
+from . import (
+    load_visibility,
+    package_default_visibility,
+    root_package_labels,
+    target_visibility,
+)
 
 # LINT.ThenChange(
 #     //scripts/shac/bazel.star:register_all_checks,
