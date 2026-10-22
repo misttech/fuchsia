@@ -629,6 +629,8 @@ pub(crate) fn max_priority_for_sched_policy(policy: u32) -> Result<u8, Errno> {
 /// Names of RoleManager roles for each static Zircon priority in the fair scheduler.
 /// The index in the array is equal to the static priority.
 // LINT.IfChange
+// Each default role in `starnix.profiles` sets `"affinity": "all"` so reverting from an
+// affinity-restricted `RoleOverrides` profile clears the thread's Zircon soft affinity mask.
 const FAIR_PRIORITY_ROLE_NAMES: [&str; 32] = [
     "fuchsia.starnix.fair.0",
     "fuchsia.starnix.fair.1",
@@ -664,7 +666,7 @@ const FAIR_PRIORITY_ROLE_NAMES: [&str; 32] = [
     "fuchsia.starnix.fair.31",
 ];
 const REALTIME_ROLE_NAME: &str = "fuchsia.starnix.realtime";
-// LINT.ThenChange(src/starnix/config/starnix.profiles)
+// LINT.ThenChange(//src/starnix/config/starnix.profiles)
 
 #[cfg(test)]
 mod tests {

@@ -38,6 +38,7 @@ using zircon_profile::Role;
 namespace {
 
 constexpr char kConfigFileExtension[] = ".profiles";
+constexpr std::string_view kAllCpusAffinity = "all";
 
 std::string ToString(const std::vector<Parameter>& params) {
   std::ostringstream stream;
@@ -389,12 +390,16 @@ std::optional<zx_profile_info_t> ParseThreadProfile(const std::string& filename,
 
   if (has_affinity) {
     const auto& affinity_member = profile.value["affinity"];
+    const bool is_string = affinity_member.IsString();
     const bool is_uint = affinity_member.IsUint64();
     const bool is_array = affinity_member.IsArray();
 
     info.flags |= ZX_PROFILE_INFO_FLAG_CPU_MASK;
 
-    if (is_uint) {
+    if (is_string && affinity_member.GetString() == kAllCpusAffinity) {
+      std::fill(std::begin(info.cpu_affinity_mask.mask), std::end(info.cpu_affinity_mask.mask),
+                std::numeric_limits<uint64_t>::max());
+    } else if (is_uint) {
       static_assert(std::numeric_limits<uint64_t>::digits <= ZX_CPU_SET_BITS_PER_WORD);
       info.cpu_affinity_mask.mask[0] = affinity_member.GetUint64();
     } else if (is_array) {
@@ -430,9 +435,11 @@ std::optional<zx_profile_info_t> ParseThreadProfile(const std::string& filename,
         return std::nullopt;
       }
     } else {
-      FX_LOG_KV(WARNING, "Profile member \"affinity\" must be a uint64 or an array of CPU indices!",
-                FX_KV("filename", filename), FX_KV("profile_name", profile_name),
-                FX_KV("tag", "RoleManager"));
+      FX_LOG_KV(
+          WARNING,
+          "Profile member \"affinity\" must be \"all\", a uint64, or an array of CPU indices!",
+          FX_KV("filename", filename), FX_KV("profile_name", profile_name),
+          FX_KV("tag", "RoleManager"));
       return std::nullopt;
     }
   }  // if (has_affinity)

@@ -72,6 +72,18 @@ TEST(ProfileConfig, Parse) {
   }
 
   {
+    const auto iter = result->thread.find(*Role::Create("test.core.all_cpus"));
+    ASSERT_TRUE(iter != result->thread.end());
+    EXPECT_EQ(iter->second.scope, ProfileScope::Core);
+    EXPECT_EQ(iter->second.info.flags,
+              ZX_PROFILE_INFO_FLAG_CPU_MASK | ZX_PROFILE_INFO_FLAG_PRIORITY);
+    EXPECT_EQ(iter->second.info.priority, 16);
+    for (const uint64_t mask_word : iter->second.info.cpu_affinity_mask.mask) {
+      EXPECT_EQ(mask_word, std::numeric_limits<uint64_t>::max());
+    }
+  }
+
+  {
     const auto iter = result->thread.find(*Role::Create("test.bringup.a"));
     ASSERT_TRUE(iter != result->thread.end());
     EXPECT_EQ(iter->second.scope, ProfileScope::Core);
@@ -276,6 +288,7 @@ TEST(ProfileConfig, Parse) {
       "test.bringup.b:affinity",
       "test.core.a",
       "test.core.critical",
+      "test.core.all_cpus",
       "test.core.parameterized.role:input=foo",
       "test.core.parameterized.role:input=bar",
       "test.core.parameterized.role:param1=foo,param2=bar",

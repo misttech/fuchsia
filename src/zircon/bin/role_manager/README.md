@@ -50,6 +50,9 @@ The JSON file has the following format:
     // A profile with fair priority and affinity to CPUs 0 and 1 using a CPU bitmask.
     "fuchsia.async.loop:two-cpus": { "priority": 16, "affinity": 3 },
 
+    // A profile with fair priority and explicit affinity to all CPUs.
+    "fuchsia.async.loop:all-cpus": { "priority": 16, "affinity": "all" },
+
     // A profile with deadline parameters.
     "fuchsia.drivers.acme.irq-handler": { "capacity": "500us", "deadline": "1ms", "period": "1ms" },
 
