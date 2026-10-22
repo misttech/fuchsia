@@ -27,8 +27,8 @@ rustc_library(
     ],
     with_host_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
-        "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_common",
+        "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust_common",
         "//src/developer/ffx/lib/netext:lib",
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:thiserror",

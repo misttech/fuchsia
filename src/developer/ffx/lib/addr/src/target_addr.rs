@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_developer_ffx::{
+use fidl_fuchsia_developer_ffx_common::{
     TargetAddrInfo, TargetIp, TargetIpAddrInfo, TargetIpPort, TargetVSockCtx, TargetVSockNamespace,
 };
-use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address};
+use fidl_fuchsia_net_common::{IpAddress, Ipv4Address, Ipv6Address};
 use netext::{IsLocalAddr, scope_id_to_name};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -742,7 +742,7 @@ mod test {
         assert!("uart:".parse::<TargetAddr>().is_err());
 
         // Conversion to/from FIDL TargetAddrInfo
-        let info: fidl_fuchsia_developer_ffx::TargetAddrInfo = (&parsed).into();
+        let info: TargetAddrInfo = (&parsed).into();
         let from_info: TargetAddr = (&info).into();
         assert_eq!(parsed, from_info);
 
