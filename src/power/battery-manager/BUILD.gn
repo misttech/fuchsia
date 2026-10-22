@@ -48,6 +48,7 @@ battery_manager_sources = [
   "src/battery_info_recorders.rs",
   "src/battery_manager.rs",
   "src/battery_simulator.rs",
+  "src/cache.rs",
   "src/config.rs",
   "src/governor_supervisor.rs",
   "src/main.rs",

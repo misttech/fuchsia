@@ -23,7 +23,9 @@
         // Each governor receives its own fuchsia.hardware.power.charger.Controller connector
         // through CreateChildArgs.additional_inputs, so that the arbiter can attribute votes to the
         // governor that cast them. Governors are not offered the battery or charger driver services:
-        // battery-manager is the only client of the drivers.
+        // battery-manager is the only client of the drivers, and serves each governor
+        // fuchsia.hardware.power.battery.Battery and fuchsia.hardware.power.charger.Charger
+        // connectors in the same additional inputs.
         {
             directory: "config",
             from: "parent",

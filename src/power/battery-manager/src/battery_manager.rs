@@ -4,8 +4,9 @@
 
 use crate::BatteryInfoSource;
 use crate::battery_info_recorders::{BatteryInfoRecorders, FaultRecoveryEvent, RecorderConfig};
+use crate::cache::{Cache, CachedStatus, StatusFields, Subscription, duplicate_lease};
 use crate::polisher::Polisher;
-use anyhow::Error;
+use anyhow::{Context as _, Error, anyhow};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_power_battery as fbattery;
 use fidl_fuchsia_hardware_power_charger as fcharger;
@@ -19,17 +20,50 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use zx;
 
-/// Telemetry from hardware power drivers (battery fuel gauge and charger).
-struct DriverTelemetry<'a> {
-    battery: Option<&'a fbattery::Status>,
-    battery_spec: Option<&'a fbattery::Spec>,
-    charger: Option<&'a fcharger::Status>,
-    charger_spec: Option<&'a fcharger::Spec>,
+/// Watch options battery-manager configures on the battery driver.
+fn battery_watch_options() -> fbattery::WatchOptions {
+    fbattery::WatchOptions {
+        // Omitting `interest` defaults to receiving change notifications on any field change.
+        wake_on: Some(fbattery::Status {
+            present: Some(true),
+            level_percent: Some(0.0),
+            remaining_capacity_uah: Some(0),
+            full_charge_capacity_uah: Some(0),
+            health: Some(fbattery::HealthStatus::Good),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }
 
-impl<'a> From<DriverTelemetry<'a>> for fpower::BatteryInfo {
-    fn from(telemetry: DriverTelemetry<'a>) -> Self {
-        let mut info = match telemetry.battery {
+/// Charger status fields that describe how the device is supplied. Changes to them move the
+/// battery current, so the battery is re-read before they are published.
+fn charger_supply_fields() -> fcharger::Status {
+    fcharger::Status {
+        online: Some(true),
+        operating_mode: Some(fcharger::OperatingMode::Charging),
+        source_type: Some(fcharger::SourceType::Usb),
+        ..Default::default()
+    }
+}
+
+/// Watch options battery-manager configures on the charger driver: changes in the charger status
+/// fields relevant to battery and power management.
+fn charger_watch_options() -> fcharger::WatchOptions {
+    let interest = fcharger::Status {
+        charge_phase: Some(fcharger::ChargePhase::None),
+        ..charger_supply_fields()
+    };
+    fcharger::WatchOptions {
+        interest: Some(interest.clone()),
+        wake_on: Some(interest),
+        ..Default::default()
+    }
+}
+
+impl<'a> From<CachedStatus<'a>> for fpower::BatteryInfo {
+    fn from(cached: CachedStatus<'a>) -> Self {
+        let mut info = match cached.battery {
             Some(battery) => battery_status_to_battery_info(battery),
             None => fpower::BatteryInfo {
                 status: Some(fpower::BatteryStatus::NotAvailable),
@@ -40,23 +74,23 @@ impl<'a> From<DriverTelemetry<'a>> for fpower::BatteryInfo {
             },
         };
 
-        if let Some(charger) = telemetry.charger {
+        if let Some(charger) = cached.charger {
             let (charge_source, charge_status) = resolve_charger_state(charger, info.level_percent);
             info.charge_source = Some(charge_source);
             info.charge_status = Some(charge_status);
         }
 
-        if telemetry.battery_spec.is_some() || telemetry.charger_spec.is_some() {
+        if cached.battery_spec.is_some() || cached.charger_spec.is_some() {
             info.battery_spec = Some(fpower::BatterySpec {
-                design_capacity_uah: telemetry
+                design_capacity_uah: cached
                     .battery_spec
                     .and_then(|s| s.design_capacity_uah)
                     .map(|v| v.try_into().unwrap_or(i32::MAX)),
-                max_charging_current_ua: telemetry
+                max_charging_current_ua: cached
                     .charger_spec
                     .and_then(|s| s.max_charge_current_ua)
                     .map(|v| v.try_into().unwrap_or(i32::MAX)),
-                max_charging_voltage_uv: telemetry
+                max_charging_voltage_uv: cached
                     .charger_spec
                     .and_then(|s| s.max_charge_voltage_uv)
                     .map(|v| v.try_into().unwrap_or(i32::MAX)),
@@ -74,9 +108,13 @@ impl<'a> From<DriverTelemetry<'a>> for fpower::BatteryInfo {
 /// describe what happened and let a single consumer serialize the state change and the
 /// resulting publish.
 pub(crate) enum DriverUpdate {
-    /// The battery driver became available. Carries its static spec and a proxy the consumer
-    /// uses for on-demand reads.
-    BatteryConnected { spec: Option<fbattery::Spec>, proxy: fbattery::BatteryProxy },
+    /// The battery driver became available. Carries its static spec, what battery-manager's watch
+    /// on it delivers, and a proxy the consumer uses for on-demand reads.
+    BatteryConnected {
+        spec: Option<fbattery::Spec>,
+        subscription: Subscription<fbattery::Status>,
+        proxy: fbattery::BatteryProxy,
+    },
     /// New telemetry from the battery driver.
     BatteryStatus { status: fbattery::Status, wake_lease: Option<zx::EventPair> },
     /// The battery driver went away.
@@ -84,8 +122,13 @@ pub(crate) enum DriverUpdate {
     /// A pre-assembled snapshot from the legacy `fuchsia.power.battery` provider, which reports
     /// `BatteryInfo` directly rather than raw driver telemetry.
     LegacyBatteryInfo { info: fpower::BatteryInfo, wake_lease: Option<zx::EventPair> },
-    /// The charger driver became available. Carries its static spec.
-    ChargerConnected { spec: Option<fcharger::Spec> },
+    /// The charger driver became available. Carries its static spec, what battery-manager's
+    /// watch on it delivers, and a proxy the consumer uses for on-demand reads.
+    ChargerConnected {
+        spec: Option<fcharger::Spec>,
+        subscription: Subscription<fcharger::Status>,
+        proxy: fcharger::ChargerProxy,
+    },
     /// New telemetry from the charger driver.
     ChargerStatus { status: fcharger::Status, wake_lease: Option<zx::EventPair> },
     /// The charger driver went away.
@@ -281,11 +324,6 @@ pub struct BatteryManager {
     /// - Check previous state transitions (e.g. plug/unplug events) when processing new updates.
     /// - Maintain state across simulation mode toggles.
     cached_battery_info: RefCell<fpower::BatteryInfo>,
-    cached_battery_status: RefCell<Option<fbattery::Status>>,
-    cached_battery_spec: RefCell<Option<fbattery::Spec>>,
-    cached_battery_proxy: RefCell<Option<fbattery::BatteryProxy>>,
-    cached_charger_status: RefCell<Option<fcharger::Status>>,
-    cached_charger_spec: RefCell<Option<fcharger::Spec>>,
     watchers: Rc<RefCell<Vec<fpower::BatteryInfoWatcherProxy>>>,
     simulation_state: RefCell<bool>,
     simulated_battery_info: RefCell<fpower::BatteryInfo>,
@@ -293,6 +331,8 @@ pub struct BatteryManager {
     info_recorders: BatteryInfoRecorders,
     /// Blocking suspension if charging
     charge_wake_lease: RefCell<Option<fsystem::LeaseToken>>,
+    /// Caches raw battery and charger status and spec and serves them to governors.
+    cache: Rc<Cache>,
 
     update_sender: mpsc::Sender<(fpower::BatteryInfo, Option<zx::EventPair>)>,
     _worker_task: fasync::Task<()>,
@@ -320,6 +360,10 @@ impl BatteryManager {
         // For now the size is arbitrary chosen. Will log error and catch in CQ.
         let (sender, receiver) = futures::channel::mpsc::channel(10);
         let worker_task = Self::start_watcher_worker(watchers_rc.clone(), receiver);
+        let cache = Rc::new(Cache::new(
+            Subscription::from_battery_driver(None, Some(battery_watch_options())),
+            Subscription::from_charger_driver(None, Some(charger_watch_options())),
+        ));
 
         BatteryManager {
             cached_battery_info: RefCell::new(fpower::BatteryInfo {
@@ -333,11 +377,6 @@ impl BatteryManager {
                 timestamp: Some(get_current_time()),
                 ..Default::default()
             }),
-            cached_battery_status: RefCell::new(None),
-            cached_battery_spec: RefCell::new(None),
-            cached_battery_proxy: RefCell::new(None),
-            cached_charger_status: RefCell::new(None),
-            cached_charger_spec: RefCell::new(None),
             watchers: watchers_rc,
             simulation_state: RefCell::new(false),
             simulated_battery_info: RefCell::new(fpower::BatteryInfo {
@@ -356,6 +395,7 @@ impl BatteryManager {
             )),
             info_recorders: BatteryInfoRecorders::new(recorder_config),
             charge_wake_lease: RefCell::new(None),
+            cache,
             update_sender: sender,
             _worker_task: worker_task,
         }
@@ -378,7 +418,7 @@ impl BatteryManager {
                 stream::iter(watchers_to_send)
                     .for_each_concurrent(None, |w| {
                         let info_clone = info.clone();
-                        let wake_lease_dup = BatteryManager::duplicate_wake_lease(&wake_lease);
+                        let wake_lease_dup = duplicate_lease(wake_lease.as_ref());
 
                         async move {
                             if let Err(e) =
@@ -391,6 +431,11 @@ impl BatteryManager {
                     .await;
             }
         })
+    }
+
+    /// Returns the cache that holds raw battery and charger status and serves governors.
+    pub(crate) fn cache(&self) -> Rc<Cache> {
+        self.cache.clone()
     }
 
     // Adds watcher
@@ -495,10 +540,10 @@ impl BatteryManager {
         // and in an active charging mode (not discharging, OTG, or passthrough), but the raw fuel
         // gauge SOC is still below `FULL_CHARGE_MIN_LEVEL_PERCENT` (95%). `resolve_charger_state`
         // maps this condition to `ChargeStatus::NotCharging` to prevent `Polisher` from splicing
-        // the UI level to 100%, so we inspect `cached_charger_status` directly to record the
+        // the UI level to 100%, so we inspect the cached charger status directly to record the
         // premature termination in Inspect diagnostics.
-        let premature_charge_done =
-            self.cached_charger_status.borrow().as_ref().is_some_and(|charger| {
+        let premature_charge_done = self.cache.with_cached(|cached| {
+            cached.charger.is_some_and(|charger| {
                 charger.online.unwrap_or(false)
                     && !matches!(
                         charger.operating_mode,
@@ -510,7 +555,8 @@ impl BatteryManager {
                     )
                     && charger.charge_phase == Some(fcharger::ChargePhase::Done)
                     && raw_level.is_some_and(|level| level < FULL_CHARGE_MIN_LEVEL_PERCENT)
-            });
+            })
+        });
 
         let old_is_plugged_in = Polisher::is_plugged_in(&self.cached_battery_info.borrow());
         let new_is_plugged_in = Polisher::is_plugged_in(&info);
@@ -544,7 +590,7 @@ impl BatteryManager {
     ///
     /// The battery and charger watch loops both derive `BatteryInfo` from the same cached
     /// state, and deriving it awaits (`determine_suspend_status`, and a battery re-read on
-    /// charger events). Funnelling every update through one consumer keeps
+    /// some charger events). Funnelling every update through one consumer keeps
     /// read-modify-publish atomic, so the loops can no longer interleave and publish stale
     /// state or leak the charging wake lease.
     pub(crate) async fn run_update_consumer(
@@ -557,8 +603,8 @@ impl BatteryManager {
         }
     }
 
-    /// Applies one driver update. This is the only writer of the `cached_*` driver state and
-    /// the only caller of `process_battery_info`.
+    /// Applies one driver update. This is the only writer of the cached driver state and the only
+    /// caller of `process_battery_info`.
     ///
     /// Returns whether watchers were updated.
     async fn apply_update(
@@ -567,21 +613,18 @@ impl BatteryManager {
         sag: Option<fsystem::ActivityGovernorProxy>,
     ) -> bool {
         let wake_lease = match update {
-            DriverUpdate::BatteryConnected { spec, proxy } => {
-                *self.cached_battery_spec.borrow_mut() = spec;
-                *self.cached_battery_proxy.borrow_mut() = Some(proxy);
+            DriverUpdate::BatteryConnected { spec, subscription, proxy } => {
+                self.cache.battery_connected(spec, subscription, proxy);
                 return false;
             }
             DriverUpdate::BatteryStatus { status, wake_lease } => {
-                *self.cached_battery_status.borrow_mut() = Some(status);
+                self.cache.publish_battery(&status, wake_lease.as_ref());
                 wake_lease
             }
             // Republish so clients see the battery is gone and the charging wake lease is
             // re-evaluated, rather than latching the last state the battery reported.
             DriverUpdate::BatteryGone => {
-                *self.cached_battery_proxy.borrow_mut() = None;
-                *self.cached_battery_status.borrow_mut() = None;
-                *self.cached_battery_spec.borrow_mut() = None;
+                self.cache.battery_gone();
                 self.info_recorders.record_disconnected();
                 None
             }
@@ -590,56 +633,66 @@ impl BatteryManager {
                 self.update_watchers_conditionally(false, info, wake_lease);
                 return true;
             }
-            DriverUpdate::ChargerConnected { spec } => {
-                *self.cached_charger_spec.borrow_mut() = spec;
+            DriverUpdate::ChargerConnected { spec, subscription, proxy } => {
+                self.cache.charger_connected(spec, subscription, proxy);
                 return false;
             }
             DriverUpdate::ChargerStatus { status, wake_lease } => {
-                *self.cached_charger_status.borrow_mut() = Some(status);
-                self.refresh_battery_status().await;
+                // The re-read shares the charger update's wake lease, so that battery `wake_on`
+                // changes it reveals carry it.
+                if self.charger_update_needs_battery(&status)
+                    && let Err(e) = self.refresh_battery_status(wake_lease.as_ref()).await
+                {
+                    self.info_recorders.record_battery_refresh_error();
+                    warn!("Failed to refresh battery status on charger update: {e:?}");
+                }
+                self.cache.publish_charger(&status, wake_lease.as_ref());
                 wake_lease
             }
             // Republish so clients see the battery-only view and the charging wake lease is
             // re-evaluated, rather than latching the last state the charger reported.
             DriverUpdate::ChargerGone => {
-                *self.cached_charger_status.borrow_mut() = None;
-                *self.cached_charger_spec.borrow_mut() = None;
+                self.cache.charger_gone();
                 self.info_recorders.record_charger_disconnect();
                 None
             }
         };
 
-        let raw_info = DriverTelemetry {
-            battery: self.cached_battery_status.borrow().as_ref(),
-            battery_spec: self.cached_battery_spec.borrow().as_ref(),
-            charger: self.cached_charger_status.borrow().as_ref(),
-            charger_spec: self.cached_charger_spec.borrow().as_ref(),
-        }
-        .into();
+        let raw_info = self.cache.with_cached(|cached| fpower::BatteryInfo::from(cached));
         let info = self.process_battery_info(raw_info, sag).await;
         self.update_watchers_conditionally(false, info, wake_lease);
         true
     }
 
-    /// Re-reads battery telemetry, if a battery driver is connected.
+    /// Whether the battery should be re-read with [`Self::refresh_battery_status`] before
+    /// publishing charger `status`.
     ///
     /// The battery driver only pushes on its own change triggers, but charger events move
-    /// quantities it reports (notably charge current), so poll it on every charger update.
-    async fn refresh_battery_status(&self) {
-        let Some(proxy) = self.cached_battery_proxy.borrow().clone() else {
-            return;
+    /// quantities it reports (notably charge current). The battery is re-read when `status`
+    /// changes one of [`charger_supply_fields`], or would complete a governor connection's
+    /// `Watch`, since the governor then reads the battery with `GetStatus`, which is served from
+    /// the cache. Other changes, such as the charge phase alone, are published with the cached
+    /// battery status.
+    fn charger_update_needs_battery(&self, status: &fcharger::Status) -> bool {
+        let supply = charger_supply_fields();
+        let supply_changed = self.cache.with_cached(|cached| {
+            cached.charger.is_none_or(|cached| cached.masked(&supply) != status.masked(&supply))
+        });
+        supply_changed || self.cache.charger_update_is_news(status)
+    }
+
+    /// Re-reads battery status from the connected driver, if any, and publishes it to the cache.
+    async fn refresh_battery_status(&self, lease: Option<&zx::EventPair>) -> Result<(), Error> {
+        let Some(proxy) = self.cache.battery_proxy() else {
+            return Ok(());
         };
-        match proxy.get_status().await {
-            Ok(Ok(status)) => *self.cached_battery_status.borrow_mut() = Some(status),
-            Ok(Err(e)) => {
-                self.info_recorders.record_battery_refresh_error();
-                warn!("Failed to refresh battery status on charger update: {:?}", e);
-            }
-            Err(e) => {
-                self.info_recorders.record_battery_refresh_error();
-                warn!("FIDL error querying battery status on charger update: {:?}", e);
-            }
-        }
+        let status = proxy
+            .get_status()
+            .await
+            .context("FIDL error querying battery status")?
+            .map_err(|e| anyhow!("Failed to read battery status: {e:?}"))?;
+        self.cache.publish_battery(&status, lease);
+        Ok(())
     }
 
     fn publish_to_inspect(&self, info: &fpower::BatteryInfo, premature_charge_done: bool) {
@@ -756,34 +809,26 @@ impl BatteryManager {
 
         let battery_spec = proxy.get_spec().await.ok().and_then(Result::ok);
 
-        let options = fbattery::WatchOptions {
-            // Omitting `interest` defaults to receiving change notifications on any field change.
-            wake_on: Some(fbattery::Status {
-                present: Some(true),
-                level_percent: Some(0.0),
-                remaining_capacity_uah: Some(0),
-                full_charge_capacity_uah: Some(0),
-                health: Some(fbattery::HealthStatus::Good),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let _ = updates.unbounded_send(DriverUpdate::BatteryConnected {
-            spec: battery_spec,
-            proxy: proxy.clone(),
-        });
-
-        match proxy.configure_watch(&options).await {
-            Ok(Ok(_effective_options)) => {}
+        let effective_options = match proxy.configure_watch(&battery_watch_options()).await {
+            Ok(Ok(effective_options)) => Some(effective_options),
             Ok(Err(status)) => {
                 self.info_recorders.record_battery_watch_error();
                 warn!("Battery driver returned error configuring watch triggers: {:?}", status);
+                None
             }
             Err(e) => {
                 self.info_recorders.record_battery_watch_error();
                 warn!("Failed to configure watch triggers on battery driver: {:?}", e);
+                None
             }
-        }
+        };
+        let subscription =
+            Subscription::from_battery_driver(battery_spec.as_ref(), effective_options);
+        let _ = updates.unbounded_send(DriverUpdate::BatteryConnected {
+            spec: battery_spec,
+            subscription,
+            proxy: proxy.clone(),
+        });
 
         let mut current_lease: Option<fsystem::LeaseToken> = if let Some(sag) = &sag {
             match sag.acquire_wake_lease("battery_manager").await {
@@ -811,7 +856,7 @@ impl BatteryManager {
         loop {
             match proxy.watch(current_lease.take()).await {
                 Ok(Ok((status, wake_lease))) => {
-                    let watcher_wake_lease = Self::duplicate_wake_lease(&wake_lease);
+                    let watcher_wake_lease = duplicate_lease(wake_lease.as_ref());
                     current_lease = wake_lease;
 
                     let _ = updates.unbounded_send(DriverUpdate::BatteryStatus {
@@ -853,35 +898,30 @@ impl BatteryManager {
                 None
             }
         };
-        let _ = updates.unbounded_send(DriverUpdate::ChargerConnected { spec: charger_spec });
 
-        // Watch for changes in charger status fields relevant to battery and power management.
-        let interest = fcharger::Status {
-            online: Some(true),
-            operating_mode: Some(fcharger::OperatingMode::Charging),
-            charge_phase: Some(fcharger::ChargePhase::None),
-            source_type: Some(fcharger::SourceType::Usb),
-            ..Default::default()
-        };
-        let options = fcharger::WatchOptions {
-            interest: Some(interest.clone()),
-            wake_on: Some(interest),
-            ..Default::default()
-        };
-
-        match proxy.configure_watch(&options).await {
-            Ok(Ok(_effective_options)) => {
+        let effective_options = match proxy.configure_watch(&charger_watch_options()).await {
+            Ok(Ok(effective_options)) => {
                 debug!("Configured charger watch options");
+                Some(effective_options)
             }
             Ok(Err(status)) => {
                 self.info_recorders.record_charger_watch_error();
                 warn!("Charger driver rejected watch options: {:?}", status);
+                None
             }
             Err(e) => {
                 self.info_recorders.record_charger_watch_error();
                 warn!("FIDL error configuring charger watch options: {:?}", e);
+                None
             }
-        }
+        };
+        let subscription =
+            Subscription::from_charger_driver(charger_spec.as_ref(), effective_options);
+        let _ = updates.unbounded_send(DriverUpdate::ChargerConnected {
+            spec: charger_spec,
+            subscription,
+            proxy: proxy.clone(),
+        });
 
         let mut current_lease: Option<fsystem::LeaseToken> = if let Some(sag) = &sag {
             match sag.acquire_wake_lease("battery_manager_charger").await {
@@ -906,7 +946,7 @@ impl BatteryManager {
         loop {
             match proxy.watch(current_lease.take()).await {
                 Ok(Ok((status, wake_lease))) => {
-                    let downstream_lease = Self::duplicate_wake_lease(&wake_lease);
+                    let downstream_lease = duplicate_lease(wake_lease.as_ref());
                     current_lease = wake_lease;
 
                     let _ = updates.unbounded_send(DriverUpdate::ChargerStatus {
@@ -950,22 +990,13 @@ impl BatteryManager {
 
         res
     }
-
-    // This function takes a reference to an Option<zx::EventPair>
-    // and returns a new Option containing a duplicated handle, or None.
-    fn duplicate_wake_lease(wake_lease_ref: &Option<zx::EventPair>) -> Option<zx::EventPair> {
-        if let Some(handle_ref) = wake_lease_ref.as_ref() {
-            handle_ref.duplicate_handle(zx::Rights::SAME_RIGHTS).ok()
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::battery_info_recorders::PersistenceDirs;
+    use assert_matches::assert_matches;
     use async_utils::hanging_get::server::HangingGet;
     use fidl::endpoints::create_request_stream;
     use fuchsia_inspect::{self as inspect};
@@ -1256,7 +1287,7 @@ mod tests {
                 match req {
                     fpower::BatteryInfoProviderRequest::Watch { watcher, .. } => {
                         let watcher = watcher.into_proxy();
-                        let duplicated_lease = BatteryManager::duplicate_wake_lease(&lease);
+                        let duplicated_lease = duplicate_lease(lease.as_ref());
                         assert!(
                             watcher.on_change_battery_info(&info, duplicated_lease).await.is_ok()
                         );
@@ -1815,11 +1846,204 @@ mod tests {
         assert_eq!(battery_info.charge_status, Some(fpower::ChargeStatus::Charging));
         assert_eq!(battery_info.level_percent, Some(49.0));
         assert_eq!(battery_info.present_charging_current_ua, Some(1_000_000));
+
+        // Governors are served the re-read battery status too.
+        let governor_battery = connect_governor_battery(&battery_manager);
+        let status = governor_battery.get_status().await.unwrap().unwrap();
+        assert_eq!(status.current_ua, Some(1_000_000));
+    }
+
+    /// Verifies that a charger update that leaves the supply unchanged but completes a governor's
+    /// `Charger.Watch` re-reads the battery before it is published, so that the governor's
+    /// `Battery.GetStatus` then returns the re-read status.
+    #[fuchsia::test]
+    async fn test_charger_update_for_governor_refreshes_battery_first() {
+        let (_dir, battery_manager) = create_manager();
+        let cache = battery_manager.cache();
+
+        // A battery driver whose `GetStatus` reports a higher current on every read, so each read
+        // is distinguishable.
+        let (battery_proxy, mut battery_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fbattery::BatteryMarker>();
+        let reads = Rc::new(std::cell::Cell::new(0));
+        let read_current_ua = |read: i32| read * 100_000;
+        let driver_reads = reads.clone();
+        let _battery_driver = fasync::Task::local(async move {
+            while let Ok(Some(request)) = battery_stream.try_next().await {
+                if let fbattery::BatteryRequest::GetStatus { responder } = request {
+                    driver_reads.set(driver_reads.get() + 1);
+                    let status = fbattery::Status {
+                        current_ua: Some(read_current_ua(driver_reads.get())),
+                        ..Default::default()
+                    };
+                    let _ = responder.send(Ok(&status));
+                }
+            }
+        });
+        cache.battery_connected(None, Subscription::from_driver(None, None, None), battery_proxy);
+        let charger_subscription = Subscription::from_driver(
+            Some(fcharger::Status {
+                online: Some(true),
+                charge_phase: Some(fcharger::ChargePhase::None),
+                ..Default::default()
+            }),
+            None,
+            None,
+        );
+        let (charger_proxy, _) = fidl::endpoints::create_proxy::<fcharger::ChargerMarker>();
+        cache.charger_connected(None, charger_subscription, charger_proxy);
+
+        let charger_status = |charge_phase| fcharger::Status {
+            online: Some(true),
+            charge_phase: Some(charge_phase),
+            ..Default::default()
+        };
+        battery_manager
+            .apply_update(
+                DriverUpdate::ChargerStatus {
+                    status: charger_status(fcharger::ChargePhase::Fast),
+                    wake_lease: None,
+                },
+                None,
+            )
+            .await;
+
+        // A governor watching every charger field has seen the current charger status.
+        let governor_charger = connect_governor_charger(&battery_manager);
+        let _ = governor_charger.watch(None).await.unwrap().unwrap();
+        let governor_battery = connect_governor_battery(&battery_manager);
+        let reads_before = reads.get();
+
+        // Only the charge phase changes, which completes the governor's `Watch`.
+        let watch = governor_charger.watch(None);
+        battery_manager
+            .apply_update(
+                DriverUpdate::ChargerStatus {
+                    status: charger_status(fcharger::ChargePhase::Taper),
+                    wake_lease: None,
+                },
+                None,
+            )
+            .await;
+        let (status, _) = watch.await.unwrap().unwrap();
+        assert_eq!(status.charge_phase, Some(fcharger::ChargePhase::Taper));
+        assert_eq!(reads.get(), reads_before + 1);
+        assert_eq!(
+            governor_battery.get_status().await.unwrap().unwrap().current_ua,
+            Some(read_current_ua(reads.get()))
+        );
+    }
+
+    /// Verifies that the battery is re-read before a charger update that changes the supply or
+    /// would complete a governor's `Watch`, but not before a charge phase change no governor
+    /// watches.
+    #[fuchsia::test]
+    async fn test_charger_update_needs_battery() {
+        let (_dir, battery_manager) = create_manager();
+        let subscription = Subscription::from_driver(
+            Some(fcharger::Status {
+                online: Some(true),
+                charge_phase: Some(fcharger::ChargePhase::None),
+                ..Default::default()
+            }),
+            None,
+            None,
+        );
+        let (charger_proxy, _) = fidl::endpoints::create_proxy::<fcharger::ChargerMarker>();
+        battery_manager.cache.charger_connected(None, subscription, charger_proxy);
+        let charger_status = |online, charge_phase| fcharger::Status {
+            online: Some(online),
+            charge_phase: Some(charge_phase),
+            ..Default::default()
+        };
+        let fast = charger_status(true, fcharger::ChargePhase::Fast);
+        let taper = charger_status(true, fcharger::ChargePhase::Taper);
+        let offline = charger_status(false, fcharger::ChargePhase::None);
+
+        assert!(battery_manager.charger_update_needs_battery(&fast));
+        battery_manager.cache.publish_charger(&fast, None);
+        assert!(!battery_manager.charger_update_needs_battery(&taper));
+        assert!(battery_manager.charger_update_needs_battery(&offline));
+
+        // The charge phase completes the `Watch` of a governor watching every field.
+        let charger = connect_governor_charger(&battery_manager);
+        let _ = charger.watch(None).await.unwrap().unwrap();
+        assert!(battery_manager.charger_update_needs_battery(&taper));
+
+        // A governor watching only `online` is not.
+        let options = fcharger::WatchOptions {
+            interest: Some(fcharger::Status { online: Some(true), ..Default::default() }),
+            ..Default::default()
+        };
+        let _ = charger.configure_watch(&options).await.unwrap().unwrap();
+        assert!(!battery_manager.charger_update_needs_battery(&taper));
+        assert!(battery_manager.charger_update_needs_battery(&offline));
+    }
+
+    const GOVERNOR: &str = "governor";
+
+    /// Connects to `battery_manager`'s cache as a governor's `Battery` client would.
+    fn connect_governor_battery(battery_manager: &BatteryManager) -> fbattery::BatteryProxy {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fbattery::BatteryMarker>();
+        let cache = battery_manager.cache();
+        fasync::Task::local(async move {
+            let _ = cache.serve_battery(GOVERNOR, stream).await;
+        })
+        .detach();
+        proxy
+    }
+
+    /// Connects to `battery_manager`'s cache as a governor's `Charger` client would.
+    fn connect_governor_charger(battery_manager: &BatteryManager) -> fcharger::ChargerProxy {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fcharger::ChargerMarker>();
+        let cache = battery_manager.cache();
+        fasync::Task::local(async move {
+            let _ = cache.serve_charger(GOVERNOR, stream).await;
+        })
+        .detach();
+        proxy
+    }
+
+    /// Connects a battery driver that is never read, so that `battery_manager` caches the battery
+    /// statuses it is sent.
+    fn connect_unread_battery_driver(battery_manager: &BatteryManager) {
+        let (proxy, _) = fidl::endpoints::create_proxy::<fbattery::BatteryMarker>();
+        battery_manager.cache.battery_connected(
+            None,
+            Subscription::from_driver(None, None, None),
+            proxy,
+        );
+    }
+
+    /// Verifies that `BatteryManager::apply_update` publishes battery driver statuses and
+    /// disconnections to `Cache` so governors can read them.
+    #[fuchsia::test]
+    async fn test_driver_updates_feed_governor_telemetry() {
+        const LEVEL_PERCENT: f32 = 50.0;
+        let (_dir, battery_manager) = create_manager();
+        let governor_battery = connect_governor_battery(&battery_manager);
+        assert_matches!(governor_battery.get_status().await, Ok(Err(fbattery::Error::Io)));
+
+        connect_unread_battery_driver(&battery_manager);
+        let status = fbattery::Status { level_percent: Some(LEVEL_PERCENT), ..Default::default() };
+        assert!(
+            battery_manager
+                .apply_update(
+                    DriverUpdate::BatteryStatus { status: status.clone(), wake_lease: None },
+                    None
+                )
+                .await
+        );
+        assert_eq!(governor_battery.get_status().await.unwrap().unwrap(), status);
+
+        assert!(battery_manager.apply_update(DriverUpdate::BatteryGone, None).await);
+        assert_matches!(governor_battery.get_status().await, Ok(Err(fbattery::Error::Io)));
     }
 
     #[fuchsia::test]
     async fn test_battery_gone_publishes_not_available() {
         let (_dir, battery_manager) = create_manager();
+        connect_unread_battery_driver(&battery_manager);
         let status = fbattery::Status {
             level_percent: Some(50.0),
             current_ua: Some(1_000_000),
@@ -1841,12 +2065,8 @@ mod tests {
 
     #[fuchsia::test]
     fn test_driver_telemetry_conversion_empty() {
-        let telemetry = DriverTelemetry {
-            battery: None,
-            battery_spec: None,
-            charger: None,
-            charger_spec: None,
-        };
+        let telemetry =
+            CachedStatus { battery: None, battery_spec: None, charger: None, charger_spec: None };
         let info: fpower::BatteryInfo = telemetry.into();
         assert_eq!(info.status, Some(fpower::BatteryStatus::NotAvailable));
         assert_eq!(info.charge_status, Some(fpower::ChargeStatus::Unknown));
@@ -1869,7 +2089,7 @@ mod tests {
             charge_phase: Some(fcharger::ChargePhase::Done),
             ..Default::default()
         };
-        let telemetry = DriverTelemetry {
+        let telemetry = CachedStatus {
             battery: Some(&battery),
             battery_spec: None,
             charger: Some(&charger),
@@ -1899,7 +2119,7 @@ mod tests {
             charge_phase: Some(fcharger::ChargePhase::Done),
             ..Default::default()
         };
-        let telemetry = DriverTelemetry {
+        let telemetry = CachedStatus {
             battery: Some(&battery),
             battery_spec: None,
             charger: Some(&charger),
@@ -1926,7 +2146,7 @@ mod tests {
             source_type: None,
             ..Default::default()
         };
-        let telemetry = DriverTelemetry {
+        let telemetry = CachedStatus {
             battery: Some(&battery),
             battery_spec: None,
             charger: Some(&charger),
@@ -2074,6 +2294,7 @@ mod tests {
                 .apply_update(
                     DriverUpdate::BatteryConnected {
                         spec: Some(battery_spec),
+                        subscription: Subscription::from_driver(None, None, None),
                         proxy: battery_proxy,
                     },
                     None,
@@ -2089,7 +2310,13 @@ mod tests {
             charge_phase: Some(fcharger::ChargePhase::Done),
             ..Default::default()
         };
-        *battery_manager.cached_charger_status.borrow_mut() = Some(charger_status);
+        let (charger_proxy, _) = fidl::endpoints::create_proxy::<fcharger::ChargerMarker>();
+        battery_manager.cache.charger_connected(
+            None,
+            Subscription::from_driver(None, None, None),
+            charger_proxy,
+        );
+        battery_manager.cache.publish_charger(&charger_status, None);
 
         let battery_status = fbattery::Status {
             present: Some(true),

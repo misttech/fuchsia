@@ -11,6 +11,7 @@ rustc_test("battery_manager_integration_test") {
   source_root = "src/integration_test.rs"
   sources = [
     "src/fake_governor_votes.rs",
+    "src/fake_telemetry_governor_votes.rs",
     "src/integration_test.rs",
   ]
   deps = [
@@ -69,6 +70,30 @@ fuchsia_component("fake_governor") {
   deps = [ ":fake_governor_bin" ]
 }
 
+rustc_binary("fake_telemetry_governor_bin") {
+  testonly = true
+  edition = "2024"
+  output_name = "fake_telemetry_governor"
+  source_root = "src/fake_telemetry_governor.rs"
+  sources = [
+    "src/fake_telemetry_governor.rs",
+    "src/fake_telemetry_governor_votes.rs",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.power.charger:fuchsia.hardware.power.charger_rust",
+    "//src/lib/fuchsia",
+    "//src/power/lib/governor",
+    "//third_party/rust_crates:anyhow",
+  ]
+}
+
+fuchsia_component("fake_telemetry_governor") {
+  testonly = true
+  component_name = "fake_telemetry_governor"
+  manifest = "meta/fake_telemetry_governor.cml"
+  deps = [ ":fake_telemetry_governor_bin" ]
+}
+
 fuchsia_test_component("battery_manager_integration_test_component") {
   component_name = "battery_manager_integration_test"
   manifest = "meta/battery_manager_test.cml"
@@ -90,6 +115,7 @@ fuchsia_test_package("battery-manager-integration-tests") {
   }
   deps = [
     ":fake_governor",
+    ":fake_telemetry_governor",
     ":test_config",
     "//src/devices/bus/drivers/platform:platform-bus",
     "//src/lib/fake-clock/svc",

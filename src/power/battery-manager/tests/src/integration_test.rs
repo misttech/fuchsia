@@ -3,11 +3,15 @@
 // found in the LICENSE file.
 
 mod fake_governor_votes;
+mod fake_telemetry_governor_votes;
 
 use anyhow::Result;
 use diagnostics_assertions::{TreeAssertion, tree_assertion};
 use diagnostics_reader::ArchiveReader;
 use fake_governor_votes::{FAKE_GOVERNOR_CHARGE_CURRENT_LIMIT_UA, FAKE_GOVERNOR_OPERATING_MODE};
+use fake_telemetry_governor_votes::{
+    charge_current_limit_ua_for_level, charge_term_current_ua_for_phase,
+};
 use fidl::endpoints::ServiceMarker as _;
 use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_driver_test as fdt;
@@ -65,6 +69,11 @@ const CONFIG_KEY_GOVERNOR_URLS: &str = "governor_urls";
 const FAKE_GOVERNOR_URL: &str = "#meta/fake_governor.cm";
 /// Child (and arbiter voter) name battery-manager derives from `FAKE_GOVERNOR_URL`.
 const FAKE_GOVERNOR_NAME: &str = "fake_governor";
+const FAKE_TELEMETRY_GOVERNOR_URL: &str = "#meta/fake_telemetry_governor.cm";
+/// Child (and arbiter voter) name battery-manager derives from `FAKE_TELEMETRY_GOVERNOR_URL`.
+const FAKE_TELEMETRY_GOVERNOR_NAME: &str = "fake_telemetry_governor";
+/// Battery level the fake battery reports after the governor received the default status.
+const TELEMETRY_UPDATED_LEVEL_PERCENT: f32 = 42.0;
 
 const INSPECT_POLL_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(100);
 /// Polls between logs of the latest Inspect mismatch, so that a hung test shows why.
@@ -1993,14 +2002,14 @@ async fn test_unplug_when_rounded_to_100_holds_full_for_ssoc_delta() -> Result<(
 
 /// Returns the config to route to battery-manager as `/config/config.json`: the package's
 /// `test_config.json` (what battery-manager reads when `/config` is not routed) with
-/// `governor_urls` replaced by the fake governor.
-fn fake_governor_config_json() -> Result<String> {
+/// `governor_urls` replaced by `governor_url`.
+fn governor_config_json(governor_url: &str) -> Result<String> {
     let mut config: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(PKG_TEST_CONFIG_PATH)?)?;
     config
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!("{PKG_TEST_CONFIG_PATH} is not a JSON object"))?
-        .insert(CONFIG_KEY_GOVERNOR_URLS.to_string(), serde_json::json!([FAKE_GOVERNOR_URL]));
+        .insert(CONFIG_KEY_GOVERNOR_URLS.to_string(), serde_json::json!([governor_url]));
     Ok(serde_json::to_string(&config)?)
 }
 
@@ -2039,7 +2048,7 @@ async fn test_governor_votes_attributed_by_name() -> Result<()> {
         FidlRouteMode::NewOnly,
         false,
         None,
-        Some(fake_governor_config_json()?),
+        Some(governor_config_json(FAKE_GOVERNOR_URL)?),
     )
     .await?;
 
@@ -2082,4 +2091,116 @@ async fn test_governor_votes_attributed_by_name() -> Result<()> {
         },
     });
     wait_for_inspect_match(&moniker, &assertion).await
+}
+
+/// Returns an assertion that the fake telemetry governor's vote reflects `level_percent`.
+fn telemetry_vote_assertion(level_percent: f32) -> TreeAssertion {
+    let expected_limit = u64::from(charge_current_limit_ua_for_level(level_percent));
+    tree_assertion!(root: contains {
+        charge_limit_arbiter: {
+            elections: contains {
+                charge_current_limit_ua: contains {
+                    votes: {
+                        var FAKE_TELEMETRY_GOVERNOR_NAME: expected_limit,
+                    },
+                },
+            },
+        },
+    })
+}
+
+/// Verifies that a governor watching `fuchsia.hardware.power.battery.Battery` through
+/// battery-manager receives the fake battery's telemetry: first the current status, then a pushed
+/// update. The governor votes a value derived from each status, observed in Inspect.
+#[fuchsia::test]
+async fn test_governor_receives_battery_telemetry() -> Result<()> {
+    let (realm, _lease_events) = setup_realm_with_config(
+        FidlRouteMode::NewOnly,
+        false,
+        None,
+        Some(governor_config_json(FAKE_TELEMETRY_GOVERNOR_URL)?),
+    )
+    .await?;
+
+    // Connecting starts battery-manager, which then launches its configured governors.
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let _ = battery_mgr.get_battery_info().await?;
+    let service = fuchsia_component::client::Service::open_from_dir(
+        realm.root.get_exposed_dir(),
+        ftest_battery::ServiceMarker,
+    )?;
+    let control = service.watch_for_any().await?.connect_to_control()?;
+
+    let moniker = format!(
+        "{DEFAULT_COLLECTION_NAME}:{}/{BATTERY_MANAGER_CHILD_NAME}",
+        realm.root.child_name()
+    );
+    wait_for_inspect_match(
+        &moniker,
+        &telemetry_vote_assertion(ftest_battery::DEFAULT_LEVEL_PERCENT),
+    )
+    .await?;
+
+    control
+        .set_battery_status(&fbattery::Status {
+            level_percent: Some(TELEMETRY_UPDATED_LEVEL_PERCENT),
+            ..Default::default()
+        })
+        .await?;
+    wait_for_inspect_match(&moniker, &telemetry_vote_assertion(TELEMETRY_UPDATED_LEVEL_PERCENT))
+        .await
+}
+
+/// Returns an assertion that the fake telemetry governor's vote reflects `charge_phase`.
+fn charge_phase_vote_assertion(charge_phase: fcharger::ChargePhase) -> TreeAssertion {
+    let expected_current = u64::from(charge_term_current_ua_for_phase(charge_phase));
+    tree_assertion!(root: contains {
+        charge_limit_arbiter: {
+            elections: contains {
+                charge_term_current_ua: contains {
+                    votes: {
+                        var FAKE_TELEMETRY_GOVERNOR_NAME: expected_current,
+                    },
+                },
+            },
+        },
+    })
+}
+
+/// Verifies that a governor watching `fuchsia.hardware.power.charger.Charger` through
+/// battery-manager receives the fake charger's status: first the current status, then a pushed
+/// charge phase change. The governor votes a value derived from each, observed in Inspect.
+#[fuchsia::test]
+async fn test_governor_receives_charger_status() -> Result<()> {
+    let fake_charger = FakeCharger::default_usb_charging();
+    let (realm, _lease_events) = setup_realm_with_config(
+        FidlRouteMode::NewOnly,
+        false,
+        Some(fake_charger.clone()),
+        Some(governor_config_json(FAKE_TELEMETRY_GOVERNOR_URL)?),
+    )
+    .await?;
+
+    // Connecting starts battery-manager, which then launches its configured governors.
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let _ = battery_mgr.get_battery_info().await?;
+
+    let moniker = format!(
+        "{DEFAULT_COLLECTION_NAME}:{}/{BATTERY_MANAGER_CHILD_NAME}",
+        realm.root.child_name()
+    );
+    wait_for_inspect_match(&moniker, &charge_phase_vote_assertion(fcharger::ChargePhase::Fast))
+        .await?;
+
+    fake_charger.set_status(fcharger::Status {
+        online: Some(true),
+        source_type: Some(fcharger::SourceType::Usb),
+        operating_mode: Some(fcharger::OperatingMode::Charging),
+        charge_phase: Some(fcharger::ChargePhase::Taper),
+        ..Default::default()
+    });
+    wait_for_inspect_match(&moniker, &charge_phase_vote_assertion(fcharger::ChargePhase::Taper))
+        .await
 }

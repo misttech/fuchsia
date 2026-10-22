@@ -6,6 +6,7 @@ mod arbiter;
 mod battery_info_recorders;
 mod battery_manager;
 mod battery_simulator;
+mod cache;
 mod config;
 mod governor_supervisor;
 mod polisher;
@@ -365,6 +366,7 @@ async fn main() -> Result<(), Error> {
     let _governor_scope = spawn_configured_governors(
         &battery_manager_config.governor_urls,
         &arbiter,
+        battery_manager.cache(),
         inspector.root(),
     );
 

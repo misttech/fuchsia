@@ -4,16 +4,19 @@
 
 //! Spawns and supervises dynamic charge governor child components in the `#governors` collection.
 //!
-//! Each configured governor receives its own `fuchsia.hardware.power.charger.Controller` connector
-//! in `CreateChildArgs.additional_inputs` so that [`ChargeLimitArbiter`] attributes votes to the
-//! governor's child name. If a governor stops or fails to create/start, it is restarted with
-//! capped exponential backoff.
+//! Each configured governor receives its own `fuchsia.hardware.power.charger.Controller`,
+//! `fuchsia.hardware.power.battery.Battery`, and `fuchsia.hardware.power.charger.Charger`
+//! connectors in `CreateChildArgs.additional_inputs` so that [`ChargeLimitArbiter`] and
+//! [`Cache`] attribute votes and status connections to the governor's child name. If a
+//! governor stops or fails to create/start, it is restarted with capped exponential backoff.
 
 use crate::Backoff;
 use crate::arbiter::ChargeLimitArbiter;
+use crate::cache::Cache;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_hardware_power_battery as fbattery;
 use fidl_fuchsia_hardware_power_charger as fcharger;
 use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
@@ -22,6 +25,7 @@ use fuchsia_inspect::{self as inspect, NumericProperty as _, Property as _};
 use futures::prelude::*;
 use log::{error, info, warn};
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// Initial delay before restarting a charge governor that stopped or failed to start.
@@ -38,6 +42,7 @@ const INSPECTOR_PROP_GOVERNOR_RESTARTS: &str = "restarts";
 pub(crate) fn spawn_configured_governors(
     governor_urls: &[String],
     arbiter: &Arc<ChargeLimitArbiter>,
+    cache: Rc<Cache>,
     inspect_root: &inspect::Node,
 ) -> fasync::Scope {
     let scope = fasync::Scope::new();
@@ -53,7 +58,7 @@ pub(crate) fn spawn_configured_governors(
         }
     };
 
-    spawn_configured_governors_with_realm(governor_urls, realm, arbiter, inspect_root, scope)
+    spawn_configured_governors_with_realm(governor_urls, realm, arbiter, cache, inspect_root, scope)
 }
 
 /// Spawns a supervision task on `scope` for each URL in `governor_urls` using `realm` and records
@@ -62,6 +67,7 @@ fn spawn_configured_governors_with_realm(
     governor_urls: &[String],
     realm: fcomponent::RealmProxy,
     arbiter: &Arc<ChargeLimitArbiter>,
+    cache: Rc<Cache>,
     inspect_root: &inspect::Node,
     scope: fasync::Scope,
 ) -> fasync::Scope {
@@ -78,6 +84,7 @@ fn spawn_configured_governors_with_realm(
                 scope.to_handle(),
                 realm.clone(),
                 arbiter.clone(),
+                cache.clone(),
                 child_name,
                 url.clone(),
                 inspect_node,
@@ -110,6 +117,7 @@ async fn supervise_governor(
     scope: fasync::ScopeHandle,
     realm: fcomponent::RealmProxy,
     arbiter: Arc<ChargeLimitArbiter>,
+    cache: Rc<Cache>,
     child_name: String,
     url: String,
     inspect_node: inspect::Node,
@@ -134,6 +142,7 @@ async fn supervise_governor(
             &scope,
             &realm,
             &arbiter,
+            &cache,
             &collection_ref,
             &child_decl,
             &child_name,
@@ -150,10 +159,12 @@ async fn supervise_governor(
 
 /// Creates and starts a single governor instance in `#governors` and waits until its
 /// `ExecutionController` reports `OnStop` (or closes).
+#[allow(clippy::too_many_arguments)]
 async fn run_governor_attempt(
     scope: &fasync::ScopeHandle,
     realm: &fcomponent::RealmProxy,
     arbiter: &Arc<ChargeLimitArbiter>,
+    cache: &Rc<Cache>,
     collection_ref: &fdecl::CollectionRef,
     child_decl: &fdecl::Child,
     child_name: &str,
@@ -162,7 +173,8 @@ async fn run_governor_attempt(
 ) {
     let (comp_ctrl_proxy, comp_ctrl_server) =
         fidl::endpoints::create_proxy::<fcomponent::ControllerMarker>();
-    let inputs = create_governor_inputs(scope, arbiter.clone(), child_name.to_owned()).await;
+    let inputs =
+        create_governor_inputs(scope, arbiter.clone(), cache.clone(), child_name.to_owned()).await;
     let child_args = fcomponent::CreateChildArgs {
         controller: Some(comp_ctrl_server),
         additional_inputs: Some(inputs.handle),
@@ -214,18 +226,31 @@ async fn run_governor_attempt(
     }
 }
 
-/// Creates the input dictionary for governor `child_name`, holding a
-/// `fuchsia.hardware.power.charger.Controller` connector whose connections `arbiter` serves as
-/// `child_name`'s votes.
+/// Creates the input dictionary for governor `child_name`, holding:
+/// - a `fuchsia.hardware.power.charger.Controller` connector whose connections `arbiter` serves
+///   as `child_name`'s votes;
+/// - `fuchsia.hardware.power.battery.Battery` and `fuchsia.hardware.power.charger.Charger`
+///   connectors whose connections `cache` serves from battery-manager's cached status.
 async fn create_governor_inputs(
     scope: &fasync::ScopeHandle,
     arbiter: Arc<ChargeLimitArbiter>,
+    cache: Rc<Cache>,
     child_name: String,
 ) -> Dictionary {
     let (connector, receiver) = Connector::new().await;
     let inputs = Dictionary::new().await;
     inputs.insert(fcharger::ControllerMarker::PROTOCOL_NAME, connector).await;
-    let _ = scope.spawn_local(serve_governor_controller(arbiter, child_name, receiver));
+    let _ = scope.spawn_local(serve_governor_controller(arbiter, child_name.clone(), receiver));
+    let (battery_connector, battery_receiver) = Connector::new().await;
+    inputs.insert(fbattery::BatteryMarker::PROTOCOL_NAME, battery_connector).await;
+    let (charger_connector, charger_receiver) = Connector::new().await;
+    inputs.insert(fcharger::ChargerMarker::PROTOCOL_NAME, charger_connector).await;
+    let _ = scope.spawn_local(serve_governor_cache(
+        cache,
+        child_name,
+        battery_receiver,
+        charger_receiver,
+    ));
     inputs
 }
 
@@ -248,6 +273,35 @@ async fn serve_governor_controller(
             }
         })
         .await;
+}
+
+/// Serves each `Battery` and `Charger` connection that governor `child_name` opens through its
+/// connectors from `cache`. Runs until the connectors are dropped along with the governor.
+async fn serve_governor_cache(
+    cache: Rc<Cache>,
+    child_name: String,
+    battery_receiver: ConnectorReceiver,
+    charger_receiver: ConnectorReceiver,
+) {
+    let cache = &*cache;
+    let child_name = child_name.as_str();
+    let battery = battery_receiver.for_each_concurrent(None, |channel| async move {
+        let stream = ServerEnd::<fbattery::BatteryMarker>::new(channel).into_stream();
+        if let Err(e) = cache.serve_battery(child_name, stream).await
+            && !e.is_closed()
+        {
+            warn!("Battery connection for governor {child_name} failed: {e:?}");
+        }
+    });
+    let charger = charger_receiver.for_each_concurrent(None, |channel| async move {
+        let stream = ServerEnd::<fcharger::ChargerMarker>::new(channel).into_stream();
+        if let Err(e) = cache.serve_charger(child_name, stream).await
+            && !e.is_closed()
+        {
+            warn!("Charger connection for governor {child_name} failed: {e:?}");
+        }
+    });
+    futures::join!(battery, charger);
 }
 
 #[cfg(test)]
@@ -281,7 +335,8 @@ mod tests {
     async fn test_spawn_configured_governors_empty_is_noop() {
         let inspector = inspect::Inspector::default();
         let arbiter = Arc::new(ChargeLimitArbiter::new());
-        let _scope = spawn_configured_governors(&[], &arbiter, inspector.root());
+        let cache = Rc::new(Cache::default());
+        let _scope = spawn_configured_governors(&[], &arbiter, cache, inspector.root());
         assert_data_tree!(inspector, root: {});
     }
 
@@ -293,6 +348,7 @@ mod tests {
         let inspector = inspect::Inspector::default();
         let inspect_node = inspector.root().create_child("msc");
         let arbiter = Arc::new(ChargeLimitArbiter::new());
+        let cache = Rc::new(Cache::default());
         let (realm_proxy, mut realm_stream) =
             fidl::endpoints::create_proxy_and_stream::<fcomponent::RealmMarker>();
 
@@ -301,6 +357,7 @@ mod tests {
             scope.to_handle(),
             realm_proxy,
             arbiter,
+            cache,
             "msc".to_string(),
             "fuchsia-pkg://fuchsia.com/msc#meta/msc.cm".to_string(),
             inspect_node,

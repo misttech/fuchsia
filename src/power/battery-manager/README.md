@@ -46,3 +46,10 @@ effective settings to the charger driver. The vote that charges least wins:
 - `charge_limit_arbiter/elections/<field>`: `result`, `overridden`, and
   per-governor `votes`.
 - `governors/<child_name>`: `url`, `running`, and `restarts`.
+
+## Battery and Charger Status Cache
+
+Each governor also receives its own `fuchsia.hardware.power.battery.Battery` and
+`fuchsia.hardware.power.charger.Charger` connectors. Battery Manager serves them
+from the driver status it caches, so governors add no bus reads or driver
+clients. See `src/cache.rs` for the semantics.
