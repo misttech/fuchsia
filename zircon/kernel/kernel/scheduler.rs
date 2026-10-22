@@ -694,13 +694,22 @@ pub enum EvaluateStatus {
     StealWork = 2,
 }
 
-#[repr(C)]
+/// Values computed by `reschedule_common_helper` and consumed by the remainder
+/// of `reschedule_common`.
+///
+/// The idle flags are latched once so that the reschedule path does not repeat
+/// loads of `Thread::flags_` (which cannot be CSE'd across the intervening
+/// calls) for values that are invariant for the duration of the operation.
 #[derive(Debug, Clone, Copy)]
 pub struct RustRescheduleResult {
     pub need_context_switch: bool,
     pub timeslice_expired: bool,
     pub current_is_migrating: bool,
     pub next_thread: *mut Thread,
+    /// Whether `current_thread` is the idle thread.
+    pub curr_is_idle: bool,
+    /// Whether `next_thread` is the idle thread.
+    pub next_is_idle: bool,
 }
 
 /// A utility result type to help avoid missing updates to a thread's
@@ -6326,32 +6335,26 @@ impl Scheduler {
         target_preemption_time_ns
     }
 
-    /// Returns the segment type inferred from whether the given thread is an idle
+    /// Returns the segment type inferred from whether the thread is an idle
     /// thread or not.
-    ///
-    /// # Safety
-    /// `thread` must point to a valid `Thread`.
-    unsafe fn to_cpu_stats_segment_type(thread: *const Thread) -> CpuStatsSegmentType {
-        // SAFETY: `thread` is a valid pointer per caller contract.
-        if unsafe { cpp_thread_is_idle(thread) } {
-            CpuStatsSegmentType::Idle
-        } else {
-            CpuStatsSegmentType::Busy
-        }
+    #[inline]
+    fn to_cpu_stats_segment_type(is_idle: bool) -> CpuStatsSegmentType {
+        if is_idle { CpuStatsSegmentType::Idle } else { CpuStatsSegmentType::Busy }
     }
 
-    /// Returns true if the given thread needs to be migrated from this CPU to another.
+    /// Returns true if the thread owning `state` needs to be migrated from this
+    /// CPU to another.
     ///
     /// # Safety
     /// The caller must ensure that:
-    /// - `thread` points to a valid, initialized `Thread`.
-    /// - An active `ChainLockTransaction` holds `thread`'s lock
+    /// - `state` is the `SchedulerState` of a valid, initialized `Thread`.
+    /// - An active `ChainLockTransaction` holds that thread's lock
     ///   (`TA_REQ(chainlock_transaction_token, thread->get_lock())`).
     /// - `self.this_cpu()` has been initialized.
     #[inline]
-    unsafe fn needs_migration_local(&self, thread: *const Thread) -> bool {
-        // SAFETY: `thread` is valid and locked by the caller.
-        let state = unsafe { &*cpp_thread_get_scheduler_state(thread.cast_mut()) };
+    unsafe fn needs_migration_local(&self, state: *const SchedulerState) -> bool {
+        // SAFETY: `state` belongs to a thread locked by the caller.
+        let state = unsafe { &*state };
 
         // Threads that are not ready should not be migrated. Check this first to
         // avoid touching the shared active mask on the common blocking path.
@@ -6372,20 +6375,19 @@ impl Scheduler {
         (state.get_effective_cpu_mask(active_mask) & current_cpu_mask) == 0
     }
 
-    /// Returns true if the given thread's time slice is adjustable under changes to
-    /// the fair scheduler demand on the CPU.
+    /// Returns true if the thread owning `state` has a time slice that is
+    /// adjustable under changes to the fair scheduler demand on the CPU.
     ///
     /// # Safety
-    /// The caller must ensure `thread` points to a valid, initialized `Thread` whose
-    /// lock is held at least shared (`TA_REQ_SHARED(thread->get_lock())`).
+    /// The caller must ensure `state` is the `SchedulerState` of a valid,
+    /// initialized `Thread` whose lock is held at least shared
+    /// (`TA_REQ_SHARED(thread->get_lock())`), and `is_idle` reflects that thread.
     #[inline]
-    unsafe fn is_thread_adjustable(thread: *const Thread) -> bool {
+    unsafe fn is_thread_adjustable(state: *const SchedulerState, is_idle: bool) -> bool {
         // Checking the thread state avoids unnecessary adjustments on a thread that
         // is no longer competing.
-        // SAFETY: `thread` is valid and its lock is held by the caller.
-        let (state, is_idle) = unsafe {
-            (&*cpp_thread_get_scheduler_state(thread.cast_mut()), cpp_thread_is_idle(thread))
-        };
+        // SAFETY: `state` belongs to a thread locked by the caller.
+        let state = unsafe { &*state };
         !is_idle && state.effective_profile.is_fair() && state.state == ThreadState::Ready
     }
 
@@ -6454,8 +6456,14 @@ impl Scheduler {
         // reference spans helper calls that also access `current_thread`'s state.
         // SAFETY: `current_thread` is valid and locked by the caller, and `self`'s
         // `queue_lock_` is held.
-        let (current_state, current_cpu) =
-            unsafe { (cpp_thread_get_scheduler_state(current_thread), self.this_cpu()) };
+        let (current_state, current_queue_state, curr_is_idle, current_cpu) = unsafe {
+            (
+                cpp_thread_get_scheduler_state(current_thread),
+                cpp_thread_get_queue_state(current_thread),
+                cpp_thread_is_idle(current_thread),
+                self.this_cpu(),
+            )
+        };
 
         // When calling into reschedule, the current thread is only allowed to be in a
         // limited number of states, depending on where it came from.
@@ -6471,7 +6479,7 @@ impl Scheduler {
             debug_assert_ne!((*current_state).state, ThreadState::Ready);
             if (*current_state).state == ThreadState::Running {
                 debug_assert_eq!(
-                    (*cpp_thread_get_queue_state(current_thread)).disposition(),
+                    (*current_queue_state).disposition(),
                     QueueDisposition::Associated
                 );
                 (*current_state).state = ThreadState::Ready;
@@ -6506,11 +6514,11 @@ impl Scheduler {
         // processing rate is changing. Simply advance the CPU stats to reflect the
         // elapsed idle time or normalized busy time at the last known processing rate
         // since the last update.
-        // SAFETY: `current_thread` is valid and `queue_lock_` is held.
+        // SAFETY: `queue_lock_` is held.
         unsafe {
             self.update_cpu_stats_segment(
                 now,
-                Self::to_cpu_stats_segment_type(current_thread),
+                Self::to_cpu_stats_segment_type(curr_is_idle),
                 self.processing_rate(),
             )
         };
@@ -6548,7 +6556,7 @@ impl Scheduler {
         // Adjust the rate of the current thread when fair bandwidth demand changes.
         // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
         if unsafe {
-            Self::is_thread_adjustable(current_thread)
+            Self::is_thread_adjustable(current_state, curr_is_idle)
                 && self.weight_total() != self.scheduled_weight_total()
                 && (*current_state).remaining_time_slice_ns().raw_value() > 0
                 && (*current_state).finish_time.raw_value() > now.raw_value()
@@ -6607,7 +6615,7 @@ impl Scheduler {
 
         // If the current thread needs to be migrated, remove it for migration.
         // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
-        let current_is_migrating = unsafe { self.needs_migration_local(current_thread) };
+        let current_is_migrating = unsafe { self.needs_migration_local(current_state) };
         if current_is_migrating {
             // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
             unsafe { self.remove(now, current_thread, INVALID_CPU) };
@@ -6656,7 +6664,7 @@ impl Scheduler {
 
         debug_assert!(!next_thread_result.thread.is_null());
         // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
-        debug_assert!(!unsafe { (*cpp_thread_get_queue_state(current_thread)).in_queue() });
+        debug_assert!(!unsafe { (*current_queue_state).in_queue() });
 
         // Flush pending preemptions.
         // SAFETY: `current_thread` is valid and running on the current CPU with IRQs disabled.
@@ -6776,9 +6784,18 @@ impl Scheduler {
 
         // Keep `next_state` as a raw pointer `*mut SchedulerState` to avoid creating
         // aliasing `&mut SchedulerState` references when `current_thread == next_thread`
-        // or across helper calls.
+        // or across helper calls. (The accessor is a constant offset from `next_thread`,
+        // so it is computed unconditionally and folds into addressing modes.)
         // SAFETY: `next_thread` is valid.
         let next_state = unsafe { cpp_thread_get_scheduler_state(next_thread) };
+        // Reuse the idle flag latched for `current_thread` when the same thread was
+        // selected; otherwise read `next_thread`'s flags once.
+        let next_is_idle = if next_thread == current_thread {
+            curr_is_idle
+        } else {
+            // SAFETY: `next_thread` is valid.
+            unsafe { cpp_thread_is_idle(next_thread) }
+        };
 
         // Convert from variable time to monotonic time if necessary.
         // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
@@ -6809,10 +6826,8 @@ impl Scheduler {
             // If the current thread is not the idle thread and not migrating, return it
             // to the run queue or remove its bookkeeping, depending on whether it is
             // READY.
-            // SAFETY: `current_thread` is valid, and its lock and `queue_lock_` are held.
-            let requeue = unsafe { !cpp_thread_is_idle(current_thread) } && !current_is_migrating;
-            if requeue {
-                // SAFETY: `current_thread`'s lock is held exclusively.
+            if !curr_is_idle && !current_is_migrating {
+                // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
                 if unsafe { (*current_state).state } == ThreadState::Ready {
                     let placement = if timeslice_expired {
                         Placement::Insertion
@@ -6837,12 +6852,12 @@ impl Scheduler {
 
             // Keep track of the weight of the active thread, since it is not in the run
             // queue contributing to the min_weight subtree invariant.
-            let active_thread_weight =
-                if !cpp_thread_is_idle(next_thread) && (*next_state).effective_profile.is_fair() {
-                    (*next_state).effective_profile.weight
-                } else {
-                    SchedWeight::max()
-                };
+            let active_thread_weight = if !next_is_idle && (*next_state).effective_profile.is_fair()
+            {
+                (*next_state).effective_profile.weight
+            } else {
+                SchedWeight::max()
+            };
             self.set_active_thread_weight(active_thread_weight);
 
             // Handle any pending migration work.
@@ -6854,11 +6869,10 @@ impl Scheduler {
         // associated with this CPU or is no longer ready.
         // SAFETY: `current_thread`'s lock and `queue_lock_` are held.
         unsafe {
-            let current_queue_state = cpp_thread_get_queue_state(current_thread);
             let current_is_associated =
                 !(*current_queue_state).active || (*current_state).curr_cpu == current_cpu;
 
-            if !cpp_thread_is_idle(current_thread)
+            if !curr_is_idle
                 && current_is_associated
                 && (timeslice_expired || current_thread != next_thread)
             {
@@ -6893,6 +6907,8 @@ impl Scheduler {
             timeslice_expired,
             current_is_migrating,
             next_thread,
+            curr_is_idle,
+            next_is_idle,
         }
     }
 }
@@ -8675,17 +8691,16 @@ impl Scheduler {
     ///
     /// # Safety
     /// The caller must ensure `self` is the current CPU's `Scheduler` with
-    /// interrupts disabled and `queue_lock_` held (`TA_REQ(queue_lock_)`), and
-    /// `next_thread` is a valid `Thread`.
-    unsafe fn reschedule_power_control(&self, now: SchedTime, next_thread: *mut Thread) {
+    /// interrupts disabled and `queue_lock_` held (`TA_REQ(queue_lock_)`).
+    unsafe fn reschedule_power_control(&self, now: SchedTime, next_is_idle: bool) {
         // SAFETY: `self`'s `queue_lock_` is held by the caller.
         if unsafe { self.power_level_control_is_enabled() } {
             // After the current thread has been potentially removed from this
             // scheduler, clear or prune the bandwidth demand cache and re-evaluate the
             // current power level.
-            // SAFETY: `next_thread` is valid and `self`'s `queue_lock_` is held.
+            // SAFETY: `self`'s `queue_lock_` is held.
             let clear_cache = unsafe {
-                cpp_thread_is_idle(next_thread)
+                next_is_idle
                     && rust_kernel_run_queue_is_empty(self.critical_deadline_queue())
                     && rust_kernel_run_queue_is_empty(self.deadline_queue())
             };
@@ -8735,28 +8750,30 @@ impl Scheduler {
         }
     }
 
-    /// Computes the next preemption time for `next_thread`.
+    /// Computes the next preemption time for `result.next_thread`.
     ///
     /// # Safety
     /// The caller must ensure `self`'s `queue_lock_` and `next_thread`'s lock are
-    /// held (`TA_REQ(queue_lock_, next_thread->get_lock())`), and `current_thread`
-    /// and `next_thread` are valid `Thread` pointers.
+    /// held (`TA_REQ(queue_lock_, next_thread->get_lock())`), `current_thread` is a
+    /// valid `Thread` pointer, and `result` was produced by
+    /// `reschedule_common_helper` for this reschedule.
     unsafe fn calculate_preemption_time(
         &self,
         current_thread: *mut Thread,
-        next_thread: *mut Thread,
+        result: &RustRescheduleResult,
         now: SchedTime,
-        timeslice_expired: bool,
         processing_rate_updated: bool,
     ) -> SchedTime {
+        let next_thread = result.next_thread;
         // SAFETY: `next_thread` is valid.
         let next_state_ptr = unsafe { cpp_thread_get_scheduler_state(next_thread) };
+        let next_is_idle = result.next_is_idle;
+        let timeslice_expired = result.timeslice_expired;
         // Each path below must set the preemption time.
         // TODO(eieio): Debug assert that the value set is >= now.
         let mut preemption_time_ns;
 
-        // SAFETY: `next_thread` is valid.
-        if unsafe { cpp_thread_is_idle(next_thread) } {
+        if next_is_idle {
             let _trace_stop_preemption = local_ktrace_begin_scope!(DETAILED, "idle");
             // SAFETY: `next_thread`'s lock and `queue_lock_` are held.
             let target = unsafe {
@@ -9142,9 +9159,11 @@ impl Scheduler {
         let result = unsafe { self.reschedule_common_helper(current_thread, now, boot_ticks) };
 
         let next_thread = result.next_thread;
-        // SAFETY: `self`'s `queue_lock_` is held and `next_thread` is valid.
+        let (curr_is_idle, next_is_idle) = (result.curr_is_idle, result.next_is_idle);
+        // SAFETY: `self` is the current CPU's `Scheduler` with interrupts disabled and
+        // `queue_lock_` held.
         unsafe {
-            self.reschedule_power_control(now, next_thread);
+            self.reschedule_power_control(now, next_is_idle);
         }
 
         // Update the current processing rate only after any uses in the reschedule
@@ -9176,10 +9195,6 @@ impl Scheduler {
         // and forward projecting idle or normalized busy time. If there is transition
         // to/from idle or the processing rate changed while non-idle, advance the CPU
         // stats to cover the segment since the initial update.
-        // SAFETY: `next_thread`, `current_thread`, and `self` are valid, and
-        // `queue_lock_` is held.
-        let (next_is_idle, curr_is_idle) =
-            unsafe { (cpp_thread_is_idle(next_thread), cpp_thread_is_idle(current_thread)) };
         // SAFETY: `queue_lock_` is held.
         unsafe {
             self.set_idle(next_is_idle);
@@ -9189,21 +9204,16 @@ impl Scheduler {
             unsafe {
                 self.update_cpu_stats_segment(
                     SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0),
-                    Self::to_cpu_stats_segment_type(current_thread),
+                    Self::to_cpu_stats_segment_type(curr_is_idle),
                     previous_processing_rate,
                 );
             }
         }
 
-        // SAFETY: `queue_lock_` and `next_thread`'s lock are held.
+        // SAFETY: `queue_lock_` and `next_thread`'s lock are held, and the state
+        // pointer and idle flag were latched from `next_thread` by the helper.
         let preemption_time_ns = unsafe {
-            self.calculate_preemption_time(
-                current_thread,
-                next_thread,
-                now,
-                result.timeslice_expired,
-                processing_rate_updated,
-            )
+            self.calculate_preemption_time(current_thread, &result, now, processing_rate_updated)
         };
         // SAFETY: Interrupts are disabled on `current_cpu`.
         unsafe {
