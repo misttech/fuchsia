@@ -24,12 +24,16 @@ exports_files([
 # LINT.IfChange
 package_group(
     name = "md5_visibility",
-    packages = [],
+    packages = [
+        "//src/connectivity/wlan/lib/rsn",
+    ],
 )
 
 package_group(
     name = "sha1_visibility",
-    packages = [],
+    packages = [
+        "//src/connectivity/wlan/lib/rsn",
+    ],
 )
 
 package_group(

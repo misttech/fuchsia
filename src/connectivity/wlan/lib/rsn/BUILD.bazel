@@ -1,0 +1,91 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wlan-rsn",
+    srcs = [
+        "src/aes.rs",
+        "src/auth/mod.rs",
+        "src/auth/psk.rs",
+        "src/integrity/cmac_aes128.rs",
+        "src/integrity/hmac_md5.rs",
+        "src/integrity/hmac_sha1.rs",
+        "src/integrity/hmac_sha256.rs",
+        "src/integrity/mod.rs",
+        "src/key/exchange/handshake/fourway/authenticator.rs",
+        "src/key/exchange/handshake/fourway/mod.rs",
+        "src/key/exchange/handshake/fourway/supplicant.rs",
+        "src/key/exchange/handshake/group_key/mod.rs",
+        "src/key/exchange/handshake/group_key/supplicant.rs",
+        "src/key/exchange/handshake/mod.rs",
+        "src/key/exchange/mod.rs",
+        "src/key/gtk.rs",
+        "src/key/igtk.rs",
+        "src/key/mod.rs",
+        "src/key/pmk.rs",
+        "src/key/ptk.rs",
+        "src/key_data/kde.rs",
+        "src/key_data/mod.rs",
+        "src/keywrap/aes.rs",
+        "src/keywrap/mod.rs",
+        "src/keywrap/rc4.rs",
+        "src/lib.rs",
+        "src/nonce.rs",
+        "src/prf.rs",
+        "src/rsna/esssa.rs",
+        "src/rsna/mod.rs",
+        "src/rsna/test_util.rs",
+    ],
+    edition = "2024",
+    visibility = ["//src/connectivity/wlan:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/eapol",
+        "//src/connectivity/wlan/lib/fcg-crypto:wlan-fcg-crypto",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/connectivity/wlan/lib/statemachine:wlan-statemachine",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/mundane",
+        "//third_party/boringssl/rust:bssl-sys.shared-no-ssl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bitfield",
+        "//third_party/rust_crates/vendor:bytes",
+        "//third_party/rust_crates/vendor:hmac",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:md-5",
+        "//third_party/rust_crates/vendor:nom",
+        "//third_party/rust_crates/vendor:num-bigint",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:sha1",
+        "//third_party/rust_crates/vendor:sha2",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "wlan-rsn_test",
+    crate = ":wlan-rsn",
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "wlan-rsn-tests",
+    unit_tests = [":wlan-rsn_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
