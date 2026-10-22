@@ -5,17 +5,25 @@
 //! Serves the `fuchsia.time.external/Adjust` FIDL API.
 
 use anyhow::{Context, Result};
+use fidl_fuchsia_time_external as ffte;
+use fuchsia_runtime as fxr;
+use fuchsia_trace as trace;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use log::{debug, error};
 use scopeguard::defer;
 use std::cell::RefCell;
-use {fidl_fuchsia_time_external as ffte, fuchsia_runtime as fxr, fuchsia_trace as trace};
 
 #[derive(Debug)]
 pub enum Command {
     /// A power management command.
-    PowerManagement,
+    PowerManagement {
+        /// If true, the system is suspending (`BeforeSuspend`); if false,
+        /// the system has resumed (`AfterResume`).
+        suspended: bool,
+        /// Signaled once the power state transition has been processed.
+        done: mpsc::Sender<()>,
+    },
     /// Report a reference point for the boot-timeline-to-utc-timeline affine
     /// transform.
     Reference {

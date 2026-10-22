@@ -4,11 +4,12 @@
 
 use anyhow::{Context, Error, Result, anyhow};
 use fidl::endpoints::{ProtocolMarker, create_endpoints};
+use fidl_fuchsia_power_system as fps;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use futures::channel::mpsc;
 use futures::{Future, SinkExt, StreamExt, TryStreamExt, future};
 use log::{debug, error};
-use {fidl_fuchsia_power_system as fps, fuchsia_async as fasync};
 
 const SUSPEND_BLOCKER_NAME: &str = "timekeeper";
 
@@ -31,16 +32,14 @@ pub async fn manage(activity_signal: mpsc::Sender<super::Command>) -> Result<fas
 
 async fn manage_internal<F, G>(
     governor_proxy: fps::ActivityGovernorProxy,
-    mut activity: mpsc::Sender<super::Command>,
+    activity: mpsc::Sender<super::Command>,
     // Injected in tests.
     loop_fn: F,
 ) -> Result<fasync::Task<()>>
 where
     G: Future<Output = fasync::Task<()>>,
-    F: Fn(fps::SuspendBlockerRequestStream) -> G,
+    F: Fn(fps::SuspendBlockerRequestStream, mpsc::Sender<super::Command>) -> G,
 {
-    let _ignore = activity.send(super::Command::PowerManagement).await;
-
     let (suspend_blocker_client, suspend_blocker_server) =
         create_endpoints::<fps::SuspendBlockerMarker>();
     let result = governor_proxy
@@ -53,7 +52,7 @@ where
         .context("while calling fuchsia.power.system.ActivityGovernor/RegisterSuspendBlocker")?;
     let suspend_blocker = suspend_blocker_server.into_stream();
     match result {
-        Ok(_) => Ok(loop_fn(suspend_blocker).await),
+        Ok(_) => Ok(loop_fn(suspend_blocker, activity).await),
         Err(e) => Err(anyhow!("error while registering suspend blocker: {:?}", e)),
     }
 }
@@ -64,6 +63,7 @@ where
 // Returns the task spawned for transition control.
 async fn management_loop(
     mut suspend_blocker_stream: fps::SuspendBlockerRequestStream,
+    mut activity: mpsc::Sender<super::Command>,
 ) -> fasync::Task<()> {
     // The Sender is used to ensure that rcv_task does not send before send_task
     // is done.
@@ -79,12 +79,11 @@ async fn management_loop(
             match result {
                 Ok((level, responder)) => {
                     let (s, mut r) = mpsc::channel::<()>(1);
-                    // For now, we just echo the power level back to the power broker.
                     if let Err(e) = send.send((level, s)).await {
                         error!("error while processing power level, bailing: {:?}", e);
                         break;
                     }
-                    // Wait until rcv_task propagates the new required level.
+                    // Wait until send_task propagates the new required level.
                     r.next().await.unwrap();
                     // Respond to the SuspendBlockerRequest, indicating the level transition is
                     // complete.
@@ -107,18 +106,32 @@ async fn management_loop(
     });
     let send_task = fasync::Task::local(async move {
         while let Some((new_level, mut s)) = rcv.next().await {
-            match new_level {
+            let suspended = match new_level {
                 POWER_OFF => {
                     debug!("new required level: power off");
+                    Some(true)
                 }
                 POWER_ON => {
                     debug!("new required level: power on");
+                    Some(false)
                 }
                 _ => {
                     error!("invalid required level: {}", new_level);
+                    None
+                }
+            };
+            if let Some(suspended) = suspended {
+                let (done_tx, mut done_rx) = mpsc::channel(1);
+                if let Err(e) = activity
+                    .send(super::Command::PowerManagement { suspended, done: done_tx })
+                    .await
+                {
+                    error!("error sending PowerManagement command: {:?}", e);
+                } else if done_rx.next().await.is_none() {
+                    error!("PowerManagement command responder dropped without signaling");
                 }
             }
-            // Handle level transition here.
+            // Signal rcv_task that level transition handling is complete.
             s.send(()).await.unwrap();
         }
         debug!("no longer reporting required level");
@@ -157,21 +170,44 @@ mod tests {
             create_endpoints::<fps::SuspendBlockerMarker>();
         let suspend_blocker = suspend_blocker_server.into_stream();
         let suspend_blocker_proxy = suspend_blocker_client.into_proxy();
+        let (activity_s, mut activity_r) = mpsc::channel::<Command>(1);
 
         // Management loop is also asynchronous.
         fasync::Task::local(async move {
-            management_loop(suspend_blocker).await.await;
+            management_loop(suspend_blocker, activity_s).await.await;
+        })
+        .detach();
+
+        let (mut observed_tx, mut observed_rx) = mpsc::channel::<bool>(3);
+        fasync::Task::local(async move {
+            while let Some(cmd) = activity_r.next().await {
+                match cmd {
+                    Command::PowerManagement { suspended, mut done } => {
+                        observed_tx.send(suspended).await.unwrap();
+                        done.send(()).await.unwrap();
+                    }
+                    other => panic!("unexpected command: {other:?}"),
+                }
+            }
         })
         .detach();
 
         assert!(suspend_blocker_proxy.after_resume().await.is_ok());
+        assert_eq!(observed_rx.next().await, Some(false));
 
         assert!(suspend_blocker_proxy.before_suspend().await.is_ok());
+        assert_eq!(observed_rx.next().await, Some(true));
 
         assert!(suspend_blocker_proxy.after_resume().await.is_ok());
+        assert_eq!(observed_rx.next().await, Some(false));
     }
 
-    async fn empty_loop(_: fps::SuspendBlockerRequestStream) -> fasync::Task<()> {
+    async fn empty_loop(
+        _: fps::SuspendBlockerRequestStream,
+        mut activity: mpsc::Sender<Command>,
+    ) -> fasync::Task<()> {
+        let (done_tx, _done_rx) = mpsc::channel(1);
+        let _ = activity.send(Command::PowerManagement { suspended: false, done: done_tx }).await;
         fasync::Task::local(async move {})
     }
 

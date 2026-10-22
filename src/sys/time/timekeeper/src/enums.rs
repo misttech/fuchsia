@@ -153,6 +153,7 @@ pub enum ClockCorrectionStrategy {
     MaxDurationSlew,
     /// The clock error bound will be set to maximum value. This means we lost the information
     /// about clock correctness.
+    #[allow(dead_code)]
     MaxErrorBound,
 }
 

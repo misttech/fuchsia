@@ -60,9 +60,6 @@ const ERROR_BOUND_UPDATE: u64 = 100_000_000; // 100ms
 /// The interval at which the error bound will be refreshed while no other events are in progress.
 const ERROR_REFRESH_INTERVAL: zx::BootDuration = zx::BootDuration::from_minutes(6);
 
-/// Denotes an unknown clock error bound
-const ZX_CLOCK_UNKNOWN_ERROR_BOUND: u64 = u64::MAX;
-
 /// An arbitrary standard deviation to ascribe to user-provided time samples.
 ///
 /// Ideally, we'd put a large value for manual user-provided samples, but possibly small or precise
@@ -76,8 +73,6 @@ enum ClockCorrection {
     Step(Step),
     MaxDurationSlew(Slew),
     NominalRateSlew(Slew),
-    /// Set the error bound to maximum known.
-    MaxErrorBound,
 }
 
 impl ClockCorrection {
@@ -123,9 +118,6 @@ impl ClockCorrection {
                     (slew.duration.into_nanos() * (slew.slew_rate_adjust as i64)) / MILLION,
                 )
             }
-            // Setting max error bound does not result in a clock change, only the clock
-            // error bound change.
-            ClockCorrection::MaxErrorBound => UtcDuration::ZERO,
         }
     }
 
@@ -135,7 +127,6 @@ impl ClockCorrection {
             ClockCorrection::Step(_) => ClockCorrectionStrategy::Step,
             ClockCorrection::NominalRateSlew(_) => ClockCorrectionStrategy::NominalRateSlew,
             ClockCorrection::MaxDurationSlew(_) => ClockCorrectionStrategy::MaxDurationSlew,
-            ClockCorrection::MaxErrorBound => ClockCorrectionStrategy::MaxErrorBound,
         }
     }
 }
@@ -394,6 +385,12 @@ pub struct ClockManager<R: Rtc, D: Diagnostics> {
     command_test_signaler: Option<mpsc::Sender<()>>,
     // Test channel for signaling that a sample has been received. Test only.
     sample_test_signaler: Option<mpsc::Sender<()>>,
+    /// True while the system is suspended (`BeforeSuspend` received and `AfterResume` not yet
+    /// received). While true, RTC / persistent state writes are suppressed and deferred.
+    is_suspended: bool,
+    /// True if one or more RTC updates were skipped while `is_suspended` was true and should be
+    /// flushed upon resume.
+    rtc_update_deferred: bool,
 }
 
 impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
@@ -442,6 +439,8 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
             config,
             command_test_signaler,
             sample_test_signaler,
+            is_suspended: false,
+            rtc_update_deferred: false,
         }
     }
 
@@ -714,12 +713,16 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                                 debug!("could not send connectivity: {:?}", e);
                             }
                         }
-                        Some(Command::PowerManagement) => {
-                            if clock_started {
-                                // Updating an unstarted clock without actually starting it
-                                // returns BAD_STATE.
-                                self.record_correction(
-                                    ClockCorrection::MaxErrorBound, &Default::default(), zx::BootInstant::ZERO);
+                        Some(Command::PowerManagement { suspended, mut done }) => {
+                            self.is_suspended = suspended;
+                            if let Err(e) = done.send(()).await {
+                                warn!("could not acknowledge PowerManagement command: {:?}", e);
+                            }
+                            if !self.is_suspended && self.rtc_update_deferred {
+                                debug!("flushing deferred RTC update after resume");
+                                self.rtc_update_deferred = false;
+                                self.refresh_rtc(allow_timekeeper_to_update_rtc, clock_started)
+                                    .await;
                             }
                         }
                         Some(Command::Reference{
@@ -760,31 +763,10 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                             responder.send(Ok(())).await.expect("infallible");
                         }
                         Some(Command::UpdateRtc) => {
+                            self.refresh_rtc(allow_timekeeper_to_update_rtc, clock_started).await;
                             if allow_timekeeper_to_update_rtc {
-                                if let Some(ref estimator) = self.estimator {
-                                    // When an estimator is present, we know that
-                                    // we got an externally synchronized time at
-                                    // least once.
-                                    let estimate_transform = estimator.transform();
-                                    self.update_rtc(&estimate_transform).await;
-                                } else if clock_started {
-                                    // The UTC clock is started, so update RTC to match.
-                                    // Note that in this case we do not know the time
-                                    // quality, we only know that UTC is started.
-                                    if let Ok(utc_instant) = self.clock.read() {
-                                        self.set_rtc_infallible(utc_instant).await;
-                                    }
-                                } else {
-                                    // While this branch could have been created differently,
-                                    // it currently mimics the legacy behavior of "what to do
-                                    // if RTC update was requested, but the clock has not
-                                    // started". We decide to not record known-incorrect time.
-                                    debug!("Not updating RTC.");
-                                }
                                 // We need to continue backing off sampling after this command.
                                 back_off_deadline = Mi::after(back_off_delay);
-                            } else {
-                                debug!("UpdateRtc command received and ignored.");
                             }
                         }
                         None => {
@@ -890,18 +872,47 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                 // Create a task to asynchronously increase error bound over time.
                 self.set_delayed_update_task(vec![], estimate_transform);
             }
-            ClockCorrection::MaxErrorBound => {
-                let update =
-                    UtcClockUpdate::builder().error_bounds(ZX_CLOCK_UNKNOWN_ERROR_BOUND).build();
-                self.update_clock(update);
-                info!("set clock error bound to maximum for track: {:?}", self.track);
-            }
         };
+    }
+
+    /// Refresh the RTC with the best available UTC estimate if `allow_timekeeper_to_update_rtc`
+    /// is true.
+    async fn refresh_rtc(&mut self, allow_timekeeper_to_update_rtc: bool, clock_started: bool) {
+        if allow_timekeeper_to_update_rtc {
+            if let Some(ref estimator) = self.estimator {
+                // When an estimator is present, we know that
+                // we got an externally synchronized time at
+                // least once.
+                let estimate_transform = estimator.transform();
+                self.update_rtc(&estimate_transform).await;
+            } else if clock_started {
+                // The UTC clock is started, so update RTC to match.
+                // Note that in this case we do not know the time
+                // quality, we only know that UTC is started.
+                if let Ok(utc_instant) = self.clock.read() {
+                    self.set_rtc_infallible(utc_instant).await;
+                }
+            } else {
+                // While this branch could have been created differently,
+                // it currently mimics the legacy behavior of "what to do
+                // if RTC update was requested, but the clock has not
+                // started". We decide to not record known-incorrect time.
+                debug!("Not updating RTC.");
+            }
+        } else {
+            debug!("UpdateRtc command received and ignored.");
+        }
     }
 
     /// Set RTC to the supplied UTC instant.
     /// This utc_instant could be coming from an unreliable time source.
     async fn set_rtc_infallible(&mut self, utc_instant: UtcInstant) {
+        if self.is_suspended {
+            debug!("skipping RTC update while suspended; deferring until resume");
+            self.rtc_update_deferred = true;
+            return;
+        }
+        self.rtc_update_deferred = false;
         if let Some(ref rtc) = self.rtc {
             // Pretty-print UTC time.
             let utc_chrono = Utc.timestamp_nanos(utc_instant.into_nanos());
@@ -923,6 +934,12 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
     /// The update is based on an existing estimate_transform, meaning it's
     /// an externally synchronized value.
     async fn update_rtc(&mut self, estimate_transform: &UtcTransform) {
+        if self.is_suspended {
+            debug!("skipping RTC update while suspended; deferring until resume");
+            self.rtc_update_deferred = true;
+            return;
+        }
+        self.rtc_update_deferred = false;
         // This version of `now` is mockable through fake time executors. Flip side,
         // it only works in async contexts.
         let boot_now = fasync::BootInstant::now();
@@ -1518,21 +1535,15 @@ mod tests {
     #[fuchsia::test]
     fn verify_asynchronous_signal_honored() {
         let mut executor = fasync::LocalExecutor::default();
+        let (sample_sender, mut sample_received) = mpsc::channel(1);
         let (test_sender, mut test_received) = mpsc::channel(1);
         let (mut s, r) = mpsc::channel(1);
         let clock = create_clock();
-        clock.update(UtcClockUpdate::builder().error_bounds(0).build()).unwrap();
-
-        let clock_clone = clock.clone();
-
-        // At the start, the clock is set to no error.
-        let details = clock_clone.get_details().unwrap();
-        assert_eq!(0, details.error_bounds);
+        let rtc = FakeRtc::valid(BACKSTOP_TIME);
+        let rtc_clone = rtc.clone();
         let b = new_state_for_test(true);
 
         let _t = fasync::Task::local(async move {
-            // Set zero bound.
-            let rtc = FakeRtc::valid(BACKSTOP_TIME);
             let diagnostics = Arc::new(FakeDiagnostics::new());
             let config = make_test_config();
 
@@ -1545,27 +1556,47 @@ mod tests {
                     STD_DEV,
                 )],
                 None,
-                Some(rtc.clone()),
+                Some(rtc_clone),
                 Arc::clone(&diagnostics),
                 config,
                 Some(test_sender),
-                None,
+                Some(sample_sender),
             );
             clock_manager.maintain_clock(r, b).await;
         });
 
-        // Signal that clock update is needed.
+        // Wait for the initial sample to initialize the estimator and start the clock.
+        assert_eq!(Some(()), executor.run_singlethreaded(sample_received.next()));
+        rtc.reset_last_set();
+
+        // 1. Signal system suspend (`suspended: true`).
+        let (done_tx, mut done_rx) = mpsc::channel(1);
+        let mut s_clone = s.clone();
         let _s = fasync::Task::local(async move {
-            s.send(Command::PowerManagement).await.unwrap();
+            s_clone
+                .send(Command::PowerManagement { suspended: true, done: done_tx })
+                .await
+                .unwrap();
         });
+        assert_eq!(Some(()), executor.run_singlethreaded(done_rx.next()));
+        assert_eq!(Some(()), executor.run_singlethreaded(test_received.next()));
 
-        // Wait until the signal propagates.
-        let ret = executor.run_singlethreaded(async move { test_received.next().await });
-        assert_eq!(Some(()), ret);
+        // 2. Request an RTC update while suspended; verify it is suppressed and deferred.
+        let mut s_clone = s.clone();
+        let _u = fasync::Task::local(async move {
+            s_clone.send(Command::UpdateRtc).await.unwrap();
+        });
+        assert_eq!(Some(()), executor.run_singlethreaded(test_received.next()));
+        assert_eq!(rtc.last_set(), None);
 
-        // Verify that clock now has a large error bound.
-        let details = clock_clone.get_details().unwrap();
-        assert_eq!(ZX_CLOCK_UNKNOWN_ERROR_BOUND, details.error_bounds);
+        // 3. Signal system resume (`suspended: false`); verify the deferred RTC update is flushed.
+        let (done_tx, mut done_rx) = mpsc::channel(1);
+        let _r = fasync::Task::local(async move {
+            s.send(Command::PowerManagement { suspended: false, done: done_tx }).await.unwrap();
+        });
+        assert_eq!(Some(()), executor.run_singlethreaded(done_rx.next()));
+        assert_eq!(Some(()), executor.run_singlethreaded(test_received.next()));
+        assert!(rtc.last_set().is_some());
     }
 
     #[fuchsia::test]
@@ -1601,12 +1632,14 @@ mod tests {
             clock_manager.maintain_clock(r, b).await;
         });
 
-        // Signal that clock update is needed.
+        // Signal power management transition.
+        let (done_tx, mut done_rx) = mpsc::channel(1);
         let _signal_rtc_command = fasync::Task::local(async move {
-            s.send(Command::PowerManagement).await.unwrap();
+            s.send(Command::PowerManagement { suspended: true, done: done_tx }).await.unwrap();
         });
 
         // Wait until the signal propagates.
+        assert_eq!(Some(()), executor.run_singlethreaded(done_rx.next()));
         let ret = executor.run_singlethreaded(async move { test_received.next().await });
         assert_eq!(Some(()), ret);
     }
