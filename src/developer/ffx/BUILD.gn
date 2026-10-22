@@ -290,6 +290,7 @@ group("tests") {
     "lib:tests($host_toolchain)",
     "playground:tests($host_toolchain)",
     "plugins/package:tests($host_toolchain)",
+    "plugins/package/far/extract:ffx_package_far_extract_test($host_toolchain)",
     "plugins/target:tests($host_toolchain)",
     "plugins/trace:tests($host_toolchain)",
     "tests($host_toolchain)",
