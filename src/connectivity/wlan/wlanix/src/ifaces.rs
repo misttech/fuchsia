@@ -1291,6 +1291,11 @@ pub mod test_utils {
         pub transaction_handle: Mutex<Option<fidl_sme::ConnectTransactionControlHandle>>,
         pub pno_transaction_handle: Mutex<Option<fidl_sme::ScheduledScanTransactionControlHandle>>,
         scan_end_receiver: Mutex<Option<oneshot::Receiver<Result<ScanEnd, Error>>>>,
+        /// If a connect_yielding_rx is configured (used in concurrency tests),
+        /// await a signal over the channel before completing the connect request.
+        /// This allows tests to pause the asynchronous connect execution mid-flight
+        /// to simulate race conditions (e.g., Select returning before connect completes).
+        pub connect_yielding_rx: Mutex<Option<mpsc::Receiver<()>>>,
         pub calls: Arc<Mutex<Vec<ClientIfaceCall>>>,
         pub connect_success: Mutex<bool>,
         pub scan_results: Mutex<Vec<fidl_sme::ScanResult>>,
@@ -1306,6 +1311,7 @@ pub mod test_utils {
                 transaction_handle: Mutex::new(None),
                 pno_transaction_handle: Mutex::new(None),
                 scan_end_receiver: Mutex::new(None),
+                connect_yielding_rx: Mutex::new(None),
                 calls: Arc::new(Mutex::new(vec![])),
                 connect_success: Mutex::new(true),
                 scan_results: Mutex::new(vec![fake_scan_result()]),
@@ -1368,6 +1374,15 @@ pub mod test_utils {
                 bssid,
                 key_mgmt,
             });
+            let mut rx_opt = {
+                let mut yield_receiver = self.connect_yielding_rx.lock();
+                yield_receiver.take()
+            }; // Lock guard is dropped immediately here to keep the future Send
+
+            if let Some(mut rx) = rx_opt.take() {
+                let _ = rx.next().await;
+                *self.connect_yielding_rx.lock() = Some(rx);
+            }
             if *self.connect_success.lock() {
                 let (proxy, server) =
                     fidl::endpoints::create_proxy::<fidl_sme::ConnectTransactionMarker>();
