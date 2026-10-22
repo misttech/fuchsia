@@ -14,7 +14,7 @@
         },
         {
             "name": "find_rdeps",
-            "description": "Finds true reverse dependencies across BUILD.gn and BUILD.bazel (excluding visibility allowlists and GN-only sentinel targets; references to generated <target>_<suffix> sub-targets such as fidl_library bindings <fidl>_rust count toward the owning target) and computes per-target 3-tier visibility recommendations (tight :__pkg__/LCA for narrow targets, 2-3 level area rollups for medium targets, and //visibility:public for globally-used platform libraries across >=6 areas)",
+            "description": "Finds true reverse dependencies across BUILD.gn and BUILD.bazel (excluding visibility allowlists and GN-only sentinel targets; references to generated <target>_<suffix> sub-targets such as fidl_library bindings <fidl>_rust count toward the owning target) and computes per-target 3-tier visibility recommendations (tight :__pkg__/LCA for narrow targets, 2-3 level area rollups for medium targets, and [\"//:__subpackages__\"] for globally-used platform libraries across >=6 areas; never //visibility:public)",
             "script_file": "find_rdeps.sh",
             "allowed_roles": [
                 "coder",

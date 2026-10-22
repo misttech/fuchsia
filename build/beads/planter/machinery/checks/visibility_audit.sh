@@ -1021,10 +1021,14 @@ for rel_path in sorted(candidate_files):
 
                     if prefix in BANNED_UMBRELLA_SUBPKGS:
                         if not allow_broad_test_vis:
+                            # docs/development/languages/bazel/style/build_files.md#target-visibility
+                            # suggests top-level directories such as //sdk/lib:__subpackages__ for
+                            # targets used across the code base, so on globally-used targets this is
+                            # only a hint for a human to confirm.
                             findings.append({
                                 "source": "visibility_audit",
                                 "category": "overbroad_subpackages_visibility",
-                                "severity": "error",
+                                "severity": "info" if is_globally_used else "error",
                                 "file": rel_path,
                                 "line": lineno,
                                 "message": f"Target '{target_name}' grants multi-domain umbrella wildcard '{val}' in visibility ('//{prefix} seems too wide').",
