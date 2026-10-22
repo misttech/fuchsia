@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "bt-a2dp",
+    srcs = [
+        "src/codec.rs",
+        "src/connected_peers.rs",
+        "src/lib.rs",
+        "src/media_task.rs",
+        "src/media_types.rs",
+        "src/peer/controller.rs",
+        "src/peer/mod.rs",
+        "src/peer/volume_relay.rs",
+        "src/permits.rs",
+        "src/rtp.rs",
+        "src/stream.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__subpackages__",
+        "//src/connectivity/bluetooth/profiles/bt-a2dp:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.avdtp.test:fuchsia.bluetooth.avdtp.test_rust",
+        "//sdk/fidl/fuchsia.bluetooth.avrcp:fuchsia.bluetooth.avrcp_rust",
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/bt-avdtp",
+        "//src/connectivity/bluetooth/lib/bt-avrcp-vol-control",
+        "//src/connectivity/bluetooth/lib/bt-metrics",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bitfield",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:dyn-clone",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:slab",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
+rustc_test(
+    name = "bt-a2dp_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bt-a2dp",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# TODO(https://fxbug.dev/574121341): Run this test in GN too.
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "bt-a2dp-lib-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":bt-a2dp_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)

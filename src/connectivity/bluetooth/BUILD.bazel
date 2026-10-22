@@ -12,6 +12,7 @@ test_suite(
     tests = [
         "//src/connectivity/bluetooth/lib/async-helpers:async-helpers-tests",
         "//src/connectivity/bluetooth/lib/battery-client:battery-client-tests",
+        "//src/connectivity/bluetooth/lib/bt-a2dp:bt-a2dp-lib-tests",
         "//src/connectivity/bluetooth/lib/bt-avctp:bt-avctp-tests",
         "//src/connectivity/bluetooth/lib/bt-avdtp:bt-avdtp-tests",
         "//src/connectivity/bluetooth/lib/bt-avrcp-vol-control:bt-avrcp-vol-control-tests",

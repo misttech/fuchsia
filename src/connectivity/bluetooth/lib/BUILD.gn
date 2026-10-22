@@ -32,7 +32,6 @@ group("lib") {
 group("tests") {
   testonly = true
   deps = [
-    "bt-a2dp:tests",
     "bt-hfp:tests",
     "fuchsia-audio-codec:tests",
     "fuchsia-audio-dai:tests",
