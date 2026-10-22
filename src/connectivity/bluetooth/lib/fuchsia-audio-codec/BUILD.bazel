@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(https://fxbug.dev/571945302): Migrate the unit tests, which remain in
+# BUILD.gn.
+rustc_library(
+    name = "fuchsia-audio-codec",
+    srcs = [
+        "src/buffer_collection_constraints.rs",
+        "src/lib.rs",
+        "src/stream_processor.rs",
+        "src/sysmem_allocator.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib:__subpackages__",
+        "//src/connectivity/bluetooth/profiles/bt-a2dp:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+        "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_rust",
+        "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//src/media/stream_processors/fuchsia-stream-processors",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
