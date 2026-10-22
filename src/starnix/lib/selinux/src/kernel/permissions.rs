@@ -40,6 +40,7 @@ macro_rules! subset_enum {
         }
 
         impl From<$name> for $existing_enum {
+            #[inline]
             fn from(other: $name) -> Self {
                 match other {
                     $($name::$variant => Self::$variant,)*
@@ -77,6 +78,7 @@ macro_rules! declare_kernel_classes {
             }
 
             $(impl From<[<$variant Permission>]> for KernelPermission {
+                #[inline]
                 fn from(v: [<$variant Permission>]) -> Self {
                     Self::$variant(v)
                 }
@@ -84,11 +86,13 @@ macro_rules! declare_kernel_classes {
             )*
 
             impl ClassPermission for KernelPermission {
+                #[inline]
                 fn class(&self) -> KernelClass {
                     match self {
                         $(KernelPermission::$variant(_) => KernelClass::$variant),*
                     }
                 }
+                #[inline]
                 fn id(&self) -> u8 {
                     match self {
                         $(KernelPermission::$variant(v) => v.id()),*
@@ -374,6 +378,7 @@ impl From<SocketClass> for FsNodeClass {
 pub trait ClassPermission {
     fn class(&self) -> KernelClass;
     fn id(&self) -> u8;
+    #[inline]
     fn as_access_vector(&self) -> AccessVector {
         AccessVector::from(1u32 << self.id())
     }
@@ -406,9 +411,11 @@ macro_rules! class_permission_enum {
 
 
         impl ClassPermission for $name {
+            #[inline]
             fn class(&self) -> KernelClass {
                 KernelClass::$kernel_class
             }
+            #[inline]
             fn id(&self) -> u8 {
                 *self as u8
             }
