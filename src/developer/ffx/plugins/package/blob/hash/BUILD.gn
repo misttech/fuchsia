@@ -82,6 +82,7 @@ if (is_host) {
              "//third_party/rust_crates:assert_matches",
              "//third_party/rust_crates:tempfile",
            ]
+    args = [ "env RUST_LIB_BACKTRACE=0" ]
     visibility = [
       ":*",
       "//src/developer/ffx:*",

@@ -33,6 +33,10 @@ rustc_test("integration") {
 
   if (is_host) {
     sources += [ "src/error_propagation.rs" ]
+
+    # Tests assert on exact `anyhow::Error` debug output, which includes a
+    # stack backtrace when `RUST_BACKTRACE=1` is set for host tests.
+    args = [ "env RUST_LIB_BACKTRACE=0" ]
   }
 }
 

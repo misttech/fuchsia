@@ -29,6 +29,10 @@ ffx_plugin("ffx_package_blob_compress") {
     "//third_party/rust_crates:tempfile",
   ]
 
+  # Tests assert on exact `anyhow::Error` output, which includes a stack
+  # backtrace when `RUST_BACKTRACE=1` is set for host tests.
+  args = [ "env RUST_LIB_BACKTRACE=0" ]
+
   args_sources = [ "src/args.rs" ]
 
   args_deps = [

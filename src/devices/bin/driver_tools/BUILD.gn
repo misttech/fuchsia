@@ -149,6 +149,10 @@ driver_tools_lib("lib_fdomain") {
     "//src/lib/fdomain/client:flex_fdomain",
   ]
   test_deps = [ "//src/lib/fdomain/local" ]
+
+  # Tests compare golden command output that includes formatted `anyhow::Error`
+  # values, which include a backtrace when `RUST_BACKTRACE=1` is set.
+  args = [ "env RUST_LIB_BACKTRACE=0" ]
   features = [ "fdomain" ]
 }
 

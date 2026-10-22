@@ -62,6 +62,10 @@ ffx_plugin("ffx_product_bundle_bisect") {
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tempfile",
   ]
+
+  # Tests repeatedly construct `anyhow::Error` on failure paths; capturing
+  # unstripped DWARF backtraces under `RUST_BACKTRACE=1` causes timeouts.
+  args = [ "env RUST_LIB_BACKTRACE=0" ]
 }
 
 if (is_host) {

@@ -36,6 +36,10 @@ import("plugins.gni")
 #   test_deps (optional)
 #     List of rust_library GN targets on which this crate's tests depend.
 #
+#   args (optional)
+#     List of arguments to pass to the host unit test of this crate, when
+#     `with_unit_tests` is true. See `args` in //build/rust/rustc_test.gni.
+#
 #   with_unit_tests (optional)
 #     Builds unit tests associated with the library. This will create a
 #     `<name>_lib_test` test file in the output directory. Equivalent
@@ -159,6 +163,7 @@ template("ffx_plugin") {
         forward_variables_from(invoker,
                                "*",
                                _args_parameter_names + [
+                                     "args",
                                      "edition",
                                      "deps",
                                      "config_data",
@@ -239,6 +244,7 @@ template("ffx_plugin") {
       forward_variables_from(invoker,
                              "*",
                              _args_parameter_names + [
+                                   "args",
                                    "config_data",
                                    "deps",
                                    "sdk_category",
@@ -349,6 +355,7 @@ template("ffx_plugin") {
       forward_variables_from(invoker,
                              "*",
                              _args_parameter_names + [
+                                   "args",
                                    "config_data",
                                    "deps",
                                    "edition",

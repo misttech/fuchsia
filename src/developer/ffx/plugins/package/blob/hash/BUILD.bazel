@@ -39,7 +39,8 @@ ffx_plugin(
 host_rustc_test(
     name = "ffx_package_blob_hash_test",
     crate = ":ffx_package_blob_hash",
-    # @bazel2gn:skip
+    # Tests assert on exact `anyhow::Error` output, which includes a stack
+    # backtrace when `RUST_BACKTRACE=1` is set for host tests.
     test_args = ["env RUST_LIB_BACKTRACE=0"],
     visibility = ["//src/developer/ffx:__pkg__"],
     deps = [
