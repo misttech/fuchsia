@@ -10,6 +10,7 @@ import("//build/python/python_library.gni")
 import("//build/python/python_wheel.gni")
 import("//build/rust/rustc_staticlib.gni")
 import("//sdk/categories/compatibility.gni")
+import("//sdk/fidl/fidl_category_lists.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
 import("//tools/fidl/gidl/gidl.gni")
 
@@ -122,11 +123,47 @@ if (is_host) {
     main_source = static_conformance_test_source
   }
 
+  _fidl_sdk_targets = partner_idk_stable_fidl_libraries_targets_list +
+                      partner_idk_unstable_fidl_libraries_targets_list +
+                      prebuilt_fidl_libraries_targets_list +
+                      host_tool_fidl_libraries_targets_list
+
+  # Exclude targets that have restricted internal visibility or known generator
+  # bugs.
+  _excluded_fidl_targets = [
+    # Restricted visibility in sdk/fidl/fuchsia.power.broker/BUILD.gn.
+    "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker",
+
+    # Generator bug in fidlgen_python where struct field shadows decoder
+    # argument.
+    "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec",
+  ]
+
+  _fidl_sdk_python_deps = []
+  foreach(target, _fidl_sdk_targets) {
+    if (_excluded_fidl_targets + [ target ] - [ target ] ==
+        _excluded_fidl_targets) {
+      _fidl_sdk_python_deps += [ "${target}_python" ]
+    }
+  }
+
+  group("fidl_sdk") {
+    public_deps = _fidl_sdk_python_deps
+    metadata = {
+      library_info_barrier = public_deps
+    }
+  }
+
   group("fuchsia-controller") {
     testonly = true
     deps = [
+      ":fidl_sdk",
+      ":fidl_sdk_wheel",
+      ":fidl_wheel",
+      ":fuchsia_controller_combined_wheel",
       ":fuchsia_controller_py",
       ":fuchsia_controller_wheel",
+      ":fuchsia_controller_with_fidl_wheel",
     ]
   }
 
@@ -199,10 +236,94 @@ if (is_host) {
       }
     }
   }
+
+  python_wheel("fidl_sdk_wheel") {
+    deps = [ ":fidl_sdk" ]
+    pyproject_toml = "pyproject.toml"
+    version = "0.1.0"
+    package_name = "fidl-sdk"
+
+    _python_version_tag = "cp" + string_replace(python_version, ".", "")
+    if (current_os == "linux") {
+      if (current_cpu == "x64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-linux_x86_64"
+      } else if (current_cpu == "arm64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-linux_aarch64"
+      }
+    } else if (current_os == "mac") {
+      if (current_cpu == "x64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-macosx_10_9_x86_64"
+      } else if (current_cpu == "arm64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-macosx_11_0_arm64"
+      }
+    }
+  }
+
+  group("fidl_wheel") {
+    deps = [ ":fidl_sdk_wheel" ]
+  }
+
+  python_wheel("fuchsia_controller_combined_wheel") {
+    deps = [
+      ":fidl_bindings",
+      ":fidl_sdk",
+      ":fuchsia_controller_py",
+    ]
+    pyproject_toml = "pyproject.toml"
+    version = "0.1.0"
+    package_name = "fuchsia-controller"
+
+    _python_version_tag = "cp" + string_replace(python_version, ".", "")
+    if (current_os == "linux") {
+      if (current_cpu == "x64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-linux_x86_64"
+      } else if (current_cpu == "arm64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-linux_aarch64"
+      }
+    } else if (current_os == "mac") {
+      if (current_cpu == "x64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-macosx_10_9_x86_64"
+      } else if (current_cpu == "arm64") {
+        wheel_tags =
+            "${_python_version_tag}-${_python_version_tag}-macosx_11_0_arm64"
+      }
+    }
+  }
+
+  group("fuchsia_controller_with_fidl_wheel") {
+    deps = [ ":fuchsia_controller_combined_wheel" ]
+  }
 } else {
   group("fuchsia-controller") {
     testonly = true
     deps = [ ":fuchsia-controller($host_toolchain)" ]
+  }
+
+  group("fidl_sdk") {
+    deps = [ ":fidl_sdk($host_toolchain)" ]
+  }
+
+  group("fidl_sdk_wheel") {
+    deps = [ ":fidl_sdk_wheel($host_toolchain)" ]
+  }
+
+  group("fidl_wheel") {
+    deps = [ ":fidl_wheel($host_toolchain)" ]
+  }
+
+  group("fuchsia_controller_combined_wheel") {
+    deps = [ ":fuchsia_controller_combined_wheel($host_toolchain)" ]
+  }
+
+  group("fuchsia_controller_with_fidl_wheel") {
+    deps = [ ":fuchsia_controller_with_fidl_wheel($host_toolchain)" ]
   }
 
   group("tests") {
