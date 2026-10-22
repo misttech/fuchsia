@@ -1101,10 +1101,8 @@ zx::result<> Ufs::ReinitAfterPowerDown() {
     return zx::error(status);
   }
   if (crypto_supported_) {
-    // TODO(https://fxbug.dev/568465123): Only the global enable is restored here. The per-slot
-    // CRYPTOCFG entries programmed by ProgramKeySlot() are lost with the controller's power, so
-    // keys programmed before the suspend must be re-established (via the PHY/KDN restore path)
-    // before encrypted I/O can resume.
+    // Only the global enable is restored here; the per-slot state is re-established by
+    // RestoreCryptoState() below once the controller is back up.
     HostControllerEnableReg::Get().ReadFrom(&mmio).set_crypto_general_enable(true).WriteTo(&mmio);
   }
   if (zx::result<> result = Notify(NotifyEvent::kInit, 0); result.is_error()) {
@@ -1162,6 +1160,15 @@ zx::result<> Ufs::ReinitAfterPowerDown() {
     return result.take_error();
   }
   if (zx::result<> result = Notify(NotifyEvent::kDeviceInitDone, 0); result.is_error()) {
+    return result.take_error();
+  }
+
+  // Inline encryption state must be restored once the host controller is enabled and the crypto
+  // engine's power-on self test has completed (handled by the PHY during kInit), but before
+  // encrypted I/O can be issued: that is, before the link is brought up for I/O rather than after
+  // the first command.
+  if (zx::result<> result = RestoreCryptoState(); result.is_error()) {
+    fdf::error("Failed to restore inline encryption state on resume: {}", result);
     return result.take_error();
   }
 
@@ -1695,35 +1702,83 @@ zx::result<uint8_t> Ufs::ProgramKeySlot(fidl::VectorView<uint8_t> wrapped_key,
   }
 
   const uint8_t slot = result->value()->slot;
-  constexpr uint8_t kMaxCryptoSlots = 32;
   if (slot >= kMaxCryptoSlots) {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
+  if (zx::result<> result = ConfigureCryptoSlot(slot, data_unit_size); result.is_error()) {
+    return result.take_error();
+  }
+  return zx::ok(slot);
+}
+
+zx::result<> Ufs::ConfigureCryptoSlot(uint8_t slot, uint32_t data_unit_size) {
+  ZX_DEBUG_ASSERT(slot < kMaxCryptoSlots);
+  // CRYPTOCFG lives in the UFSHCI register space, which is gated during a PowerDown suspend.
+  std::lock_guard<std::mutex> lock(uic_lock_);
+  if (IsHardwarePoweredOff()) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  WriteCryptoConfigLocked(slot, data_unit_size);
+  crypto_slot_data_unit_size_[slot] = data_unit_size;
+  return zx::ok();
+}
+
+void Ufs::WriteCryptoConfigLocked(uint8_t slot, uint32_t data_unit_size) {
   // Configure UFSHCI CRYPTO_CFG per Section 5.6.3:
   // 1. Clear CFGE = 0 first.
   // 2. Program remaining configuration words (DWORD 17 = 0).
   // 3. Write CFGE = 1 | DUSIZE to DWORD 16 last.
+  constexpr uint32_t kMinCryptoDataUnitSize = 0x200;
   constexpr uint32_t kCryptoCfgBase = 0x500;
   constexpr uint32_t kCryptoCfgStride = 0x80;
   constexpr uint32_t kCryptoCfgDword16Offset = 0x40;
   constexpr uint32_t kCryptoCfgDword17Offset = 0x44;
   constexpr uint32_t kCryptoCfgEnable = 1U << 31;
-  const uint32_t dusize_flag = du / kMinCryptoDataUnitSize;
+  const uint32_t dusize_flag = data_unit_size / kMinCryptoDataUnitSize;
   const uint32_t cfg_offset = kCryptoCfgBase + slot * kCryptoCfgStride;
+  GetMmio().Write32(0, cfg_offset + kCryptoCfgDword16Offset);
+  GetMmio().Write32(0, cfg_offset + kCryptoCfgDword17Offset);
+  GetMmio().Write32(kCryptoCfgEnable | (dusize_flag & 0xffU), cfg_offset + kCryptoCfgDword16Offset);
+}
+
+bool Ufs::HasProgrammedCryptoKeys() {
+  std::lock_guard<std::mutex> lock(uic_lock_);
+  return std::ranges::any_of(crypto_slot_data_unit_size_, [](uint32_t du) { return du != 0; });
+}
+
+zx::result<> Ufs::RestoreCryptoState() {
+  if (!crypto_supported_) {
+    return zx::ok();
+  }
+
+  uint32_t restored_slots = 0;
   {
-    // CRYPTOCFG lives in the UFSHCI register space, which is gated during a PowerDown suspend.
     std::lock_guard<std::mutex> lock(uic_lock_);
     if (IsHardwarePoweredOff()) {
       return zx::error(ZX_ERR_BAD_STATE);
     }
-    GetMmio().Write32(0, cfg_offset + kCryptoCfgDword16Offset);
-    GetMmio().Write32(0, cfg_offset + kCryptoCfgDword17Offset);
-    GetMmio().Write32(kCryptoCfgEnable | (dusize_flag & 0xffU),
-                      cfg_offset + kCryptoCfgDword16Offset);
+    for (uint8_t slot = 0; slot < kMaxCryptoSlots; ++slot) {
+      const uint32_t data_unit_size = crypto_slot_data_unit_size_[slot];
+      if (data_unit_size == 0) {
+        continue;
+      }
+      WriteCryptoConfigLocked(slot, data_unit_size);
+      ++restored_slots;
+    }
+  }
+  if (restored_slots == 0) {
+    return zx::ok();
   }
 
-  return zx::ok(slot);
+  // TODO(https://fxbug.dev/568465123): CRYPTOCFG has been rewritten above, but the key material in
+  // the host controller's key table is also lost across PowerDown and must be re-pushed by the
+  // inline encryption provider (e.g. GSA KDN RESTORE_KEYS on Iris) before encrypted I/O can be
+  // resumed. Until that is plumbed through fuchsia.hardware.inlineencryption, fail resume rather
+  // than let encrypted I/O silently proceed with an empty key table. DeviceManager::SuspendPower()
+  // falls back to Sleep when keys are programmed, so this is not reachable in practice.
+  fdf::error("Cannot restore {} inline encryption key(s) after PowerDown suspend", restored_slots);
+  return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx::result<std::vector<uint8_t>> Ufs::DeriveRawSecret(fidl::VectorView<uint8_t> wrapped_key) {

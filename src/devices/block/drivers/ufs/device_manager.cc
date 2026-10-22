@@ -946,11 +946,19 @@ zx::result<> DeviceManager::SuspendPower() {
   // silently turn a power-on write-protected LU writable. Linux keeps VCC when
   // dev_info.is_lu_power_on_wp is set; we achieve the same by staying in Sleep (device Idle, link
   // Hibern8) instead, which only drops the link.
-  const bool power_down =
-      controller_.SupportsPowerDownSuspend() && !IsLogicalLunPowerOnWriteProtect();
-  if (controller_.SupportsPowerDownSuspend() && !power_down && !power_down_blocked_) {
+  const bool supports_power_down = controller_.SupportsPowerDownSuspend();
+  bool power_down = supports_power_down && !IsLogicalLunPowerOnWriteProtect();
+  if (supports_power_down && !power_down && !power_down_blocked_) {
     fdf::info("A power-on write-protected LU is present; using Sleep instead of PowerDown suspend");
     power_down_blocked_ = true;
+  }
+  // TODO(https://fxbug.dev/568465123): PowerDown collapses the host controller power domain, which
+  // discards programmed inline encryption keys. Until key restore is wired through the inline
+  // encryption provider on resume, stay in Sleep (link hibernate, controller powered) whenever keys
+  // are live so that encrypted I/O continues to work after resume.
+  if (power_down && controller_.HasProgrammedCryptoKeys()) {
+    fdf::info("Inline encryption keys are programmed; using Sleep instead of PowerDown suspend");
+    power_down = false;
   }
   const UfsPowerMode target_power_mode =
       power_down ? UfsPowerMode::kPowerDown : UfsPowerMode::kSleep;

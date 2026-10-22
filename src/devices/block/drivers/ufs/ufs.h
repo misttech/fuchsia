@@ -22,8 +22,10 @@
 #include <lib/scsi/block-device.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
+#include <array>
 #include <atomic>
 #include <deque>
+#include <mutex>
 #include <span>
 #include <unordered_set>
 
@@ -297,6 +299,11 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
 
   virtual bool SupportsPowerDownSuspend() const { return false; }
 
+  // Returns true if any inline encryption key slot has been programmed. Key slot state (UFSHCI
+  // CRYPTOCFG and, on platforms where the key table lives inside the host controller power domain,
+  // the key material itself) does not survive a PowerDown suspend.
+  bool HasProgrammedCryptoKeys() TA_EXCL(uic_lock_);
+
   // Host-controller side of the power sequence, driven by DeviceManager::SuspendPower() /
   // ResumePower() (the device/link side lives in DeviceManager).
 
@@ -348,9 +355,23 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
     return fdf::MmioBuffer::Create(offset, size, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   }
 
+  // Writes the UFSHCI CRYPTOCFG entry for |slot| and records the slot as programmed with
+  // |data_unit_size|. Called by ProgramKeySlot() after the inline encryption provider has loaded
+  // the key material into the hardware slot. Fails with ZX_ERR_BAD_STATE while the host
+  // controller is powered down, in which case the slot is not recorded.
+  zx::result<> ConfigureCryptoSlot(uint8_t slot, uint32_t data_unit_size) TA_EXCL(uic_lock_);
+
  private:
   friend class UfsTest;
   friend class RequestProcessor;
+
+  // Writes UFSHCI CRYPTOCFG DWORD16/17 for |slot| per UFSHCI 3.0 section 5.6.3. The caller holds
+  // uic_lock_ (so that the register writes cannot race with the host controller being powered
+  // down) and has checked IsHardwarePoweredOff().
+  void WriteCryptoConfigLocked(uint8_t slot, uint32_t data_unit_size) TA_REQ(uic_lock_);
+  // Re-establishes inline encryption state in the host controller after a PowerDown suspend.
+  zx::result<> RestoreCryptoState() TA_EXCL(uic_lock_);
+
   void HandleIrq(async_dispatcher_t *dispatcher, async::IrqBase *irq, zx_status_t status,
                  const zx_packet_interrupt_t *interrupt);
   void HandleTimeout(async_dispatcher_t *dispatcher, async::TaskBase *task, zx_status_t status);
@@ -505,6 +526,14 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
 
   bool crypto_supported_ = false;
   fidl::WireSyncClient<fuchsia_hardware_inlineencryption::Controller> inline_encryption_client_;
+
+  // UFSHCI 3.0 section 5.6: CRYPTOCAP.CFGC is 8 bits, but the driver (and the block server's
+  // session-scoped slot numbering) currently supports at most 32 slots.
+  static constexpr uint8_t kMaxCryptoSlots = 32;
+  // Data unit size programmed into each crypto slot, or 0 if the slot has not been programmed.
+  // Shadow of the CRYPTOCFG registers, so it shares their lock (uic_lock_): every writer also
+  // writes the registers, and RestoreCryptoState() replays the whole table in one critical section.
+  std::array<uint32_t, kMaxCryptoSlots> crypto_slot_data_unit_size_ TA_GUARDED(uic_lock_) = {};
 };
 
 }  // namespace ufs

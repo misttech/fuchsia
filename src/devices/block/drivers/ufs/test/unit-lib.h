@@ -263,6 +263,12 @@ class TestUfs : public UfsPci {
     supports_power_down_suspend_ = supports;
   }
 
+  // Marks |slot| as holding a programmed inline encryption key, bypassing the inline encryption
+  // provider FIDL call that ProgramKeySlot() would otherwise make.
+  zx::result<> ProgramCryptoSlotForTest(uint8_t slot, uint32_t data_unit_size) {
+    return ConfigureCryptoSlot(slot, data_unit_size);
+  }
+
   static void SetMockDevice(ufs_mock_device::UfsMockDevice* mock_device) {
     TestUfs::mock_device_ = mock_device;
   }

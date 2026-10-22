@@ -990,4 +990,89 @@ TEST_F(PowerTest, PowerDownSuspendWithPhyFailureStillRecordsPowerDown) {
   mock_device_.GetUicCmdProcessor().Reset();
 }
 
+TEST_F(PowerTest, PowerDownSuspendFallsBackToSleepWithCryptoKeys) {
+  TestUfs::SetSupportsPowerDownSuspend(true);
+
+  libsync::Completion sleep_complete;
+  std::atomic<uint32_t> link_startup_count{0};
+  std::atomic<uint32_t> post_suspend_count{0};
+  std::atomic<uint32_t> pre_resume_count{0};
+
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeHibernateEnter,
+      [&](UfsMockDevice& mock_device, uint32_t ucmdarg1, uint32_t ucmdarg2, uint32_t ucmdarg3) {
+        mock_device_.GetUicCmdProcessor().DefaultDmeHibernateEnterHandler(mock_device, ucmdarg1,
+                                                                          ucmdarg2, ucmdarg3);
+        sleep_complete.Signal();
+      });
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeLinkStartUp,
+      [&](UfsMockDevice& mock_device, uint32_t ucmdarg1, uint32_t ucmdarg2, uint32_t ucmdarg3) {
+        mock_device_.GetUicCmdProcessor().DefaultDmeLinkStartUpHandler(mock_device, ucmdarg1,
+                                                                       ucmdarg2, ucmdarg3);
+        link_startup_count.fetch_add(1);
+      });
+
+  ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
+
+  // 1. With no keys programmed, the first real "off" is a PowerDown suspend.
+  ASSERT_NO_FATAL_FAILURE(VerifyInitialOffIgnoredAndSuspend());
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() { sleep_complete.Wait(); }));
+  ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kPowerDown);
+  EXPECT_FALSE(dut_->HasProgrammedCryptoKeys());
+
+  dut_->SetHostControllerCallback([&](NotifyEvent event, uint64_t data) -> zx::result<> {
+    switch (event) {
+      case NotifyEvent::kPostSuspend:
+        post_suspend_count.fetch_add(1);
+        break;
+      case NotifyEvent::kPreResume:
+        pre_resume_count.fetch_add(1);
+        break;
+      default:
+        break;
+    }
+    return Ufs::NotifyEventCallback(event, data);
+  });
+
+  SetPowerLevelSync(Ufs::kPowerLevelOn);
+  ASSERT_TRUE(dut_->IsResumed());
+  EXPECT_EQ(pre_resume_count.load(), 1u);
+  EXPECT_EQ(link_startup_count.load(), 2u);
+
+  // 2. Program an inline encryption key slot and verify CRYPTOCFG was written.
+  constexpr uint8_t kSlot = 3;
+  constexpr uint32_t kDataUnitSize = 4096;
+  constexpr uint32_t kCryptoCfgDword16 = 0x500 + kSlot * 0x80 + 0x40;
+  constexpr uint32_t kExpectedCryptoCfg = (1U << 31) | (kDataUnitSize / 512);
+  ASSERT_OK(dut_->ProgramCryptoSlotForTest(kSlot, kDataUnitSize));
+  EXPECT_TRUE(dut_->HasProgrammedCryptoKeys());
+  EXPECT_EQ(mock_device_.GetRegisters()->Read<uint32_t>(kCryptoCfgDword16), kExpectedCryptoCfg);
+
+  // 3. Suspend again. Because a key is live, the driver must stay in Sleep (link hibernate) rather
+  //    than PowerDown so that the host controller key table and CRYPTOCFG are retained.
+  sleep_complete.Reset();
+  SetPowerLevelSync(Ufs::kPowerLevelOff);
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() { sleep_complete.Wait(); }));
+
+  ASSERT_FALSE(dut_->IsResumed());
+  ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kSleep);
+  ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(), scsi::PowerCondition::kIdle);
+  ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(), LinkState::kHibernate);
+  EXPECT_EQ(post_suspend_count.load(), 0u);
+  EXPECT_TRUE(HostControllerEnableReg::Get()
+                  .ReadFrom(mock_device_.GetRegisters())
+                  .host_controller_enable());
+  EXPECT_EQ(mock_device_.GetRegisters()->Read<uint32_t>(kCryptoCfgDword16), kExpectedCryptoCfg);
+
+  // 4. Resume from Sleep; verify the controller and link were not re-initialized.
+  SetPowerLevelSync(Ufs::kPowerLevelOn);
+  ASSERT_TRUE(dut_->IsResumed());
+  ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), UfsPowerMode::kActive);
+  EXPECT_EQ(pre_resume_count.load(), 1u);
+  EXPECT_EQ(link_startup_count.load(), 2u);
+  EXPECT_EQ(mock_device_.GetRegisters()->Read<uint32_t>(kCryptoCfgDword16), kExpectedCryptoCfg);
+  mock_device_.GetUicCmdProcessor().Reset();
+}
+
 }  // namespace ufs
