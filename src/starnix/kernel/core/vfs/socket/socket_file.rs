@@ -44,6 +44,7 @@ impl SocketFile {
         kernel_private: bool,
     ) -> Result<FileHandle, Errno> {
         let fs = socket_fs(current_task.kernel());
+        security::file_system_resolve_security(current_task, &fs)?;
         let mode = mode!(IFSOCK, 0o777);
         let flags = if kernel_private { FsNodeFlags::IS_PRIVATE } else { FsNodeFlags::empty() };
         let node = fs.create_node_with_flags(

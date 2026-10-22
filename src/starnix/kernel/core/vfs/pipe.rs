@@ -414,12 +414,7 @@ impl Pipe {
 /// write endpoint of the pipe. This order matches the order expected by
 /// sys_pipe2().
 pub fn new_pipe(current_task: &CurrentTask) -> Result<(FileHandle, FileHandle), Errno> {
-    let fs = current_task
-        .kernel()
-        .expando
-        .get::<FsRegistry>()
-        .create(current_task, "pipefs".into(), FileSystemOptions::default())
-        .ok_or_else(|| errno!(EINVAL))??;
+    let fs = pipe_fs(current_task, FileSystemOptions::default())?;
     let mut info = FsNodeInfo::new(mode!(IFIFO, 0o600), current_task.current_fscred());
     info.blksize = ATOMIC_IO_BYTES.into();
     let node = fs.create_node_and_allocate_node_id(SpecialNode, info);
@@ -451,6 +446,20 @@ pub fn new_pipe(current_task: &CurrentTask) -> Result<(FileHandle, FileHandle), 
     Ok((read_file, write_file))
 }
 
+/// Creates a new anonymous [`FileObject`] backed by a `pipefs` [`crate::vfs::FsNode`]
+/// (`S_IFIFO`) with the specified `ops`.
+pub(crate) fn new_pipe_file(
+    current_task: &CurrentTask,
+    ops: Box<dyn FileOps>,
+    flags: OpenFlags,
+) -> Result<FileHandle, Errno> {
+    let fs = pipe_fs(current_task, FileSystemOptions::default())?;
+    let mut info = FsNodeInfo::new(mode!(IFIFO, 0o600), current_task.current_fscred());
+    info.blksize = ATOMIC_IO_BYTES.into();
+    let node = fs.create_node_and_allocate_node_id(SpecialNode, info);
+    Ok(FileObject::new_anonymous(current_task, ops, node, flags))
+}
+
 struct PipeFs;
 impl FileSystemOps for PipeFs {
     fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
@@ -468,7 +477,7 @@ fn pipe_fs(
     struct PipeFsHandle(FileSystemHandle);
 
     let kernel = current_task.kernel();
-    Ok(kernel
+    let fs = kernel
         .expando
         .get_or_init(|| {
             PipeFsHandle(
@@ -477,7 +486,9 @@ fn pipe_fs(
             )
         })
         .0
-        .clone())
+        .clone();
+    security::file_system_resolve_security(current_task, &fs)?;
+    Ok(fs)
 }
 
 pub fn register_pipe_fs(fs_registry: &FsRegistry) {

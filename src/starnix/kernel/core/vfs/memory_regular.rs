@@ -10,10 +10,11 @@ use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    AppendLockWriteGuard, DirEntry, FallocMode, FileHandle, FileObject, FileOps, FileSystemHandle,
-    FsNode, FsNodeInfo, FsNodeLinkBehavior, FsNodeOps, FsString, MAX_LFS_FILESIZE,
-    MemoryXattrStorage, Mount, MountInfo, NamespaceNode, OpenAccessCheck, WhatToMount,
-    XattrStorage as _, fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
+    Anon, AppendLockWriteGuard, DirEntry, FallocMode, FileHandle, FileObject, FileOps,
+    FileSystemHandle, FsNode, FsNodeFlags, FsNodeInfo, FsNodeLinkBehavior, FsNodeOps, FsString,
+    MAX_LFS_FILESIZE, MemoryXattrStorage, Mount, MountInfo, NamespaceNode, OpenAccessCheck,
+    WhatToMount, XattrStorage as _, anon_fs, fileops_impl_noop_sync, fs_node_impl_not_dir,
+    fs_node_impl_xattr_delegate,
 };
 use linux_uapi::{ASHMEM_GET_SIZE, ASHMEM_SET_SIZE};
 use once_cell::sync::OnceCell;
@@ -251,13 +252,49 @@ pub struct MemoryRegularFile {
 }
 
 impl MemoryRegularFile {
-    /// Create a file object based on a VMO.
+    /// Creates a file object based on a VMO.
     pub fn new(memory: Arc<MemoryObject>) -> Self {
         MemoryRegularFile { memory }
     }
-}
 
-impl MemoryRegularFile {
+    /// Creates a new anonymous file backed by a private regular [`FsNode`] with the specified
+    /// `size`, to which no security labeling nor access-checks will be applied.
+    pub fn new_private_file_with_ops(
+        current_task: &CurrentTask,
+        ops: Box<dyn FileOps>,
+        size: usize,
+        flags: OpenFlags,
+        name: &'static str,
+    ) -> FileHandle {
+        let mut info = FsNodeInfo::new(mode!(IFREG, 0o600), current_task.current_fscred());
+        info.size = size;
+        let fs = anon_fs(current_task.kernel());
+        let node = fs.create_node_with_flags(None, Anon {}, info, FsNodeFlags::IS_PRIVATE);
+        security::fs_node_init_anon(current_task, &node, name)
+            .expect("Private anon_inode creation cannot fail");
+        let name = NamespaceNode::new_anonymous(DirEntry::new(node, None, name.into()));
+        FileObject::new(current_task, ops, name, flags)
+            .expect("FileObject::new on private anon_inode cannot fail")
+    }
+
+    /// Creates a new anonymous file backed by `memory` and a private regular [`FsNode`], to which
+    /// no security labeling nor access-checks will be applied.
+    pub fn new_private_file(
+        current_task: &CurrentTask,
+        memory: Arc<MemoryObject>,
+        flags: OpenFlags,
+        name: &'static str,
+    ) -> FileHandle {
+        let size = memory.get_size() as usize;
+        Self::new_private_file_with_ops(
+            current_task,
+            Box::new(Self::new(memory)),
+            size,
+            flags,
+            name,
+        )
+    }
+
     pub fn read(
         memory: &Arc<MemoryObject>,
         file: &FileObject,

@@ -5,6 +5,7 @@
 use crate::task::CurrentTask;
 use crate::vfs::FileHandle;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::from_status_like_fdio;
 use starnix_uapi::open_flags::OpenFlags;
 
 mod remote;
@@ -24,12 +25,21 @@ pub use remote_volume::*;
 pub use syslog::*;
 pub use timer::*;
 
-/// Create a FileHandle from a zx::NullableHandle.
+/// Creates a [`FileHandle`] from a [`zx::NullableHandle`].
+///
+/// Wraps [`zx::ObjectType::SOCKET`] handles (such as component stdio handles) in `pipefs`-backed
+/// FIFO (`S_IFIFO`) nodes via [`create_fuchsia_pipe`], and uses [`new_remote_file`] for all other
+/// handle types.
 pub fn create_file_from_handle(
     current_task: &CurrentTask,
     handle: zx::NullableHandle,
 ) -> Result<FileHandle, Errno> {
-    new_remote_file(current_task, handle, OpenFlags::RDWR)
+    let info = handle.basic_info().map_err(|status| from_status_like_fdio!(status))?;
+    if info.object_type == zx::ObjectType::SOCKET {
+        create_fuchsia_pipe(current_task, zx::Socket::from(handle), OpenFlags::RDWR)
+    } else {
+        new_remote_file(current_task, handle, OpenFlags::RDWR)
+    }
 }
 
 #[cfg(test)]

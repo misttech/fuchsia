@@ -55,16 +55,15 @@ pub(in crate::security) fn fs_node_notify_security_context(
     security_server: &SecurityServer,
     fs_node: NonPrivateFsNode<'_>,
     security_context: &FsStr,
-) -> Result<(), Errno> {
+) {
     let fs = fs_node.fs();
     if !fs.security_state.state.supports_xattr() {
-        return error!(ENOTSUP);
+        return;
     }
     let sid = security_server
         .security_context_to_sid(security_context.into())
-        .map_err(|_| errno!(EINVAL))?;
+        .unwrap_or_else(|_| InitialSid::Unlabeled.into());
     set_cached_sid(fs_node, sid);
-    Ok(())
 }
 
 /// Called by the VFS to initialize the security state for an `FsNode` that
@@ -1339,11 +1338,15 @@ mod tests {
         self, TEST_FILE_NAME, spawn_kernel_with_selinux_hooks_test_policy_and_run,
     };
     use super::*;
-    use bstr::BStr;
-
+    use crate::fs::fuchsia::{create_file_from_handle, create_fuchsia_pipe, new_remote_file};
+    use crate::mm::PAGE_SIZE;
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::{FsNode, XattrOp};
+    use bstr::BStr;
+    use fidl_fuchsia_io as fio;
+    use selinux::SocketClass;
     use starnix_uapi::errno;
+    use starnix_uapi::open_flags::OpenFlags;
 
     const VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_valid_t:s0";
     const VALID_SECURITY_CONTEXT_WITH_NUL: &[u8] = b"u:object_r:test_valid_t:s0\0";
@@ -1566,6 +1569,166 @@ mod tests {
             .entry;
 
             assert_eq!(BStr::new(b"/foo/bar"), get_fs_relative_path(&dir_entry));
+        })
+        .await;
+    }
+
+    fn spawn_mock_fuchsia_file(selinux_context: Option<fio::SelinuxContext>) -> zx::Channel {
+        use fidl::endpoints::DiscoverableProtocolMarker as _;
+        use futures::StreamExt as _;
+
+        let (client, server) = zx::Channel::create();
+        std::thread::spawn(move || {
+            let mut executor = fuchsia_async::LocalExecutor::default();
+            executor.run_singlethreaded(async move {
+                let mut stream =
+                    fidl::endpoints::ServerEnd::<fio::FileMarker>::new(server).into_stream();
+                while let Some(Ok(request)) = stream.next().await {
+                    match request {
+                        fio::FileRequest::Query { responder } => {
+                            let _ = responder.send(fio::FileMarker::PROTOCOL_NAME.as_bytes());
+                        }
+                        fio::FileRequest::Describe { responder } => {
+                            let _ = responder.send(fio::FileInfo::default());
+                        }
+                        fio::FileRequest::GetAttributes { responder, .. } => {
+                            let mutable = fio::MutableNodeAttributes {
+                                selinux_context: selinux_context.clone(),
+                                ..Default::default()
+                            };
+                            let immutable = fio::ImmutableNodeAttributes {
+                                protocols: Some(fio::NodeProtocolKinds::FILE),
+                                ..Default::default()
+                            };
+                            let _ = responder.send(Ok((&mutable, &immutable)));
+                        }
+                        fio::FileRequest::Close { responder } => {
+                            let _ = responder.send(Ok(()));
+                            break;
+                        }
+                        _ => panic!("Unexpected FileRequest: {request:?}"),
+                    }
+                }
+            });
+        });
+        client
+    }
+
+    #[fuchsia::test]
+    async fn remote_file_and_pipe_labeling() {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
+            let task_sid = security_server
+                .security_context_to_sid(VALID_SECURITY_CONTEXT.into())
+                .expect("invalid security context");
+            testing::mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
+
+            // Fuchsia stream socket wrapped via `create_fuchsia_pipe` is labeled as a `pipefs`
+            // `fifo_file` with the creating task's SID.
+            let (pipe_client, _pipe_server) = zx::Socket::create_stream();
+            let pipe_file = create_fuchsia_pipe(current_task, pipe_client, OpenFlags::RDWR)
+                .expect("create_fuchsia_pipe");
+            assert_eq!(
+                fs_node_effective_sid_and_class(NonPrivateFsNode::new(pipe_file.node()).unwrap()),
+                FsNodeSidAndClass { sid: task_sid, class: FsNodeClass::File(FileClass::FifoFile) }
+            );
+
+            // Fuchsia stream socket wrapped via `create_file_from_handle` (used for component
+            // startup handles such as stdio) is labeled as a `pipefs` `fifo_file` with the creating
+            // task's SID.
+            let (stdio_client, _stdio_server) = zx::Socket::create_stream();
+            let stdio_file = create_file_from_handle(current_task, stdio_client.into())
+                .expect("create_file_from_handle socket");
+            assert_eq!(
+                fs_node_effective_sid_and_class(NonPrivateFsNode::new(stdio_file.node()).unwrap()),
+                FsNodeSidAndClass { sid: task_sid, class: FsNodeClass::File(FileClass::FifoFile) }
+            );
+
+            // Fuchsia stream socket wrapped via `new_remote_file` is labeled as a `sockfs`
+            // `unix_stream_socket` with the creating task's SID.
+            let (sock_client, _sock_server) = zx::Socket::create_stream();
+            let sock_file = new_remote_file(current_task, sock_client.into(), OpenFlags::RDWR)
+                .expect("new_remote_file socket");
+            assert_eq!(
+                fs_node_effective_sid_and_class(NonPrivateFsNode::new(sock_file.node()).unwrap()),
+                FsNodeSidAndClass {
+                    sid: task_sid,
+                    class: FsNodeClass::Socket(SocketClass::UnixStreamSocket)
+                }
+            );
+
+            // Fuchsia `fuchsia.io/File` and `fuchsia.io/Directory` channels wrapped via
+            // `new_remote_file` are labeled on `remotefs` with `FileClass::File` / `FileClass::Dir`
+            // and the default `file` initial SID when no `selinux_context` attribute is present.
+            let (file_server, file_client) = zx::Channel::create();
+            fdio::open("/pkg/meta/contents", fio::PERM_READABLE, file_server)
+                .expect("open /pkg/meta/contents");
+            let remote_file = new_remote_file(current_task, file_client.into(), OpenFlags::RDONLY)
+                .expect("new_remote_file file");
+            assert_eq!(
+                fs_node_effective_sid_and_class(NonPrivateFsNode::new(remote_file.node()).unwrap()),
+                FsNodeSidAndClass {
+                    sid: InitialSid::File.into(),
+                    class: FsNodeClass::File(FileClass::File)
+                }
+            );
+
+            let (dir_server, dir_client) = zx::Channel::create();
+            fdio::open("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE, dir_server)
+                .expect("open /pkg");
+            let remote_dir = new_remote_file(current_task, dir_client.into(), OpenFlags::RDONLY)
+                .expect("new_remote_file directory");
+            assert_eq!(
+                fs_node_effective_sid_and_class(NonPrivateFsNode::new(remote_dir.node()).unwrap()),
+                FsNodeSidAndClass {
+                    sid: InitialSid::File.into(),
+                    class: FsNodeClass::File(FileClass::Dir)
+                }
+            );
+
+            // Fuchsia `fuchsia.io/File` channel reporting a valid `SELINUX_CONTEXT` attribute is
+            // labeled with the reported context.
+            let labeled_channel = spawn_mock_fuchsia_file(Some(fio::SelinuxContext::Data(
+                VALID_SECURITY_CONTEXT.to_vec(),
+            )));
+            let labeled_file =
+                new_remote_file(current_task, labeled_channel.into(), OpenFlags::RDONLY)
+                    .expect("new_remote_file labeled file");
+            assert_eq!(
+                fs_node_effective_sid_and_class(
+                    NonPrivateFsNode::new(labeled_file.node()).unwrap()
+                ),
+                FsNodeSidAndClass { sid: task_sid, class: FsNodeClass::File(FileClass::File) }
+            );
+
+            // Fuchsia `fuchsia.io/File` channel reporting an invalid `SELINUX_CONTEXT` attribute
+            // is labeled as `Unlabeled`.
+            let invalid_channel = spawn_mock_fuchsia_file(Some(fio::SelinuxContext::Data(
+                b"invalid_context".to_vec(),
+            )));
+            let invalid_file =
+                new_remote_file(current_task, invalid_channel.into(), OpenFlags::RDONLY)
+                    .expect("new_remote_file invalid context file");
+            assert_eq!(
+                fs_node_effective_sid_and_class(
+                    NonPrivateFsNode::new(invalid_file.node()).unwrap()
+                ),
+                FsNodeSidAndClass {
+                    sid: InitialSid::Unlabeled.into(),
+                    class: FsNodeClass::File(FileClass::File)
+                }
+            );
+
+            // VMO and Counter handles wrapped via `new_remote_file` use kernel-private nodes.
+            let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
+            let vmo_file =
+                new_remote_file(current_task, vmo.into(), OpenFlags::RDWR).expect("vmo file");
+            assert!(vmo_file.node().is_private());
+            assert!(vmo_file.node().is_reg());
+
+            let counter = zx::Counter::create();
+            let counter_file = new_remote_file(current_task, counter.into(), OpenFlags::RDONLY)
+                .expect("counter file");
+            assert!(counter_file.node().is_private());
         })
         .await;
     }

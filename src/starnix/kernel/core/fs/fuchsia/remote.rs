@@ -5,23 +5,25 @@
 use crate::fs::fuchsia::RemoteUnixDomainSocket;
 use crate::fs::fuchsia::remote_volume::RemoteVolume;
 use crate::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
+use crate::fs::fuchsia::zxio::{zxio_query_events, zxio_wait_async};
 use crate::mm::memory::MemoryObject;
 use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::security;
-use crate::task::{CurrentTask, Kernel};
+use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::file_server::serve_file_tagged;
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::fsverity::FsVerityState;
-use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
+use crate::vfs::pipe::new_pipe_file;
+use crate::vfs::socket::{Socket, SocketFile, SocketHandle, ZxioBackedSocket};
 use crate::vfs::{
     Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType,
     DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
     FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps,
-    FsStr, FsString, LookupVec, RenameContext, SeekTarget, StatxFlags, SymlinkTarget, XattrOp,
-    XattrStorage, default_seek, fileops_impl_directory, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink,
-    fs_node_impl_xattr_delegate,
+    FsStr, FsString, LookupVec, MemoryRegularFile, NamespaceNode, RenameContext, SeekTarget,
+    StatxFlags, SymlinkTarget, XattrOp, XattrStorage, default_seek, fileops_impl_directory,
+    fileops_impl_nonseekable, fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_not_dir,
+    fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
@@ -46,17 +48,19 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, mode, off_t, statfs,
+    __kernel_fsid_t, XATTR_NAME_SELINUX, errno, error, from_status_like_fdio, fsverity_descriptor,
+    mode, off_t, statfs,
 };
 use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
 use sync_io_client::{RemoteDirectory, RemoteIo, SyncIo, SyncIoDirectory};
 use syncio::zxio::{
-    ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_SYMLINK, ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET,
-    ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET, ZXIO_OBJECT_TYPE_RAW_SOCKET,
-    ZXIO_OBJECT_TYPE_STREAM_SOCKET, ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET, zxio_node_attr,
+    ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET, ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET,
+    ZXIO_OBJECT_TYPE_RAW_SOCKET, ZXIO_OBJECT_TYPE_STREAM_SOCKET,
+    ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET,
 };
 use syncio::{
     AllocateMode, XattrSetMode, Zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t,
@@ -426,10 +430,8 @@ impl<'a> LookupFactory<'a> {
             if fsverity_enabled {
                 *child.fsverity.lock() = FsVerityState::FsVerity;
             }
-            // This is valid to fail if we're using mount point labelling or the provided context
-            // string is invalid.
             if let Some(fio::SelinuxContext::Data(data)) = mutable.selinux_context.as_ref() {
-                let _ = security::fs_node_notify_security_context(
+                security::fs_node_notify_security_context(
                     self.current_task,
                     &child,
                     FsStr::new(data),
@@ -702,54 +704,21 @@ impl<I: SyncIo> RemoteNode<I> {
     }
 }
 
-/// Creates a file handle from a zx::NullableHandle.
-///
-/// The handle must be a channel, socket, vmo or debuglog object.  If the handle is a channel, then
-/// the channel must implement the `fuchsia.unknown/Queryable` protocol.  Not all protocols are
-/// supported; files and directories are, but symlinks are not.
-///
-/// The resulting object will be owned by root, and will have permissions derived from the `flags`
-/// used to open this object. This is not the same as the permissions set if the object was created
-/// using Starnix itself. We use this mainly for interfacing with objects created outside of Starnix
-/// where these flags represent the desired permissions already.
-pub fn new_remote_file(
-    current_task: &CurrentTask,
-    handle: zx::NullableHandle,
-    flags: OpenFlags,
-) -> Result<FileHandle, Errno> {
-    let remote_creds = current_task.current_creds().clone();
-    let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle, remote_creds)?;
-    let mut rights = fio::Flags::empty();
-    if flags.can_read() {
-        rights |= fio::PERM_READABLE;
-    }
-    if flags.can_write() {
-        rights |= fio::PERM_WRITABLE;
-    }
-    let mode = get_mode(&attrs, rights);
-    // TODO: https://fxbug.dev/407611229 - Give these nodes valid labels.
-    let mut info = FsNodeInfo::new(mode, FsCred::root());
-    update_info_from_attrs(&mut info, &attrs);
-    Ok(Anon::new_private_file_extended(current_task, ops, flags, "[fuchsia:remote]", info))
+/// Classified Fuchsia handle representation returned by [`classify_remote_handle`].
+enum RemoteHandle {
+    Socket(SocketHandle),
+    File(RemoteIo),
+    Directory(RemoteIo),
+    Counter(RemoteCounter),
+    Zxio { zxio: Zxio, handle_type: zx::ObjectType, content_size: Option<u64> },
 }
 
-/// Creates a FileOps from a zx::NullableHandle.
-///
-/// The handle must satisfy the same requirements as `new_remote_file`.
-pub fn new_remote_file_ops(
-    current_task: &CurrentTask,
-    handle: zx::NullableHandle,
-    creds: Arc<Credentials>,
-) -> Result<Box<dyn FileOps>, Errno> {
-    let (_, ops) = remote_file_attrs_and_ops(current_task, handle, creds)?;
-    Ok(ops)
-}
-
-fn remote_file_attrs_and_ops(
+/// Inspects `handle` and constructs the corresponding [`RemoteHandle`] variant.
+fn classify_remote_handle(
     current_task: &CurrentTask,
     mut handle: zx::NullableHandle,
-    remote_creds: Arc<Credentials>,
-) -> Result<(zxio_node_attr, Box<dyn FileOps>), Errno> {
+    creds: Arc<Credentials>,
+) -> Result<RemoteHandle, Errno> {
     let handle_type =
         handle.basic_info().map_err(|status| from_status_like_fdio!(status))?.object_type;
 
@@ -763,16 +732,9 @@ fn remote_file_attrs_and_ops(
         const DIRECTORY_PROTOCOL: &[u8] = fio::DirectoryMarker::PROTOCOL_NAME.as_bytes();
         match &protocol[..] {
             UNIX_DOMAIN_SOCKET_PROTOCOL => {
-                let socket_ops =
-                    RemoteUnixDomainSocket::new(queryable.into_channel(), remote_creds)?;
+                let socket_ops = RemoteUnixDomainSocket::new(queryable.into_channel(), creds)?;
                 let socket = Socket::new_with_ops(Box::new(socket_ops))?;
-                let file_ops = SocketFile::new(socket);
-                let attr = zxio_node_attr {
-                    has: zxio_node_attr_has_t { mode: true, ..zxio_node_attr_has_t::default() },
-                    mode: 0o777 | FileMode::IFSOCK.bits(),
-                    ..zxio_node_attr::default()
-                };
-                return Ok((attr, file_ops));
+                return Ok(RemoteHandle::Socket(socket));
             }
             FILE_PROTOCOL => {
                 let file_proxy = fio::FileSynchronousProxy::from(queryable.into_channel());
@@ -782,22 +744,11 @@ fn remote_file_attrs_and_ops(
                     file_proxy.into_channel().into(),
                     info.stream.unwrap_or_else(|| zx::NullableHandle::invalid().into()),
                 );
-                let attr = io
-                    .attr_get_zxio(MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES)
-                    .map_err(map_sync_io_client_error)?;
-                return Ok((attr, Box::new(AnonymousRemoteFileObject::new(io))));
+                return Ok(RemoteHandle::File(io));
             }
             DIRECTORY_PROTOCOL => {
                 let io = RemoteIo::new(queryable.into_channel().into());
-                let attr = io
-                    .attr_get_zxio(MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES)
-                    .map_err(map_sync_io_client_error)?;
-                return Ok((
-                    attr,
-                    Box::new(RemoteDirectoryObject::new(RemoteDirectory::new(
-                        io.into_proxy().into_channel().into(),
-                    ))),
-                ));
+                return Ok(RemoteHandle::Directory(io));
             }
             _ => {
                 handle = queryable.into_channel().into_handle();
@@ -805,9 +756,7 @@ fn remote_file_attrs_and_ops(
             }
         }
     } else if handle_type == zx::ObjectType::COUNTER {
-        let attr = zxio_node_attr::default();
-        let file_ops = Box::new(RemoteCounter::new(handle.into()));
-        return Ok((attr, file_ops));
+        return Ok(RemoteHandle::Counter(RemoteCounter::new(handle.into())));
     }
 
     // Otherwise, use zxio based objects.
@@ -815,7 +764,7 @@ fn remote_file_attrs_and_ops(
     // NOTE: If it's a channel, this will repeat the query, which is something we can optimize if we
     // need to.
     let zxio = Zxio::create(handle).map_err(|status| from_status_like_fdio!(status))?;
-    let mut attrs = zxio
+    let attrs = zxio
         .attr_get(zxio_node_attr_has_t {
             protocols: true,
             content_size: true,
@@ -825,9 +774,13 @@ fn remote_file_attrs_and_ops(
             ..Default::default()
         })
         .map_err(|status| from_status_like_fdio!(status))?;
-    let ops: Box<dyn FileOps> = match (handle_type, attrs.object_type) {
+    match (handle_type, attrs.object_type) {
         (zx::ObjectType::VMO, _) | (zx::ObjectType::DEBUGLOG, _) | (_, ZXIO_OBJECT_TYPE_NONE) => {
-            Box::new(RemoteZxioFileObject::new(zxio))
+            Ok(RemoteHandle::Zxio {
+                zxio,
+                handle_type,
+                content_size: attrs.has.content_size.then_some(attrs.content_size),
+            })
         }
         (zx::ObjectType::SOCKET, _)
         | (_, ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET)
@@ -837,21 +790,186 @@ fn remote_file_attrs_and_ops(
         | (_, ZXIO_OBJECT_TYPE_PACKET_SOCKET) => {
             let socket_ops = ZxioBackedSocket::new_with_zxio(current_task, zxio);
             let socket = Socket::new_with_ops(Box::new(socket_ops))?;
-            attrs.has.mode = true;
-            attrs.mode = FileMode::IFSOCK.bits();
-            SocketFile::new(socket)
+            Ok(RemoteHandle::Socket(socket))
         }
-        _ => return error!(ENOTSUP),
-    };
-    Ok((attrs, ops))
+        _ => error!(ENOTSUP),
+    }
 }
 
+/// Creates a [`FileHandle`] from a [`zx::NullableHandle`].
+///
+/// The handle must be a channel, socket, vmo, debuglog, or counter object. If the handle is a
+/// channel, then the channel must implement the `fuchsia.unknown/Queryable` protocol. Not all
+/// protocols are supported; files, directories, and sockets are, but symlinks are not.
+///
+/// The resulting object will be owned by root, and will have permissions derived from the `flags`
+/// used to open this object. This is not the same as the permissions set if the object was created
+/// using Starnix itself. We use this mainly for interfacing with objects created outside of Starnix
+/// where these flags represent the desired permissions already.
+pub fn new_remote_file(
+    current_task: &CurrentTask,
+    handle: zx::NullableHandle,
+    flags: OpenFlags,
+) -> Result<FileHandle, Errno> {
+    let creds = current_task.current_creds().clone();
+    match classify_remote_handle(current_task, handle, creds)? {
+        RemoteHandle::Socket(socket) => {
+            SocketFile::from_socket(current_task, socket, flags, /* kernel_private = */ false)
+        }
+        RemoteHandle::File(io) => {
+            new_remote_fs_node_file(current_task, io, /* is_dir = */ false, flags)
+        }
+        RemoteHandle::Directory(io) => {
+            new_remote_fs_node_file(current_task, io, /* is_dir = */ true, flags)
+        }
+        RemoteHandle::Counter(counter) => {
+            Ok(Anon::new_private_file(current_task, Box::new(counter), flags, "[fuchsia:counter]"))
+        }
+        RemoteHandle::Zxio { zxio, handle_type, content_size } => {
+            let size = content_size.map(|s| usize::try_from(s).unwrap_or(usize::MAX)).unwrap_or(0);
+            let ops = Box::new(RemoteZxioFileObject::new(zxio));
+            let name = match handle_type {
+                zx::ObjectType::VMO => "[fuchsia:vmo]",
+                zx::ObjectType::DEBUGLOG => "[fuchsia:debuglog]",
+                _ => "[fuchsia:remote]",
+            };
+            Ok(MemoryRegularFile::new_private_file_with_ops(current_task, ops, size, flags, name))
+        }
+    }
+}
+
+/// Unrooted [`FsNodeOps`] implementation for remote Fuchsia channels wrapped via
+/// [`new_remote_file`].
+struct AnonymousRemoteNode;
+
+impl FsNodeOps for AnonymousRemoteNode {
+    fs_node_impl_not_dir!();
+
+    fn create_file_ops(
+        &self,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        _flags: OpenFlags,
+    ) -> Result<Box<dyn FileOps>, Errno> {
+        error!(ENOSYS)
+    }
+}
+
+/// [`FileSystemOps`] for the kernel-singleton `remotefs` instance hosting unrooted remote nodes.
+struct RemoteNullFs;
+
+impl FileSystemOps for RemoteNullFs {
+    fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
+        Ok(default_statfs(0))
+    }
+
+    fn name(&self) -> &'static FsStr {
+        "remotefs".into()
+    }
+}
+
+/// Returns the kernel-singleton `remotefs` [`FileSystemHandle`] used for unrooted remote nodes.
+fn remote_null_fs(current_task: &CurrentTask) -> Result<FileSystemHandle, Errno> {
+    struct RemoteNullFsHandle {
+        fs: FileSystemHandle,
+    }
+
+    let kernel = current_task.kernel();
+    let fs = kernel
+        .expando
+        .get_or_init(|| RemoteNullFsHandle {
+            fs: FileSystem::new(
+                kernel,
+                CacheMode::Uncached,
+                RemoteNullFs,
+                FileSystemOptions::default(),
+            )
+            .expect("remotefs constructed with valid options"),
+        })
+        .fs
+        .clone();
+    security::file_system_resolve_security(current_task, &fs)?;
+    Ok(fs)
+}
+
+/// Creates a [`FileHandle`] backed by an unrooted [`FsNode`] in [`remote_null_fs`].
+fn new_remote_fs_node_file(
+    current_task: &CurrentTask,
+    io: RemoteIo,
+    is_dir: bool,
+    flags: OpenFlags,
+) -> Result<FileHandle, Errno> {
+    let fs = remote_null_fs(current_task)?;
+    let is_xattr_labeled = security::fs_is_xattr_labeled(fs.clone());
+    let mut query = MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES;
+    if is_xattr_labeled {
+        query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
+    }
+    let (mutable, mut immutable) = io.attr_get(query).map_err(map_sync_io_client_error)?;
+    immutable.protocols.get_or_insert(if is_dir {
+        fio::NodeProtocolKinds::DIRECTORY
+    } else {
+        fio::NodeProtocolKinds::FILE
+    });
+    let mut rights = fio::Flags::empty();
+    if flags.can_read() {
+        rights |= fio::PERM_READABLE;
+    }
+    if flags.can_write() {
+        rights |= fio::PERM_WRITABLE;
+    }
+    let mode = get_mode_from_fidl(&mutable, &immutable, rights);
+    let mut info = FsNodeInfo::new(mode, FsCred::root());
+    update_info_from_fidl(&mut info, &mutable, &immutable);
+    let selinux_context = match mutable.selinux_context {
+        Some(fio::SelinuxContext::Data(data)) => Some(data),
+        Some(fio::SelinuxContext::UseExtendedAttributes(_)) => {
+            io.xattr_get(XATTR_NAME_SELINUX.to_bytes().into()).ok()
+        }
+        _ => None,
+    };
+    let ops: Box<dyn FileOps> = if is_dir {
+        Box::new(RemoteDirectoryObject::new(RemoteDirectory::new(
+            io.into_proxy().into_channel().into(),
+        )))
+    } else {
+        Box::new(AnonymousRemoteFileObject::new(io))
+    };
+
+    let node = fs.create_node_and_allocate_node_id(AnonymousRemoteNode, info);
+    if let Some(data) = selinux_context {
+        security::fs_node_notify_security_context(current_task, &node, FsStr::new(&data));
+    }
+    let dir_entry = DirEntry::new_unrooted(node);
+    security::fs_node_init_with_dentry(current_task, &dir_entry)?;
+    FileObject::new(current_task, ops, NamespaceNode::new_anonymous(dir_entry), flags)
+}
+
+/// Creates a [`FileOps`] from a [`zx::NullableHandle`].
+pub fn new_remote_file_ops(
+    current_task: &CurrentTask,
+    handle: zx::NullableHandle,
+    creds: Arc<Credentials>,
+) -> Result<Box<dyn FileOps>, Errno> {
+    match classify_remote_handle(current_task, handle, creds)? {
+        RemoteHandle::Socket(socket) => Ok(SocketFile::new(socket)),
+        RemoteHandle::File(io) => Ok(Box::new(AnonymousRemoteFileObject::new(io))),
+        RemoteHandle::Directory(io) => Ok(Box::new(RemoteDirectoryObject::new(
+            RemoteDirectory::new(io.into_proxy().into_channel().into()),
+        ))),
+        RemoteHandle::Counter(counter) => Ok(Box::new(counter)),
+        RemoteHandle::Zxio { zxio, .. } => Ok(Box::new(RemoteZxioFileObject::new(zxio))),
+    }
+}
+
+/// Creates a `pipefs`-backed [`FileHandle`] (`S_IFIFO`) from a [`zx::Socket`].
 pub fn create_fuchsia_pipe(
     current_task: &CurrentTask,
     socket: zx::Socket,
     flags: OpenFlags,
 ) -> Result<FileHandle, Errno> {
-    new_remote_file(current_task, socket.into(), flags)
+    let zxio = Zxio::create(socket.into()).map_err(|status| from_status_like_fdio!(status))?;
+    new_pipe_file(current_task, Box::new(RemotePipeObject::new(zxio)), flags)
 }
 
 // This only needs to include attributes that can be out of date.  There are other attributes that
@@ -943,36 +1061,6 @@ const MODE_ATTRIBUTES: fio::NodeAttributesQuery =
     fio::NodeAttributesQuery::PROTOCOLS.union(fio::NodeAttributesQuery::MODE);
 
 // NOTE: Keep in sync with `MODE_ATTRIBUTES`.
-fn get_mode(attrs: &zxio_node_attributes_t, rights: fio::Flags) -> FileMode {
-    if attrs.protocols & ZXIO_NODE_PROTOCOL_SYMLINK != 0 {
-        // We don't set the mode for symbolic links , so we synthesize it instead.
-        FileMode::IFLNK | FileMode::ALLOW_ALL
-    } else if attrs.has.mode {
-        // If the filesystem supports POSIX mode bits, use that directly.
-        FileMode::from_bits(attrs.mode)
-    } else {
-        // The filesystem doesn't support the `mode` attribute, so synthesize it from the protocols
-        // this node supports, and the rights used to open it.
-        let is_directory =
-            attrs.protocols & ZXIO_NODE_PROTOCOL_DIRECTORY == ZXIO_NODE_PROTOCOL_DIRECTORY;
-        let mode = if is_directory { FileMode::IFDIR } else { FileMode::IFREG };
-        let mut permissions = FileMode::EMPTY;
-        if rights.contains(fio::PERM_READABLE) {
-            permissions |= FileMode::IRUSR;
-        }
-        if rights.contains(fio::PERM_WRITABLE) {
-            permissions |= FileMode::IWUSR;
-        }
-        if rights.contains(fio::PERM_EXECUTABLE) {
-            permissions |= FileMode::IXUSR;
-        }
-        // Make sure the same permissions are granted to user, group, and other.
-        permissions |= FileMode::from_bits((permissions.bits() >> 3) | (permissions.bits() >> 6));
-        mode | permissions
-    }
-}
-
-/// Same as `get_mode` but uses FIDL.
 fn get_mode_from_fidl(
     mutable: &fio::MutableNodeAttributes,
     immutable: &fio::ImmutableNodeAttributes,
@@ -2114,6 +2202,93 @@ pub fn is_remote_file(file: &FileObject) -> bool {
     file.downcast_file::<RemoteFileObject<RemoteIo>>().is_some()
 }
 
+/// [`FileOps`] implementation for Fuchsia stream/datagram pipes backed by [`Zxio`].
+struct RemotePipeObject {
+    zxio: Zxio,
+}
+
+impl RemotePipeObject {
+    fn new(zxio: Zxio) -> Self {
+        Self { zxio }
+    }
+}
+
+impl FileOps for RemotePipeObject {
+    fileops_impl_nonseekable!();
+    fileops_impl_noop_sync!();
+
+    fn read(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        debug_assert!(offset == 0);
+        if data.available() == 0 {
+            return Ok(0);
+        }
+        file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
+            let total = data.available();
+            let mut bytes = vec![0u8; total];
+            let actual = match self.zxio.read(&mut bytes) {
+                Ok(actual) => actual,
+                Err(zx::Status::PEER_CLOSED | zx::Status::BAD_STATE) => return Ok(0),
+                Err(status) => return Err(from_status_like_fdio!(status)),
+            };
+            data.write_all(&bytes[0..actual])
+        })
+    }
+
+    fn write(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        debug_assert!(offset == 0);
+        file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, || {
+            let bytes = data.peek_all()?;
+            let actual =
+                self.zxio.write(&bytes).map_err(|status| from_status_like_fdio!(status))?;
+            data.advance(actual)?;
+            Ok(actual)
+        })
+    }
+
+    fn wait_async(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        waiter: &Waiter,
+        events: FdEvents,
+        handler: EventHandler,
+    ) -> Option<WaitCanceler> {
+        Some(zxio_wait_async(&self.zxio, waiter, events, handler))
+    }
+
+    fn query_events(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<FdEvents, Errno> {
+        zxio_query_events(&self.zxio)
+    }
+
+    fn to_handle(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
+        self.zxio
+            .deep_clone()
+            .and_then(Zxio::release)
+            .map(Some)
+            .map_err(|status| from_status_like_fdio!(status))
+    }
+}
+
 struct RemoteSymlink<I> {
     node: BaseNode<I>,
     target: LockDepRwLock<Box<[u8]>, FuchsiaRemoteTargetLock>,
@@ -2537,6 +2712,7 @@ mod test {
         spawn_kernel_and_run(async |current_task| {
             let (client, server) = zx::Socket::create_stream();
             let pipe = create_fuchsia_pipe(&current_task, client, OpenFlags::RDWR).unwrap();
+            assert!(pipe.node().is_fifo());
 
             let bytes = [0u8; 64];
             assert_eq!(bytes.len(), server.write(&bytes).unwrap());
@@ -2545,6 +2721,10 @@ mod test {
             let bytes_read = pipe.read(&current_task, &mut VecOutputBuffer::new(64)).unwrap();
 
             assert_eq!(bytes_read, bytes.len());
+            assert_eq!(pipe.read(&current_task, &mut VecOutputBuffer::new(0)).unwrap(), 0);
+
+            std::mem::drop(server);
+            assert_eq!(pipe.read(&current_task, &mut VecOutputBuffer::new(64)).unwrap(), 0);
         })
         .await;
     }
@@ -2618,7 +2798,7 @@ mod test {
 
             let fd = new_remote_file(&current_task, client.into(), OpenFlags::RDONLY)
                 .expect("new_remote_file");
-            assert!(!fd.node().is_dir());
+            assert!(fd.node().is_reg());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
         })
         .await;
@@ -2631,6 +2811,7 @@ mod test {
 
             let fd = new_remote_file(&current_task, counter.into(), OpenFlags::RDONLY)
                 .expect("new_remote_file");
+            assert!(fd.node().is_private());
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
         })
         .await;
@@ -2642,7 +2823,9 @@ mod test {
             let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
             let fd = new_remote_file(&current_task, vmo.into(), OpenFlags::RDWR)
                 .expect("new_remote_file");
-            assert!(!fd.node().is_dir());
+            assert!(fd.node().is_reg());
+            assert!(fd.node().is_private());
+            assert_eq!(fd.node().info().size, *PAGE_SIZE as usize);
             assert!(fd.to_handle(&current_task).expect("to_handle").is_some());
         })
         .await;

@@ -31,12 +31,11 @@ use magma::{
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 use starnix_core::task::CurrentTask;
-use starnix_core::vfs::{Anon, FdFlags, FsNodeInfo, MemoryRegularFile};
+use starnix_core::vfs::{Anon, FdFlags, MemoryRegularFile};
 use starnix_logging::track_stub;
 
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{errno, error};
@@ -626,17 +625,12 @@ pub fn query(
         )]
         let vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(result_buffer_out)) };
         let memory = MemoryObject::from(vmo);
-        let memory_size = memory.get_size();
         // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
-        let mut info = FsNodeInfo::new(FileMode::from_bits(0o600), current_task.current_fscred());
-        // Enable seek for file size discovery.
-        info.size = memory_size as usize;
-        let file = Anon::new_private_file_extended(
+        let file = MemoryRegularFile::new_private_file(
             current_task,
-            Box::new(MemoryRegularFile::new(Arc::new(memory))),
+            Arc::new(memory),
             OpenFlags::RDWR,
             "[fuchsia:magma_vmo]",
-            info,
         );
         let fd = current_task.add_file(file, FdFlags::empty())?;
         response.result_buffer_out = fd.raw() as u64;

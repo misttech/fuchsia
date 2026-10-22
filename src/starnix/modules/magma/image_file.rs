@@ -6,10 +6,9 @@ use fidl_fuchsia_ui_composition as fuicomp;
 use magma::magma_image_info_t;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::CurrentTask;
-use starnix_core::vfs::{Anon, FileHandle, FileOps, FsNodeInfo};
+use starnix_core::vfs::{FileHandle, FileOps, MemoryRegularFile};
 use starnix_core::{fileops_impl_memory, fileops_impl_noop_sync};
 
-use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use std::sync::Arc;
 
@@ -47,18 +46,14 @@ impl ImageFile {
         info: ImageInfo,
         memory: MemoryObject,
     ) -> FileHandle {
-        let memory_size = memory.get_size();
-
-        let mut node_info =
-            FsNodeInfo::new(FileMode::from_bits(0o600), current_task.current_fscred());
-        node_info.size = memory_size as usize;
+        let memory_size = memory.get_size() as usize;
         // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
-        Anon::new_private_file_extended(
+        MemoryRegularFile::new_private_file_with_ops(
             current_task,
             Box::new(ImageFile { info, memory: Arc::new(memory) }),
+            memory_size,
             OpenFlags::RDWR,
             "[fuchsia:image]",
-            node_info,
         )
     }
 }

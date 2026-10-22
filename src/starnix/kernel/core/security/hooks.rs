@@ -566,10 +566,10 @@ pub fn fs_node_notify_security_context(
     current_task: &CurrentTask,
     fs_node: &FsNode,
     context: &FsStr,
-) -> Result<(), Errno> {
+) {
     track_hook_duration!("security.hooks.fs_node_notify_security_context");
     let Some(fs_node) = NonPrivateFsNode::new(fs_node) else {
-        return Ok(());
+        return;
     };
     if_selinux_else(
         current_task,
@@ -580,7 +580,7 @@ pub fn fs_node_notify_security_context(
                 context,
             )
         },
-        || error!(ENOTSUP),
+        || (),
     )
 }
 

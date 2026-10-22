@@ -50,7 +50,11 @@ impl Anon {
         name: &'static str,
         info: FsNodeInfo,
     ) -> Result<FileHandle, Errno> {
-        Self::new_file_internal(current_task, ops, flags, name, info, FsNodeFlags::empty())
+        let fs = anon_fs(current_task.kernel());
+        let node = fs.create_node_with_flags(None, Anon {}, info, FsNodeFlags::empty());
+        security::fs_node_init_anon(current_task, &node, name)?;
+        let name = NamespaceNode::new_anonymous(DirEntry::new(node, None, name.into()));
+        FileObject::new(current_task, ops, name, flags)
     }
 
     /// Returns a new anonymous file with the specified properties, and a unique `FsNode`.
@@ -82,34 +86,6 @@ impl Anon {
             .expect("Private anon_inode creation cannot fail");
         let name = NamespaceNode::new_anonymous(DirEntry::new(node, None, name.into()));
         FileObject::new(current_task, ops, name, flags).unwrap()
-    }
-
-    /// Returns a new private anonymous file, applying caller-supplied `info`.
-    // TODO: https://fxbug.dev/407611229 - Migrate callers off this and remove it.
-    pub fn new_private_file_extended(
-        current_task: &CurrentTask,
-        ops: Box<dyn FileOps>,
-        flags: OpenFlags,
-        name: &'static str,
-        info: FsNodeInfo,
-    ) -> FileHandle {
-        Self::new_file_internal(current_task, ops, flags, name, info, FsNodeFlags::IS_PRIVATE)
-            .expect("Private anon_inode creation cannot fail")
-    }
-
-    fn new_file_internal(
-        current_task: &CurrentTask,
-        ops: Box<dyn FileOps>,
-        flags: OpenFlags,
-        name: &'static str,
-        info: FsNodeInfo,
-        node_flags: FsNodeFlags,
-    ) -> Result<FileHandle, Errno> {
-        let fs = anon_fs(current_task.kernel());
-        let node = fs.create_node_with_flags(None, Anon {}, info, node_flags);
-        security::fs_node_init_anon(current_task, &node, name)?;
-        let name = NamespaceNode::new_anonymous(DirEntry::new(node, None, name.into()));
-        FileObject::new(current_task, ops, name, flags)
     }
 }
 
