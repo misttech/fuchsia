@@ -1912,11 +1912,11 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("rustls") {
-  public_deps = [ ":rustls-v0_23_45" ]
+  public_deps = [ ":rustls-v0_23_46" ]
 }
 
-group("rustls-0.23.45") {
-  public_deps = [ ":rustls-v0_23_45" ]
+group("rustls-0.23.46") {
+  public_deps = [ ":rustls-v0_23_46" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -12026,7 +12026,7 @@ rustc_library("hyper-rustls-v0_27_9") {
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_1" ]
   deps += [ ":rustls-native-certs-v0_8_4" ]
-  deps += [ ":rustls-v0_23_45" ]
+  deps += [ ":rustls-v0_23_46" ]
   deps += [ ":tokio-rustls-v0_26_4" ]
   deps += [ ":tower-service-v0_3_3" ]
 
@@ -19120,11 +19120,11 @@ rustc_library("ring-v0_17_14") {
   visibility += [ ":hickory-proto-v0_26_3.actual.rust_compilation_deps" ]
   visibility += [ ":ring" ]
   visibility += [ ":ring-0.17.14" ]
-  visibility += [ ":rustls-v0_23_45.actual" ]
-  visibility += [ ":rustls-v0_23_45.rustdoc" ]
-  visibility += [ ":rustls-v0_23_45.aux.deps.deps" ]
-  visibility += [ ":rustls-v0_23_45.aux.deps.transdeps" ]
-  visibility += [ ":rustls-v0_23_45.actual.rust_compilation_deps" ]
+  visibility += [ ":rustls-v0_23_46.actual" ]
+  visibility += [ ":rustls-v0_23_46.rustdoc" ]
+  visibility += [ ":rustls-v0_23_46.aux.deps.deps" ]
+  visibility += [ ":rustls-v0_23_46.aux.deps.transdeps" ]
+  visibility += [ ":rustls-v0_23_46.actual.rust_compilation_deps" ]
   visibility += [ ":rustls-webpki-v0_103_16.actual" ]
   visibility += [ ":rustls-webpki-v0_103_16.rustdoc" ]
   visibility += [ ":rustls-webpki-v0_103_16.aux.deps.deps" ]
@@ -19841,19 +19841,19 @@ rustc_library("rustix-v1_1_4") {
   applicable_licenses = [ ":rustix-v1_1_4.license" ]
 }
 
-license("rustls-v0_23_45.license") {
+license("rustls-v0_23_46.license") {
   public_package_name = "rustls"
   license_files = [
-    "//third_party/rust_crates/vendor/rustls-0.23.45/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rustls-0.23.45/LICENSE-ISC",
-    "//third_party/rust_crates/vendor/rustls-0.23.45/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rustls-0.23.46/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustls-0.23.46/LICENSE-ISC",
+    "//third_party/rust_crates/vendor/rustls-0.23.46/LICENSE-MIT",
   ]
 }
 
-rustc_library("rustls-v0_23_45") {
+rustc_library("rustls-v0_23_46") {
   crate_name = "rustls"
-  source_root = "//third_party/rust_crates/vendor/rustls-0.23.45/src/lib.rs"
-  output_name = "rustls-67000af76276dab1"
+  source_root = "//third_party/rust_crates/vendor/rustls-0.23.46/src/lib.rs"
+  output_name = "rustls-f3c19936aa07975f"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19872,8 +19872,8 @@ rustc_library("rustls-v0_23_45") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=67000af76276dab1",
-    "-Cextra-filename=-67000af76276dab1",
+    "-Cmetadata=f3c19936aa07975f",
+    "-Cextra-filename=-f3c19936aa07975f",
     "--cfg=feature=\"log\"",
     "--cfg=feature=\"logging\"",
     "--cfg=feature=\"ring\"",
@@ -19887,7 +19887,7 @@ rustc_library("rustls-v0_23_45") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustls-v0_23_45.license" ]
+  applicable_licenses = [ ":rustls-v0_23_46.license" ]
 }
 
 license("rustls-native-certs-v0_8_4.license") {
@@ -24151,7 +24151,7 @@ rustc_library("tokio-rustls-v0_26_4") {
 
   deps = []
   deps += [ ":tokio-v1_53_1" ]
-  deps += [ ":rustls-v0_23_45" ]
+  deps += [ ":rustls-v0_23_46" ]
 
   rustenv = []
 

@@ -473,7 +473,7 @@ _NORMAL_DEPENDENCIES = {
             "rkyv": Label("//third_party/rust_crates/vendor/rkyv-0.8.18:rkyv"),
             "rsa": Label("//third_party/rust_crates/vendor/rsa-0.9.10:rsa"),
             "rustc-hash": Label("//third_party/rust_crates/vendor/rustc-hash-2.1.3:rustc_hash"),
-            "rustls": Label("//third_party/rust_crates/vendor/rustls-0.23.45:rustls"),
+            "rustls": Label("//third_party/rust_crates/vendor/rustls-0.23.46:rustls"),
             "rustls-pemfile": Label("//third_party/rust_crates/vendor/rustls-pemfile-2.2.0:rustls_pemfile"),
             "rustls-webpki": Label("//third_party/rust_crates/vendor/rustls-webpki-0.103.16:webpki"),
             "rustyline": Label("//third_party/rust_crates/vendor/rustyline-18.0.1:rustyline"),
