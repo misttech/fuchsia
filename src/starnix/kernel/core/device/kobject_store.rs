@@ -62,78 +62,10 @@ impl KObjectStore {
             },
         );
 
-        // TODO(https://fxbug.dev/452096300): Populate or remove stub udc class.
-        self.get_or_create_class("udc".into());
-
-        // Board / SoC-specific stub device registrations.
         // TODO(https://fxbug.dev/452096300): Replace hardcoded board/SoC stub devices with dynamic
         // device configuration.
-        let platform_bus = self.platform_bus();
-        let soc = self.soc_device();
-
-        // TODO(https://fxbug.dev/452096300): Stub Qualcomm MDSS display controller and DRM
-        // connector.
-        let mdss_mdp = registry.add_bus_device(
-            "5e00000.qcom,mdss_mdp".into(),
-            Some(soc),
-            platform_bus,
-            build_device_directory,
-        );
-        let drm_class = self.get_or_create_class("drm".into());
-        let card0 = registry.add_numberless_device(
-            "card0".into(),
-            Some(mdss_mdp.clone()),
-            drm_class.clone(),
-            build_device_directory,
-        );
-        registry.add_numberless_device(
-            "sde-conn-0-DSI-1".into(),
-            Some(card0.clone()),
-            drm_class.clone(),
-            |device, dir| {
-                build_device_directory(device, dir);
-                dir.entry(
-                    "display_power_state",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o644),
-                );
-                dir.entry(
-                    "panel_power_state",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o644),
-                );
-            },
-        );
-        registry.add_numberless_device(
-            "card0-DSI-1".into(),
-            Some(card0),
-            drm_class,
-            |device, dir| {
-                build_device_directory(device, dir);
-                dir.subdir("panel", 0o755, |dir| {
-                    dir.entry(
-                        "panel_name",
-                        StubBytesFile::new_node_with_data(
-                            bug_ref!("https://fxbug.dev/560212202"),
-                            b"Placeholder",
-                        ),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-            },
-        );
-
-        // TODO(https://fxbug.dev/452096300): Stub panel backlight device parented by the display
-        // controller.
-        registry.add_numberless_device(
-            "panel0-backlight".into(),
-            Some(mdss_mdp),
-            self.get_or_create_class("backlight".into()),
-            |device, dir| {
-                build_device_directory(device, dir);
-                add_stub_attributes(dir, &["brightness"]);
-            },
-        );
+        // Eagerly create `/sys/devices/platform/soc` and `/sys/bus/platform/devices/soc`.
+        let _ = self.soc_device();
 
         registry.add_numberless_device(
             "battery".into(),

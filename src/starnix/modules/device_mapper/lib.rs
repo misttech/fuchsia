@@ -13,24 +13,26 @@ use linux_uapi::DM_UUID_LEN;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
 use starnix_core::device::DeviceMode;
 use starnix_core::device::kobject::{Device, DeviceMetadata};
-use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
+use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory, get_sysfs};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, VecOutputBuffer};
+use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::{
     FileHandle, FileObject, FileObjectState, FileOps, FileToken, FsString, NamespaceNode,
     OutputBuffer, fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekable,
     fileops_impl_seekless,
 };
 use starnix_ext::map_ext::EntryExt;
-use starnix_logging::{log_trace, track_stub};
+use starnix_logging::{bug_ref, log_trace, track_stub};
 use starnix_sync::{DeviceMapperRegistryDevicesLock, DmDeviceStateLock, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::device_id::{DEVICE_MAPPER_MAJOR, DeviceId, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserCString, UserRef};
 use starnix_uapi::{
@@ -79,6 +81,31 @@ pub fn device_mapper_init(kernel: &Kernel) -> Result<(), Errno> {
         DEVICE_MAPPER_MAJOR,
         get_or_create_dm_device,
     )?;
+
+    let dir_mode = 0o755;
+    kernel.device_registry.objects.root.edit(&get_sysfs(kernel), |root| {
+        root.subdir("module", dir_mode, |dir| {
+            dir.subdir("dm_bufio", dir_mode, |dir| {
+                dir.subdir("parameters", dir_mode, |dir| {
+                    dir.entry(
+                        "max_age_seconds",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                        mode!(IFREG, 0o644),
+                    );
+                });
+            });
+            dir.subdir("dm_verity", dir_mode, |dir| {
+                dir.subdir("parameters", dir_mode, |dir| {
+                    dir.entry(
+                        "prefetch_cluster",
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893670")),
+                        mode!(IFREG, 0o644),
+                    );
+                });
+            });
+        });
+    });
+
     Ok(())
 }
 
@@ -1229,4 +1256,30 @@ fn get_or_create_dm_device(
         .get::<DeviceMapperRegistry>()
         .get_or_create_by_minor(current_task, id.minor())?
         .create_file_ops())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starnix_core::testing::spawn_kernel_and_run;
+
+    #[::fuchsia::test]
+    async fn device_mapper_init_registers_sysfs_module_parameters() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            device_mapper_init(kernel).expect("device_mapper_init should succeed");
+
+            let root = &kernel.device_registry.objects.root;
+            let max_age_seconds = root
+                .lookup("module/dm_bufio/parameters/max_age_seconds".into())
+                .expect("dm_bufio max_age_seconds should exist");
+            assert_eq!(max_age_seconds.info().mode, mode!(IFREG, 0o644));
+
+            let prefetch_cluster = root
+                .lookup("module/dm_verity/parameters/prefetch_cluster".into())
+                .expect("dm_verity prefetch_cluster should exist");
+            assert_eq!(prefetch_cluster.info().mode, mode!(IFREG, 0o644));
+        })
+        .await;
+    }
 }

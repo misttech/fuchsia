@@ -164,26 +164,7 @@ impl SysFs {
             );
         });
 
-        dir.subdir("module", dir_mode, |dir| {
-            dir.subdir("dm_bufio", dir_mode, |dir| {
-                dir.subdir("parameters", dir_mode, |dir| {
-                    dir.entry(
-                        "max_age_seconds",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o644),
-                    );
-                });
-            });
-            dir.subdir("dm_verity", dir_mode, |dir| {
-                dir.subdir("parameters", dir_mode, |dir| {
-                    dir.entry(
-                        "prefetch_cluster",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893670")),
-                        mode!(IFREG, 0o644),
-                    );
-                });
-            });
-        });
+        dir.subdir("module", dir_mode, empty_dir);
 
         dir.subdir("devices", dir_mode, |dir| {
             dir.subdir("leds", dir_mode, |_dir| {});
@@ -254,23 +235,6 @@ mod tests {
 
             assert!(root.lookup("devices/platform/uevent".into()).is_some());
             assert!(root.lookup("bus/platform/devices/soc".into()).is_some());
-            assert!(root.lookup("class/drm/card0".into()).is_some());
-            assert!(root.lookup("class/drm/sde-conn-0-DSI-1".into()).is_some());
-            assert!(
-                root.lookup(
-                    "devices/platform/soc/5e00000.qcom,mdss_mdp/drm/card0/sde-conn-0-DSI-1/display_power_state"
-                        .into(),
-                )
-                .is_some()
-            );
-            assert!(root.lookup("class/drm/card0-DSI-1".into()).is_some());
-            assert_eq!(
-                read_sysfs_file(
-                    current_task,
-                    "devices/platform/soc/5e00000.qcom,mdss_mdp/drm/card0/card0-DSI-1/panel/panel_name",
-                ),
-                b"Placeholder",
-            );
         })
         .await;
     }
@@ -308,16 +272,6 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let root = &current_task.kernel().device_registry.objects.root;
 
-            // Backlight, parented by the display controller.
-            assert!(root.lookup("class/backlight/panel0-backlight".into()).is_some());
-            assert!(
-                root.lookup(
-                    "devices/platform/soc/5e00000.qcom,mdss_mdp/backlight/panel0-backlight/brightness"
-                        .into(),
-                )
-                .is_some()
-            );
-
             // eMMC host, card and block stub share a single device directory tree.
             assert!(root.lookup("class/mmc_host/mmc0".into()).is_some());
             assert!(root.lookup("bus/mmc/devices/mmc0:0001".into()).is_some());
@@ -345,8 +299,7 @@ mod tests {
                 .lookup("devices/virtual/power_supply/battery/capacity".into())
                 .expect("battery capacity node should exist");
             assert_eq!(battery_capacity.info().mode, mode!(IFREG, 0o644));
-            let file_ops =
-                battery_capacity.create_file_ops(current_task, OpenFlags::RDWR).unwrap();
+            let file_ops = battery_capacity.create_file_ops(current_task, OpenFlags::RDWR).unwrap();
             let file = anon_test_file(current_task, file_ops, OpenFlags::RDWR);
             let mut input = VecInputBuffer::new(b"77\n");
             assert_eq!(file.write(current_task, &mut input).unwrap(), 3);
@@ -357,9 +310,6 @@ mod tests {
                 let path = format!("devices/system/goog-chip-info/{name}");
                 assert_eq!(read_sysfs_file(current_task, &path), b"Placeholder");
             }
-
-            // Device-less classes.
-            assert!(root.lookup("class/udc".into()).is_some());
         })
         .await;
     }

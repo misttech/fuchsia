@@ -171,6 +171,8 @@ impl BytesFileOps for CcToggleEnableSysfsFile {
 pub fn usb_device_init(kernel: &Arc<Kernel>) -> Result<Device, Errno> {
     let registry = &kernel.device_registry;
 
+    // TODO(https://fxbug.dev/452096300): Populate or remove stub udc class.
+    registry.objects.get_or_create_class("udc".into());
     let android_usb_class = registry.objects.get_or_create_class("android_usb".into());
 
     let shared_state = Arc::new(AtomicU8::new(UsbGadgetState::Disconnected as u8));
@@ -388,6 +390,7 @@ mod tests {
             assert_eq!(metadata.devname.as_slice(), b"android0");
 
             let root = &current_task.kernel().device_registry.objects.root;
+            assert!(root.lookup("class/udc".into()).is_some());
             assert!(
                 root.lookup(
                     "devices/platform/10d50000.hsi2c/i2c-6/i2c-max77759tcpc/cc_toggle_enable"

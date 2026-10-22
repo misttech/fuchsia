@@ -16,14 +16,17 @@ use fidl_fuchsia_ui_display_singleton as fuidisplay;
 use fidl_fuchsia_ui_views as fuiviews;
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::device::kobject::DeviceMetadata;
-use starnix_core::device::{DeviceMode, DeviceOps};
+use starnix_core::device::{DeviceMode, DeviceOps, DeviceRegistry};
+use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
+use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::{
     CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_memory, fileops_impl_noop_sync,
 };
-use starnix_logging::{log_info, log_warn, track_stub};
+use starnix_logging::{bug_ref, log_info, log_warn, track_stub};
 use starnix_sync::{
     FramebufferInfoLock, FramebufferMemoryLock, FramebufferViewBoundProtocolsLock,
     FramebufferViewIdentityLock, LockDepMutex, LockDepRwLock,
@@ -31,6 +34,7 @@ use starnix_sync::{
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserAddress};
 use starnix_uapi::{
@@ -131,6 +135,8 @@ impl Framebuffer {
             graphics_class,
             FramebufferDevice { framebuffer: framebuffer.clone() },
         )?;
+
+        register_display_stub_devices(registry);
 
         Ok(framebuffer)
     }
@@ -375,5 +381,131 @@ impl FileOps for Framebuffer {
                 error!(EINVAL)
             }
         }
+    }
+}
+
+/// Registers stub DRM display controller, connector, and panel backlight devices in sysfs.
+fn register_display_stub_devices(registry: &DeviceRegistry) {
+    let objects = &registry.objects;
+    let platform_bus = objects.platform_bus();
+    let soc = objects.soc_device();
+
+    // TODO(https://fxbug.dev/452096300): Stub Qualcomm MDSS display controller and DRM connector.
+    let mdss_mdp = registry.add_bus_device(
+        "5e00000.qcom,mdss_mdp".into(),
+        Some(soc),
+        platform_bus,
+        build_device_directory,
+    );
+    let drm_class = objects.get_or_create_class("drm".into());
+    let card0 = registry.add_numberless_device(
+        "card0".into(),
+        Some(mdss_mdp.clone()),
+        drm_class.clone(),
+        build_device_directory,
+    );
+    registry.add_numberless_device(
+        "sde-conn-0-DSI-1".into(),
+        Some(card0.clone()),
+        drm_class.clone(),
+        |device, dir| {
+            build_device_directory(device, dir);
+            dir.entry(
+                "display_power_state",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o644),
+            );
+            dir.entry(
+                "panel_power_state",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o644),
+            );
+        },
+    );
+    registry.add_numberless_device("card0-DSI-1".into(), Some(card0), drm_class, |device, dir| {
+        build_device_directory(device, dir);
+        dir.subdir("panel", 0o755, |dir| {
+            dir.entry(
+                "panel_name",
+                StubBytesFile::new_node_with_data(
+                    bug_ref!("https://fxbug.dev/560212202"),
+                    b"Placeholder",
+                ),
+                mode!(IFREG, 0o444),
+            );
+        });
+    });
+
+    // TODO(https://fxbug.dev/452096300): Stub panel backlight device parented by the display
+    // controller.
+    registry.add_numberless_device(
+        "panel0-backlight".into(),
+        Some(mdss_mdp),
+        objects.get_or_create_class("backlight".into()),
+        |device, dir| {
+            build_device_directory(device, dir);
+            dir.entry(
+                "brightness",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+        },
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starnix_core::testing::{anon_test_file, spawn_kernel_and_run};
+    use starnix_core::vfs::VecOutputBuffer;
+
+    #[::fuchsia::test]
+    async fn framebuffer_device_init_registers_display_and_backlight_devices() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            Framebuffer::device_init(
+                kernel,
+                /* args = */ &[],
+                /* enable_visual_debugging = */ false,
+                /* initial_view_id_annotation = */ String::new(),
+            )
+            .expect("Framebuffer::device_init should succeed");
+
+            let root = &kernel.device_registry.objects.root;
+            assert!(root.lookup("class/graphics/fb0".into()).is_some());
+            assert!(root.lookup("class/drm/card0".into()).is_some());
+            assert!(root.lookup("class/drm/sde-conn-0-DSI-1".into()).is_some());
+            assert!(
+                root.lookup(
+                    "devices/platform/soc/5e00000.qcom,mdss_mdp/drm/card0/sde-conn-0-DSI-1/display_power_state"
+                        .into(),
+                )
+                .is_some()
+            );
+            assert!(root.lookup("class/drm/card0-DSI-1".into()).is_some());
+
+            let panel_name = root
+                .lookup(
+                    "devices/platform/soc/5e00000.qcom,mdss_mdp/drm/card0/card0-DSI-1/panel/panel_name"
+                        .into(),
+                )
+                .expect("panel_name node should exist");
+            assert_eq!(panel_name.info().mode, mode!(IFREG, 0o444));
+            let file_ops = panel_name.create_file_ops(current_task, OpenFlags::RDONLY).unwrap();
+            let file = anon_test_file(current_task, file_ops, OpenFlags::RDONLY);
+            let mut buf = VecOutputBuffer::new(16);
+            let n = file.read(current_task, &mut buf).unwrap();
+            assert_eq!(&Vec::from(buf)[..n], b"Placeholder");
+
+            assert!(root.lookup("class/backlight/panel0-backlight".into()).is_some());
+            assert!(
+                root.lookup(
+                    "devices/platform/soc/5e00000.qcom,mdss_mdp/backlight/panel0-backlight/brightness"
+                        .into(),
+                )
+                .is_some()
+            );
+        })
+        .await;
     }
 }
