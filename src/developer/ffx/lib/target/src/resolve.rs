@@ -20,6 +20,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use target_errors::{FfxTargetError, TargetSource};
 use tokio::sync::Mutex;
@@ -340,6 +341,9 @@ async fn lookup_discovery_cache(
     match crate::cache::Cache::load(&cache_file) {
         Ok(cache) => {
             let resolutions = match_target_infos_to_resolutions(cache.targets, target_spec);
+            for r in &resolutions {
+                r.from_cache.store(true, Ordering::Relaxed);
+            }
             let status = if resolutions.is_empty() { "cache_miss" } else { "cache_hit" };
             emit_cache_event(status, &query_tag).await;
             (!resolutions.is_empty()).then_some(resolutions)
@@ -748,6 +752,10 @@ enum ConnectionState {
 pub struct Resolution {
     target: ResolutionTarget,
     discovered: Option<TargetHandle>,
+    // Set when loaded from the non-strict discovery cache, and cleared once a connection to the
+    // target succeeds, so it only marks resolutions that have not been verified against a live
+    // target.
+    from_cache: AtomicBool,
     connection: Mutex<ConnectionState>,
     rcs_proxy: Mutex<Option<RemoteControlProxy>>,
     identify_host_response: Mutex<Option<IdentifyHostResponse>>,
@@ -768,10 +776,17 @@ impl Resolution {
         Self {
             target,
             discovered: None,
+            from_cache: AtomicBool::new(false),
             connection: Mutex::new(ConnectionState::Uninitialized),
             rcs_proxy: Mutex::new(None),
             identify_host_response: Mutex::new(None),
         }
+    }
+
+    /// Returns `true` if this [`Resolution`] was loaded from the non-strict discovery cache and
+    /// has not yet been verified by a successful connection.
+    pub fn from_cache(&self) -> bool {
+        self.from_cache.load(Ordering::Relaxed)
     }
 
     fn from_addr(sa: SocketAddr) -> Self {
@@ -916,6 +931,7 @@ impl Resolution {
         let conn_res = self.connect_new(context).await;
         match &conn_res {
             Ok(conn) => {
+                self.from_cache.store(false, Ordering::Relaxed);
                 *conn_guard = ConnectionState::Connected(conn.clone());
             }
             Err(_) => {
@@ -1267,6 +1283,30 @@ mod test {
 
         // Now it should not be usable
         assert!(!resolution.is_usable().await);
+    }
+
+    #[fuchsia::test]
+    async fn test_successful_connection_clears_from_cache() {
+        #[derive(Debug)]
+        struct PlaceholderConnector;
+        impl crate::TargetConnector for PlaceholderConnector {
+            const CONNECTION_TYPE: &'static str = "placeholder";
+            async fn connect(
+                &mut self,
+            ) -> Result<crate::TargetConnection, crate::TargetConnectionError> {
+                Ok(crate::TargetConnection::FDomain(crate::FDomainConnection::invalid()))
+            }
+        }
+
+        let test_env = ffx_config::test_env().build().unwrap();
+        let conn =
+            std::sync::Mutex::new(Some(Connection::new(PlaceholderConnector).await.unwrap()));
+        let resolution = Resolution::mock(move || Ok(conn.lock().unwrap().take().unwrap()));
+        resolution.from_cache.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(resolution.from_cache());
+
+        resolution.get_connection(&test_env.context).await.unwrap();
+        assert!(!resolution.from_cache());
     }
 
     #[fuchsia::test]

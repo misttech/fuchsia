@@ -38,6 +38,29 @@ impl TargetResolutionError {
     }
 }
 
+/// An error from [`DirectConnector::connect`], distinguishing failures to resolve a target from
+/// failures to connect to a resolved target, since callers retry the two differently.
+#[derive(Debug, thiserror::Error)]
+pub enum DirectConnectError {
+    #[error(transparent)]
+    Resolution(#[from] TargetResolutionError),
+    #[error("Failed to connect to target {target_spec}: {err}")]
+    Connection {
+        target_spec: String,
+        #[source]
+        err: Box<ffx_target::FfxTargetCrateError>,
+    },
+}
+
+impl From<DirectConnectError> for ffx_command_error::Error {
+    fn from(err: DirectConnectError) -> Self {
+        match err {
+            DirectConnectError::Resolution(e) => e.into_command_error(),
+            DirectConnectError::Connection { err, .. } => (*err).into_command_error(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct DirectConnector(Arc<DirectConnectorInner>);
 
@@ -98,6 +121,46 @@ impl DirectConnector {
             *resolution = Some(Arc::clone(&new));
 
             Ok(new)
+        })
+    }
+
+    /// Resolves the target and establishes a connection, automatically falling back from a
+    /// speculative discovery cache hit to active discovery if the cached address is stale or
+    /// unreachable.
+    pub async fn connect(
+        &self,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<(Arc<Resolution>, Arc<ffx_target::Connection>), DirectConnectError>
+    {
+        let mut resolution = self.resolution().await?;
+        let mut conn_res = resolution.get_connection(context).await;
+        if conn_res.is_err() && resolution.from_cache() {
+            log::debug!(
+                "Connection to cached target {} failed; re-resolving without cache",
+                resolution.target_spec()
+            );
+            // `get_connection` marks the resolution failed (`is_usable() == false`) and
+            // deletes the cache file, so `self.resolution()` re-resolves via active discovery.
+            match self.resolution().await {
+                Ok(res) => {
+                    resolution = res;
+                    conn_res = resolution.get_connection(context).await;
+                }
+                Err(e) => {
+                    // The cached target was never verified against a live target, so don't
+                    // report it as previously resolved.
+                    *self.0.resolution.lock().await = None;
+                    return Err(e.into());
+                }
+            }
+        }
+        // On failure, `get_connection` marks the resolution unusable, so the next
+        // `self.resolution()` call re-resolves without the cache.
+        conn_res.map(|conn| (Arc::clone(&resolution), conn)).map_err(|err| {
+            DirectConnectError::Connection {
+                target_spec: resolution.target_spec(),
+                err: Box::new(err),
+            }
         })
     }
 
@@ -755,6 +818,69 @@ mod tests {
         // 4. Subsequent `dc.resolution()` re-reads $SHARED_DATA/targets.json and resolves to 127.0.0.1:8083.
         let res2 = dc.resolution().await.unwrap();
         assert_eq!(res2.target_spec(), "127.0.0.1:8083");
+    }
+
+    fn setup_stale_cache_connector(
+        live_addr: Option<&str>,
+    ) -> (ffx_config::TestEnv, DirectConnector) {
+        let mut builder = test_env();
+        let cache_dir = builder.isolate_root().join("cache");
+        let fake_key = builder.isolate_root().join("fake_ssh_key");
+        std::fs::write(&fake_key, "fake").unwrap();
+
+        let env = builder
+            .runtime_config("target.default", "test-target")
+            .runtime_config("target.discovery_cache_dir", cache_dir.to_str().unwrap())
+            .runtime_config("ssh.path", "/bin/false")
+            .runtime_config("ssh.priv", fake_key.to_str().unwrap())
+            .build()
+            .unwrap();
+
+        write_test_cache(&env.context, "test-target", "127.0.0.1:8082");
+
+        let (tx, rx) = futures::channel::mpsc::unbounded::<TargetEvent>();
+        if let Some(addr_str) = live_addr {
+            let addr = addr::TargetAddr::from_str(addr_str).unwrap();
+            let handle = TargetHandle {
+                node_name: Some("test-target".to_string()),
+                state: TargetState::Product { addrs: vec![addr], serial: None },
+                manual: false,
+            };
+            tx.unbounded_send(TargetEvent::Added(handle)).unwrap();
+        }
+        drop(tx);
+        let discovery = DiscoveryBuilder::default().build_with_stream(&env.context, rx);
+        let connector = DirectConnector(Arc::new(DirectConnectorInner {
+            context: env.context.clone(),
+            resolution: futures::lock::Mutex::new(None),
+            resolver: futures::lock::Mutex::new(DefaultTargetResolver::new(discovery)),
+        }));
+        (env, connector)
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_connect_falls_back_from_stale_cache_to_active_discovery() {
+        let (env, connector) = setup_stale_cache_connector(Some("127.0.0.1:8083"));
+
+        // `connect()` tries cached 127.0.0.1:8082, fails with a non-fatal SSH error, and
+        // automatically re-resolves via active discovery to 127.0.0.1:8083.
+        let err = connector.connect(&env.context).await.unwrap_err();
+        let DirectConnectError::Connection { target_spec, .. } = err else {
+            panic!("expected DirectConnectError::Connection, got {err:?}");
+        };
+        assert_eq!(target_spec, "127.0.0.1:8083");
+        assert!(connector.has_resolved_target().await);
+    }
+
+    #[fuchsia::test]
+    async fn test_direct_connector_connect_stale_cache_when_offline_clears_resolved_target() {
+        let (env, connector) = setup_stale_cache_connector(None);
+
+        // `connect()` tries cached 127.0.0.1:8082, fails, falls back to active discovery which
+        // returns `TargetNotFound`, and clears `has_resolved_target()` to `false`.
+        let err = connector.connect(&env.context).await.unwrap_err();
+        assert!(matches!(err, DirectConnectError::Resolution(_)), "got {err:?}");
+        assert!(!connector.has_resolved_target().await);
     }
 
     // Tests that `FhoTargetEnvironment` can initialize a `DirectConnector` connection behavior

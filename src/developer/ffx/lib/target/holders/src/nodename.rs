@@ -82,10 +82,8 @@ impl TryFromEnv for NodenameHolder {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         let ConnectionBehavior::Direct(ref dc) = *behavior;
-        let identity = dc
-            .resolution()
-            .await
-            .map_err(|e| e.into_command_error())?
+        let (resolution, _conn) = dc.connect(env.environment_context()).await?;
+        let identity = resolution
             .identify(&env.environment_context())
             .await
             .map_err(|e| e.into_command_error())?

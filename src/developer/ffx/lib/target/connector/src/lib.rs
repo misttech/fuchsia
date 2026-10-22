@@ -7,7 +7,8 @@ use ffx_command_error::{Error, Result};
 use fho::{FhoEnvironment, TryFromEnv};
 use std::time::Duration;
 use target_behavior::{
-    ConnectionBehavior, DirectConnector, FhoTargetEnvironment, target_interface,
+    ConnectionBehavior, DirectConnectError, DirectConnector, FhoTargetEnvironment,
+    TargetResolutionError, target_interface,
 };
 
 const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(50);
@@ -104,14 +105,44 @@ where
     }
 }
 
+/// Returns the error to report while waiting to retry if `err` is non-fatal, or `Err` with the
+/// fatal error if the command should fail.
+fn check_connection_retry(
+    target_spec: String,
+    err: ffx_command_error::Error,
+) -> Result<(Option<String>, ffx_command_error::Error)> {
+    let e = err.downcast_non_fatal()?;
+    log::debug!("error when trying to connect to target {target_spec}: {e}");
+    Ok((Some(target_spec), Error::User(e)))
+}
+
+/// Returns the error to report while waiting to retry if resolution failed with `TargetNotFound`
+/// and should be retried, or `Err` with the error if the command should fail.
+async fn check_resolution_retry(
+    err: TargetResolutionError,
+    dc: &DirectConnector,
+    retry_mode: DiscoveryRetryMode,
+) -> Result<(Option<String>, ffx_command_error::Error)> {
+    let err = err.into_command_error();
+    let should_retry =
+        retry_mode == DiscoveryRetryMode::RetryIndefinitely || dc.has_resolved_target().await;
+    if should_retry && is_target_not_found(&err) {
+        log::debug!("Target not found during resolution, waiting to retry: {err}");
+        Ok((None, err))
+    } else {
+        Err(err)
+    }
+}
+
 /// Repeatedly resolves and connects to the target until `T::try_from_env` succeeds or a fatal
 /// error occurs.
 ///
-/// Each retry calls `dc.resolution()`, which re-resolves from `$SHARED_DATA/targets.json` (in
-/// strict mode) or live discovery (in non-strict mode) whenever the previous `Resolution` was
-/// invalidated by a failed or timed-out connection attempt.
+/// Each attempt calls [`DirectConnector::connect`], which resolves from `$SHARED_DATA/targets.json`
+/// (in strict mode) or the discovery cache / live discovery (in non-strict mode) and re-resolves
+/// whenever a previous `Resolution` was invalidated by a failed or timed-out connection attempt.
 ///
-/// If `dc.resolution()` fails with `TargetNotFound`, it retries when `retry_mode` is
+/// Connection and `T::try_from_env` failures are retried only if they are non-fatal. Resolution
+/// failures are retried only on `TargetNotFound`, and only when `retry_mode` is
 /// `DiscoveryRetryMode::RetryIndefinitely` or when `dc.has_resolved_target()` is `true`
 /// (meaning a target was previously resolved and may be temporarily offline across a reboot).
 async fn direct_connector_try_connect<T>(
@@ -125,43 +156,22 @@ where
 {
     let mut retry_delay = INITIAL_RETRY_DELAY;
     loop {
-        let should_retry_not_found =
-            retry_mode == DiscoveryRetryMode::RetryIndefinitely || dc.has_resolved_target().await;
-        let resolution = match dc.resolution().await {
-            Ok(res) => res,
-            Err(err) => {
-                let cmd_err = err.into_command_error();
-                if should_retry_not_found && is_target_not_found(&cmd_err) {
-                    log::debug!("Target not found during resolution, waiting to retry: {cmd_err}");
-                    log_target_wait(&None, &Some(cmd_err))?;
-                    fuchsia_async::Timer::new(retry_delay).await;
-                    retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
-                    continue;
-                }
-                return Err(cmd_err);
+        let (target_spec, wait_err) = match dc.connect(env.environment_context()).await {
+            Ok((resolution, _conn)) => match T::try_from_env(env).await {
+                Ok(val) => return Ok(val),
+                Err(err) => check_connection_retry(resolution.target_spec(), err)?,
+            },
+            Err(DirectConnectError::Connection { target_spec, err }) => {
+                check_connection_retry(target_spec, (*err).into_command_error())?
+            }
+            Err(DirectConnectError::Resolution(err)) => {
+                check_resolution_retry(err, dc, retry_mode).await?
             }
         };
-        let target_spec = resolution.target_spec();
-        if let Err(conn_err) = resolution.get_connection(env.environment_context()).await {
-            let cmd_err = conn_err.into_command_error();
-            let e = cmd_err.downcast_non_fatal()?;
-            log::debug!("error when trying to connect to target {target_spec}: {e}");
-            log_target_wait(&Some(target_spec), &Some(Error::User(e)))?;
-            fuchsia_async::Timer::new(retry_delay).await;
-            retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
-            continue;
-        }
-        return match T::try_from_env(env).await {
-            Err(conn_error) => {
-                let e = conn_error.downcast_non_fatal()?;
-                log::debug!("error when trying to connect using TryFromEnv: {e}");
-                log_target_wait(&Some(target_spec), &Some(Error::User(e)))?;
-                fuchsia_async::Timer::new(retry_delay).await;
-                retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
-                continue;
-            }
-            Ok(res) => Ok(res),
-        };
+
+        log_target_wait(&target_spec, &Some(wait_err))?;
+        fuchsia_async::Timer::new(retry_delay).await;
+        retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
     }
 }
 
@@ -291,6 +301,41 @@ mod tests {
         let log_target_wait_called = RefCell::new(false);
         let res = connector
             .try_connect(|_, _| {
+                *log_target_wait_called.borrow_mut() = true;
+                Ok(())
+            })
+            .await;
+
+        assert!(is_target_not_found(&res.unwrap_err()));
+        assert!(!*log_target_wait_called.borrow());
+    }
+
+    // Tests that a fatal `TargetNotFound` returned during `Resolution::get_connection()` (such as
+    // a missing UART device path) fails immediately even under `try_connect_indefinitely`, which
+    // only retries `TargetNotFound` from resolution.
+    #[fuchsia::test]
+    async fn test_connector_try_connect_indefinitely_connection_target_not_found_fails_immediately()
+    {
+        let env = test_env().build().unwrap();
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let target_env = target_behavior::target_interface(&fho_env);
+
+        let resolution = ffx_target::Resolution::mock(|| {
+            Err(target_errors::FfxTargetError::OpenTargetError {
+                err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
+                target: None,
+                targets: vec![],
+                target_source: None,
+            }
+            .into())
+        });
+        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+        target_env.set_behavior_for_test(behavior);
+
+        let connector = Connector::<DummyHolder>::try_from_env(&fho_env).await.unwrap();
+        let log_target_wait_called = RefCell::new(false);
+        let res = connector
+            .try_connect_indefinitely(|_, _| {
                 *log_target_wait_called.borrow_mut() = true;
                 Ok(())
             })
