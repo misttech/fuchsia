@@ -1888,6 +1888,9 @@ impl NamespaceNode {
     /// This only traverses one level of mount, even if the submount's root
     /// is itself a mountpoint for another mount.
     fn enter_one_mount(&self) -> Option<NamespaceNode> {
+        if !self.entry.has_mounts() {
+            return None;
+        }
         if let Some(mount) = self.mount.deref() {
             if let Some(submount) =
                 mount.relations.get_submount(&RcuReadScope::new(), &PtrKey::from(&self.entry))
@@ -1902,7 +1905,16 @@ impl NamespaceNode {
     ///
     /// This function traverses multiple mounts if there are mounts layered on top of each other.
     /// It handles its own synchronization by acquiring the mounts sequence lock for reading.
-    fn enter_mount(&self) -> NamespaceNode {
+    fn enter_mount(self) -> NamespaceNode {
+        // `Mounts::register_mount()` sets `HAS_MOUNTS` before a submount is published and
+        // `Mounts::unregister_mount()` clears it only after the last mount on this `DirEntry` is
+        // removed, so we can skip the slow path when it is clear. `DirEntry::destroy()` also lowers
+        // `HAS_MOUNTS` before `Mounts::unmount()` detaches any remaining submounts, which is
+        // harmless here because the entry has already been unlinked from its parent's children and
+        // marked `IS_DEAD`.
+        if !self.entry.has_mounts() {
+            return self;
+        }
         // While the child is a mountpoint, replace child with the mount's root.
         let kernel = self.entry.node.fs().kernel.upgrade().expect("kernel");
         kernel.mounts_lock.read_seq(|| {
@@ -2032,7 +2044,7 @@ impl NamespaceNode {
     }
 
     pub fn mount(&self, what: WhatToMount, flags: MountpointFlags) -> Result<(), Errno> {
-        let target = self.enter_mount();
+        let target = self.clone().enter_mount();
 
         // A target node may not have a mount point if it's an anonymous node. Modern Linux (6.15+)
         // returns ENOENT in this case, rather than the more intuitive EINVAL.
@@ -2935,6 +2947,75 @@ mod test {
                 kernel.mounts.mounts.lock().get(&PtrKey::from(&foo_dir.entry)).unwrap().len(),
                 1
             );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_enter_mount_has_mounts_lifecycle() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(&kernel);
+            let ns1 = Namespace::new(root_fs.clone());
+            let ns2 = Namespace::new(root_fs.clone());
+            let foo_entry = root_fs.root().create_dir(&current_task, "foo".into()).unwrap();
+            assert!(!foo_entry.has_mounts());
+
+            // Non-mountpoint lookup takes the !has_mounts() fast path and returns foo_entry.
+            let foo_ns1 = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "foo".into())
+                .unwrap();
+            assert!(Arc::ptr_eq(&foo_ns1.entry, &foo_entry));
+
+            // Mounting foofs1 in ns1 raises HAS_MOUNTS on foo_entry; ns1 enters foofs1, while ns2
+            // (sharing foo_entry with HAS_MOUNTS set) still resolves to foo_entry.
+            let foofs1 = TmpFs::new_fs(&kernel);
+            foo_ns1.mount(WhatToMount::Fs(foofs1.clone()), MountpointFlags::empty()).unwrap();
+            assert!(foo_entry.has_mounts());
+            assert!(!foofs1.root().has_mounts());
+
+            let mounted1 = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "foo".into())
+                .unwrap();
+            assert!(Arc::ptr_eq(&mounted1.entry, foofs1.root()));
+            let foo_ns2 = ns2
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "foo".into())
+                .unwrap();
+            assert!(Arc::ptr_eq(&foo_ns2.entry, &foo_entry));
+
+            // Stacking foofs2 on top of foofs1 in ns1 raises HAS_MOUNTS on foofs1.root().
+            let foofs2 = TmpFs::new_fs(&kernel);
+            mounted1.mount(WhatToMount::Fs(foofs2.clone()), MountpointFlags::empty()).unwrap();
+            assert!(foofs1.root().has_mounts());
+            assert!(!foofs2.root().has_mounts());
+
+            let mounted2 = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "foo".into())
+                .unwrap();
+            assert!(Arc::ptr_eq(&mounted2.entry, foofs2.root()));
+
+            // Unmounting foofs2 lowers HAS_MOUNTS on foofs1.root() and exposes foofs1 again.
+            mounted2.unmount(UnmountFlags::empty()).unwrap();
+            assert!(!foofs1.root().has_mounts());
+            assert!(foo_entry.has_mounts());
+            let after_unmount2 = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "foo".into())
+                .unwrap();
+            assert!(Arc::ptr_eq(&after_unmount2.entry, foofs1.root()));
+
+            // Unmounting foofs1 lowers HAS_MOUNTS on foo_entry and exposes the underlying dir.
+            after_unmount2.unmount(UnmountFlags::empty()).unwrap();
+            assert!(!foo_entry.has_mounts());
+            let after_unmount1 = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "foo".into())
+                .unwrap();
+            assert!(Arc::ptr_eq(&after_unmount1.entry, &foo_entry));
         })
         .await;
     }
