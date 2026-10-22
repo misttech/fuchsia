@@ -1,7 +1,6 @@
 [package]
 name = "shared_child"
-version = "1.1.1"
-authors = ["jacko"]
+version = "1.1.2"
 license = "MIT"
 repository = "https://github.com/oconnor663/shared_child.rs"
 documentation = "https://docs.rs/shared_child"
@@ -13,14 +12,18 @@ rust-version = "1.74"
 edition = "2021"
 
 [target.'cfg(not(windows))'.dependencies]
-libc = "0.2.42"
+libc = "0.2.152"
 sigchld = { version = "0.2.3", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [features]
 # Unix doesn't support waiting on a child with a timeout, so we have to emulate
 # that by handling the SIGCHLD signal.
 timeout = ["dep:sigchld"]
 default = ["timeout"]
+
+[[example]]
+name = "timeout"
+required-features = ["timeout"]

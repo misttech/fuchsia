@@ -22,13 +22,11 @@
 //! reuse while there are still open handles to a child process. This library
 //! wraps `std::process::Child` for concurrent use, backed by these APIs.
 //!
-//! Compatibility note: The `libc` crate doesn't currently support `waitid` on
-//! NetBSD or OpenBSD, or on older versions of OSX. There [might also
-//! be](https://bugs.python.org/msg167016) some version of OSX where the
-//! `waitid` function exists but is broken. We can add a "best effort"
-//! workaround using `waitpid` for these platforms as we run into them. Please
-//! [file an issue](https://github.com/oconnor663/shared_child.rs/issues/new) if
-//! you hit this.
+//! Compatibility note: There are some Unix-like platforms that don't support
+//! `waitid`. We can add best-effort workarounds using `waitpid` for these
+//! platforms as needed. Please [file an
+//! issue](https://github.com/oconnor663/shared_child.rs/issues/new) if you hit
+//! this.
 //!
 //! # Example
 //!
@@ -39,7 +37,9 @@
 //!
 //! // Spawn a child that will just sleep for a long time,
 //! // and put it in an Arc to share between threads.
-//! let mut command = Command::new("python");
+//! let mut command = Command::new("python3");
+//! # // See `python_cmd` in the tests below.
+//! # if cfg!(windows) { command = Command::new("python"); }
 //! command.arg("-c").arg("import time; time.sleep(1000000000)");
 //! let shared_child = SharedChild::spawn(&mut command).unwrap();
 //! let child_arc = Arc::new(shared_child);
@@ -134,6 +134,16 @@ impl SharedChild {
 
     /// Wait for the child to exit, blocking the current thread, and return its
     /// exit status.
+    ///
+    /// Note that unlike the [`wait`] and [`wait_with_output`] methods on `std::process::Child`,
+    /// waiting on a `SharedChild` does _not_ automatically close the child's standard input pipe
+    /// (if any). One thread might wait on a `SharedChild` while another thread calls
+    /// [`take_stdin`][Self::take_stdin] and writes to it, and the order in which those threads run
+    /// doesn't matter.
+    ///
+    /// [`wait`]: https://doc.rust-lang.org/nightly/std/process/struct.Child.html#method.wait
+    /// [`wait_with_output`]: https://doc.rust-lang.org/nightly/std/process/struct.Child.html#method.wait_with_output
+    /// [`piped`]: https://doc.rust-lang.org/nightly/std/process/struct.Stdio.html#method.piped
     pub fn wait(&self) -> io::Result<ExitStatus> {
         // Start by taking the inner lock, but note that we need to release it before waiting, or
         // else we'd block .try_wait(), .wait_deadline(), and .kill().
@@ -180,8 +190,14 @@ impl SharedChild {
     ///
     /// This polls the child at least once, and if the child has already exited it will return
     /// `Ok(Some(_))` even if the timeout is zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Instant::now() + timeout` overflows.
     #[cfg(feature = "timeout")]
     pub fn wait_timeout(&self, timeout: Duration) -> io::Result<Option<ExitStatus>> {
+        // `Instant` doesn't currently support saturating operations, so this addition can panic.
+        // See https://internals.rust-lang.org/t/instant-systemtime-min-max/21375.
         let deadline = std::time::Instant::now() + timeout;
         self.wait_deadline(deadline)
     }
@@ -209,6 +225,13 @@ impl SharedChild {
                 // deadline passes. Spurious wakeups are acceptable here.
                 Waiting => {
                     let timeout = deadline.saturating_duration_since(Instant::now());
+                    // XXX: Our `wait_deadline_noreap` function in `sys/windows.rs` supports
+                    // durations longer than `u32::MAX - 1` ms (~49.7 days) by waiting repeatedly
+                    // in a loop. However, the `Condvar` implementation in the standard library
+                    // doesn't do a similar loop, and large timeouts here behave like `INFINITE`:
+                    // https://github.com/rust-lang/rust/blob/1.98.1/library/std/src/sys/pal/windows/mod.rs#L240-L254
+                    // Given that the API accepts a `Duration`, I'd rather let the standard library
+                    // fix this eventually (if anyone cares) instead of working around it here.
                     inner_guard = self.condvar.wait_timeout(inner_guard, timeout).unwrap().0;
                 }
                 // There are no other blocking waiters. Proceed to the blocking wait.
@@ -378,10 +401,22 @@ mod tests {
     }
 
     #[cfg(not(unix))]
-    pub fn true_cmd() -> Command {
-        let mut cmd = Command::new("python");
-        cmd.arg("-c").arg("");
+    pub fn python_cmd(code: &str) -> Command {
+        let mut cmd = if cfg!(windows) {
+            // "Using Python on Windows...The recommended command for launching Python is `python`..."
+            // https://docs.python.org/3/using/windows.html
+            Command::new("python")
+        } else {
+            Command::new("python3")
+        };
+        cmd.arg("-c");
+        cmd.arg(code);
         cmd
+    }
+
+    #[cfg(not(unix))]
+    pub fn true_cmd() -> Command {
+        python_cmd("")
     }
 
     // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
@@ -394,12 +429,8 @@ mod tests {
 
     #[cfg(not(unix))]
     pub fn sleep_cmd(duration: Duration) -> Command {
-        let mut cmd = Command::new("python");
-        cmd.arg("-c").arg(format!(
-            "import time; time.sleep({})",
-            duration.as_secs_f32()
-        ));
-        cmd
+        let secs = duration.as_secs_f32();
+        python_cmd(&format!("import time; time.sleep({secs})"))
     }
 
     pub fn sleep_forever_cmd() -> Command {
@@ -414,9 +445,7 @@ mod tests {
 
     #[cfg(not(unix))]
     pub fn cat_cmd() -> Command {
-        let mut cmd = Command::new("python");
-        cmd.arg("-c").arg("");
-        cmd
+        python_cmd("import sys; sys.stdout.write(sys.stdin.read())")
     }
 
     #[test]
@@ -611,7 +640,6 @@ mod tests {
 
     #[test]
     fn test_new() -> Result<(), Box<dyn Error>> {
-        // Spawn a short-lived child.
         let mut command = cat_cmd();
         command.stdin(Stdio::piped());
         command.stdout(Stdio::null());

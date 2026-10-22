@@ -13,8 +13,7 @@
 edition = "2021"
 rust-version = "1.74"
 name = "shared_child"
-version = "1.1.1"
-authors = ["jacko"]
+version = "1.1.2"
 build = false
 autolib = false
 autobins = false
@@ -42,15 +41,20 @@ timeout = ["dep:sigchld"]
 name = "shared_child"
 path = "src/lib.rs"
 
+[[example]]
+name = "timeout"
+path = "examples/timeout.rs"
+required-features = ["timeout"]
+
 [target."cfg(not(windows))".dependencies.libc]
-version = "0.2.42"
+version = "0.2.152"
 
 [target."cfg(not(windows))".dependencies.sigchld]
 version = "0.2.3"
 optional = true
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.60.2"
+version = "0.61"
 features = [
     "Win32_Foundation",
     "Win32_System_Threading",

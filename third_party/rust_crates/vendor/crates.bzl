@@ -566,7 +566,7 @@ _NORMAL_DEPENDENCIES = {
             "semver": Label("//third_party/rust_crates/vendor/semver-1.0.28:semver"),
             "serde_yaml": Label("//third_party/rust_crates/vendor/serde_yaml-0.9.34+deprecated:serde_yaml"),
             "serial_test": Label("//third_party/rust_crates/vendor/serial_test-4.0.1:serial_test"),
-            "shared_child": Label("//third_party/rust_crates/vendor/shared_child-1.1.1:shared_child"),
+            "shared_child": Label("//third_party/rust_crates/vendor/shared_child-1.1.2:shared_child"),
             "signal-hook": Label("//third_party/rust_crates/vendor/signal-hook-0.4.4:signal_hook"),
             "syn": Label("//third_party/rust_crates/vendor/syn-3.0.6:syn"),
             "synstructure": Label("//third_party/rust_crates/vendor/synstructure-0.14.0:synstructure"),

@@ -2274,13 +2274,13 @@ group("sha2-0.11.0") {
 
 if (!(current_os == "fuchsia")) {
   group("shared_child") {
-    public_deps = [ ":shared_child-v1_1_1" ]
+    public_deps = [ ":shared_child-v1_1_2" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("shared_child-1.1.1") {
-    public_deps = [ ":shared_child-v1_1_1" ]
+  group("shared_child-1.1.2") {
+    public_deps = [ ":shared_child-v1_1_2" ]
   }
 }
 
@@ -21912,16 +21912,16 @@ rustc_library("sharded-slab-v0_1_7") {
   applicable_licenses = [ ":sharded-slab-v0_1_7.license" ]
 }
 
-license("shared_child-v1_1_1.license") {
+license("shared_child-v1_1_2.license") {
   public_package_name = "shared_child"
   license_files =
-      [ "//third_party/rust_crates/vendor/shared_child-1.1.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/shared_child-1.1.2/LICENSE" ]
 }
 
-rustc_library("shared_child-v1_1_1") {
+rustc_library("shared_child-v1_1_2") {
   crate_name = "shared_child"
-  source_root = "//third_party/rust_crates/vendor/shared_child-1.1.1/src/lib.rs"
-  output_name = "shared_child-758a40b944e361d1"
+  source_root = "//third_party/rust_crates/vendor/shared_child-1.1.2/src/lib.rs"
+  output_name = "shared_child-3b29b5400c34afd8"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -21932,20 +21932,20 @@ rustc_library("shared_child-v1_1_1") {
     deps += [ ":libc-v0_2_190" ]
   }
   if (false) {
-    deps += [ ":windows-sys-v0_60_2" ]
+    deps += [ ":windows-sys-v0_61_2" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=758a40b944e361d1",
-    "-Cextra-filename=-758a40b944e361d1",
+    "-Cmetadata=3b29b5400c34afd8",
+    "-Cextra-filename=-3b29b5400c34afd8",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":shared_child-v1_1_1.license" ]
+  applicable_licenses = [ ":shared_child-v1_1_2.license" ]
 }
 
 license("signal-hook-v0_3_18.license") {
