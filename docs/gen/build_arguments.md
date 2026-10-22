@@ -81,7 +81,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:787
+From //build/config/BUILDCONFIG.gn:790
 
 ### allowed_test_device_types
 
@@ -907,7 +907,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -4078,7 +4078,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:545
+From //build/config/BUILDCONFIG.gn:548
 
 ### fat_lto_objects
 
@@ -5159,7 +5159,7 @@ Each element of the list is one variant, which is a scope defining:
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:297
+From //build/config/BUILDCONFIG.gn:300
 
 ### link_rbe_check
 
@@ -5245,8 +5245,8 @@ From //build/toolchain/rbe.gni:296
 
 ### llvm_prefix
 
-This directory contains the cipd packages for linux-x64, linux-arm64, and
-mac-x64. Rather than using the prebuilts provided with the source tree, you
+This directory contains the cipd packages for linux-x64 and linux-arm64.
+Rather than using the prebuilts provided with the source tree, you
 can download these individual packages from cipd and set this to the
 directory containing those packages.
 
@@ -8808,7 +8808,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:777
+From //build/config/BUILDCONFIG.gn:780
 
 ### select_variant_canonical
 
@@ -8818,7 +8818,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:782
+From //build/config/BUILDCONFIG.gn:785
 
 ### select_variant_shortcuts
 
@@ -8895,7 +8895,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:552
+From //build/config/BUILDCONFIG.gn:555
 
 ### skip_buildtools_check
 
@@ -9238,7 +9238,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:964
+From //build/config/BUILDCONFIG.gn:967
 
 ### truncate_build_info_commit_date
 
@@ -9701,7 +9701,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:981
+From //build/config/BUILDCONFIG.gn:984
 
 ### zircon_tracelog
 
