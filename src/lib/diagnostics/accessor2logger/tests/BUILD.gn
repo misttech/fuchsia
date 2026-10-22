@@ -12,6 +12,7 @@ test("stream_cpp_unittests") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/stdcompat",
     "//src/lib/diagnostics/accessor2logger",
+    "//src/lib/diagnostics/accessor2logger:test_support",
     "//src/lib/fsl",
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",

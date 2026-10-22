@@ -140,6 +140,7 @@ source_set("diagnostics") {
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
     "//sdk/lib/syslog/cpp",
+    "//src/lib/diagnostics/accessor2logger:test_support",
     "//src/lib/fsl",
     "//src/lib/fxl",
   ]

@@ -92,7 +92,8 @@ class LogBatchIterator {
 // Prints formatted content to the log.
 fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
                  std::string>
-ConvertFormattedContentToLogMessages(fuchsia::diagnostics::FormattedContent content);
+ConvertFormattedContentToLogMessages(fuchsia::diagnostics::FormattedContent content,
+                                     MessageParser* parser = nullptr);
 
 // Get the severity corresponding to the given verbosity. Note that
 // verbosity relative to the default severity and can be thought of

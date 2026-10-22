@@ -16,7 +16,15 @@
 namespace forensics {
 namespace stubs {
 
-using DiagnosticsBatchIteratorBase = SingleBindingFidlServer<fuchsia_diagnostics::BatchIterator>;
+class DiagnosticsBatchIteratorBase
+    : public SingleBindingFidlServer<fuchsia_diagnostics::BatchIterator> {
+ public:
+  void SetFormat(fuchsia_diagnostics::Format format) { format_ = format; }
+  fuchsia_diagnostics::Format format() const { return format_; }
+
+ private:
+  fuchsia_diagnostics::Format format_ = fuchsia_diagnostics::Format::kFxt;
+};
 
 class DiagnosticsBatchIterator : public DiagnosticsBatchIteratorBase {
  public:

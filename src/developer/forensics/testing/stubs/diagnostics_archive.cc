@@ -9,12 +9,19 @@ namespace stubs {
 
 void DiagnosticsArchive::StreamDiagnostics(StreamDiagnosticsRequest& request,
                                            StreamDiagnosticsCompleter::Sync& completer) {
+  if (request.stream_parameters().format().has_value()) {
+    batch_iterator_->SetFormat(request.stream_parameters().format().value());
+  }
   batch_iterator_->Bind(std::move(request.result_stream()), dispatcher_);
 }
 
 void DiagnosticsArchiveSequentialIterators::StreamDiagnostics(
     StreamDiagnosticsRequest& request, StreamDiagnosticsCompleter::Sync& completer) {
   FX_CHECK(current_iterator_index_ < batch_iterators_.size());
+  if (request.stream_parameters().format().has_value()) {
+    batch_iterators_[current_iterator_index_]->SetFormat(
+        request.stream_parameters().format().value());
+  }
   batch_iterators_[current_iterator_index_++]->Bind(std::move(request.result_stream()),
                                                     dispatcher_);
 }
@@ -27,6 +34,9 @@ void DiagnosticsArchiveClosesFirstIteratorConnection::StreamDiagnostics(
     return;
   }
 
+  if (request.stream_parameters().format().has_value()) {
+    BatchIterator()->SetFormat(request.stream_parameters().format().value());
+  }
   BatchIterator()->Bind(std::move(request.result_stream()), dispatcher());
 }
 

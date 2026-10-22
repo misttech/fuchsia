@@ -19,12 +19,21 @@
 #include <src/lib/fxl/strings/string_printf.h>
 
 #include "lib/syslog/cpp/log_level.h"
+#include "src/lib/diagnostics/accessor2logger/test_support.h"
 #include "src/lib/fxl/strings/join_strings.h"
 
-using diagnostics::accessor2logger::ConvertFormattedContentToLogMessages;
 using fuchsia::diagnostics::FormattedContent;
 
 namespace {
+
+// Test compatibility shim: routes ConvertFormattedContentToLogMessages through
+// ConvertFormattedContentForTest which transcodes JSON payloads to FXT and decodes
+// them through the diagnostics hierarchy.
+inline fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
+                        std::string>
+ConvertFormattedContentToLogMessages(FormattedContent content) {
+  return diagnostics::accessor2logger::testing::ConvertFormattedContentForTest(std::move(content));
+}
 
 class FakeBatchIterator : public fuchsia::diagnostics::BatchIterator {
  public:
@@ -273,9 +282,7 @@ TEST(LogMessage, MonikerStringification) {
   buffer.vmo = std::move(vmo.vmo());
   buffer.size = sizeof(kSampleLogPayload);
   content.set_json(std::move(buffer));
-  auto messages =
-      diagnostics::accessor2logger::ConvertFormattedContentToLogMessages(std::move(content))
-          .take_value();
+  auto messages = ConvertFormattedContentToLogMessages(std::move(content)).take_value();
   auto message = messages[0].value();
   auto encoded_message =
       fxl::StringPrintf("[%05d.%03d][%05" PRIu64 "][%05" PRIu64 "][%s] %s: %s\n",
@@ -331,9 +338,7 @@ TEST(LogMessage, LegacyHostEncoding) {
   buffer.vmo = std::move(vmo.vmo());
   buffer.size = sizeof(kSampleLogPayload);
   content.set_json(std::move(buffer));
-  auto messages =
-      diagnostics::accessor2logger::ConvertFormattedContentToLogMessages(std::move(content))
-          .take_value();
+  auto messages = ConvertFormattedContentToLogMessages(std::move(content)).take_value();
   auto message = messages[0].value();
   auto encoded_message =
       fxl::StringPrintf("[%05d.%03d][%05" PRIu64 "][%05" PRIu64 "][%s] %s: %s\n",
@@ -1106,6 +1111,32 @@ TEST(LogMessage, MoveConstructAndAssignLogBatchIterator) {
   diagnostics::accessor2logger::LogBatchIterator iterator3(std::move(ptr2),
                                                            fuchsia::diagnostics::Format::FXT);
   iterator3 = std::move(iterator2);
+}
+
+TEST(LogMessage, DecodeFxtVmo) {
+  constexpr zx::duration kTimestamp = zx::sec(1234);
+  auto vmo = diagnostics::accessor2logger::testing::BuildFxtVmo(
+      zx::basic_time<ZX_CLOCK_BOOT>(kTimestamp.get()), FUCHSIA_LOG_INFO, "hello fxt world", 123,
+      456, {"tag1", "tag2"});
+  ASSERT_TRUE(vmo.is_valid());
+
+  FormattedContent content;
+  content.set_fxt(std::move(vmo));
+
+  auto messages = ConvertFormattedContentToLogMessages(std::move(content));
+  ASSERT_TRUE(messages.is_ok());
+  ASSERT_EQ(1u, messages.value().size());
+  ASSERT_TRUE(messages.value()[0].is_ok());
+
+  const auto& log = messages.value()[0].value();
+  EXPECT_EQ(123u, log.pid);
+  EXPECT_EQ(456u, log.tid);
+  EXPECT_EQ(kTimestamp.get(), log.time.get());
+  EXPECT_EQ(FUCHSIA_LOG_INFO, log.severity);
+  EXPECT_EQ("hello fxt world", log.msg);
+  ASSERT_EQ(2u, log.tags.size());
+  EXPECT_EQ("tag1", log.tags[0]);
+  EXPECT_EQ("tag2", log.tags[1]);
 }
 
 }  // namespace

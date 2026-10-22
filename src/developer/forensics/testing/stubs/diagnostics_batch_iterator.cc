@@ -8,6 +8,7 @@
 #include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/lib/diagnostics/accessor2logger/test_support.h"
 #include "src/lib/fsl/vmo/strings.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -15,8 +16,18 @@ namespace forensics {
 namespace stubs {
 namespace {
 
-std::vector<fuchsia_diagnostics::FormattedContent> ToVmo(
-    const std::vector<std::string>& json_batch) {
+std::vector<fuchsia_diagnostics::FormattedContent> ToVmo(const std::vector<std::string>& json_batch,
+                                                         fuchsia_diagnostics::Format format) {
+  if (format == fuchsia_diagnostics::Format::kFxt) {
+    auto vmos = diagnostics::accessor2logger::testing::EncodeJsonBatchToFxtVmos(json_batch);
+    std::vector<fuchsia_diagnostics::FormattedContent> fxt_batch_vmo;
+    fxt_batch_vmo.reserve(vmos.size());
+    for (auto& vmo : vmos) {
+      fxt_batch_vmo.push_back(fuchsia_diagnostics::FormattedContent::WithFxt(std::move(vmo)));
+    }
+    return fxt_batch_vmo;
+  }
+
   std::vector<fuchsia_diagnostics::FormattedContent> json_batch_vmo;
   json_batch_vmo.reserve(json_batch.size());
   for (const std::string& json_chunk : json_batch) {
@@ -44,7 +55,7 @@ void DiagnosticsBatchIterator::GetNext(GetNextCompleter::Sync& completer) {
       "No more calls to GetNext() expected (%lu/%lu calls made)",
       std::distance(json_batches_.cbegin(), next_json_batch_), json_batches_.size());
 
-  completer.Reply(fit::ok(ToVmo(*next_json_batch_++)));
+  completer.Reply(fit::ok(ToVmo(*next_json_batch_++, format())));
 }
 
 void DiagnosticsBatchIteratorNeverRespondsAfterOneBatch::GetNext(
@@ -54,7 +65,7 @@ void DiagnosticsBatchIteratorNeverRespondsAfterOneBatch::GetNext(
     return;
   }
 
-  completer.Reply(fit::ok(ToVmo(json_batch_)));
+  completer.Reply(fit::ok(ToVmo(json_batch_, format())));
   has_returned_batch_ = true;
 }
 
@@ -63,7 +74,7 @@ void DiagnosticsBatchIteratorReturnsError::GetNext(GetNextCompleter::Sync& compl
     completer.Reply(fit::error(fuchsia_diagnostics::ReaderError::kIo));
     returned_error_ = true;
   } else {
-    completer.Reply(fit::ok(ToVmo({})));
+    completer.Reply(fit::ok(ToVmo({}, format())));
   }
 }
 
@@ -75,7 +86,7 @@ void DiagnosticsBatchIteratorDelayedBatches::GetNext(GetNextCompleter::Sync& com
             "No more calls to GetNext() expected (%lu/%lu calls made)",
             std::distance(json_batches_.cbegin(), next_json_batch_), json_batches_.size());
 
-        completer.Reply(fit::ok(ToVmo(*next_json_batch_++)));
+        completer.Reply(fit::ok(ToVmo(*next_json_batch_++, format())));
       },
       is_initial_delay_ ? initial_delay_ : delay_between_batches_);
   is_initial_delay_ = false;

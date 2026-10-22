@@ -38,7 +38,7 @@ std::vector<fuchsia::logger::LogMessage> GetLogs() {
   auto params = fuchsia::diagnostics::StreamParameters();
   params.set_stream_mode(fuchsia::diagnostics::StreamMode::SNAPSHOT);
   params.set_data_type(fuchsia::diagnostics::DataType::LOGS);
-  params.set_format(fuchsia::diagnostics::Format::JSON);
+  params.set_format(fuchsia::diagnostics::Format::FXT);
   params.set_client_selector_configuration(
       fuchsia::diagnostics::ClientSelectorConfiguration::WithSelectAll(true));
 
