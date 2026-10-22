@@ -420,6 +420,9 @@ config("scheduler") {
   if (scheduler_lock_spin_tracing_compressed) {
     rustflags += [ "--cfg=scheduler_lock_spin_tracing_compressed" ]
   }
+  if (wait_queue_depth_tracing_enabled) {
+    rustflags += [ "--cfg=wait_queue_depth_tracing_enabled" ]
+  }
 }
 
 config("persistent_ram_config") {

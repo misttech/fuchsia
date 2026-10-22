@@ -12,11 +12,11 @@
 
 #include <fbl/intrusive_wavl_tree.h>
 #include <fbl/macros.h>
-#include <fbl/wavl_tree_best_node_observer.h>
 #include <kernel/deadline.h>
 #include <kernel/preempt_disabled_token.h>
 #include <kernel/scheduler_state.h>
 #include <kernel/timer.h>
+#include <kernel/wait_ffi.h>
 
 struct Thread;
 class WaitQueueCollection;
@@ -40,15 +40,6 @@ enum class Interruptible : bool { No, Yes };
 enum class ForceInheritance : bool { No, Yes };
 
 extern "C" {
-void cpp_wait_queue_collection_insert(WaitQueueCollection* collection, Thread* thread);
-void cpp_wait_queue_collection_remove(WaitQueueCollection* collection, Thread* thread);
-SchedDuration cpp_wait_queue_collection_min_inheritable_relative_deadline(
-    const WaitQueueCollection* collection);
-SchedulerState::WaitQueueInheritedSchedulerState*
-cpp_wait_queue_collection_find_inherited_scheduler_state_storage(WaitQueueCollection* collection);
-Thread* cpp_wait_queue_collection_threads_begin(const WaitQueueCollection* collection);
-Thread* cpp_wait_queue_collection_threads_next(const WaitQueueCollection* collection,
-                                               const Thread* thread);
 bool cpp_wait_queue_lock_ops_lock_for_wake_all_in_queue(WaitQueue* queue,
                                                         zx_status_t wait_queue_error,
                                                         void* unblock_list_out);
@@ -93,7 +84,6 @@ class WaitQueueCollection {
  private:
   // fwd decls
   struct BlockedThreadTreeTraits;
-  struct MinRelativeDeadlineTraits;
 
  public:
   using PrimaryKey = SchedTime;
@@ -143,7 +133,6 @@ class WaitQueueCollection {
     friend class WaitQueueBase;
     friend class WaitQueueCollection;
     friend struct WaitQueueCollection::BlockedThreadTreeTraits;
-    friend struct WaitQueueCollection::MinRelativeDeadlineTraits;
 
     // Dumping routines are allowed to see inside us.
     friend class ThreadDumper;
@@ -190,24 +179,28 @@ class WaitQueueCollection {
   bool IsEmpty() const { return threads_.is_empty(); }
 
   // The current minimum inheritable relative deadline of the set of blocked threads.
-  SchedDuration MinInheritableRelativeDeadline() const;
-
-  Thread& PeekOnlyThread() {
-    DEBUG_ASSERT_MSG(threads_.size() == 1, "Expected size 1, not %zu", threads_.size());
-    return threads_.front();
+  SchedDuration MinInheritableRelativeDeadline() const {
+    return SchedDuration{rust_wait_queue_collection_min_inheritable_relative_deadline(this)};
   }
 
   // Peek at the first Thread in the collection.
   Thread* PeekFront() { return threads_.is_empty() ? nullptr : &threads_.front(); }
   const Thread* PeekFront() const { return const_cast<WaitQueueCollection*>(this)->PeekFront(); }
 
-  inline SchedulerState::WaitQueueInheritedSchedulerState* FindInheritedSchedulerStateStorage();
+  SchedulerState::WaitQueueInheritedSchedulerState* FindInheritedSchedulerStateStorage() {
+    return static_cast<SchedulerState::WaitQueueInheritedSchedulerState*>(
+        rust_wait_queue_collection_find_inherited_scheduler_state_storage(this));
+  }
 
   // Add the Thread into its sorted location in the collection.
-  void Insert(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread));
+  void Insert(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread)) {
+    rust_wait_queue_collection_insert(this, thread);
+  }
 
   // Remove the Thread from the collection.
-  void Remove(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread));
+  void Remove(Thread* thread) TA_REQ(ChainLockable::GetLock(*thread)) {
+    rust_wait_queue_collection_remove(this, thread);
+  }
 
   // Either lock every thread in the collection, or failed with
   // ChainLock::Result::Backoff, releasing any locks which were obtained in the
@@ -215,7 +208,9 @@ class WaitQueueCollection {
   // WaitQueue WakeAll.  Note that it is not possible to statically annotated
   // this, and needs to be used with extreme care.  If LockAll returns success,
   // it is critical that the caller (eventually) drops all of the locks.
-  ChainLock::Result LockAll() TA_REQ(chainlock_transaction_token);
+  ChainLock::Result LockAll() TA_REQ(chainlock_transaction_token) {
+    return static_cast<ChainLock::Result>(rust_wait_queue_collection_lock_all(this));
+  }
 
   // Accessor for the underlying thread collection.
   const auto& threads() const { return threads_; }
@@ -236,20 +231,12 @@ class WaitQueueCollection {
     static fbl::WAVLTreeNodeState<Thread*>& node_state(Thread& thread);
   };
 
-  struct MinRelativeDeadlineTraits {
-    // WAVLTreeBestNodeObserver template API
-    using ValueType = SchedDuration;
-    static ValueType GetValue(const Thread& thread);
-    static ValueType GetSubtreeBest(const Thread& thread);
-    static bool Compare(ValueType a, ValueType b);
-    static void AssignBest(Thread& thread, ValueType val);
-    static void ResetBest(Thread& thread);
-  };
-
+  // The C++ view of the tree of blocked threads. All mutation (Insert, Remove) happens in Rust,
+  // which maintains the node links and the subtree_min_deadline_ invariant, so no observer runs
+  // on this side; C++ only reads the tree through this type.
   using BlockedThreadTree =
       fbl::WAVLTree<Key, Thread*, BlockedThreadTreeTraits, fbl::DefaultObjectTag,
-                    fbl::SizeOrder::Constant, BlockedThreadTreeTraits,
-                    fbl::WAVLTreeBestNodeObserver<MinRelativeDeadlineTraits>>;
+                    fbl::SizeOrder::Constant, BlockedThreadTreeTraits>;
   BlockedThreadTree threads_;
 };
 

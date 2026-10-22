@@ -2488,7 +2488,7 @@ mod tests {
 
                 // `ThreadState` members (wait_queue.rs accessors).
                 let wq_state = proof.wait_queue_state();
-                not_blocked = !wq_state.in_wait_queue()
+                not_blocked = !wq_state.in_wait_queue(proof.token())
                     && wq_state.blocking_wait_queue(proof.token()).is_none();
                 // `blocked_status` keeps the last wake status until the next block, so only check
                 // that it reads back.

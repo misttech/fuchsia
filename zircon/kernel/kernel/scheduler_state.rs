@@ -7,11 +7,12 @@
 //! Types and structures for kernel scheduler state (`include/kernel/scheduler_state.h`).
 
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
-use crate::platform_rs::timer::DurationMono;
+use crate::platform_rs::timer::{DurationMono, InstantMono};
 use core::mem::{MaybeUninit, align_of, size_of};
 use object_constants_rs as object_constants;
 use wait_queue_bindings as bindings;
 use zr::OpaqueFacade;
+use zx_types::zx_instant_mono_t;
 
 /// The scheduling state of a thread matching C++ `enum thread_state : uint8_t`.
 // LINT.IfChange(ThreadStateKind)
@@ -118,6 +119,13 @@ impl SchedulerState {
         let deadline = unsafe { (*self.effective_profile_ptr()).deadline() };
         DurationMono(deadline.deadline_ns.raw_value())
     }
+
+    /// Returns the virtual finish time of the thread (`finish_time()`).
+    #[inline]
+    pub fn finish_time(&self) -> InstantMono {
+        // SAFETY: `self` is a valid `SchedulerState` reference.
+        InstantMono(unsafe { cpp_scheduler_state_finish_time(self) })
+    }
 }
 
 /// Opaque wrapper around C++ `SchedulerState::BaseProfile`.
@@ -146,6 +154,7 @@ unsafe extern "C" {
     fn cpp_scheduler_state_curr_cpu(state: *const SchedulerState) -> cpu_num_t;
     fn cpp_scheduler_state_last_cpu(state: *const SchedulerState) -> cpu_num_t;
     fn cpp_scheduler_state_hard_affinity(state: *const SchedulerState) -> cpu_mask_t;
+    fn cpp_scheduler_state_finish_time(state: *const SchedulerState) -> zx_instant_mono_t;
 }
 
 // thread priority

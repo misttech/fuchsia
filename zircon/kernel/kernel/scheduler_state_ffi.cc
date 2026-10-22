@@ -28,4 +28,9 @@ FFI_ALWAYS_INLINE cpu_num_t cpp_scheduler_state_last_cpu(const SchedulerState* s
 FFI_ALWAYS_INLINE cpu_mask_t cpp_scheduler_state_hard_affinity(const SchedulerState* state) {
   return state->hard_affinity();
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_instant_mono_t cpp_scheduler_state_finish_time(const SchedulerState* state) {
+  return state->finish_time().raw_value();
+}
 }  // extern "C"

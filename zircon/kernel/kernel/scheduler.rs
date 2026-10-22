@@ -7016,14 +7016,15 @@ impl WavlTreeAugmentedInvariantObserverTraits for SubtreeInvariantTraits {
         }
     }
 
-    fn set_subtree_value(node: &mut Self::Target, val: Self::Value) {
+    fn set_subtree_value(node: &Self::Target, val: Self::Value) {
         // SAFETY: `node` is a valid `Thread` in the `RunQueue` mutated exclusively
         // under `queue_lock_`, and no other reference to its `SchedulerState` is live.
-        let state = unsafe { &mut *cpp_thread_get_scheduler_state(node) };
+        let state =
+            unsafe { &mut *cpp_thread_get_scheduler_state(core::ptr::from_ref(node).cast_mut()) };
         state.subtree_invariants = val;
     }
 
-    fn reset_subtree_value(_node: &mut Self::Target) {
+    fn reset_subtree_value(_node: &Self::Target) {
         // No-op, matches C++
     }
 }

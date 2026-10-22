@@ -316,7 +316,6 @@ kernel_bindgen_crate("wait-queue-bindings") {
     "Thread",
     "Timer",
     "WaitQueueCollection_BlockedThreadTreeTraits",
-    "WaitQueueCollection_MinRelativeDeadlineTraits.*",
     "WaitQueueCollection_PrimaryKey",
     "WaitQueueCollection_Key",
     "WaitQueueBase_.*",

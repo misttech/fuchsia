@@ -158,8 +158,9 @@ impl<T> WavlTreeObserver for DefaultWavlTreeObserver<T> {
 pub trait WavlTreeAugmentedInvariantObserverTraits {
     /// The type of the node.
     type Target;
-    /// The type of the invariant value.
-    type Value: Copy;
+    /// The type of the invariant value. `PartialEq` lets the observer stop walking towards the
+    /// root as soon as a recomputed subtree value is unchanged.
+    type Value: Copy + PartialEq;
 
     /// Returns the invariant value for the given node.
     fn get_node_value(node: &Self::Target) -> Self::Value;
@@ -180,10 +181,10 @@ pub trait WavlTreeAugmentedInvariantObserverTraits {
     fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value;
 
     /// Sets the node's subtree invariant value.
-    fn set_subtree_value(node: &mut Self::Target, val: Self::Value);
+    fn set_subtree_value(node: &Self::Target, val: Self::Value);
 
     /// Resets the node's subtree invariant value.
-    fn reset_subtree_value(node: &mut Self::Target);
+    fn reset_subtree_value(node: &Self::Target);
 }
 
 /// A WAVL tree observer that maintains augmented invariants.
@@ -218,19 +219,53 @@ where
     Traits: WavlTreeAugmentedInvariantObserverTraits,
     Traits::Target: WavlTreeContainable<Traits::Target, Tag>,
 {
-    unsafe fn recompute_until_root(&self, mut current: *mut Traits::Target) {
+    /// Recomputes the subtree values from `current` up to the root.
+    ///
+    /// With `stop_when_unchanged`, the walk ends at the first node whose value does not change:
+    /// a subtree value is a pure function of the node's own value and its children's subtree
+    /// values, so once one ancestor is unchanged every ancestor above it is too. That holds only
+    /// if every node on the path still sits where its stored value was computed (true after an
+    /// insert or an in-place replace); an erase of a node with two children first swaps it with
+    /// its successor, whose stale stored value now sits above the invalidation point, so erase
+    /// must walk all the way to the root. In the common case of inserting a node that does not
+    /// change its parent's subtree value, the early-out stops after a single step.
+    ///
+    /// # Safety
+    ///
+    /// `current` must be null, the sentinel, or a valid pointer to a node linked into the tree
+    /// whose ancestor chain is intact.
+    unsafe fn recompute_until_root(
+        &self,
+        mut current: *mut Traits::Target,
+        stop_when_unchanged: bool,
+    ) {
         while valid_sentinel_ptr(current) {
+            // SAFETY: `current` is non-null and non-sentinel, so by the caller's contract it is a
+            // valid node in the tree, as is every parent reached from it.
             let current_ref = unsafe { &*current };
             let node_value = Traits::get_node_value(current_ref);
             let parent = current_ref.get_node().get_parent();
-            unsafe {
-                self.update_subtree_value(node_value, current);
+            // SAFETY: As above.
+            let changed = unsafe { self.update_subtree_value(node_value, current) };
+            if stop_when_unchanged && !changed {
+                break;
             }
             current = parent;
         }
     }
 
-    unsafe fn update_subtree_value(&self, mut value: Traits::Value, node: *mut Traits::Target) {
+    /// Recomputes `node`'s subtree value from `value` and its children's subtree values, writing
+    /// it back only if it changed. Returns whether it changed.
+    ///
+    /// # Safety
+    ///
+    /// `node` must be a valid, non-null, non-sentinel pointer to a node linked into the tree.
+    unsafe fn update_subtree_value(
+        &self,
+        mut value: Traits::Value,
+        node: *mut Traits::Target,
+    ) -> bool {
+        // SAFETY: The caller guarantees `node` is a valid node in the tree.
         let node_ref = unsafe { &*node };
         let ns = node_ref.get_node();
 
@@ -248,8 +283,11 @@ where
             value = Traits::combine_values(value, right_val);
         }
 
-        let node_mut = unsafe { &mut *node };
-        Traits::set_subtree_value(node_mut, value);
+        if Traits::get_subtree_value(node_ref) == value {
+            return false;
+        }
+        Traits::set_subtree_value(node_ref, value);
+        true
     }
 }
 
@@ -269,13 +307,15 @@ where
     type Target = Traits::Target;
 
     fn record_insert(&self, node: *mut Self::Target) {
+        // SAFETY: `WavlTree` passes a valid, non-null, non-sentinel node pointer that has just
+        // been linked into the tree.
         let node_ref = unsafe { &*node };
         let parent = node_ref.get_node().get_parent();
         let val = Traits::get_node_value(node_ref);
-        let node_mut = unsafe { &mut *node };
-        Traits::set_subtree_value(node_mut, val);
+        Traits::set_subtree_value(node_ref, val);
         if valid_sentinel_ptr(parent) {
-            unsafe { self.recompute_until_root(parent) };
+            // SAFETY: `parent` is a valid node in the tree (non-null, non-sentinel).
+            unsafe { self.recompute_until_root(parent, true) };
         }
     }
 
@@ -287,23 +327,29 @@ where
 
     fn record_insert_replace(&self, node: *mut Self::Target, replacement: *mut Self::Target) {
         debug_assert!(ALLOW_REPLACE_COLLISION);
+        // SAFETY: `WavlTree` passes valid, non-null, non-sentinel pointers for both the node being
+        // replaced (still linked into the tree) and its replacement.
         let replacement_ref = unsafe { &*replacement };
 
-        let parent = unsafe {
-            self.update_subtree_value(Traits::get_node_value(replacement_ref), node);
-            let ns = (*node).get_node();
-            ns.get_parent()
-        };
-        if valid_sentinel_ptr(parent) {
+        // If `node`'s subtree value is unchanged by taking `replacement`'s value, so is every
+        // ancestor's, and the walk towards the root can be skipped entirely.
+        //
+        // SAFETY: `node` is still a valid node linked into the tree at this point.
+        let changed =
+            unsafe { self.update_subtree_value(Traits::get_node_value(replacement_ref), node) };
+        // SAFETY: As above.
+        let parent = unsafe { (*node).get_node().get_parent() };
+        if changed && valid_sentinel_ptr(parent) {
+            // SAFETY: `parent` is a valid node in the tree (non-null, non-sentinel).
             unsafe {
-                self.recompute_until_root(parent);
+                self.recompute_until_root(parent, true);
             }
         }
 
-        let replacement_mut = unsafe { &mut *replacement };
-        let node_mut = unsafe { &mut *node };
-        Traits::set_subtree_value(replacement_mut, Traits::get_subtree_value(node_mut));
-        Traits::reset_subtree_value(node_mut);
+        // SAFETY: `WavlTree` passes a valid, non-null, non-sentinel node pointer.
+        let node_ref = unsafe { &*node };
+        Traits::set_subtree_value(replacement_ref, Traits::get_subtree_value(node_ref));
+        Traits::reset_subtree_value(node_ref);
     }
 
     fn record_rotation(
@@ -343,19 +389,24 @@ where
             parent_value = Traits::combine_values(parent_value, right_val);
         }
 
-        let pivot_mut = unsafe { &mut *pivot };
-        Traits::set_subtree_value(pivot_mut, parent_subtree_val);
+        // SAFETY: `WavlTree` passes a valid, non-null, non-sentinel pivot pointer.
+        let pivot_ref = unsafe { &*pivot };
+        Traits::set_subtree_value(pivot_ref, parent_subtree_val);
 
-        let parent_mut = unsafe { &mut *parent };
-        Traits::set_subtree_value(parent_mut, parent_value);
+        Traits::set_subtree_value(parent_ref, parent_value);
     }
 
     fn record_erase(&self, node: *mut Self::Target, invalidated: *mut Self::Target) {
+        // No early-out here: see `recompute_until_root` for why the successor swap makes it
+        // unsound on erase.
         if valid_sentinel_ptr(invalidated) {
-            unsafe { self.recompute_until_root(invalidated) };
+            // SAFETY: `WavlTree` passes `invalidated` as the deepest node still linked into the
+            // tree whose subtree may have changed; it is non-null and non-sentinel here.
+            unsafe { self.recompute_until_root(invalidated, false) };
         }
-        let node_mut = unsafe { &mut *node };
-        Traits::reset_subtree_value(node_mut);
+        // SAFETY: `WavlTree` passes a valid, non-null, non-sentinel node pointer.
+        let node_ref = unsafe { &*node };
+        Traits::reset_subtree_value(node_ref);
     }
 }
 
@@ -2301,13 +2352,14 @@ where
     S: SizeTracker,
     O: WavlTreeObserver<Target = P::Target>,
 {
-    /// Returns a reference to the current element, or `None` if the cursor is at the sentinel.
+    /// Returns a reference to the current element, or `None` if the cursor is not at a valid
+    /// element (null or the sentinel).
     pub fn get(&self) -> Option<&'a P::Target> {
-        if is_sentinel_ptr(self.current) {
+        if !valid_sentinel_ptr(self.current) {
             None
         } else {
-            // SAFETY: `self.current` is checked to be non-sentinel.
-            // The lifetime `'a` is tied to the `WavlTree` borrow.
+            // SAFETY: `self.current` is checked to be non-null and non-sentinel, so it points to
+            // a node in the tree. The lifetime `'a` is tied to the `WavlTree` borrow.
             unsafe { Some(&*self.current) }
         }
     }
@@ -2391,15 +2443,15 @@ where
     S: SizeTracker,
     O: WavlTreeObserver<Target = P::Target>,
 {
-    /// Returns a reference to the current element.
+    /// Returns a reference to the current element, or `None` if the cursor is not at a valid
+    /// element (null or the sentinel).
     pub fn get(&self) -> Option<&P::Target> {
-        if is_sentinel_ptr(self.current) {
+        if !valid_sentinel_ptr(self.current) {
             None
         } else {
-            // SAFETY: `self.current` is checked to be non-sentinel (which implies it is a valid,
-            // non-null node in the tree because `current` is never null). Since `CursorMut` mutably
-            // borrows the tree, the node is guaranteed to be valid and dereferenceable for the
-            // lifetime of the reference.
+            // SAFETY: `self.current` is checked to be non-null and non-sentinel, so it points to
+            // a node in the tree. Since `CursorMut` mutably borrows the tree, the node is
+            // guaranteed to be valid and dereferenceable for the lifetime of the reference.
             unsafe { Some(&*self.current) }
         }
     }
@@ -3135,6 +3187,24 @@ mod tests {
                     assert_eq!($get_val(cursor_mut.get().unwrap()), 30);
 
                     tree.clear();
+                }
+
+                #[test]
+                fn test_empty_tree_cursors() {
+                    stack_pin_init!(let tree = WavlTree::<i32, $ptr_type>::new());
+                    // SAFETY: `tree` is never moved out of `tree` after pinning.
+                    let tree = unsafe { tree.get_unchecked_mut() };
+
+                    // On an empty tree the root is null while the extremes are the sentinel;
+                    // neither is a valid element.
+                    assert!(!tree.root_cursor().is_valid());
+                    assert!(tree.root_cursor().get().is_none());
+                    assert!(!tree.front_cursor().is_valid());
+                    assert!(tree.front_cursor().get().is_none());
+                    assert!(!tree.back_cursor().is_valid());
+                    assert!(tree.back_cursor().get().is_none());
+                    assert!(tree.cursor_mut().get().is_none());
+                    assert!(tree.find_cursor(&1).get().is_none());
                 }
 
                 #[test]
@@ -4403,14 +4473,14 @@ mod tests {
     #[derive(WavlTreeContainable, Recyclable)]
     struct TestAugmentedObject {
         value: i32,
-        subtree_sum: i32,
+        subtree_sum: core::cell::Cell<i32>,
         #[wavl_node]
         node: WavlTreeNode<TestAugmentedObject>,
     }
 
     impl TestAugmentedObject {
         fn new(value: i32) -> Self {
-            Self { value, subtree_sum: 0, node: WavlTreeNode::new() }
+            Self { value, subtree_sum: core::cell::Cell::new(0), node: WavlTreeNode::new() }
         }
     }
 
@@ -4431,19 +4501,19 @@ mod tests {
         }
 
         fn get_subtree_value(node: &Self::Target) -> Self::Value {
-            node.subtree_sum
+            node.subtree_sum.get()
         }
 
         fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value {
             a + b
         }
 
-        fn set_subtree_value(node: &mut Self::Target, val: Self::Value) {
-            node.subtree_sum = val;
+        fn set_subtree_value(node: &Self::Target, val: Self::Value) {
+            node.subtree_sum.set(val);
         }
 
-        fn reset_subtree_value(node: &mut Self::Target) {
-            node.subtree_sum = 0;
+        fn reset_subtree_value(node: &Self::Target) {
+            node.subtree_sum.set(0);
         }
     }
 
@@ -4472,7 +4542,8 @@ mod tests {
             let right_sum = verify_subtree_sums(ns.get_right());
             let expected_sum = node_ref.value + left_sum + right_sum;
             assert_eq!(
-                node_ref.subtree_sum, expected_sum,
+                node_ref.subtree_sum.get(),
+                expected_sum,
                 "Subtree sum mismatch at node {}",
                 node_ref.value
             );
@@ -4492,7 +4563,7 @@ mod tests {
 
         // Verify final sum at root
         let expected_total_sum: i32 = values.iter().sum();
-        assert_eq!(unsafe { &*tree.root }.subtree_sum, expected_total_sum);
+        assert_eq!(unsafe { &*tree.root }.subtree_sum.get(), expected_total_sum);
 
         // Erase some nodes
         let to_erase = [15, 5, 20];
@@ -4503,7 +4574,7 @@ mod tests {
             assert_eq!(erased.as_ref().unwrap().value, val);
             current_sum -= val;
             if !tree.root.is_null() {
-                assert_eq!(unsafe { &*tree.root }.subtree_sum, current_sum);
+                assert_eq!(unsafe { &*tree.root }.subtree_sum.get(), current_sum);
                 verify_subtree_sums(tree.root);
             }
         }
@@ -4541,14 +4612,18 @@ mod tests {
     #[derive(WavlTreeContainable, Recyclable)]
     struct TestNonCommutativeObject {
         value: i32,
-        subtree_val: NonCommutativeVal,
+        subtree_val: core::cell::Cell<NonCommutativeVal>,
         #[wavl_node]
         node: WavlTreeNode<TestNonCommutativeObject>,
     }
 
     impl TestNonCommutativeObject {
         fn new(value: i32) -> Self {
-            Self { value, subtree_val: NonCommutativeVal::default(), node: WavlTreeNode::new() }
+            Self {
+                value,
+                subtree_val: core::cell::Cell::new(NonCommutativeVal::default()),
+                node: WavlTreeNode::new(),
+            }
         }
     }
 
@@ -4569,19 +4644,19 @@ mod tests {
         }
 
         fn get_subtree_value(node: &Self::Target) -> Self::Value {
-            node.subtree_val
+            node.subtree_val.get()
         }
 
         fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value {
             NonCommutativeVal::combine(a, b)
         }
 
-        fn set_subtree_value(node: &mut Self::Target, val: Self::Value) {
-            node.subtree_val = val;
+        fn set_subtree_value(node: &Self::Target, val: Self::Value) {
+            node.subtree_val.set(val);
         }
 
-        fn reset_subtree_value(node: &mut Self::Target) {
-            node.subtree_val = NonCommutativeVal::default();
+        fn reset_subtree_value(node: &Self::Target) {
+            node.subtree_val.set(NonCommutativeVal::default());
         }
     }
 
@@ -4615,7 +4690,8 @@ mod tests {
                 right_val,
             );
             assert_eq!(
-                node_ref.subtree_val, expected,
+                node_ref.subtree_val.get(),
+                expected,
                 "Subtree non-commutative value mismatch at node {}",
                 node_ref.value
             );
@@ -4641,7 +4717,7 @@ mod tests {
             if !tree.root.is_null() {
                 verify_subtree_values(tree.root);
                 let expected = expected_in_order(&values[..=i]);
-                assert_eq!(unsafe { &*tree.root }.subtree_val, expected);
+                assert_eq!(unsafe { &*tree.root }.subtree_val.get(), expected);
             }
         }
 
@@ -4656,7 +4732,7 @@ mod tests {
             if !tree.root.is_null() {
                 verify_subtree_values(tree.root);
                 let expected = expected_in_order(&remaining);
-                assert_eq!(unsafe { &*tree.root }.subtree_val, expected);
+                assert_eq!(unsafe { &*tree.root }.subtree_val.get(), expected);
             }
         }
     }

@@ -5,63 +5,39 @@
 // https://opensource.org/licenses/MIT
 
 #include <assert.h>
+#include <lib/kconcurrent/chainlock.h>
+#include <lib/ktrace.h>
 
 #include <kernel/ffi.h>
 #include <kernel/wait.h>
-#include <kernel/wait_queue_internal.h>
+#include <kernel/wait_ffi.h>
 #include <ktl/utility.h>
+
+static_assert(static_cast<uint32_t>(ChainLock::Result::Ok) == 0);
+static_assert(static_cast<uint32_t>(ChainLock::Result::Retry) == 1);
+static_assert(static_cast<uint32_t>(ChainLock::Result::Backoff) == 2);
+static_assert(static_cast<uint32_t>(ChainLock::Result::Cycle) == 3);
+
+#ifndef WAIT_QUEUE_DEPTH_TRACING_ENABLED
+#define WAIT_QUEUE_DEPTH_TRACING_ENABLED false
+#endif
+
+namespace {
+
+inline void WqTraceDepth(const WaitQueueCollection* collection, uint32_t depth) {
+  if constexpr (WAIT_QUEUE_DEPTH_TRACING_ENABLED) {
+    KTrace::Probe(KTrace::Context::Cpu, "wq_depth"_intern, reinterpret_cast<uint64_t>(collection),
+                  static_cast<uint64_t>(depth));
+  }
+}
+
+}  // namespace
 
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_wait_queue_collection_insert(
-    WaitQueueCollection* collection, Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(collection != nullptr);
-  DEBUG_ASSERT(thread != nullptr);
-  collection->Insert(thread);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_wait_queue_collection_remove(
-    WaitQueueCollection* collection, Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(collection != nullptr);
-  DEBUG_ASSERT(thread != nullptr);
-  collection->Remove(thread);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE SchedDuration cpp_wait_queue_collection_min_inheritable_relative_deadline(
-    const WaitQueueCollection* collection) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(collection != nullptr);
-  return collection->MinInheritableRelativeDeadline();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE SchedulerState::WaitQueueInheritedSchedulerState*
-cpp_wait_queue_collection_find_inherited_scheduler_state_storage(WaitQueueCollection* collection)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(collection != nullptr);
-  return collection->FindInheritedSchedulerStateStorage();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-//
-// These two shims reach through `WaitQueueCollection::threads()` rather than forwarding to a
-// single `WaitQueueCollection` method. They are the iterator plumbing for the Rust
-// `WaitQueueCollection::threads()` iterator, which only needs the first thread and each thread's
-// successor (the collection is only read, while its wait queue's lock is held).
-FFI_ALWAYS_INLINE Thread* cpp_wait_queue_collection_threads_begin(
-    const WaitQueueCollection* collection) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(collection != nullptr);
-  return collection->threads().begin().CopyPointer();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE Thread* cpp_wait_queue_collection_threads_next(
-    const WaitQueueCollection* collection, const Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-  DEBUG_ASSERT(collection != nullptr);
-  DEBUG_ASSERT(thread != nullptr);
-  return (++collection->threads().make_iterator(*thread)).CopyPointer();
+FFI_ALWAYS_INLINE void cpp_wq_trace_depth(const WaitQueueCollection* collection, uint32_t depth) {
+  WqTraceDepth(collection, depth);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

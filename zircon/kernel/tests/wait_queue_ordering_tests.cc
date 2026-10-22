@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/fit/defer.h>
+#include <lib/kconcurrent/chainlock_transaction.h>
 #include <lib/unittest/unittest.h>
 #include <zircon/compiler.h>
 
@@ -51,7 +52,9 @@ struct WaitQueueOrderingTests {
     ASSERT_TRUE(ac.check());
     auto cleanup = fit::defer([&wqc]() __TA_NO_THREAD_SAFETY_ANALYSIS {
       while (wqc->Count() > 0) {
-        wqc->Remove(wqc->PeekFront());
+        Thread* t = wqc->PeekFront();
+        SingleChainLockGuard guard{IrqSaveOption, t->get_lock(), CLT_TAG("wq_order")};
+        wqc->Remove(t);
       }
     });
 
@@ -74,33 +77,51 @@ struct WaitQueueOrderingTests {
     // Add a fair thread to the collection, which is at the front of the queue
     // by definition.
     ResetFair(t0, kDefaultWeight, now);
-    wqc->Insert(&t0);
+    {
+      SingleChainLockGuard guard{IrqSaveOption, t0.get_lock(), CLT_TAG("wq_order")};
+      wqc->Insert(&t0);
+    }
     ASSERT_EQ(&t0, wqc->PeekFront());
 
     // Add a higher weight thread with the same start time to the collection.
     // The thread selected should have a lower address, since the finish times
     // are the same.
     ResetFair(t1, kHighWeight, now);
-    wqc->Insert(&t1);
+    {
+      SingleChainLockGuard guard{IrqSaveOption, t1.get_lock(), CLT_TAG("wq_order")};
+      wqc->Insert(&t1);
+    }
     ASSERT_EQ(&t0, wqc->PeekFront());
 
     // Reduce the start and finish times of the thread we just added and try
     // again. The thread with the earlier finish time should be selected.
-    wqc->Remove(&t1);
+    {
+      SingleChainLockGuard guard{IrqSaveOption, t1.get_lock(), CLT_TAG("wq_order")};
+      wqc->Remove(&t1);
+    }
     ResetFair(t1, kLowWeight, now - SchedNs(1));
-    wqc->Insert(&t1);
+    {
+      SingleChainLockGuard guard{IrqSaveOption, t1.get_lock(), CLT_TAG("wq_order")};
+      wqc->Insert(&t1);
+    }
     ASSERT_EQ(&t1, wqc->PeekFront());
 
     // Add a deadline thread whose absolute deadline is far in the future.
     // The thread with the earliest finish time should be selected.
     ResetDeadline(t2, kLongDeadline, now);
-    wqc->Insert(&t2);
+    {
+      SingleChainLockGuard guard{IrqSaveOption, t2.get_lock(), CLT_TAG("wq_order")};
+      wqc->Insert(&t2);
+    }
     ASSERT_EQ(&t1, wqc->PeekFront());
 
     // Add another deadline thread with a shorter relative deadline. This
     // should become the new choice.
     ResetDeadline(t3, kShortDeadline, now);
-    wqc->Insert(&t3);
+    {
+      SingleChainLockGuard guard{IrqSaveOption, t3.get_lock(), CLT_TAG("wq_order")};
+      wqc->Insert(&t3);
+    }
     ASSERT_EQ(&t3, wqc->PeekFront());
 
     // Finally, unwind by "unblocking" all of the threads from the queue and
@@ -109,7 +130,10 @@ struct WaitQueueOrderingTests {
     for (Thread* expected_thread : expected_order) {
       Thread* actual_thread = wqc->PeekFront();
       ASSERT_EQ(expected_thread, actual_thread);
-      wqc->Remove(actual_thread);
+      {
+        SingleChainLockGuard guard{IrqSaveOption, actual_thread->get_lock(), CLT_TAG("wq_order")};
+        wqc->Remove(actual_thread);
+      }
     }
     // And the queue should finally be empty now.
     ASSERT_NULL(wqc->PeekFront());
@@ -125,6 +149,7 @@ struct WaitQueueOrderingTests {
   static constexpr SchedDuration kShortDeadline = SchedUs(500);
   static constexpr SchedDuration kLongDeadline = SchedMs(20);
 
+ public:
   static void ResetFair(Thread& t, SchedWeight weight,
                         SchedTime start_time) __TA_NO_THREAD_SAFETY_ANALYSIS {
     SchedulerState& ss = t.scheduler_state();
@@ -165,3 +190,52 @@ struct WaitQueueOrderingTests {
 UNITTEST_START_TESTCASE(wq_order_tests)
 UNITTEST("basic", WaitQueueOrderingTests::Test)
 UNITTEST_END_TESTCASE(wq_order_tests, "wq_order", "WaitQueue ordering tests")
+
+// Test-only shims for the Rust `wait_queue` ktests (//zircon/kernel/kernel/wait_queue.rs).
+extern "C" {
+Thread* cpp_wait_queue_test_thread_create();
+void cpp_wait_queue_test_thread_destroy(Thread* t);
+void cpp_wait_queue_test_reset_fair(Thread* t, int64_t weight, int64_t start_time);
+void cpp_wait_queue_test_reset_deadline(Thread* t, int64_t rel_deadline, int64_t start_time);
+uint32_t cpp_wait_queue_test_tree_size(const WaitQueueCollection* collection);
+Thread* cpp_wait_queue_test_tree_front(const WaitQueueCollection* collection);
+const Thread* cpp_wait_queue_test_tree_nth(const WaitQueueCollection* collection, size_t n);
+}  // extern "C"
+
+extern "C" {
+Thread* cpp_wait_queue_test_thread_create() {
+  fbl::AllocChecker ac;
+  Thread* t = new (&ac) Thread{};
+  if (!ac.check()) {
+    return nullptr;
+  }
+  return t;
+}
+
+void cpp_wait_queue_test_thread_destroy(Thread* t) { delete t; }
+
+void cpp_wait_queue_test_reset_fair(Thread* t, int64_t weight, int64_t start_time) {
+  WaitQueueOrderingTests::ResetFair(*t, SchedWeight{weight}, SchedTime{start_time});
+}
+
+void cpp_wait_queue_test_reset_deadline(Thread* t, int64_t rel_deadline, int64_t start_time) {
+  WaitQueueOrderingTests::ResetDeadline(*t, SchedDuration{rel_deadline}, SchedTime{start_time});
+}
+
+uint32_t cpp_wait_queue_test_tree_size(const WaitQueueCollection* collection) {
+  return collection->Count();
+}
+
+Thread* cpp_wait_queue_test_tree_front(const WaitQueueCollection* collection) {
+  return const_cast<WaitQueueCollection*>(collection)->PeekFront();
+}
+
+// Walks the C++ view of the tree in order and returns the |n|th thread, or nullptr past the end.
+const Thread* cpp_wait_queue_test_tree_nth(const WaitQueueCollection* collection, size_t n) {
+  auto it = collection->threads().begin();
+  const auto end = collection->threads().end();
+  for (; it != end && n > 0; ++it, --n) {
+  }
+  return it == end ? nullptr : &*it;
+}
+}  // extern "C"
