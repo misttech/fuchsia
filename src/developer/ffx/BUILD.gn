@@ -289,11 +289,14 @@ group("tests") {
     "core:tests($host_toolchain)",
     "lib:tests($host_toolchain)",
     "playground:tests($host_toolchain)",
+    "plugins/emulator/common:ffx_emulator_common_test($host_toolchain)",
     "plugins/package:tests($host_toolchain)",
     "plugins/package/far/extract:ffx_package_far_extract_test($host_toolchain)",
     "plugins/target:tests($host_toolchain)",
     "plugins/trace:tests($host_toolchain)",
+    "plugins/version:ffx_version_test($host_toolchain)",
     "tests($host_toolchain)",
+    "tools/bluetooth/common:ffx_bluetooth_common_test($host_toolchain)",
   ]
 }
 
