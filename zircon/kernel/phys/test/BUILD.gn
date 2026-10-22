@@ -576,24 +576,6 @@ efi_shell_test("efi-shell-smoke-test") {
   contents = [ "echo \"$boot_test_success_string\"" ]
 }
 
-kernel_package("physboot-zbi-kernel-test-data") {
-  visibility = [ ":*" ]
-  testonly = true
-
-  prefix = ""
-  deps = [ "..:physboot-zbi-kernel" ]
-}
-
-zbi("physboot-zbi-kernel-test-zircon") {
-  visibility = [ ":*" ]
-  testonly = true
-
-  deps = [
-    ":physboot-zbi-kernel-test-data($phys_toolchain)",
-    default_test_vmzircon_label,
-  ]
-}
-
 kernel_elf_binary("physboot-hello-world-test") {
   testonly = true
   install_name = "vmzircon"
