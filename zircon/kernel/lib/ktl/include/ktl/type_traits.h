@@ -116,6 +116,9 @@ using std::is_trivially_copy_assignable_v;
 using std::is_trivially_copy_constructible;
 using std::is_trivially_copy_constructible_v;
 
+using std::is_trivially_copyable;
+using std::is_trivially_copyable_v;
+
 using std::is_trivially_constructible;
 using std::is_trivially_constructible_v;
 

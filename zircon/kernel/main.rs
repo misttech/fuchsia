@@ -205,6 +205,10 @@ pub mod power_moonflower;
 #[path = "dev/power/motmot/motmot.rs"]
 pub mod power_motmot;
 
+#[cfg(target_arch = "aarch64")]
+#[path = "dev/timer/armv7_mmio_timer/armv7_mmio_timer.rs"]
+pub mod armv7_mmio_timer;
+
 // Test modules:
 
 #[cfg(ktest)]
