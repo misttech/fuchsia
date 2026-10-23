@@ -8,6 +8,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/sys/time/lib/push-source:push-source-tests",
         "//src/sys/time/timekeeper/persistence:time-persistence-tests",
     ],
 )
