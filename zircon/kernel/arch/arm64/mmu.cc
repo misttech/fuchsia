@@ -20,7 +20,6 @@
 #include <lib/heap.h>
 #include <lib/instrumentation/asan.h>
 #include <lib/ktrace.h>
-#include <lib/lazy_init/lazy_init.h>
 #include <lib/page/size.h>
 #include <lib/page_cache.h>
 #include <stdlib.h>
@@ -30,6 +29,7 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <arch/arm64/arm64_ffi.h>
 #include <arch/arm64/hypervisor/el2_state.h>
 #include <arch/aspace.h>
 #include <kernel/auto_preempt_disabler.h>
@@ -44,8 +44,6 @@
 #include <vm/physmap.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
-
-#include "asid_allocator.h"
 
 #include <ktl/enforce.h>
 
@@ -121,8 +119,6 @@ KCOUNTER(cm_flush_all, "mmu.consistency_manager.flush_all")
 KCOUNTER(cm_flush_all_replacing, "mmu.consistency_manager.flush_all_replacing")
 KCOUNTER(cm_single_tlb_invalidates, "mmu.consistency_manager.single_tlb_invalidate")
 KCOUNTER(cm_flush, "mmu.consistency_manager.flush")
-
-lazy_init::LazyInit<AsidAllocator> asid;
 
 KCOUNTER(vm_mmu_protect_make_execute_calls, "vm.mmu.protect.make_execute_calls")
 KCOUNTER(vm_mmu_protect_make_execute_pages, "vm.mmu.protect.make_execute_pages")
@@ -1928,12 +1924,11 @@ zx_status_t ArmArchVmAspace::Init() {
       page_size_shift_ = MMU_USER_PAGE_SIZE_SHIFT;
 
       if (feat_asid_enabled) {
-        auto status = asid->Alloc();
-        if (status.is_error()) {
+        zx_status_t status = rust_arm64_asid_allocator_alloc(asid_);
+        if (status != ZX_OK) {
           printf("ARM: out of ASIDs!\n");
-          return status.status_value();
+          return status;
         }
-        asid_ = status.value();
       } else {
         // Initialize to a valid value even when disabled to distinguish from the destroyed case.
         asid_ = MMU_ARM64_FIRST_USER_ASID;
@@ -2238,8 +2233,8 @@ zx_status_t ArmArchVmAspace::DestroyIndividual() {
   // Free any ASID.
   if (type_ == ArmAspaceType::kUser) {
     if (feat_asid_enabled) {
-      auto status = asid->Free(asid_);
-      ASSERT(status.is_ok());
+      zx_status_t status = rust_arm64_asid_allocator_free(asid_);
+      ASSERT(status == ZX_OK);
     } else {
       DEBUG_ASSERT(asid_ == MMU_ARM64_FIRST_USER_ASID);
     }
@@ -2545,7 +2540,7 @@ void arm64_mmu_early_init() {
   // After we've probed the feature set and parsed the boot options, initialize the asid
   // allocator.
   if (feat_asid_enabled) {
-    asid.Initialize();
+    rust_arm64_asid_allocator_init();
   } else {
     dprintf(INFO, "mmu: not using ASIDs\n");
   }

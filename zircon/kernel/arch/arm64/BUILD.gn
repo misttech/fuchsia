@@ -90,7 +90,6 @@ if (toolchain_environment == "kernel.phys" ||
     sources = [
       "arch.cc",
       "arm64_ffi.cc",
-      "asid_allocator.cc",
       "asm.S",
       "cache-ops.S",
       "coresight.cc",
@@ -115,7 +114,6 @@ if (toolchain_environment == "kernel.phys" ||
     deps = [
       "user-copy",
       "//sdk/lib/fit",
-      "//src/lib/lazy_init",
       "//zircon/kernel/dev/coresight",
       "//zircon/kernel/dev/interrupt/gic/common",
       "//zircon/kernel/dev/iommu/arm_smmu",
@@ -141,7 +139,6 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/phys/handoff",
       "//zircon/kernel/platform:headers",
       "//zircon/kernel/vm",
-      "//zircon/system/ulib/bitmap",
       "//zircon/system/ulib/fbl",
       "//zircon/system/ulib/pretty",
       "//zircon/system/ulib/zx",
@@ -187,6 +184,9 @@ if (toolchain_environment == "kernel.phys" ||
     var_allowlist = [
       "KERNEL_ASPACE_BASE",
       "KERNEL_ASPACE_SIZE",
+      "MMU_ARM64_FIRST_USER_ASID",
+      "MMU_ARM64_MAX_USER_ASID_16",
+      "MMU_ARM64_MAX_USER_ASID_8",
       "MMU_GUEST_SIZE_SHIFT",
       "USER_ASPACE_BASE",
       "USER_ASPACE_SIZE",
@@ -316,6 +316,8 @@ if (toolchain_environment == "kernel.phys" ||
     output_name = "arch_arm64"
     source_root = "src/mod.rs"
     sources = [
+      "src/asid_allocator.rs",
+      "src/asid_allocator_ffi.rs",
       "src/cache.rs",
       "src/crashlog.rs",
       "src/feature.rs",
@@ -345,32 +347,34 @@ if (toolchain_environment == "kernel.phys" ||
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//src/lib/kprint",
+      "//src/lib/lazy_init:lazy_init_rs",
       "//src/lib/lockdep/rust:lockdep",
       "//src/lib/regio",
+      "//third_party/rust_crates:pin-init",
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
+      "//zircon/kernel/lib/id_allocator:id-allocator-rs",
       "//zircon/kernel/lib/init:init_rust",
       "//zircon/kernel/lib/libc:rust",
       "//zircon/kernel/lib/user_copy",
       "//zircon/kernel/phys/handoff:handoff-rs",
       "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs",
     ]
-    test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
+    test_deps = [
+      "//src/lib/kalloc",
+      "//zircon/kernel/lib/unittest:unittest-rs",
+    ]
   }
 
   source_set("tests") {
     testonly = true
-    sources = [
-      "asid_allocator_tests.cc",
-      "mmu_tests.cc",
-    ]
+    sources = [ "mmu_tests.cc" ]
     deps = [
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/unittest",
       "//zircon/kernel/vm",
-      "//zircon/system/ulib/bitmap",
     ]
   }
 
