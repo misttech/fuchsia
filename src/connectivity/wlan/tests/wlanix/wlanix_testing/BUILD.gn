@@ -8,17 +8,13 @@ python_library("wlanix_testing") {
   testonly = true
   sources = [
     "__init__.py",
-    "base_test.py",
     "fidl_servers.py",
     "nl80211.py",
   ]
   library_deps = [
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
     "//src/developer/fuchsia-controller:fuchsia_controller_py",
-    "//src/testing/end_to_end/antlion",
     "//src/testing/end_to_end/honeydew",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
-    "//src/testing/end_to_end/mobly_controller/legacy_access_point",
     "//src/testing/end_to_end/mobly_controller/openwrt_access_point",
     "//third_party/mobly",
   ]
