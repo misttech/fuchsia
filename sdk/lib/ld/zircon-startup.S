@@ -13,7 +13,7 @@
 // the three argument registers in place: the same two arguments received at
 // process start, and the third word returned by Startld.
 
-.function _start, global
+.function _start, global, callgraph=direct
 
   // This can assume the sp is already aligned to 16 by the kernel.
 
@@ -36,7 +36,7 @@
   .cfi_rel_offset x0, 16 // These are above those two, further from the SP.
   .cfi_rel_offset x1, 24
 
-  bl StartLd
+  callgraph.call StartLd
 
   mov x16, x0  // User entry point returned in x0; stash this in x16.
   mov x2, x1   // Third user argument returned in x1.
@@ -67,7 +67,7 @@
   sd a1, 8(sp)
   .cfi_rel_offset a1, 8
 
-  call StartLd
+  callgraph.call StartLd
 
   mv t1, a0  // User entry point returned in a0; stash this in t1.
   mv a2, a1  // Third user argument returned in a1.
@@ -102,7 +102,7 @@
   .cfi_adjust_cfa_offset 8
   .cfi_rel_offset %rsi, 0
 
-  call StartLd
+  callgraph.call StartLd
 
   // The user entry point was returned in %rax.  Restore the original first and
   // second user arguments.  The third user argument was returned in %rdx, so

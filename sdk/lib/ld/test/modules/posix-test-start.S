@@ -12,43 +12,46 @@
 // in-process caller.  In the separate-process version, the return value is
 // passed to _exit.
 
-.function _start, global
+.function _start, global, callgraph=direct
 
   // This can assume the sp is already aligned to 16 by the kernel.
 
 #if defined(__aarch64__)
 
 #ifdef IN_PROCESS_TEST
-  b TestStart
+  .llvm.stack_size 0
+  callgraph.tail TestStart
 #else
   .prologue.fp
-  bl TestStart
+  callgraph.tail TestStart
   // Return value in x0 is argument.
-  bl _exit
+  callgraph.tail _exit
   assert.fail
 #endif
 
 #elif defined(__arm__)
 
 #ifdef IN_PROCESS_TEST
-  b TestStart
+  .llvm.stack_size 0
+  callgraph.tail TestStart
 #else
   // .prologue.fp
-  bl TestStart
+  callgraph.tail TestStart
   // Return value in r0 is argument.
-  bl _exit
+  callgraph.tail _exit
   assert.fail
 #endif
 
 #elif defined(__riscv)
 
 #ifdef IN_PROCESS_TEST
-  b TestStart
+  .llvm.stack_size 0
+  callgraph.tail TestStart
 #else
   .prologue.fp
-  call TestStart
+  callgraph.call TestStart
   // Return value in a0 is argument.
-  call _exit
+  callgraph.call _exit
   assert.fail
 #endif
 
@@ -58,17 +61,18 @@
   // If called by ld-startup-tests.cc code, the return address is already in
   // the word just below %rsp.  Simulate what calling TestStart directly would
   // do so its value is returned to the caller.
+  .llvm.stack_size 8
   sub $8, %rsp
-  jmp TestStart
+  callgraph.tail TestStart
 #else
   // There's no caller so push a placeholder return address to appear in
   // the frame pointer record.
   pushq $0
   .prologue.fp
-  call TestStart
+  callgraph.call TestStart
   // Move the return value into the argument register.
   mov %rax, %rdi
-  call _exit
+  callgraph.call _exit
   assert.fail
 #endif
 
