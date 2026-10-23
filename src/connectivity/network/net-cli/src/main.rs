@@ -8,7 +8,6 @@ use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_net_debug as fdebug;
 use fidl_fuchsia_net_dhcp as fdhcp;
 use fidl_fuchsia_net_filter as ffilter;
-use fidl_fuchsia_net_filter_deprecated as ffilter_deprecated;
 use fidl_fuchsia_net_interfaces as finterfaces;
 use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
 use fidl_fuchsia_net_name as fname;
@@ -108,15 +107,6 @@ impl net_cli::ServiceConnector<froot::FilterMarker> for Connector {
 impl net_cli::ServiceConnector<fdhcp::Server_Marker> for Connector {
     async fn connect(&self) -> Result<<fdhcp::Server_Marker as ProtocolMarker>::Proxy, Error> {
         self.connect_to_exposed_protocol::<fdhcp::Server_Marker>(DHCPD_MONIKER).await
-    }
-}
-
-#[async_trait::async_trait]
-impl net_cli::ServiceConnector<ffilter_deprecated::FilterMarker> for Connector {
-    async fn connect(
-        &self,
-    ) -> Result<<ffilter_deprecated::FilterMarker as ProtocolMarker>::Proxy, Error> {
-        self.connect_to_exposed_protocol::<ffilter_deprecated::FilterMarker>(NETSTACK_MONIKER).await
     }
 }
 

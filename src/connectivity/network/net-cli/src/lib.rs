@@ -31,7 +31,6 @@ use flex_fuchsia_net as fnet;
 use flex_fuchsia_net_debug as fdebug;
 use flex_fuchsia_net_dhcp as fdhcp;
 use flex_fuchsia_net_filter as fnet_filter;
-use flex_fuchsia_net_filter_deprecated as ffilter_deprecated;
 use flex_fuchsia_net_interfaces as finterfaces;
 use flex_fuchsia_net_interfaces_admin as finterfaces_admin;
 use flex_fuchsia_net_name as fname;
@@ -45,7 +44,6 @@ use itertools::Itertools as _;
 use log::{info, warn};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, IpAddress as _, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet};
-use netfilter::FidlReturn as _;
 use prettytable::{Row, Table, format, row};
 use ser::AddressAssignmentState;
 use serde_json::json;
@@ -65,12 +63,6 @@ pub use capture::DEFAULT_CAPTURE_NAME;
 pub use opts::{
     Command, CommandEnum, UserFacingError, underlying_user_facing_error, user_facing_error,
 };
-
-macro_rules! filter_fidl {
-    ($method:expr, $context:expr) => {
-        $method.await.transform_result().context($context)
-    };
-}
 
 fn add_row(t: &mut Table, row: Row) {
     let _: &mut Row = t.add_row(row);
@@ -102,7 +94,6 @@ pub trait NetCliDepsConnector:
     + ServiceConnector<froot::RoutesV6Marker>
     + ServiceConnector<froot::FilterMarker>
     + ServiceConnector<fdhcp::Server_Marker>
-    + ServiceConnector<ffilter_deprecated::FilterMarker>
     + ServiceConnector<finterfaces::StateMarker>
     + ServiceConnector<finterfaces_admin::InstallerMarker>
     + ServiceConnector<fneighbor::ControllerMarker>
@@ -124,7 +115,6 @@ impl<O> NetCliDepsConnector for O where
         + ServiceConnector<froot::RoutesV6Marker>
         + ServiceConnector<froot::FilterMarker>
         + ServiceConnector<fdhcp::Server_Marker>
-        + ServiceConnector<ffilter_deprecated::FilterMarker>
         + ServiceConnector<finterfaces::StateMarker>
         + ServiceConnector<finterfaces_admin::InstallerMarker>
         + ServiceConnector<fneighbor::ControllerMarker>
@@ -161,11 +151,6 @@ where
         }
         CommandEnum::Rule(opts::Rule { rule_cmd: cmd }) => {
             do_rule(&mut out, cmd, connector).await.context("failed during rule command")
-        }
-        CommandEnum::FilterDeprecated(opts::FilterDeprecated { filter_cmd: cmd }) => {
-            do_filter_deprecated(out, cmd, connector)
-                .await
-                .context("failed during filter-deprecated command")
         }
         CommandEnum::Filter(opts::filter::Filter { filter_cmd: cmd }) => {
             filter::do_filter(out, cmd, connector).await.context("failed during filter command")
@@ -1477,50 +1462,6 @@ async fn do_rule_list<C: NetCliDepsConnector>(
     Ok(())
 }
 
-async fn do_filter_deprecated<C: NetCliDepsConnector, W: std::io::Write>(
-    mut out: W,
-    cmd: opts::FilterDeprecatedEnum,
-    connector: &C,
-) -> Result<(), Error> {
-    let filter = connect_with_context::<ffilter_deprecated::FilterMarker, _>(connector).await?;
-    match cmd {
-        opts::FilterDeprecatedEnum::GetRules(opts::FilterGetRules {}) => {
-            let (rules, generation): (Vec<ffilter_deprecated::Rule>, u32) =
-                filter.get_rules().await?;
-            writeln!(out, "{:?} (generation {})", rules, generation)?;
-        }
-        opts::FilterDeprecatedEnum::SetRules(opts::FilterSetRules { rules }) => {
-            let (_cur_rules, generation) = filter.get_rules().await?;
-            let rules = netfilter::parser_deprecated::parse_str_to_rules(&rules)?;
-            filter_fidl!(filter.update_rules(&rules, generation), "error setting filter rules")?;
-            info!("successfully set filter rules");
-        }
-        opts::FilterDeprecatedEnum::GetNatRules(opts::FilterGetNatRules {}) => {
-            let (rules, generation): (Vec<ffilter_deprecated::Nat>, u32) =
-                filter.get_nat_rules().await?;
-            writeln!(out, "{:?} (generation {})", rules, generation)?;
-        }
-        opts::FilterDeprecatedEnum::SetNatRules(opts::FilterSetNatRules { rules }) => {
-            let (_cur_rules, generation) = filter.get_nat_rules().await?;
-            let rules = netfilter::parser_deprecated::parse_str_to_nat_rules(&rules)?;
-            filter_fidl!(filter.update_nat_rules(&rules, generation), "error setting NAT rules")?;
-            info!("successfully set NAT rules");
-        }
-        opts::FilterDeprecatedEnum::GetRdrRules(opts::FilterGetRdrRules {}) => {
-            let (rules, generation): (Vec<ffilter_deprecated::Rdr>, u32) =
-                filter.get_rdr_rules().await?;
-            writeln!(out, "{:?} (generation {})", rules, generation)?;
-        }
-        opts::FilterDeprecatedEnum::SetRdrRules(opts::FilterSetRdrRules { rules }) => {
-            let (_cur_rules, generation) = filter.get_rdr_rules().await?;
-            let rules = netfilter::parser_deprecated::parse_str_to_rdr_rules(&rules)?;
-            filter_fidl!(filter.update_rdr_rules(&rules, generation), "error setting RDR rules")?;
-            info!("successfully set RDR rules");
-        }
-    }
-    Ok(())
-}
-
 async fn do_log<C: NetCliDepsConnector>(cmd: opts::LogEnum, connector: &C) -> Result<(), Error> {
     let log = connect_with_context::<fstack::LogMarker, _>(connector).await?;
     match cmd {
@@ -2095,15 +2036,6 @@ mod testutil {
                 .as_ref()
                 .cloned()
                 .ok_or_else(|| anyhow!("connector has no dhcp server instance"))
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl ServiceConnector<ffilter_deprecated::FilterMarker> for TestConnector {
-        async fn connect(
-            &self,
-        ) -> Result<<ffilter_deprecated::FilterMarker as ProtocolMarker>::Proxy, Error> {
-            Err(anyhow!("connect filter_deprecated unimplemented for test connector"))
         }
     }
 

@@ -10,26 +10,20 @@ rustc_library("netfilter") {
   edition = "2024"
 
   deps = [
-    "//src/lib/fidl/rust/fidl",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:pest",
     "//third_party/rust_crates:pest_derive",
   ]
 
   if (is_fuchsia) {
     deps += [
-      "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust_flex",
       "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex",
-      "//sdk/fidl/fuchsia.net.filter.deprecated:fuchsia.net.filter.deprecated_rust_flex",
       "//src/lib/network/fidl_fuchsia_net_filter_ext",
       "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
       "//src/lib/network/fidl_fuchsia_net_matchers_ext",
     ]
   } else {
     deps += [
-      "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust_fdomain_flex",
       "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain_flex",
-      "//sdk/fidl/fuchsia.net.filter.deprecated:fuchsia.net.filter.deprecated_rust_fdomain_flex",
       "//src/lib/network/fidl_fuchsia_net_filter_ext:fidl_fuchsia_net_filter_ext_fdomain",
       "//src/lib/network/fidl_fuchsia_net_interfaces_ext:fidl_fuchsia_net_interfaces_ext_fdomain",
       "//src/lib/network/fidl_fuchsia_net_matchers_ext:fidl_fuchsia_net_matchers_ext_fdomain",
@@ -42,11 +36,9 @@ rustc_library("netfilter") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   sources = [
-    "src/error.rs",
     "src/grammar.rs",
     "src/lib.rs",
     "src/parser.rs",
-    "src/parser_deprecated.rs",
     "src/util.rs",
   ]
 }

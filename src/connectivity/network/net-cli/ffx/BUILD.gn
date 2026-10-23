@@ -20,7 +20,6 @@ ffx_plugin("ffx_net") {
     "//sdk/fidl/fuchsia.net.debug:fuchsia.net.debug_rust_fdomain",
     "//sdk/fidl/fuchsia.net.dhcp:fuchsia.net.dhcp_rust_fdomain",
     "//sdk/fidl/fuchsia.net.filter:fuchsia.net.filter_rust_fdomain",
-    "//sdk/fidl/fuchsia.net.filter.deprecated:fuchsia.net.filter.deprecated_rust_fdomain",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust_fdomain",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust_fdomain",
     "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust_fdomain",

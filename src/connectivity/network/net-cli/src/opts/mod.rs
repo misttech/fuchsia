@@ -53,7 +53,6 @@ pub struct Command {
 #[argh(subcommand)]
 pub enum CommandEnum {
     Capture(capture::Capture),
-    FilterDeprecated(FilterDeprecated),
     Filter(filter::Filter),
     If(If),
     Log(Log),
@@ -63,64 +62,6 @@ pub enum CommandEnum {
     Dhcp(Dhcp),
     Dhcpd(dhcpd::Dhcpd),
     Dns(dns::Dns),
-}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "filter-deprecated")]
-/// commands for configuring packet filtering with the deprecated API
-pub struct FilterDeprecated {
-    #[argh(subcommand)]
-    pub filter_cmd: FilterDeprecatedEnum,
-}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand)]
-pub enum FilterDeprecatedEnum {
-    GetNatRules(FilterGetNatRules),
-    GetRdrRules(FilterGetRdrRules),
-    GetRules(FilterGetRules),
-    SetNatRules(FilterSetNatRules),
-    SetRdrRules(FilterSetRdrRules),
-    SetRules(FilterSetRules),
-}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "get-nat-rules")]
-/// gets nat rules
-pub struct FilterGetNatRules {}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "get-rdr-rules")]
-/// gets rdr rules
-pub struct FilterGetRdrRules {}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "get-rules")]
-/// gets filter rules
-pub struct FilterGetRules {}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "set-nat-rules")]
-/// sets nat rules (see the netfilter::parser library for the NAT rules format)
-pub struct FilterSetNatRules {
-    #[argh(positional)]
-    pub rules: String,
-}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "set-rdr-rules")]
-/// sets rdr rules (see the netfilter::parser library for the RDR rules format)
-pub struct FilterSetRdrRules {
-    #[argh(positional)]
-    pub rules: String,
-}
-
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
-#[argh(subcommand, name = "set-rules")]
-/// sets filter rules (see the netfilter::parser library for the rules format)
-pub struct FilterSetRules {
-    #[argh(positional)]
-    pub rules: String,
 }
 
 #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]

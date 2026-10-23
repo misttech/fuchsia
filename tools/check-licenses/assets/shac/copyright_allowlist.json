@@ -39,7 +39,6 @@
         "sdk/ctf/tests/pkg/fdio/test_bins/attempt_use_shell_outside_package.sh",
         "sdk/ctf/tests/pkg/fdio/test_bins/echo_arguments.sh",
         "sdk/ctf/tests/pkg/fidl/cpp/union_migration.test.fidl",
-        "sdk/fidl/fuchsia.net.filter.deprecated/BUILD.gn",
         "sdk/fidl/fuchsia.net.http/BUILD.gn",
         "sdk/fidl/fuchsia.net.name/BUILD.gn",
         "sdk/fidl/fuchsia.net.stackmigrationdeprecated/BUILD.gn",

@@ -7,7 +7,6 @@ use fdomain_fuchsia_developer_remotecontrol as fremotecontrol;
 use fdomain_fuchsia_net_debug as fdebug;
 use fdomain_fuchsia_net_dhcp as fdhcp;
 use fdomain_fuchsia_net_filter as ffilter;
-use fdomain_fuchsia_net_filter_deprecated as ffilter_deprecated;
 use fdomain_fuchsia_net_interfaces as finterfaces;
 use fdomain_fuchsia_net_interfaces_admin as finterfaces_admin;
 use fdomain_fuchsia_net_name as fname;
@@ -94,16 +93,6 @@ impl net_cli::ServiceConnector<fdhcp::Server_Marker> for FfxConnector<'_> {
         &self,
     ) -> Result<<fdhcp::Server_Marker as ProtocolMarker>::Proxy, anyhow::Error> {
         self.remotecontrol_connect::<fdhcp::Server_Marker>(DHCPD_MONIKER_SUFFIX).await
-    }
-}
-
-#[async_trait::async_trait]
-impl net_cli::ServiceConnector<ffilter_deprecated::FilterMarker> for FfxConnector<'_> {
-    async fn connect(
-        &self,
-    ) -> Result<<ffilter_deprecated::FilterMarker as ProtocolMarker>::Proxy, anyhow::Error> {
-        self.remotecontrol_connect::<ffilter_deprecated::FilterMarker>(NETSTACK_MONIKER_SUFFIX)
-            .await
     }
 }
 
