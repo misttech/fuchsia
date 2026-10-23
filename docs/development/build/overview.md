@@ -114,11 +114,11 @@ good runtime characteristics.
 
 This section does a full comparison between the build optimization flags:
 
-* [--debug](#--debug)
-* [--balanced](#--balanced)
-* [--release](#--release)
+* [--debug](#debug)
+* [--balanced](#balanced)
+* [--release](#release)
 
-##### `--debug` {#--debug}
+##### `--debug` {#debug}
 
 * **Primary goal:** Faster incremental compilation, full debuggability.
 * **Optimizations:** Minimal to none. Code is compiled to be as close to the
@@ -135,7 +135,7 @@ This section does a full comparison between the build optimization flags:
     accurately.
   * Rapid iteration is more important than runtime performance.
 
-##### `--balanced` {#--balanced}
+##### `--balanced` {#balanced}
 
 Note: This optimization flag is recommended default for faster iteration with
 good performance.
@@ -164,7 +164,7 @@ good performance.
   * To benefit from ongoing compile-time improvements, as this mode is actively
     being optimized for speed.
 
-##### `--release` {#--release}
+##### `--release` {#release}
 
 * **Primary goal:** Maximum runtime performance and smallest binary size.
 * **Optimizations:** Full optimizations are enabled. This includes aggressive

@@ -9,10 +9,11 @@ process does it through `libdriver.so`.)
 
 To register a trace provider, the steps are:
 
-1. [Register a component with the trace manager](#register-a-component--with-the-trace-manager).
+1. [Register a component with the trace
+   manager](#register-a-component-with-the-trace-manager).
 2. [Set up capability routing](#set-up-capability-routing).
 
-## Register a component with the trace manager {:#register-a-component--with-the-trace-manager .numbered}
+## Register a component with the trace manager {:#register-a-component-with-the-trace-manager .numbered}
 
 To register a component as a trace provider, you can use the `libtrace-provider`
 library to provide an asynchronous loop in your component's code.

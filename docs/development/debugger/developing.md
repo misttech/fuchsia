@@ -4,8 +4,8 @@ This document covers various topics to help you as you develop and debug the
 zxdb debugger:
 
 * [Run tests](#run-tests)
-* [Reload `debug_agent.cm` after a new build](#reload-debug_agent)
-* [Enable debug logging in `debug_agent`](#enable-debug-logging-debug_agent)
+* [Reload `debug_agent.cm` after a new build](#reload-debug-agent)
+* [Enable debug logging in `debug_agent`](#enable-debug-logging-debug-agent)
 * [Enable debug logging in zxdb](#enable-debug-logging)
 * [Launch zxdb in another debugger](#launch-zdb-other-debugger)
 * [Debug `debug_agent` in another `debug_agent`](#debug-agent-in-another-agent)
@@ -37,7 +37,7 @@ Note: These test the integration of the zxdb frontend with the `debug_agent`.
 fx test --e2e zxdb_e2e_tests
 ```
 
-## Reload `debug_agent.cm` after a new build {:#reload-debug_agent}
+## Reload `debug_agent.cm` after a new build {:#reload-debug-agent}
 
 Since the `debug_agent_launcher` is a long-running process, your system does
 not try to update the `debug_agent` package after the first `ffx debug connect`
@@ -49,7 +49,7 @@ To force the system to unload `debug_agent.cm`:
 ffx component stop /core/debug_agent
 ```
 
-## Enable debug logging in `debug_agent` {:#enable-debug-logging-debug_agent}
+## Enable debug logging in `debug_agent` {:#enable-debug-logging-debug-agent}
 
 To enable the debug logging of the `debug_agent`, add
 `--set-severity core/debug_agent#DEBUG` to `fx log`. For example:

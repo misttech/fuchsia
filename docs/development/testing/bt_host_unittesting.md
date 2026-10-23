@@ -56,7 +56,7 @@ be referenced as needed:
   + [Death tests](https://github.com/google/googletest/blob/HEAD/docs/advanced.md#death-tests)
   + [Scoped tracing](https://github.com/google/googletest/blob/HEAD/docs/advanced.md#adding-traces-to-assertions)
 
-### `bt-host` unit test overview
+### `bt-host` unit test overview {#bt-host-unit-test-overview}
 
 Most `bt-host` tests are written in the following pattern:
 
@@ -79,16 +79,16 @@ Most `bt-host` tests are written in the following pattern:
 
 GTest test fixtures are reusable environments that often store test
 dependencies and provide convenience methods for writing unit tests. The test
-fixture used in this example is the [`SMP_Phase1Test` class](#smp_phase1_test).
+fixture used in this example is the [`SMP_Phase1Test` class](#smp-phase1-test).
 
 ### Test doubles
 
 Test doubles are objects used to substitute for real objects in test code. There
 are many different types of test doubles. The two example test doubles used in
-`SMP_Phase1Test` are [`FakeChannel`](#fake_channel) and
+`SMP_Phase1Test` are [`FakeChannel`](#fake-channel) and
 [`FakeListener`](#fakelistener).
 
-## `SMP_Phase1Test` test fixture {#smp_phase1_test}
+## `SMP_Phase1Test` test fixture {#smp-phase1-test}
 
 [`SMP_Phase1Test`](https://fuchsia.googlesource.com/fuchsia/+/2ee647a648d93300d49328db8ef4bb0426e36c53/src/connectivity/bluetooth/core/bt-host/sm/phase_1_unittest.cc#36)
 is the test fixture used to test the
@@ -99,8 +99,8 @@ The `Phase1` class is responsible for Phase 1 of Bluetooth Low Energy (BLE)
 pairing, in which the devices negotiate the security features of the pairing.
 
 This section annotates the test fixture setup code of `SMP_Phase1Test` as a
-representative example of
-["Creating a test fixture" and "Constructing the LUT"](#bt-host_unit_test_overview).
+representative example of ["Creating a test fixture" and "Constructing the
+LUT"](#bt-host-unit-test-overview).
 It may be helpful to have
 [phase_1_unittest.cc](https://fuchsia.googlesource.com/fuchsia/+/2ee647a648d93300d49328db8ef4bb0426e36c53/src/connectivity/bluetooth/core/bt-host/sm/phase_1_unittest.cc#42)
 open while reading this section.
@@ -152,7 +152,7 @@ struct Phase1Args {
 };
 ```
 
-### L2CAP mock dependency {#fake_channel}
+### L2CAP mock dependency {#fake-channel}
 
 `L2CAP` channels provide a logical connection to a peer protocol/service, and
 are depended on by higher-level protocols like `ATT`, `GATT`, `SMP`, `SDP`.

@@ -87,14 +87,14 @@ When a custom handler is required, Starnix does the following things:
 The following syscalls are the primary interfaces used by tasks to configure and
 trigger the signal flow described above:
 
-### `rt_sigaction(2)` {:#rt_sigaction}
+### `rt_sigaction(2)` {:#rt-sigaction}
 
 Tasks use this syscall to register custom actions for specific signals. Starnix
 maintains this mapping within the `Task` structure, evaluating it during the
 [**Processing**][processing] phase to determine whether a signal should be
 ignored, default-handled, or routed to a user-space execution handler.
 
-### `rt_sigreturn(2)` {:#rt_sigreturn}
+### `rt_sigreturn(2)` {:#rt-sigreturn}
 
 When a user-space signal handler finishes executing, it calls
 `rt_sigreturn`. Starnix uses this signal to conclude the
@@ -116,4 +116,4 @@ target process's pending signal queue.
 [processing]: #processing
 [execution]: #execution
 [kill-syscall]: #kill
-[rt-sigaction-syscall]: #rt_sigaction
+[rt-sigaction-syscall]: #rt-sigaction

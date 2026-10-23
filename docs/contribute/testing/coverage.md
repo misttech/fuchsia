@@ -62,7 +62,7 @@ ask authors to close any testing gaps that they identify as important.
 
 ![Gerrit screenshot showing line coverage](incremental.png)
 
-## Coverage-driven development workflow {#local_coverage_edit_loop}
+## Coverage-driven development workflow {#local-coverage-edit-loop}
 
 You can view coverage from local edits in your browser or in VS Code for both
 Fuchsia component tests and host tests. You can use this to establish a

@@ -35,7 +35,8 @@ To enable a DFv2 driver to use Banjo protocols, see the tasks below:
   Implement and serve Banjo protocols in a DFv2 driver, which sets up
   the driver to communicate with child drivers using Banjo protocols.
 
-- [Connect to a Banjo server from a DFv2 driver](#connect-to-a-banjo-server-from-a-DFv2-driver):
+- [Connect to a Banjo server from a DFv2
+  driver](#connect-to-a-banjo-server-from-a-dfv2-driver):
   Connect to a parent driver's Banjo server from a DFv2 child driver
   and start using Banjo protocols.
 
@@ -214,7 +215,7 @@ guide:
 1. [Set up the compat device server][set-up-the-compat-device-server].
 2. [Provide Banjo services to descendant DFv1 drivers][provide-banjo-services].
 
-## Connect to a Banjo server from a DFv2 driver {:#connect-to-a-banjo-server-from-a-DFv2-driver}
+## Connect to a Banjo server from a DFv2 driver {:#connect-to-a-banjo-server-from-a-dfv2-driver}
 
 This section uses the [Banjo transport example][banjo-transport-example]
 to walk through the task of connecting a DFv2 child driver to a parent

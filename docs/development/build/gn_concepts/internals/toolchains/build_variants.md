@@ -304,7 +304,7 @@ be set to "speed", which change how many default configs are
 defined in a corresponding variant toolchain context.
 
 
-## The `toolchain_variant` global variable  {: #toolchain_variant }
+## The `toolchain_variant` global variable  {: #toolchain-variant }
 
 When in a `BUILD.gn` or `*.gni` file, the global `toolchain_variant` variable
 can be used to retrieve variant-related information for the `current_toolchain`.
@@ -600,7 +600,7 @@ a few hard-coded ones, and creates others from the list of known variants:
 
 ## Variant target redirection
 
-### The `variant_target()` template  {: #variant_target }
+### The `variant_target()` template  {: #variant-target }
 
 The `variant_target()` template defined in `//build/config/BUILDCONFIG.gn`
 implements the core build variant selection mechanism.
@@ -766,17 +766,17 @@ TBW
 
 TBW
 
-## Special global variables  {: #global_variables }
+## Special global variables  {: #global-variables }
 
-### The `host_toolchain` and `host_out_dir` global variables {: #host_variables }
-
-TBW
-
-### The `zircon_toolchain` variable  {: #zircon_variable }
+### The `host_toolchain` and `host_out_dir` global variables {: #host-variables }
 
 TBW
 
-### The `variant()` template  {: #variant_template }
+### The `zircon_toolchain` variable  {: #zircon-variable }
+
+TBW
+
+### The `variant()` template  {: #variant-template }
 
 TBW
 

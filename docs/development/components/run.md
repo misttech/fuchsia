@@ -239,7 +239,7 @@ Reloading is also faster when destroying the component is expensive, such as
 when it requires shutting down and restarting a session or the target
 device/emulator.
 
-### Destroy/create/start {#destroy_create_stop}
+### Destroy/create/start {#destroy-create-stop}
 
 To fully reload the component and drop acquired resources, you can first destroy
 the existing component instance, then restart it. Use:
@@ -255,7 +255,7 @@ capability changes will be updated. However, destroying the component will also
 free any resources it uses. This full reset may be what you want if your goal is
 to start with a completely reinitialized component.
 
-### Run --recreate {#run_recreate}
+### Run --recreate {#run-recreate}
 
 A convenient command that is analogous to the destroy/create/start sequence is
 the `run` command with `--recreate`:
@@ -264,7 +264,7 @@ the `run` command with `--recreate`:
 ffx component run {{ '<var label="moniker">TARGET_MONIKER</var>' }} {{ '<var label="url">COMPONENT_URL</var>' }} --recreate
 ```
 
-### Stop/start {#start_stop}
+### Stop/start {#start-stop}
 
 Although it's not primarily a way to do updates, a side effect of just stopping,
 then starting your component is that it will be partially updated.

@@ -8,11 +8,11 @@ description: This guide explores various independent ways to iterate on and impr
 Each of the following sections explores one potential way to iterate
 on the original key-value store design, specifically:
 
-+   [Adding support for reading from the store](#add_read_item)
-+   [Using generic values](#use_generic_values)
-+   [Supporting nested key-value stores](#support_trees)
-+   [Adding support for iterating the store](#add_iterator)
-+   [Enabling exporting backups](#support_exports)
++   [Adding support for reading from the store](#add-read-item)
++   [Using generic values](#use-generic-values)
++   [Supporting nested key-value stores](#support-trees)
++   [Adding support for iterating the store](#add-iterator)
++   [Enabling exporting backups](#support-exports)
 
 Rather than building on one another sequentially, each
 presents an independent way in which the base case presented
@@ -23,23 +23,23 @@ This page builds on the
 
 <!-- DO_NOT_REMOVE_COMMENT (Why? See: /tools/fidl/scripts/canonical_example/README.md) -->
 
-## Adding support for reading from the store {#add_read_item}
+## Adding support for reading from the store {#add-read-item}
 
 <<_add_read_item_tutorial.md>>
 
-## Using generic values {#use_generic_values}
+## Using generic values {#use-generic-values}
 
 <<_use_generic_values_tutorial.md>>
 
-## Supporting nested key-value stores {#support_trees}
+## Supporting nested key-value stores {#support-trees}
 
 <<_support_trees_tutorial.md>>
 
-## Adding support for iterating the store {#add_iterator}
+## Adding support for iterating the store {#add-iterator}
 
 <<_add_iterator_tutorial.md>>
 
-## Enabling exporting backups {#support_exports}
+## Enabling exporting backups {#support-exports}
 
 <<_support_exports_tutorial.md>>
 

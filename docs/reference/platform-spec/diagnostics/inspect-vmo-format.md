@@ -181,7 +181,7 @@ Each type interprets the payload differently, as follows:
 * [INT\_VALUE](#numeric)
 * [UINT\_VALUE](#numeric)
 * [DOUBLE\_VALUE](#numeric)
-* [BUFFER\_VALUE](#buffer_value)
+* [BUFFER\_VALUE](#buffer-value)
 * [EXTENT](#extent)
 * [NAME](#name)
 * [TOMBSTONE](#node)
@@ -334,7 +334,7 @@ packet-beta
 Numeric `VALUE` blocks all contain the 64-bit numeric type inlined into
 the second 8 bytes of the block. Numeric values are little endian.
 
-## BUFFER\_VALUE {#buffer_value}
+## BUFFER\_VALUE {#buffer-value}
 
 ```mermaid
 ---

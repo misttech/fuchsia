@@ -1541,7 +1541,7 @@ Things to avoid:
    maintain, and callers rarely want to update a single value.
 
  * Avoid removing a setting with a magic value, like `-1`. Instead, remove a
-   setting by the [absence of that settings field](#magic_values).
+   setting by the [absence of that settings field](#magic-values).
 
 ### Referring to union variants and table fields
 
@@ -1674,7 +1674,7 @@ pattern used by the client library.
 In order to include the client library in the Fuchsia SDK, we should provide
 implementations of the library in at least two languages.
 
-### Service hubs: use with care {#service_hubs}
+### Service hubs: use with care {#service-hubs}
 
 A _service hub_ is a `Discoverable` protocol that simply lets you discover a
 number of other protocols, typically with explicit names:
@@ -1760,7 +1760,7 @@ identifiers to model logical objects in the protocol.  That pattern lets clients
 interact with a potentially large set of logical objects through a single
 protocol.
 
-### Specifying absence with magic values: no {#magic_values}
+### Specifying absence with magic values: no {#magic-values}
 
 We typically want to instruct the server to set some state, but allow for the
 removal of state too. The following uses magic values to instruct removal:

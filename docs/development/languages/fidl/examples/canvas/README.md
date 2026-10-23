@@ -23,11 +23,11 @@ modified or improved.
 
 <!-- DO_NOT_REMOVE_COMMENT (Why? See: /tools/fidl/scripts/canonical_example/README.md) -->
 
-### Basic metering on client requests {#add_line_metered}
+### Basic metering on client requests {#add-line-metered}
 
 <<_add_line_metered_tutorial.md>>
 
-### Clients explicitly request draw operations {#client_requested_draw}
+### Clients explicitly request draw operations {#client-requested-draw}
 
 <<_client_requested_draw_tutorial.md>>
 

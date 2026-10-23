@@ -89,7 +89,7 @@ discussed in [configurable parameters](#configurable_parameters).
 
 ## Details
 
-### Should a time sample be accepted? {#sample_validation}
+### Should a time sample be accepted? {#sample-validation}
 
 Time samples are subjected to simple validity tests before being accepted:
 
@@ -119,7 +119,7 @@ inputs there is no reason to believe the first is more reliable than the second.
 A system that can recover from an error, even at the cost of a significant jump
 in time, is preferable to one that cannot.
 
-### Which time source should be used? {#source_selection}
+### Which time source should be used? {#source-selection}
 
 As introduced in [UTC architecture](architecture.md), Timekeeper may be
 configured to use four different time source roles although it is unlikely that
@@ -158,7 +158,7 @@ sufficient value to compensate for the additional complexity. Many failure modes
 are accommodated internal to the time sources so complete time source failures
 should be rare events.
 
-### How should a time sample change the estimated UTC? {#update_estimate}
+### How should a time sample change the estimated UTC? {#update-estimate}
 
 Each valid sample received from the selected time source should be used to
 update Timekeeper’s estimate of UTC. Each of these samples contains some error
@@ -171,7 +171,7 @@ filter][1] in other domains. Timekeeper defines a simple two dimensional Kalman
 filter to maintain the UTC estimate where the two states are UTC time and
 frequency, expressed as utc nanoseconds per monotonic nanosecond. Note that
 frequency is maintained external to the filter through the [frequency correction
-algorithm](#frequency_estimation); filter frequency is excluded from the Kalman
+algorithm](#frequency-estimation); filter frequency is excluded from the Kalman
 filter’s measurement model and has a covariance of zero.
 
 The parameters in the Kalman filter are presented in Figure 2.
@@ -184,7 +184,7 @@ ever non-zero. This value is limited to a lower limit of MIN_COVARIANCE to
 prevent the filter from over-indexing on its internal state and rejecting new
 inputs.
 
-### What strategy should be used to converge the reported UTC? {#convergence_strategy}
+### What strategy should be used to converge the reported UTC? {#convergence-strategy}
 
 After each update to the estimated UTC, Timekeeper decides whether to
 immediately step the userspace clock to the new estimate or apply a rate
@@ -219,7 +219,7 @@ In summary:
    `sign(estimated_utc - clock_utc) * PREFERRED_RATE_CORRECTION` for a duration
    of `|estimated_utc - clock_utc|/PREFERRED_RATE_CORRECTION`.
 
-### How should a sequence of time samples change the estimated frequency? {#frequency_estimation}
+### How should a sequence of time samples change the estimated frequency? {#frequency-estimation}
 
 A device’s oscillator is likely to have some inherent frequency error due to
 manufacturing imperfections. Estimating the oscillator frequency to account for
@@ -297,7 +297,7 @@ estimated_frequency = clamp(
 EWMA provides a simple way to blend data across multiple periods while retaining
 minimal state.
 
-### How can clock error be bounded? {#error_bound}
+### How can clock error be bounded? {#error-bound}
 
 For the UTC clock, the error bound is defined as half of a 95% confidence
 interval. In other words, for a randomly selected time on a randomly selected
@@ -361,7 +361,7 @@ The error bound calculation is summarized in Figure 5:
 ![This figure illustrates the error bound construction.](images/error_bound.png "Figure 5 - Error Bound Construction")
 
 
-### What clock updates should be made? {#clock_updates}
+### What clock updates should be made? {#clock-updates}
 
 Changes to the rate and offset of the clock follow directly from selecting a
 convergence strategy and estimating the oscillator frequency as discussed in

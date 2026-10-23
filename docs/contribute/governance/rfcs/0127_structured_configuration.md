@@ -420,7 +420,7 @@ Configuration values are usually set by developers, maintainers, or
 administrators rather than end users.
 
 
-### Data types {#scope_data_types}
+### Data types {#scope-data-types}
 
 Structured configuration is intended for a moderate number of bounded and well
 defined configuration keys for each component. Limiting the scope and size of
@@ -489,7 +489,7 @@ containing the configuration key data types and names, plus a *configuration
 value file* containing a value and mutability for each configuration key. In
 the initial implementation both of these files are placed inside the same
 package as the component (or as separate bootfs files for components that run
-before pkgfs is available). See [alternative 3](#alternative_packaging) below
+before pkgfs is available). See [alternative 3](#alternative-packaging) below
 for rationale and a discussion on the future direction.
 
 Each time a component instance is started, the component framework checks for
@@ -572,7 +572,7 @@ behavior that were previously expressed using different manifests.
 The build, assembly, and release process is responsible for generating two files
 for each configurable component. Both files are placed in the same package as
 the component (in the future this will be extended to support supplying values
-through a different package, see [this alternative](#alternative_packaging).
+through a different package, see [this alternative](#alternative-packaging).
 
 
 #### Configuration definition file
@@ -730,7 +730,7 @@ different implementations of the override service API.
 Configuration override manager maintains a database of "overridden"
 configuration key-value pairs, editable over FIDL as described below. Each entry
 in this database is defined at the component instance level and indexed by
-component instance ID (see [this alternative](#alternative_component_id) for
+component instance ID (see [this alternative](#alternative-component-id) for
 additional justification). Each override entry is either stored on disk to
 persist across power cycles or is retained in memory for the remainder of the
 current power cycle. Persistence is specified when the entry is created.
@@ -1060,7 +1060,7 @@ allocating storage for use by other components. This use of storage would have
 raising additional security questions and required new infrastructure in CF.
 
 
-### Deliver configuration through a central package {#alternative_packaging}
+### Deliver configuration through a central package {#alternative-packaging}
 
 This RFC places the configuration values for a component in the component’s
 package. An alternative would have been to place all configuration for all
@@ -1097,7 +1097,7 @@ define the nature of this "different package" - options include a meta-package,
 a sidecar package, or a wrapper package.
 
 
-### Index configuration overrides by component URL and moniker {#alternative_component_id}
+### Index configuration overrides by component URL and moniker {#alternative-component-id}
 
 This RFC indexes configuration overrides by a component's
 [instance ID][component_instance_id]. Instance IDs are used to index other
@@ -1162,7 +1162,7 @@ experience:
    component to the framework and defining configuration keys fits within this
    definition. Maintaining a single file is less work than adding a new file.
 1. The syntax and data types that are available for defining configuration is a
-   small subset of the full FIDL language (see [scope](#scope_data_types)).
+   small subset of the full FIDL language (see [scope](#scope-data-types)).
    Requiring FIDL syntax while only supporting a subset could be both confusing
    and frustrating.
 1. Configuration requires information that cannot be represented in the FIDL

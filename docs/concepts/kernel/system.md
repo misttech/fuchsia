@@ -91,7 +91,7 @@ For example, components can discover implementations of FIDL
 Similarly, by convention, the `pkg` namespace entry is mapped to the package
 from which the component was resolved.
 
-#### Outgoing directory {#outgoing_directory}
+#### Outgoing directory {#outgoing-directory}
 
 A component serves an [outgoing directory][glossary.outgoing-directory] to
 publish capabilities to the rest of the system.

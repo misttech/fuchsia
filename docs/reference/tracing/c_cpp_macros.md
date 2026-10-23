@@ -153,7 +153,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
   TRACE_INSTANT("category", "name", "int", 77);   // discouraged
   ```
 
-## TRACE_ENABLED {#TRACE_ENABLED}
+## TRACE_ENABLED {#trace-enabled}
 
 ```
  Returns true if tracing is enabled.
@@ -166,7 +166,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_CATEGORY_ENABLED {#TRACE_CATEGORY_ENABLED}
+## TRACE_CATEGORY_ENABLED {#trace-category-enabled}
 
 ```
  Returns true if tracing of the specified category has been enabled (which
@@ -181,7 +181,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
      }
 
 ```
-## TRACE_NONCE {#TRACE_NONCE}
+## TRACE_NONCE {#trace-nonce}
 
 ```
  Returns a new unique 64-bit unsigned integer (within this process).
@@ -196,7 +196,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
      TRACE_ASYNC_END("category", "name", async_id);
 
 ```
-## TRACE_INSTANT {#TRACE_INSTANT}
+## TRACE_INSTANT {#trace-instant}
 
 ```
  Writes an instant event representing a single moment in time (a probe).
@@ -214,7 +214,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_COUNTER {#TRACE_COUNTER}
+## TRACE_COUNTER {#trace-counter}
 
 ```
  Writes a counter event with the specified id.
@@ -239,7 +239,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_DURATION {#TRACE_DURATION}
+## TRACE_DURATION {#trace-duration}
 
 ```
  Writes a duration event that ends when the current scope exits.
@@ -262,7 +262,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_DURATION_BEGIN {#TRACE_DURATION_BEGIN}
+## TRACE_DURATION_BEGIN {#trace-duration-begin}
 
 ```
  Writes a duration begin event only.
@@ -285,7 +285,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_DURATION_END {#TRACE_DURATION_END}
+## TRACE_DURATION_END {#trace-duration-end}
 
 ```
  Writes a duration end event only.
@@ -307,7 +307,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_ASYNC_BEGIN {#TRACE_ASYNC_BEGIN}
+## TRACE_ASYNC_BEGIN {#trace-async-begin}
 
 ```
  Writes an asynchronous begin event with the specified id.
@@ -336,7 +336,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_ASYNC_INSTANT {#TRACE_ASYNC_INSTANT}
+## TRACE_ASYNC_INSTANT {#trace-async-instant}
 
 ```
  Writes an asynchronous instant event with the specified id.
@@ -363,7 +363,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_ASYNC_END {#TRACE_ASYNC_END}
+## TRACE_ASYNC_END {#trace-async-end}
 
 ```
  Writes an asynchronous end event with the specified id.
@@ -390,7 +390,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_FLOW_BEGIN {#TRACE_FLOW_BEGIN}
+## TRACE_FLOW_BEGIN {#trace-flow-begin}
 
 ```
  Writes a flow begin event with the specified id.
@@ -424,7 +424,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_FLOW_STEP {#TRACE_FLOW_STEP}
+## TRACE_FLOW_STEP {#trace-flow-step}
 
 ```
  Writes a flow step event with the specified id.
@@ -456,7 +456,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_FLOW_END {#TRACE_FLOW_END}
+## TRACE_FLOW_END {#trace-flow-end}
 
 ```
  Writes a flow end event with the specified id.
@@ -488,7 +488,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 
 ```
 
-## TRACE_BLOB_EVENT {#TRACE_BLOB_EVENT}
+## TRACE_BLOB_EVENT {#trace-blob-event}
 
 ```
  Writes a large blob record with the given blob data and metadata.
@@ -504,7 +504,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
  |blob_size| is the size, in bytes, of the data.
 ```
 
-## TRACE_BLOB_ATTACHMENT {#TRACE_BLOB_ATTACHMENT}
+## TRACE_BLOB_ATTACHMENT {#trace-blob-attachment}
 
 ```
  Writes a large blob record with the given blob data, with only a
@@ -521,7 +521,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
  |blob_size| is the size, in bytes, of the data.
 ```
 
-## TRACE_KERNEL_OBJECT {#TRACE_KERNEL_OBJECT}
+## TRACE_KERNEL_OBJECT {#trace-kernel-object}
 
 ```
  Writes a description of a kernel object indicated by |handle|,
@@ -541,7 +541,7 @@ but show the use of a well defined type, a type macro, and a discouraged example
 ```
 
 <!-- # Commented out for the time being
-## TRACE_INSTANT {#trace_instant}
+## TRACE_INSTANT {#trace-instant}
 
 The `TRACE_INSTANT` macro records a trace with a single timestamp that is
 scoped to a process, thread, or global.

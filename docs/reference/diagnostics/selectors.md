@@ -191,7 +191,7 @@ root/reverser_service/connection_validity
 This path hierarchy selector describes the path from root to the
 `connection_validity` node. It is completely unrelated to the
 `connection_validity` property on the `reverser_service` node, which
-can be selected using a [Property Selector](#property_selector):
+can be selected using a [Property Selector](#property-selector):
 `root/reverser_service:connection_validity`.
 
 ### Wildcarding {#wildcarding}
@@ -277,7 +277,7 @@ internal quotes must be escaped.
 
 Name filters are case-sensitive.
 
-## Property selector {#property_selector}
+## Property selector {#property-selector}
 
 ### Syntax  {#syntax}
 

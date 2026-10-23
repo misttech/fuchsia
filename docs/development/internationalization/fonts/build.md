@@ -242,7 +242,7 @@ All possible font packages are predeclared in
     `fuchsia-pkg://fuchsia.com/<package-name>`, e.g.
     `fuchsia-pkg://fuchsia.com/font-package-roboto-regular-ttf`.
 
-### `local_font_bundle` {#local_font_bundle}
+### `local_font_bundle` {#local-font-bundle}
 
 _Defined in [fonts.gni](/src/fonts/build/fonts.gni)_
 
@@ -307,14 +307,14 @@ The fallback chain is defined manually. Some guidelines to follow:
 -   When there is overlapping coverage, put smaller font files higher in the
     list. This reduces UI jank when loading fallback fonts.
 
-### `font_collection` {#font_collection}
+### `font_collection` {#font-collection}
 
 _Defined in [fonts.gni](/src/fonts/build/fonts.gni)_
 
 After any needed `local_font_bundle`s, and/or font `packages` have been
 declared, they are assembled into a `font_collection`.
 
-#### Inputs {#font_collection-inputs}
+#### Inputs {#font-collection-inputs}
 
 (See fonts.gni for complete documentation.)
 
@@ -350,7 +350,7 @@ every included font file and extracts the list of
 All of this data is assembled into a single `.font_manifest.json` file that
 supplied to the font provider service using a `config_data` rule.
 
-#### Outputs {#:font_collection-outputs}
+#### Outputs {#font-collection-outputs}
 
 A `font_collection` produces the following artifacts:
 

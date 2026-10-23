@@ -148,7 +148,6 @@ For more information on how components connect to capabilities at runtime, see
 [doc-collections]: /docs/concepts/components/v2/realms.md#collections
 [doc-component-manifest]: /docs/concepts/components/v2/component_manifests.md
 [doc-environments]: /docs/concepts/components/v2/environments.md
-[doc-outgoing-directory]: /docs/concepts/packages/system.md#outgoing_directory
 [doc-protocol-open]: /docs/concepts/components/v2/capabilities/life_of_a_protocol_open.md
 [doc-resolvers]: /docs/concepts/components/v2/capabilities/resolver.md
 [glossary.capability]: /docs/glossary#capability

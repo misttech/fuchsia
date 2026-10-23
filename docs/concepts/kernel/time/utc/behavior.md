@@ -143,7 +143,7 @@ the system has an estimate of `error_bound`, the `error_bound` is set to
 `ZX_CLOCK_UNKNOWN_ERROR`. In some cases, if a Fuchsia device is running
 abnormal workloads or has defective hardware, the true UTC time may fall
 outside the range defined by `error_bound`. See the
-[How can clock error be bounded?](algorithms.md#error_bound) section for
+[How can clock error be bounded?](algorithms.md#error-bound) section for
 details on how the error bound is calculated. If you require additional details
 about the UTC clock, see the
 [kernel clock reference](/docs/reference/kernel_objects/clock.md)

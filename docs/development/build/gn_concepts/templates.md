@@ -308,7 +308,7 @@ template("my_template") {
 }
 ```
 
-### If forwarding `deps`, also forward `public_deps` and `data_deps` {#if-forwarding-deps-also-forward-public_deps-and-data_deps}
+### If forwarding `deps`, also forward `public_deps` and `data_deps` {#if-forwarding-deps-also-forward-public-deps-and-data-deps}
 
 All built-in rules that take `deps` take `public_deps` and `data_deps`.
 Some built-in rules don’t differentiate between types of deps (e.g. `action()`
@@ -333,7 +333,7 @@ template("my_template") {
 
 ## Target Names {#target-names}
 
-### Define an inner target named `target_name` {#define-an-inner-target-named-target_name}
+### Define an inner target named `target_name` {#define-an-inner-target-named-target-name}
 
 Your template should define at least one target that is named `target_name`.
 This allows your users to invoke your template with a name, and then use that
@@ -359,7 +359,7 @@ group("images") {
 }
 ```
 
-### `target_name` is a good default for an output name, but offer an override {#target_name-is-a-good-default-for-an-output-name-but-offer-an-override}
+### `target_name` is a good default for an output name, but offer an override {#target-name-is-a-good-default-for-an-output-name-but-offer-an-override}
 
 If your template produces a single output then using the target name to select
 the output name is good default behavior. However, target names must be unique
@@ -378,7 +378,7 @@ template("image") {
 }
 ```
 
-### Prefix internal target names with `$target_name` {#prefix-internal-target-names-with-$target_name}
+### Prefix internal target names with `$target_name` {#prefix-internal-target-names-with-target-name}
 
 GN labels must be unique, or else you’ll get a gen-time error. If everyone on
 the same project follows the same naming convention then collisions are less
@@ -472,14 +472,14 @@ bin_runner("this_will_work") {
 
 ## GN functions and generation {#gn-functions-and-generation}
 
-### Only use `read_file()` with source files {#only-use-read_file-with-source-files}
+### Only use `read_file()` with source files {#only-use-read-file-with-source-files}
 
 `read_file()` occurs during generation and can not be safely used to read from generated
 files or build outputs. It can be used to read source files, for example to read
 a manifest file or a json file with which to populate build dependencies.
 Notably `read_file()` can not be used with `generated_file()` or `write_file()`.
 
-### Prefer `generated_file()` over `write_file()` {#prefer-generated_file-over-write_file}
+### Prefer `generated_file()` over `write_file()` {#prefer-generated-file-over-write-file}
 
 In general, it’s recommended that you use `generated_file()` over `write_file()`.
 `generated_file()` provides additional features and addresses some of the challenges
@@ -611,7 +611,7 @@ if (variants.profile) {
 }
 ```
 
-### Forwarding `"*"` {#forwarding-*}
+### Forwarding `"*"` {#forwarding}
 
 `forward_variables_from()` copies specified variables to the current
 scope from the given scope _or any enclosing scope_. Unless you

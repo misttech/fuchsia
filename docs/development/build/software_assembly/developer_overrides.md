@@ -82,7 +82,8 @@ For more information, see the following sections:
 *   To learn how to specify the assembly target, see
     [Product Label Patterns](#product-label-patterns).
 *   To learn how to define the override target, see
-    [Defining an `assembly_developer_overrides` target](#defining-an-assembly_developer_overrides-target).
+    [Defining an `assembly_developer_overrides`
+    target](#defining-an-assembly-developer-overrides-target).
 
 ### Using `fx args` or `args.gn` {:#args-gn}
 
@@ -131,8 +132,8 @@ product_assembly_overrides_contents = {
 ```
 
 The value uses the same syntax as the `assembly_developer_overrides()` GN
-template, see
-[Defining an `assembly_developer_overrides` target](#defining-an-assembly_developer_overrides-target).
+template, see [Defining an `assembly_developer_overrides`
+target](#defining-an-assembly-developer-overrides-target).
 
 #### `product_assembly_overrides` {:#product-assembly-overrides}
 
@@ -167,7 +168,7 @@ product_assembly_overrides = [
 ]
 ```
 
-## Defining an `assembly_developer_overrides` target {:#defining-an-assembly_developer_overrides-target}
+## Defining an `assembly_developer_overrides` target {:#defining-an-assembly-developer-overrides-target}
 
 To define a set of developer overrides, use the `assembly_developer_overrides()`
 template in a `BUILD.gn` file. It is recommended to place these definitions in
@@ -210,7 +211,7 @@ within an `assembly_developer_overrides` target:
 * [Shell commands](#shell-commands)
 * [Board configuration](#board-configuration)
 * [Compiled packages and components](#compiled-packages-and-components)
-* [Appending to lists](#appending-to-lists-with-__append_to__key_)
+* [Appending to lists](#appending-to-lists-with-append-to-key)
 
 ### Developer-only assembly options {:#developer-only-assembly-options}
 
@@ -261,7 +262,8 @@ assembly_developer_overrides("enable_sl4f") {
 ```
 
 If you want to append to a list instead of replacing it, see
-[Appending to lists with `__append_to_<key>`](#appending-to-lists-with-__append_to__key_).
+[Appending to lists with
+`__append_to_<key>`](#appending-to-lists-with-append-to-key).
 
 ### Kernel command line arguments {:#kernel-command-line-arguments}
 
@@ -367,7 +369,8 @@ assembly_developer_overrides("add_new_feature") {
 ```
 
 To append to a list instead of replacing it, see
-[Appending to lists with `__append_to_<key>`](#appending-to-lists-with-__append_to__key_).
+[Appending to lists with
+`__append_to_<key>`](#appending-to-lists-with-append-to-key).
 
 ### Compiled packages and components
 
@@ -395,7 +398,7 @@ assembly_developer_overrides("add_core_shard") {
 }
 ```
 
-### Appending to lists with `__append_to_<key>` {:#appending-to-lists-with-__append_to__key_}
+### Appending to lists with `__append_to_<key>` {:#appending-to-lists-with-append-to-key}
 
 By default, developer overrides replace a list with the new contents that you
 specify. To append to a list instead, use the `__append_to_<key>` syntax, where

@@ -60,7 +60,7 @@ Envelopes can refer to data that is either:
      This can be used for "small-sized" types that are fixed-size and less
      than 64 bits.
 
-### Out-Of-Line Envelopes {#out_of_line-envelopes}
+### Out-Of-Line Envelopes {#out-of-line-envelopes}
 
 An out-of-line envelope is:
 
@@ -97,7 +97,7 @@ format][wformat-envelopes]:
             the envelope &mdash; will always also be zero.
         *   This is important, as discussed in the [Tag Bit](#tag-bit) below.
     *   See [Encoding Sizes for Out-of-Line
-        Envelopes](#encoding-sizes-for-out_of_line-envelopes) below for
+        Envelopes](#encoding-sizes-for-out-of-line-envelopes) below for
         performance implications of calculating the recursive size.
 *   **The `handle_count` is 16 bits, instead of 32 bits.**
     *   It's not currently possible to send > 64 handles over a Zircon channel;
@@ -120,7 +120,7 @@ how to process an envelope if the content's type is unknown.
 
 An out-of-line envelope explicitly has the size occupying the least
 significant bits, and the handle count occupying the most significant bits.
-As discussed in the [Envelope](#out_of_line-envelopes) section,
+As discussed in the [Envelope](#out-of-line-envelopes) section,
 
 *   since the lowest bit of the size field will always be zero (due to the
     size being a multiple of 8),
@@ -410,7 +410,7 @@ This enables the decoder to copy the size and handle count from the unknown
 envelope, and overwrite the envelope with a pointer to the decoder's own
 custom data structure.
 
-### Encoding Sizes for Out-of-Line Envelopes {#encoding-sizes-for-out_of_line-envelopes}
+### Encoding Sizes for Out-of-Line Envelopes {#encoding-sizes-for-out-of-line-envelopes}
 
 This RFC requires that out-of-line envelopes have the correct (recursive)
 size for present out-of-line data.
@@ -647,7 +647,7 @@ However:
 *   Optional handles become less efficient, if we decide to use the envelope
     encoding for optional handles.
 *   As discussed in [Encoding Sizes for Out-of-Line
-    Envelopes](#encoding-sizes-for-out_of_line-envelopes), encoding the size
+    Envelopes](#encoding-sizes-for-out-of-line-envelopes), encoding the size
     and handle count in an envelope for a type that a receiver will know is
     a performance regression from the current behavior.
 

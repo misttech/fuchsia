@@ -71,7 +71,7 @@ The following example writes an instant event representing a single moment in ti
   For more information on the `TRACE_INSTANT` macro, see
   [`TRACE_INSTANT`][trace-instant].
 
-### Time an event {:#time-an-event transformation="converted"}
+### Time an event {:#time-an-event}
 
 This example shows you how to time a function or procedure:
 
@@ -251,16 +251,16 @@ trace from the component. For more information, see the next
 [register-a-trace-provider]: /docs/development/tracing/tutorial/register-a-trace-provider.md
 [c-cpp-macros]: /docs/reference/tracing/c_cpp_macros.md
 [rust-macros]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/index.html
-[trace-instant]: /docs/reference/tracing/c_cpp_macros.md#TRACE_INSTANT
+[trace-instant]: /docs/reference/tracing/c_cpp_macros.md#trace-instant
 [trace-instant-rust]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/macro.instant.html
-[ntrace]: /docs/reference/tracing/c_cpp_macros.md#NTRACE
-[trace-enabled]: /docs/reference/tracing/c_cpp_macros.md#TRACE_ENABLED
-[trace-category-enabled]: /docs/reference/tracing/c_cpp_macros.md#TRACE_CATEGORY_ENABLED
+[ntrace]: /docs/reference/tracing/c_cpp_macros.md#ntrace
+[trace-enabled]: /docs/reference/tracing/c_cpp_macros.md#trace-enabled
+[trace-category-enabled]: /docs/reference/tracing/c_cpp_macros.md#trace-category-enabled
 [trace-enabled-rust]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/fn.is_enabled.html
 [trace-category-enabled-rust]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/fn.category_enabled.html
 [blobfs-cc]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/src/storage/blobfs/blobfs.cc
-[trace-duration]: /docs/reference/tracing/c_cpp_macros.md#TRACE_DURATION
-[trace-duration-begin]: /docs/reference/tracing/c_cpp_macros.md#TRACE_DURATION_BEGIN
-[trace-duration-end]: /docs/reference/tracing/c_cpp_macros.md#TRACE_DURATION_END
+[trace-duration]: /docs/reference/tracing/c_cpp_macros.md#trace-duration
+[trace-duration-begin]: /docs/reference/tracing/c_cpp_macros.md#trace-duration-begin
+[trace-duration-end]: /docs/reference/tracing/c_cpp_macros.md#trace-duration-end
 [trace-duration-rust]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_trace/fn.duration.html
 [record-and-visualize-a-trace]: /docs/development/tracing/tutorial/record-and-visualize-a-trace.md

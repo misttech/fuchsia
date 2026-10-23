@@ -247,7 +247,7 @@ reproducing the recipe step locally.
 [hermetic-integration-tests]: /docs/reference/testing/what-tests-to-write.md#hermetic_integration_tests
 [ffx-log-ref]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_log
 [debuglog]: /docs/reference/kernel_objects/debuglog.md
-[logs-storage-concepts]: /docs/concepts/components/diagnostics/README.md#log_storage
+[logs-storage-concepts]: /docs/concepts/components/diagnostics/README.md#log-storage
 [`log_listener`]: /src/diagnostics/log_listener/README.md
 [kernel-console]: /zircon/kernel/lib/debuglog/debuglog.cc
 [`netsvc`]: /src/bringup/bin/netsvc/debuglog.cc

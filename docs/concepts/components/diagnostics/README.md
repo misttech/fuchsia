@@ -13,7 +13,7 @@ Logs are time-ordered streams of diagnostic data emitted by Fuchsia programs.
 They most commonly take the form of low frequency human-oriented text strings
 describing changes to state in a subsystem.
 
-### Contents {#log_contents}
+### Contents {#log-contents}
 
 A log contains several pieces of metadata that is mostly self-reported by each
 component that generates a specific log. At a minimum, a log message contains
@@ -30,7 +30,7 @@ component writes to a socket. For more information about the fields that
 Archivist provides for a Fuchsia device log, see
 [Log records][diagnostics-schema-ref].
 
-### Storage {#log_storage}
+### Storage {#log-storage}
 
 Currently all log stores are rotated on a first-in-first-out (FIFO) basis,
 with newer messages overwriting older ones. Messages from any component can roll
