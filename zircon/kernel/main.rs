@@ -252,6 +252,10 @@ pub mod ksync_kernel_tests;
 #[path = "tests/rustlang-support/test_mod.rs"]
 pub mod test_mod;
 
+#[cfg(all(console_enabled, ktest))]
+#[path = "tests/tests.rs"]
+pub mod kernel_tests;
+
 #[cfg(ktest)]
 #[path = "tests/unused_rust.rs"]
 pub mod unused_rust;

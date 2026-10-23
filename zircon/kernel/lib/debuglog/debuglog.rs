@@ -31,6 +31,7 @@ unsafe extern "C" {
     ) -> i32;
     fn cpp_dlog_serial_write(ptr: *const c_char, len: usize);
     fn cpp_dlog_serial_write_interruptible(ptr: *const c_char, len: usize) -> i32;
+    fn cpp_serial_write(ptr: *const c_char, len: usize);
     fn cpp_dlog_sync();
     fn cpp_dlog_panic_start();
     fn cpp_dlog_bluescreen_init();
@@ -57,6 +58,12 @@ pub fn dlog_write(severity: u32, flags: u32, bytes: &[u8]) -> Result<(), Status>
 pub fn dlog_serial_write(bytes: &[u8]) {
     // SAFETY: `bytes.as_ptr()` points to `bytes.len()` initialized bytes.
     unsafe { cpp_dlog_serial_write(bytes.as_ptr() as *const c_char, bytes.len()) }
+}
+
+/// Writes `bytes` directly to the kernel serial port without going through debuglog.
+pub fn serial_write(bytes: &[u8]) {
+    // SAFETY: `bytes.as_ptr()` points to `bytes.len()` initialized bytes.
+    unsafe { cpp_serial_write(bytes.as_ptr() as *const c_char, bytes.len()) }
 }
 
 /// Like `dlog_serial_write`, except that if the calling thread must wait for the serial debug port

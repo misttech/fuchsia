@@ -84,13 +84,10 @@ if (toolchain_environment == "kernel") {
       "arch_rs_tests.cc",
       "benchmarks.cc",
       "brwlock_tests.cc",
-      "cache_tests.cc",
-      "clock_tests.cc",
       "cpu_search_tests.cc",
       "cpu_tests.cc",
       "dpc_tests.cc",
       "event_tests.cc",
-      "fibo.cc",
       "heap_tests.cc",
       "interrupt_disable_tests.cc",
       "job_tests.cc",
@@ -99,7 +96,6 @@ if (toolchain_environment == "kernel") {
       "lazy_owned_wait_queue_tests.cc",
       "lock_dep_tests.cc",
       "loop_limiter_tests.cc",
-      "mem_tests.cc",
       "mmu_tests.cc",
       "mp_hotplug_tests.cc",
       "mp_tests.cc",
@@ -114,20 +110,17 @@ if (toolchain_environment == "kernel") {
       "relocation_tests.cc",
       "scheduler_run_queue_tests.cc",
       "scheduler_state_tests.cc",
-      "sleep_tests.cc",
-      "spinner.cc",
       "string_tests.cc",
       "sync_ipi_tests.cc",
-      "tests.cc",
       "thread_dispatcher_tests.cc",
       "timer_tests.cc",
-      "uart_tests.cc",
       "variant_tests.cc",
       "wait_queue_ordering_tests.cc",
     ]
     deps = [
       ":arch_rs_tests",
       ":common",
+      ":tests_rs",
       ":unused_rust",
       "rustlang-support:kernel-tests",
       "//src/lib/ksync:ksync_kernel_tests",
@@ -169,5 +162,30 @@ if (toolchain_environment == "kernel") {
   kernel_rust_mod("arch_rs_tests") {
     testonly = true
     sources = [ "arch_rs_tests.rs" ]
+  }
+
+  kernel_rust_mod("tests_rs") {
+    testonly = true
+    sources = [
+      "cache_tests.rs",
+      "clock_tests.rs",
+      "fibo.rs",
+      "mem_tests.rs",
+      "sleep_tests.rs",
+      "spinner.rs",
+      "tests.rs",
+      "uart_tests.rs",
+    ]
+    deps = [
+      "//sdk/rust/zx-status",
+      "//src/lib/kalloc",
+      "//src/lib/kprint",
+      "//src/lib/ksync",
+      "//third_party/rust_crates:rand",
+      "//zircon/kernel/lib/arch:arch-rs",
+      "//zircon/kernel/lib/debug",
+      "//zircon/kernel/lib/page",
+      "//zircon/system/ulib/pretty/rust:pretty",
+    ]
   }
 }

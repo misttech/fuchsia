@@ -66,6 +66,7 @@ FFI_ALWAYS_INLINE void cpp_thread_current_kill();
 FFI_ALWAYS_INLINE void cpp_thread_get_backtrace(Thread* thread, Backtrace* out_bt);
 FFI_ALWAYS_INLINE void cpp_thread_dump(const Thread* thread, bool full);
 FFI_ALWAYS_INLINE zx_duration_mono_t cpp_thread_runtime(const Thread* thread);
+FFI_ALWAYS_INLINE zx_status_t cpp_thread_detach_and_resume(Thread* thread);
 
 __END_CDECLS
 

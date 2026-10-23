@@ -55,6 +55,8 @@ extern "C" void arch_zero_page(void *);
 // Give the specific arch a chance to override some routines.
 #include <arch/arch_ops.h>
 
+extern "C" uint32_t cpp_arch_dcache_line_size();
+
 // The arch_blocking_disallowed() flag is used to check that in-kernel interrupt
 // handlers do not do any blocking operations.  This is a per-CPU flag.
 // Various blocking operations, such as mutex.Acquire(), contain assertions

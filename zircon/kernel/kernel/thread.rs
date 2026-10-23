@@ -67,6 +67,7 @@ unsafe extern "C" {
     ) -> *mut Thread;
     fn cpp_thread_set_base_profile(thread: *mut Thread, profile: *const SchedulerStateBaseProfile);
     fn cpp_thread_resume(thread: *mut Thread);
+    fn cpp_thread_detach_and_resume(thread: *mut Thread) -> zx_status_t;
     fn cpp_thread_join(
         thread: *mut Thread,
         out_retcode: *mut i32,
@@ -1224,6 +1225,18 @@ impl ThreadPtr {
     /// The caller must ensure the thread has not been joined or destroyed.
     pub unsafe fn resume(self) {
         unsafe { cpp_thread_resume(self.as_raw()) }
+    }
+
+    /// Detaches and resumes a newly created thread (`Thread::DetachAndResume`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread has not been joined, detached, or destroyed, and
+    /// that `self` is not used after detaching once the thread may have exited.
+    pub unsafe fn detach_and_resume(self) -> Result<(), Status> {
+        // SAFETY: Caller guarantees `self.as_raw()` points to a valid thread that has not been
+        // joined, detached, or destroyed.
+        Status::ok(unsafe { cpp_thread_detach_and_resume(self.as_raw()) })
     }
 
     /// Waits `deadline` time for a thread to complete execution then releases its memory.

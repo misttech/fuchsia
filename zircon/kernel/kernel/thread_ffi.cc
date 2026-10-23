@@ -627,4 +627,9 @@ FFI_ALWAYS_INLINE void cpp_thread_dump_all_during_panic(const char* match_owner,
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_current_reschedule() { Thread::Current::Reschedule(); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_thread_detach_and_resume(Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->DetachAndResume();
+}
 }  // extern "C"

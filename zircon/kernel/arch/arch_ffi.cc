@@ -70,6 +70,7 @@ void cpp_arch_set_blocking_disallowed(bool value);
 void* cpp_arch_get_curr_percpu();
 uint32_t cpp_arch_vm_features();
 uint32_t cpp_arch_num_spinlocks_held();
+uint32_t cpp_arch_dcache_line_size();
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_arch_yield() { arch::Yield(); }
@@ -125,5 +126,6 @@ FFI_ALWAYS_INLINE void cpp_arch_set_blocking_disallowed(bool value) {
 FFI_ALWAYS_INLINE void* cpp_arch_get_curr_percpu() { return arch_get_curr_percpu(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_vm_features() { return arch_vm_features(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_num_spinlocks_held() { return arch_num_spinlocks_held(); }
+FFI_ALWAYS_INLINE uint32_t cpp_arch_dcache_line_size() { return arch_dcache_line_size(); }
 
 }  // extern "C"

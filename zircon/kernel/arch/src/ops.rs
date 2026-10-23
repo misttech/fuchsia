@@ -11,8 +11,10 @@ pub const ZX_VM_FEATURE_CAN_MAP_XOM: u32 = 1 << 0;
 
 unsafe extern "C" {
     fn arch_zero_page(va: *mut core::ffi::c_void);
+    fn arch_clean_cache_range(start: usize, len: usize);
     fn cpp_arch_vm_features() -> u32;
     fn cpp_arch_num_spinlocks_held() -> u32;
+    fn cpp_arch_dcache_line_size() -> u32;
 }
 
 /// Arch optimized version of a page zero routine against a page aligned buffer.
@@ -25,6 +27,28 @@ pub unsafe fn zero_page(va: VAddr) {
     // SAFETY: it is safe to zero the given address.
     unsafe {
         arch_zero_page(core::ptr::with_exposed_provenance_mut(va.0));
+    }
+}
+
+/// Returns the architectural data cache line size in bytes.
+#[inline(always)]
+pub fn dcache_line_size() -> u32 {
+    // SAFETY: `cpp_arch_dcache_line_size` is a pure query of the architectural cache line size.
+    unsafe { cpp_arch_dcache_line_size() }
+}
+
+/// Cleans the data cache for `[start, start + len)`.
+///
+/// # Safety
+///
+/// `[start, start + len)` must be a valid mapped kernel address range for the duration of the call.
+#[inline(always)]
+pub unsafe fn clean_cache_range(start: *const u8, len: usize) {
+    // SAFETY: Caller guarantees `[start, start + len)` is a valid mapped kernel address range.
+    // Exposing provenance allows the C/assembly implementation to cast the integer address back to
+    // a pointer and observe prior stores.
+    unsafe {
+        arch_clean_cache_range(start.expose_provenance(), len);
     }
 }
 

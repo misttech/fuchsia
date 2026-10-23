@@ -18,6 +18,7 @@
 
 // Back door to directly write to the kernel serial port.
 void serial_write(ktl::string_view str);
+extern "C" void cpp_serial_write(const char* ptr, size_t len);
 
 extern FILE gSerialFile;
 extern FILE gStdoutUnbuffered;

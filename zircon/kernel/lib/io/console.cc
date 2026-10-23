@@ -18,6 +18,7 @@
 #include <zircon/types.h>
 
 #include <arch/ops.h>
+#include <kernel/ffi.h>
 #include <kernel/lockdep.h>
 #include <kernel/thread.h>
 #include <platform/debug.h>
@@ -36,6 +37,11 @@ void serial_write(ktl::string_view str) {
 
   // Write out the serial port.
   platform_dputs_irq(str.data(), str.size());
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void cpp_serial_write(const char* ptr, size_t len) {
+  serial_write({ptr, len});
 }
 
 static void stdout_write(ktl::string_view str, SkipPersistedDebuglog skip_pdlog) {
