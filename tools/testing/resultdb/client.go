@@ -45,10 +45,15 @@ type resultDBInvocation struct {
 	Name string `json:"name"`
 }
 
+// TODO(b/527958872): Remove legacy report helpers once all test results are uploaded
+// via -post mode / SendData directly:
+//   - ReportTestResults
+//   - ReportTestExonerations
+//   - report
 func report[T proto.Message](c *Client, requests []T, endpoint string) error {
 	for _, req := range requests {
 		data := protojson.Format(req)
-		err := c.sendData(data, endpoint)
+		err := c.SendData(data, endpoint)
 		if err != nil {
 			return err
 		}
@@ -70,10 +75,11 @@ func (c *Client) ReportInvocationLevelArtifacts(outputRoot string, invocationArt
 	}
 
 	testResult := protojson.Format(invocationRequest)
-	return c.sendData(testResult, "ReportInvocationLevelArtifacts")
+	return c.SendData(testResult, "ReportInvocationLevelArtifacts")
 }
 
-func (c *Client) sendData(data, endpoint string) error {
+// SendData sends raw json payload to the specified endpoint on ResultSink.
+func (c *Client) SendData(data, endpoint string) error {
 	<-c.semaphore
 	defer func() { c.semaphore <- struct{}{} }()
 

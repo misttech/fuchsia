@@ -2343,10 +2343,147 @@ func TestDetermineScheme(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := determineScheme(tc.detail)
+			got := DetermineScheme(tc.detail)
 			if got != tc.wantScheme {
-				t.Errorf("determineScheme() = %q, want %q", got, tc.wantScheme)
+				t.Errorf("DetermineScheme() = %q, want %q", got, tc.wantScheme)
 			}
 		})
+	}
+}
+
+func TestParentInvocationLevelArtifacts(t *testing.T) {
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "syslog.txt")
+	if err := os.WriteFile(logFile, []byte("syslog"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	artifacts := parentInvocationLevelArtifacts(tempDir, []string{"syslog.txt"})
+	if _, ok := artifacts["parent/syslog.txt"]; !ok {
+		t.Errorf("expected key parent/syslog.txt, got keys %v", artifacts)
+	}
+}
+
+func TestTestToUploadRequests(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm",
+		Status:    runtests.TestSuccess,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					SuiteName: "MySuite",
+					CaseName:  "MyCase",
+					Status:    runtests.TestSuccess,
+					Format:    "Rust",
+				},
+				{
+					SuiteName: "MySuite",
+					CaseName:  "MyExoneratedCase",
+					Status:    runtests.TestExonerated,
+					Format:    "Rust",
+				},
+			},
+		},
+	}
+
+	reqs, skipped, err := TestToUploadRequests(detail, []*resultpb.StringPair{}, outputRoot, nil)
+	if err != nil {
+		t.Fatalf("TestToUploadRequests failed: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("Unexpected skipped tests: %v", skipped)
+	}
+	if len(reqs) != 2 {
+		t.Fatalf("Got %d upload requests, want 2 (results + exonerations)", len(reqs))
+	}
+
+	if reqs[0].Endpoint != "ReportTestResults" {
+		t.Errorf("reqs[0].Endpoint = %q, want ReportTestResults", reqs[0].Endpoint)
+	}
+	var testResultsReq sinkpb.ReportTestResultsRequest
+	if err := protojson.Unmarshal(reqs[0].Data, &testResultsReq); err != nil {
+		t.Fatalf("Failed to unmarshal ReportTestResultsRequest: %v", err)
+	}
+	if len(testResultsReq.TestResults) != 3 {
+		// 2 test cases + 1 suite-level test detail (suite-level results are omitted in stacked CL per b/527958757)
+		t.Errorf("Got %d test results in request, want 3", len(testResultsReq.TestResults))
+	}
+
+	if reqs[1].Endpoint != "ReportTestExonerations" {
+		t.Errorf("reqs[1].Endpoint = %q, want ReportTestExonerations", reqs[1].Endpoint)
+	}
+	var testExonerationsReq sinkpb.ReportTestExonerationsRequest
+	if err := protojson.Unmarshal(reqs[1].Data, &testExonerationsReq); err != nil {
+		t.Fatalf("Failed to unmarshal ReportTestExonerationsRequest: %v", err)
+	}
+	if len(testExonerationsReq.TestExonerations) != 1 {
+		t.Errorf("Got %d test exonerations in request, want 1", len(testExonerationsReq.TestExonerations))
+	}
+
+	// 2. With OutputFiles: sub-invocation-level artifacts request is appended.
+	outputDir := "my_output_dir"
+	if err := os.MkdirAll(filepath.Join(outputRoot, outputDir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	logFile := filepath.Join(outputRoot, outputDir, "stdout-and-stderr.txt")
+	if err := os.WriteFile(logFile, []byte("log content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	detail.OutputDir = outputDir
+	detail.OutputFiles = []string{"stdout-and-stderr.txt"}
+
+	reqsWithArtifacts, skipped, err := TestToUploadRequests(detail, []*resultpb.StringPair{}, outputRoot, nil)
+	if err != nil {
+		t.Fatalf("TestToUploadRequests with artifacts failed: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("Unexpected skipped tests: %v", skipped)
+	}
+	if len(reqsWithArtifacts) != 3 {
+		t.Fatalf("Got %d upload requests, want 3 (results + exonerations + artifacts)", len(reqsWithArtifacts))
+	}
+	if reqsWithArtifacts[2].Endpoint != "ReportInvocationLevelArtifacts" {
+		t.Errorf("reqsWithArtifacts[2].Endpoint = %q, want ReportInvocationLevelArtifacts", reqsWithArtifacts[2].Endpoint)
+	}
+	var invArtifactsReq sinkpb.ReportInvocationLevelArtifactsRequest
+	if err := protojson.Unmarshal(reqsWithArtifacts[2].Data, &invArtifactsReq); err != nil {
+		t.Fatalf("Failed to unmarshal ReportInvocationLevelArtifactsRequest: %v", err)
+	}
+	if len(invArtifactsReq.Artifacts) != 1 {
+		t.Errorf("Got %d artifacts in request, want 1", len(invArtifactsReq.Artifacts))
+	}
+	if artifact, ok := invArtifactsReq.Artifacts["stdout-and-stderr.txt"]; !ok {
+		t.Errorf("Artifact stdout-and-stderr.txt not found in request: %+v", invArtifactsReq.Artifacts)
+	} else if artifact.GetFilePath() != logFile {
+		t.Errorf("Artifact FilePath = %q, want %q", artifact.GetFilePath(), logFile)
+	}
+
+	// 3. With parent invocation artifacts: sub-invocation includes artifacts with "parent/" prefix.
+	parentLogFile := filepath.Join(outputRoot, "infra_and_test_std_and_klog.txt")
+	if err := os.WriteFile(parentLogFile, []byte("parent log content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reqsWithParent, skipped, err := TestToUploadRequests(detail, []*resultpb.StringPair{}, outputRoot, []string{"infra_and_test_std_and_klog.txt"})
+	if err != nil {
+		t.Fatalf("TestToUploadRequests with parent artifacts failed: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("Unexpected skipped tests: %v", skipped)
+	}
+	if len(reqsWithParent) != 3 {
+		t.Fatalf("Got %d upload requests, want 3", len(reqsWithParent))
+	}
+	var parentInvArtifactsReq sinkpb.ReportInvocationLevelArtifactsRequest
+	if err := protojson.Unmarshal(reqsWithParent[2].Data, &parentInvArtifactsReq); err != nil {
+		t.Fatalf("Failed to unmarshal ReportInvocationLevelArtifactsRequest: %v", err)
+	}
+	if len(parentInvArtifactsReq.Artifacts) != 2 {
+		t.Errorf("Got %d artifacts in request, want 2", len(parentInvArtifactsReq.Artifacts))
+	}
+	if artifact, ok := parentInvArtifactsReq.Artifacts["parent/infra_and_test_std_and_klog.txt"]; !ok {
+		t.Errorf("parent/infra_and_test_std_and_klog.txt not found in request: %+v", parentInvArtifactsReq.Artifacts)
+	} else if artifact.GetFilePath() != parentLogFile {
+		t.Errorf("parent artifact FilePath = %q, want %q", artifact.GetFilePath(), parentLogFile)
 	}
 }

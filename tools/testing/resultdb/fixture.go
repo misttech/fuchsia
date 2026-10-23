@@ -146,7 +146,7 @@ func synthesizeFixtureResult(results []*sinkpb.TestResult, testDetail *runtests.
 		return nil, ""
 	}
 
-	fineName := fixtureFineName(determineScheme(testDetail), results)
+	fineName := fixtureFineName(DetermineScheme(testDetail), results)
 	testID := fmt.Sprintf("%s/%s:%s", testDetail.Name, fineName, FixtureCaseName)
 	if len(testID) > MaxTestIDLength {
 		log.Printf("[ERROR] Skip uploading *fixture to ResultDB due to test_id exceeding %d bytes max limit: %q", MaxTestIDLength, testID)

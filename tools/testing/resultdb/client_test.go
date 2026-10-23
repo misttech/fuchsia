@@ -6,6 +6,9 @@ package resultdb
 
 import (
 	"flag"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
@@ -169,5 +172,71 @@ func TestParseExoneratedSummary(t *testing.T) {
 	}
 	if diff := cmp.Diff(exoneratedIDs, expectedIDs); diff != "" {
 		t.Errorf("Exoneration IDs differ (-got +want):\n%s", diff)
+	}
+}
+
+func TestSendData(t *testing.T) {
+	var receivedBody string
+	var receivedAuthHeader string
+	var receivedPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuthHeader = r.Header.Get("Authorization")
+		receivedPath = r.URL.Path
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		receivedBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		resultSink: &resultSink{
+			AuthToken:      "test-token",
+			ResultSinkAddr: server.Listener.Addr().String(),
+		},
+		httpClient: &http.Client{},
+		semaphore:  make(chan struct{}, 1),
+	}
+	client.semaphore <- struct{}{}
+
+	payload := `{"testResults":[{"testId":"foo"}]}`
+	if err := client.SendData(payload, "ReportTestResults"); err != nil {
+		t.Fatalf("SendData failed: %v", err)
+	}
+
+	if receivedAuthHeader != "ResultSink test-token" {
+		t.Errorf("got auth header %q, want %q", receivedAuthHeader, "ResultSink test-token")
+	}
+	if receivedPath != "/prpc/luci.resultsink.v1.Sink/ReportTestResults" {
+		t.Errorf("got path %q, want %q", receivedPath, "/prpc/luci.resultsink.v1.Sink/ReportTestResults")
+	}
+	if receivedBody != payload {
+		t.Errorf("got body %q, want %q", receivedBody, payload)
+	}
+}
+
+func TestSendDataError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		resultSink: &resultSink{
+			AuthToken:      "test-token",
+			ResultSinkAddr: server.Listener.Addr().String(),
+		},
+		httpClient: &http.Client{},
+		semaphore:  make(chan struct{}, 1),
+	}
+	client.semaphore <- struct{}{}
+
+	if err := client.SendData(`{}`, "ReportTestResults"); err == nil {
+		t.Errorf("expected error for HTTP 400, got nil")
 	}
 }

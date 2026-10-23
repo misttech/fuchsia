@@ -17,6 +17,7 @@ import (
 
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -59,6 +60,12 @@ const (
 	MaxPropertiesSize = 20 * 1024
 )
 
+// UploadRequest represents a serialized payload to be posted to ResultSink.
+type UploadRequest struct {
+	Endpoint string          `json:"endpoint"`
+	Data     json.RawMessage `json:"data"`
+}
+
 // ParseSummary unmarshals the summary.json file content into runtests.TestSummary struct.
 func ParseSummary(filePath string) (*runtests.TestSummary, error) {
 	content, err := os.ReadFile(filePath)
@@ -72,6 +79,16 @@ func ParseSummary(filePath string) (*runtests.TestSummary, error) {
 	return &summary, nil
 }
 
+// TODO(b/527958872): Remove legacy flat test-id and summary batch conversion logic
+// once Fuchsia test results fully transition to structured test identifiers.
+// Major functions and helpers to be removed:
+//   - ProcessSummaries
+//   - SummaryToResultSink
+//   - testToResultSink
+//   - MaxTestIDLength checks and flat test_id formatting in testCaseToResultSink
+//     and testDetailsToResultSink (along with testsSkipped return plumbing)
+//   - unreachable legacy scheme switch branches in testDetailsToResultSink
+//
 // SummaryToResultSink converts runtests.TestSummary data into an array of result_sink TestResult and TestExoneration.
 func SummaryToResultSink(s *runtests.TestSummary, tags []*resultpb.StringPair, outputRoot string) ([]*sinkpb.TestResult, []*sinkpb.TestExoneration, []string) {
 	if len(outputRoot) == 0 {
@@ -127,11 +144,11 @@ func testToResultSink(test *runtests.TestDetails, tags []*resultpb.StringPair, r
 	return r, exonerations, ts
 }
 
-// determineScheme inspects a test's test cases to determine the appropriate
+// DetermineScheme inspects a test's test cases to determine the appropriate
 // ResultDB module scheme (e.g. "rust", "go", "mobly", "gtest", "flat", or "single").
 // Returns "single" if the test has no cases (indicating a standalone script/binary test).
 // If a test has cases with conflicting formats, it logs a warning and falls back to "flat".
-func determineScheme(test *runtests.TestDetails) string {
+func DetermineScheme(test *runtests.TestDetails) string {
 	if len(test.Cases) == 0 {
 		return "single"
 	}
@@ -169,6 +186,78 @@ func determineScheme(test *runtests.TestDetails) string {
 		log.Printf("[Info] Unknown format %q for test %q, falling back to 'flat' scheme", format, test.Name)
 		return "flat"
 	}
+}
+
+// parentInvocationLevelArtifacts creates resultdb artifacts for parent invocation-level files
+// with the "parent/" key prefix to be sent to ResultDB sub-invocations.
+func parentInvocationLevelArtifacts(outputRoot string, invocationArtifacts []string) map[string]*sinkpb.Artifact {
+	artifacts := InvocationLevelArtifacts(outputRoot, invocationArtifacts)
+	parentArtifacts := make(map[string]*sinkpb.Artifact, len(artifacts))
+	for k, v := range artifacts {
+		parentArtifacts[path.Join("parent", k)] = v
+	}
+	return parentArtifacts
+}
+
+// TestToUploadRequests converts a single runtests.TestDetails into serialized UploadRequests
+// suitable for sending to ResultSink endpoints.
+func TestToUploadRequests(test *runtests.TestDetails, tags []*resultpb.StringPair, outputRoot string, parentArtifacts []string) ([]UploadRequest, []string, error) {
+	if len(outputRoot) == 0 {
+		outputRoot, _ = os.Getwd()
+	}
+	rootPath, _ := filepath.Abs(outputRoot)
+	testResults, exonerations, testsSkipped := testToResultSink(test, tags, rootPath)
+
+	artifacts := parentInvocationLevelArtifacts(rootPath, parentArtifacts)
+	if len(test.Cases) > 0 {
+		for _, of := range test.OutputFiles {
+			outputFile := filepath.Join(rootPath, test.OutputDir, of)
+			if isReadable(outputFile) {
+				artifacts[artifactName(of)] = &sinkpb.Artifact{
+					Body: &sinkpb.Artifact_FilePath{FilePath: outputFile},
+				}
+			} else {
+				log.Printf("[Warn] outputFile: %s is not readable, skip.", outputFile)
+			}
+		}
+	}
+
+	var uploadRequests []UploadRequest
+	for _, req := range createTestResultsRequests(testResults, MaxBatchSize) {
+		data, err := protojson.Marshal(req)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal ReportTestResultsRequest: %w", err)
+		}
+		uploadRequests = append(uploadRequests, UploadRequest{
+			Endpoint: "ReportTestResults",
+			Data:     data,
+		})
+	}
+	for _, req := range createTestExonerationsRequests(exonerations, MaxBatchSize) {
+		data, err := protojson.Marshal(req)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal ReportTestExonerationsRequest: %w", err)
+		}
+		uploadRequests = append(uploadRequests, UploadRequest{
+			Endpoint: "ReportTestExonerations",
+			Data:     data,
+		})
+	}
+
+	if len(artifacts) > 0 {
+		data, err := protojson.Marshal(&sinkpb.ReportInvocationLevelArtifactsRequest{
+			Artifacts: artifacts,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal ReportInvocationLevelArtifactsRequest: %w", err)
+		}
+		uploadRequests = append(uploadRequests, UploadRequest{
+			Endpoint: "ReportInvocationLevelArtifacts",
+			Data:     data,
+		})
+	}
+
+	return uploadRequests, testsSkipped, nil
 }
 
 // InvocationLevelArtifacts creates resultdb artifacts for invocation-level files to be sent to ResultDB.
@@ -387,7 +476,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 	// to see if it passed, which would mean that a failed result for a test case is
 	// expected and thus should be reported as a passed result.
 	testStatus, _, _ := resultDBStatus(testDetail.Status)
-	scheme := determineScheme(testDetail)
+	scheme := DetermineScheme(testDetail)
 
 	// ResultDB reserves characters <= ',' (ASCII U+0020 to U+002C, such as ' ',
 	// '!', '"', '#', etc.) as leading characters for fine_name and case_name
@@ -543,7 +632,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	properties, testTags := testDetailProperties(testDetail, tags)
 	var testIDStructured *sinkpb.TestIdentifier
 	if len(testDetail.Cases) == 0 {
-		scheme := determineScheme(testDetail)
+		scheme := DetermineScheme(testDetail)
 		switch scheme {
 		case "single":
 			testIDStructured = &sinkpb.TestIdentifier{
