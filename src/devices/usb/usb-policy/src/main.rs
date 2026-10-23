@@ -11,6 +11,7 @@
 #![warn(clippy::unimplemented)]
 
 use anyhow::{Error, format_err};
+use fidl_fuchsia_hardware_power_charger as fcharger;
 use fidl_fuchsia_hardware_power_usb as fusb_power;
 use fidl_fuchsia_hardware_usb_peripheral as peripheral;
 use fidl_fuchsia_hardware_usb_policy as fpolicy;
@@ -69,6 +70,9 @@ struct UsbPolicySharedStateInner {
 
     /// Optional injected `fusb_power::DebugProxy` for testing.
     usb_power_debug_override: Option<fusb_power::DebugProxy>,
+
+    /// Optional injected `fcharger::DebugProxy` for testing.
+    charger_debug_override: Option<fcharger::DebugProxy>,
 }
 
 /// A thread-safe wrapper around `UsbPolicySharedStateInner` that encapsulates locking.
@@ -92,6 +96,7 @@ impl UsbPolicySharedState {
                 wake_alarms_override: None,
                 sag_override: None,
                 usb_power_debug_override: None,
+                charger_debug_override: None,
             }),
             serial_number,
         }
@@ -173,6 +178,11 @@ impl UsbPolicySharedState {
         inner.usb_power_debug_override.clone()
     }
 
+    pub fn get_charger_debug_override(&self) -> Option<fcharger::DebugProxy> {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.charger_debug_override.clone()
+    }
+
     #[cfg(test)]
     pub fn set_wake_alarms_for_test(&self, proxy: ftalarms::WakeAlarmsProxy) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -189,6 +199,12 @@ impl UsbPolicySharedState {
     pub fn set_usb_power_debug_for_test(&self, proxy: fusb_power::DebugProxy) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.usb_power_debug_override = Some(proxy);
+    }
+
+    #[cfg(test)]
+    pub fn set_charger_debug_for_test(&self, proxy: fcharger::DebugProxy) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.charger_debug_override = Some(proxy);
     }
 
     pub async fn wait_for_controller(&self) -> Arc<controller::ControllerState> {
@@ -245,6 +261,58 @@ async fn get_usb_power_debug_device(
             Err(zx::Status::UNAVAILABLE)
         })
         .await
+}
+
+async fn get_charger_debug_device(
+    shared_state: &Arc<UsbPolicySharedState>,
+) -> Option<fcharger::DebugProxy> {
+    if let Some(proxy) = shared_state.get_charger_debug_override() {
+        return Some(proxy);
+    }
+
+    let connect_fut = async {
+        let service =
+            Service::open(fcharger::DebugServiceMarker).map_err(|_| zx::Status::UNAVAILABLE)?;
+        let instance = service.watch_for_any().await.map_err(|_| zx::Status::UNAVAILABLE)?;
+        instance.connect_to_debug().map_err(|_| zx::Status::UNAVAILABLE)
+    };
+
+    connect_fut
+        .on_timeout(zx::MonotonicInstant::after(GET_CONFIG_TIMEOUT), || {
+            Err(zx::Status::UNAVAILABLE)
+        })
+        .await
+        .ok()
+}
+
+/// Applies or clears the charger `OperatingMode::Discharging` override so that a USB-A host
+/// connection (where 5V VBUS stays active after CC1/CC2 are opened) stops drawing USB power
+/// during `DisconnectCable`.
+async fn set_charger_cable_connected(
+    charger_debug: Option<&fcharger::DebugProxy>,
+    connected: bool,
+) {
+    let Some(charger_debug) = charger_debug else {
+        return;
+    };
+    let options = fcharger::ControlOptions {
+        operating_mode: Some(fcharger::OperatingMode::Discharging),
+        ..Default::default()
+    };
+    let res = if connected {
+        charger_debug.clear_control(&options).await
+    } else {
+        charger_debug.set_control(&options).await
+    };
+    match res {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            warn!("Charger Debug (connected={connected}) returned error: {e:?}");
+        }
+        Err(e) => {
+            warn!("Charger Debug (connected={connected}) FIDL error: {e:?}");
+        }
+    }
 }
 
 async fn fetch_serial_number() -> String {
@@ -332,20 +400,23 @@ async fn handle_disconnect_cable(
     shared_state.cancel_pending_reconnect();
 
     let usb_power_debug = get_usb_power_debug_device(shared_state).await?;
-    if duration == 0 {
-        return usb_power_debug
-            .set_connected(false, None)
-            .await
-            .map_err(|_| zx::Status::INTERNAL)?
-            .map_err(|_| zx::Status::INTERNAL);
-    }
-
-    let alarms_proxy = shared_state.get_wake_alarms()?;
+    let charger_debug = get_charger_debug_device(shared_state).await;
     let setup_lease = if let Some(sag_proxy) = shared_state.get_sag() {
         sag_proxy.acquire_wake_lease("usb-policy-disconnect-setup").await.ok().and_then(Result::ok)
     } else {
         None
     };
+    if duration == 0 {
+        usb_power_debug
+            .set_connected(false, None)
+            .await
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?;
+        set_charger_cable_connected(charger_debug.as_ref(), false).await;
+        return Ok(());
+    }
+
+    let alarms_proxy = shared_state.get_wake_alarms()?;
 
     let setup_done = zx::Event::create();
     let setup_done_dup =
@@ -387,6 +458,7 @@ async fn handle_disconnect_cable(
         let _ = alarms_proxy.cancel("usb-policy-reconnect");
         return Err(e);
     }
+    set_charger_cable_connected(charger_debug.as_ref(), false).await;
     drop(setup_lease);
 
     let state_for_task = shared_state.clone();
@@ -399,6 +471,7 @@ async fn handle_disconnect_cable(
 
         match alarm_res {
             Ok(Ok(alarm_wake_lease)) => {
+                set_charger_cable_connected(charger_debug.as_ref(), true).await;
                 if let Err(e) = usb_power_debug
                     .set_connected(true, Some(alarm_wake_lease))
                     .await
@@ -413,10 +486,12 @@ async fn handle_disconnect_cable(
             }
             Ok(Err(e)) => {
                 warn!("WakeAlarms.SetAndWait returned error: {:?}", e);
+                set_charger_cable_connected(charger_debug.as_ref(), true).await;
                 let _ = usb_power_debug.set_connected(true, None).await;
             }
             Err(e) => {
                 warn!("WakeAlarms.SetAndWait FIDL error: {:?}", e);
+                set_charger_cable_connected(charger_debug.as_ref(), true).await;
                 let _ = usb_power_debug.set_connected(true, None).await;
             }
         }
@@ -430,6 +505,7 @@ async fn handle_connect_cable(shared_state: &Arc<UsbPolicySharedState>) -> Resul
     let usb_power_debug = get_usb_power_debug_device(shared_state).await.inspect_err(|e| {
         warn!("ConnectCable: failed to connect to USB power debug service: {:?}", e);
     })?;
+    let charger_debug = get_charger_debug_device(shared_state).await;
     let wake_lease = match shared_state.get_sag() {
         Some(sag_proxy) => match sag_proxy.acquire_wake_lease("usb-policy-connect").await {
             Ok(Ok(lease)) => Some(lease),
@@ -453,6 +529,7 @@ async fn handle_connect_cable(shared_state: &Arc<UsbPolicySharedState>) -> Resul
     // place.
     shared_state.cancel_pending_reconnect();
 
+    set_charger_cable_connected(charger_debug.as_ref(), true).await;
     usb_power_debug
         .set_connected(true, wake_lease)
         .await
@@ -463,7 +540,8 @@ async fn handle_connect_cable(shared_state: &Arc<UsbPolicySharedState>) -> Resul
         .map_err(|e| {
             warn!("ConnectCable: SetConnected(true) returned error: {:?}", e);
             zx::Status::INTERNAL
-        })
+        })?;
+    Ok(())
 }
 
 async fn run_configuration_server(
@@ -1357,6 +1435,120 @@ mod tests {
             let _ = responder.send(Ok(lease_client));
         }
         assert!(usb_power_debug_stream.next().now_or_never().is_none());
+        Ok(())
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum ChargerDebugCall {
+        SetControl(fcharger::ControlOptions),
+        ClearControl(fcharger::ControlOptions),
+    }
+
+    #[fuchsia::test]
+    async fn test_configuration_server_disconnect_and_connect_cable_updates_charger_debug()
+    -> anyhow::Result<()> {
+        let (usb_power_debug_proxy, mut usb_power_debug_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fusb_power::DebugMarker>();
+        let (charger_debug_proxy, mut charger_debug_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fcharger::DebugMarker>();
+        let (alarms_proxy, mut alarms_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ftalarms::WakeAlarmsMarker>();
+
+        let shared_state = Arc::new(UsbPolicySharedState::new());
+        shared_state.set_usb_power_debug_for_test(usb_power_debug_proxy);
+        shared_state.set_charger_debug_for_test(charger_debug_proxy);
+        shared_state.set_wake_alarms_for_test(alarms_proxy);
+
+        let (config_proxy, config_stream) =
+            fidl::endpoints::create_proxy_and_stream::<usb_policy::ConfigurationMarker>();
+        let _server_task =
+            fuchsia_async::Task::local(run_configuration_server(config_stream, shared_state));
+
+        let (alarm_fire_tx, alarm_fire_rx) = futures::channel::oneshot::channel::<()>();
+        let _alarms_task = fuchsia_async::Task::local(async move {
+            if let Some(Ok(ftalarms::WakeAlarmsRequest::SetAndWait {
+                mode,
+                alarm_id,
+                responder,
+                ..
+            })) = alarms_stream.next().await
+            {
+                assert_eq!(alarm_id, "usb-policy-reconnect");
+                if let ftalarms::SetMode::NotifySetupDone(done_event) = mode {
+                    let _ = done_event.signal(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED);
+                }
+                let _ = alarm_fire_rx.await;
+                let (lease_client, _lease_server) = zx::EventPair::create();
+                let _ = responder.send(Ok(lease_client));
+            }
+        });
+
+        let usb_power_debug_events_task = fuchsia_async::Task::local(async move {
+            let mut events = Vec::new();
+            while let Some(Ok(fusb_power::DebugRequest::SetConnected {
+                connected,
+                wake_lease,
+                responder,
+            })) = usb_power_debug_stream.next().await
+            {
+                events.push((connected, wake_lease.is_some()));
+                let _ = responder.send(Ok(()));
+                if events.len() == 4 {
+                    break;
+                }
+            }
+            events
+        });
+
+        let charger_debug_events_task = fuchsia_async::Task::local(async move {
+            let mut calls = Vec::new();
+            while let Some(Ok(req)) = charger_debug_stream.next().await {
+                match req {
+                    fcharger::DebugRequest::SetControl { options, responder } => {
+                        calls.push(ChargerDebugCall::SetControl(options));
+                        let _ = responder.send(Ok(()));
+                    }
+                    fcharger::DebugRequest::ClearControl { options, responder } => {
+                        calls.push(ChargerDebugCall::ClearControl(options));
+                        let _ = responder.send(Ok(()));
+                    }
+                    fcharger::DebugRequest::_UnknownMethod { .. } => {
+                        panic!("unexpected fcharger::DebugRequest");
+                    }
+                }
+                if calls.len() == 4 {
+                    break;
+                }
+            }
+            calls
+        });
+
+        // 1. Indefinite disconnect (`duration == 0`) followed by explicit `connect_cable()`.
+        assert_eq!(config_proxy.disconnect_cable(0).await?, Ok(()));
+        assert_eq!(config_proxy.connect_cable().await?, Ok(()));
+
+        // 2. Timed disconnect (`duration > 0`) followed by wake-alarm reconnect.
+        let duration_nanos = zx::MonotonicDuration::from_seconds(5).into_nanos();
+        assert_eq!(config_proxy.disconnect_cable(duration_nanos).await?, Ok(()));
+        let _ = alarm_fire_tx.send(());
+
+        assert_eq!(
+            usb_power_debug_events_task.await,
+            vec![(false, false), (true, false), (false, false), (true, true)]
+        );
+        let expected_options = fcharger::ControlOptions {
+            operating_mode: Some(fcharger::OperatingMode::Discharging),
+            ..Default::default()
+        };
+        assert_eq!(
+            charger_debug_events_task.await,
+            vec![
+                ChargerDebugCall::SetControl(expected_options.clone()),
+                ChargerDebugCall::ClearControl(expected_options.clone()),
+                ChargerDebugCall::SetControl(expected_options.clone()),
+                ChargerDebugCall::ClearControl(expected_options),
+            ]
+        );
         Ok(())
     }
 

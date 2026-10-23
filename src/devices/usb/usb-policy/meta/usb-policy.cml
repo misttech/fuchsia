@@ -27,7 +27,10 @@
             ],
         },
         {
-            service: "fuchsia.hardware.power.usb.DebugService",
+            service: [
+                "fuchsia.hardware.power.charger.DebugService",
+                "fuchsia.hardware.power.usb.DebugService",
+            ],
             availability: "optional",
         },
         {

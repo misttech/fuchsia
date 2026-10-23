@@ -589,6 +589,7 @@
                 "fuchsia.hardware.haptics.Service",
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.pci.DebugService",
+                "fuchsia.hardware.power.charger.DebugService",
                 "fuchsia.hardware.power.suspend.SuspendService",
                 "fuchsia.hardware.power.usb.DebugService",
                 "fuchsia.hardware.qcom.hvdcpopti.Service",

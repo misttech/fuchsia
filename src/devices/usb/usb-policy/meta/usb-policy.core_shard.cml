@@ -19,7 +19,10 @@
             to: "#usb-policy",
         },
         {
-            service: [ "fuchsia.hardware.power.usb.DebugService" ],
+            service: [
+                "fuchsia.hardware.power.charger.DebugService",
+                "fuchsia.hardware.power.usb.DebugService",
+            ],
             from: "parent",
             to: "#usb-policy",
             availability: "optional",
