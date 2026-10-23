@@ -15,6 +15,7 @@
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
+#include <cstring>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -641,6 +642,10 @@ class UsbAdbTest : public testing::Test {
     });
   }
 
+  // Simulates the host starting an adb session: the host's CNXN is passed to the client, and the
+  // device replies. Defined below, after the adb header helpers.
+  void StartHostSession(fidl::WireSyncClient<fadb::UsbAdbImpl>& usb_impl);
+
   // Safety net that drains any fake endpoint requests still outstanding at
   // deconfigure time. The driver now issues its own CancelAll() at the start of
   // teardown, which is what actually drains requests, and Deconfigure() only runs
@@ -799,6 +804,242 @@ TEST_F(UsbAdbTest, RecvAdbMessage) {
   driver_test_.runtime().RunUntil([&] { return completed.load(); });
   EXPECT_EQ(response_status, ZX_OK);
   EXPECT_EQ(actual_size, kReceiveSize);
+
+  SafeStopDriver();
+}
+
+// Returns an adb packet header (struct amessage) for |command| with a valid magic.
+std::vector<uint8_t> AdbHeader(uint32_t command) {
+  const uint32_t fields[] = {command, 0x01000001, 256 * 1024, 0, 0, command ^ 0xffffffff};
+  std::vector<uint8_t> header(sizeof(fields));
+  memcpy(header.data(), fields, sizeof(fields));
+  return header;
+}
+
+constexpr uint32_t kAdbCnxn = 0x4e584e43;
+constexpr uint32_t kAdbWrte = 0x45545257;
+
+void UsbAdbTest::StartHostSession(fidl::WireSyncClient<fadb::UsbAdbImpl>& usb_impl) {
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, AdbHeader(kAdbCnxn));
+  });
+  auto result = usb_impl->Receive();
+  ASSERT_TRUE(result.ok());
+  ASSERT_TRUE(result->is_ok());
+  ASSERT_EQ(result->value()->data.size(), AdbHeader(kAdbCnxn).size());
+
+  ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, 100));
+}
+
+TEST_F(UsbAdbTest, CnxnDuringHostSessionRestartsUsb) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  // The host starts a session. Its CNXN is passed to the client as usual.
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, AdbHeader(kAdbCnxn));
+  });
+  auto first = usb_impl->Receive();
+  ASSERT_TRUE(first.ok());
+  ASSERT_TRUE(first->is_ok());
+  EXPECT_EQ(first->value()->data.size(), AdbHeader(kAdbCnxn).size());
+
+  // The device replies, which establishes the session.
+  ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, 100));
+
+  // The host adb server restarts and sends a new CNXN without a USB disconnect. The driver restarts
+  // USB: the client is told the device is offline and its connection is closed.
+  handler.expected_statuses_.emplace(0);
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, AdbHeader(kAdbCnxn));
+  });
+  ExpectHandleOneEventSafe(usb_impl, handler);
+  EXPECT_EQ(usb_impl.HandleOneEvent(handler).status(), ZX_ERR_PEER_CLOSED);
+
+  WaitForState(State::kAwaitingUsbConnection);
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { EXPECT_EQ(env.fake_dev_->deconfigure_count(), 1u); });
+
+  usb_impl = {};
+  SafeStopDriver();
+}
+
+// Returns |stale_bytes| of filler followed by |tail|, as the device receives it when the host's
+// previous transfer was interrupted partway through a request.
+std::vector<uint8_t> AfterStaleData(size_t stale_bytes, const std::vector<uint8_t>& tail) {
+  std::vector<uint8_t> data(stale_bytes, 0xab);
+  data.insert(data.end(), tail.begin(), tail.end());
+  return data;
+}
+
+TEST_F(UsbAdbTest, CnxnAfterInterruptedTransferRestartsUsb) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  // The host starts a session and the device replies.
+  ASSERT_NO_FATAL_FAILURE(StartHostSession(usb_impl));
+
+  // The host adb server is killed after two packets of a transfer, and the restarted server's CNXN
+  // completes the same request. The driver still recognizes the CNXN and restarts USB.
+  handler.expected_statuses_.emplace(0);
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp)
+        .RequestComplete(ZX_OK, AfterStaleData(2 * kBulkMaxPacket, AdbHeader(kAdbCnxn)));
+  });
+  ExpectHandleOneEventSafe(usb_impl, handler);
+  EXPECT_EQ(usb_impl.HandleOneEvent(handler).status(), ZX_ERR_PEER_CLOSED);
+
+  WaitForState(State::kAwaitingUsbConnection);
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { EXPECT_EQ(env.fake_dev_->deconfigure_count(), 1u); });
+
+  usb_impl = {};
+  SafeStopDriver();
+}
+
+TEST_F(UsbAdbTest, CnxnNotInItsOwnPacketIsDelivered) {
+  auto usb_impl = NormalStartAdb();
+  ASSERT_NO_FATAL_FAILURE(StartHostSession(usb_impl));
+
+  // A CNXN header that does not start on a packet boundary, or that is followed by more data, was
+  // not sent as its own packet, so it is payload and is passed to the client.
+  std::vector<uint8_t> unaligned = AfterStaleData(100, AdbHeader(kAdbCnxn));
+  std::vector<uint8_t> leading = AdbHeader(kAdbCnxn);
+  leading.resize(kBulkMaxPacket + 100, 0xab);
+  for (const auto& data : {unaligned, leading}) {
+    driver_test_.RunInEnvironmentTypeContext([&data](UsbAdbEnvironment& env) {
+      env.fake_dev_->fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, data);
+    });
+    auto result = usb_impl->Receive();
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->data.size(), data.size());
+  }
+
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kOnline); });
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { EXPECT_EQ(env.fake_dev_->deconfigure_count(), 0u); });
+
+  SafeStopDriver();
+}
+
+TEST_F(UsbAdbTest, CnxnBeforeDeviceRepliesIsDelivered) {
+  auto usb_impl = NormalStartAdb();
+
+  // Until the device has sent anything, a repeated CNXN does not indicate a stale session and is
+  // passed to the client.
+  for (int i = 0; i < 2; i++) {
+    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+      env.fake_dev_->fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, AdbHeader(kAdbCnxn));
+    });
+    auto result = usb_impl->Receive();
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->data.size(), AdbHeader(kAdbCnxn).size());
+  }
+
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kOnline); });
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { EXPECT_EQ(env.fake_dev_->deconfigure_count(), 0u); });
+
+  SafeStopDriver();
+}
+
+TEST_F(UsbAdbTest, OtherHeadersDuringHostSessionAreDelivered) {
+  auto usb_impl = NormalStartAdb();
+  ASSERT_NO_FATAL_FAILURE(StartHostSession(usb_impl));
+
+  // Only CNXN restarts USB; other packet headers are passed to the client.
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, AdbHeader(kAdbWrte));
+  });
+  auto result = usb_impl->Receive();
+  ASSERT_TRUE(result.ok());
+  ASSERT_TRUE(result->is_ok());
+  EXPECT_EQ(result->value()->data.size(), AdbHeader(kAdbWrte).size());
+
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kOnline); });
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { EXPECT_EQ(env.fake_dev_->deconfigure_count(), 0u); });
+
+  SafeStopDriver();
+}
+
+TEST_F(UsbAdbTest, OfflineTxDoesNotStartHostSession) {
+  auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
+  ASSERT_TRUE(client_->StartAdb(std::move(server_end)).ok());
+  auto usb_impl = fidl::WireClient<fadb::UsbAdbImpl>(
+      std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  // While offline, the client queues more data than fits in the bulk IN request pool, so some of
+  // it is still being sent after the endpoints are enabled, from TxComplete(). A FIDL message is
+  // limited to 64 KiB, so the data is queued as two writes that together need more requests than
+  // the pool has.
+  constexpr size_t kChunksPerWrite = kBulkTxCount / 2 + 1;
+  constexpr size_t kOfflineWrites = 2;
+  static_assert(kChunksPerWrite * kOfflineWrites > kBulkTxCount);
+  std::vector<uint8_t> offline_data(kVmoDataSize * kChunksPerWrite, 0xaa);
+  std::atomic<size_t> offline_tx_done = 0;
+  std::atomic<size_t> offline_tx_ok = 0;
+  for (size_t i = 0; i < kOfflineWrites; i++) {
+    usb_impl
+        ->QueueTx(fidl::VectorView<uint8_t>::FromExternal(offline_data.data(), offline_data.size()))
+        .ThenExactlyOnce([&](auto& result) {
+          if (result.ok() && result->is_ok()) {
+            offline_tx_ok++;
+          }
+          offline_tx_done++;
+        });
+  }
+  driver_test_.runtime().RunUntil([&]() {
+    size_t count = 0;
+    driver_test_.RunInDriverContext(
+        [&](UsbAdbDevice& dev) { count = UsbAdbTestHelper::TxPendingReqsCount(dev); });
+    return count == kOfflineWrites;
+  });
+
+  // Bring USB online, and let the host read everything queued while offline.
+  WaitConfigured();
+  EnableUsb();
+  driver_test_.runtime().RunUntil([&]() {
+    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+      auto& bulk_in = env.fake_dev_->fake_endpoint(kBulkInEp);
+      while (bulk_in.pending_request_count() > 0) {
+        bulk_in.RequestComplete(ZX_OK, kVmoDataSize);
+      }
+    });
+    return offline_tx_done.load() == kOfflineWrites;
+  });
+  EXPECT_EQ(offline_tx_ok.load(), kOfflineWrites);
+
+  // The host has not sent anything yet, so the data sent so far does not mean that the device has
+  // answered a host session. The host's first CNXN is passed to the client rather than treated as a
+  // restarted host.
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, AdbHeader(kAdbCnxn));
+  });
+  std::atomic<bool> received = false;
+  size_t received_size = 0;
+  usb_impl->Receive().ThenExactlyOnce([&](auto& result) {
+    if (result.ok() && result->is_ok()) {
+      received_size = result->value()->data.size();
+    }
+    received = true;
+  });
+  driver_test_.runtime().RunUntil([&]() { return received.load(); });
+  EXPECT_EQ(received_size, AdbHeader(kAdbCnxn).size());
+
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kOnline); });
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { EXPECT_EQ(env.fake_dev_->deconfigure_count(), 0u); });
 
   SafeStopDriver();
 }

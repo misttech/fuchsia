@@ -17,7 +17,9 @@
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 #include <zircon/compiler.h>
+#include <zircon/syscalls.h>
 
+#include <cstring>
 #include <deque>
 #include <queue>
 #include <vector>
@@ -37,6 +39,10 @@ constexpr uint32_t kBulkRxCount = 16;
 constexpr size_t kVmoDataSize = 4096;
 
 constexpr uint16_t kBulkMaxPacket = 512;
+
+constexpr size_t kAdbHeaderSize = 24;
+constexpr uint32_t kAdbCommandConnect = 0x4e584e43;  // "CNXN"
+constexpr uint32_t kAdbProtocolVersionMin = 0x01000000;
 
 constexpr char kDeviceName[] = "usb-adb-function";
 
@@ -65,6 +71,9 @@ enum class State : uint8_t {
   // - A fadb::Device client calls StopAdb().
   // - A UsbAdbImpl client closes their channel.
   // - usb-peripheral calls SetConfigured(false).
+  // - The host sends an adb CNXN after the device has already sent data in this
+  //   session, meaning the host started a new adb session without a USB
+  //   disconnect (e.g. its adb server was restarted mid-transfer).
   // - Stop gets called.
   //
   // ... we disable endpoints, cancel in-flight requests, and move to
@@ -143,6 +152,39 @@ class UsbAdbDevice : public fdf::DriverBase2,
 
   fidl::ServerBindingGroup<fadb::Device> device_bindings_;
 
+  struct AdbHeader {
+    uint32_t command;
+    uint32_t arg0;
+    uint32_t arg1;
+    uint32_t data_length;
+    uint32_t data_check;
+    uint32_t magic;
+
+    // FromVaddr reads the header information out of a DMA payload pointed at by the given vaddr and
+    // fixes up the endianness of all fields.
+    static AdbHeader FromVaddr(const zx_vaddr_t vaddr) {
+      auto* bytes = reinterpret_cast<const uint8_t*>(vaddr);
+      zx_cache_flush(bytes, kAdbHeaderSize, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+
+      AdbHeader header;
+
+      std::memcpy(&header.command, bytes + 0, sizeof(uint32_t));
+      std::memcpy(&header.arg0, bytes + 4, sizeof(uint32_t));
+      std::memcpy(&header.arg1, bytes + 8, sizeof(uint32_t));
+      std::memcpy(&header.data_length, bytes + 12, sizeof(uint32_t));
+      std::memcpy(&header.data_check, bytes + 16, sizeof(uint32_t));
+      std::memcpy(&header.magic, bytes + 20, sizeof(uint32_t));
+      header.command = le32toh(header.command);
+      header.arg0 = le32toh(header.arg0);
+      header.arg1 = le32toh(header.arg1);
+      header.data_length = le32toh(header.data_length);
+      header.data_check = le32toh(header.data_check);
+      header.magic = le32toh(header.magic);
+
+      return header;
+    }
+  };
+
   // Structure to store pending and in-flight transfer requests.
   struct txn_req_t {
     QueueTxRequest request;
@@ -161,6 +203,11 @@ class UsbAdbDevice : public fdf::DriverBase2,
   // USB request completion callback methods.
   void TxComplete(std::vector<fendpoint::Completion> completion);
   void RxComplete(std::vector<fendpoint::Completion> completion);
+
+  // Returns true if |completion| is a successful bulk OUT transfer that ends with an adb CNXN
+  // packet header sent as its own USB packet, either alone or after whole packets of an interrupted
+  // transfer.
+  bool IsAdbConnect(const fendpoint::Completion& completion);
 
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
   // Owning ServerBinding for USB function interface.
@@ -240,6 +287,15 @@ class UsbAdbDevice : public fdf::DriverBase2,
   bool reset_usb_on_stop_ = false;
   bool usb_disconnect_observed_ = false;
   bool adb_connected_during_stop_ = false;
+
+  // Whether the host has sent anything since the endpoints were last enabled.
+  bool host_data_received_ = false;
+
+  // Whether data has been queued to the host since it first sent something after the endpoints
+  // were last enabled, i.e. the device has answered the host's CNXN. A CNXN received after that
+  // means the host started a new adb session without a USB disconnect. Data queued before the host
+  // sends anything (e.g. written by a client while offline) does not count.
+  bool host_session_started_ = false;
 
   bool CancelAllCompleted() const { return bulk_in_cancelled_ && bulk_out_cancelled_; }
   bool AllRequestsReturned() {

@@ -8,9 +8,11 @@
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/zx/vmar.h>
 #include <zircon/assert.h>
+#include <zircon/syscalls.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 
 #include <usb/peripheral.h>
@@ -341,6 +343,9 @@ void UsbAdbDevice::SendQueued() {
       }
       return;
     }
+    if (host_data_received_) {
+      host_session_started_ = true;
+    }
 
     it->in_flight_vmo_ids.insert(it->in_flight_vmo_ids.end(), queued_vmo_ids.begin(),
                                  queued_vmo_ids.end());
@@ -500,6 +505,32 @@ void UsbAdbDevice::RxComplete(std::vector<fendpoint::Completion> completions) {
         CheckUsbStopComplete();
         break;
       case State::kOnline:
+        if (host_session_started_ && IsAdbConnect(completion)) {
+          // The host started a new adb session without a USB disconnect, e.g. because its adb
+          // server was restarted in the middle of a transfer. The client may be holding a
+          // partially received packet, and data from the previous session may still be queued
+          // ahead of the reply to this CNXN, which the host would reject. Restart USB as if the
+          // cable had been replugged: this flushes both directions, makes the client start over,
+          // and makes the host reconnect to a clean device.
+          zxlogf(WARNING, "Received adb CNXN during an existing host session; restarting USB");
+          RecordEvent("host_reconnected: CNXN during session");
+          bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
+
+          // Only an explicit USB reset (Deconfigure() + StartUsb()) makes the host re-enumerate and
+          // tears down the client's session. If a bus disconnect is already in progress, the
+          // SetConfigured(false) that follows handles it instead.
+          if (!usb_disconnect_observed_) {
+            reset_usb_on_stop_ = true;
+            RecordEvent("reset_usb_on_stop");
+          }
+
+          ResetOrStopUsb(State::kStoppingForReconnect);
+          break;
+        }
+
+        if (completion.status().value_or(ZX_ERR_INTERNAL) == ZX_OK) {
+          host_data_received_ = true;
+        }
         if (completion.status().value_or(ZX_ERR_INTERNAL) == ZX_ERR_IO_NOT_PRESENT) {
           if (!usb_disconnect_observed_) {
             usb_disconnect_observed_ = true;
@@ -512,6 +543,35 @@ void UsbAdbDevice::RxComplete(std::vector<fendpoint::Completion> completions) {
         break;
     }
   }
+}
+
+bool UsbAdbDevice::IsAdbConnect(const fendpoint::Completion& completion) {
+  if (completion.status().value_or(ZX_ERR_INTERNAL) != ZX_OK || !completion.request().has_value()) {
+    return false;
+  }
+
+  // The host sends a CNXN header as a single short packet. Normally it fills a request on its own.
+  // But if the previous host session was killed in the middle of a transfer, the request may
+  // already hold some whole packets of that transfer, and the CNXN then completes the request after
+  // them. Packets before the final short packet are always full-sized, so the CNXN can only start
+  // at a multiple of the max packet size (512 bytes at high speed; 1024 at SuperSpeed is also a
+  // multiple of 512).
+  const size_t transfer_size = completion.transfer_size().value_or(0);
+  if (transfer_size < kAdbHeaderSize || transfer_size > kVmoDataSize ||
+      (transfer_size - kAdbHeaderSize) % kBulkMaxPacket != 0) {
+    return false;
+  }
+
+  std::optional<zx_vaddr_t> addr = bulk_out_ep_.GetMappedAddr(*completion.request(), 0);
+  if (!addr.has_value()) {
+    return false;
+  }
+
+  auto header = AdbHeader::FromVaddr(*addr + transfer_size - kAdbHeaderSize);
+
+  return (header.command == kAdbCommandConnect &&
+          header.magic == (kAdbCommandConnect ^ 0xffffffff) && header.data_length <= kVmoDataSize &&
+          header.arg0 >= kAdbProtocolVersionMin);
 }
 
 void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
@@ -676,6 +736,8 @@ zx::result<> UsbAdbDevice::EnableEndpoints() {
 
   usb_disconnect_observed_ = false;
   adb_connected_during_stop_ = false;
+  host_data_received_ = false;
+  host_session_started_ = false;
   SetState(State::kOnline);
 
   SendQueued();
