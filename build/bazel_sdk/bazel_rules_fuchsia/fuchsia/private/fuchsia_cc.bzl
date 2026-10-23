@@ -64,11 +64,10 @@ def _fuchsia_cc_apply_transitive_features_impl(ctx):
         runfiles = actual[DefaultInfo].default_runfiles,
         executable = final_executable,
     ))
-    if CcInfo in actual:
-        result.append(actual[CcInfo])
-    if CcSharedLibraryInfo in actual:
-        result.append(actual[CcSharedLibraryInfo])
-    if result == []:
+    for provider in KNOWN_PROVIDERS + [CcSharedLibraryInfo, FuchsiaUnstrippedBinariesInfo]:
+        if provider in actual:
+            result.append(actual[provider])
+    if len(result) == 1:
         fail("Could not find any providers in: {}".format(actual.label))
     return result
 

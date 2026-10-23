@@ -13,8 +13,17 @@ load(
     "merge_debug_symbol_infos",
 )
 load(
+    "@fuchsia_rules_common//debug_symbols:providers.bzl",
+    "FuchsiaUnstrippedBinariesInfo",
+    "FuchsiaUnstrippedBinaryInfo",
+)
+load(
     "@fuchsia_rules_common//packages:providers.bzl",
     "FuchsiaPackageResourcesInfo",
+)
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "COMPILED_BINARY_PROVIDERS",
 )
 load(
     ":providers.bzl",
@@ -54,6 +63,17 @@ def _fuchsia_component_common_impl(ctx):
 
     resources = []
     for dep in ctx.attr.deps:
+        if (
+            FuchsiaUnstrippedBinariesInfo not in dep and
+            FuchsiaUnstrippedBinaryInfo not in dep and
+            any([p in dep for p in COMPILED_BINARY_PROVIDERS])
+        ):
+            fail(
+                "Component '{}' cannot depend directly on unwrapped binary or library target '{}' in `deps` because it would not be stripped or have its runtime dependencies packaged. Wrap executable binaries in `fx_packaged_binary()` instead.".format(
+                    ctx.label,
+                    dep.label,
+                ),
+            )
         if FuchsiaPackageResourcesInfo in dep:
             resources += dep[FuchsiaPackageResourcesInfo].resources
         else:

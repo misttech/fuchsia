@@ -19,6 +19,8 @@ load(
 load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
     "FuchsiaDebugSymbolInfo",
+    "FuchsiaUnstrippedBinariesInfo",
+    "FuchsiaUnstrippedBinaryInfo",
 )
 load(
     "@fuchsia_rules_common//packages:providers.bzl",
@@ -53,7 +55,11 @@ COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES = {
     ),
     "resources": attr.label_list(
         doc = "The list of resources included in this package",
-        providers = [FuchsiaPackageResourcesInfo],
+        providers = [
+            [FuchsiaPackageResourcesInfo],
+            [FuchsiaUnstrippedBinariesInfo],
+            [FuchsiaUnstrippedBinaryInfo],
+        ],
     ),
     "processed_binaries": attr.label(
         doc = "Label to a find_and_process_unstripped_binaries() target for this package.",
@@ -231,7 +237,7 @@ def common_build_fuchsia_package_impl(
             for file in subpackage[FuchsiaPackageInfo].files
         ]
 
-    # Validate binary paths in cmls
+    # Validate binary paths in cmls.
     component_manifest_files = [c.component_info.manifest for c in packaged_components]
     depfile = ctx.actions.declare_file(pkg_dir + "components_validation.depfile")
     ctx.actions.run(

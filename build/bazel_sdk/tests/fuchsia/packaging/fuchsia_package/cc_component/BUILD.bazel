@@ -74,6 +74,7 @@ fuchsia_unittest_package(
     fuchsia_api_level = "HEAD",
     unit_tests = [
         ":cc_unit_test",
+        ":cc_unit_test_with_transitive_features",
     ],
     visibility = ["//visibility:public"],
 )
@@ -442,6 +443,13 @@ fuchsia_cc_test(
 fuchsia_cc_test(
     name = "cc_unit_test",
     srcs = [":cc_main"],
+    deps = [":cc_lib"],
+)
+
+fuchsia_cc_test(
+    name = "cc_unit_test_with_transitive_features",
+    srcs = [":cc_main"],
+    transitive_features = ["-ubsan"],
     deps = [":cc_lib"],
 )
 

@@ -4,6 +4,7 @@
 
 """Tests for the platform Bazel package and device test rules."""
 
+load("@fuchsia_rules_common//packages:resources.bzl", "resource")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load(
     "//build/bazel/rules/components:cml_shard.bzl",
@@ -421,12 +422,19 @@ filegroup(
         ":example_check_includes_disabled_package",
         ":example_cml_shard_invalid_name_failure_test",
         ":example_cml_shard_mismatched_shard_failure_test",
+        ":example_component_unwrapped_cc_binary_failure_test",
+        ":example_component_unwrapped_rust_binary_failure_test",
         ":example_conflicting_runners_failure_test",
         ":example_expect_includes_package",
         ":example_expect_includes_unittest_package",
         ":example_gtest_unittest_package",
         ":example_multi_component_test",
         ":example_multi_unittest_package",
+        ":example_resource_bin_dir_failure_test",
+        ":example_resource_cc_binary_failure_test",
+        ":example_resource_from_filegroup",
+        ":example_resource_packaged_binary_failure_test",
+        ":example_resource_rust_binary_failure_test",
         ":example_rust_dylib_unittest_package",
         ":example_rust_unittest_package",
         ":example_test",
@@ -435,6 +443,7 @@ filegroup(
         ":example_unenforced_omitted_package",
         ":example_unittest_package",
         ":example_unittest_package_default_name",
+        ":example_unittest_package_with_packaged_binary_resource",
         ":example_zxtest_unittest_package",
         ":verify_example_gtest_runner_shard",
         ":verify_example_multi_component_test_realms",
@@ -448,6 +457,7 @@ filegroup(
         ":verify_example_test_with_test_type",
         ":verify_example_unittest_package_default_name_realms",
         ":verify_example_unittest_package_realms",
+        ":verify_example_unittest_package_with_packaged_binary_resource_unstripped_binaries",
         ":verify_example_zxtest_runner_shard",
     ],
     visibility = ["//build/bazel/rules/tests:__pkg__"],
@@ -782,4 +792,125 @@ fx_package(
     package_name = "fx-check-includes-disabled-package-example",
     testonly = True,
     components = [":example_check_includes_disabled_component"],
+)
+
+# Tests that `resource()` accepts a `filegroup()` target (such as `@gn_targets`
+# entries) in `src` even though `filegroup()` provides `InstrumentedFilesInfo`.
+filegroup(
+    name = "example_resource_filegroup",
+    srcs = ["example_test.cc"],
+)
+
+resource(
+    name = "example_resource_from_filegroup",
+    src = ":example_resource_filegroup",
+    dest = "data/example_test.cc",
+)
+
+# Tests that `resource()` rejects compiled C++ and Rust binaries, already-wrapped
+# `fx_packaged_binary()` targets, and `bin/` destinations (unless
+# `allow_binary_output_dir = True`).
+resource(
+    name = "example_resource_cc_binary",
+    testonly = True,
+    src = ":example_test_bin",
+    dest = "data/example_test_bin",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_resource_cc_binary_failure_test",
+    expected_message = "cannot reference compiled binary or library target",
+    target_under_test = ":example_resource_cc_binary",
+)
+
+resource(
+    name = "example_resource_rust_binary",
+    testonly = True,
+    src = ":example_rust_test_bin",
+    dest = "data/example_rust_test_bin",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_resource_rust_binary_failure_test",
+    expected_message = "cannot reference compiled binary or library target",
+    target_under_test = ":example_resource_rust_binary",
+)
+
+resource(
+    name = "example_resource_packaged_binary",
+    testonly = True,
+    src = ":example_test_packaged_bin",
+    dest = "data/example_test_packaged_bin",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_resource_packaged_binary_failure_test",
+    expected_message = "Pass `fx_packaged_binary()` targets directly",
+    target_under_test = ":example_resource_packaged_binary",
+)
+
+resource(
+    name = "example_resource_bin_dir",
+    src = "example_test.cc",
+    dest = "bin/example_script",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_resource_bin_dir_failure_test",
+    expected_message = "`bin/` is reserved for packaged binaries",
+    target_under_test = ":example_resource_bin_dir",
+)
+
+# Tests that `fx_component()` and `fx_test_component()` reject unwrapped C++ and
+# Rust binaries in `deps`.
+fx_component(
+    name = "example_component_unwrapped_cc_binary",
+    testonly = True,
+    compiled_manifest = ":example_helper_manifest",
+    component_name = "example_helper",
+    tags = ["manual"],
+    deps = [":example_test_bin"],
+)
+
+analysis_failure_test(
+    name = "example_component_unwrapped_cc_binary_failure_test",
+    expected_message = "cannot depend directly on unwrapped binary or library target",
+    target_under_test = ":example_component_unwrapped_cc_binary",
+)
+
+fx_test_component(
+    name = "example_component_unwrapped_rust_binary",
+    compiled_manifest = ":example_test_manifest",
+    component_name = "example_test",
+    tags = ["manual"],
+    deps = [":example_rust_test_bin"],
+)
+
+analysis_failure_test(
+    name = "example_component_unwrapped_rust_binary_failure_test",
+    expected_message = "cannot depend directly on unwrapped binary or library target",
+    target_under_test = ":example_component_unwrapped_rust_binary",
+)
+
+# Tests that `fx_unittest_package(resources = ...)` accepts `fx_packaged_binary()`
+# targets and strips them along with the unit test binary.
+fx_unittest_package(
+    name = "example_unittest_package_with_packaged_binary_resource",
+    package_name = "fx-unittest-package-with-packaged-binary-resource-example",
+    resources = [":example_second_test_packaged_bin"],
+    unit_tests = [":example_test_bin"],
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_unittest_package_with_packaged_binary_resource_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_second_test_bin",
+        "example_test_bin",
+    ],
+    test = ":example_unittest_package_with_packaged_binary_resource",
 )
