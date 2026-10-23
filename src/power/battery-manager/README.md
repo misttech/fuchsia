@@ -46,6 +46,8 @@ effective settings to the charger driver. The vote that charges least wins:
 - `charge_limit_arbiter/elections/<field>`: `result`, `overridden`, and
   per-governor `votes`.
 - `governors/<child_name>`: `url`, `running`, and `restarts`.
+- `governor_telemetry`: per-governor `battery_sample_interval` and
+  `charger_sample_interval` votes, `wakeup`, and `sample_count`.
 
 ## Battery and Charger Status Cache
 
@@ -53,3 +55,9 @@ Each governor also receives its own `fuchsia.hardware.power.battery.Battery` and
 `fuchsia.hardware.power.charger.Charger` connectors. Battery Manager serves them
 from the driver status it caches, so governors add no bus reads or driver
 clients. See `src/cache.rs` for the semantics.
+
+Governors can also request periodic samples with `ConfigureWatch.max_interval`.
+A sample notifies `BatteryInfo` watchers only if it changes a field they act on.
+Products with suspend enabled must serve `fuchsia.time.alarms.WakeAlarms` from
+Timekeeper (`timekeeper.serve_fuchsia_time_alarms`) so that samples can wake the
+system.

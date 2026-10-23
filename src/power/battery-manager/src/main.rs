@@ -15,6 +15,7 @@ use crate::arbiter::ChargeLimitArbiter;
 use crate::battery_info_recorders::RecorderConfig;
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver, DriverUpdate};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
+use crate::cache::Wakeup;
 pub(crate) use crate::config::BatteryManagerConfig;
 use crate::config::read_battery_manager_config;
 use crate::governor_supervisor::spawn_configured_governors;
@@ -26,6 +27,7 @@ use fidl_fuchsia_hardware_power_charger as fcharger;
 use fidl_fuchsia_power_battery as fpower;
 use fidl_fuchsia_power_battery_test as spower;
 use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_time_alarms as falarms;
 use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_component::server::ServiceFs;
@@ -334,6 +336,25 @@ async fn main() -> Result<(), Error> {
         .boxed()
     });
 
+    let cache = battery_manager.cache();
+    cache.record_inspect(inspector.root());
+    let wakeup = match fclient::connect_to_protocol::<falarms::WakeAlarmsMarker>() {
+        Ok(alarms) => Wakeup::WakeAlarms(alarms),
+        Err(e) => {
+            warn!("Failed to connect to WakeAlarms, sampling with timers: {e:?}");
+            Wakeup::Timer
+        }
+    };
+    let sample_updates = update_tx.clone();
+    let cache_for_sampler = cache.clone();
+    let _sampler_task = fasync::Task::local(async move {
+        cache_for_sampler
+            .run_sampler(wakeup, move |wake_lease| {
+                let _ = sample_updates.unbounded_send(DriverUpdate::Sampled { wake_lease });
+            })
+            .await;
+    });
+
     let battery_manager_for_updates = battery_manager.clone();
     let sag_updates = sag.clone();
     let _update_task = fasync::Task::local(async move {
@@ -366,7 +387,7 @@ async fn main() -> Result<(), Error> {
     let _governor_scope = spawn_configured_governors(
         &battery_manager_config.governor_urls,
         &arbiter,
-        battery_manager.cache(),
+        cache,
         inspector.root(),
     );
 

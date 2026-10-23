@@ -10,7 +10,8 @@ use diagnostics_assertions::{TreeAssertion, tree_assertion};
 use diagnostics_reader::ArchiveReader;
 use fake_governor_votes::{FAKE_GOVERNOR_CHARGE_CURRENT_LIMIT_UA, FAKE_GOVERNOR_OPERATING_MODE};
 use fake_telemetry_governor_votes::{
-    charge_current_limit_ua_for_level, charge_term_current_ua_for_phase,
+    MAX_INTERVAL_MILLIS, SAMPLED_RESPONSES, charge_current_limit_ua_for_level,
+    charge_term_current_ua_for_phase, input_current_limit_ua_for_responses,
 };
 use fidl::endpoints::ServiceMarker as _;
 use fidl_fuchsia_component_test as ftest;
@@ -2203,4 +2204,56 @@ async fn test_governor_receives_charger_status() -> Result<()> {
     });
     wait_for_inspect_match(&moniker, &charge_phase_vote_assertion(fcharger::ChargePhase::Taper))
         .await
+}
+
+/// Verifies that a governor that configures `max_interval` on its `Battery` connection votes for
+/// that sample interval, and that its `Watch` keeps completing with periodic samples while the
+/// battery status does not change.
+#[fuchsia::test]
+async fn test_governor_receives_periodic_samples() -> Result<()> {
+    let (realm, _lease_events) = setup_realm_with_config(
+        FidlRouteMode::NewOnly,
+        false,
+        None,
+        Some(governor_config_json(FAKE_TELEMETRY_GOVERNOR_URL)?),
+    )
+    .await?;
+
+    // Connecting starts battery-manager, which then launches its configured governors.
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let _ = battery_mgr.get_battery_info().await?;
+
+    let moniker = format!(
+        "{DEFAULT_COLLECTION_NAME}:{}/{BATTERY_MANAGER_CHILD_NAME}",
+        realm.root.child_name()
+    );
+    // Battery-manager wakes with timers on the fake clock here, as wake alarms are not routed to
+    // it; once the governor has received `SAMPLED_RESPONSES` responses (which only periodic
+    // samples provide while the battery status does not change), its `input_current_limit_ua` vote
+    // saturates at `SAMPLED_RESPONSES`.
+    let expected_limit = u64::from(input_current_limit_ua_for_responses(SAMPLED_RESPONSES));
+    let sampled = tree_assertion!(root: contains {
+        governor_telemetry: contains {
+            battery_sample_interval: {
+                result: MAX_INTERVAL_MILLIS,
+                overridden: false,
+                votes: {
+                    var FAKE_TELEMETRY_GOVERNOR_NAME: MAX_INTERVAL_MILLIS,
+                },
+            },
+        },
+        charge_limit_arbiter: {
+            elections: contains {
+                input_current_limit_ua: {
+                    result: expected_limit,
+                    overridden: false,
+                    votes: {
+                        var FAKE_TELEMETRY_GOVERNOR_NAME: expected_limit,
+                    },
+                },
+            },
+        },
+    });
+    wait_for_inspect_match(&moniker, &sampled).await
 }

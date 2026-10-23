@@ -50,6 +50,13 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.time.alarms.WakeAlarms",
+            from: "#timekeeper",
+            to: "#battery_manager",
+            source_availability: "unknown",
+            availability: "optional",
+        },
+        {
             config: [ "fuchsia.power.SuspendEnabled" ],
             from: "parent",
             to: [ "#battery_manager" ],

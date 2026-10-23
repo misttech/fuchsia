@@ -63,6 +63,12 @@
             availability: "optional",
         },
         {
+            // Wakes the system to sample telemetry for governors. Timers are used instead if it
+            // is unavailable.
+            protocol: "fuchsia.time.alarms.WakeAlarms",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.power.SuspendEnabled",
             key: "suspend_enabled",
             type: "bool",

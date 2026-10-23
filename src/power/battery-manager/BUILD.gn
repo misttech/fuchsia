@@ -23,6 +23,7 @@ battery_manager_deps = [
   "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
   "//sdk/fidl/fuchsia.power.battery.test:fuchsia.power.battery.test_rust",
   "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+  "//sdk/fidl/fuchsia.time.alarms:fuchsia.time.alarms_rust",
   "//sdk/lib/power/state_recorder/rust",
   "//sdk/rust/zx",
   "//src/lib/diagnostics/inspect/runtime/rust",

@@ -24,3 +24,16 @@ const CHARGE_TERM_CURRENT_UA_PER_CHARGE_PHASE: u32 = 1_000;
 pub fn charge_term_current_ua_for_phase(charge_phase: fcharger::ChargePhase) -> u32 {
     charge_phase.into_primitive() * CHARGE_TERM_CURRENT_UA_PER_CHARGE_PHASE
 }
+
+/// `max_interval`, in milliseconds, that the fake telemetry governor configures on its `Battery`
+/// connection.
+pub(crate) const MAX_INTERVAL_MILLIS: u64 = 1_000;
+
+/// Number of `Watch` responses at which the fake telemetry governor saturates its response vote.
+pub(crate) const SAMPLED_RESPONSES: u32 = 3;
+
+/// Returns the `input_current_limit_ua` the fake telemetry governor votes after receiving
+/// `responses` `Watch` responses, so that the test can count them.
+pub(crate) fn input_current_limit_ua_for_responses(responses: u32) -> u32 {
+    responses
+}

@@ -660,7 +660,9 @@ pub(crate) struct Polisher {
     estimator: ChargeTimeEstimator,
     rate_limiter: RateLimiter,
     last_is_plugged_in: Option<bool>,
-    last_original_level: Option<f32>,
+    /// Whether the curve was spliced to FULL on the previous update, so that only entering FULL is
+    /// logged.
+    spliced_to_full: bool,
 }
 
 impl Polisher {
@@ -683,7 +685,7 @@ impl Polisher {
             estimator,
             rate_limiter,
             last_is_plugged_in: None,
-            last_original_level: None,
+            spliced_to_full: false,
         }
     }
 
@@ -861,18 +863,24 @@ impl Polisher {
                 self.config.ssoc_delta,
             );
 
-            // Handle Full state spoofing
-            if info.charge_status == Some(fpower::ChargeStatus::Full) {
-                info!(
-                    "CurveMapper: Splicing curve to FULL at real={:.2} due to FULL status",
-                    level
-                );
+            // Handle Full state spoofing. While FULL, the midpoint follows the real level.
+            let full = info.charge_status == Some(fpower::ChargeStatus::Full);
+            if full {
+                if self.spliced_to_full {
+                    debug!("CurveMapper: Splicing curve to FULL at real={level:.2}");
+                } else {
+                    info!(
+                        "CurveMapper: Splicing curve to FULL at real={:.2} due to FULL status",
+                        level
+                    );
+                }
                 CurveMapper::set_midpoint(
                     &mut self.curve_mapper.current_curve,
                     level,
                     CurveMapper::SSOC_FULL,
                 );
             }
+            self.spliced_to_full = full;
         }
 
         // Return the curve-mapped level (UIC equivalent)
@@ -906,17 +914,13 @@ impl Polisher {
         // 6. Set Level Status (Uses the reported level so that it matches what is displayed)
         self.set_level_status(reported_soc, &mut info);
 
-        // Logging
-        if self.last_original_level != original_level
-            || self.last_post_curve != post_curve
-            || self.last_rate_limited_level != rate_limited_soc
-        {
+        // Log when the polished level changes, not on every change of the raw level.
+        if self.last_post_curve != post_curve || self.last_rate_limited_level != rate_limited_soc {
             info!(
                 "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}, \
                  rate limited: {:?}, reported: {:?}",
                 original_level, scaled_real_soc, post_curve, rate_limited_soc, reported_soc
             );
-            self.last_original_level = original_level;
             self.last_rate_limited_level = rate_limited_soc; // Store current RL for next cycle
             self.last_post_curve = post_curve; // Store UIC here!
         }
@@ -1867,6 +1871,29 @@ mod tests {
         // Map function naturally maps real=12.0 to ui=12.0 since it's below curve[0].real (15.0).
         let info = polisher.polish_info(new_info(14.0, fpower::ChargeStatus::Discharging));
         assert_matches!(info.level_percent, Some(p) if (p - 12.0).abs() < f32::EPSILON);
+    }
+
+    /// Verifies that the curve midpoint follows the real level on every update while FULL.
+    #[fuchsia::test]
+    fn test_polish_info_full_splice_tracks_real_level() {
+        const OFFSET: f32 = 3.0;
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: OFFSET,
+            ..crate::BatteryManagerConfig::default_for_test()
+        });
+        let _ = polisher.polish_info(new_info(95.0, fpower::ChargeStatus::Charging));
+        assert!(!polisher.spliced_to_full);
+
+        for level in [100.0, 99.0] {
+            let _ = polisher.polish_info(new_info(level, fpower::ChargeStatus::Full));
+            assert!(polisher.spliced_to_full);
+            let midpoint = polisher.curve_mapper.current_curve[1];
+            assert_eq!(midpoint.real, InitialScaler::scale_level_with_offset(level, OFFSET));
+            assert_eq!(midpoint.ui, CurveMapper::SSOC_FULL);
+        }
+
+        let _ = polisher.polish_info(new_info(98.0, fpower::ChargeStatus::Charging));
+        assert!(!polisher.spliced_to_full);
     }
 
     #[fuchsia::test]

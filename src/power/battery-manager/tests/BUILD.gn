@@ -81,6 +81,7 @@ rustc_binary("fake_telemetry_governor_bin") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.power.charger:fuchsia.hardware.power.charger_rust",
+    "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/power/lib/governor",
     "//third_party/rust_crates:anyhow",

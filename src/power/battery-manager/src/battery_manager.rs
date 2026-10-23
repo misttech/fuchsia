@@ -123,16 +123,19 @@ pub(crate) enum DriverUpdate {
     /// `BatteryInfo` directly rather than raw driver telemetry.
     LegacyBatteryInfo { info: fpower::BatteryInfo, wake_lease: Option<zx::EventPair> },
     /// The charger driver became available. Carries its static spec, what battery-manager's
-    /// watch on it delivers, and a proxy the consumer uses for on-demand reads.
+    /// watch on it delivers, and a proxy the consumer uses for on-demand reads and samples.
     ChargerConnected {
         spec: Option<fcharger::Spec>,
         subscription: Subscription<fcharger::Status>,
         proxy: fcharger::ChargerProxy,
     },
-    /// New telemetry from the charger driver.
+    /// New status from the charger driver.
     ChargerStatus { status: fcharger::Status, wake_lease: Option<zx::EventPair> },
     /// The charger driver went away.
     ChargerGone,
+    /// Status was sampled into `Cache` for governors that configured a `max_interval` and
+    /// differed from the previously cached status.
+    Sampled { wake_lease: Option<zx::EventPair> },
 }
 
 struct OnDropUpdate(mpsc::UnboundedSender<DriverUpdate>, Option<DriverUpdate>);
@@ -245,6 +248,18 @@ fn battery_status_to_battery_info(battery: &fbattery::Status) -> fpower::Battery
 /// there would splice the UI level to 100% (see `Polisher::apply_spoofing`), so termination below
 /// this level is reported as `NotCharging` instead.
 const FULL_CHARGE_MIN_LEVEL_PERCENT: f32 = 95.0;
+
+/// Whether `info` differs from `previous` in a field that `BatteryInfo` watchers act on, as opposed
+/// to telemetry such as voltage and current that changes with every sample.
+fn has_user_visible_change(previous: &fpower::BatteryInfo, info: &fpower::BatteryInfo) -> bool {
+    previous.status != info.status
+        || previous.charge_status != info.charge_status
+        || previous.charge_source != info.charge_source
+        || previous.level_percent != info.level_percent
+        || previous.level_status != info.level_status
+        || previous.health != info.health
+        || previous.battery_spec != info.battery_spec
+}
 
 /// Resolves `(ChargeSource, ChargeStatus)` from charger telemetry and the raw battery level.
 ///
@@ -612,6 +627,7 @@ impl BatteryManager {
         update: DriverUpdate,
         sag: Option<fsystem::ActivityGovernorProxy>,
     ) -> bool {
+        let sampled = matches!(update, DriverUpdate::Sampled { .. });
         let wake_lease = match update {
             DriverUpdate::BatteryConnected { spec, subscription, proxy } => {
                 self.cache.battery_connected(spec, subscription, proxy);
@@ -656,10 +672,19 @@ impl BatteryManager {
                 self.info_recorders.record_charger_disconnect();
                 None
             }
+            // The sampler has already published the changed statuses to `cache`, so the battery
+            // is not re-read as on a charger update.
+            DriverUpdate::Sampled { wake_lease } => wake_lease,
         };
 
         let raw_info = self.cache.with_cached(|cached| fpower::BatteryInfo::from(cached));
         let info = self.process_battery_info(raw_info, sag).await;
+        // Samples are taken for governors. Watchers are only sent those that change a field they
+        // act on, so that they are updated on driver events as without governors.
+        if sampled && !has_user_visible_change(&self.cached_battery_info.borrow(), &info) {
+            *self.cached_battery_info.borrow_mut() = info;
+            return false;
+        }
         self.update_watchers_conditionally(false, info, wake_lease);
         true
     }
@@ -1589,7 +1614,9 @@ mod tests {
             ..Default::default()
         };
 
-        battery_manager.process_battery_info(info.clone(), None).await;
+        battery_manager
+            .apply_update(DriverUpdate::LegacyBatteryInfo { info, wake_lease: None }, None)
+            .await;
 
         // Verify recordings in Inspect
         let global_inspector = inspect::component::inspector();
@@ -2061,6 +2088,111 @@ mod tests {
         assert_eq!(info.status, Some(fpower::BatteryStatus::NotAvailable));
         assert_eq!(info.charge_status, Some(fpower::ChargeStatus::Unknown));
         assert_eq!(info.level_percent, None);
+    }
+
+    /// Acknowledges the next `BatteryInfo` pushed to a watcher and returns it and its wake lease.
+    async fn next_watcher_push(
+        stream: &mut fpower::BatteryInfoWatcherRequestStream,
+    ) -> (fpower::BatteryInfo, Option<zx::EventPair>) {
+        match stream.try_next().await {
+            Ok(Some(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+                info,
+                wake_lease,
+                responder,
+            })) => {
+                responder.send().unwrap();
+                (info, wake_lease)
+            }
+            other => panic!("Unexpected watcher request: {other:?}"),
+        }
+    }
+
+    /// Verifies that `Cache::battery_sampled` returns `false` when the sampled status is
+    /// unchanged and `true` when it differs, so `DriverUpdate::Sampled` is only forwarded to
+    /// `BatteryManager` when a sampled field changed, and that `BatteryInfo` watchers are only
+    /// notified of samples that change a field they act on.
+    #[fuchsia::test]
+    async fn test_sample_notifies_watchers_only_on_change() {
+        const LEVEL_PERCENT: f32 = 50.0;
+        const CHANGED_LEVEL_PERCENT: f32 = 40.0;
+        const VOLTAGE_UV: u32 = 3_800_000;
+        const CHANGED_VOLTAGE_UV: u32 = 3_700_000;
+        const CHANGED_VOLTAGE_MV: u32 = CHANGED_VOLTAGE_UV / 1000;
+
+        let (_dir, battery_manager) = create_manager();
+        let (watcher, mut watcher_stream) =
+            create_request_stream::<fpower::BatteryInfoWatcherMarker>();
+        battery_manager.add_watcher(watcher.into_proxy());
+
+        // The cache publishes samples only for a connected driver.
+        let (battery_proxy, _battery_server) =
+            fidl::endpoints::create_proxy::<fbattery::BatteryMarker>();
+        assert!(
+            !battery_manager
+                .apply_update(
+                    DriverUpdate::BatteryConnected {
+                        spec: None,
+                        subscription: Subscription::from_driver(None, None, None),
+                        proxy: battery_proxy,
+                    },
+                    None
+                )
+                .await
+        );
+
+        let status = fbattery::Status {
+            level_percent: Some(LEVEL_PERCENT),
+            voltage_uv: Some(VOLTAGE_UV),
+            ..Default::default()
+        };
+        assert!(
+            battery_manager
+                .apply_update(
+                    DriverUpdate::BatteryStatus { status: status.clone(), wake_lease: None },
+                    None
+                )
+                .await
+        );
+        let _ = next_watcher_push(&mut watcher_stream).await;
+
+        assert!(!battery_manager.cache.battery_sampled(Some(&status), None));
+
+        // A sample that only changes telemetry updates the cached info without notifying and drops
+        // its wake lease.
+        let changed = fbattery::Status { voltage_uv: Some(CHANGED_VOLTAGE_UV), ..status };
+        assert!(battery_manager.cache.battery_sampled(Some(&changed), None));
+        let (lease, lease_peer) = zx::EventPair::create();
+        assert!(
+            !battery_manager
+                .apply_update(DriverUpdate::Sampled { wake_lease: Some(lease) }, None)
+                .await
+        );
+        assert!(matches!(
+            lease_peer
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST),
+            zx::WaitResult::Ok(_)
+        ));
+        assert_eq!(
+            battery_manager.get_battery_info_copy().present_voltage_mv,
+            Some(CHANGED_VOLTAGE_MV)
+        );
+
+        // A sample that changes the level notifies with the latest telemetry and wake lease.
+        let level_changed =
+            fbattery::Status { level_percent: Some(CHANGED_LEVEL_PERCENT), ..changed };
+        assert!(battery_manager.cache.battery_sampled(Some(&level_changed), None));
+        let (lease, lease_peer) = zx::EventPair::create();
+        assert!(
+            battery_manager
+                .apply_update(DriverUpdate::Sampled { wake_lease: Some(lease) }, None)
+                .await
+        );
+        let (info, wake_lease) = next_watcher_push(&mut watcher_stream).await;
+        assert_ne!(info.level_percent, Some(LEVEL_PERCENT));
+        assert_eq!(info.present_voltage_mv, Some(CHANGED_VOLTAGE_MV));
+        drop(wake_lease.expect("notified sample should forward wake lease"));
+        let _ =
+            fasync::OnSignals::new(&lease_peer, zx::Signals::EVENTPAIR_PEER_CLOSED).await.unwrap();
     }
 
     #[fuchsia::test]
