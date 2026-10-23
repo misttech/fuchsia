@@ -422,7 +422,7 @@ macro_rules! class_permission_enum {
         }
 
         impl $name {
-            pub(super) const PERMISSIONS: &[KernelPermission] = &[$(KernelPermission::$kernel_class(Self::$variant)),*];
+            const PERMISSIONS: &[KernelPermission] = &[$(KernelPermission::$kernel_class(Self::$variant)),*];
         }
     };
     ($(#[$meta:meta])* $name:ident {

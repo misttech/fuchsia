@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::permissions::{
-    ClassPermission as _, FileClass, KernelClass, KernelPermission, ProcessPermission,
-};
+use super::permissions::{ClassPermission, FileClass, KernelClass, ProcessPermission};
 use super::{KernelAccessDecision, ObjectClass};
 use crate::NullessByteStr;
 use crate::policy::{
@@ -14,7 +12,6 @@ use crate::policy::{
 };
 
 use fuchsia_rcu::RcuDroppable;
-use std::collections::HashMap;
 use std::ops::Deref;
 use strum::VariantArray as _;
 
@@ -42,9 +39,9 @@ struct ProcessTransitionPermissions {
 /// policy's collection of classes without scanning by name.
 #[derive(Debug, RcuDroppable)]
 pub(crate) struct PolicyIndex {
-    /// Map from [`KernelClass`]es to their corresponding [`ClassId`]s in the associated policy's
-    /// classes collection.
-    classes: HashMap<KernelClass, ClassId>,
+    /// Index mapping [`KernelClass`]es to their corresponding [`ClassId`]s in the associated
+    /// policy's classes collection.
+    classes: [Option<ClassId>; KernelClass::VARIANTS.len()],
     /// Index mapping kernel class permissions to their policy-specific [`AccessVector`] bit index.
     permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
     /// Cached `process` class ID and `transition`/`dyntransition` permission bitmask, if defined by
@@ -64,8 +61,8 @@ impl PolicyIndex {
     pub fn new(policy: Policy) -> Result<Self, anyhow::Error> {
         let policy_classes = policy.classes();
 
-        let mut classes = HashMap::with_capacity(KernelClass::VARIANTS.len());
-        let mut permissions = [KernelPermissionIdsArray::default(); _];
+        let mut classes = [None; KernelClass::VARIANTS.len()];
+        let mut permissions = [KernelPermissionIdsArray::default(); KernelClass::VARIANTS.len()];
 
         // Accumulate classes and permissions indexed by kernel class and permission enums. If the
         // policy defines that unknown classes or permissions should cause rejection then return an
@@ -73,8 +70,9 @@ impl PolicyIndex {
         for known_class in KernelClass::VARIANTS {
             match policy_classes.get_by_name(known_class.name().as_bytes()) {
                 Some(class) => {
-                    classes.insert(*known_class, class.id());
-                    let class_permissions = &mut permissions[*known_class as usize];
+                    let class_index = *known_class as usize;
+                    classes[class_index] = Some(class.id());
+                    let class_permissions = &mut permissions[class_index];
                     for permission in known_class.permissions() {
                         if let Some(permission_id) =
                             policy.find_permission_id_by_name(class, permission.name())
@@ -97,12 +95,9 @@ impl PolicyIndex {
             }
         }
 
-        // Allow unused space in the classes map to be released.
-        classes.shrink_to_fit();
-
         let mut index = Self { classes, permissions, process_transition_permissions: None, policy };
         index.process_transition_permissions =
-            index.classes.get(&KernelClass::Process).map(|&class| {
+            index.classes[KernelClass::Process as usize].map(|class| {
                 let mut permissions = AccessVector::NONE;
                 if let Some(transition) =
                     index.kernel_permission_to_access_vector(ProcessPermission::Transition)
@@ -123,21 +118,18 @@ impl PolicyIndex {
     /// Returns the policy entry for a class identified either by its well-known kernel object
     /// class enum value, or its policy-defined Id.
     pub fn class(&self, object_class: ObjectClass) -> Option<&Class> {
-        match object_class {
-            ObjectClass::Kernel(kernel_class) => {
-                let &class_id = self.classes.get(&kernel_class)?;
-                self.policy.classes().get_by_id(class_id)
-            }
-            ObjectClass::ClassId(class_id) => self.policy.classes().get_by_id(class_id),
-        }
+        let class_id = match object_class {
+            ObjectClass::Kernel(kernel_class) => self.classes[kernel_class as usize]?,
+            ObjectClass::ClassId(class_id) => class_id,
+        };
+        self.policy.classes().get_by_id(class_id)
     }
 
     /// Returns the policy [`AccessVector`] for a well-known kernel object class permission.
-    pub fn kernel_permission_to_access_vector<P: Into<KernelPermission>>(
+    fn kernel_permission_to_access_vector<P: ClassPermission>(
         &self,
         permission: P,
     ) -> Option<AccessVector> {
-        let permission = permission.into();
         let class_index = permission.class() as usize;
         let permission_index = permission.id() as usize;
         let permission_id = self.permissions[class_index][permission_index]?;
@@ -273,17 +265,16 @@ impl PolicyIndex {
         let decision_allow = access_decision.allow;
         let decision_audit = (access_decision.allow & access_decision.auditallow)
             | (!access_decision.allow & access_decision.auditdeny);
-        for permission in class.permissions() {
-            if let Some(permission_access_vector) =
-                self.kernel_permission_to_access_vector(*permission)
-            {
+        for (id, permission_id) in self.permissions[class as usize].iter().enumerate() {
+            if let Some(permission_id) = permission_id {
                 // If the permission is known, set the corresponding bit according to
                 // `decision_allow` and `decision_audit`.
-                let bit = 1 << permission.id();
+                let permission_access_vector = AccessVector::from(*permission_id);
+                let bit = 1 << id;
                 let allow = decision_allow & permission_access_vector == permission_access_vector;
                 let audit = decision_audit & permission_access_vector == permission_access_vector;
-                kernel_allow = (kernel_allow & !bit) | ((allow as u32) << permission.id());
-                kernel_audit = (kernel_audit & !bit) | ((audit as u32) << permission.id());
+                kernel_allow = (kernel_allow & !bit) | ((allow as u32) << id);
+                kernel_audit = (kernel_audit & !bit) | ((audit as u32) << id);
             }
         }
         KernelAccessDecision {

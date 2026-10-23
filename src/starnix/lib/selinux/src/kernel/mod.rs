@@ -73,7 +73,7 @@ mod tests {
     fn object_class_permissions() {
         let test_class_id = ClassId::for_test(20);
         assert_eq!(ObjectClass::ClassId(test_class_id), test_class_id.into());
-        for variant in ProcessPermission::PERMISSIONS {
+        for variant in KernelClass::Process.permissions() {
             assert_eq!(KernelClass::Process, variant.class());
             assert_eq!("process", variant.class().name());
             assert_eq!(ObjectClass::Kernel(KernelClass::Process), variant.class().into());
