@@ -2,30 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//build/assembly/scripts:__pkg__"],
-)
-
-py_library(
-    name = "serialization",
-    srcs = [
-        "serialization/__init__.py",
-        "serialization/serialization.py",
-    ],
-    imports = ["."],
-)
-
-py_library(
-    name = "depfile",
-    srcs = [
-        "depfile/__init__.py",
-        "depfile/depfile.py",
-    ],
-    imports = ["."],
-)
+package(default_applicable_licenses = ["//:license"])
 
 py_library(
     name = "assembly",
@@ -38,21 +17,9 @@ py_library(
         "assembly/package_manifest.py",
     ],
     imports = ["."],
+    visibility = ["//build/assembly/scripts:__pkg__"],
     deps = [
-        ":depfile",
-        ":serialization",
-    ],
-)
-
-py_library(
-    name = "elf",
-    srcs = [
-        "elf/__init__.py",
-        "elf/elfinfo.py",
-        "elf/verify_manifest_elf_binaries.py",
-    ],
-    imports = ["."],
-    visibility = [
-        "//build/bazel/debug_symbols/tests:__pkg__",
+        "//build/python/modules/depfile",
+        "//build/python/modules/serialization",
     ],
 )

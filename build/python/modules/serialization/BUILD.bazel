@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# A python library for serializing/deserializing classes to/from JSON.
+py_library(
+    name = "serialization",
+    srcs = [
+        "__init__.py",
+        "serialization.py",
+    ],
+    imports = [".."],
+    visibility = [
+        "//build:__pkg__",
+        "//build/assembly:__subpackages__",
+        "//build/python:__subpackages__",
+        "//build/rbe:__pkg__",
+        "//build/resultstore:__pkg__",
+        "//build/scripts:__pkg__",
+        "//tools/devshell:__subpackages__",
+    ],
+)

@@ -59,7 +59,7 @@ debug_symbols_manifest(
 py_binary(
     name = "check_debug_binaries",
     srcs = ["check_debug_binaries.py"],
-    deps = ["//build/python/modules:elf"],
+    deps = ["//build/python/modules/elf"],
 )
 
 # A single target that will build multiple dependencies in all

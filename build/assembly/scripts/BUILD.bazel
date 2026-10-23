@@ -2,18 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//build:__subpackages__"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 py_binary(
     name = "assembly_input_bundle_tool",
     srcs = ["assembly_input_bundle_tool.py"],
+    visibility = [
+        "//build/assembly:__pkg__",
+        "//build/bazel/rules/assembly:__pkg__",
+        "//bundles/assembly:__subpackages__",
+    ],
     deps = [
         "//build/python/modules:assembly",
-        "//build/python/modules:depfile",
+        "//build/python/modules/depfile",
     ],
 )
