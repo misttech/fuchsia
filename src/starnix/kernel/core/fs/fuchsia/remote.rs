@@ -755,8 +755,8 @@ impl<I: SyncIo> RemoteNode<I> {
                         uid: Some(node_info.uid),
                         gid: Some(node_info.gid),
                         selinux_context: selinux_context
-                            .clone()
-                            .map(|ctx| fio::SelinuxContext::Data(ctx.into())),
+                            .as_deref()
+                            .map(|ctx| fio::SelinuxContext::Data(ctx.to_vec())),
                         ..extra_attributes
                     }),
                     NODE_INFO_ATTRIBUTES
@@ -1179,18 +1179,14 @@ fn get_name_str<'a>(name_bytes: &'a FsStr) -> Result<&'a str, Errno> {
 }
 
 impl<I: SyncIo> XattrStorage for BaseNode<I> {
-    fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno> {
-        Ok(self
-            .io
-            .xattr_get(name)
-            .map_err(|status| match status {
-                zx::Status::NOT_FOUND => errno!(ENODATA),
-                status => from_status_like_fdio!(status),
-            })?
-            .into())
+    fn get_xattr(&self, name: &FsStr) -> Result<Box<[u8]>, Errno> {
+        self.io.xattr_get(name).map(Vec::into_boxed_slice).map_err(|status| match status {
+            zx::Status::NOT_FOUND => errno!(ENODATA),
+            status => from_status_like_fdio!(status),
+        })
     }
 
-    fn set_xattr(&self, name: &FsStr, value: &FsStr, op: XattrOp) -> Result<(), Errno> {
+    fn set_xattr(&self, name: &FsStr, value: &[u8], op: XattrOp) -> Result<(), Errno> {
         let mode = match op {
             XattrOp::Set => XattrSetMode::Set,
             XattrOp::Create => XattrSetMode::Create,

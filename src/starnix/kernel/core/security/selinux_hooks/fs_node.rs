@@ -142,7 +142,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     let maybe_sid = match attr {
                         Ok(ValueOrSize::Value(security_context)) => Some(
                             security_server
-                                .security_context_to_sid((&security_context).into())
+                                .security_context_to_sid(security_context.as_ref().into())
                                 .unwrap_or_else(|_| InitialSid::Unlabeled.into()),
                         ),
                         Ok(ValueOrSize::Size(_)) => None,
@@ -1132,7 +1132,7 @@ pub(in crate::security) fn check_fs_node_setxattr_access(
     current_task: &CurrentTask,
     fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
-    value: &FsStr,
+    value: &[u8],
     _op: XattrOp,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
@@ -1286,7 +1286,7 @@ pub(in crate::security) fn fs_node_getsecurity(
     fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     max_size: usize,
-) -> Result<Option<ValueOrSize<FsString>>, Errno> {
+) -> Result<Option<ValueOrSize<Box<[u8]>>>, Errno> {
     if name != XATTR_NAME_SELINUX.to_bytes() {
         return Ok(None);
     }
@@ -1319,7 +1319,7 @@ pub(in crate::security) fn fs_node_setsecurity(
     current_task: &CurrentTask,
     fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
-    value: &FsStr,
+    value: &[u8],
     op: XattrOp,
 ) -> Result<Option<()>, Errno> {
     if name != XATTR_NAME_SELINUX.to_bytes() {

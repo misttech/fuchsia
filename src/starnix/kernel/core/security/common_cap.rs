@@ -14,7 +14,7 @@
 use crate::security::{self, NonPrivateFsNode};
 use crate::task::loader::ResolvedProgram;
 use crate::task::{CurrentTask, Task};
-use crate::vfs::{FsStr, FsString, ValueOrSize, XattrOp};
+use crate::vfs::{FsStr, ValueOrSize, XattrOp};
 use linux_uapi::{
     VFS_CAP_FLAGS_EFFECTIVE, VFS_CAP_REVISION_2, VFS_CAP_REVISION_3, XATTR_NAME_CAPS, vfs_cap_data,
     vfs_cap_data__bindgen_ty_1, vfs_ns_cap_data, vfs_ns_cap_data__bindgen_ty_1,
@@ -118,7 +118,7 @@ impl FileCapabilities {
     ///
     /// If `rootid` maps to UID 0 in `current_task`'s user namespace, emits a 20-byte V2
     /// ([`vfs_cap_data`]) attribute; otherwise emits a 24-byte V3 ([`vfs_ns_cap_data`]) attribute.
-    fn into_bytes(&self, _current_task: &CurrentTask) -> Result<FsString, Errno> {
+    fn into_bytes(&self, _current_task: &CurrentTask) -> Result<Box<[u8]>, Errno> {
         // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
         //
         //   When a version 3 security.capability attribute is retrieved [...] by
@@ -225,7 +225,7 @@ pub(super) fn fs_node_setxattr(
     current_task: &CurrentTask,
     _fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
-    _value: &FsStr,
+    _value: &[u8],
     _op: XattrOp,
 ) -> Result<(), Errno> {
     // From <https://man7.org/linux/man-pages/man7/capabilities.7.html>:
@@ -249,7 +249,7 @@ pub(super) fn fs_node_getsecurity(
     fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
     max_size: usize,
-) -> Result<Option<ValueOrSize<FsString>>, Errno> {
+) -> Result<Option<ValueOrSize<Box<[u8]>>>, Errno> {
     if name != XATTR_NAME_CAPS.to_bytes() {
         return Ok(None);
     }
@@ -274,13 +274,13 @@ pub(super) fn fs_node_setsecurity(
     current_task: &CurrentTask,
     fs_node: NonPrivateFsNode<'_>,
     name: &FsStr,
-    value: &FsStr,
+    value: &[u8],
     op: XattrOp,
 ) -> Result<Option<()>, Errno> {
     if name == XATTR_NAME_CAPS.to_bytes() {
         let caps = FileCapabilities::from_bytes(current_task, value)?;
         let serialized = caps.into_bytes(current_task)?;
-        fs_node.ops().set_xattr(&fs_node, current_task, name, serialized.as_ref(), op)?;
+        fs_node.ops().set_xattr(&fs_node, current_task, name, &serialized, op)?;
         fs_node.common_cap_state().has_no_capabilities.store(false, Ordering::Relaxed);
         return Ok(Some(()));
     }

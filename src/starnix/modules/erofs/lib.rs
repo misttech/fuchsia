@@ -141,11 +141,11 @@ fn get_node_xattr(
     node: &FsNode,
     erofs_node: &NodeInner,
     name: &FsStr,
-) -> Result<ValueOrSize<FsString>, Errno> {
+) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
     let fs = node.fs();
     let fs_ops = fs.downcast_ops::<ErofsFileSystem>().unwrap();
     match fs_ops.fs.get_xattr(erofs_node, name.as_ref()).map_err(|e| errno!(EIO, e))? {
-        Some(val) => Ok(FsString::from(val).into()),
+        Some(val) => Ok(val.into_boxed_slice().into()),
         None => error!(ENODATA),
     }
 }
@@ -216,7 +216,7 @@ impl FsNodeOps for ErofsDirectory {
         _current_task: &CurrentTask,
         name: &FsStr,
         _max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         get_node_xattr(node, &self.node, name)
     }
 
@@ -348,7 +348,7 @@ impl FsNodeOps for ErofsFile {
         _current_task: &CurrentTask,
         name: &FsStr,
         _max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         get_node_xattr(node, &self.node, name)
     }
 
@@ -390,7 +390,7 @@ impl FsNodeOps for ErofsSymlink {
         _current_task: &CurrentTask,
         name: &FsStr,
         _max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         get_node_xattr(node, &self.node, name)
     }
 
@@ -955,7 +955,7 @@ mod tests {
             else {
                 panic!("expected Value");
             };
-            assert_eq!(flavor, "vanilla");
+            assert_eq!(&*flavor, b"vanilla");
             assert_eq!(
                 file1_node
                     .ops()

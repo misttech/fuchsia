@@ -114,11 +114,11 @@ impl XattrStorage for ExtNode {
         Ok(self.xattrs.keys().map(|k| k.clone().into()).collect())
     }
 
-    fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno> {
-        self.xattrs.get(&**name).map(|a| a.clone().into()).ok_or_else(|| errno!(ENODATA))
+    fn get_xattr(&self, name: &FsStr) -> Result<Box<[u8]>, Errno> {
+        self.xattrs.get(&**name).map(|a| a.as_slice().into()).ok_or_else(|| errno!(ENODATA))
     }
 
-    fn set_xattr(&self, _name: &FsStr, _value: &FsStr, _op: XattrOp) -> Result<(), Errno> {
+    fn set_xattr(&self, _name: &FsStr, _value: &[u8], _op: XattrOp) -> Result<(), Errno> {
         error!(ENOSYS)
     }
     fn remove_xattr(&self, _name: &FsStr) -> Result<(), Errno> {

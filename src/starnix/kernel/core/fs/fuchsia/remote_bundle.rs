@@ -132,13 +132,13 @@ impl RemoteBundle {
         self.metadata.get(inode_num).unwrap()
     }
 
-    fn get_xattr(&self, node: &FsNode, name: &FsStr) -> Result<ValueOrSize<FsString>, Errno> {
+    fn get_xattr(&self, node: &FsNode, name: &FsStr) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         let value = &self
             .get_node(node.ino)
             .extended_attributes
             .get(&**name)
             .ok_or_else(|| errno!(ENODATA))?[..];
-        Ok(FsString::from(value).into())
+        Ok(Box::<[u8]>::from(&**value).into())
     }
 
     fn list_xattrs(&self, node: &FsNode) -> Result<ValueOrSize<Vec<FsString>>, Errno> {
@@ -256,7 +256,7 @@ impl FsNodeOps for File {
         _current_task: &CurrentTask,
         name: &FsStr,
         _size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         let fs = node.fs();
         let bundle = RemoteBundle::from_fs(&fs);
         bundle.get_xattr(node, name)
@@ -494,7 +494,7 @@ impl FsNodeOps for DirectoryObject {
         _current_task: &CurrentTask,
         name: &FsStr,
         _size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         let fs = node.fs();
         let bundle = RemoteBundle::from_fs(&fs);
         bundle.get_xattr(node, name)
@@ -530,7 +530,7 @@ impl FsNodeOps for SymlinkObject {
         _current_task: &CurrentTask,
         name: &FsStr,
         _size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         let fs = node.fs();
         let bundle = RemoteBundle::from_fs(&fs);
         bundle.get_xattr(node, name)
@@ -638,20 +638,20 @@ mod test {
             assert_eq!(file_token.offset, 0);
 
             assert_eq!(
-                &test_file
+                &*test_file
                     .node()
                     .get_xattr(&current_task, &test_dir.mount, "user.a".into(), usize::MAX)
                     .expect("get_xattr failed")
                     .unwrap(),
-                "apple"
+                b"apple"
             );
             assert_eq!(
-                &test_file
+                &*test_file
                     .node()
                     .get_xattr(&current_task, &test_dir.mount, "user.b".into(), usize::MAX)
                     .expect("get_xattr failed")
                     .unwrap(),
-                "ball"
+                b"ball"
             );
             assert_eq!(
                 test_file

@@ -424,7 +424,7 @@ pub fn file_system_resolve_security(
 /// Used to return an extended attribute name and value to apply to a [`crate::vfs::FsNode`].
 pub struct FsNodeSecurityXattr {
     pub name: &'static FsStr,
-    pub value: FsString,
+    pub value: Box<[u8]>,
 }
 
 /// Checks whether the `current_task` is allowed to mmap `file` or memory using the given
@@ -2059,7 +2059,7 @@ pub fn check_fs_node_setxattr_access(
     current_task: &CurrentTask,
     fs_node: &FsNode,
     name: &FsStr,
-    value: &FsStr,
+    value: &[u8],
     op: XattrOp,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_setxattr_access");
@@ -2192,7 +2192,7 @@ pub fn fs_node_getsecurity(
     fs_node: &FsNode,
     name: &FsStr,
     max_size: usize,
-) -> Result<ValueOrSize<FsString>, Errno> {
+) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
     track_hook_duration!("security.hooks.fs_node_getsecurity");
     let Some(non_private_node) = NonPrivateFsNode::new(fs_node) else {
         return fs_node.ops().get_xattr(fs_node, current_task, name, max_size);
@@ -2226,7 +2226,7 @@ pub fn fs_node_setsecurity(
     current_task: &CurrentTask,
     fs_node: &FsNode,
     name: &FsStr,
-    value: &FsStr,
+    value: &[u8],
     op: XattrOp,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.fs_node_setsecurity");
@@ -2986,7 +2986,7 @@ mod tests {
                     &current_task,
                     &node,
                     XATTR_NAME_SELINUX.to_bytes().into(),
-                    "!".into(), // Note: Not a valid security context.
+                    b"!", // Note: Not a valid security context.
                     XattrOp::Set,
                 )
                 .is_err()
@@ -3009,7 +3009,7 @@ mod tests {
                 &current_task,
                 &node,
                 XATTR_NAME_SELINUX.to_bytes().into(),
-                "!".into(), // Note: Not a valid security context.
+                b"!", // Note: Not a valid security context.
                 XattrOp::Set,
             )
             .expect("set_xattr(security.selinux) failed");
@@ -3060,13 +3060,13 @@ mod tests {
             let node = &testing::create_test_file(current_task).entry.node;
 
             // Set a mismatched value in `node`'s "security.seliux" attribute.
-            const TEST_VALUE: &str = "Something Random";
+            const TEST_VALUE: &[u8] = b"Something Random";
             node.ops()
                 .set_xattr(
                     node,
                     current_task,
                     XATTR_NAME_SELINUX.to_bytes().into(),
-                    TEST_VALUE.into(),
+                    TEST_VALUE,
                     XattrOp::Set,
                 )
                 .expect("set_xattr(security.selinux) failed");
@@ -3080,10 +3080,7 @@ mod tests {
             // Reading the security attribute should return the Security Context for the SID, rather than delegating.
             let result =
                 fs_node_getsecurity(current_task, node, XATTR_NAME_SELINUX.to_bytes().into(), 4096);
-            assert_eq!(
-                result,
-                Ok(ValueOrSize::Value(FsString::new(VALID_SECURITY_CONTEXT_WITH_NUL.into())))
-            );
+            assert_eq!(result, Ok(ValueOrSize::Value(VALID_SECURITY_CONTEXT_WITH_NUL.into())));
         })
         .await;
     }
@@ -3096,12 +3093,12 @@ mod tests {
             // Set an invalid value in `node`'s "security.selinux" attribute.
             // This requires SELinux to be in permissive mode, otherwise the "relabelto" permission check will fail.
             security_server.set_enforcing(false);
-            const TEST_VALUE: &str = "Something Random";
+            const TEST_VALUE: &[u8] = b"Something Random";
             fs_node_setsecurity(
                 &current_task,
                 node,
                 XATTR_NAME_SELINUX.to_bytes().into(),
-                TEST_VALUE.into(),
+                TEST_VALUE,
                 XattrOp::Set,
             )
             .expect("set_xattr(security.selinux) failed");
@@ -3110,7 +3107,7 @@ mod tests {
             // Reading the security attribute should pass-through to read the value from the file system.
             let result =
                 fs_node_getsecurity(current_task, node, XATTR_NAME_SELINUX.to_bytes().into(), 4096);
-            assert_eq!(result, Ok(ValueOrSize::Value(FsString::new(TEST_VALUE.into()))));
+            assert_eq!(result, Ok(ValueOrSize::Value(TEST_VALUE.into())));
         })
         .await;
     }

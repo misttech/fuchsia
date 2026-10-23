@@ -820,7 +820,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _current_task: &CurrentTask,
         _name: &FsStr,
         _max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         error!(ENOTSUP)
     }
 
@@ -830,7 +830,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _node: &FsNode,
         _current_task: &CurrentTask,
         _name: &FsStr,
-        _value: &FsStr,
+        _value: &[u8],
         _op: XattrOp,
     ) -> Result<(), Errno> {
         error!(ENOTSUP)
@@ -1027,10 +1027,10 @@ macro_rules! fs_node_impl_dir_readonly {
 /// See [`fs_node_impl_xattr_delegate`] for usage details.
 pub trait XattrStorage {
     /// Delegate for [`FsNodeOps::get_xattr`].
-    fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno>;
+    fn get_xattr(&self, name: &FsStr) -> Result<Box<[u8]>, Errno>;
 
     /// Delegate for [`FsNodeOps::set_xattr`].
-    fn set_xattr(&self, name: &FsStr, value: &FsStr, op: XattrOp) -> Result<(), Errno>;
+    fn set_xattr(&self, name: &FsStr, value: &[u8], op: XattrOp) -> Result<(), Errno>;
 
     /// Delegate for [`FsNodeOps::remove_xattr`].
     fn remove_xattr(&self, name: &FsStr) -> Result<(), Errno>;
@@ -1069,7 +1069,7 @@ macro_rules! fs_node_impl_xattr_delegate {
             _current_task: &CurrentTask,
             name: &$crate::vfs::FsStr,
             _size: usize,
-        ) -> Result<$crate::vfs::ValueOrSize<$crate::vfs::FsString>, starnix_uapi::errors::Errno> {
+        ) -> Result<$crate::vfs::ValueOrSize<Box<[u8]>>, starnix_uapi::errors::Errno> {
             Ok($delegate.get_xattr(name)?.into())
         }
 
@@ -1078,7 +1078,7 @@ macro_rules! fs_node_impl_xattr_delegate {
             _node: &FsNode,
             _current_task: &CurrentTask,
             name: &$crate::vfs::FsStr,
-            value: &$crate::vfs::FsStr,
+            value: &[u8],
             op: $crate::vfs::XattrOp,
         ) -> Result<(), starnix_uapi::errors::Errno> {
             $delegate.set_xattr(name, value, op)
@@ -1519,7 +1519,7 @@ impl FsNode {
                     &new_node,
                     current_task,
                     xattr.name,
-                    xattr.value.as_slice().into(),
+                    &xattr.value,
                     XattrOp::Create,
                 ) {
                     Err(e) => {
@@ -2344,7 +2344,7 @@ impl FsNode {
         mount: &MountInfo,
         name: &FsStr,
         max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         // Perform discretionary capability & access checks appropriate to the xattr prefix.
         self.check_xattr_access(current_task, mount, name, Access::READ)?;
 
@@ -2366,7 +2366,7 @@ impl FsNode {
         current_task: &CurrentTask,
         mount: &MountInfo,
         name: &FsStr,
-        value: &FsStr,
+        value: &[u8],
         op: XattrOp,
     ) -> Result<(), Errno> {
         // Perform discretionary capability & access checks appropriate to the xattr prefix.
@@ -2908,7 +2908,7 @@ mod tests {
                     &current_task,
                     &MountInfo::detached(),
                     "security.name".into(),
-                    "security_label".into(),
+                    b"security_label",
                     XattrOp::Create,
                 ),
                 error!(EPERM)
@@ -2943,7 +2943,7 @@ mod tests {
                     &current_task,
                     &MountInfo::detached(),
                     "trusted.name".into(),
-                    "some data".into(),
+                    b"some data",
                     XattrOp::Create,
                 ),
                 error!(EPERM)
@@ -2978,7 +2978,7 @@ mod tests {
                     &current_task,
                     &MountInfo::detached(),
                     "security.name".into(),
-                    "security_label".into(),
+                    b"security_label",
                     XattrOp::Create,
                 ),
                 Ok(())
@@ -2990,7 +2990,7 @@ mod tests {
             // Getting the label should succeed even without read access to the file.
             assert_eq!(
                 node.get_xattr(&current_task, &MountInfo::detached(), "security.name".into(), 4096),
-                Ok(ValueOrSize::Value("security_label".into()))
+                Ok(ValueOrSize::Value(b"security_label"[..].into()))
             );
         })
         .await;

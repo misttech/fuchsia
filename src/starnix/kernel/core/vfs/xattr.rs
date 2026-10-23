@@ -11,7 +11,8 @@ use starnix_uapi::{errno, error};
 
 pub struct MemoryXattrStorage {
     // Arbitrary userspace programs can define xattr keys so we use a collision-resistant hasher.
-    xattrs: RcuHashMap<FsString, FsString, RcuHashMapLock, std::collections::hash_map::RandomState>,
+    xattrs:
+        RcuHashMap<FsString, Box<[u8]>, RcuHashMapLock, std::collections::hash_map::RandomState>,
 }
 
 impl Default for MemoryXattrStorage {
@@ -21,20 +22,20 @@ impl Default for MemoryXattrStorage {
 }
 
 impl XattrStorage for MemoryXattrStorage {
-    fn get_xattr(&self, name: &FsStr) -> Result<FsString, Errno> {
+    fn get_xattr(&self, name: &FsStr) -> Result<Box<[u8]>, Errno> {
         self.xattrs.get(&RcuReadScope::new(), name).cloned().ok_or_else(|| errno!(ENODATA))
     }
 
-    fn set_xattr(&self, name: &FsStr, value: &FsStr, op: XattrOp) -> Result<(), Errno> {
+    fn set_xattr(&self, name: &FsStr, value: &[u8], op: XattrOp) -> Result<(), Errno> {
         let mut xattrs = self.xattrs.lock();
         match xattrs.entry(name.to_owned()) {
             Entry::Vacant(_) if op == XattrOp::Replace => return error!(ENODATA),
             Entry::Occupied(_) if op == XattrOp::Create => return error!(EEXIST),
             Entry::Vacant(v) => {
-                v.insert(value.to_owned());
+                v.insert(value.into());
             }
             Entry::Occupied(mut o) => {
-                o.insert(value.to_owned());
+                o.insert(value.into());
             }
         };
         Ok(())

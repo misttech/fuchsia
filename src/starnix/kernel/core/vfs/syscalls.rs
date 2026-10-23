@@ -1359,8 +1359,8 @@ fn do_setxattr(
         _ => return error!(EINVAL),
     };
     let name = read_xattr_name(current_task, name_addr)?;
-    let value = FsString::from(current_task.read_memory_to_vec(value_addr, size)?);
-    node.entry.node.set_xattr(current_task, &node.mount, name.as_ref(), value.as_ref(), op)
+    let value = current_task.read_memory_to_vec(value_addr, size)?;
+    node.entry.node.set_xattr(current_task, &node.mount, name.as_ref(), &value, op)
 }
 
 pub fn sys_fsetxattr(

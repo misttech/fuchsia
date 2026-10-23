@@ -228,7 +228,7 @@ impl FsNodeOps for LayeredNodeOps {
         current_task: &CurrentTask,
         name: &FsStr,
         max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         self.fs.base_fs.root().node.ops().get_xattr(
             &*self.fs.base_fs.root().node,
             current_task,
@@ -243,7 +243,7 @@ impl FsNodeOps for LayeredNodeOps {
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
-        value: &FsStr,
+        value: &[u8],
         op: XattrOp,
     ) -> Result<(), Errno> {
         self.fs.base_fs.root().node.set_xattr(current_task, &MountInfo::detached(), name, value, op)

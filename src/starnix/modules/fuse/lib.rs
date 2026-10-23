@@ -1684,7 +1684,7 @@ impl FsNodeOps for FuseNode {
         current_task: &CurrentTask,
         name: &FsStr,
         max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         let response = self.connection.lock().execute_operation(
             current_task,
             self,
@@ -1704,7 +1704,7 @@ impl FsNodeOps for FuseNode {
         _node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
-        value: &FsStr,
+        value: &[u8],
         op: XattrOp,
     ) -> Result<(), Errno> {
         let mut state = self.connection.lock();
@@ -1721,7 +1721,7 @@ impl FsNodeOps for FuseNode {
                 },
                 is_ext: configuration.flags.contains(FuseInitFlags::SETXATTR_EXT),
                 name: name.to_owned(),
-                value: value.to_owned(),
+                value: value.into(),
             },
         )?;
         Ok(())
@@ -2484,7 +2484,7 @@ impl RunningOperationKind {
                     let getxattr_out = Self::to_response::<uapi::fuse_getxattr_out>(&buffer);
                     Ok(FuseResponse::GetXAttr(ValueOrSize::Size(getxattr_out.size as usize)))
                 } else {
-                    Ok(FuseResponse::GetXAttr(FsString::new(buffer).into()))
+                    Ok(FuseResponse::GetXAttr(buffer.into_boxed_slice().into()))
                 }
             }
             Self::Init { .. } => {
@@ -2684,7 +2684,7 @@ enum FuseOperation {
         /// Name of the attribute
         name: FsString,
         /// Value of the attribute
-        value: FsString,
+        value: Box<[u8]>,
     },
     Statfs,
     Symlink {
@@ -2710,7 +2710,7 @@ enum FuseResponse {
     Attr(uapi::fuse_attr_out),
     Create(CreateResponse),
     Entry(uapi::fuse_entry_out),
-    GetXAttr(ValueOrSize<FsString>),
+    GetXAttr(ValueOrSize<Box<[u8]>>),
     Init(uapi::fuse_init_out),
     Open(uapi::fuse_open_out),
     Poll(uapi::fuse_poll_out),
@@ -2833,7 +2833,7 @@ impl FuseOperation {
                     if *is_ext { setxattr_in.as_bytes() } else { &setxattr_in.as_bytes()[..8] };
                 let mut len = data.write_all(header)?;
                 len += Self::write_null_terminated(data, name)?;
-                len += data.write_all(value.as_bytes())?;
+                len += data.write_all(value)?;
                 Ok(len)
             }
             Self::Symlink { target, name } => {

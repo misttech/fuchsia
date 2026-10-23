@@ -40,7 +40,7 @@ use syncio::zxio_node_attr_has_t;
 // Name and value for the xattr used to mark opaque directories in the upper FS.
 // See https://docs.kernel.org/filesystems/overlayfs.html#whiteouts-and-opaque-directories
 const OPAQUE_DIR_XATTR: &str = "trusted.overlay.opaque";
-const OPAQUE_DIR_XATTR_VALUE: &str = "y";
+const OPAQUE_DIR_XATTR_VALUE: &[u8] = b"y";
 
 #[derive(Clone)]
 struct DirEntryInfo {
@@ -130,7 +130,7 @@ impl ActiveEntry {
             current_task,
             self.mount(),
             OPAQUE_DIR_XATTR.into(),
-            OPAQUE_DIR_XATTR_VALUE.into(),
+            OPAQUE_DIR_XATTR_VALUE,
             XattrOp::Set,
         )
     }
@@ -143,7 +143,7 @@ impl ActiveEntry {
             OPAQUE_DIR_XATTR.into(),
             OPAQUE_DIR_XATTR_VALUE.len(),
         ) {
-            Ok(ValueOrSize::Value(v)) if v == OPAQUE_DIR_XATTR_VALUE => true,
+            Ok(ValueOrSize::Value(v)) if &*v == OPAQUE_DIR_XATTR_VALUE => true,
             _ => false,
         }
     }
@@ -880,7 +880,7 @@ impl FsNodeOps for OverlayNodeOps {
         current_task: &CurrentTask,
         name: &FsStr,
         max_size: usize,
-    ) -> Result<ValueOrSize<FsString>, Errno> {
+    ) -> Result<ValueOrSize<Box<[u8]>>, Errno> {
         let entry = self
             .node
             .upper
@@ -897,7 +897,7 @@ impl FsNodeOps for OverlayNodeOps {
         node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
-        value: &FsStr,
+        value: &[u8],
         op: XattrOp,
     ) -> Result<(), Errno> {
         self.node.as_mounter(current_task, || {
