@@ -455,7 +455,8 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
             .enable_frame_counter_overlay =
                 config_values_.enable_frame_counter_overlay() ||
                 (config_values_.visual_debugging_level() >= VISUAL_DEBUGGING_LEVEL_INFO_PLUS),
-        });
+        },
+        inspect_node_.CreateChild("DisplayCompositor"));
   }
 
   // Flatland manager depends on compositor, and is required by engine.

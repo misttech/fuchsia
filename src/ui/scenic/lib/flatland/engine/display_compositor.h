@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/time.h>
 
 #include <cstdint>
@@ -88,7 +89,8 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
                     std::shared_ptr<display::CoordinatorProxy> coordinator_proxy,
                     const std::shared_ptr<Renderer>& renderer,
                     fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
-                    const DisplayCompositorConfig& config);
+                    const DisplayCompositorConfig& config,
+                    inspect::Node inspect_node = inspect::Node());
 
   ~DisplayCompositor() override;
 
@@ -418,6 +420,10 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
     // `renderer_->ReleaseBufferImage()` in `ReleaseBufferImage()`.
     bool imported_to_gpu = false;
 
+    // True for client images (`BufferCollectionUsage::kClientImage`); false for compositor render
+    // targets (`BufferCollectionUsage::kRenderTarget`).
+    bool is_client_image = false;
+
     // Image tiling type for `display_coordinator_.SetLayerPrimaryConfig()` when
     // `imported_to_display` is true.
     uint32_t tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear;
@@ -426,6 +432,31 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Tracks per-image import state and pending lazy imports.
   std::unordered_map<allocation::GlobalImageId, ImageImportData> image_import_map_
       FXL_GUARDED_BY(lock_);
+
+  // Classifies client images (`kClientImage`) by which backend(s) (`imported_to_display` and/or
+  // `imported_to_gpu`) they were imported into over their lifetime.
+  struct ClientImageUsageCounts {
+    uint64_t d2d_only = 0;
+    uint64_t gpu_only = 0;
+    uint64_t both = 0;
+    uint64_t unused = 0;
+
+    void Add(const ImageImportData& data) {
+      if (data.imported_to_display && data.imported_to_gpu) {
+        ++both;
+      } else if (data.imported_to_display) {
+        ++d2d_only;
+      } else if (data.imported_to_gpu) {
+        ++gpu_only;
+      } else {
+        ++unused;
+      }
+    }
+  };
+
+  // Cumulative backend-import counts of released client images (`kClientImage`). Combined on demand
+  // in `inspect_client_image_usage_node_` with the currently active entries in `image_import_map_`.
+  ClientImageUsageCounts released_client_image_counts_ FXL_GUARDED_BY(lock_);
 
   // Counts remaining pending lazy imports for a client buffer collection after
   // `ReleaseBufferCollection()` has been called.
@@ -445,7 +476,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       pending_collection_releases_ FXL_GUARDED_BY(lock_);
 
   /// The below members are either thread-safe or only manipulated from the main thread and
-  /// therefore don't need locks.
+  /// therefore don't need `lock_`.
 
   // Software renderer used when render data cannot be directly composited to the display.
   const std::shared_ptr<Renderer> renderer_;
@@ -486,6 +517,9 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   const DisplayCompositorConfig config_;
 
   inspect::Node inspect_node_;
+  // Reports client image counts classified by backend import state (`imported_to_display` and
+  // `imported_to_gpu`).
+  inspect::LazyNode inspect_client_image_usage_node_;
 };
 
 }  // namespace flatland

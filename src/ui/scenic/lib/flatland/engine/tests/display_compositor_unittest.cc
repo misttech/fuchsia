@@ -14,6 +14,10 @@
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
 #include <lib/fpromise/bridge.h>
+#include <lib/fpromise/single_threaded_executor.h>
+#include <lib/inspect/cpp/hierarchy.h>
+#include <lib/inspect/cpp/inspect.h>
+#include <lib/inspect/cpp/reader.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/time.h>
 
@@ -198,7 +202,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
     display_compositor_ = std::make_shared<flatland::DisplayCompositor>(
         dispatcher(), std::move(coordinator_proxy), renderer_,
         utils::CreateSysmemAllocatorClient(dispatcher(), "display_compositor_unittest"),
-        flatland::DisplayCompositorConfig{});
+        flatland::DisplayCompositorConfig{}, inspector_.GetRoot().CreateChild("DisplayCompositor"));
   }
 
   void TearDown() override {
@@ -411,6 +415,44 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
     EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
   }
 
+  struct ClientImageUsageCounts {
+    uint64_t total_imported = 0;
+    uint64_t active = 0;
+    uint64_t direct_to_display_only = 0;
+    uint64_t gpu_composition_total = 0;
+    uint64_t gpu_composition_only = 0;
+    uint64_t both_d2d_and_gpu = 0;
+    uint64_t unused = 0;
+
+    bool operator==(const ClientImageUsageCounts&) const = default;
+  };
+
+  ClientImageUsageCounts ReadClientImageUsageCounts() {
+    auto result = fpromise::run_single_threaded(inspect::ReadFromInspector(inspector_));
+    FX_CHECK(result.is_ok());
+    const auto hierarchy = result.take_value();
+    const auto* compositor_node = hierarchy.GetByPath({"DisplayCompositor"});
+    FX_CHECK(compositor_node);
+    const auto* usage_node = compositor_node->GetByPath({"Client image usage counts"});
+    FX_CHECK(usage_node);
+
+    auto get_uint = [&](const std::string& name) -> uint64_t {
+      const auto* prop = usage_node->node().get_property<inspect::UintPropertyValue>(name);
+      FX_CHECK(prop) << "Missing property: " << name;
+      return prop->value();
+    };
+
+    return ClientImageUsageCounts{
+        .total_imported = get_uint("Total imported"),
+        .active = get_uint("Active"),
+        .direct_to_display_only = get_uint("Direct to display only"),
+        .gpu_composition_total = get_uint("GPU composition (total)"),
+        .gpu_composition_only = get_uint("GPU composition only"),
+        .both_d2d_and_gpu = get_uint("Both direct to display and GPU"),
+        .unused = get_uint("Unused"),
+    };
+  }
+
   // One `SetDisplayPowerMode()` call on the mock, replying `reply`. Set this up right
   // before each `DisplayCompositor::SetDisplayPowerMode()` call.
   void ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode expected_mode,
@@ -444,6 +486,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
   async::Loop display_coordinator_loop_{&kAsyncLoopConfigNeverAttachToThread};
   std::unique_ptr<flatland::MockDisplayCoordinator> mock_display_coordinator_;
   std::shared_ptr<flatland::MockRenderer> renderer_;
+  inspect::Inspector inspector_;
   std::shared_ptr<flatland::DisplayCompositor> display_compositor_;
 
   // Only for use on the main thread. Establish a new connection when on the
@@ -4228,6 +4271,248 @@ TEST_F(DisplayCompositorTest,
   display_collection_released.Wait();
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, ClientImageUsageInspectCounts) {
+  const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  SetDisplaySupported(kGlobalBufferCollectionId, true);
+
+  const display::DisplayId kDisplayId(1);
+  const glm::uvec2 kResolution(1024, 768);
+  const DisplayInfo kDisplayInfo = {kResolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, kResolution.x, kResolution.y,
+                           kMaxDisplayLayersCount);
+
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).WillRepeatedly(Return());
+  AddDisplayWithExpectations(&display, kDisplayInfo);
+
+  const ImageMetadata kRenderTargetMetadata = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = kResolution.x,
+      .height = kResolution.y,
+  };
+  AddSyntheticRenderTarget(kDisplayId, kRenderTargetMetadata);
+
+  // Importing and releasing a `kRenderTarget` image must not be counted as a client image.
+  EXPECT_CALL(*mock_display_coordinator_, ImportImage(_, _))
+      .WillRepeatedly(
+          testing::Invoke([](fuchsia_hardware_display::wire::CoordinatorImportImageRequest*,
+                             MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
+            completer.Reply(fit::ok());
+          }));
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillRepeatedly(ReturnPromise(fpromise::ok()));
+
+  const ImageMetadata render_target_image = {
+      .collection_id = kGlobalBufferCollectionId,
+      .identifier = allocation::GenerateUniqueImageId(),
+      .vmo_index = 0,
+      .width = 128,
+      .height = 128,
+  };
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
+      render_target_image, BufferCollectionUsage::kRenderTarget)));
+
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{}));
+
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(render_target_image.identifier))
+      .Times(1)
+      .WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(render_target_image.identifier);
+  testing::Mock::VerifyAndClearExpectations(renderer_.get());
+
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{}));
+
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillRepeatedly(ReturnPromise(fpromise::ok()));
+
+  auto make_client_image = [&](allocation::GlobalBufferCollectionId collection_id) {
+    ImageMetadata metadata = {
+        .collection_id = collection_id,
+        .identifier = allocation::GenerateUniqueImageId(),
+        .vmo_index = 0,
+        .width = 128,
+        .height = 256,
+    };
+    EXPECT_TRUE(RunPromise(
+        display_compositor_->ImportBufferImage(metadata, BufferCollectionUsage::kClientImage)));
+    return metadata;
+  };
+
+  // Import 4 display-supported client images:
+  // - image1: D2D only
+  // - image2: D2D first, then GPU (becomes Both direct to display and GPU)
+  // - image3: GPU first, then D2D (becomes Both direct to display and GPU)
+  // - image4: Unused
+  const ImageMetadata image1 = make_client_image(kGlobalBufferCollectionId);
+  const ImageMetadata image2 = make_client_image(kGlobalBufferCollectionId);
+  const ImageMetadata image3 = make_client_image(kGlobalBufferCollectionId);
+  const ImageMetadata image4 = make_client_image(kGlobalBufferCollectionId);
+
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                              .total_imported = 4u,
+                                              .active = 4u,
+                                              .direct_to_display_only = 0u,
+                                              .gpu_composition_total = 0u,
+                                              .gpu_composition_only = 0u,
+                                              .both_d2d_and_gpu = 0u,
+                                              .unused = 4u,
+                                          }));
+
+  // Import a client image on a non-display-supported collection (`!IsDisplaySupported()`), which is
+  // imported eagerly to the GPU renderer and counted in the GPU-only bucket.
+  const auto kGpuOnlyCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  SetDisplaySupported(kGpuOnlyCollectionId, false);
+  const ImageMetadata image5 = make_client_image(kGpuOnlyCollectionId);
+
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                              .total_imported = 5u,
+                                              .active = 5u,
+                                              .direct_to_display_only = 0u,
+                                              .gpu_composition_total = 1u,
+                                              .gpu_composition_only = 1u,
+                                              .both_d2d_and_gpu = 0u,
+                                              .unused = 4u,
+                                          }));
+
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayLayers(_, _)).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryPosition(_, _)).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryAlpha(_, _)).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).WillRepeatedly(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .WillRepeatedly(
+          testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+            completer.Reply(display::WireConfigResult::kOk);
+          }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).WillRepeatedly(Return());
+
+  // Frame 1: Direct-to-display with image1 and image2.
+  {
+    std::array layers = {MakeImageLayer(image1), MakeImageLayer(image2)};
+    RenderData render_data = {.display_id = kDisplayId, .layers = layers};
+    auto result = display_compositor_->RenderFrame(1, zx::time_monotonic(1),
+                                                   std::span<const RenderData>(&render_data, 1), {},
+                                                   {}, {}, [](const scheduling::Timestamps&) {});
+    EXPECT_EQ(result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
+
+    EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                                .total_imported = 5u,
+                                                .active = 5u,
+                                                .direct_to_display_only = 2u,
+                                                .gpu_composition_total = 1u,
+                                                .gpu_composition_only = 1u,
+                                                .both_d2d_and_gpu = 0u,
+                                                .unused = 2u,
+                                            }));
+  }
+
+  // Frame 2: GPU composition with image2 and image3.
+  EXPECT_CALL(*renderer_, RequiresRenderInProtected(_)).WillRepeatedly(Return(false));
+  EXPECT_CALL(*renderer_, Render(_, _, _))
+      .WillRepeatedly(testing::Invoke([](const ImageMetadata&, std::span<const ResolvedLayer>,
+                                         const Renderer::RenderArgs& render_args) {
+        for (const auto& fence : render_args.release_fences) {
+          fence.signal(0, ZX_EVENT_SIGNALED);
+        }
+      }));
+  {
+    std::array layers = {MakeImageLayer(image2), MakeImageLayer(image3)};
+    RenderData render_data = {.display_id = kDisplayId, .layers = layers};
+    auto result = display_compositor_->RenderFrame(
+        2, zx::time_monotonic(2), std::span<const RenderData>(&render_data, 1), {}, {}, {},
+        [](const scheduling::Timestamps&) {},
+        DisplayCompositor::RenderFrameTestArgs{.force_gpu_composition = true});
+    EXPECT_EQ(result, DisplayCompositor::RenderFrameResult::kGpuComposition);
+
+    EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                                .total_imported = 5u,
+                                                .active = 5u,
+                                                .direct_to_display_only = 1u,
+                                                .gpu_composition_total = 3u,
+                                                .gpu_composition_only = 2u,
+                                                .both_d2d_and_gpu = 1u,
+                                                .unused = 1u,
+                                            }));
+  }
+
+  // Frame 3: Direct-to-display with image1 (already D2D-only -> idempotent) and image3
+  // (previously GPU-only -> now Both direct to display and GPU).
+  {
+    std::array layers = {MakeImageLayer(image1), MakeImageLayer(image3)};
+    RenderData render_data = {.display_id = kDisplayId, .layers = layers};
+    auto result = display_compositor_->RenderFrame(3, zx::time_monotonic(3),
+                                                   std::span<const RenderData>(&render_data, 1), {},
+                                                   {}, {}, [](const scheduling::Timestamps&) {});
+    EXPECT_EQ(result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
+
+    EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                                .total_imported = 5u,
+                                                .active = 5u,
+                                                .direct_to_display_only = 1u,
+                                                .gpu_composition_total = 3u,
+                                                .gpu_composition_only = 1u,
+                                                .both_d2d_and_gpu = 2u,
+                                                .unused = 1u,
+                                            }));
+  }
+
+  // Release image1 (D2D-only) first, then image4 (Unused), image5 (GPU-only), and image2 (Both)
+  // one by one, verifying after each release that `Active` decrements by 1 and all four lifetime
+  // bucket counts remain intact.
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(_)).Times(0);
+  display_compositor_->ReleaseBufferImage(image1.identifier);
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                              .total_imported = 5u,
+                                              .active = 4u,
+                                              .direct_to_display_only = 1u,
+                                              .gpu_composition_total = 3u,
+                                              .gpu_composition_only = 1u,
+                                              .both_d2d_and_gpu = 2u,
+                                              .unused = 1u,
+                                          }));
+
+  display_compositor_->ReleaseBufferImage(image4.identifier);
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                              .total_imported = 5u,
+                                              .active = 3u,
+                                              .direct_to_display_only = 1u,
+                                              .gpu_composition_total = 3u,
+                                              .gpu_composition_only = 1u,
+                                              .both_d2d_and_gpu = 2u,
+                                              .unused = 1u,
+                                          }));
+
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image5.identifier)).Times(1).WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image5.identifier);
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                              .total_imported = 5u,
+                                              .active = 2u,
+                                              .direct_to_display_only = 1u,
+                                              .gpu_composition_total = 3u,
+                                              .gpu_composition_only = 1u,
+                                              .both_d2d_and_gpu = 2u,
+                                              .unused = 1u,
+                                          }));
+
+  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*renderer_, ReleaseBufferImage(image2.identifier)).Times(1).WillOnce(Return());
+  display_compositor_->ReleaseBufferImage(image2.identifier);
+  EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
+                                              .total_imported = 5u,
+                                              .active = 1u,
+                                              .direct_to_display_only = 1u,
+                                              .gpu_composition_total = 3u,
+                                              .gpu_composition_only = 1u,
+                                              .both_d2d_and_gpu = 2u,
+                                              .unused = 1u,
+                                          }));
+
+  ClearSyntheticRenderTargets(kDisplayId);
+  ExpectDisplayCleanup();
 }
 
 }  // namespace flatland::test

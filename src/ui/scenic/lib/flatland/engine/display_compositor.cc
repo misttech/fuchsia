@@ -194,18 +194,52 @@ DisplayCompositor::DisplayCompositor(async_dispatcher_t* main_dispatcher,
                                      std::shared_ptr<display::CoordinatorProxy> coordinator_proxy,
                                      const std::shared_ptr<Renderer>& renderer,
                                      fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
-                                     const DisplayCompositorConfig& config)
+                                     const DisplayCompositorConfig& config,
+                                     inspect::Node inspect_node)
     : display_coordinator_shared_ptr_(std::move(coordinator_proxy)),
       display_coordinator_(*display_coordinator_shared_ptr_),
       renderer_(renderer),
       release_fence_manager_(main_dispatcher),
       sysmem_allocator_(std::move(sysmem_allocator)),
       main_dispatcher_(main_dispatcher),
-      config_(config) {
+      config_(config),
+      inspect_node_(std::move(inspect_node)) {
   FX_CHECK(main_dispatcher_);
   FX_DCHECK(renderer_);
   FX_DCHECK(sysmem_allocator_);
   FX_DCHECK(display_coordinator_shared_ptr_);
+
+  // Classifies client images (`kClientImage`) by their backend import state (`imported_to_display`
+  // and `imported_to_gpu`).
+  inspect_client_image_usage_node_ =
+      inspect_node_.CreateLazyNode("Client image usage counts", [this] {
+        uint64_t active = 0;
+        ClientImageUsageCounts counts;
+        {
+          std::scoped_lock lock(lock_);
+          counts = released_client_image_counts_;
+          for (const auto& [_, data] : image_import_map_) {
+            if (!data.is_client_image) {
+              continue;
+            }
+            ++active;
+            counts.Add(data);
+          }
+        }
+
+        inspect::Inspector inspector;
+        auto& root = inspector.GetRoot();
+        root.CreateUint("Total imported",
+                        counts.d2d_only + counts.gpu_only + counts.both + counts.unused,
+                        &inspector);
+        root.CreateUint("Active", active, &inspector);
+        root.CreateUint("Direct to display only", counts.d2d_only, &inspector);
+        root.CreateUint("GPU composition (total)", counts.gpu_only + counts.both, &inspector);
+        root.CreateUint("GPU composition only", counts.gpu_only, &inspector);
+        root.CreateUint("Both direct to display and GPU", counts.both, &inspector);
+        root.CreateUint("Unused", counts.unused, &inspector);
+        return fpromise::make_ok_promise(std::move(inspector));
+      });
 }
 
 DisplayCompositor::~DisplayCompositor() {
@@ -679,6 +713,7 @@ fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::Image
           .pending_display_import = true,
           .pending_gpu_import = true,
           .imported_to_gpu = false,
+          .is_client_image = true,
       };
       return fpromise::make_ok_promise();
     }
@@ -691,6 +726,7 @@ fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::Image
     image_import_map_[metadata.identifier] = ImageImportData{
         .metadata = metadata,
         .imported_to_gpu = true,
+        .is_client_image = true,
     };
   }
 
@@ -714,6 +750,10 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
       const allocation::GlobalBufferCollectionId collection_id = it->second.metadata.collection_id;
       const bool had_pending_display_import = it->second.pending_display_import;
       const bool had_pending_gpu_import = it->second.pending_gpu_import;
+
+      if (it->second.is_client_image) {
+        released_client_image_counts_.Add(it->second);
+      }
 
       should_release_from_gpu = it->second.imported_to_gpu;
       if (it->second.imported_to_display) {
