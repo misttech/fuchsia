@@ -11,7 +11,10 @@ use fdf::{AsAsyncDispatcherRef, AsyncDispatcher, DispatcherBuilder, OnDispatcher
 use fdf_env::Environment;
 use fdf_fidl::DriverChannel;
 use fidl_next::{Client as NextClient, ClientDispatcher, ClientEnd as NextClientEnd};
-use fidl_next_fuchsia_driver_framework::{Driver as NextDriver, DriverStartArgs};
+use fidl_next_fuchsia_driver_framework::{
+    Driver as NextDriver, DriverStartArgs, HealthCheckError, HealthCheckRequest,
+    HealthCheckResponse,
+};
 use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use std::marker::PhantomData;
@@ -164,6 +167,15 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
     /// Get a reference to the harness that started the driver.
     pub fn harness(&self) -> &'_ TestHarness<D> {
         self.harness
+    }
+
+    /// Sends a `HealthCheck` request over the driver channel to the driver under test, as the
+    /// driver host would, and returns the driver's reply.
+    pub async fn health_check(
+        &self,
+        request: HealthCheckRequest,
+    ) -> Result<HealthCheckResponse, HealthCheckError> {
+        self.client.health_check(request).await.expect("health_check FIDL call success")
     }
 
     /// Stop the driver.

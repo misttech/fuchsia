@@ -472,7 +472,12 @@ mod convert {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DriverError, Node, NodeBuilder, ServiceInstance, ServiceOffer};
+    use crate::{
+        DriverError, HealthCheckError, HealthCheckInspect, HealthCheckRequest, HealthCheckResponse,
+        HealthCheckResult, HealthCondition, HealthStatus, Node, NodeBuilder, ServiceInstance,
+        ServiceOffer,
+    };
+    use diagnostics_assertions::assert_data_tree;
     use fidl_next::{Request, Responder};
     use fidl_next_fuchsia_examples as fexample;
     use fidl_next_fuchsia_examples::echo::{EchoString, SendString};
@@ -739,6 +744,101 @@ mod tests {
         let started_driver = harness.start_driver().await.expect("driver starts");
         let driver = started_driver.get_driver().expect("driver");
         assert_eq!(driver.power_element_token.as_ref().map(koid), Some(koid(&power_token)));
+        started_driver.stop_driver().await;
+    }
+
+    /// Leaves health at the SDK defaults.
+    struct DefaultHealthDriver;
+    impl Driver for DefaultHealthDriver {
+        const NAME: &str = "default_health_driver";
+        async fn start(_context: crate::DriverContext) -> Result<Self, crate::DriverError> {
+            Ok(Self)
+        }
+        async fn stop(&self) {}
+    }
+
+    #[fuchsia::test]
+    async fn test_dut_health_check_default() {
+        let mut harness = TestHarness::<DefaultHealthDriver>::new();
+        let started_driver = harness.start_driver().await.expect("success");
+
+        let ping_res = started_driver.health_check(HealthCheckRequest::Ping).await;
+        assert_eq!(ping_res, Ok(HealthCheckResponse::default()));
+        let fast_res = started_driver.health_check(HealthCheckRequest::Fast).await;
+        assert_eq!(fast_res, Err(HealthCheckError::NotSupported));
+
+        started_driver.stop_driver().await;
+    }
+
+    /// Answers FAST checks with a custom condition and records every result into an inspector it
+    /// keeps for the test to read, the way a real driver would with the inspector it publishes.
+    struct CustomHealthDriver {
+        inspector: fuchsia_inspect::Inspector,
+        health_inspect: HealthCheckInspect,
+    }
+    impl Driver for CustomHealthDriver {
+        const NAME: &str = "custom_health_driver";
+        async fn start(_context: crate::DriverContext) -> Result<Self, crate::DriverError> {
+            let inspector = fuchsia_inspect::Inspector::default();
+            let health_inspect = HealthCheckInspect::new(inspector.root());
+            Ok(Self { inspector, health_inspect })
+        }
+        async fn stop(&self) {}
+
+        async fn health_check(&self, request: HealthCheckRequest) -> HealthCheckResult {
+            let result = match request {
+                HealthCheckRequest::Fast => Ok(HealthCheckResponse {
+                    conditions: Some(vec![HealthCondition {
+                        status: Some(HealthStatus::Ok),
+                        reason_code: Some("CUSTOM_OK".to_string()),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }),
+                _ => Err(HealthCheckError::NotSupported),
+            };
+            self.health_inspect.record(request, &result);
+            result
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_dut_health_check_custom() {
+        let mut harness = TestHarness::<CustomHealthDriver>::new();
+        let started_driver = harness.start_driver().await.expect("success");
+
+        let fast_res = started_driver.health_check(HealthCheckRequest::Fast).await;
+        let expected = HealthCheckResponse {
+            conditions: Some(vec![HealthCondition {
+                status: Some(HealthStatus::Ok),
+                reason_code: Some("CUSTOM_OK".to_string()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        assert_eq!(fast_res, Ok(expected));
+
+        // The result was recorded into the inspector the driver owns.
+        let driver = started_driver.get_driver().expect("failed to get driver");
+        assert_data_tree!(driver.inspector, root: {
+            driver_health_check: {
+                level: "FAST",
+                status: "OK",
+                conditions: { CUSTOM_OK: { status: "OK" } },
+            },
+        });
+
+        // A NOT_SUPPORTED error on DEEP does not overwrite the informative FAST record.
+        let deep_res = started_driver.health_check(HealthCheckRequest::Deep).await;
+        assert_eq!(deep_res, Err(HealthCheckError::NotSupported));
+        assert_data_tree!(driver.inspector, root: {
+            driver_health_check: {
+                level: "FAST",
+                status: "OK",
+                conditions: { CUSTOM_OK: { status: "OK" } },
+            },
+        });
+
         started_driver.stop_driver().await;
     }
 }
