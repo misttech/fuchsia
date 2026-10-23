@@ -78,7 +78,7 @@ rust_library(
     }),
     version = "0.8.4",
     deps = [
-        "//third_party/rust_crates/vendor/either-1.18.0:either",
+        "//third_party/rust_crates/vendor/either-1.19.0:either",
         "//third_party/rust_crates/vendor/ipnet-2.11.0:ipnet",
         "//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits",
     ],
