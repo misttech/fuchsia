@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{InterruptibleEventRequeueOwnerLock, LockDepMutex};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -57,7 +58,7 @@ pub struct InterruptibleEvent {
     ///  3. Holding an `Arc<zx::Thread>` guarantees the underlying `zx_handle_t` stays open until
     ///     `reset()`, avoiding `zx_handle_duplicate` syscalls and `ZX_POL_BAD_HANDLE` policy
     ///     exceptions if the worker thread exits during the wait.
-    requeue_owner: fuchsia_sync::Mutex<Option<Arc<zx::Thread>>>,
+    requeue_owner: LockDepMutex<Option<Arc<zx::Thread>>, InterruptibleEventRequeueOwnerLock>,
 }
 
 /// The initial state.
@@ -139,7 +140,7 @@ impl Default for InterruptibleEvent {
         InterruptibleEvent {
             futex: zx::Futex::new(READY),
             requeue_target: zx::Futex::new(READY),
-            requeue_owner: fuchsia_sync::Mutex::new(None),
+            requeue_owner: LockDepMutex::new(None),
         }
     }
 }
