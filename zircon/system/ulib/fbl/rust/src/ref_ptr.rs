@@ -123,6 +123,7 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
     }
 
     /// Use the given pin-initializer to pin-initialize a `T` inside of a new `RefPtr`.
+    #[inline]
     pub fn try_pin_init<E>(init: impl PinInit<T, E>) -> Result<Self, E>
     where
         T: UninitRecyclable,
@@ -142,6 +143,7 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
     }
 
     /// Use the given initializer to in-place initialize a `T` inside of a new `RefPtr`.
+    #[inline]
     pub fn try_init<E>(init: impl Init<T, E>) -> Result<Self, E>
     where
         T: UninitRecyclable,
