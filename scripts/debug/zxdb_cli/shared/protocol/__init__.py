@@ -25,6 +25,7 @@ from shared.protocol.async_backtrace import (
 )
 from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
+from shared.protocol.console import ConsoleRequest, ConsoleResponse
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
@@ -56,6 +57,7 @@ RequestType = Annotated[
     AsyncBacktraceRequest
     | AttachRequest
     | BreakRequest
+    | ConsoleRequest
     | ContinueRequest
     | DetachRequest
     | EvaluateRequest
@@ -77,6 +79,7 @@ RequestType = Annotated[
 
 ResponseType = (
     GetStateResponse
+    | ConsoleResponse
     | EvaluateResponse
     | ThreadStackTraceResponse
     | ProcessStackTraceResponse
@@ -107,6 +110,8 @@ __all__ = [
     "AsyncBacktraceRequest",
     "AttachRequest",
     "BreakRequest",
+    "ConsoleRequest",
+    "ConsoleResponse",
     "ContinueRequest",
     "DetachRequest",
     "EvaluateRequest",

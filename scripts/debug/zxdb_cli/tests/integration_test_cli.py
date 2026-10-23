@@ -299,6 +299,25 @@ class FakeDapServerMixin(unittest.IsolatedAsyncioTestCase):
                         )
                         writer.write(resp_header + resp_body)
                         await writer.drain()
+                    elif req.get("command") == "zxdb.ConsoleCommand":
+                        resp = {
+                            "seq": req["seq"],
+                            "type": "response",
+                            "request_seq": req["seq"],
+                            "success": True,
+                            "command": "zxdb.ConsoleCommand",
+                            "body": {
+                                "output": "Console output OK\n",
+                            },
+                        }
+                        resp_body = json.dumps(resp).encode("utf-8")
+                        resp_header = (
+                            f"Content-Length: {len(resp_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(resp_header + resp_body)
+                        await writer.drain()
             except (asyncio.IncompleteReadError, ConnectionResetError):
                 pass
             finally:
@@ -979,6 +998,42 @@ class TestCLIIntegration(FakeDapServerMixin):
             assert eval_req is not None
             self.assertEqual(eval_req["arguments"]["expression"], "1 + 1")
             self.assertEqual(eval_req["arguments"]["frameId"], 1)
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_console_command(self) -> None:
+        proc, _port = await self._setup_daemon_and_server()
+
+        try:
+            f = StringIO()
+            with contextlib.redirect_stdout(f):
+                exit_code = await main(["console", "sym-stat"])
+            self.assertEqual(exit_code, 0)
+
+            output = f.getvalue()
+            output_json = json.loads(output)
+            self.assertTrue(output_json.get("success"))
+            body = output_json.get("body")
+            self.assertIsNotNone(body)
+            self.assertEqual(body.get("output"), "Console output OK\n")
+
+            console_req = next(
+                (
+                    r
+                    for r in self.received_dap_requests
+                    if r.get("command") == "zxdb.ConsoleCommand"
+                ),
+                None,
+            )
+            self.assertIsNotNone(console_req)
+            assert console_req is not None
+            self.assertEqual(console_req["arguments"]["command"], "sym-stat")
+            self.assertNotIn("frameId", console_req["arguments"])
 
             # Stop via CLI
             exit_code = await main(["stop"])

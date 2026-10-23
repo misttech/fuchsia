@@ -17,6 +17,7 @@ from shared.protocol.async_backtrace import (
 )
 from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
+from shared.protocol.console import ConsoleRequest, ConsoleResponse
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
@@ -240,6 +241,27 @@ class TestPolymorphicParsing(unittest.TestCase):
         self.assertTrue(isinstance(req, AsyncBacktraceRequest))
         self.assertEqual(req.pid, 1234)
 
+    def test_parse_console(self) -> None:
+        data = {"command": "console", "input": "sym-stat"}
+        req = make_request(data)
+        self.assertTrue(isinstance(req, ConsoleRequest))
+        self.assertEqual(req.input, "sym-stat")
+        self.assertIsNone(req.thread_id)
+        self.assertEqual(req.frame_index, 0)
+
+    def test_parse_console_with_thread_and_frame(self) -> None:
+        data = {
+            "command": "console",
+            "input": "regs",
+            "thread_id": 1001,
+            "frame_index": 2,
+        }
+        req = make_request(data)
+        self.assertTrue(isinstance(req, ConsoleRequest))
+        self.assertEqual(req.input, "regs")
+        self.assertEqual(req.thread_id, 1001)
+        self.assertEqual(req.frame_index, 2)
+
     def test_parse_unknown_command(self) -> None:
         data = {"command": "unknown-cmd"}
         with self.assertRaises(ValidationError):
@@ -252,6 +274,7 @@ class TestResponseTypeAndDeserialization(unittest.TestCase):
             AsyncBacktraceRequest.response_type, AsyncBacktraceResponse
         )
         self.assertEqual(GetStateRequest.response_type, GetStateResponse)
+        self.assertEqual(ConsoleRequest.response_type, ConsoleResponse)
         self.assertEqual(EvaluateRequest.response_type, EvaluateResponse)
         self.assertEqual(
             StackTraceRequest.response_type,
@@ -348,6 +371,27 @@ class TestResponseTypeAndDeserialization(unittest.TestCase):
         json_line = (
             '{"success": true, "message": null, "events": null, "body": '
             '{"result": "123", "type": "int", "unknown_field": 42}}'
+        )
+        with self.assertRaises(ValidationError):
+            deserialize_response(json_line, req)
+
+    def test_deserialize_console_response(self) -> None:
+        req = ConsoleRequest(input="sym-stat")
+        json_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"output": "Process 1 symbol status\\n"}}'
+        )
+        resp = deserialize_response(json_line, req)
+        self.assertTrue(resp.success)
+        self.assertIsInstance(resp.body, ConsoleResponse)
+        assert resp.body is not None
+        self.assertEqual(resp.body.output, "Process 1 symbol status\n")
+
+    def test_deserialize_console_forbid_extra(self) -> None:
+        req = ConsoleRequest(input="sym-stat")
+        json_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"output": "ok", "extra": 1}}'
         )
         with self.assertRaises(ValidationError):
             deserialize_response(json_line, req)

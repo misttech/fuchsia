@@ -22,6 +22,7 @@ from daemon_manager.manager import (
 from shared.protocol.async_backtrace import AsyncBacktraceRequest
 from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
+from shared.protocol.console import ConsoleRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest
 from shared.protocol.finish import FinishRequest
@@ -647,6 +648,90 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
                 thread_id=1, frame_index=2, expression="x", start=5, count=10
             )
         )
+
+    @patch("cli.cli.send_command")
+    async def test_console_command_without_thread_id(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["console", "sym-stat"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            ConsoleRequest(
+                input="sym-stat",
+                thread_id=None,
+                frame_index=0,
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_console_command_with_thread_and_frame(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "console",
+                "-t",
+                "1",
+                "--frame-index",
+                "2",
+                "disassemble",
+                "--num=5",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            ConsoleRequest(
+                input="disassemble --num=5",
+                thread_id=1,
+                frame_index=2,
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_console_command_aliases(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        for alias in ["cmd", "console-command", "console_command"]:
+            mock_send.reset_mock()
+            exit_code = await main([alias, "ps"])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                ConsoleRequest(input="ps", thread_id=None, frame_index=0)
+            )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_console(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "console", "input": "regs", "thread_id": 1, "frame_index": 2}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            ConsoleRequest(input="regs", thread_id=1, frame_index=2)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_console_command_missing_input(self, mock_send: Mock) -> None:
+        with contextlib.redirect_stderr(StringIO()):
+            exit_code = await main(["console"])
+        self.assertEqual(exit_code, 1)
+        mock_send.assert_not_called()
+
+        with contextlib.redirect_stderr(StringIO()):
+            exit_code = await main(
+                ["--json", '{"command": "console", "input": "   "}']
+            )
+        self.assertEqual(exit_code, 1)
+        mock_send.assert_not_called()
+
+        with contextlib.redirect_stderr(StringIO()):
+            exit_code = await main(["console", "--frame-index", "2", "regs"])
+        self.assertEqual(exit_code, 1)
+        mock_send.assert_not_called()
 
     @patch("cli.cli.send_command")
     async def test_step_in_command(self, mock_send: Mock) -> None:

@@ -13,6 +13,7 @@ if (is_host) {
       "daemon_manager:tests",
       "shared:tests",
       "tests:cli_integration_test",
+      "//src/lib/debug/dap:tests",
     ]
   }
 

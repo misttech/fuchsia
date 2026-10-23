@@ -22,6 +22,7 @@ if (is_host) {
       "commands/attach.py",
       "commands/base.py",
       "commands/break_cmd.py",
+      "commands/console.py",
       "commands/continue_cmd.py",
       "commands/detach.py",
       "commands/evaluate.py",

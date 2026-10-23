@@ -26,6 +26,7 @@ if (is_host) {
       "handlers/async_backtrace.py",
       "handlers/attach.py",
       "handlers/break_req.py",
+      "handlers/console.py",
       "handlers/continue_req.py",
       "handlers/detach.py",
       "handlers/evaluate.py",

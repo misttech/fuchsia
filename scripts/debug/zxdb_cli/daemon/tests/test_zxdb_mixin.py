@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import Daemon
 from shared.protocol.detach import DetachRequest
-from zxdb_dap import ZxdbDapMixin, ZxdbDetachArguments
+from zxdb_dap import (
+    ZxdbConsoleCommandArguments,
+    ZxdbDapMixin,
+    ZxdbDetachArguments,
+)
 
 
 class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
@@ -22,6 +26,31 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
         await client.zxdb_detach(args)
 
         client._send_request.assert_called_once_with("zxdb.Detach", args)
+
+    async def test_zxdb_console_command(self) -> None:
+        class MockClient(ZxdbDapMixin):
+            def __init__(self) -> None:
+                self._send_request = AsyncMock(
+                    return_value={
+                        "seq": 1,
+                        "type": "response",
+                        "request_seq": 1,
+                        "success": True,
+                        "command": "zxdb.ConsoleCommand",
+                        "body": {"output": "ok\n"},
+                    }
+                )
+
+        client = MockClient()
+        args = ZxdbConsoleCommandArguments(command="sym-stat", frame_id=10)
+
+        resp = await client.zxdb_console_command(args)
+
+        client._send_request.assert_called_once_with(
+            "zxdb.ConsoleCommand", args
+        )
+        self.assertTrue(resp.success)
+        self.assertEqual(resp.body.output, "ok\n")
 
 
 class TestDaemonDetach(unittest.IsolatedAsyncioTestCase):

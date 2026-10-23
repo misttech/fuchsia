@@ -37,6 +37,7 @@ from shared.protocol.async_backtrace import (
     AsyncBacktraceResponse,
 )
 from shared.protocol.attach import AttachRequest
+from shared.protocol.console import ConsoleRequest, ConsoleResponse
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
@@ -53,6 +54,7 @@ from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
 from zxdb_dap import (
     AsyncTaskNode,
+    ZxdbConsoleCommandArguments,
     ZxdbPauseArguments,
 )
 
@@ -1259,6 +1261,138 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_dap_client.pause_thread.assert_called_once()
         mock_dap_client.stack_trace.assert_called_once()
         mock_dap_client.evaluate.assert_called_once()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_console_without_thread_id(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_cmd_resp = Mock()
+        mock_cmd_resp.success = True
+        mock_cmd_resp.body.output = "Process 1 symbol status\n"
+        mock_dap_client.zxdb_console_command = AsyncMock(
+            return_value=mock_cmd_resp
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "console",
+            ConsoleRequest(input="sym-stat"),
+        )
+
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+        assert isinstance(resp.body, ConsoleResponse)
+        self.assertEqual(resp.body.output, "Process 1 symbol status\n")
+        mock_dap_client.stack_trace.assert_not_called()
+        mock_dap_client.zxdb_console_command.assert_called_once_with(
+            ZxdbConsoleCommandArguments(command="sym-stat", frame_id=None)
+        )
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_console_with_thread_and_frame(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_stack_resp = Mock()
+        mock_frame_0 = Mock()
+        mock_frame_0.id = 41
+        mock_frame_1 = Mock()
+        mock_frame_1.id = 42
+        mock_stack_resp.body.stack_frames = [mock_frame_0, mock_frame_1]
+        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+
+        mock_cmd_resp = Mock()
+        mock_cmd_resp.success = True
+        mock_cmd_resp.body.output = "rax = 0x1\n"
+        mock_dap_client.zxdb_console_command = AsyncMock(
+            return_value=mock_cmd_resp
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_thread(1).is_stopped = True
+
+        resp = await daemon.registry.handle(
+            "console",
+            ConsoleRequest(input="regs", thread_id=1, frame_index=1),
+        )
+
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+        assert isinstance(resp.body, ConsoleResponse)
+        self.assertEqual(resp.body.output, "rax = 0x1\n")
+        mock_dap_client.stack_trace.assert_called_once()
+        mock_dap_client.zxdb_console_command.assert_called_once_with(
+            ZxdbConsoleCommandArguments(command="regs", frame_id=42)
+        )
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_console_frame_out_of_range(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_stack_resp = Mock()
+        mock_frame_0 = Mock()
+        mock_frame_0.id = 41
+        mock_stack_resp.body.stack_frames = [mock_frame_0]
+        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_thread(1).is_stopped = True
+
+        resp = await daemon.registry.handle(
+            "console",
+            ConsoleRequest(input="regs", thread_id=1, frame_index=5),
+        )
+
+        self.assertFalse(resp.success)
+        self.assertIn("out of range", resp.message or "")
+        mock_dap_client.zxdb_console_command.assert_not_called()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_console_frame_index_without_thread_id(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "console",
+            ConsoleRequest(input="regs", thread_id=None, frame_index=2),
+        )
+
+        self.assertFalse(resp.success)
+        self.assertIn("thread_id is required", resp.message or "")
+        mock_dap_client.zxdb_console_command.assert_not_called()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_console_dap_error(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.zxdb_console_command = AsyncMock(
+            side_effect=DapError("not a valid verb")
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "console",
+            ConsoleRequest(input="bad_cmd"),
+        )
+
+        self.assertFalse(resp.success)
+        self.assertIn("not a valid verb", resp.message or "")
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_elides_subtle_frames(

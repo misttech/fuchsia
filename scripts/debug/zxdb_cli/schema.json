@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 16,
+    "version": 17,
     "requests": {
         "$defs": {
             "AsyncBacktraceRequest": {
@@ -157,6 +157,67 @@
                     "line"
                 ],
                 "title": "BreakRequest",
+                "type": "object"
+            },
+            "ConsoleRequest": {
+                "description": "Request execution of a raw zxdb console command.",
+                "properties": {
+                    "command": {
+                        "const": "console",
+                        "default": "console",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "input": {
+                        "title": "Input",
+                        "type": "string"
+                    },
+                    "thread_id": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Thread Id"
+                    },
+                    "frame_index": {
+                        "default": 0,
+                        "title": "Frame Index",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "input"
+                ],
+                "title": "ConsoleRequest",
                 "type": "object"
             },
             "ContinueRequest": {
@@ -1081,6 +1142,7 @@
                 "async-backtrace": "#/$defs/AsyncBacktraceRequest",
                 "attach": "#/$defs/AttachRequest",
                 "break": "#/$defs/BreakRequest",
+                "console": "#/$defs/ConsoleRequest",
                 "continue": "#/$defs/ContinueRequest",
                 "detach": "#/$defs/DetachRequest",
                 "evaluate": "#/$defs/EvaluateRequest",
@@ -1109,6 +1171,9 @@
             },
             {
                 "$ref": "#/$defs/BreakRequest"
+            },
+            {
+                "$ref": "#/$defs/ConsoleRequest"
             },
             {
                 "$ref": "#/$defs/ContinueRequest"
@@ -1243,6 +1308,21 @@
                     }
                 },
                 "title": "AsyncTaskNode",
+                "type": "object"
+            },
+            "ConsoleResponse": {
+                "additionalProperties": false,
+                "description": "Response containing the console command output.",
+                "properties": {
+                    "output": {
+                        "title": "Output",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "output"
+                ],
+                "title": "ConsoleResponse",
                 "type": "object"
             },
             "EvaluateResponse": {
@@ -1619,6 +1699,9 @@
                 "anyOf": [
                     {
                         "$ref": "#/$defs/GetStateResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/ConsoleResponse"
                     },
                     {
                         "$ref": "#/$defs/EvaluateResponse"
