@@ -13,10 +13,8 @@
             type: "expect_pass_with_err_logs",
             matchers: [
                 // NB: Netcfg logs an error when rejecting an interface name.
-                "test_oir_interface_name_conflict_reject_netcfg_basic::*",
-                "test_oir_interface_name_conflict_reject_netcfg_advanced::*",
-                "test_oir_interface_name_conflict_reject_not_netcfg_managed_netcfg_basic",
-                "test_oir_interface_name_conflict_reject_not_netcfg_managed_netcfg_advanced",
+                "test_oir_interface_name_conflict_reject::*",
+                "test_oir_interface_name_conflict_reject_not_netcfg_managed",
 
                 // NB: Netcfg logs an error when the DHCPv4 client exits.
                 "dhcpv4_client_restarts_after_delay",
@@ -26,8 +24,7 @@
             type: "skip",
             matchers: [
                 // Hangs indefinitely.
-                "test_wlan_ap_dhcp_server_netcfg_advanced",
-                "test_wlan_ap_dhcp_server_netcfg_basic",
+                "test_wlan_ap_dhcp_server",
             ],
         },
     ],

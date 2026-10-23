@@ -15,8 +15,8 @@ use futures::future::{FutureExt as _, LocalBoxFuture};
 use net_types::ip::Ip;
 use netemul::{TestEndpoint, TestNetwork, TestRealm};
 use netstack_testing_common::realms::{
-    KnownServiceProvider, Manager, ManagerConfig, Netstack3, SocketProxyType, TestRealmExt,
-    TestSandboxExt, constants,
+    KnownServiceProvider, ManagerConfig, Netstack3, SocketProxyType, TestRealmExt, TestSandboxExt,
+    constants,
 };
 use netstack_testing_common::{
     ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, interfaces, wait_for_component_stopped,
@@ -36,7 +36,6 @@ pub struct NetcfgOwnedDeviceArgs {
 /// once the interface has been discovered via the Netstack
 /// interfaces watcher.
 pub async fn with_netcfg_owned_device<
-    M: Manager,
     F: for<'a> FnOnce(
         u64,
         &'a netemul::TestNetwork<'a>,
@@ -58,7 +57,6 @@ pub async fn with_netcfg_owned_device<
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     use_dhcp_server: false,
                     socket_proxy_type,
                     config: manager_config,
@@ -74,10 +72,10 @@ pub async fn with_netcfg_owned_device<
         .expect("create netstack realm");
     // Add a device to the realm.
     let network = sandbox.create_network(name).await.expect("create network");
-    let _endpoint = add_device_to_devfs::<M>(&network, &realm, name.to_string(), None).await;
+    let _endpoint = add_device_to_devfs(&network, &realm, name.to_string(), None).await;
 
     // Make sure the Netstack got the new device added.
-    let (interface_state, if_id, if_name) = verify_interface_added::<M>(&realm).await;
+    let (interface_state, if_id, if_name) = verify_interface_added(&realm).await;
 
     after_interface_up(if_id, &network, &interface_state, &realm, &sandbox).await;
 
@@ -98,7 +96,7 @@ pub async fn with_netcfg_owned_device<
 /// condition must be observed via the interfaces watcher.
 ///
 /// Returns the new endpoint that was added to the realm.
-pub async fn add_device_to_devfs<'a, M: Manager>(
+pub async fn add_device_to_devfs<'a>(
     network: &'a TestNetwork<'a>,
     realm: &'a TestRealm<'a>,
     name: String,
@@ -121,7 +119,7 @@ pub async fn add_device_to_devfs<'a, M: Manager>(
 /// Observe a new non-loopback interface via Netstack's interface watcher.
 ///
 /// Returns the interface state proxy and the interface's id and name.
-pub async fn verify_interface_added<'a, M: Manager>(
+pub async fn verify_interface_added<'a>(
     realm: &'a TestRealm<'a>,
 ) -> (fnet_interfaces::StateProxy, u64, String) {
     let interface_state = realm

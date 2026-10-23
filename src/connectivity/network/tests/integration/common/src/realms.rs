@@ -34,7 +34,6 @@ use fidl_fuchsia_net_settings as fnet_settings;
 use fidl_fuchsia_net_sockets as fnet_sockets;
 use fidl_fuchsia_net_stack as fnet_stack;
 use fidl_fuchsia_net_test_realm as fntr;
-use fidl_fuchsia_net_virtualization as fnet_virtualization;
 use fidl_fuchsia_netemul as fnetemul;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
@@ -117,69 +116,6 @@ impl NetstackVersion {
     }
 }
 
-/// The NetCfg version.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum NetCfgVersion {
-    /// The basic NetCfg version.
-    Basic,
-    /// The advanced NetCfg version.
-    Advanced,
-}
-
-/// The network manager to use in a [`KnownServiceProvider::Manager`].
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum ManagementAgent {
-    /// A version of netcfg.
-    NetCfg(NetCfgVersion),
-}
-
-impl ManagementAgent {
-    /// Gets the URL for this network manager component.
-    pub fn get_url(&self) -> &'static str {
-        match self {
-            Self::NetCfg(NetCfgVersion::Basic) => constants::netcfg::basic::COMPONENT_URL,
-            Self::NetCfg(NetCfgVersion::Advanced) => constants::netcfg::advanced::COMPONENT_URL,
-        }
-    }
-
-    /// Default arguments that should be passed to the component when run in a
-    /// test realm.
-    pub fn get_program_args(&self) -> &[&'static str] {
-        match self {
-            Self::NetCfg(NetCfgVersion::Basic) | Self::NetCfg(NetCfgVersion::Advanced) => {
-                &["--min-severity", "DEBUG"]
-            }
-        }
-    }
-
-    /// Gets the services exposed by this management agent.
-    pub fn get_services(&self) -> &[&'static str] {
-        match self {
-            Self::NetCfg(NetCfgVersion::Basic) => &[
-                fnet_dhcpv6::PrefixProviderMarker::PROTOCOL_NAME,
-                fnet_masquerade::FactoryMarker::PROTOCOL_NAME,
-                fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
-                fnp_properties::NetworksMarker::PROTOCOL_NAME,
-                fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME,
-                fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
-                fnp_properties::PrivilegedNetworkLookupMarker::PROTOCOL_NAME,
-                fnet_reachability::MonitorMarker::PROTOCOL_NAME,
-            ],
-            Self::NetCfg(NetCfgVersion::Advanced) => &[
-                fnet_dhcpv6::PrefixProviderMarker::PROTOCOL_NAME,
-                fnet_masquerade::FactoryMarker::PROTOCOL_NAME,
-                fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
-                fnet_virtualization::ControlMarker::PROTOCOL_NAME,
-                fnp_properties::NetworksMarker::PROTOCOL_NAME,
-                fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME,
-                fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
-                fnp_properties::PrivilegedNetworkLookupMarker::PROTOCOL_NAME,
-                fnet_reachability::MonitorMarker::PROTOCOL_NAME,
-            ],
-        }
-    }
-}
-
 /// Available configurations for a Manager.
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[allow(missing_docs)]
@@ -249,26 +185,15 @@ impl SocketProxyType {
 #[allow(missing_docs)]
 pub enum KnownServiceProvider {
     Netstack(NetstackVersion),
-    Manager {
-        agent: ManagementAgent,
-        config: ManagerConfig,
-        use_dhcp_server: bool,
-        socket_proxy_type: SocketProxyType,
-    },
+    Manager { config: ManagerConfig, use_dhcp_server: bool, socket_proxy_type: SocketProxyType },
     SecureStash,
-    DhcpServer {
-        persistent: bool,
-    },
+    DhcpServer { persistent: bool },
     DhcpClient,
     Dhcpv6Client,
     DnsResolver,
-    Reachability {
-        eager: bool,
-    },
+    Reachability { eager: bool },
     SocketProxy,
-    NetworkTestRealm {
-        require_outer_netstack: bool,
-    },
+    NetworkTestRealm { require_outer_netstack: bool },
     FakeClock,
     FakeSocketProxy,
     FakeNetcfg,
@@ -283,12 +208,7 @@ pub mod constants {
     }
     pub mod netcfg {
         pub const COMPONENT_NAME: &str = "netcfg";
-        pub mod basic {
-            pub const COMPONENT_URL: &str = "#meta/netcfg-basic.cm";
-        }
-        pub mod advanced {
-            pub const COMPONENT_URL: &str = "#meta/netcfg-advanced.cm";
-        }
+        pub const COMPONENT_URL: &str = "#meta/netcfg-basic.cm";
         pub mod fake {
             pub const COMPONENT_URL: &str = "#meta/fake_netcfg.cm";
         }
@@ -400,12 +320,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 },
                 ..Default::default()
             },
-            KnownServiceProvider::Manager {
-                agent,
-                use_dhcp_server,
-                config,
-                socket_proxy_type: _,
-            } => {
+            KnownServiceProvider::Manager { use_dhcp_server, config, socket_proxy_type: _ } => {
                 let enable_dhcpv6 = match config {
                     ManagerConfig::Dhcpv6 => true,
                     ManagerConfig::Forwarding
@@ -423,19 +338,29 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
 
                 fnetemul::ChildDef {
                     name: Some(constants::netcfg::COMPONENT_NAME.to_string()),
-                    source: Some(fnetemul::ChildSource::Component(agent.get_url().to_string())),
+                    source: Some(fnetemul::ChildSource::Component(
+                        constants::netcfg::COMPONENT_URL.to_string(),
+                    )),
                     program_args: Some(
-                        agent
-                            .get_program_args()
-                            .iter()
-                            .cloned()
-                            .chain(std::iter::once("--config-data"))
-                            .chain(std::iter::once(config.as_str()))
+                        ["--min-severity", "DEBUG", "--config-data", config.as_str()]
+                            .into_iter()
                             .map(Into::into)
                             .collect(),
                     ),
                     exposes: Some(
-                        agent.get_services().iter().map(|service| service.to_string()).collect(),
+                        [
+                            fnet_dhcpv6::PrefixProviderMarker::PROTOCOL_NAME,
+                            fnet_masquerade::FactoryMarker::PROTOCOL_NAME,
+                            fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
+                            fnp_properties::NetworksMarker::PROTOCOL_NAME,
+                            fnp_properties::NetworkRegistryMarker::PROTOCOL_NAME,
+                            fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
+                            fnp_properties::PrivilegedNetworkLookupMarker::PROTOCOL_NAME,
+                            fnet_reachability::MonitorMarker::PROTOCOL_NAME,
+                        ]
+                        .into_iter()
+                        .map(|service| service.to_string())
+                        .collect(),
                     ),
                     uses: Some(fnetemul::ChildUses::Capabilities(
                         std::iter::once(fnetemul::Capability::ChildDep(or_void_protocol_dep::<
@@ -862,29 +787,6 @@ pub enum ProdNetstack3 {}
 
 impl Netstack for ProdNetstack3 {
     const VERSION: NetstackVersion = NetstackVersion::ProdNetstack3;
-}
-
-/// Abstraction for a Fuchsia component which offers network configuration services.
-pub trait Manager: Copy + Clone {
-    /// The management agent to be used.
-    const MANAGEMENT_AGENT: ManagementAgent;
-}
-
-/// Uninstantiable type that represents netcfg_basic's implementation of a network manager.
-#[derive(Copy, Clone)]
-pub enum NetCfgBasic {}
-
-impl Manager for NetCfgBasic {
-    const MANAGEMENT_AGENT: ManagementAgent = ManagementAgent::NetCfg(NetCfgVersion::Basic);
-}
-
-/// Uninstantiable type that represents netcfg_advanced's implementation of a
-/// network manager.
-#[derive(Copy, Clone)]
-pub enum NetCfgAdvanced {}
-
-impl Manager for NetCfgAdvanced {
-    const MANAGEMENT_AGENT: ManagementAgent = ManagementAgent::NetCfg(NetCfgVersion::Advanced);
 }
 
 /// Helpers for `netemul::TestSandbox`.

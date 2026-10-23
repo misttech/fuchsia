@@ -42,7 +42,6 @@ impl syn::parse::Parse for Variant {
 #[derive(Debug, Copy, Clone)]
 enum VariantType {
     Ip,
-    Manager,
 }
 
 impl FromStr for VariantType {
@@ -51,7 +50,6 @@ impl FromStr for VariantType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "Ip" => Ok(Self::Ip),
-            "Manager" => Ok(Self::Manager),
             _ => Err(()),
         }
     }
@@ -61,8 +59,6 @@ impl VariantType {
     // NB: Extracted to constants so they can be reused in tests.
     const IPV4: &'static str = "net_types::ip::Ipv4";
     const IPV6: &'static str = "net_types::ip::Ipv6";
-    const NETCFG_BASIC: &'static str = "netstack_testing_common::realms::NetCfgBasic";
-    const NETCFG_ADVANCED: &'static str = "netstack_testing_common::realms::NetCfgAdvanced";
 
     fn implementations(&self) -> Vec<Implementation> {
         match self {
@@ -75,18 +71,6 @@ impl VariantType {
                 Implementation {
                     type_name: str_to_syn_path(Self::IPV6),
                     suffix: "v6",
-                    attrs: vec![],
-                },
-            ],
-            Self::Manager => vec![
-                Implementation {
-                    type_name: str_to_syn_path(Self::NETCFG_BASIC),
-                    suffix: "netcfg_basic",
-                    attrs: vec![],
-                },
-                Implementation {
-                    type_name: str_to_syn_path(Self::NETCFG_ADVANCED),
-                    suffix: "netcfg_advanced",
                     attrs: vec![],
                 },
             ],
@@ -477,15 +461,6 @@ fn netstack_test_inner(
 /// }
 /// ```
 ///
-/// Similarly,
-/// ```
-/// #[netstack_test]
-/// #[variant(M, Manager)]
-/// async fn test_foo<M: Manager>(name: &str) {/*...*/}
-/// ```
-///
-/// Expands equivalently to the ip variant.
-///
 /// This macro also supports expanding with multiple variations, including
 /// multiple occurrences of the same trait bound.
 /// ```
@@ -606,19 +581,6 @@ mod tests {
         params: vec![VariantType::IPV6],
         suffix: "_v6",
     }]; "simple case")]
-    #[test_case(vec!["M", "I"] => vec![VariantExpectation {
-        params: vec![VariantType::NETCFG_BASIC, VariantType::IPV4],
-        suffix: "_netcfg_basic_v4",
-    }, VariantExpectation {
-        params: vec![VariantType::NETCFG_BASIC, VariantType::IPV6],
-        suffix: "_netcfg_basic_v6",
-    }, VariantExpectation {
-        params: vec![VariantType::NETCFG_ADVANCED, VariantType::IPV4],
-        suffix: "_netcfg_advanced_v4",
-    }, VariantExpectation {
-        params: vec![VariantType::NETCFG_ADVANCED, VariantType::IPV6],
-        suffix: "_netcfg_advanced_v6",
-    }]; "two traits")]
     #[test_case(vec!["I", "II"] => vec![VariantExpectation {
         params: vec![VariantType::IPV4, VariantType::IPV4],
         suffix: "_v4_v4",
@@ -649,11 +611,6 @@ mod tests {
                 Variant {
                     ident: syn::parse_str("II").unwrap(),
                     variant_type: VariantType::Ip,
-                    seen: false,
-                },
-                Variant {
-                    ident: syn::parse_str("M").unwrap(),
-                    variant_type: VariantType::Manager,
                     seen: false,
                 },
             ],

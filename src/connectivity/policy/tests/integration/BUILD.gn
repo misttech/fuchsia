@@ -59,7 +59,6 @@ package_deps_for_tests = [
 
   # netcfg integration with netstack is tested.
   ":netcfg-netemul-configs",
-  "//src/connectivity/policy/netcfg:component-advanced",
   "//src/connectivity/policy/netcfg:component-basic",
   "//src/connectivity/policy/netcfg/integration/fake-netcfg:component",
 

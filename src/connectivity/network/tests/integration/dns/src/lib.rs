@@ -34,8 +34,7 @@ use netemul::{RealmTcpListener as _, RealmUdpSocket as _};
 use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::ndp::send_ra_with_router_lifetime;
 use netstack_testing_common::realms::{
-    KnownServiceProvider, Manager, ManagerConfig, Netstack3, SocketProxyType, TestSandboxExt as _,
-    constants,
+    KnownServiceProvider, ManagerConfig, Netstack3, SocketProxyType, TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{
     ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, Result, pause_fake_clock, wait_for_component_stopped,
@@ -222,7 +221,6 @@ impl DnsCheckType {
     // Determine whether the DNS servers are present given the CheckType.
     async fn evaluate_check<
         'a,
-        M: Manager,
         F: Unpin + FusedFuture + Future<Output = Result<component_events::events::Stopped>>,
     >(
         self,
@@ -272,14 +270,13 @@ const NDP_DNS_SERVER: fnet::Ipv6Address = fidl_ip_v6!("20a::1234:5678");
 /// Tests that Netstack exposes DNS servers discovered through NDP and NetworkManager
 /// appropriately publishes the DNS servers.
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(DnsCheckType::lookup_admin(); "lookup_admin")]
 #[test_case(DnsCheckType::dns_server_watcher(); "dns_server_watcher")]
-async fn discovered_ndp_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
+async fn discovered_ndp_dns(name: &str, check_type: DnsCheckType) {
     let name = name.to_string();
     // The device must be installed by netcfg in order to start the NDP watcher
     // on the interface.
-    let _if_name = with_netcfg_owned_device::<M, _>(
+    let _if_name = with_netcfg_owned_device(
         &name.clone(),
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
@@ -316,9 +313,7 @@ async fn discovered_ndp_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
                 )
                 .fuse();
                 let mut wait_for_netmgr = pin!(wait_for_netmgr);
-                check_type
-                    .evaluate_check::<M, _>(&client_realm, &mut wait_for_netmgr, &expect)
-                    .await
+                check_type.evaluate_check(&client_realm, &mut wait_for_netmgr, &expect).await
             }
             .boxed_local()
         },
@@ -329,10 +324,9 @@ async fn discovered_ndp_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
 /// Tests that DHCPv4 exposes DNS servers discovered through DHCPv4 and NetworkManager
 /// appropriately publishes the DNS servers.
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(DnsCheckType::lookup_admin(); "lookup_admin")]
 #[test_case(DnsCheckType::dns_server_watcher(); "dns_server_watcher")]
-async fn discovered_dhcpv4_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
+async fn discovered_dhcpv4_dns(name: &str, check_type: DnsCheckType) {
     const SERVER_ADDR: fnet::Subnet = fidl_subnet!("192.168.0.1/24");
     /// DNS server served by DHCP.
     const DHCP_DNS_SERVER: fnet::Ipv4Address = fidl_ip_v4!("123.12.34.56");
@@ -343,7 +337,7 @@ async fn discovered_dhcpv4_dns<M: Manager>(name: &str, check_type: DnsCheckType)
     // The device must be installed by netcfg in order to start the DHCPv4 client
     // on the interface, as the DHCPv4 DNS servers are found through the DHCPv4
     // client configuration and not the DnsServerWatcher.
-    let _if_name = with_netcfg_owned_device::<M, _>(
+    let _if_name = with_netcfg_owned_device(
         &name.clone(),
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
@@ -451,7 +445,7 @@ async fn discovered_dhcpv4_dns<M: Manager>(name: &str, check_type: DnsCheckType)
                 )
                 .fuse();
                 let mut wait_for_netmgr = pin!(wait_for_netmgr);
-                check_type.evaluate_check::<M, _>(client_realm, &mut wait_for_netmgr, &expect).await
+                check_type.evaluate_check(client_realm, &mut wait_for_netmgr, &expect).await
             }
             .boxed_local()
         },
@@ -462,10 +456,9 @@ async fn discovered_dhcpv4_dns<M: Manager>(name: &str, check_type: DnsCheckType)
 /// Tests that DHCPv6 exposes DNS servers discovered dynamically and NetworkManager
 /// appropriately publishes the DNS servers.
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(DnsCheckType::lookup_admin(); "lookup_admin")]
 #[test_case(DnsCheckType::dns_server_watcher(); "dns_server_watcher")]
-async fn discovered_dhcpv6_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
+async fn discovered_dhcpv6_dns(name: &str, check_type: DnsCheckType) {
     /// DHCPv6 server IP.
     const DHCPV6_SERVER: net_types_ip::Ipv6Addr =
         net_types_ip::Ipv6Addr::from_bytes(std_ip_v6!("fe80::1").octets());
@@ -477,7 +470,7 @@ async fn discovered_dhcpv6_dns<M: Manager>(name: &str, check_type: DnsCheckType)
     let name = name.to_string();
     // Install the device into the Netstack via netcfg so that the DHCPv6
     // client is started on the interface.
-    let _if_name = with_netcfg_owned_device::<M, _>(
+    let _if_name = with_netcfg_owned_device(
         &name.clone(),
         ManagerConfig::Dhcpv6,
         NetcfgOwnedDeviceArgs {
@@ -623,7 +616,7 @@ async fn discovered_dhcpv6_dns<M: Manager>(name: &str, check_type: DnsCheckType)
                 )
                 .fuse();
                 let mut wait_for_netmgr = pin!(wait_for_netmgr);
-                check_type.evaluate_check::<M, _>(client_realm, &mut wait_for_netmgr, &expect).await
+                check_type.evaluate_check(client_realm, &mut wait_for_netmgr, &expect).await
             }
             .boxed_local()
         },
@@ -632,10 +625,9 @@ async fn discovered_dhcpv6_dns<M: Manager>(name: &str, check_type: DnsCheckType)
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(DnsCheckType::lookup_admin(); "lookup_admin")]
 #[test_case(DnsCheckType::dns_server_watcher(); "dns_server_watcher")]
-async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
+async fn discovered_starnix_networks_dns(name: &str, check_type: DnsCheckType) {
     const NETWORK_ID1: u32 = 1;
     const NETWORK_ID2: u32 = 2;
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
@@ -644,7 +636,6 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
             format!("{}-realm", name),
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::EnableSocketProxy,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::Real,
@@ -684,7 +675,7 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
     let wait_for_netmgr =
         wait_for_component_stopped(&realm, constants::netcfg::COMPONENT_NAME, None).fuse();
     let mut wait_for_netmgr = pin!(wait_for_netmgr);
-    check_type.clone().evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &expect1).await;
+    check_type.clone().evaluate_check(&realm, &mut wait_for_netmgr, &expect1).await;
 
     // Perform an update and confirm the updated DNS server appears in the DNS update.
     network1.dns_servers = Some(fnp_properties::NetworkDnsServers {
@@ -697,7 +688,7 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
         address: fidl_ip_v4!("192.0.2.2"),
         port: DEFAULT_DNS_PORT,
     })]);
-    check_type.clone().evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &expect2).await;
+    check_type.clone().evaluate_check(&realm, &mut wait_for_netmgr, &expect2).await;
 
     // Add a second network and observe the DNS servers in the DNS update.
     let network2 = fnp_properties::Network {
@@ -722,14 +713,14 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
             zone_index: 0,
         }),
     ]);
-    check_type.clone().evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &expect3).await;
+    check_type.clone().evaluate_check(&realm, &mut wait_for_netmgr, &expect3).await;
 
     // To clear the available DNS servers, the networks in the Starnix
     // registry must be fully removed.
     assert_matches::assert_matches!(network_registry.remove(NETWORK_ID1).await, Ok(Ok(())));
     assert_matches::assert_matches!(network_registry.remove(NETWORK_ID2).await, Ok(Ok(())));
 
-    check_type.evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &HashSet::new()).await;
+    check_type.evaluate_check(&realm, &mut wait_for_netmgr, &HashSet::new()).await;
 
     realm.shutdown().await.expect("failed to shutdown realm");
 }
@@ -743,10 +734,9 @@ fn starnix_network_info(mark: u32, handle: u64) -> fnp_properties::NetworkInfo {
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(DnsCheckType::lookup_admin(); "lookup_admin")]
 #[test_case(DnsCheckType::dns_server_watcher(); "dns_server_watcher")]
-async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
+async fn discovered_starnix_fuchsia_networks_dns(name: &str, check_type: DnsCheckType) {
     const STARNIX_NETWORK_ID: u32 = 2;
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
@@ -754,7 +744,6 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
             format!("{name}-realm"),
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::EnableSocketProxy,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::Real,
@@ -791,17 +780,17 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
     let wait_for_netmgr =
         wait_for_component_stopped(&realm, constants::netcfg::COMPONENT_NAME, None).fuse();
     let mut wait_for_netmgr = pin!(wait_for_netmgr);
-    check_type.clone().evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &expect1).await;
+    check_type.clone().evaluate_check(&realm, &mut wait_for_netmgr, &expect1).await;
 
     // Add a device to devfs for netcfg to manage and install into the Netstack.
     // The network will not yet be added to the NetworkRegistry or set it as default.
     // It will not be a default network candidate until it has a default route.
     let network = sandbox.create_network(name).await.expect("create network");
     let _endpoint =
-        add_device_to_devfs::<M>(&network, &realm, format!("{}-fuchsia-ep", name), None).await;
+        add_device_to_devfs(&network, &realm, format!("{}-fuchsia-ep", name), None).await;
 
     // Make sure the Netstack got the new device added.
-    let (_interface_state, if_id, _if_name) = verify_interface_added::<M>(&realm).await;
+    let (_interface_state, if_id, _if_name) = verify_interface_added(&realm).await;
 
     // Update the Starnix network's DNS servers and wait for the update. When we
     // observe this update, we observed there was not a Fuchsia NetworkRegistry
@@ -818,7 +807,7 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
     });
     check_type
         .clone()
-        .evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &HashSet::from([starnix_updated_dns]))
+        .evaluate_check(&realm, &mut wait_for_netmgr, &HashSet::from([starnix_updated_dns]))
         .await;
 
     let root_routes = realm
@@ -835,7 +824,7 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
 
     // The current state should be an empty DNS server list because the Fuchsia
     // network is taking precedence over the Starnix NetworkRegistry.
-    check_type.clone().evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &HashSet::new()).await;
+    check_type.clone().evaluate_check(&realm, &mut wait_for_netmgr, &HashSet::new()).await;
 
     // Send a Router Advertisement to an EP on the same network with DNS server
     // configurations.
@@ -856,7 +845,7 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
     });
     check_type
         .clone()
-        .evaluate_check::<M, _>(&realm, &mut wait_for_netmgr, &HashSet::from([ndp_dns]))
+        .evaluate_check(&realm, &mut wait_for_netmgr, &HashSet::from([ndp_dns]))
         .await;
 
     // TODO(https://fxbug.dev/42175016): Respect DNS servers lookups based on
@@ -890,7 +879,7 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
     // We should observe both the NDP and Starnix network-provided DNS servers.
     // The Fuchsia network is no longer taking precedence.
     check_type
-        .evaluate_check::<M, _>(
+        .evaluate_check(
             &realm,
             &mut wait_for_netmgr,
             &HashSet::from([starnix_updated_dns, ndp_dns]),

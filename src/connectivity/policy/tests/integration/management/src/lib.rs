@@ -49,8 +49,8 @@ use netemul::{RealmTcpListener, RealmTcpStream, RealmUdpSocket, TestRealm};
 use netstack_testing_common::interfaces::{self, TestInterfaceExt as _};
 use netstack_testing_common::nud::apply_nud_flake_workaround;
 use netstack_testing_common::realms::{
-    self, KnownServiceProvider, ManagementAgent, Manager, ManagerConfig, NetCfgBasic,
-    NetCfgVersion, Netstack3, SocketProxyType, TestRealmExt as _, TestSandboxExt,
+    self, KnownServiceProvider, ManagerConfig, Netstack3, SocketProxyType, TestRealmExt as _,
+    TestSandboxExt,
 };
 use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
@@ -78,11 +78,10 @@ use test_case::test_case;
 /// Test that NetCfg discovers a newly added device and it adds the device
 /// to the Netstack.
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(ManagerConfig::Empty, "eth"; "no_prefix")]
 #[test_case(ManagerConfig::IfacePrefix, "testeth"; "with_prefix")]
-async fn test_oir<M: Manager>(name: &str, config: ManagerConfig, prefix: &str) {
-    let if_name = with_netcfg_owned_device::<M, _>(
+async fn test_oir(name: &str, config: ManagerConfig, prefix: &str) {
+    let if_name = with_netcfg_owned_device(
         name,
         config,
         NetcfgOwnedDeviceArgs {
@@ -110,7 +109,6 @@ async fn test_oir<M: Manager>(name: &str, config: ManagerConfig, prefix: &str) {
 // Send a UDP packet between Realm1 and Realm2, where Realm1 and Realm2 can be
 // initialized with a predefined ManagerConfig.
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(
     ManagerConfig::Empty,
     ManagerConfig::PacketFilterEthernet,
@@ -186,7 +184,7 @@ async fn test_oir<M: Manager>(name: &str, config: ManagerConfig, prefix: &str) {
     ManagerConfig::Empty,
     fhardware_network::PortClass::WlanAp,
     true; "both_no_filter__both_ports_wlan_ap")]
-async fn test_filtering_udp<M: Manager>(
+async fn test_filtering_udp(
     name: &str,
     realm1_manager: ManagerConfig,
     realm2_manager: ManagerConfig,
@@ -201,7 +199,7 @@ async fn test_filtering_udp<M: Manager>(
     const SENDER_PORT: u16 = 1234;
     const RECEIVER_PORT: u16 = 8080;
 
-    async fn setup_filtering_iface<'a, M: Manager>(
+    async fn setup_filtering_iface<'a>(
         network: &'a netemul::TestNetwork<'a>,
         realm: &'a netemul::TestRealm<'a>,
         port: u16,
@@ -209,7 +207,7 @@ async fn test_filtering_udp<M: Manager>(
         port_class: fhardware_network::PortClass,
     ) -> (netemul::TestEndpoint<'a>, SocketAddr) {
         // Install a new device via devfs so netcfg can pick it up and install filtering rules.
-        let ep = add_device_to_devfs::<M>(
+        let ep = add_device_to_devfs(
             network,
             realm,
             name,
@@ -223,7 +221,7 @@ async fn test_filtering_udp<M: Manager>(
         .await;
 
         // Make sure the Netstack got the new device added.
-        let (interface_state, if_id, _if_name) = verify_interface_added::<M>(&realm).await;
+        let (interface_state, if_id, _if_name) = verify_interface_added(&realm).await;
 
         // Get the link local address for the interface.
         let link_local_addr = interfaces::wait_for_v6_ll(&interface_state, if_id)
@@ -257,7 +255,6 @@ async fn test_filtering_udp<M: Manager>(
             format!("{name}-sender_realm"),
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     use_dhcp_server: true,
                     config: realm1_manager,
                     socket_proxy_type: SocketProxyType::None,
@@ -271,7 +268,7 @@ async fn test_filtering_udp<M: Manager>(
             ],
         )
         .expect("failed to create sender realm");
-    let (_sender_ep, sender_ep_addr) = setup_filtering_iface::<M>(
+    let (_sender_ep, sender_ep_addr) = setup_filtering_iface(
         &eth_network,
         &sender_realm,
         SENDER_PORT,
@@ -285,7 +282,6 @@ async fn test_filtering_udp<M: Manager>(
             format!("{name}-receiver_realm"),
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     use_dhcp_server: true,
                     config: realm2_manager,
                     socket_proxy_type: SocketProxyType::None,
@@ -299,7 +295,7 @@ async fn test_filtering_udp<M: Manager>(
             ],
         )
         .expect("failed to create receiver realm");
-    let (_receiver_ep, receiver_ep_addr) = setup_filtering_iface::<M>(
+    let (_receiver_ep, receiver_ep_addr) = setup_filtering_iface(
         &eth_network,
         &receiver_realm,
         RECEIVER_PORT,
@@ -393,8 +389,7 @@ async fn test_filtering_udp<M: Manager>(
 // Test that Netcfg discovers a device, adds it to the Netstack,
 // and does not provision the device (send DHCP packets).
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_install_only_no_provisioning<M: Manager>(name: &str) {
+async fn test_install_only_no_provisioning(name: &str) {
     // RFC2131 and RFC8415 specify the ports that DHCP servers
     // must use for sending messages.
     const DHCPV4_SERVER_PORT: u16 = 67;
@@ -402,7 +397,7 @@ async fn test_install_only_no_provisioning<M: Manager>(name: &str) {
     const DHCPV6_SERVER_PORT: u16 = 546;
     const DHCPV6_CLIENT_PORT: u16 = 547;
 
-    let _if_name: String = with_netcfg_owned_device::<M, _>(
+    let _if_name: String = with_netcfg_owned_device(
         name,
         ManagerConfig::AllDelegated,
         NetcfgOwnedDeviceArgs {
@@ -515,8 +510,7 @@ async fn test_install_only_no_provisioning<M: Manager>(name: &str) {
 // Test that Netcfg discovers a device, adds it to the Netstack,
 // and does not provision the device (send DHCP packets).
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_install_with_local_table<M: Manager>(name: &str) {
+async fn test_install_with_local_table(name: &str) {
     async fn assert_local_table_exists<I: FidlRouteAdminIpExt + FidlRouteIpExt>(
         realm: &TestRealm<'_>,
         grant: &fnet_resources::GrantForInterfaceAuthorization,
@@ -529,7 +523,7 @@ async fn test_install_with_local_table<M: Manager>(name: &str) {
             .expect("fidl error")
             .expect("failed to get local table");
     }
-    let _if_name: String = with_netcfg_owned_device::<M, _>(
+    let _if_name: String = with_netcfg_owned_device(
         name,
         ManagerConfig::AllInterfaceLocalDelegated,
         NetcfgOwnedDeviceArgs {
@@ -568,15 +562,13 @@ enum InterfaceWatcherEvent {
 /// Tests that when two interfaces are added with the same PersistentIdentifier,
 /// that the first interface is removed prior to adding the second interface.
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager>(name: &str) {
+async fn test_oir_interface_name_conflict_uninstall_existing(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<Netstack3, _, _>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -759,10 +751,9 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager>(name: &
 /// directly and not managed by Netcfg, or managed by Netcfg with a
 /// different naming identifier and the same name.
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(true; "netcfg_managed")]
 #[test_case(false; "not_netcfg_managed")]
-async fn test_oir_interface_name_conflict_reject<M: Manager>(
+async fn test_oir_interface_name_conflict_reject(
     name: &str,
     is_conflicting_iface_netcfg_managed: bool,
 ) {
@@ -772,7 +763,6 @@ async fn test_oir_interface_name_conflict_reject<M: Manager>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::DuplicateNames,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -905,8 +895,7 @@ async fn test_oir_interface_name_conflict_reject<M: Manager>(
 /// Also make sure that a new WLAN AP interface may be added after a previous interface has been
 /// removed from the netstack.
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_wlan_ap_dhcp_server<M: Manager>(name: &str) {
+async fn test_wlan_ap_dhcp_server(name: &str) {
     // Use a large timeout to check for resolution.
     //
     // These values effectively result in a large timeout of 60s which should avoid
@@ -1192,7 +1181,6 @@ async fn test_wlan_ap_dhcp_server<M: Manager>(name: &str) {
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Empty,
                     use_dhcp_server: true,
                     socket_proxy_type: SocketProxyType::None,
@@ -1229,8 +1217,7 @@ async fn test_wlan_ap_dhcp_server<M: Manager>(name: &str) {
 
 /// Tests that netcfg observes component stop events and exits cleanly.
 #[netstack_test]
-#[variant(M, Manager)]
-async fn observes_stop_events<M: Manager>(name: &str) {
+async fn observes_stop_events(name: &str) {
     use component_events::events::{self};
 
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
@@ -1239,7 +1226,6 @@ async fn observes_stop_events<M: Manager>(name: &str) {
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -1283,9 +1269,8 @@ async fn observes_stop_events<M: Manager>(name: &str) {
 /// Test that NetCfg enables forwarding on interfaces when the device class is configured to have
 /// that enabled.
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_forwarding<M: Manager>(name: &str) {
-    let _if_name: String = with_netcfg_owned_device::<M, _>(
+async fn test_forwarding(name: &str) {
+    let _if_name: String = with_netcfg_owned_device(
         name,
         ManagerConfig::Forwarding,
         NetcfgOwnedDeviceArgs {
@@ -1327,15 +1312,13 @@ async fn test_forwarding<M: Manager>(name: &str) {
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_prefix_provider_not_supported<M: Manager>(name: &str) {
+async fn test_prefix_provider_not_supported(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<Netstack3, _, _>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Empty,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -1371,15 +1354,13 @@ async fn test_prefix_provider_not_supported<M: Manager>(name: &str) {
 // TODO(https://fxbug.dev/42065403): Remove this test when multiple clients
 // requesting prefixes is supported.
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_prefix_provider_already_acquiring<M: Manager>(name: &str) {
+async fn test_prefix_provider_already_acquiring(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<Netstack3, _, _>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Dhcpv6,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -1458,15 +1439,13 @@ async fn test_prefix_provider_already_acquiring<M: Manager>(name: &str) {
 /// calls to `AcquirePrefix` on rapid restart cycles do not encounter the
 /// `AlreadyAcquiring` race condition.
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_prefix_provider_stop_rapid_cycles<M: Manager>(name: &str) {
+async fn test_prefix_provider_stop_rapid_cycles(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<Netstack3, _, _>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Dhcpv6,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -1507,7 +1486,6 @@ async fn test_prefix_provider_stop_rapid_cycles<M: Manager>(name: &str) {
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(
     fnet_dhcpv6::AcquirePrefixConfig {
         interface_id: Some(42),
@@ -1524,7 +1502,7 @@ async fn test_prefix_provider_stop_rapid_cycles<M: Manager>(name: &str) {
     fnet_dhcpv6::PrefixControlExitReason::InvalidPrefixLength;
     "invalid prefix length"
 )]
-async fn test_prefix_provider_config_error<M: Manager>(
+async fn test_prefix_provider_config_error(
     name: &str,
     config: fnet_dhcpv6::AcquirePrefixConfig,
     want_reason: fnet_dhcpv6::PrefixControlExitReason,
@@ -1535,7 +1513,6 @@ async fn test_prefix_provider_config_error<M: Manager>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Dhcpv6,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -1564,15 +1541,13 @@ async fn test_prefix_provider_config_error<M: Manager>(
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_prefix_provider_double_watch<M: Manager>(name: &str) {
+async fn test_prefix_provider_double_watch(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<Netstack3, _, _>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::Dhcpv6,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
@@ -1792,9 +1767,8 @@ mod dhcpv6_helper {
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
-async fn test_prefix_provider_full_integration<M: Manager>(name: &str) {
-    let _if_name: String = with_netcfg_owned_device::<M, _>(
+async fn test_prefix_provider_full_integration(name: &str) {
+    let _if_name: String = with_netcfg_owned_device(
         name,
         ManagerConfig::Dhcpv6,
         NetcfgOwnedDeviceArgs {
@@ -1919,9 +1893,8 @@ async fn test_prefix_provider_full_integration<M: Manager>(name: &str) {
 // Regression test for https://fxbug.dev/335892036, in which netcfg panicked if an interface was
 // disabled while it was holding a DHCPv6 prefix for it.
 #[netstack_test]
-#[variant(M, Manager)]
-async fn disable_interface_while_having_dhcpv6_prefix<M: Manager>(name: &str) {
-    let _if_name: String = with_netcfg_owned_device::<M, _>(
+async fn disable_interface_while_having_dhcpv6_prefix(name: &str) {
+    let _if_name: String = with_netcfg_owned_device(
         name,
         ManagerConfig::Dhcpv6,
         NetcfgOwnedDeviceArgs {
@@ -2163,7 +2136,6 @@ impl MasqueradeTestSetup {
                 format!("{name}_router"),
                 [
                     KnownServiceProvider::Manager {
-                        agent: ManagementAgent::NetCfg(NetCfgVersion::Advanced),
                         config: ManagerConfig::Empty,
                         use_dhcp_server: false,
                         socket_proxy_type: SocketProxyType::None,
@@ -2311,10 +2283,9 @@ async fn get_src_ip(
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(MasqueradeTestSetup::ipv4(); "ipv4")]
 #[test_case(MasqueradeTestSetup::ipv6(); "ipv6")]
-async fn test_masquerade<M: Manager>(name: &str, setup: MasqueradeTestSetup) {
+async fn test_masquerade(name: &str, setup: MasqueradeTestSetup) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
 
     let MasqueradeTestSetup {
@@ -2375,7 +2346,6 @@ impl MasqueradeErrorTestCase {
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case::test_matrix(
     [MasqueradeTestSetup::ipv4(), MasqueradeTestSetup::ipv6()],
     [
@@ -2384,7 +2354,7 @@ impl MasqueradeErrorTestCase {
         MasqueradeErrorTestCase::SubnetWithHostBits
     ]
 )]
-async fn test_masquerade_errors<M: Manager>(
+async fn test_masquerade_errors(
     name: &str,
     setup: MasqueradeTestSetup,
     test_case: MasqueradeErrorTestCase,
@@ -2435,10 +2405,9 @@ async fn test_masquerade_errors<M: Manager>(
 // Verify that the masquerade configuration is associated with the lifetime of
 // the underlying FIDL connection.
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(MasqueradeTestSetup::ipv4(); "ipv4")]
 #[test_case(MasqueradeTestSetup::ipv6(); "ipv6")]
-async fn test_masquerade_lifetime<M: Manager>(name: &str, setup: MasqueradeTestSetup) {
+async fn test_masquerade_lifetime(name: &str, setup: MasqueradeTestSetup) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
 
     let MasqueradeTestSetup {
@@ -2514,10 +2483,9 @@ async fn test_masquerade_lifetime<M: Manager>(name: &str, setup: MasqueradeTestS
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
 #[test_case(MasqueradeTestSetup::ipv4(); "ipv4")]
 #[test_case(MasqueradeTestSetup::ipv6(); "ipv6")]
-async fn test_masquerade_multiple_controllers<M: Manager>(name: &str, setup: MasqueradeTestSetup) {
+async fn test_masquerade_multiple_controllers(name: &str, setup: MasqueradeTestSetup) {
     // Verify that two masquerade controllers can operate independently of one another.
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
 
@@ -2612,7 +2580,7 @@ async fn test_masquerade_multiple_controllers<M: Manager>(name: &str, setup: Mas
 async fn dhcpv4_client_restarts_after_delay() {
     const SERVER_MAC: net_types::ethernet::Mac = net_declare::net_mac!("02:02:02:02:02:02");
 
-    let _name = with_netcfg_owned_device::<NetCfgBasic, _>(
+    let _name = with_netcfg_owned_device(
         "dhcpv4_client_restarts_after_delay",
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
@@ -2900,15 +2868,13 @@ async fn dhcpv4_client_restarts_after_delay() {
 }
 
 #[netstack_test]
-#[variant(M, Manager)]
-async fn add_blackhole_interface<M: Manager>(name: &str) {
+async fn add_blackhole_interface(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<Netstack3, _, _>(
             name,
             [
                 KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::WithBlackhole,
                     use_dhcp_server: false,
                     socket_proxy_type: SocketProxyType::None,
