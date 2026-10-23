@@ -7,9 +7,9 @@ use assert_matches::assert_matches;
 use cm_rust::{CapabilityTypeName, ComponentDecl, FidlIntoNative, push_box};
 use cm_types::{LongName, Name, Path, RelativePath, Url};
 use derivative::Derivative;
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_data as fdata;
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_component_decl_common as fdecl;
+use fidl_fuchsia_data_common as fdata;
+use fidl_fuchsia_io_common as fio;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
