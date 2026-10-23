@@ -127,18 +127,6 @@ void Symbolize::OnLoad(const ElfImage& loaded) {
   AddModule(&loaded);
 }
 
-const ElfImage* Symbolize::module_for_vaddr_range(uintptr_t vaddr, size_t len) const {
-  auto contains_vaddr_range = [vaddr, len](const ElfImage* module) {
-    return module->contains_vaddr_range(vaddr, len);
-  };
-  auto list = modules();
-  auto it = ktl::ranges::find_if(list, contains_vaddr_range);
-  if (it == list.end()) [[unlikely]] {
-    return nullptr;
-  }
-  return *it;
-}
-
 void Symbolize::BackTraceFrame(unsigned int n, uintptr_t pc, bool interrupt) {
   // Just print the line in markup format.  Context() was called earlier.
   writer_.Prefix(name_);

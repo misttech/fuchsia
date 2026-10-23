@@ -19,9 +19,6 @@ kernel_elf_binary("trivial-test-userboot") {
 
   has_patches = false
 
-  # This ensures the PT_LOAD layout of the binary will be one physboot handles.
-  configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
-
   sources = [ "trivial-test-userboot.cc" ]
   defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
 

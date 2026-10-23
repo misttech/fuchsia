@@ -123,7 +123,6 @@ zbi_executable("elf-code-patching-test.executable") {
     "//zircon/kernel/phys:allocation",
     "//zircon/kernel/phys:elf-image",
     "//zircon/kernel/phys:kernel-package",
-    "//zircon/kernel/phys:phys-elf-loading",
     "//zircon/kernel/phys:symbolize",
     "//zircon/kernel/phys:zbi-memory",
     "//zircon/kernel/phys:zbitl-allocation",
@@ -145,7 +144,6 @@ kernel_elf_binary("elf-code-patching-test-add-one") {
 
   install_name = "add-one"
 
-  configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
   ldflags = [ "-Wl,-e,AddOne" ]
 
   deps = [
@@ -161,7 +159,6 @@ kernel_elf_binary("elf-code-patching-test-multiply") {
 
   install_name = "multiply_by_factor"
 
-  configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
   ldflags = [ "-Wl,-e,multiply_by_factor" ]
 
   deps = [
