@@ -99,6 +99,7 @@ if (is_fuchsia) {
     visibility = [
       ":*",
       "//src/storage/benchmarks/fuchsia:*",
+      "//src/storage/ext4:*",
       "//src/storage/gpt/component:*",
       "//src/storage/lib/fs_management/rust:*",
       "//src/storage/lib/storage_device:*",

@@ -1,0 +1,94 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "fuchsia_package_resource_group",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ext4-lib",
+    srcs = [
+        "src/lib.rs",
+        "src/parser.rs",
+        "src/processor.rs",
+        "src/readers.rs",
+        "src/structs.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/starnix/modules/ext4:__pkg__",
+        "//src/storage/ext4/lib/ext4_extract:__pkg__",
+        "//src/storage/ext4/lib/parser:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:once_cell",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+            "//sdk/rust/zx",
+            "//src/lib/fidl/rust/fidl",
+            "//src/storage/lib/block_client/rust:block-client",
+            "//third_party/rust_crates/vendor:anyhow",
+            "//third_party/rust_crates/vendor:log",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "ext4-lib_test",
+    crate = ":ext4-lib",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:maplit",
+        "//third_party/rust_crates/vendor:sha2",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# bazel2gn can't translate resource groups or packages with resources, so the
+# GN copy of this test is packaged by hand in BUILD.gn.
+# LINT.IfChange
+# @bazel2gn:skip
+fuchsia_package_resource_group(
+    name = "test-images",
+    testonly = True,
+    srcs = [
+        "test_files/1file.img",
+        "test_files/extents.img",
+        "test_files/longdir.img",
+        "test_files/nest.img",
+        "test_files/nest64.img",
+        "test_files/xattr.img",
+    ],
+    basename_only = True,
+    dest = "data",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "ext4-lib-tests",
+    resources = [":test-images"],
+    unit_tests = [":ext4-lib_test"],
+)
+# LINT.ThenChange(BUILD.gn)
