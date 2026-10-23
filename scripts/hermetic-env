@@ -156,6 +156,7 @@ fi
 # Forward the args to the system `env`.
 exec /usr/bin/env -i \
   "FUCHSIA_DIR=${fuchsia_dir}" \
+  "PYTHONPATH=${fuchsia_dir}" \
   "TERM=${TERM}" \
   "PATH=${newpath}" \
   "HOME=${HOME}" \
