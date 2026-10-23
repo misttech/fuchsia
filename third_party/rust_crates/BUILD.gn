@@ -3074,7 +3074,7 @@ rustc_library("aes-gcm-v0_11_1") {
   deps += [ ":aes-v0_9_1" ]
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":ctr-v0_10_1" ]
-  deps += [ ":ctutils-v0_4_2" ]
+  deps += [ ":ctutils-v0_4_3" ]
   deps += [ ":ghash-v0_6_0" ]
 
   rustenv = []
@@ -3116,7 +3116,7 @@ rustc_library("aes-gcm-siv-v0_12_1") {
   deps += [ ":aes-v0_9_1" ]
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":ctr-v0_10_1" ]
-  deps += [ ":ctutils-v0_4_2" ]
+  deps += [ ":ctutils-v0_4_3" ]
   deps += [ ":polyval-v0_7_3" ]
 
   rustenv = []
@@ -7275,7 +7275,7 @@ rustc_library("crypto-bigint-v0_7_5") {
   deps = []
   deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":cpubits-v0_1_1" ]
-  deps += [ ":ctutils-v0_4_2" ]
+  deps += [ ":ctutils-v0_4_3" ]
   deps += [ ":getrandom-v0_4_3" ]
   deps += [ ":hybrid-array-v0_4_13" ]
   deps += [ ":num-traits-v0_2_19" ]
@@ -7471,18 +7471,18 @@ rustc_library("ctr-v0_10_1") {
   applicable_licenses = [ ":ctr-v0_10_1.license" ]
 }
 
-license("ctutils-v0_4_2.license") {
+license("ctutils-v0_4_3.license") {
   public_package_name = "ctutils"
   license_files = [
-    "//third_party/rust_crates/vendor/ctutils-0.4.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ctutils-0.4.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ctutils-0.4.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ctutils-0.4.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("ctutils-v0_4_2") {
+rustc_library("ctutils-v0_4_3") {
   crate_name = "ctutils"
-  source_root = "//third_party/rust_crates/vendor/ctutils-0.4.2/src/lib.rs"
-  output_name = "ctutils-9253178295ce98d9"
+  source_root = "//third_party/rust_crates/vendor/ctutils-0.4.3/src/lib.rs"
+  output_name = "ctutils-712d4efa09c456e"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -7496,14 +7496,14 @@ rustc_library("ctutils-v0_4_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9253178295ce98d9",
-    "-Cextra-filename=-9253178295ce98d9",
+    "-Cmetadata=712d4efa09c456e",
+    "-Cextra-filename=-712d4efa09c456e",
     "--cfg=feature=\"subtle\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ctutils-v0_4_2.license" ]
+  applicable_licenses = [ ":ctutils-v0_4_3.license" ]
 }
 
 license("darling-v0_20_11.license") {
@@ -8327,7 +8327,7 @@ rustc_library("digest-v0_11_3") {
   deps += [ ":block-buffer-v0_12_1" ]
   deps += [ ":const-oid-v0_10_2" ]
   deps += [ ":crypto-common-v0_2_2" ]
-  deps += [ ":ctutils-v0_4_2" ]
+  deps += [ ":ctutils-v0_4_3" ]
 
   rustenv = []
 
@@ -21124,7 +21124,7 @@ rustc_library("sec1-v0_8_1") {
   deps = []
   deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":base16ct-v1_0_0" ]
-  deps += [ ":ctutils-v0_4_2" ]
+  deps += [ ":ctutils-v0_4_3" ]
   deps += [ ":der-v0_8_2" ]
   deps += [ ":hybrid-array-v0_4_13" ]
   deps += [ ":serdect-v0_4_3" ]
@@ -25708,7 +25708,7 @@ rustc_library("universal-hash-v0_6_1") {
 
   deps = []
   deps += [ ":crypto-common-v0_2_2" ]
-  deps += [ ":ctutils-v0_4_2" ]
+  deps += [ ":ctutils-v0_4_3" ]
 
   rustenv = []
 
