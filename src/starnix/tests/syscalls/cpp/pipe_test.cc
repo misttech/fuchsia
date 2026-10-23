@@ -746,16 +746,25 @@ TEST(PipeTest, PollHupWithoutPollinOnEmptyClosedPipe) {
 TEST(PipeTest, ZeroLengthIoAndSplicePrecedence) {
   int pipe_a[2];
   int pipe_b[2];
+  int blocking_pipe[2];
   SAFE_SYSCALL(pipe2(pipe_a, O_NONBLOCK));
   SAFE_SYSCALL(pipe2(pipe_b, O_NONBLOCK));
+  SAFE_SYSCALL(pipe2(blocking_pipe, 0));
   fbl::unique_fd a_rd(pipe_a[0]);
   fbl::unique_fd a_wr(pipe_a[1]);
   fbl::unique_fd b_rd(pipe_b[0]);
   fbl::unique_fd b_wr(pipe_b[1]);
+  fbl::unique_fd blk_rd(blocking_pipe[0]);
+  fbl::unique_fd blk_wr(blocking_pipe[1]);
 
-  // Zero-length read on an empty pipe returns 0 rather than EAGAIN.
+  // Zero-length read and readv on empty non-blocking and blocking pipes return 0 rather than
+  // EAGAIN or blocking.
   char buf[1];
+  iovec empty_iov = {.iov_base = buf, .iov_len = 0};
   EXPECT_THAT(read(a_rd.get(), buf, 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(readv(a_rd.get(), &empty_iov, 1), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(read(blk_rd.get(), buf, 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(readv(blk_rd.get(), &empty_iov, 1), SyscallSucceedsWithValue(0));
 
   // Passing a non-null invalid offset pointer for a pipe fd in splice fails with ESPIPE before
   // dereferencing the pointer (EFAULT).
@@ -766,9 +775,14 @@ TEST(PipeTest, ZeroLengthIoAndSplicePrecedence) {
   // Zero-length splice returns 0 before validating flags or file descriptors.
   EXPECT_THAT(splice(-1, nullptr, -1, nullptr, 0, ~0u), SyscallSucceedsWithValue(0));
 
-  // Zero-length write on a broken pipe returns 0 without raising SIGPIPE.
+  // Zero-length write and writev on broken non-blocking and blocking pipes return 0 without EPIPE
+  // or raising SIGPIPE.
   b_rd.reset();
+  blk_rd.reset();
   EXPECT_THAT(write(b_wr.get(), "", 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(writev(b_wr.get(), &empty_iov, 1), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(write(blk_wr.get(), "", 0), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(writev(blk_wr.get(), &empty_iov, 1), SyscallSucceedsWithValue(0));
 }
 
 TEST(PipeTest, SpliceNonblockSocketEndpoint) {

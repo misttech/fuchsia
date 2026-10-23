@@ -233,6 +233,10 @@ impl Pipe {
     }
 
     pub fn read(&mut self, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
+        if data.available() == 0 {
+            return Ok(0);
+        }
+
         // Return EAGAIN if the pipe is empty and still has at least one open writer so the caller
         // blocks; otherwise fall through and return 0 to indicate EOF.
 
@@ -244,6 +248,10 @@ impl Pipe {
     }
 
     pub fn write(&mut self, data: &mut dyn InputBuffer) -> Result<usize, Errno> {
+        if data.available() == 0 {
+            return Ok(0);
+        }
+
         if !self.had_reader {
             return error!(EAGAIN);
         }
@@ -515,9 +523,6 @@ impl FileOps for PipeFileObject {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
-        if data.available() == 0 {
-            return Ok(0);
-        }
         file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
             let mut pipe = self.pipe.lock();
             let was_writable = pipe.is_writable(uapi::PIPE_BUF as usize);
@@ -538,9 +543,6 @@ impl FileOps for PipeFileObject {
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
         debug_assert!(data.bytes_read() == 0);
-        if data.available() == 0 {
-            return Ok(0);
-        }
 
         let result =
             file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLERR, None, || {
@@ -1230,6 +1232,7 @@ mod tests {
             let pipe_ops = pipe_out.downcast_file::<PipeFileObject>().unwrap();
 
             // Zero-length read and vmsplice_to on an empty pipe return 0 without blocking or EAGAIN.
+            assert_eq!(pipe_ops.pipe.lock().read(&mut VecOutputBuffer::new(0)).unwrap(), 0);
             assert_eq!(pipe_out.read(&current_task, &mut VecOutputBuffer::new(0)).unwrap(), 0);
             assert_eq!(
                 pipe_ops
@@ -1246,8 +1249,9 @@ mod tests {
             // without EPIPE or SIGPIPE.
             std::mem::drop(pipe_out);
             current_task.trigger_delayed_releaser();
-            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"")).unwrap(), 0);
             let pipe_in_ops = pipe_in.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(pipe_in_ops.pipe.lock().write(&mut VecInputBuffer::new(b"")).unwrap(), 0);
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"")).unwrap(), 0);
             assert_eq!(
                 pipe_in_ops
                     .vmsplice_from(&current_task, &pipe_in, UserBuffers::default(), true)
