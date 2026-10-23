@@ -9,7 +9,6 @@ use anyhow::{anyhow, bail};
 use fuchsia_rcu::RcuDroppable;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
-use strum::VariantArray as _;
 
 /// Encapsulates a set of access-check exceptions parsed from a supplied configuration.
 #[derive(RcuDroppable)]
@@ -51,96 +50,95 @@ impl ExceptionsConfig {
 
     fn parse_config_line(&mut self, policy: &Policy, line: &str) -> Result<(), anyhow::Error> {
         let mut parts = line.trim().split_whitespace();
-        if let Some(statement) = parts.next() {
-            match statement {
-                "todo_deny" => {
-                    // "todo_deny" lines have the form:
-                    //   todo_deny b/<id> <source> <target> <class>
+        let Some(statement) = parts.next() else {
+            return Ok(());
+        };
+        match statement {
+            "todo_deny" => {
+                // "todo_deny" lines have the form:
+                //   todo_deny b/<id> <source> <target> <class>
 
-                    // Parse the bug Id, which must be present
-                    let bug_id = bug_ref_to_id(
-                        parts.next().ok_or_else(|| anyhow!("Expected bug identifier"))?,
-                    )?;
+                // Parse the bug Id, which must be present
+                let bug_id =
+                    bug_ref_to_id(parts.next().ok_or_else(|| anyhow!("Expected bug identifier"))?)?;
 
-                    // Parse the source & target types. If either of these is not defined by the
-                    // `policy` then the statement is ignored.
-                    let stype = policy
-                        .types()
-                        .get_by_name(
-                            parts.next().ok_or_else(|| anyhow!("Expected source type"))?.as_bytes(),
-                        )
-                        .map(|t| t.id());
-                    let ttype = policy
-                        .types()
-                        .get_by_name(
-                            parts.next().ok_or_else(|| anyhow!("Expected target type"))?.as_bytes(),
-                        )
-                        .map(|t| t.id());
+                // Parse the source & target types. If either of these is not defined by the
+                // `policy` then the statement is ignored.
+                let source_type = policy
+                    .types()
+                    .get_by_name(
+                        parts.next().ok_or_else(|| anyhow!("Expected source type"))?.as_bytes(),
+                    )
+                    .map(|t| t.id());
+                let target_type = policy
+                    .types()
+                    .get_by_name(
+                        parts.next().ok_or_else(|| anyhow!("Expected target type"))?.as_bytes(),
+                    )
+                    .map(|t| t.id());
 
-                    let class_name = parts.next().ok_or_else(|| anyhow!("Target class missing"))?;
+                let class_name = parts.next().ok_or_else(|| anyhow!("Target class missing"))?;
 
-                    // Parse the object class name to the corresponding policy-specific Id.
-                    // This allows non-kernel classes, and userspace queries against kernel classes,
-                    // to have exceptions applied to them.
-                    let policy_class =
-                        policy.classes().get_by_name(class_name.as_bytes()).map(|x| x.id());
+                // Parse the object class name to the corresponding policy-specific Id.
+                // This allows non-kernel classes, and userspace queries against kernel classes,
+                // to have exceptions applied to them.
+                let policy_class =
+                    policy.classes().get_by_name(class_name.as_bytes()).map(|x| x.id());
 
-                    // Parse the kernel object class. This must correspond to a known kernel object
-                    // class, regardless of whether the policy actually defines the class.
-                    let kernel_class = object_class_by_name(class_name);
+                // Parse the kernel object class. This must correspond to a known kernel object
+                // class, regardless of whether the policy actually defines the class.
+                let kernel_class = KernelClass::from_name(class_name);
 
-                    // If the class isn't defined by policy, or used by the kernel, then there is
-                    // no way to apply the exception.
-                    if policy_class.is_none() && kernel_class.is_none() {
-                        println!("Ignoring statement: {} (unknown class)", line);
-                        return Ok(());
-                    }
-
-                    // If the source or target domains are unrecognized then there is no way to
-                    // apply the exception.
-                    let (Some(source), Some(target)) = (stype, ttype) else {
-                        println!("Ignoring statement: {} (unknown source or target)", line);
-                        return Ok(());
-                    };
-
-                    if let Some(policy_class) = policy_class {
-                        self.todo_deny_entries.insert(
-                            ExceptionsEntry { source, target, class: policy_class.into() },
-                            bug_id,
-                        );
-                    }
-                    if let Some(kernel_class) = kernel_class {
-                        self.todo_deny_entries.insert(
-                            ExceptionsEntry { source, target, class: kernel_class.into() },
-                            bug_id,
-                        );
-                    }
+                // If the class isn't defined by policy, or used by the kernel, then there is
+                // no way to apply the exception.
+                if policy_class.is_none() && kernel_class.is_none() {
+                    println!("Ignoring statement: {line} (unknown class)");
+                    return Ok(());
                 }
-                "todo_permissive" => {
-                    // "todo_permissive" lines have the form:
-                    //   todo_permissive b/<id> <source>
 
-                    // Parse the bug Id, which must be present
-                    let bug_id = bug_ref_to_id(
-                        parts.next().ok_or_else(|| anyhow!("Expected bug identifier"))?,
-                    )?;
+                // If the source or target domains are unrecognized then there is no way to
+                // apply the exception.
+                let (Some(source), Some(target)) = (source_type, target_type) else {
+                    println!("Ignoring statement: {line} (unknown source or target)");
+                    return Ok(());
+                };
 
-                    // Parse the source type. The statement is ignored if the type is not defined by policy.
-                    let stype = policy
-                        .types()
-                        .get_by_name(
-                            parts.next().ok_or_else(|| anyhow!("Expected source type"))?.as_bytes(),
-                        )
-                        .map(|t| t.id());
-
-                    if let Some(source) = stype {
-                        self.permissive_entries.insert(source, bug_id);
-                    } else {
-                        println!("Ignoring statement: {}", line);
-                    }
+                if let Some(policy_class) = policy_class {
+                    self.todo_deny_entries.insert(
+                        ExceptionsEntry { source, target, class: policy_class.into() },
+                        bug_id,
+                    );
                 }
-                _ => bail!("Unknown statement {}", statement),
+                if let Some(kernel_class) = kernel_class {
+                    self.todo_deny_entries.insert(
+                        ExceptionsEntry { source, target, class: kernel_class.into() },
+                        bug_id,
+                    );
+                }
             }
+            "todo_permissive" => {
+                // "todo_permissive" lines have the form:
+                //   todo_permissive b/<id> <source>
+
+                // Parse the bug Id, which must be present
+                let bug_id =
+                    bug_ref_to_id(parts.next().ok_or_else(|| anyhow!("Expected bug identifier"))?)?;
+
+                // Parse the source type. The statement is ignored if the type is not defined by policy.
+                let source_type = policy
+                    .types()
+                    .get_by_name(
+                        parts.next().ok_or_else(|| anyhow!("Expected source type"))?.as_bytes(),
+                    )
+                    .map(|t| t.id());
+
+                if let Some(source) = source_type {
+                    self.permissive_entries.insert(source, bug_id);
+                } else {
+                    println!("Ignoring statement: {line}");
+                }
+            }
+            _ => bail!("Unknown statement {}", statement),
         }
         Ok(())
     }
@@ -165,12 +163,6 @@ fn bug_ref_to_id(bug_ref: &str) -> Result<NonZeroU32, anyhow::Error> {
     bug_id_part.parse::<NonZeroU32>().map_err(|_| anyhow!("Malformed bug Id: {}", bug_id_part))
 }
 
-/// Returns the `KernelClass` corresponding to the supplied `name`, if any.
-/// `None` is returned if no such kernel object class exists in the Starnix implementation.
-fn object_class_by_name(name: &str) -> Option<KernelClass> {
-    KernelClass::VARIANTS.iter().find(|class| class.name() == name).map(Clone::clone)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,7 +172,6 @@ mod tests {
 
     const EXCEPTION_SOURCE_TYPE: &[u8] = b"test_exception_source_t";
     const EXCEPTION_TARGET_TYPE: &[u8] = b"test_exception_target_t";
-    const _EXCEPTION_OTHER_TYPE: &[u8] = b"test_exception_other_t";
     const UNMATCHED_TYPE: &[u8] = b"test_exception_unmatched_t";
 
     const NON_KERNEL_CLASS: &str = "test_exception_non_kernel_class";
