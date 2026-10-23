@@ -21,6 +21,7 @@ rustc_library(
         "src/lock_ordering.rs",
         "src/lock_traits.rs",
         "src/locks.rs",
+        "src/object_waiter.rs",
         "src/port_event.rs",
         "src/rcu_lock.rs",
         "src/rw_seq_lock.rs",
@@ -51,6 +52,7 @@ rustc_library(
         "//src/starnix/lib/starnix_stack",
         "//third_party/rust_crates/vendor:lock_api",
         "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:smallvec",
     ],
 )
 
@@ -68,6 +70,7 @@ rustc_test(
         "src/lock_ordering.rs",
         "src/lock_traits.rs",
         "src/locks.rs",
+        "src/object_waiter.rs",
         "src/port_event.rs",
         "src/rcu_lock.rs",
         "src/rw_seq_lock.rs",
@@ -92,6 +95,7 @@ rustc_test(
         "//src/starnix/lib/starnix_stack",
         "//third_party/rust_crates/vendor:lock_api",
         "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:smallvec",
         "//third_party/rust_crates/vendor:test-case",
     ],
 )

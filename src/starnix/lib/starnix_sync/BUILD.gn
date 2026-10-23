@@ -49,6 +49,7 @@ rustc_library("starnix_sync") {
     "src/lock_ordering.rs",
     "src/lock_traits.rs",
     "src/locks.rs",
+    "src/object_waiter.rs",
     "src/port_event.rs",
     "src/rcu_lock.rs",
     "src/rw_seq_lock.rs",
@@ -84,6 +85,7 @@ rustc_library("starnix_sync") {
     "//src/starnix/lib/starnix_stack",
     "//third_party/rust_crates:lock_api",
     "//third_party/rust_crates:scopeguard",
+    "//third_party/rust_crates:smallvec",
   ]
 }
 rustc_test("starnix_sync_lib_test") {
@@ -96,6 +98,7 @@ rustc_test("starnix_sync_lib_test") {
     "src/lock_ordering.rs",
     "src/lock_traits.rs",
     "src/locks.rs",
+    "src/object_waiter.rs",
     "src/port_event.rs",
     "src/rcu_lock.rs",
     "src/rw_seq_lock.rs",
@@ -120,6 +123,7 @@ rustc_test("starnix_sync_lib_test") {
     "//src/starnix/lib/starnix_stack",
     "//third_party/rust_crates:lock_api",
     "//third_party/rust_crates:scopeguard",
+    "//third_party/rust_crates:smallvec",
     "//third_party/rust_crates:test-case",
   ]
 }
