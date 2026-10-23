@@ -1,0 +1,67 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "time_test_client",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "time_test_client_packaged_bin",
+    binary = ":bin",
+    binary_name = "time_test_client",
+)
+
+fx_component_manifest(
+    name = "component-manifest",
+    component_name = "time_test_client",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/time_test_client.cml",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":component-manifest",
+    component_name = "time_test_client",
+    deps = [
+        ":time_test_client_packaged_bin",
+    ],
+)
+
+fx_package(
+    name = "time_test_client",
+    package_name = "time-test-client",
+    components = [
+        ":component",
+    ],
+)

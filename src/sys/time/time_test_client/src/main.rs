@@ -19,7 +19,7 @@ use std::sync::LazyLock;
 const POLL_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 
 static CLOCK_RIGHTS: LazyLock<zx::Rights> = LazyLock::new(|| {
-    /// Rights to request when duplicating handles to userspace clocks.
+    // Rights to request when duplicating handles to userspace clocks.
     zx::Rights::READ
         | zx::Rights::DUPLICATE
         | zx::Rights::WAIT
@@ -37,7 +37,7 @@ async fn main() {
 }
 
 /// Returns a standard format timestamp for a zx::MonotonicInstant.
-fn zx_timestamp(time: &zx::MonotonicInstant) -> String {
+fn zx_timestamp(time: &runtime::UtcInstant) -> String {
     chrono_timestamp(&Utc.timestamp_nanos(time.into_nanos()))
 }
 
@@ -81,7 +81,7 @@ impl RuntimeUtcMonitor {
 /// A monitor for a UTC `zx::Clock` to log changes in clock details.
 struct ClockMonitor {
     /// The `zx::Clock` to be monitored.
-    clock: zx::Clock,
+    clock: runtime::UtcClock,
     /// The generation counter that was present during initialization.
     initial_generation: u32,
 }
@@ -153,12 +153,14 @@ impl ClockMonitor {
     }
 
     /// Returns a string description of the most useful information in a `zx::ClockDetails`.
-    fn describe_clock_details(clock_details: &zx::ClockDetails) -> String {
-        let transform = &clock_details.mono_to_synthetic;
+    fn describe_clock_details(clock_details: &runtime::UtcClockDetails) -> String {
+        let transform = &clock_details.reference_to_synthetic;
         format!(
             "gen={}, offset={:.1}s, rate={}/{}, err_bound={:.3}ms",
             clock_details.generation_counter,
-            (transform.synthetic_offset - transform.reference_offset) as f64 / 1e9f64,
+            (transform.synthetic_offset.into_nanos() - transform.reference_offset.into_nanos())
+                as f64
+                / 1e9f64,
             transform.rate.synthetic_ticks,
             transform.rate.reference_ticks,
             (clock_details.error_bounds as f64) / 1e6f64,
