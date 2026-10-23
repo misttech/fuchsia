@@ -47,6 +47,7 @@ test_suite(
         "//src/developer/ffx/lib/termio:termio_test",
         "//src/developer/ffx/lib/trace:lib_test",
         "//src/developer/ffx/lib/traceable_error:lib_test",
+        "//src/developer/ffx/lib/uart_driver_api:lib_test",
         "//src/developer/ffx/lib/usb_fastboot_discovery:lib_test",
         "//src/developer/ffx/lib/version:lib_test",
         "//src/developer/ffx/plugins/config:ffx_config_plugin_args_test",
