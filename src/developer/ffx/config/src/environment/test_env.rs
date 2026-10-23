@@ -74,10 +74,12 @@ impl TestEnv {
         env_file.write_all(b"{}")?;
         env_file.flush()?;
 
+        let isolate_root_path = std::path::absolute(isolate_root.path())?;
         let context = EnvironmentContext::new(
             EnvironmentKind::InTree {
                 tree_root: isolate_root.path().to_owned(),
                 build_dir: Some(PathBuf::from(build_dir)),
+                isolate_root: Some(isolate_root_path),
             },
             ExecutableKind::Test,
             Some(env_vars),
@@ -169,17 +171,20 @@ impl TestEnv {
                 None,
                 self.context.no_environment,
             )?,
-            EnvironmentKind::InTree { tree_root, build_dir } => EnvironmentContext::new(
-                EnvironmentKind::InTree {
-                    tree_root: tree_root.clone(),
-                    build_dir: build_dir.clone(),
-                },
-                self.context.exe_kind(),
-                self.context.env_vars.clone(),
-                self.context.runtime_args.clone(),
-                Some(self.env_file.path().to_owned()),
-                self.context.no_environment,
-            )?,
+            EnvironmentKind::InTree { tree_root, build_dir, isolate_root } => {
+                EnvironmentContext::new(
+                    EnvironmentKind::InTree {
+                        tree_root: tree_root.clone(),
+                        build_dir: build_dir.clone(),
+                        isolate_root: isolate_root.clone(),
+                    },
+                    self.context.exe_kind(),
+                    self.context.env_vars.clone(),
+                    self.context.runtime_args.clone(),
+                    Some(self.env_file.path().to_owned()),
+                    self.context.no_environment,
+                )?
+            }
             _ => anyhow::bail!("Cannot reload context for this environment kind"),
         };
         self.context = context;

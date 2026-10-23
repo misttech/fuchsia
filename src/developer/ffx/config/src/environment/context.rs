@@ -126,13 +126,19 @@ impl EnvironmentContext {
         no_environment: bool,
     ) -> Result<Self, ContextError> {
         let config = if !no_environment {
-            let env_path = match &env_file_path {
-                Some(path) => path.clone(),
-                None => kind.get_default_env_path()?,
+            let unisolated_test = exe_kind == ExecutableKind::Test && kind.isolate_root().is_none();
+            let env_files = match &env_file_path {
+                Some(path) => Self::load_env_files(path)?,
+                None if unisolated_test => EnvironmentFiles::default(),
+                None => {
+                    let env_path = kind.get_default_env_path()?;
+                    Self::load_env_files(&env_path)?
+                }
             };
-            let env_files = Self::load_env_files(&env_path)?;
 
-            let user_conf = env_files.user.or_else(|| kind.get_default_user_file_path().ok());
+            let user_conf = env_files.user.or_else(|| {
+                if unisolated_test { None } else { kind.get_default_user_file_path().ok() }
+            });
             let build_conf = if let Some(build_config_path) = kind.get_build_config_file() {
                 Some(build_config_path.into())
             } else {
@@ -246,7 +252,7 @@ impl EnvironmentContext {
         no_environment: bool,
     ) -> Result<Self, ContextError> {
         Self::new(
-            EnvironmentKind::InTree { tree_root, build_dir },
+            EnvironmentKind::InTree { tree_root, build_dir, isolate_root: None },
             exe_kind,
             None,
             runtime_args,
@@ -290,11 +296,7 @@ impl EnvironmentContext {
     }
 
     pub fn is_isolated(&self) -> bool {
-        match self.kind {
-            EnvironmentKind::ConfigDomain { isolate_root: Some(..), .. }
-            | EnvironmentKind::Isolated { .. } => true,
-            _ => false,
-        }
+        self.kind.is_isolated()
     }
 
     pub fn is_in_tree(&self) -> bool {
@@ -366,8 +368,7 @@ impl EnvironmentContext {
     }
 
     pub fn analytics_enabled(&self) -> bool {
-        use EnvironmentKind::*;
-        if let Isolated { .. } = self.kind {
+        if self.is_isolated() {
             false
         } else {
             // note: double negative to turn this into an affirmative
@@ -613,23 +614,20 @@ impl EnvironmentContext {
         ffx_path = std::fs::canonicalize(ffx_path)?;
 
         let mut cmd = Command::new(&ffx_path);
-        match &self.kind {
-            EnvironmentKind::Isolated { isolate_root } => {
-                cmd.arg("--isolate-dir").arg(isolate_root);
+        if let Some(isolate_root) = self.kind.isolate_root() {
+            cmd.arg("--isolate-dir").arg(isolate_root);
 
-                // for isolation we're always going to clear the environment,
-                // because it's better to fail than poison the isolation with something
-                // external.
-                // But an isolated context without an env var hash shouldn't be
-                // constructable anyways.
-                cmd.env_clear();
-                if let Some(env_vars) = &self.env_vars {
-                    for (k, v) in env_vars {
-                        cmd.env(k, v);
-                    }
+            // for isolation we're always going to clear the environment,
+            // because it's better to fail than poison the isolation with something
+            // external.
+            // But an isolated context without an env var hash shouldn't be
+            // constructable anyways.
+            cmd.env_clear();
+            if let Some(env_vars) = &self.env_vars {
+                for (k, v) in env_vars {
+                    cmd.env(k, v);
                 }
             }
-            _ => {}
         }
         cmd.env(Self::FFX_BIN_ENV, &ffx_path);
         cmd.arg("--config").arg(serde_json::to_string(&self.runtime_args)?);
@@ -744,6 +742,7 @@ impl From<EnvironmentContext> for serde_json::Value {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::paths::PathsError;
 
     use assert_matches::assert_matches;
     use tempfile::tempdir;
@@ -872,6 +871,54 @@ mod test {
         .expect("in tree context");
 
         assert!(context.is_in_tree());
+        assert!(!context.is_isolated());
+    }
+
+    #[fuchsia::test]
+    fn test_in_tree_test_env_is_isolated() {
+        let build_dir = tempdir().expect("build directory");
+        let env = crate::test_env().in_tree(build_dir.path()).build().expect("in_tree test_env");
+        let isolate_dir = std::path::absolute(env.isolate_root.path()).expect("absolute path");
+
+        assert!(env.context.is_in_tree());
+        check_isolated_paths(&env.context, &isolate_dir);
+    }
+
+    #[fuchsia::test]
+    fn test_unisolated_test_context_rejects_default_host_paths() {
+        let ctx =
+            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, false)
+                .expect("unisolated test context");
+
+        assert_matches!(
+            ctx.get_default_user_file_path(),
+            Err(PathsError::UnisolatedTestEnvironment("get_default_user_file_path"))
+        );
+        assert_matches!(
+            ctx.get_default_env_path(),
+            Err(PathsError::UnisolatedTestEnvironment("get_default_env_path"))
+        );
+        assert_matches!(
+            ctx.get_runtime_path(),
+            Err(PathsError::UnisolatedTestEnvironment("get_runtime_path"))
+        );
+        assert_matches!(
+            ctx.get_cache_path(),
+            Err(PathsError::UnisolatedTestEnvironment("get_cache_path"))
+        );
+        assert_matches!(
+            ctx.get_config_path(),
+            Err(PathsError::UnisolatedTestEnvironment("get_config_path"))
+        );
+        assert_matches!(
+            ctx.get_data_path(),
+            Err(PathsError::UnisolatedTestEnvironment("get_data_path"))
+        );
+        assert_matches!(
+            ctx.get_shared_data_path(),
+            Err(PathsError::UnisolatedTestEnvironment("get_shared_data_path"))
+        );
+        assert_eq!(ctx.get_analytics_path(), None);
     }
 
     fn check_config_domain_paths(context: &EnvironmentContext, domain_root: &Utf8Path) {
@@ -897,6 +944,7 @@ mod test {
         assert_eq!(context.get_cache_path().unwrap(), isolate_dir.join("cache"));
         assert_eq!(context.get_config_path().unwrap(), isolate_dir.join("config"));
         assert_eq!(context.get_data_path().unwrap(), isolate_dir.join("data"));
+        assert_eq!(context.get_shared_data_path().unwrap(), isolate_dir.join("shared"));
         assert!(context.is_isolated());
     }
 

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::EnvironmentContext;
-use crate::environment::EnvironmentKind;
+use crate::environment::{EnvironmentKind, ExecutableKind};
 
 use camino::Utf8Path;
 use std::fs::create_dir_all;
@@ -25,6 +25,11 @@ pub enum PathsError {
 
     #[error("SHARED_DATA must be specified in strict mode. Use `ffx ... -c shared_data=<dir>.`")]
     SharedDataRequiredInStrictMode,
+
+    #[error(
+        "test environment context is not isolated when resolving `{0}`; use `ffx_config::test_init()` or `ffx_config::test_env()`"
+    )]
+    UnisolatedTestEnvironment(&'static str),
 }
 
 pub const ENV_FILE: &str = ".ffx_env";
@@ -32,14 +37,14 @@ pub const USER_FILE: &str = ".ffx_user_config.json";
 pub const DEFAULT_BUILD_CONFIG_FILE: &str = "ffx-config.json";
 
 impl EnvironmentKind {
-    pub fn get_default_user_file_path(&self) -> std::result::Result<PathBuf, PathsError> {
+    pub(crate) fn get_default_user_file_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join(USER_FILE)),
             _ => get_default_user_file_path(),
         }
     }
 
-    pub fn get_default_env_path(&self) -> std::result::Result<PathBuf, PathsError> {
+    pub(crate) fn get_default_env_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join(ENV_FILE)),
             _ => default_env_path(),
@@ -64,10 +69,16 @@ impl EnvironmentKind {
 
 impl EnvironmentContext {
     pub fn get_default_user_file_path(&self) -> std::result::Result<PathBuf, PathsError> {
+        if self.exe_kind() == ExecutableKind::Test && self.env_kind().isolate_root().is_none() {
+            return Err(PathsError::UnisolatedTestEnvironment("get_default_user_file_path"));
+        }
         self.env_kind().get_default_user_file_path()
     }
 
     pub fn get_default_env_path(&self) -> std::result::Result<PathBuf, PathsError> {
+        if self.exe_kind() == ExecutableKind::Test && self.env_kind().isolate_root().is_none() {
+            return Err(PathsError::UnisolatedTestEnvironment("get_default_env_path"));
+        }
         self.env_kind().get_default_env_path()
     }
 
@@ -87,28 +98,40 @@ impl EnvironmentContext {
     pub fn get_runtime_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("runtime")),
-            _ => get_runtime_base_path(),
+            None if self.exe_kind() == ExecutableKind::Test => {
+                Err(PathsError::UnisolatedTestEnvironment("get_runtime_path"))
+            }
+            None => get_runtime_base_path(),
         }
     }
 
     pub fn get_cache_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("cache")),
-            _ => get_cache_base_path(),
+            None if self.exe_kind() == ExecutableKind::Test => {
+                Err(PathsError::UnisolatedTestEnvironment("get_cache_path"))
+            }
+            None => get_cache_base_path(),
         }
     }
 
     pub fn get_config_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("config")),
-            _ => get_config_base_path(),
+            None if self.exe_kind() == ExecutableKind::Test => {
+                Err(PathsError::UnisolatedTestEnvironment("get_config_path"))
+            }
+            None => get_config_base_path(),
         }
     }
 
     pub fn get_data_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("data")),
-            _ => get_data_base_path(),
+            None if self.exe_kind() == ExecutableKind::Test => {
+                Err(PathsError::UnisolatedTestEnvironment("get_data_path"))
+            }
+            None => get_data_base_path(),
         }
     }
 
@@ -125,11 +148,15 @@ impl EnvironmentContext {
             } else {
                 return Err(PathsError::SharedDataNotString(format!("{v:?}")));
             }
+        } else if self.is_strict() {
+            return Err(PathsError::SharedDataRequiredInStrictMode);
         } else {
-            if self.is_strict() {
-                return Err(PathsError::SharedDataRequiredInStrictMode);
-            } else {
-                Ok(get_shared_data_base_path()?.join("shared"))
+            match self.env_kind().isolate_root() {
+                Some(isolate_root) => Ok(isolate_root.join("shared")),
+                None if self.exe_kind() == ExecutableKind::Test => {
+                    Err(PathsError::UnisolatedTestEnvironment("get_shared_data_path"))
+                }
+                None => Ok(get_shared_data_base_path()?.join("shared")),
             }
         }
     }
@@ -140,7 +167,8 @@ impl EnvironmentContext {
         }
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Some(isolate_root.join("metrics")),
-            _ => get_analytics_base_path().ok(),
+            None if self.exe_kind() == ExecutableKind::Test => None,
+            None => get_analytics_base_path().ok(),
         }
     }
 }

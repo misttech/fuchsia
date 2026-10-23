@@ -14,7 +14,7 @@ pub enum EnvironmentKind {
     /// in it.
     ConfigDomain { domain: Box<ConfigDomain>, isolate_root: Option<PathBuf> },
     /// In a fuchsia.git build tree with a jiri root and possibly a build directory.
-    InTree { tree_root: PathBuf, build_dir: Option<PathBuf> },
+    InTree { tree_root: PathBuf, build_dir: Option<PathBuf>, isolate_root: Option<PathBuf> },
     /// Isolated within a particular directory for testing or consistency purposes
     Isolated { isolate_root: PathBuf },
     /// An environment context in which the config should:
@@ -30,7 +30,9 @@ impl EnvironmentKind {
     /// Get the isolate root of this environment
     pub fn isolate_root(&self) -> Option<&Path> {
         match self {
-            Self::ConfigDomain { isolate_root, .. } => isolate_root.as_deref(),
+            Self::ConfigDomain { isolate_root, .. } | Self::InTree { isolate_root, .. } => {
+                isolate_root.as_deref()
+            }
             Self::Isolated { isolate_root } => Some(&isolate_root),
             _ => None,
         }
@@ -42,6 +44,7 @@ impl EnvironmentKind {
             self,
             EnvironmentKind::Isolated { .. }
                 | EnvironmentKind::ConfigDomain { isolate_root: Some(_), .. }
+                | EnvironmentKind::InTree { isolate_root: Some(_), .. }
         )
     }
 
@@ -140,16 +143,33 @@ impl std::fmt::Display for EnvironmentKind {
                 domain.root(),
                 isolation_root.display(),
             ),
-            InTree { tree_root, build_dir: Some(build_dir) } => write!(
+            InTree { tree_root, build_dir: Some(build_dir), isolate_root: None } => write!(
                 f,
                 "Fuchsia.git In-Tree Rooted at {root}, with default build directory of {build}",
                 root = tree_root.display(),
                 build = build_dir.display()
             ),
-            InTree { tree_root, build_dir: None } => write!(
+            InTree {
+                tree_root,
+                build_dir: Some(build_dir),
+                isolate_root: Some(isolation_root),
+            } => write!(
+                f,
+                "Fuchsia.git In-Tree Rooted at {root}, with default build directory of {build}, using isolation root at {isolate}",
+                root = tree_root.display(),
+                build = build_dir.display(),
+                isolate = isolation_root.display(),
+            ),
+            InTree { tree_root, build_dir: None, isolate_root: None } => write!(
                 f,
                 "Fuchsia.git In-Tree Root at {root} with no default build directory",
                 root = tree_root.display()
+            ),
+            InTree { tree_root, build_dir: None, isolate_root: Some(isolation_root) } => write!(
+                f,
+                "Fuchsia.git In-Tree Root at {root} with no default build directory, using isolation root at {isolate}",
+                root = tree_root.display(),
+                isolate = isolation_root.display(),
             ),
             Isolated { isolate_root } => write!(
                 f,

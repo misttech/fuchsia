@@ -675,9 +675,12 @@ mod test {
     use byteorder::{NativeEndian, ReadBytesExt};
     use fidl_fuchsia_fdomain as fdproto;
     use futures_test as _;
+    use std::cell::RefCell;
+    use std::ffi::CString;
     use std::io::Read;
     use std::os::fd::{FromRawFd, RawFd};
     use std::os::unix::net::UnixStream;
+    use tempfile::{TempDir, tempdir};
 
     fn testing_lib_context() -> *const LibContext {
         let mut ctx: *const LibContext = std::ptr::null_mut();
@@ -701,11 +704,24 @@ mod test {
         }
     }
 
+    thread_local! {
+        static TEST_ISOLATE_DIRS: RefCell<Vec<TempDir>> = const { RefCell::new(Vec::new()) };
+    }
+
     fn testing_env_context(lib_ctx: *const LibContext) -> *const EnvContext {
+        let isolate_dir = tempdir().expect("create test isolate dir");
+        let isolate_dir_cstr =
+            CString::new(isolate_dir.path().to_str().expect("utf8 path")).unwrap();
         let mut env: *const EnvContext = std::ptr::null_mut();
-        unsafe {
-            create_ffx_env_context(&mut env, lib_ctx, std::ptr::null(), std::ptr::null());
-        }
+        // SAFETY: `env` is a valid out-pointer, `lib_ctx` is a valid context pointer allocated by
+        // `testing_lib_context`, `config` is null (0 entries), and `isolate_dir_cstr` is a valid
+        // NUL-terminated C string that remains live for the duration of the call.
+        let status = unsafe {
+            create_ffx_env_context(&mut env, lib_ctx, std::ptr::null(), isolate_dir_cstr.as_ptr())
+        };
+        assert_eq!(status, FcTransportStatus::OK);
+        assert!(!env.is_null());
+        TEST_ISOLATE_DIRS.with(|dirs| dirs.borrow_mut().push(isolate_dir));
         env
     }
 
