@@ -458,6 +458,11 @@ void PrettyTypeManager::AddDefaultRustPrettyTypes() {
                                       GetterList{{"weak_count", "ptr.pointer->weak.v.value"},
                                                  {"strong_count", "ptr.pointer->strong.v.value"}}));
   rust_.emplace_back(
+      InternalGlob("alloc::rcs::arc::Arc<*>"),
+      std::make_unique<PrettyPointer>(
+          "ptr.pointer", GetterList{{"weak_count", "ptr.pointer->weak.v.value.__0"},
+                                    {"strong_count", "ptr.pointer->strong.v.value.__0"}}));
+  rust_.emplace_back(
       InternalGlob("core::ptr::non_null::NonNull<*>"),
       std::make_unique<PrettyPointer>("pointer", GetterList{{"as_ptr", "ptr.pointer"},
                                                             {"as_ref", "*ptr.pointer"},
@@ -470,6 +475,8 @@ void PrettyTypeManager::AddDefaultRustPrettyTypes() {
     rust_.emplace_back(InternalGlob((std::string("core::sync::atomic::") + name).c_str()),
                        std::make_unique<PrettyWrappedValue>(name, "{", "}", "v.value"));
   }
+  rust_.emplace_back(InternalGlob("core::sync::atomic::Atomic<*>"),
+                     std::make_unique<PrettyWrappedValue>("Atomic", "{", "}", "v.value.__0"));
   rust_.emplace_back(InternalGlob("core::sync::atomic::AtomicBool"),
                      std::make_unique<PrettyWrappedValue>("AtomicBool", "{", "}", "(bool)v.value"));
   rust_.emplace_back(InternalGlob("core::sync::atomic::AtomicPtr<*>"),
@@ -480,6 +487,8 @@ void PrettyTypeManager::AddDefaultRustPrettyTypes() {
   rust_.emplace_back(InternalGlob("core::cell::UnsafeCell<*>"),
                      std::make_unique<PrettyWrappedValue>("UnsafeCell", "{", "}", "value"));
   rust_.emplace_back(InternalGlob("alloc::sync::ArcInner<*>"),
+                     std::make_unique<PrettyWrappedValue>("ArcInner", "{", "}", "data"));
+  rust_.emplace_back(InternalGlob("alloc::rcs::arc::ArcInner<*>"),
                      std::make_unique<PrettyWrappedValue>("ArcInner", "{", "}", "data"));
   rust_.emplace_back(InternalGlob("lock_api::mutex::Mutex<*>"),
                      std::make_unique<PrettyWrappedValue>("Mutex", "{", "}", "data.value"));

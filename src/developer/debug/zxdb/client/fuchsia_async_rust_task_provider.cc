@@ -114,10 +114,11 @@ void FetchFuture(Session* session, const fxl::RefPtr<EvalContext>& context, cons
 // and fetch the memory manually.
 void FormatRustString(const fxl::RefPtr<EvalContext>& context, const ExprValue& value,
                       fit::callback<void(std::string)> cb) {
-  // A Rust String is { vec: { buf: { ptr: { pointer: <addr> }, ... }, len: <len> } }
+  // A Rust String is structured as String -> Vec -> RawVec -> RawVecInner -> NonNull.
+  // NonNull holds the raw pointer directly in "pointer".
   ErrOrValue len_val = ResolveNonstaticMember(context, value, {"vec", "len"});
   ErrOrValue ptr_val =
-      ResolveNonstaticMember(context, value, {"vec", "buf", "inner", "ptr", "pointer", "pointer"});
+      ResolveNonstaticMember(context, value, {"vec", "buf", "inner", "ptr", "pointer"});
 
   if (len_val.has_error() || ptr_val.has_error()) {
     cb("<error>");
@@ -1056,7 +1057,7 @@ std::optional<std::string> GetScopeExpressionForExecutorFrame(
           // Multithreaded executor, found on a worker thread.
           {{"fuchsia_async::runtime::fuchsia::executor::send", "create_worker_threads::{closure"},
            "root_scope"},
-      };
+  };
 
   for (const auto& [func_parts, expr] : kExecutorFrameNameToScopeExpr) {
     size_t i = 0;
