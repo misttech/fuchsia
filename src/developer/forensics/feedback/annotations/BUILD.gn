@@ -43,8 +43,8 @@ source_set("annotations") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_hlcpp",
-    "//sdk/lib/fdio",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/feedback:constants",
     "//src/lib/files",

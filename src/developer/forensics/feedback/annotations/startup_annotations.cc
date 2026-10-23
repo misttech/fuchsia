@@ -4,11 +4,8 @@
 
 #include "src/developer/forensics/feedback/annotations/startup_annotations.h"
 
-#include <fuchsia/sysinfo/cpp/fidl.h>
-#include <lib/fdio/directory.h>
-#include <lib/fdio/fdio.h>
-#include <lib/fidl/cpp/string.h>
-#include <lib/fidl/cpp/synchronous_interface_ptr.h>
+#include <fidl/fuchsia.sysinfo/cpp/fidl.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/syscalls.h>
@@ -54,32 +51,28 @@ ErrorOrString ReadAnnotationWithFallback(const std::string& filepath,
 }
 
 ErrorOrString BoardName() {
-  fuchsia::sysinfo::SysInfoSyncPtr sysinfo;
-
-  if (const zx_status_t status = fdio_service_connect("/svc/fuchsia.sysinfo.SysInfo",
-                                                      sysinfo.NewRequest().TakeChannel().release());
-      status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Error connecting to sysinfo";
+  zx::result client_end = component::Connect<fuchsia_sysinfo::SysInfo>();
+  if (client_end.is_error()) {
+    FX_PLOGS(ERROR, client_end.status_value()) << "Error connecting to sysinfo";
     return ErrorOrString(Error::kConnectionError);
   }
 
-  ::fidl::StringPtr out_board_name;
-  zx_status_t out_status;
-  if (const zx_status_t status = sysinfo->GetBoardName(&out_status, &out_board_name);
-      status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to get device board name";
+  const fidl::SyncClient sysinfo(std::move(*client_end));
+  const fidl::Result result = sysinfo->GetBoardName();
+  if (result.is_error()) {
+    FX_PLOGS(ERROR, result.error_value().status()) << "Failed to get device board name";
     return ErrorOrString(Error::kConnectionError);
   }
-  if (out_status != ZX_OK) {
-    FX_PLOGS(ERROR, out_status) << "Failed to get device board name";
+  if (result->status() != ZX_OK) {
+    FX_PLOGS(ERROR, result->status()) << "Failed to get device board name";
     return ErrorOrString(Error::kBadValue);
   }
-  if (!out_board_name) {
-    FX_PLOGS(ERROR, out_status) << "Failed to get device board name";
+  if (!result->name().has_value()) {
+    FX_PLOGS(ERROR, result->status()) << "Failed to get device board name";
     return ErrorOrString(Error::kMissingValue);
   }
 
-  return ErrorOrString(out_board_name.value());
+  return ErrorOrString(result->name().value());
 }
 
 std::string NumCPUs() { return std::to_string(zx_system_get_num_cpus()); }
