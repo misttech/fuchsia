@@ -7,79 +7,79 @@ Tests of various (sometimes hardcoded) properties of ifaces.
 
 import struct
 
-import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import fuchsia_wlan_base_test
+import wlanix_testing
 from mobly import test_runner
 from mobly.asserts import assert_equal
-from wlanix_testing import base_test
 
 
-class IfaceCorrectnessAndConsistencyTest(base_test.IfaceBaseTestClass):
+class IfaceCorrectnessAndConsistencyTest(
+    fuchsia_wlan_base_test.FuchsiaWlanBaseTest
+):
+    wlanix: wlanix_testing.Wlanix
+    chip: wlanix_testing.WifiChip
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.wlanix = wlanix_testing.Wlanix(self.dut)
+        self.chip = await self.wlanix.ensure_single_chip()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.chip.destroy_all_sta_ifaces()
+
+    async def teardown_test(self) -> None:
+        await self.chip.destroy_all_sta_ifaces()
+        await super().teardown_test()
+
     # TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
     # the same iface name, even when an iface is recreated.
     async def test_iface_name_hardcoded_as_wlan(self) -> None:
-        response = (await self.wifi_sta_iface_proxy.get_name()).unwrap()
+        iface = await self.chip.create_sta_iface()
         assert_equal(
-            response.iface_name,
+            await iface.get_name(),
             "wlan",
             'WifiStaIface should always return the hardcoded iface name "wlan"',
         )
 
     async def test_iface_name_consistency(self) -> None:
-        get_sta_iface_names_response = (
-            await self.wifi_chip_proxy.get_sta_iface_names()
-        ).unwrap()
-        assert get_sta_iface_names_response.iface_names is not None
+        iface = await self.chip.create_sta_iface()
+        iface_names = await self.chip.get_sta_iface_names()
         assert_equal(
-            len(get_sta_iface_names_response.iface_names),
+            len(iface_names),
             1,
             "WifiChip should have returned the iface just created",
         )
-
-        iface_name = get_sta_iface_names_response.iface_names[0]
-        get_name_response = (
-            await self.wifi_sta_iface_proxy.get_name()
-        ).unwrap()
         assert_equal(
-            iface_name,
-            get_name_response.iface_name,
+            iface_names[0],
+            await iface.get_name(),
             "WifiStaIface returns a different name than WifiChip",
         )
 
     async def test_iface_nl80211_fields(self) -> None:
         """Verifies that NL80211_CMD_GET_INTERFACE returns correct fields."""
-        get_interface_message = fidl_wlanix.Nl80211Message(
-            message=fidl_wlanix.Message(
-                # fmt: off
-                payload=[
-                    # Generic Netlink Header
-                    0x05,  # Command: GetInterface
-                    0x01,  # Version
-                    0x00, 0x00 # Reserved
-                ],
-                # fmt: on
-            )
-        )
-        message_response = (
-            await self.nl80211_proxy.message(message=get_interface_message)
-        ).unwrap()
-        assert message_response.responses is not None
-        attrs = base_test.verify_new_interface_response(
-            list(message_response.responses)
-        )
+        iface = await self.chip.create_sta_iface()
+        attrs = await iface.query_nl80211_attrs()
 
         # Verify fields
-        ifIndex = struct.unpack("<I", attrs[base_test.NL80211_ATTR_IFINDEX])[0]
+        ifIndex = struct.unpack(
+            "<I", attrs[wlanix_testing.NL80211_ATTR_IFINDEX]
+        )[0]
         assert ifIndex >= 0, f"Invalid ifIndex: {ifIndex}"
 
-        wiphyIndex = struct.unpack("<I", attrs[base_test.NL80211_ATTR_WIPHY])[0]
+        wiphyIndex = struct.unpack(
+            "<I", attrs[wlanix_testing.NL80211_ATTR_WIPHY]
+        )[0]
         assert wiphyIndex >= 0, f"Invalid wiphyIndex: {wiphyIndex}"
 
         ifName = (
-            attrs[base_test.NL80211_ATTR_IFNAME].decode("utf-8").rstrip("\x00")
+            attrs[wlanix_testing.NL80211_ATTR_IFNAME]
+            .decode("utf-8")
+            .rstrip("\x00")
         )
         assert_equal(ifName, "wlan", 'ifName should be "wlan"')
 
-        macAddress = attrs[base_test.NL80211_ATTR_MAC]
+        macAddress = attrs[wlanix_testing.NL80211_ATTR_MAC]
         assert_equal(
             len(macAddress), 6, f"MAC address length invalid: {len(macAddress)}"
         )

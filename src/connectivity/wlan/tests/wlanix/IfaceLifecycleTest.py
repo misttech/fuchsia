@@ -5,51 +5,56 @@
 Battery of tests of the lifecycle of ifaces managed by wlanix.
 """
 
-import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import fuchsia_wlan_base_test
+import wlanix_testing
 from mobly import test_runner
 from mobly.asserts import assert_equal
-from wlanix_testing import base_test
 
 
-class IfaceLifecycleTest(base_test.WifiChipBaseTestClass):
+class IfaceLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    wlanix: wlanix_testing.Wlanix
+    chip: wlanix_testing.WifiChip
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.wlanix = wlanix_testing.Wlanix(self.dut)
+        self.chip = await self.wlanix.ensure_single_chip()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.chip.destroy_all_sta_ifaces()
+
+    async def teardown_test(self) -> None:
+        await self.chip.destroy_all_sta_ifaces()
+        await super().teardown_test()
+
     async def test_create_and_destroy_iface(self) -> None:
-        response = (await self.wifi_chip_proxy.get_sta_iface_names()).unwrap()
-        assert response.iface_names is not None
+        iface_names = await self.chip.get_sta_iface_names()
         assert_equal(
-            len(response.iface_names),
+            len(iface_names),
             0,
             "WifiChip should have returned an empty list of iface names",
         )
 
-        proxy, server = self.dut.fuchsia_controller.channel_create()
-        (
-            await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
-        ).unwrap()
-        wifi_sta_iface = fidl_wlanix.WifiStaIfaceClient(proxy)
+        iface = await self.chip.create_sta_iface()
 
-        response = (await self.wifi_chip_proxy.get_sta_iface_names()).unwrap()
-        assert response.iface_names is not None
+        iface_names = await self.chip.get_sta_iface_names()
         assert_equal(
-            len(response.iface_names),
+            len(iface_names),
             1,
             "WifiChip should have returned the iface just created",
         )
-
-        iface_name = response.iface_names[0]
-        wifi_sta_iface_response = (await wifi_sta_iface.get_name()).unwrap()
         assert_equal(
-            iface_name,
-            wifi_sta_iface_response.iface_name,
+            iface_names[0],
+            await iface.get_name(),
             "WifiStaIface returns a different name than WifiChip",
         )
-        (
-            await self.wifi_chip_proxy.remove_sta_iface(iface_name=iface_name)
-        ).unwrap()
 
-        response = (await self.wifi_chip_proxy.get_sta_iface_names()).unwrap()
-        assert response.iface_names is not None
+        await iface.remove()
+
+        iface_names = await self.chip.get_sta_iface_names()
         assert_equal(
-            len(response.iface_names),
+            len(iface_names),
             0,
             "WifiChip should no longer contain the iface just removed",
         )
@@ -57,7 +62,7 @@ class IfaceLifecycleTest(base_test.WifiChipBaseTestClass):
         # TODO(https://fxbug.dev/365110075): Uncomment this check once wlanix supports
         # stopping a WifiStaIface after its iface is removed via WifiChip.RemoveStaIface
         # with assertRaises(Exception):
-        #     await wifi_sta_iface.get_name()).unwrap()
+        #     (await iface.wifi_sta_iface.get_name()).unwrap()
 
 
 if __name__ == "__main__":

@@ -45,8 +45,7 @@ antlion_host_test("iface_lifecycle_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/IfaceLifecycleTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
-    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
   ]
 }
 
@@ -54,8 +53,7 @@ antlion_host_test("iface_correctness_and_consistency_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/IfaceCorrectnessAndConsistencyTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
-    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
   ]
 }
 
@@ -72,8 +70,8 @@ antlion_host_test("apf_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/ApfTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
-    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
   ]
 }
 
@@ -95,10 +93,9 @@ antlion_host_test("create_client_iface_benchmark_test") {
       "//src/connectivity/wlan/tests/wlanix/CreateClientIfaceBenchmarkTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
-    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
-    "//src/performance/lib/trace_processing:trace_processing",
     "//src/performance/lib/perf_publish",
+    "//src/performance/lib/trace_processing:trace_processing",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
   ]
   data_sources = [
     "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.wlan.wlanix.txt",

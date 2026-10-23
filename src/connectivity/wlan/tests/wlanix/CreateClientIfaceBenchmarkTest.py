@@ -10,62 +10,37 @@ import logging
 import os
 import statistics
 
-import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import fuchsia_wlan_base_test
 import perf_publish.publish as publish
 import test_data
+import wlanix_testing
 from mobly import asserts, test_runner
 from trace_processing import trace_importing, trace_model, trace_utils
-from wlanix_testing import base_test
 
 logger = logging.getLogger(__name__)
 
 NUM_ITERATIONS = 20
 
 
-class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
-    async def _create_iface(self) -> str:
-        proxy, server = self.dut.fuchsia_controller.channel_create()
-        (
-            await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
-        ).unwrap()
-        wifi_sta_iface = fidl_wlanix.WifiStaIfaceClient(proxy)
+class CreateClientIfaceBenchmarkTest(
+    fuchsia_wlan_base_test.FuchsiaWlanBaseTest
+):
+    wlanix: wlanix_testing.Wlanix
+    chip: wlanix_testing.WifiChip
 
-        iface_name = (await wifi_sta_iface.get_name()).unwrap().iface_name
-        assert iface_name is not None, "iface_name should not be None"
-        return iface_name
-
-    async def _destroy_iface(self, iface_name: str) -> None:
-        (
-            await self.wifi_chip_proxy.remove_sta_iface(iface_name=iface_name)
-        ).unwrap()
-
-        iface_names = (
-            (await self.wifi_chip_proxy.get_sta_iface_names())
-            .unwrap()
-            .iface_names
-        )
-        assert iface_names is not None, "iface_names should not be None"
-        asserts.assert_false(
-            iface_name in iface_names,
-            f"Iface {iface_name} still exists after removal",
-        )
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.wlanix = wlanix_testing.Wlanix(self.dut)
+        self.chip = await self.wlanix.ensure_single_chip()
 
     async def setup_test(self) -> None:
         await super().setup_test()
+        await self.chip.destroy_all_sta_ifaces()
         self.trace_file = "benchmark.fxt"
         self.trace_path = os.path.join(self.log_path, self.trace_file)
-        self.iface_name: str | None = None
 
     async def teardown_test(self) -> None:
-        if self.iface_name:
-            logger.warning(
-                f"Cleaning up lingering iface {self.iface_name} during teardown"
-            )
-            await self.wifi_chip_proxy.remove_sta_iface(
-                iface_name=self.iface_name
-            )
-            self.iface_name = None
-
+        await self.chip.destroy_all_sta_ifaces()
         if os.path.exists(self.trace_path):
             logger.info(f"Trace file generated at: {self.trace_path}")
         await super().teardown_test()
@@ -126,17 +101,18 @@ class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
         ):
             for i in range(NUM_ITERATIONS):
                 logger.info(f"Iteration {i+1}: Creating client iface")
-                self.iface_name = await self._create_iface()
+                iface = await self.chip.create_sta_iface(
+                    attach_supplicant=False
+                )
                 logger.info(
-                    f"Iteration {i+1}: Created iface {self.iface_name}. Now destroying."
+                    f"Iteration {i+1}: Created iface {iface.name}. Now destroying."
                 )
 
-                await self._destroy_iface(self.iface_name)
+                await iface.remove()
 
                 logger.info(
-                    f"Iteration {i+1}: Successfully destroyed iface {self.iface_name}"
+                    f"Iteration {i+1}: Successfully destroyed iface {iface.name}"
                 )
-                self.iface_name = None
 
         model = trace_importing.create_model_from_trace_file_path(
             self.trace_path,
