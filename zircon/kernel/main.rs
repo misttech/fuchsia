@@ -56,6 +56,9 @@ pub mod console;
 #[cfg(not(console_enabled))]
 use console_env as _;
 
+#[path = "lib/control-region/control_region.rs"]
+pub mod control_region;
+
 #[path = "lib/counters/src/lib.rs"]
 pub mod counters;
 
@@ -215,6 +218,10 @@ pub mod boot_options_cli;
 #[cfg(ktest)]
 #[path = "lib/console/tests/mod.rs"]
 pub mod console_tests_rust;
+
+#[cfg(ktest)]
+#[path = "lib/control-region/tests/kernel.rs"]
+pub mod control_region_tests;
 
 #[cfg(ktest)]
 #[path = "lib/libc/tests/string_file_tests.rs"]

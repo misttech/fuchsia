@@ -58,6 +58,7 @@ source_set("kernel") {
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options:headers",
     "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/control-region",
     "//zircon/kernel/lib/counters",
     "//zircon/kernel/lib/cxxabi-dynamic-init",
     "//zircon/kernel/lib/fbl",
