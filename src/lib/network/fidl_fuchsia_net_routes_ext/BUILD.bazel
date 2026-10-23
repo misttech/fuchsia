@@ -1,0 +1,126 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+_COMMON_SRCS = [
+    "src/admin.rs",
+    "src/lib.rs",
+    "src/rules.rs",
+    "src/testutil.rs",
+]
+
+_COMMON_BUILD_FLAGS = ["//build/config/rust/lints:deny_unused_results"]
+
+# @bazel2gn:transformer=deps
+_COMMON_DEPS = [
+    "//src/connectivity/lib/net-types",
+    "//src/lib/async-utils",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/network/fidl_fuchsia_net_ext",
+    "//third_party/rust_crates/vendor:futures",
+    "//third_party/rust_crates/vendor:thiserror",
+]
+
+rustc_library(
+    name = "fidl_fuchsia_net_routes_ext",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    visibility = [
+        "//src/connectivity/network:__subpackages__",
+        "//src/connectivity/policy:__subpackages__",
+        "//src/connectivity/weave/tests/weave_ip_forward:__pkg__",
+        "//src/lib/network:__subpackages__",
+    ],
+    deps = _COMMON_DEPS + [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex",
+        "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers_rust_flex",
+        "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust_flex",
+        "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust_flex",
+        "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin_rust_flex",
+        "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust_flex",
+        "//src/lib/fdomain/client:flex_fidl",
+        "//src/lib/network/fidl_fuchsia_net_matchers_ext",
+    ],
+)
+
+rustc_library(
+    name = "fidl_fuchsia_net_routes_ext_fdomain",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = ["fdomain"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    visibility = ["//src/connectivity/network/net-cli:__pkg__"],
+    deps = _COMMON_DEPS + [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust_fdomain_flex",
+        "//src/lib/fdomain/client:flex_fdomain",
+        "//src/lib/network/fidl_fuchsia_net_matchers_ext:fidl_fuchsia_net_matchers_ext_fdomain",
+    ],
+)
+
+rustc_test(
+    name = "fidl_fuchsia_net_routes_ext_test",
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate = ":fidl_fuchsia_net_routes_ext",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/connectivity/lib/ip-test-macro",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+rustc_test(
+    name = "fidl_fuchsia_net_routes_ext_fdomain_test",
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate = ":fidl_fuchsia_net_routes_ext_fdomain",
+    crate_features = ["fdomain"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/connectivity/lib/ip-test-macro",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "fidl_fuchsia_net_routes_ext_fdomain_host_test",
+    binary_name = "fidl_fuchsia_net_routes_ext_fdomain_test",
+)
+
+fx_unittest_package(
+    name = "fidl-fuchsia-net-routes-ext-tests",
+    unit_tests = [":fidl_fuchsia_net_routes_ext_test"],
+)
+
+fx_unittest_package(
+    name = "fidl-fuchsia-net-routes-ext-fdomain-tests",
+    unit_tests = [":fidl_fuchsia_net_routes_ext_fdomain_test"],
+)
