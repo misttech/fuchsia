@@ -62,6 +62,9 @@ class Symbolize {
 
   auto modules() const { return modules_.as_span(); }
 
+  // The running phys executable's own image.
+  const ElfImage& self() const { return *self_; }
+
   // Return the ELF build ID note for the currently executing module.
   elfldltl::ElfNote build_id() const;
 
@@ -151,6 +154,8 @@ class Symbolize {
     main_module_ = &main;
   }
 
+  const ElfImage* self_ = nullptr;
+
  private:
   [[gnu::format(printf, 2, 3)]] void Printf(const char* fmt, ...);
 
@@ -174,14 +179,9 @@ class MainSymbolize : public Symbolize {
  public:
   explicit MainSymbolize(const char* name, FILE* f = stdout);
 
-  const ElfImage& self() const { return *self_; }
-
   void set_self(const ElfImage* self);
 
   void EnableModuleLoading(ModuleList modules) { ReplaceModulesStorage(ktl::move(modules)); }
-
- private:
-  const ElfImage* self_ = nullptr;
 };
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_SYMBOLIZE_H_

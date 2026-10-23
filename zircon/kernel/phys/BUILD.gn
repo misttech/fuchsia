@@ -680,7 +680,6 @@ if (toolchain_environment == "kernel.phys" ||
 
     public = [ "include/phys/elf-image.h" ]
     sources = [
-      "elf-image-self-vmos.cc",
       "elf-image-vmos.cc",
       "elf-image.cc",
     ]

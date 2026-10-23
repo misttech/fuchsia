@@ -234,10 +234,12 @@ class ElfImage {
     return load_info_.SymbolizerContext(writer, id, name(), build_id_->desc, address, prefix);
   }
 
-  // Publish instrumentation VMOs for this module.  The argument is similar
-  // called like HandoffPrep::PublishExtraVmo, which see; PublishDebugdataFunction
-  // takes different arguments to name the data, so it can be used to compose
-  // either a ZBI_TYPE_DEBUGDATA payload or a named VMO.
+  // Publish this image's llvm-profdata (if any) as an instrumentation VMO.
+  // This is only meaningful for the running phys executable's own image, i.e.
+  // the one set up by InitSelf.  The argument is similar called like
+  // HandoffPrep::PublishExtraVmo, which see; PublishDebugdataFunction takes
+  // different arguments to name the data, so it can be used to compose either
+  // a ZBI_TYPE_DEBUGDATA payload or a named VMO.
   void PublishDebugdata(PublishDebugdataFunction publish_debugdata) const;
 
   // Call the image's entry point as a function type F.
@@ -247,39 +249,12 @@ class ElfImage {
     return ImageEntry<F>()(ktl::forward<Args>(args)...);
   }
 
-  // The module calls this on its own ElfImage to provide code that must be
-  // instantiated separately in each module to publish per-module
-  // instrumentation data.
-  void OnHandoff() { publish_self_ = PublishSelf; }
-
   // Describes the file before ": " and then does printf.
   [[gnu::format(printf, 2, 3)]] void Printf(const char* fmt, ...) const;
   void Printf() const;  // Same as Printf("").
   void Printf(Error error) const;
 
  private:
-  // PublishSelf takes one of these for each particular kind of per-module
-  // instrumentation VMO supported.  The callback knows what kind of data it's
-  // for and deals with calling a PublishDebugdataFunction with the right
-  // arguments.  That code exists in the module where PublishDebugdata is
-  // called.  PublishSelf exists separately in each module and deals with
-  // filling the buffer with the right per-module data.
-  using PublishSelfCallback = fit::inline_function<ktl::span<ktl::byte>(size_t stream_size)>;
-
-  // publish_self_ is set to point to this by the module itself, so it points
-  // to the instantiation of this function inside that one module.  The first
-  // argument is always with the module that contains the code being called.
-  static void PublishSelf(const ElfImage& module, PublishSelfCallback llvmprofdata);
-
-  // Subroutine of PublishDebugdata only used inside elf-image-vmos.cc.
-  template <const ktl::string_view& kSinkName, const ktl::string_view& kSuffix,
-            const ktl::string_view& kAnnounce>
-  PublishSelfCallback MakePublishSelfCallback(PublishDebugdataFunction& publish_debugdata) const;
-
-  // This is only called from PublishSelf so it will always be the
-  // instantiation inside this module.
-  void PublishSelfLlvmProfdata(PublishSelfCallback publish) const;
-
   ktl::span<const code_patching::Directive> patches() const { return patcher_.patches(); }
 
   ktl::span<ktl::byte> GetBytesToPatch(const code_patching::Directive& patch);
@@ -300,7 +275,6 @@ class ElfImage {
   code_patching::Patcher patcher_;
   ktl::optional<uintptr_t> load_bias_;
   ktl::optional<size_type> stack_size_;
-  decltype(PublishSelf)* publish_self_ = nullptr;
 };
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ELF_IMAGE_H_

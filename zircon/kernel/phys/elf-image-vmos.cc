@@ -5,34 +5,36 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/llvm-profdata/llvm-profdata.h>
+#include <zircon/assert.h>
 
+#include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <phys/elf-image.h>
 #include <phys/symbolize.h>
 
 #include <ktl/enforce.h>
 
-template <const ktl::string_view& kSinkName, const ktl::string_view& kSuffix,
-          const ktl::string_view& kAnnounce>
-ElfImage::PublishSelfCallback ElfImage::MakePublishSelfCallback(
-    ElfImage::PublishDebugdataFunction& publish_debugdata) const {
-  return [this, &publish_debugdata](size_t stream_size) {
-    gSymbolize->DumpFile(kAnnounce, stream_size, kSinkName, name_, kSuffix);
-    return publish_debugdata(kSinkName, name_, kSuffix, stream_size);
-  };
-}
-
-// PublishDebugdata is called in the module collecting the instrumentation VMOs
-// and so this code is in *that* module's instantiation, not the `*this`
-// module.  The publish_self_ member points to the PublishSelf static method as
-// instantiated inside the `*this` module's code (see elf-image-self-vmos.cc).
-// We call into the target module so it can determine the size of the VMO it
-// needs to create, then it calls us back to publish it and yield the span of
-// data to fill in.
+// Publish llvm-profdata if present.
 void ElfImage::PublishDebugdata(PublishDebugdataFunction publish_debugdata) const {
-  if (publish_self_) {
-    publish_self_(*this,
-                  MakePublishSelfCallback<LlvmProfdata::kDataSinkName, LlvmProfdata::kFileSuffix,
-                                          LlvmProfdata::kAnnounce>(publish_debugdata));
+  // LlvmProfdata reads the running executable's own instrumentation sections,
+  // so this is only correct for the self image.
+  ZX_DEBUG_ASSERT(this == &gSymbolize->self());
+
+  LlvmProfdata profdata;
+  ZX_DEBUG_ASSERT(build_id_);
+  profdata.Init(build_id_->desc);
+  if (profdata.size_bytes() == 0) {
+    return;
   }
+
+  constexpr ktl::string_view kSinkName = LlvmProfdata::kDataSinkName;
+  constexpr ktl::string_view kSuffix = LlvmProfdata::kFileSuffix;
+  gSymbolize->DumpFile(LlvmProfdata::kAnnounce, profdata.size_bytes(), kSinkName, name_, kSuffix);
+  ktl::span buffer = publish_debugdata(kSinkName, name_, kSuffix, profdata.size_bytes());
+
+  // Copy the fixed data and live data values and then start updating the
+  // handoff data in place.
+  auto live_data = profdata.WriteFixedData(buffer);
+  profdata.CopyLiveData(live_data);
+  LlvmProfdata::UseLiveData(live_data);
 }

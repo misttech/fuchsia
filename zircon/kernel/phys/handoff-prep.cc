@@ -255,9 +255,9 @@ void HandoffPrep::SetInstrumentation() {
     PublishExtraVmo(MakePhysVmo(contents, VmoNameString(phys_vmo_name), stream_size));
     return contents;
   };
-  for (const ElfImage* module : gSymbolize->modules()) {
-    module->PublishDebugdata(publish_debugdata);
-  }
+  // Only physboot's own instrumentation data is published here; the kernel
+  // proper publishes its own once it's running.
+  gSymbolize->self().PublishDebugdata(publish_debugdata);
 }
 
 void HandoffPrep::PublishExtraVmo(PhysVmo&& vmo) {
