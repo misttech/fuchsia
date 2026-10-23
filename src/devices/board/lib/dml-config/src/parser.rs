@@ -559,6 +559,7 @@ pub async fn publish_dml_devices(
 
         let mut mmio_list = Vec::new();
         let mut irq_list = Vec::new();
+        let mut irq_controllers = Vec::new();
         let mut bti_list = Vec::new();
         let mut smc_list = Vec::new();
         let mut boot_metadata_list = Vec::new();
@@ -575,10 +576,15 @@ pub async fn publish_dml_devices(
             }
             for irq in crate::irq_list(pdev_dict) {
                 let irq_spec = match irq.controller {
-                    Some(controller_id) => fpbus::IrqSpec::UserspaceIrq(fpbus::UserspaceIrq {
-                        irq: irq.number,
-                        controller_id,
-                    }),
+                    Some(controller_id) => {
+                        if !irq_controllers.contains(&controller_id) {
+                            irq_controllers.push(controller_id);
+                        }
+                        fpbus::IrqSpec::UserspaceIrq(fpbus::UserspaceIrq {
+                            irq: irq.number,
+                            controller_id,
+                        })
+                    }
                     None => fpbus::IrqSpec::Irq(irq.number),
                 };
                 irq_list.push(fpbus::Irq {
@@ -710,6 +716,12 @@ pub async fn publish_dml_devices(
             }
         }
 
+        for (parent, key) in generate_interrupt_controller_parents(&irq_controllers) {
+            if generated_keys.insert(key) {
+                resource_parents.push(parent);
+            }
+        }
+
         if resource_parents.is_empty() && dev.driver_host.is_some() {
             node.driver_host = dev.driver_host.clone();
         }
@@ -805,6 +817,28 @@ pub async fn publish_dml_devices(
     Ok(())
 }
 
+/// Generates composite parent specifications for distinct userspace interrupt controllers
+/// referenced by a device's interrupts, in first-reference order.
+fn generate_interrupt_controller_parents(
+    irq_controllers: &[u32],
+) -> Vec<(fdf_framework::ParentSpec2, String)> {
+    irq_controllers
+        .iter()
+        .enumerate()
+        .map(|(idx, &controller_id)| {
+            let key = format!("interrupt-controller-{idx}");
+            let parent = fdf_framework::ParentSpec2 {
+                bind_rules: vec![
+                    make_accept_bind_rule("fuchsia.NAME", property_string("interrupt-controller")),
+                    make_accept_bind_rule("fuchsia.ID", property_int(controller_id)),
+                ],
+                properties: vec![make_property2("fuchsia.NAME", property_string(&key))],
+            };
+            (parent, key)
+        })
+        .collect()
+}
+
 /// Registers `iommus` with the `pbus`.
 async fn register_iommus(
     pbus: &fidl_next::Client<fpbus::PlatformBus, DriverChannel>,
@@ -898,5 +932,83 @@ mod tests {
         assert!(parent.properties.iter().any(|p| p.key == "fuchsia.BIND_PCI_DID"
             && p.value == fdf_framework::NodePropertyValue::IntValue(0x7212)));
         assert!(!parent.properties.iter().any(|p| p.key == "fuchsia.BIND_PCI_TOPO"));
+    }
+
+    #[test]
+    fn test_interrupt_controller_parents_dedup_and_order() {
+        let pdev_dict = fdr::Dictionary {
+            entries: Some(vec![
+                fdr::DictionaryEntry {
+                    key: "interrupts.0.number".to_string(),
+                    value: fdr::DictionaryValue::Int64(574),
+                },
+                fdr::DictionaryEntry {
+                    key: "interrupts.1.number".to_string(),
+                    value: fdr::DictionaryValue::Int64(17),
+                },
+                fdr::DictionaryEntry {
+                    key: "interrupts.1.controller".to_string(),
+                    value: fdr::DictionaryValue::Int64(290),
+                },
+                fdr::DictionaryEntry {
+                    key: "interrupts.2.number".to_string(),
+                    value: fdr::DictionaryValue::Int64(18),
+                },
+                fdr::DictionaryEntry {
+                    key: "interrupts.2.controller".to_string(),
+                    value: fdr::DictionaryValue::Int64(290),
+                },
+                fdr::DictionaryEntry {
+                    key: "interrupts.3.number".to_string(),
+                    value: fdr::DictionaryValue::Int64(4),
+                },
+                fdr::DictionaryEntry {
+                    key: "interrupts.3.controller".to_string(),
+                    value: fdr::DictionaryValue::Int64(289),
+                },
+            ]),
+            ..Default::default()
+        };
+
+        let mut irq_controllers = Vec::new();
+        for irq in crate::irq_list(&pdev_dict) {
+            if let Some(controller_id) = irq.controller {
+                if !irq_controllers.contains(&controller_id) {
+                    irq_controllers.push(controller_id);
+                }
+            }
+        }
+        assert_eq!(irq_controllers, vec![290, 289]);
+
+        let parents = generate_interrupt_controller_parents(&irq_controllers);
+        assert_eq!(parents.len(), 2);
+
+        let (parent0, key0) = &parents[0];
+        assert_eq!(key0, "interrupt-controller-0");
+        assert_eq!(
+            parent0.bind_rules,
+            vec![
+                make_accept_bind_rule("fuchsia.NAME", property_string("interrupt-controller")),
+                make_accept_bind_rule("fuchsia.ID", property_int(290)),
+            ]
+        );
+        assert_eq!(
+            parent0.properties,
+            vec![make_property2("fuchsia.NAME", property_string("interrupt-controller-0"))]
+        );
+
+        let (parent1, key1) = &parents[1];
+        assert_eq!(key1, "interrupt-controller-1");
+        assert_eq!(
+            parent1.bind_rules,
+            vec![
+                make_accept_bind_rule("fuchsia.NAME", property_string("interrupt-controller")),
+                make_accept_bind_rule("fuchsia.ID", property_int(289)),
+            ]
+        );
+        assert_eq!(
+            parent1.properties,
+            vec![make_property2("fuchsia.NAME", property_string("interrupt-controller-1"))]
+        );
     }
 }

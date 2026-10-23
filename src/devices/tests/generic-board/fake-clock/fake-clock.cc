@@ -143,6 +143,16 @@ class FakeClockDriver : public fdf::DriverBase2,
     }
     fdf::info("fake-clock registered as interrupt controller successfully!");
 
+    std::vector<fuchsia_driver_framework::NodeProperty2> irq_props{
+        fdf::MakeProperty2("fuchsia.NAME", "interrupt-controller"),
+        fdf::MakeProperty2("fuchsia.ID", 1u),
+    };
+    auto irq_child = AddChild("interrupt-controller", irq_props, {});
+    if (irq_child.is_error()) {
+      fdf::error("Failed to add interrupt-controller child: {}", irq_child);
+      return irq_child.take_error();
+    }
+
     // Default clock config: name="my-clock", clock_id=1
     std::string clock_name = "my-clock";
     uint32_t clock_id = 1;

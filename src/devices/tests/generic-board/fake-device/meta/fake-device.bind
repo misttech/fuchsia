@@ -13,6 +13,10 @@ primary parent "pdev" {
   fuchsia.COMPATIBLE == "fake,device";
 }
 
+optional parent "interrupt-controller-0" {
+  fuchsia.NAME == "interrupt-controller-0";
+}
+
 parent "my-clock" {
   fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "my-clock";

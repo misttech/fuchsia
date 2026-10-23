@@ -22,5 +22,10 @@
             service: "fuchsia.hardware.clock.Service",
             requirements: { match_name: true },
         },
+        {
+            name: "interrupt-controller-0",
+            availability: "optional",
+            requirements: { match_name: true },
+        },
     ],
 }
