@@ -422,7 +422,8 @@ void CommandBuffer::BeginRenderPass(vk::RenderPass render_pass,
 
 void CommandBuffer::EndRenderPass() { command_buffer_.endRenderPass(); }
 
-bool CommandBuffer::Retire() {
+bool CommandBuffer::Retire(CommandBufferFinishedCallback* out_callback) {
+  FX_DCHECK(out_callback);
   if (!is_active_) {
     // Submission failed, so proceed with cleanup.
     FX_DLOGS(INFO) << "CommandBuffer submission failed, proceeding with retirement";
@@ -440,18 +441,15 @@ bool CommandBuffer::Retire() {
   is_active_ = is_submitted_ = false;
   ESCHER_CHECKED_VK_RESULT(device_.resetFences(1, &fence_));
 
-  if (callback_) {
-    TRACE_DURATION("gfx", "escher::CommandBuffer::Retire::callback", "ptr", TA_POINTER(this));
-    callback_();
-    callback_ = nullptr;
-  }
-
   wait_semaphores_.clear();
   wait_semaphore_stages_.clear();
   signal_semaphores_.clear();
 
   auto result = command_buffer_.reset(vk::CommandBufferResetFlags());
   FX_DCHECK(result == vk::Result::eSuccess);
+
+  *out_callback = std::move(callback_);
+  callback_ = nullptr;
 
   return true;
 }

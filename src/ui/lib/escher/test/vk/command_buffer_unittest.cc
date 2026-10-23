@@ -4,6 +4,8 @@
 
 #include "src/ui/lib/escher/vk/command_buffer.h"
 
+#include "src/ui/lib/escher/impl/command_buffer_pool.h"
+#include "src/ui/lib/escher/renderer/buffer_cache.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/vk/vulkan_tester.h"
 
@@ -532,5 +534,122 @@ VK_TEST_F(CommandBufferTest, AddSignalSemaphoreDeduplicatesSameKoid) {
   EXPECT_EQ(event2.wait_one(ZX_EVENT_SIGNALED, zx::deadline_after(zx::sec(30)), nullptr), ZX_OK);
 }
 #endif
+
+// Verifies that calling `Cleanup()` from within a `CommandBufferFinishedCallback` runs `cb1`'s
+// callback once, keeps an unsubmitted `cb2` pending in `pending_buffers_`, and lets a later
+// `Cleanup()` drain `cb2` after it is submitted (https://fxbug.dev/519646989).
+VK_TEST_F(CommandBufferTest, ReentrantCleanupDoesNotCorruptPendingQueue) {
+  auto escher = test::GetEscher();
+  auto cb1 = CommandBuffer::NewForGraphics(escher, false);
+  // Allocate `cb2` before submitting `cb1` so `cb2` sits right behind `cb1` in `pending_buffers_`
+  // in an unsubmitted (not-ready-to-retire) state.
+  auto cb2 = CommandBuffer::NewForGraphics(escher, false);
+
+  int cb1_callback_count = 0;
+  int cb2_callback_count = 0;
+
+  EXPECT_TRUE(cb1->Submit([&]() {
+    ++cb1_callback_count;
+    // Nested `Cleanup()` returns false immediately; the second call checks that the re-entrancy
+    // guard remains set after the first nested call returns.
+    EXPECT_FALSE(escher->Cleanup());
+    EXPECT_FALSE(escher->Cleanup());
+  }));
+
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  // `cb1` should retire and run its callback once, while `cb2` remains pending because it has not
+  // been submitted yet.
+  EXPECT_FALSE(escher->Cleanup());
+  EXPECT_EQ(cb1_callback_count, 1);
+  EXPECT_EQ(cb2_callback_count, 0);
+
+  // Now submit `cb2` and verify a subsequent `Cleanup()` drains it cleanly.
+  EXPECT_TRUE(cb2->Submit([&]() { ++cb2_callback_count; }));
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  EXPECT_TRUE(escher->Cleanup());
+  EXPECT_EQ(cb1_callback_count, 1);
+  EXPECT_EQ(cb2_callback_count, 1);
+}
+
+// Verifies that `CommandBufferPool::Cleanup()` returns a retired buffer to `free_buffers_` and
+// notifies `CommandBufferSequencer` before running the buffer's finished callback.
+VK_TEST_F(CommandBufferTest, CleanupCompletesRetirementBeforeRunningCallback) {
+  auto escher = test::GetEscher();
+  BufferCache buffer_cache(escher->GetWeakPtr());
+  impl::CommandBufferPool pool(
+      escher->vk_device(), escher->device()->vk_main_queue(),
+      escher->device()->vk_main_queue_family(), escher->command_buffer_sequencer(),
+      /*supports_graphics_and_compute=*/true, /*use_protected_memory=*/false);
+
+  BufferPtr host_buffer = buffer_cache.NewHostBuffer(256);
+  ASSERT_TRUE(host_buffer);
+  EXPECT_EQ(buffer_cache.free_buffer_count(), 0u);
+
+  impl::CommandBuffer* first_cb = pool.GetCommandBuffer();
+  first_cb->KeepAlive(host_buffer);
+
+  impl::CommandBuffer* reused_cb = nullptr;
+  bool second_callback_ran = false;
+
+  EXPECT_TRUE(
+      first_cb->Submit(pool.queue(), [&, captured_buffer = std::move(host_buffer)]() mutable {
+        // Even though `first_cb` was the only pending buffer and has already been popped from
+        // `pending_buffers_`, the initial `pool.Cleanup()` call is still running this callback and
+        // has not finished yet, so a nested `pool.Cleanup()` call must return false.
+        EXPECT_FALSE(pool.Cleanup());
+
+        // Because `CommandBufferFinished()` ran before this callback, dropping the last reference
+        // to `captured_buffer` recycles it immediately into `buffer_cache` without deferring.
+        EXPECT_EQ(buffer_cache.free_buffer_count(), 0u);
+        captured_buffer.reset();
+        EXPECT_EQ(buffer_cache.free_buffer_count(), 1u);
+
+        // Because `first_cb` was pushed to `free_buffers_` before this callback ran, requesting a
+        // new `CommandBuffer` reuses `first_cb` instead of allocating a second Vulkan command
+        // buffer.
+        reused_cb = pool.GetCommandBuffer();
+        EXPECT_EQ(reused_cb, first_cb);
+        EXPECT_TRUE(reused_cb->Submit(pool.queue(), [&]() { second_callback_ran = true; }));
+        EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+      }));
+
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  EXPECT_TRUE(pool.Cleanup());
+  EXPECT_EQ(reused_cb, first_cb);
+  EXPECT_TRUE(second_callback_ran);
+  EXPECT_EQ(buffer_cache.free_buffer_count(), 1u);
+}
+
+// Verifies that when a `CommandBufferFinishedCallback` submits a new command buffer (`cb3`) and
+// calls `Cleanup()`, already-pending buffers (`cb2`) and `cb3` are deferred to the active
+// `Cleanup()` call on the stack and run their callbacks in FIFO order after `cb1`'s callback
+// returns.
+VK_TEST_F(CommandBufferTest, ReentrantCleanupPreservesFifoOrder) {
+  auto escher = test::GetEscher();
+  auto cb1 = CommandBuffer::NewForGraphics(escher, false);
+  auto cb2 = CommandBuffer::NewForGraphics(escher, false);
+
+  std::vector<int> execution_order;
+  CommandBufferPtr cb3;
+
+  EXPECT_TRUE(cb1->Submit([&]() {
+    execution_order.push_back(1);
+    cb3 = CommandBuffer::NewForGraphics(escher, false);
+    EXPECT_TRUE(cb3->Submit([&]() { execution_order.push_back(3); }));
+    EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+    // Nested `Cleanup()` returns false without retiring `cb2` or `cb3`; the ongoing `Cleanup()`
+    // call will continue draining `pending_buffers_` in FIFO order (`cb2`, then `cb3`) after this
+    // callback returns.
+    EXPECT_FALSE(escher->Cleanup());
+    EXPECT_EQ(execution_order, std::vector<int>{1});
+  }));
+  EXPECT_TRUE(cb2->Submit([&]() { execution_order.push_back(2); }));
+
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  EXPECT_TRUE(escher->Cleanup());
+
+  const std::vector<int> expected_order = {1, 2, 3};
+  EXPECT_EQ(execution_order, expected_order);
+}
 
 }  // namespace

@@ -41,10 +41,11 @@ class CommandBuffer {
 
   vk::CommandBuffer vk() const { return command_buffer_; }
 
-  // Return true if successful.  The callback will be invoked after all commands
-  // have finished executing on the GPU (there is no guarantee about how long
-  // afterward: this depends on when the CommandBufferPool that owns this buffer
-  // calls Retire()).
+  // Return true if successful.  The callback will be invoked by the owning
+  // `CommandBufferPool::Cleanup()` after all commands have finished executing
+  // on the GPU, the buffer has been returned to the pool, and the sequencer
+  // has been notified.  The callback may call `GetCommandBuffer()` and
+  // `Cleanup()` (a nested `Cleanup()` call returns false).
   bool Submit(vk::Queue queue, CommandBufferFinishedCallback callback);
 
   // During Submit(), these semaphores will be added to the vk::SubmitInfo.
@@ -134,9 +135,13 @@ class CommandBuffer {
   // Called by CommandBufferPool when this buffer is obtained from it.
   void Begin(uint64_t sequence_number);
 
-  // Called by CommandBufferPool, to attempt to reset the buffer for reuse.
+  // Called by `CommandBufferPool`, to attempt to reset the buffer for reuse.
   // Return false and do nothing if the buffer's submission fence is not ready.
-  bool Retire();
+  // If successful, moves `callback_` into `out_callback` rather than running it
+  // directly, since the callback may trigger a re-entrant
+  // `CommandBufferPool::Cleanup()` call before the pool finishes retiring this
+  // buffer.
+  bool Retire(CommandBufferFinishedCallback* out_callback);
 
   const vk::Device device_;
   const vk::CommandBuffer command_buffer_;

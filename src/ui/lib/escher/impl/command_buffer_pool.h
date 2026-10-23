@@ -37,7 +37,10 @@ class CommandBufferPool {
   CommandBuffer* GetCommandBuffer();
 
   // Do periodic housekeeping.  Return true if cleanup was complete, i.e. all
-  // pending command buffers are now finished.
+  // pending command buffers are now finished.  A call made from inside a
+  // `CommandBufferFinishedCallback` does no work and returns false because the
+  // active `Cleanup()` call on the stack finishes the drain, so callers must
+  // not retry from inside a callback.
   bool Cleanup();
 
   vk::Device device() const { return device_; }
@@ -60,6 +63,9 @@ class CommandBufferPool {
   std::queue<std::unique_ptr<CommandBuffer>> free_buffers_;
   std::queue<std::unique_ptr<CommandBuffer>> pending_buffers_;
   const bool use_protected_memory_;
+  // True while `Cleanup()` is running; guards against re-entrant `Cleanup()`
+  // calls triggered by a `CommandBufferFinishedCallback`.
+  bool cleaning_up_ = false;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(CommandBufferPool);
 };

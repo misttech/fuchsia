@@ -4,6 +4,8 @@
 
 #include "src/ui/lib/escher/impl/command_buffer_pool.h"
 
+#include <lib/fit/defer.h>
+
 #include "src/ui/lib/escher/impl/command_buffer_sequencer.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
@@ -105,12 +107,20 @@ CommandBuffer* CommandBufferPool::GetCommandBuffer() {
 
 bool CommandBufferPool::Cleanup() {
   TRACE_DURATION("gfx", "escher::CommandBufferPool::Cleanup");
-  // TODO: add some guard against potential re-entrant calls resulting from
-  // invocation of CommandBufferFinishedCallbacks.
+  if (cleaning_up_) {
+    // A `CommandBufferFinishedCallback` invoked below may trigger a nested call
+    // to `Cleanup()`. Return false immediately so finished callbacks do not run
+    // nested inside one another, bounding recursion and keeping callbacks in
+    // FIFO order at one level while the active `Cleanup()` call on the stack
+    // finishes draining `pending_buffers_`.
+    return false;
+  }
+  cleaning_up_ = true;
+  auto reset_cleaning_up = fit::defer([this]() { cleaning_up_ = false; });
 
   while (!pending_buffers_.empty()) {
-    auto& buffer = pending_buffers_.front();
-    if (!buffer->Retire()) {
+    CommandBufferFinishedCallback callback;
+    if (!pending_buffers_.front()->Retire(&callback)) {
       // The first buffer in the queue is not finished, so neither are the rest.
       // Return false to notify the caller that more cleanup will need to be
       // done in the future.
@@ -120,10 +130,26 @@ bool CommandBufferPool::Cleanup() {
       // fashion).
       return false;
     }
-    sequencer_->CommandBufferFinished(buffer->sequence_number());
-    free_buffers_.push(std::move(pending_buffers_.front()));
+    std::unique_ptr<CommandBuffer> buffer = std::move(pending_buffers_.front());
     pending_buffers_.pop();
+
+    // Return the retired buffer to `free_buffers_` and notify `sequencer_`
+    // before running `callback`. This ensures that if `callback` submits new
+    // work or releases resources, the buffer can be reused and the resources
+    // can be recycled immediately.
+    const uint64_t sequence_number = buffer->sequence_number();
+    [[maybe_unused]] const CommandBuffer* buffer_ptr = buffer.get();
+    free_buffers_.push(std::move(buffer));
+    sequencer_->CommandBufferFinished(sequence_number);
+
+    if (callback) {
+      // Keep the legacy "Retire::callback" name for existing trace consumers.
+      TRACE_DURATION("gfx", "escher::CommandBuffer::Retire::callback", "ptr",
+                     TA_POINTER(buffer_ptr));
+      callback();
+    }
   }
+
   // No pending buffers remain.
   return true;
 }

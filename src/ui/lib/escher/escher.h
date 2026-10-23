@@ -92,13 +92,15 @@ class Escher final {
 
   uint64_t GetNumGpuBytesAllocated();
 
-  // Do periodic housekeeping.  This is called by Renderer::EndFrame(), so you
+  // Do periodic housekeeping.  This is called by `Renderer::EndFrame()`, so you
   // don't need to call it if your application is constantly rendering.
   // However, if your app enters a "quiet period" then you might want to
-  // arrange to call Cleanup() after the last frame has finished rendering.
+  // arrange to call `Cleanup()` after the last frame has finished rendering.
   // Return true if cleanup was complete, and false if more cleanup remains
-  // (in that case, the app should wait a moment before calling Cleanup()
-  // again).
+  // (in that case, the app should wait a moment before calling `Cleanup()`
+  // again).  A call made from inside a `CommandBufferFinishedCallback` does no
+  // work and returns false because the active `Cleanup()` call on the stack
+  // finishes the drain, so callers must not retry from inside a callback.
   bool Cleanup();
 
   // Allow clients to set the pipeline builder; if this isn't called then Escher will use a
