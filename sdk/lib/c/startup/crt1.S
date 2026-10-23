@@ -81,7 +81,7 @@
 // assembly where it's possible to precisely control what kinds of relocations
 // are used for both main and __libc_start_main.
 
-.function _start, global
+.function _start, global, callgraph=direct
   .prologue.fp
 
   // Three argument registers are accepted by _start and passed through
@@ -102,7 +102,7 @@
   // always sufficient (whereas `adrp` + add would always be required for
   // either a PLT entry or an RODATA word).
   adr x3, 0f
-  bl __libc_start_main
+  callgraph.call __libc_start_main
 
   // __libc_start_main is declared [[noreturn]] and cannot return.  This
   // appears as the return address for backtrace purposes, but will never be
@@ -117,7 +117,7 @@
   // instead do a GOT load and jump here, for just one extra jump and one extra
   // load, but in the more common case that would instead do the same number of
   // jumps at the cost of an extra load of an extra relocated GOT slot.
-0:b main
+0:callgraph.tail main
 
 #elif defined(__riscv)
 
@@ -127,9 +127,9 @@
   // multiple instructions for the general case of the distance to the 0: label
   // but it should be relaxed down at link time to only two.
   lla a3, 0f
-  call __libc_start_main
+  callgraph.call __libc_start_main
   unimp
-0:tail main
+0:callgraph.tail main
 
 #elif defined(__x86_64__)
 
@@ -150,7 +150,7 @@
   // already done an extra bounce through the PLT doesn't hurt much (less than
   // the double bounce on the other machines where PLT32 is harder to use).
   lea main@PLT(%rip), %rcx
-  call __libc_start_main@PLT
+  callgraph.call __libc_start_main
   ud2
 
 #else

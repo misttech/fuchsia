@@ -69,6 +69,7 @@
 // depending on whether it's a base register (always 64 bits) or it's a
 // pointer-sized operand.
 .macro prologue
+  .llvm.stack_size 16
   stp.spill x1, x2
 
   // Fetch the blocks vector pointer using a standard IE model TLS read:
@@ -132,8 +133,7 @@
 // versions.  It extracts the the GOT's value slot into r0 and the blocks
 // vector pointer into r2, with r1 then available for scratch.
 .macro prologue
-  .tlsdesc.cfi
-
+  .llvm.stack_size 8
   push.spill r1, r2
 
   ldr r0, [r0, #4]
@@ -192,6 +192,7 @@
 // versions.  It extracts the the GOT's value slot into a1 and the blocks
 // vector pointer into a2, with a0 then available for scratch.
 .macro prologue
+  .llvm.stack_size 16
   add sp, sp, -16
   .cfi_adjust_cfa_offset 16
   sd a1, 0(sp)
@@ -273,6 +274,7 @@
 // versions.  It extracts the the GOT's value slot into %rax and the blocks
 // vector pointer into %rdx, with %rcx then available for scratch.
 .macro prologue
+  .llvm.stack_size 16
   push.spill %rcx
   push.spill %rdx
 
