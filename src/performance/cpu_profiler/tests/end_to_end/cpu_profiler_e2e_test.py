@@ -59,23 +59,45 @@ class CpuProfilerEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_greater(output_json["samples_collected"], 10)
 
     def test_attach_system_wide(self) -> None:
-        output_json = json.loads(
+        component_url = (
+            "fuchsia-pkg://fuchsia.com/demo_target#meta/demo_target.cm"
+        )
+        moniker = "/core/ffx-laboratory:demo_target"
+        self.dut.ffx.run(
+            [
+                "component",
+                "run",
+                "--recreate",
+                moniker,
+                component_url,
+            ]
+        )
+        try:
+            output_json = json.loads(
+                self.dut.ffx.run(
+                    [
+                        "--machine",
+                        "json",
+                        "profiler",
+                        "attach",
+                        "--system-wide",
+                        "--duration",
+                        "5",
+                        "--print-stats",
+                        "--symbolize",
+                        "false",
+                    ],
+                    capture_output=True,
+                )
+            )
+        finally:
             self.dut.ffx.run(
                 [
-                    "--machine",
-                    "json",
-                    "profiler",
-                    "attach",
-                    "--system-wide",
-                    "--duration",
-                    "5",
-                    "--print-stats",
-                    "--symbolize",
-                    "false",
-                ],
-                capture_output=True,
+                    "component",
+                    "destroy",
+                    moniker,
+                ]
             )
-        )
         asserts.assert_greater(output_json["samples_collected"], 10)
 
 
