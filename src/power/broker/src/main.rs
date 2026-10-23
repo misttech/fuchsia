@@ -113,13 +113,15 @@ impl BrokerSvc {
                                         {
                                             log::debug!("{debug_info}: run_lease_control err: {:?}", err);
                                         }
-                                        // When the channel is closed, drop the lease.
+                                        // When the channel is closed, drop the lease if it is still
+                                        // present (it may have already been dropped if its target
+                                        // element was removed).
                                         log::debug!(
                                             "{debug_info}: Channel closed, dropping lease {lease_id}"
                                         );
                                         let mut broker = svc.broker.borrow_mut();
                                         if let Err(err) = broker.drop_lease(lease.id) {
-                                            log::error!("{debug_info}: drop_lease {lease_id} failed: {:?}", err);
+                                            log::debug!("{debug_info}: drop_lease {lease_id} failed: {:?}", err);
                                         }
                                     }
                                 })
@@ -328,9 +330,12 @@ impl BrokerSvc {
                     &mut crate::inspect::EagerInspectWriter,
                 );
 
-                // Drop provisional lease (if one was taken).
+                // Drop provisional lease (if one was taken; it may have already been dropped if
+                // the required element was removed while waiting for the lease to be satisfied).
                 if let Some(lease_id) = provisional_lease_id {
-                    self.broker.borrow_mut().drop_lease(lease_id).expect("drop failed");
+                    if let Err(err) = self.broker.borrow_mut().drop_lease(lease_id) {
+                        log::debug!("{debug_info}: drop_lease {lease_id} failed: {:?}", err);
+                    }
                 }
                 responder.send(res.map_err(Into::into)).context("send failed")?;
                 Ok(())
@@ -363,7 +368,7 @@ impl BrokerSvc {
                 log::debug!("LeaseToken closed, dropping lease {lease_id}");
                 let mut broker = svc.broker.borrow_mut();
                 if let Err(err) = broker.drop_lease(lease_id) {
-                    log::error!("drop_lease {lease_id} failed: {:?}", err);
+                    log::debug!("drop_lease {lease_id} failed: {:?}", err);
                 }
             }
         })
@@ -1178,5 +1183,59 @@ mod tests {
         assert!(admin_stream.next().now_or_never().is_none());
 
         drop(task);
+    }
+
+    #[fuchsia::test]
+    async fn test_add_dependency_required_element_removed_while_provisional_lease_pending() {
+        let svc = Rc::new(BrokerSvc::new(StuckDetector::new(0, false, None, None)));
+        let token_a = fpb::DependencyToken::create();
+
+        let (element_a, element_b) = {
+            let mut broker = svc.broker.borrow_mut();
+            let element_a = broker.add_element("A", 0, vec![0, 1], vec![]).unwrap();
+            broker
+                .register_dependency_token(
+                    element_a,
+                    token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
+                )
+                .unwrap();
+            let element_b = broker.add_element("B", 0, vec![0, 1], vec![]).unwrap();
+            let level_1 = broker.get_level_index(element_b, &1).unwrap().clone();
+            // Lease B at level 1 so B's required level is 1; adding a dependency from B(1) to A(1)
+            // will therefore acquire a provisional lease on A(1) and wait for it to be satisfied.
+            let _lease_b = broker.acquire_lease(element_b, level_1, zx::Koid::from_raw(1)).unwrap();
+            (element_a, element_b)
+        };
+
+        let (element_control_proxy, element_control_stream) =
+            create_proxy_and_stream::<fpb::ElementControlMarker>();
+        let control_task = Task::local(svc.clone().run_element_control(
+            element_b,
+            "B".to_string(),
+            element_control_stream,
+        ));
+
+        let mut add_dep_fut = element_control_proxy.add_dependency(fpb::LevelDependency {
+            dependent_level: Some(1),
+            requires_token: Some(token_a),
+            requires_level_by_preference: Some(vec![1]),
+            ..Default::default()
+        });
+
+        // Poll once so `handle_element_control_request` acquires the provisional lease on A(1)
+        // and suspends waiting for it to reach `LeaseStatus::Satisfied`.
+        assert!(futures::poll!(&mut add_dep_fut).is_pending());
+
+        // Remove A while the provisional lease on A(1) is still pending. This drops and vacates
+        // the provisional lease and closes its status channel.
+        svc.broker.borrow_mut().remove_element(&element_a);
+
+        // `AddDependency` must return an error without panicking when attempting to drop the
+        // already-dropped provisional lease.
+        let res = add_dep_fut.await.expect("FIDL call should not fail with peer closed");
+        assert_eq!(res, Err(fpb::ModifyDependencyError::NotAuthorized));
+
+        drop(element_control_proxy);
+        control_task.await.expect("run_element_control failed");
     }
 }

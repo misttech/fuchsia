@@ -597,16 +597,28 @@ impl Broker {
     }
 
     fn vacate_lease_if_all_claims_dropped(&mut self, lease_id: LeaseID) {
+        self.vacate_lease_with_removed_element(lease_id, None);
+    }
+
+    fn vacate_lease_with_removed_element(
+        &mut self,
+        lease_id: LeaseID,
+        removed_element: Option<&Element>,
+    ) {
         if self.catalog.is_lease_powering_down(lease_id)
             && self.catalog.has_no_remaining_claims(lease_id)
         {
-            if let Err(err) = self.vacate_lease(lease_id) {
+            if let Err(err) = self.vacate_lease(lease_id, removed_element) {
                 log::error!("Failed to vacate lease {lease_id}: {:?}", err);
             }
         }
     }
 
-    fn vacate_lease(&mut self, lease_id: LeaseID) -> Result<(), Error> {
+    fn vacate_lease(
+        &mut self,
+        lease_id: LeaseID,
+        removed_element: Option<&Element>,
+    ) -> Result<(), Error> {
         log::debug!("vacate_lease({lease_id})");
         let lease = self
             .catalog
@@ -617,13 +629,18 @@ impl Broker {
 
         self.catalog.lease_status.update(&lease_id, LeaseStatus::Vacated);
         for target in &lease.targets {
-            if let Some(element) = self.catalog.topology.get_element(&target.element_id) {
+            if let Some(element) = self
+                .catalog
+                .topology
+                .get_element(&target.element_id)
+                .or_else(|| removed_element.filter(|e| e.id == target.element_id))
+            {
                 self.catalog.topology.inspect().on_update_lease_status(
-                    &element,
+                    element,
                     &lease,
                     &LeaseStatus::Vacated,
                 );
-                self.catalog.topology.inspect().on_drop_lease(&element, &lease);
+                self.catalog.topology.inspect().on_drop_lease(element, &lease);
             }
         }
 
@@ -924,6 +941,25 @@ impl Broker {
         }
         self.in_transition.remove(&element_id);
 
+        // Drop any open leases targeting this element while its vertex is still in the topology so
+        // their Inspect lifecycle events are emitted before the element vertex is removed.
+        let leases_targeting_element: Vec<LeaseID> = self
+            .catalog
+            .leases
+            .iter()
+            .filter(|(lease_id, lease)| {
+                !self.catalog.is_lease_dropped(**lease_id)
+                    && lease.targets.iter().any(|target| target.element_id == *element_id)
+            })
+            .map(|(lease_id, _)| *lease_id)
+            .sorted()
+            .collect();
+        for lease_id in leases_targeting_element {
+            if let Err(err) = self.drop_lease(lease_id) {
+                log::warn!("Failed to drop lease {lease_id} during element removal: {:?}", err);
+            }
+        }
+
         // Remove all removable dependencies that require this element.
         let removable_deps =
             self.catalog.topology.get_removable_dependencies_for_required_element(*element_id);
@@ -943,13 +979,21 @@ impl Broker {
         self.update_required_levels(elements_to_update.into_iter(), &mut EagerInspectWriter);
         for lease_id in affected_leases {
             self.update_lease_status(lease_id);
-            self.vacate_lease_if_all_claims_dropped(lease_id);
+            self.vacate_lease_with_removed_element(lease_id, maybe_element.as_ref());
         }
 
         self.unregister_all_credentials_for_element(*element_id);
         let current_level = self.current.remove(&element_id);
         let required_level = self.required.remove(&element_id);
         if let Some(element) = maybe_element {
+            // If any lease targeting this element is still powering down (for example, on
+            // upstream ancestors or other target elements), emit its `rm_lease` event before
+            // removing the element vertex.
+            for (_, lease) in self.catalog.leases.iter().sorted_by_key(|(id, _)| *id) {
+                if lease.targets.iter().any(|target| target.element_id == element.id) {
+                    self.catalog.topology.inspect().on_drop_lease(&element, lease);
+                }
+            }
             self.catalog.topology.inspect().on_remove_element(
                 element,
                 current_level.map(|level| level.level.level),
@@ -1250,6 +1294,15 @@ impl Catalog {
         for dep in self.topology.dependencies_for_dependent_element(removed_element_id) {
             if let Some(entry) = self.claims.get(dep) {
                 affected_leases.extend(entry.all_leases());
+            }
+        }
+
+        // 3. Leases that target removed_element_id (including leases whose direct claims on
+        // removed_element_id were dropped while pending when the lease was dropped, leaving
+        // active/deactivating claims several hops away).
+        for (lease_id, lease) in &self.leases {
+            if lease.targets.iter().any(|target| target.element_id == removed_element_id) {
+                affected_leases.insert(*lease_id);
             }
         }
         affected_leases
@@ -5787,16 +5840,16 @@ mod tests {
         assert_lease_cleaned_up(&broker.catalog, lease.id);
     }
 
-    // When an element that a direct lease targets is removed, the lease's root
-    // claim on it should be dropped along with the claims it held beneath it,
-    // and the now-targetless lease should still clean up when dropped.
+    // When an element that a direct lease targets is removed, the lease and all
+    // claims held beneath it should be dropped immediately and its Inspect
+    // lifecycle events emitted before the target vertex is removed.
     #[fuchsia::test]
     async fn test_remove_element_that_is_direct_lease_target() {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
         // A <= B <= L. B is the lease target, so the lease holds a root claim
-        // on B. Removing B must drop that claim along with B's claim on A.
+        // on B. Removing B must drop the lease along with its claims on B and A.
         let element_a =
             broker.add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
         let token_a = DependencyToken::create();
@@ -5845,13 +5898,287 @@ mod tests {
         broker.remove_element(&element_b);
         assert_eq!(broker.element_exists(element_b), false);
 
-        // The lease's claims are all orphaned, so A is no longer required.
-        assert!(broker.catalog.has_no_remaining_claims(lease.id));
+        // The lease and all of its claims are dropped immediately, leaving A no longer required.
         assert_eq!(broker.get_required_level(&element_a), Some(OFF));
-
-        // Dropping the now-targetless lease still cleans up.
-        broker.drop_lease(lease.id).unwrap();
         assert_lease_cleaned_up(&broker.catalog, lease.id);
+        broker.catalog.assert_claims_consistent();
+        assert!(broker.drop_lease(lease.id).is_err());
+
+        assert_data_tree!(inspect, root: contains {
+            test: contains {
+                leases: {},
+            },
+        });
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
+        assert_events_recorded_in_order!(
+            &hierarchy,
+            [
+                {
+                    create_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        level: ON.level as u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        status: LeaseStatus::Pending.into_primitive() as u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        status: LeaseStatus::PoweringDown.into_primitive() as u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        status: LeaseStatus::Vacated.into_primitive() as u64,
+                    },
+                },
+                {
+                    rm_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        name: "L",
+                        level: ON.level as u64,
+                        status: LeaseStatus::Vacated.into_primitive() as u64,
+                    },
+                },
+                {
+                    rm_element: {
+                        element_id: *element_b,
+                        name: "B",
+                    },
+                },
+            ]
+        );
+    }
+
+    // When an element is removed while a lease targeting it is active (Satisfied),
+    // the lease should be dropped immediately, its claims cleaned up, its entries
+    // removed from `leases` and `lease_status`, and its Inspect lifecycle events
+    // emitted before the element vertex is removed.
+    #[fuchsia::test]
+    async fn test_remove_element_with_active_lease() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        let element_a =
+            broker.add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
+        let token_a = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                element_a,
+                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
+            )
+            .unwrap();
+
+        let element_b = broker
+            .add_element(
+                "B",
+                OFF.level,
+                BINARY_POWER_LEVELS.to_vec(),
+                vec![fpb::LevelDependency {
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(token_a.into()),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+
+        let lease =
+            broker.acquire_lease(element_b, ON, zx::Koid::from_raw(456)).expect("acquire failed");
+
+        broker.update_current_level(element_a, ON);
+        broker.update_current_level(element_b, ON);
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+
+        broker.remove_element(&element_b);
+        assert!(!broker.element_exists(element_b));
+        assert_eq!(broker.get_required_level(&element_a), Some(OFF));
+        assert_lease_cleaned_up(&broker.catalog, lease.id);
+        broker.catalog.assert_claims_consistent();
+        assert!(broker.drop_lease(lease.id).is_err());
+
+        assert_data_tree!(inspect, root: contains {
+            test: contains {
+                leases: {},
+            },
+        });
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
+        assert_events_recorded_in_order!(
+            &hierarchy,
+            [
+                {
+                    create_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        level: ON.level as u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        status: LeaseStatus::Pending.into_primitive() as u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        status: LeaseStatus::Satisfied.into_primitive() as u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        status: LeaseStatus::PoweringDown.into_primitive() as u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        status: LeaseStatus::Vacated.into_primitive() as u64,
+                    },
+                },
+                {
+                    rm_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        level: ON.level as u64,
+                        status: LeaseStatus::Vacated.into_primitive() as u64,
+                    },
+                },
+                {
+                    rm_element: {
+                        element_id: *element_b,
+                        name: "B",
+                    },
+                },
+            ]
+        );
+    }
+
+    // When a target element is removed while a multi-hop lease targeting it is
+    // in the process of being fulfilled (with pending claims on the removed
+    // element and active/in-transition claims several hops away), dropping the
+    // lease during element removal must also clean up its orphaned claims
+    // several hops away and vacate the lease immediately.
+    #[fuchsia::test]
+    async fn test_remove_element_with_multihop_pending_lease() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        // D(ON) -> C(ON) -> B(ON) -> A(ON).
+        let element_a =
+            broker.add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
+        let token_a = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                element_a,
+                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
+            )
+            .unwrap();
+
+        let element_b = broker
+            .add_element(
+                "B",
+                OFF.level,
+                BINARY_POWER_LEVELS.to_vec(),
+                vec![fpb::LevelDependency {
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(token_a.into()),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+        let token_b = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                element_b,
+                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
+            )
+            .unwrap();
+
+        let element_c = broker
+            .add_element(
+                "C",
+                OFF.level,
+                BINARY_POWER_LEVELS.to_vec(),
+                vec![fpb::LevelDependency {
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(token_b.into()),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+        let token_c = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                element_c,
+                token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
+            )
+            .unwrap();
+
+        let element_d = broker
+            .add_element(
+                "D",
+                OFF.level,
+                BINARY_POWER_LEVELS.to_vec(),
+                vec![fpb::LevelDependency {
+                    dependent_level: Some(ON.level),
+                    requires_token: Some(token_c.into()),
+                    requires_level_by_preference: Some(vec![ON.level]),
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+
+        // Acquire a lease on D(ON). Initially `[B(ON) -> A(ON)]` is activated (requiring A(ON)),
+        // while `[C(ON) -> B(ON)]`, `[D(ON) -> C(ON)]`, and `[None -> D(ON)]` are pending.
+        let lease =
+            broker.acquire_lease(element_d, ON, zx::Koid::from_raw(789)).expect("acquire failed");
+        assert_eq!(broker.get_required_level(&element_a), Some(ON));
+        assert_eq!(broker.get_required_level(&element_b), Some(OFF));
+        assert_eq!(broker.get_required_level(&element_c), Some(OFF));
+
+        // Transition A to ON. This satisfies `[B(ON) -> A(ON)]` and activates `[C(ON) -> B(ON)]`
+        // (putting B into transition to ON), while `[D(ON) -> C(ON)]` and `[None -> D(ON)]`
+        // remain pending because B has not yet reached ON.
+        broker.update_current_level(element_a, ON);
+        assert_eq!(broker.get_required_level(&element_b), Some(ON));
+        assert_eq!(broker.get_required_level(&element_c), Some(OFF));
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
+
+        // Remove D while `[D(ON) -> C(ON)]` and `[None -> D(ON)]` are still pending. `drop_lease`
+        // drops those pending claims on D immediately (leaving no claims referencing D in
+        // `catalog.claims`), so `find_leases_affected_by_removal` must find `lease` via
+        // `catalog.leases` and `cleanup_orphaned_claims_for_leases` must drop the orphaned
+        // `[C(ON) -> B(ON)]` and `[B(ON) -> A(ON)]` claims and vacate `lease` immediately.
+        broker.remove_element(&element_d);
+        assert!(!broker.element_exists(element_d));
+        assert_eq!(broker.get_required_level(&element_a), Some(OFF));
+        assert_lease_cleaned_up(&broker.catalog, lease.id);
+        broker.catalog.assert_claims_consistent();
+
+        // Complete B's in-flight transition to ON; now that `[C(ON) -> B(ON)]` has been dropped,
+        // B's required level drops back to OFF.
+        broker.update_current_level(element_b, ON);
+        assert_eq!(broker.get_required_level(&element_b), Some(OFF));
     }
 
     #[fuchsia::test]
