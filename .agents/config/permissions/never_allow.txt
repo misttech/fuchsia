@@ -16,8 +16,6 @@ git reset --hard
 git push --force
 # Reason: Overwrites remote history; push a new patchset to `refs/for/main` without `--force` instead.
 git push --force-with-lease
-# Reason: Overwrites remote history; push a new patchset to `refs/for/main` without `--force` instead.
-git push -f
 
 # Destructive filesystem operations
 # Reason: Formatting filesystems is destructive and never permitted in an agent session.

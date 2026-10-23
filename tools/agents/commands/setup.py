@@ -125,6 +125,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Manage and sync Git hooks across checkout repositories during both initial setup and reset/uninstall workflows (default: True).",
     )
     parser.add_argument(
+        "--agent-hooks",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Manage PreToolUse agent hooks in hooks.json during setup (default: True).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print changes without modifying config or services.",
@@ -245,16 +251,20 @@ def run(args: argparse.Namespace) -> int:
     ask_grants.extend(grants.ask)
     grant_reasons.update(grants.reasons)
 
-    for raw_cmds, list_files, grants_target, target_reasons in (
-        (args.allow, args.allow_list, allow_grants, None),
-        (args.deny, args.deny_list, deny_grants, grant_reasons),
-        (args.ask, args.ask_list, ask_grants, None),
+    for raw_cmds, list_files, grants_target, literal, target_reasons in (
+        (args.allow, args.allow_list, allow_grants, False, None),
+        (args.deny, args.deny_list, deny_grants, True, grant_reasons),
+        (args.ask, args.ask_list, ask_grants, False, None),
     ):
         for cmd in raw_cmds:
-            grants_target.extend(permissions.expand_command_variants(cmd))
+            grants_target.extend(
+                permissions.expand_command_variants(cmd, literal=literal)
+            )
         for f in list_files:
             grants_target.extend(
-                permissions.read_command_list_file(f, reasons=target_reasons)
+                permissions.read_command_list_file(
+                    f, literal=literal, reasons=target_reasons
+                )
             )
 
     success = config.apply_grants(
@@ -266,6 +276,7 @@ def run(args: argparse.Namespace) -> int:
         state_dir=state_dir,
         selected_profile=selected_profile,
         grant_reasons=grant_reasons,
+        agent_hooks=args.agent_hooks,
     )
     if not success:
         return 1

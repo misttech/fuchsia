@@ -118,6 +118,7 @@ class ConfigTest(BaseTestCase):
         journal = state.load_state(self.state_dir / "state.json")
         self.assertEqual(journal.active_profile, "local-changes")
         self.assertEqual(len(journal.history), 1)
+        self.assertTrue((cfg_file.parent / "hooks.json").is_file())
 
     def test_apply_grants_existing_file_and_backup(self) -> None:
         """Verify preexisting config is backed up to backups/ before modification."""
@@ -173,7 +174,50 @@ class ConfigTest(BaseTestCase):
         )
         self.assertTrue(success)
         self.assertFalse(cfg_file.exists())
+        self.assertFalse((cfg_file.parent / "hooks.json").exists())
         self.assertFalse((self.state_dir / "state.json").exists())
+        self.assertIn(
+            "[DRY RUN] Would configure PreToolUse agent hook at:", self.stdout
+        )
+
+    def test_apply_grants_no_agent_hooks(self) -> None:
+        """Verify agent_hooks=False removes hooks.json instead of installing."""
+        cfg_file = self.mock_root / "config.json"
+        hooks_file = cfg_file.parent / "hooks.json"
+
+        self.assertTrue(
+            config.apply_grants(
+                config_path=cfg_file,
+                allow=["command(fx build)"],
+                state_dir=self.state_dir,
+                agent_hooks=True,
+            )
+        )
+        self.assertTrue(hooks_file.exists())
+
+        self.assertTrue(
+            config.apply_grants(
+                config_path=cfg_file,
+                allow=["command(fx build)"],
+                state_dir=self.state_dir,
+                dry_run=True,
+                agent_hooks=False,
+            )
+        )
+        self.assertIn(
+            "[DRY RUN] Would remove PreToolUse agent hook from:", self.stdout
+        )
+        self.assertTrue(hooks_file.exists())
+
+        self.assertTrue(
+            config.apply_grants(
+                config_path=cfg_file,
+                allow=["command(fx build)"],
+                state_dir=self.state_dir,
+                agent_hooks=False,
+            )
+        )
+        self.assertFalse(hooks_file.exists())
 
     def test_apply_grants_invalid_json(self) -> None:
         """Verify invalid JSON in existing config.json is gracefully handled."""

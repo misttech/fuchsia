@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Unit tests for PreToolUse command schemas and grant policies."""
+"""Unit tests for PreToolUse command schemas, grant policies, and installer."""
 
 from __future__ import annotations
 
@@ -13,11 +13,21 @@ import unittest
 from collections.abc import Sequence
 from unittest import mock
 
+from agents.lib import config, permissions, state
 from agents.lib.agent_hooks.grant_policy import (
     GrantPolicyConfig,
     matches_grant_rule,
 )
-from agents.lib.agent_hooks.pre_tool_use import create_default_command_router
+from agents.lib.agent_hooks.installer import (
+    HOOK_GROUP_NAME,
+    get_hooks_path,
+    install_agent_hooks,
+    uninstall_agent_hooks,
+)
+from agents.lib.agent_hooks.pre_tool_use import (
+    create_default_command_router,
+    create_default_tool_router,
+)
 from agents.lib.agent_hooks.pre_tool_use import main as pre_tool_use_main
 from agents_testing.base import BaseTestCase
 
@@ -152,8 +162,13 @@ class CommandRuleAndSchemasTest(BaseTestCase):
         )
 
 
-class GrantPolicyTest(BaseTestCase):
-    """Tests for GrantPolicyConfig, sed -i gating, and main entrypoint."""
+class GrantPolicyAndInstallerTest(BaseTestCase):
+    """Tests for GrantPolicyConfig, sed -i gating, and hooks.json."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.state_dir = self.test_dir / "state"
+        self.config_path = self.test_dir / ".gemini" / "config" / "config.json"
 
     def test_sed_inplace_policy(self) -> None:
         read_only_router = create_default_command_router(
@@ -184,6 +199,54 @@ class GrantPolicyTest(BaseTestCase):
             read_only_router.evaluate("sed -i 's/a/b/' f && rm -rf /").decision,
             "deny",
         )
+
+    def test_grant_lifecycle_and_reset(self) -> None:
+        cfg = self.config_path
+        allow_sed = permissions.expand_command_variants("sed")
+        deny_who = permissions.expand_command_variants("whoami", literal=True)
+        self.assertTrue(
+            config.apply_grants(
+                cfg, allow_sed, deny_who, [], False, self.state_dir
+            )
+        )
+        hooks_path = get_hooks_path(cfg)
+        self.assertTrue(hooks_path.is_file())
+        policy = GrantPolicyConfig.from_files(config_path=cfg)
+        self.assertFalse(policy.is_sed_inplace_allowed())
+        router = create_default_tool_router(grant_policy=policy)
+        call = {"name": "run_command", "args": {"CommandLine": "ls && whoami"}}
+        self.assertEqual(router.evaluate(call).decision, "deny")
+
+        local_allow = allow_sed + permissions.expand_command_variants("sed -i")
+        config.apply_grants(cfg, local_allow, [], [], False, self.state_dir)
+        self.assertTrue(
+            GrantPolicyConfig.from_files(cfg).is_sed_inplace_allowed()
+        )
+        state.reset(
+            cfg,
+            self.state_dir / "state.json",
+            self.state_dir / "backups",
+            False,
+        )
+        self.assertFalse(hooks_path.exists())
+        self.assertEqual(
+            GrantPolicyConfig.from_files(cfg).allow_grants,
+            (),
+        )
+
+    def test_installer_preserves_custom_hooks(self) -> None:
+        hooks_path = get_hooks_path(self.config_path)
+        hooks_path.parent.mkdir(parents=True, exist_ok=True)
+        custom: dict[str, object] = {"custom": {"PreToolUse": []}}
+        hooks_path.write_text(json.dumps(custom), encoding="utf-8")
+        install_agent_hooks(self.config_path, self.state_dir / "state.json")
+        loaded = json.loads(hooks_path.read_text(encoding="utf-8"))
+        self.assertIn(HOOK_GROUP_NAME, loaded)
+        self.assertTrue(uninstall_agent_hooks(self.config_path))
+        self.assertEqual(
+            json.loads(hooks_path.read_text(encoding="utf-8")), custom
+        )
+        self.assertFalse(uninstall_agent_hooks(self.config_path))
 
     def test_main_entrypoint(self) -> None:
         cfg = self.test_dir / "config.json"

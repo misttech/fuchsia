@@ -123,12 +123,7 @@ class SetupCommandTest(BaseTestCase):
                 for g in grants["allow"]
             )
         )
-        self.assertTrue(
-            any(
-                g.startswith("command(regex:") and "git" in g and "push" in g
-                for g in grants["deny"]
-            )
-        )
+        self.assertIn("command(git push --force)", grants["deny"])
 
     def test_run_with_profile(self) -> None:
         """Verify setting profile populates category grants."""
@@ -158,12 +153,7 @@ class SetupCommandTest(BaseTestCase):
                 for g in grants["allow"]
             )
         )
-        self.assertTrue(
-            any(
-                g.startswith("command(regex:") and "git" in g and "clean" in g
-                for g in grants["deny"]
-            )
-        )
+        self.assertIn("command(git clean)", grants["deny"])
 
     def test_run_default_profile(self) -> None:
         """Verify running setup without explicit args defaults to local-changes profile."""
@@ -566,7 +556,8 @@ class SetupCommandTest(BaseTestCase):
                     )
                     self.assertTrue(
                         any(
-                            g.startswith("command(regex:")
+                            g.startswith("command(")
+                            and not g.startswith("command(regex:")
                             and "git" in g
                             and "clean" in g
                             for g in grants["deny"]
@@ -581,9 +572,12 @@ class SetupCommandTest(BaseTestCase):
                         )
                     )
                     # Verify ad-hoc grant is also applied in its target category
+                    expected_prefix = (
+                        "command(" if target_cat == "deny" else "command(regex:"
+                    )
                     self.assertTrue(
                         any(
-                            g.startswith("command(regex:")
+                            g.startswith(expected_prefix)
                             and expected_token in g
                             for g in grants[target_cat]
                         )
@@ -974,6 +968,39 @@ class SetupCommandTest(BaseTestCase):
                     self.assertEqual(setup.run(args), 0)
                     mock_status.assert_called_once_with(self.fuchsia_dir)
                     self.assertIn(expected_str, self.stdout)
+
+    def test_setup_no_agent_hooks_flag(self) -> None:
+        """Verify --no-agent-hooks removes hooks.json while updating config.json."""
+        config_path = self.mock_root / "config.json"
+        hooks_path = self.mock_root / "hooks.json"
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+
+        args_enable = parser.parse_args(
+            [
+                "--config",
+                str(config_path),
+                "--state-dir",
+                str(self.state_dir),
+                "--no-git-hooks",
+            ]
+        )
+        self.assertEqual(setup.run(args_enable), 0)
+        self.assertTrue(hooks_path.exists())
+
+        args_disable = parser.parse_args(
+            [
+                "--config",
+                str(config_path),
+                "--state-dir",
+                str(self.state_dir),
+                "--no-git-hooks",
+                "--no-agent-hooks",
+            ]
+        )
+        self.assertEqual(setup.run(args_disable), 0)
+        self.assertTrue(config_path.exists())
+        self.assertFalse(hooks_path.exists())
 
 
 if __name__ == "__main__":

@@ -347,6 +347,7 @@ class StateTest(BaseTestCase):
             reloaded.grant_reasons, {"command(deny_1)": "Use safe_1 instead."}
         )
         self.assertEqual(len(reloaded.history), 1)
+        self.assertTrue((self.config_path.parent / "hooks.json").is_file())
 
         # Execute rollback remaining step (back to before initial setup)
         self.assertTrue(
@@ -365,6 +366,7 @@ class StateTest(BaseTestCase):
         self.assertEqual(reloaded_final.active_profile, "")
         self.assertEqual(reloaded_final.grant_reasons, {})
         self.assertEqual(len(reloaded_final.history), 0)
+        self.assertFalse((self.config_path.parent / "hooks.json").exists())
 
     def test_reset_success(self) -> None:
         """Verify reset removes managed grants while preserving custom rules and userSettings."""
@@ -485,6 +487,8 @@ class StateTest(BaseTestCase):
         status_text = state.format_status(self.config_path, self.state_path)
         self.assertIn("Active Profile : local-changes", status_text)
         self.assertIn("Last Updated   : 2026-08-26 12:00:00", status_text)
+        self.assertIn("Agent Hooks    :", status_text)
+        self.assertIn("[not configured]", status_text)
         self.assertIn(
             "[ALLOW] :   2 total (  1 managed,   1 custom)", status_text
         )

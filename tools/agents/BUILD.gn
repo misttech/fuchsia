@@ -17,6 +17,7 @@ if (is_host) {
     "lib/agent_hooks/engine/router.py",
     "lib/agent_hooks/engine/shell_lexer.py",
     "lib/agent_hooks/grant_policy.py",
+    "lib/agent_hooks/installer.py",
     "lib/agent_hooks/pre_tool_use.py",
     "lib/agent_hooks/schemas.py",
     "lib/config.py",

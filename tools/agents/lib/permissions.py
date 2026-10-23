@@ -72,43 +72,6 @@ TRUSTED_HELP_TOOLS: set[str] = {
 }
 
 
-def _is_sed_inplace(arguments: str) -> bool:
-    """Check if sed arguments include an in-place modification flag."""
-    try:
-        tokens = shlex.split(arguments)
-    except ValueError:
-        tokens = arguments.split()
-
-    for token in tokens:
-        if token == "--in-place" or token.startswith("--in-place="):
-            return True
-        if token.startswith("-") and not token.startswith("--"):
-            # Matches short option bundle containing 'i' (e.g. -i, -i.bak, -Ei, -in)
-            if re.match(r"^-[a-zA-Z]*i", token):
-                return True
-    return False
-
-
-def _is_git_clean_force(arguments: str) -> bool:
-    """Check if git clean arguments include a force flag."""
-    try:
-        tokens = shlex.split(arguments)
-    except ValueError:
-        tokens = arguments.split()
-
-    if not tokens or tokens[0] != "clean":
-        return False
-
-    for token in tokens[1:]:
-        if token == "--force" or token.startswith("--force="):
-            return True
-        if token.startswith("-") and not token.startswith("--"):
-            # Matches short option bundle containing 'f' (e.g. -f, -df, -fd, -fdx, -fxd)
-            if "f" in token:
-                return True
-    return False
-
-
 @dataclasses.dataclass(frozen=True)
 class ProfileDefinition:
     """Definition of a permission profile flavor."""
@@ -293,29 +256,6 @@ def _expand_python_variants(arguments: str) -> list[str]:
     return results
 
 
-def _expand_git_clean_force_variants() -> list[str]:
-    """Expand git clean force variants into an anchored regex matching any force flag."""
-    prefix = (
-        f"{ENV_VARS_PREFIX_PATTERN}"
-        f"{TOOL_SPECS['git'].binary_prefix}\\b"
-        f"{TOOL_SPECS['git'].global_flags_pattern}"
-    )
-    return [
-        f"command(regex:{prefix}\\s+clean"
-        f"(?:\\s+{_ARG_VALUE_PATTERN})*\\s+(-[a-zA-Z]*f\\S*|--force(?:={_ARG_VALUE_PATTERN})?)(?:\\s+.*)?)"
-    ]
-
-
-def _expand_sed_variants(base_command: str, arguments: str) -> list[str]:
-    """Expand sed command variants, providing dedicated regex matching for in-place flags."""
-    if _is_sed_inplace(arguments):
-        return [
-            f"command(regex:{ENV_VARS_PREFIX_PATTERN}(\\S+/)?sed\\b"
-            f"(?:\\s+{_ARG_VALUE_PATTERN})*\\s+(-[a-zA-Z]*i\\S*|--in-place(\\S*)?)(?:\\s+.*)?)"
-        ]
-    return _expand_binary_variants(base_command, arguments)
-
-
 def _expand_binary_variants(base_command: str, arguments: str) -> list[str]:
     """Expand general system binaries into anchored regex pattern grants."""
     base_name = pathlib.Path(base_command).name
@@ -325,18 +265,9 @@ def _expand_binary_variants(base_command: str, arguments: str) -> list[str]:
     if not arguments:
         return [f"command(regex:{prefix}{escaped_base}\\b(?:\\s+.*)?)"]
 
-    if arguments.endswith("/"):
-        escaped_args = re.escape(arguments.rstrip("/"))
-        arg_suffix = "/+(?:\\s+.*)?"
-    elif arguments.endswith("~"):
-        escaped_args = re.escape(arguments)
-        arg_suffix = "/*(?:\\s+.*)?"
-    else:
-        escaped_args = re.escape(arguments)
-        arg_suffix = "(?:\\s+.*)?"
-
+    escaped_args = re.escape(arguments)
     return [
-        f"command(regex:{prefix}{escaped_base}\\b\\s+{escaped_args}{arg_suffix})"
+        f"command(regex:{prefix}{escaped_base}\\b\\s+{escaped_args}(?:\\s+.*)?)"
     ]
 
 
@@ -352,7 +283,9 @@ def _clean_command_line(raw_line: str) -> str:
         return re.sub(r"\s+#.*$", "", line).strip()
 
 
-def expand_command_variants(raw_line: str) -> list[str]:
+def expand_command_variants(
+    raw_line: str, *, literal: bool = False
+) -> list[str]:
     """Expand a human-friendly command line into agent grant variants."""
     line = _clean_command_line(raw_line)
     if not line:
@@ -377,19 +310,18 @@ def expand_command_variants(raw_line: str) -> list[str]:
         return []
 
     base_name = pathlib.Path(base_command).name
+    if literal:
+        normalized = f"{base_name} {arguments}" if arguments else base_name
+        return [f"command({normalized})"]
+
     if arguments == "help" and base_name in TRUSTED_HELP_TOOLS:
         return _expand_help_variants(base_name)
 
     results: list[str] = []
     if base_name in TOOL_SPECS:
-        if base_name == "git" and _is_git_clean_force(arguments):
-            results.extend(_expand_git_clean_force_variants())
-        else:
-            results.extend(TOOL_SPECS[base_name].expand(arguments))
+        results.extend(TOOL_SPECS[base_name].expand(arguments))
     elif base_name in PYTHON_COMMAND_NAMES:
         results.extend(_expand_python_variants(arguments))
-    elif base_name == "sed":
-        results.extend(_expand_sed_variants(base_command, arguments))
     else:
         results.extend(_expand_binary_variants(base_command, arguments))
 
@@ -399,6 +331,7 @@ def expand_command_variants(raw_line: str) -> list[str]:
 def read_command_list_file(
     file_path: pathlib.Path,
     *,
+    literal: bool = False,
     reasons: dict[str, str] | None = None,
 ) -> list[str]:
     """Read a permission list file and return expanded grant variants.
@@ -420,7 +353,7 @@ def read_command_list_file(
             if not stripped or stripped.startswith("#"):
                 pending_reason = None
                 continue
-            expanded = expand_command_variants(raw_line)
+            expanded = expand_command_variants(raw_line, literal=literal)
             grants.extend(expanded)
             if reasons is not None and pending_reason:
                 for grant in expanded:
@@ -445,6 +378,7 @@ def load_profile_grants(
     def _collect_rules(
         category_files: Sequence[str],
         *,
+        literal: bool = False,
         out_reasons: dict[str, str] | None = None,
     ) -> list[str]:
         rules: list[str] = []
@@ -452,13 +386,15 @@ def load_profile_grants(
             for perm_dir in permission_dirs:
                 file_path = perm_dir / filename
                 rules.extend(
-                    read_command_list_file(file_path, reasons=out_reasons)
+                    read_command_list_file(
+                        file_path, literal=literal, reasons=out_reasons
+                    )
                 )
         return list(dict.fromkeys(rules))
 
     return PermissionGrants(
         allow=_collect_rules(profile.allow),
-        deny=_collect_rules(profile.deny, out_reasons=reasons),
+        deny=_collect_rules(profile.deny, literal=True, out_reasons=reasons),
         ask=_collect_rules(profile.ask),
         reasons=reasons,
     )
