@@ -82,6 +82,7 @@ idk_cc_source_library(
     visibility = [
         "//build/bazel/rules/fidl:__subpackages__",
         "//sdk/lib/fidl_driver:__pkg__",
+        "//src/lib/fidl/contrib/fpromise:__pkg__",
     ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [
         ":cpp_base",
