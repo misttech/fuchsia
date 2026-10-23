@@ -18,6 +18,7 @@ test_suite(
         "//src/lib/assembly/components:components_test",
         "//src/lib/assembly/constants:constants_test",
         "//src/lib/assembly/container:container_test",
+        "//src/lib/assembly/fxfs:fxfs_test",
         "//src/lib/assembly/image_assembly_config:image_assembly_config_test",
         "//src/lib/assembly/images_config:images_config_test",
         "//src/lib/assembly/package_copy:package_copy_test",

@@ -106,7 +106,6 @@ _ALLOWED_PACKAGES = {
     "src/lib/assembly/domain_config": True,
     "src/lib/assembly/driver_manifest": True,
     "src/lib/assembly/fvm": True,
-    "src/lib/assembly/fxfs": True,
     "src/lib/assembly/image_assembly_config_builder": True,
     "src/lib/assembly/memory_buckets": True,
     "src/lib/assembly/named_file_map": True,
