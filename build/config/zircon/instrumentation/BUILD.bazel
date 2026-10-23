@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(ubsan-trap)
+# ubsan-trap is pure instrumentation with no runtime.
+# NOTE: This assumes is_gcc=false in Bazel.
+compiler_build_flags(
+    name = "ubsan-trap",
+    # If the toolchain configs already enable ubsan, don't change anything.
+    c_family_flags = select({
+        "//build/bazel/config/toolchain_tags/ubsan:true": [],
+        "//conditions:default": [
+            "-fsanitize=undefined",
+            "-fsanitize-trap=undefined",
+        ],
+    }),
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:ubsan-trap)

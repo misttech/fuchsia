@@ -207,11 +207,15 @@ compiler_config("nolibc") {
 
 # LINT.ThenChange(BUILD.bazel:nolibc)
 
+# LINT.IfChange(data_sections)
 config("data_sections") {
   cflags = [ "-fdata-sections" ]
   ldflags = cflags
 }
 
+# LINT.ThenChange(BUILD.bazel:data_sections)
+
+# LINT.IfChange(assert_levels)
 # The 'default_assert_level' will point to one of the assert_level_<n> values
 # below. This allows targets or toolchains to opt out from the default and
 # select a specific value.
@@ -242,6 +246,9 @@ variant("default_assert_level") {
   configs = [ ":assert_level_$zx_assert_level" ]
 }
 
+# LINT.ThenChange(BUILD.bazel:assert_levels)
+
+# LINT.IfChange(default_icf)
 # This is separate from default_optimize so it can be removed.
 config("default_icf") {
   if (optimize != "none" && optimize != "debug") {
@@ -251,10 +258,15 @@ config("default_icf") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:default_icf)
+
+# LINT.IfChange(no_threadsafe_statics)
 config("no_threadsafe_statics") {
   cflags_cc = [ "-fno-threadsafe-statics" ]
   cflags_objcc = cflags_cc
 }
+
+# LINT.ThenChange(BUILD.bazel:no_threadsafe_statics)
 
 # LINT.IfChange(no_fuzzer)
 config("no_fuzzer") {
@@ -265,12 +277,15 @@ config("no_fuzzer") {
 
 # LINT.ThenChange(BUILD.bazel:no_fuzzer)
 
+# LINT.IfChange(no_maybe_uninitialized)
 # TODO(https://fxbug.dev/42101776) Remove this once the warning with fit::variant is addressed.
 config("no_maybe_uninitialized") {
   if (is_gcc) {
     cflags = [ "-Wno-maybe-uninitialized" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:no_maybe_uninitialized)
 
 variant("user") {
   defines = [ "_ALL_SOURCE" ]
@@ -326,12 +341,15 @@ compiler_config("no-dynamic-linker") {
 
 # LINT.ThenChange(BUILD.bazel:no-dynamic-linker)
 
+# LINT.IfChange(integer-paranoia)
 config("integer-paranoia") {
   cflags = [
     "-fsanitize=integer-divide-by-zero,signed-integer-overflow",
     "-fsanitize-undefined-trap-on-error",
   ]
 }
+
+# LINT.ThenChange(BUILD.bazel:integer-paranoia)
 
 config("static-libc++") {
   ldflags = [ "-static-libstdc++" ]
@@ -356,6 +374,7 @@ config("static-libc++") {
   }
 }
 
+# LINT.IfChange(pure_and_rodso)
 # This config is used for code that needs to be purely position-independent
 # without using dynamic relocation. Since the compiler doesn't generally make
 # guarantees about this, it's sometimes necessary to disable specific
@@ -381,6 +400,9 @@ variant("rodso") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:pure_and_rodso)
+
+# LINT.IfChange(tiny)
 # This has to be variant() rather than config() to be used in the toolchain
 # configs list.
 variant("tiny") {
@@ -388,6 +410,8 @@ variant("tiny") {
   asmflags = cflags
   ldflags = cflags
 }
+
+# LINT.ThenChange(BUILD.bazel:tiny)
 
 # LINT.IfChange(static-pie)
 # Statically linked position independent executable.
@@ -415,6 +439,7 @@ compiler_config("link-no-pie") {
 
 # LINT.ThenChange(BUILD.bazel:static-pie)
 
+# LINT.IfChange(forbid-guard-variables)
 # Disallow C++ static initializers in functions that require runtime init.
 config("forbid-guard-variables") {
   if (!is_gcc) {
@@ -424,6 +449,8 @@ config("forbid-guard-variables") {
     ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:forbid-guard-variables)
 
 # LINT.IfChange(hermetic-code-blob)
 # This is used by hermetic_code_blob() in hermetic_code_blob.gni.

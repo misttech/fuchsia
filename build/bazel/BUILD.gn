@@ -447,6 +447,20 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/config/lto/config.gni:lto)
+
+  # LINT.IfChange(zx_assert_level)
+  declaration = "//build/config/zircon/levels.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "zx_assert_level"
+      value = "$zx_assert_level"
+      type = "string"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/config/zircon/levels.gni:zx_assert_level)
 }
 
 if (current_toolchain == default_toolchain) {

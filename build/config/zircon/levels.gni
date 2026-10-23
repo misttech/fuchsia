@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# LINT.IfChange(zx_assert_level)
 declare_args() {
   # Controls which asserts are enabled.
   #
@@ -12,3 +13,4 @@ declare_args() {
   # * 2 enables all asserts.
   zx_assert_level = 2
 }
+# LINT.ThenChange(//build/bazel/BUILD.gn:zx_assert_level)

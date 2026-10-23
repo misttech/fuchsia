@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_build_info//:args.bzl", "zx_assert_level")
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
@@ -52,6 +53,64 @@ compiler_build_flags(
 )
 # LINT.ThenChange(BUILD.gn:nolibc)
 
+# LINT.IfChange(data_sections)
+build_flags(
+    name = "data_sections",
+    cflags = ["-fdata-sections"],
+    ldflags = ["-fdata-sections"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:data_sections)
+
+# LINT.IfChange(assert_levels)
+# The 'default_assert_level' will point to one of the assert_level_<n> values
+# below. This allows targets or toolchains to opt out from the default and
+# select a specific value.
+[
+    build_flags(
+        name = "assert_level_{}".format(level),
+        defines = ["ZX_ASSERT_LEVEL={}".format(level)] + (["NDEBUG"] if level == 0 else []),
+        subflags = [
+            "//build/config/rust:debug_assertions" if level > 1 else "//build/config/rust:no_debug_assertions",
+        ],
+        visibility = ["//visibility:public"],
+    )
+    for level in [
+        0,
+        1,
+        2,
+    ]
+]
+
+build_flags(
+    name = "default_assert_level",
+    subflags = [":assert_level_{}".format(zx_assert_level)],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:assert_levels)
+
+# LINT.IfChange(default_icf)
+# This is separate from default_optimize so it can be removed.
+build_flags(
+    name = "default_icf",
+    subflags = select({
+        "//build/bazel/config/select/optimize:none": [],
+        "//build/bazel/config/select/optimize:debug": [],
+        "//conditions:default": ["//build/config:icf"],
+    }),
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:default_icf)
+
+# LINT.IfChange(no_threadsafe_statics)
+build_flags(
+    name = "no_threadsafe_statics",
+    cflags_cc = ["-fno-threadsafe-statics"],
+    # NOTE: cflags_objcc is not supported in Bazel.
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:no_threadsafe_statics)
+
 # LINT.IfChange(no_fuzzer)
 # NOTE: This assumes is_gcc=false in Bazel.
 build_flags(
@@ -60,6 +119,15 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:no_fuzzer)
+
+# LINT.IfChange(no_maybe_uninitialized)
+# TODO(https://fxbug.dev/42101776) Remove this once the warning with fit::variant is addressed.
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "no_maybe_uninitialized",
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:no_maybe_uninitialized)
 
 # LINT.IfChange(user-executable)
 # NOTE: This assumes is_gcc=false in Bazel.
@@ -83,6 +151,58 @@ compiler_build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:no-dynamic-linker)
+
+# LINT.IfChange(integer-paranoia)
+build_flags(
+    name = "integer-paranoia",
+    cflags = [
+        "-fsanitize=integer-divide-by-zero,signed-integer-overflow",
+        "-fsanitize-undefined-trap-on-error",
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:integer-paranoia)
+
+# LINT.IfChange(pure_and_rodso)
+# This config is used for code that needs to be purely position-independent
+# without using dynamic relocation. Since the compiler doesn't generally make
+# guarantees about this, it's sometimes necessary to disable specific
+# optimizations to ensure the code with this requirement doesn't get compiled in
+# ways that won't work. This config can be changed to add switches when those
+# needs arise.
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "pure",
+    # TODO(https://fxbug.dev/527515871): The pass in Clang that makes lookup
+    # tables PIC-friendly is disabled for aarch64 since the offset between
+    # data and text sections can be up to 4GB, but the pc-relative relocations
+    # used to make them pic-friendly has a range of +/-2GB which could potentially
+    # lead to overflows.
+    cflags = select({
+        "@platforms//cpu:arm64": ["-fno-jump-tables"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+)
+
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "rodso",
+    subflags = [":pure"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:pure_and_rodso)
+
+# LINT.IfChange(tiny)
+build_flags(
+    name = "tiny",
+    cflags = ["-mcmodel=tiny"],
+    # NOTE: asmflags is not supported. Bazel uses cflags.
+    # asmflags = ["-mcmodel=tiny"],
+    ldflags = ["-mcmodel=tiny"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:tiny)
 
 # LINT.IfChange(static-pie)
 # Statically linked position independent executable.
@@ -113,6 +233,19 @@ compiler_build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:static-pie)
+
+# LINT.IfChange(forbid-guard-variables)
+# Disallow C++ static initializers in functions that require runtime init.
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "forbid-guard-variables",
+    cflags_cc = [
+        "-Xclang",
+        "-fforbid-guard-variables",
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:forbid-guard-variables)
 
 # LINT.IfChange(hermetic-code-blob)
 extra_linker_flags(

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# LINT.IfChange(ubsan-trap)
 # ubsan-trap is pure instrumentation with no runtime.
 config("ubsan-trap") {
   # If the toolchain configs already enable ubsan, don't change anything.
@@ -20,3 +21,4 @@ config("ubsan-trap") {
     }
   }
 }
+# LINT.ThenChange(BUILD.bazel:ubsan-trap)
