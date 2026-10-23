@@ -2508,14 +2508,14 @@ alias(
 )
 
 alias(
-    name = "rustfix-0.9.7",
-    actual = "//third_party/rust_crates/vendor/rustfix-0.9.7:rustfix",
+    name = "rustfix-0.9.8",
+    actual = "//third_party/rust_crates/vendor/rustfix-0.9.8:rustfix",
     tags = ["manual"],
 )
 
 alias(
     name = "rustfix",
-    actual = "//third_party/rust_crates/vendor/rustfix-0.9.7:rustfix",
+    actual = "//third_party/rust_crates/vendor/rustfix-0.9.8:rustfix",
     tags = ["manual"],
 )
 
