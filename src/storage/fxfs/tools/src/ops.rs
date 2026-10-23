@@ -4,7 +4,7 @@
 
 use anyhow::{Error, bail};
 use chrono::{TimeZone, Utc};
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io_common as fio;
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::OpenFxFilesystem;
 use fxfs::fsck;

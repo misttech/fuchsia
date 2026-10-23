@@ -5,7 +5,7 @@
 use crate::fuse_attr::{create_file_attr, to_fxfs_time};
 use crate::fuse_errors::{FuseErrorParser, FxfsResult};
 use crate::fuse_fs::{FuseFs, FuseStrParser};
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io_common as fio;
 use fuchsia as _;
 use fuse3::Result;
 use fuse3::raw::prelude::{Filesystem as FuseFilesystem, *};

@@ -15,7 +15,7 @@ if (is_host) {
     edition = "2024"
     deps = [
       "//build/validate:non_production_tag",
-      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
       "//src/storage/fxfs:lib",
       "//src/storage/fxfs/crypto",
       "//src/storage/fxfs/crypto/insecure",
