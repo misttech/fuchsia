@@ -1,0 +1,57 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "rust",
+    srcs = [
+        "src/client.rs",
+        "src/error.rs",
+        "src/lib.rs",
+        "src/port_slab.rs",
+        "src/session/buffer/mod.rs",
+        "src/session/buffer/pool.rs",
+        "src/session/buffer/sys.rs",
+        "src/session/mod.rs",
+        "src/session/tx.rs",
+    ],
+    build_flags = [
+        "//build/config/rust/lints:deny_unused_results",
+        "//src/connectivity/network:performance_critical_rust_crate",
+    ],
+    crate_name = "netdevice_client",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    visibility = [
+        "//src/connectivity/lib/network-device:__pkg__",
+        "//src/connectivity/network/netstack3:__pkg__",
+        "//src/connectivity/wlan/testing/hw-sim:__subpackages__",
+        "//src/virtualization/tests/virtio_net_test_util:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/network/lib/explicit",
+        "//src/lib/async-utils",
+        "//src/lib/const-unwrap",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl_table_validation",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:arrayvec",
+        "//third_party/rust_crates/vendor:event-listener",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
