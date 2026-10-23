@@ -36,6 +36,7 @@ kernel_rust_mod("gicv3-rs") {
     "//zircon/kernel/lib/pow2_range_allocator:pow2-range-allocator-rs",
     "//zircon/kernel/lib/root_resource_filter:root_resource_filter_rs",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 source_set("v3") {

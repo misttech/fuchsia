@@ -231,6 +231,108 @@ bool cpu_suspend_one_wakes_another() {
   END_TEST;
 }
 
+// Verifies that a CPU does not lose a pending IPI when it suspends and resumes.
+//
+// Thread A, on CPU A, disables interrupts and waits for thread B, on the boot CPU, to start an
+// mp_sync_exec targeting CPU A.  Thread A then suspends CPU A.  The resulting generic IPI is either
+// already pending when CPU A suspends or it wakes CPU A.  Either way, it must still be pending when
+// CPU A resumes so that the task runs once thread A reenables interrupts.  Otherwise, thread B's
+// mp_sync_exec would not return.
+//
+// Note, this test only exercises the resume path that reinitializes the CPU's interrupt state on
+// platforms where suspending a CPU may power it down.
+bool cpu_suspend_sync_exec() {
+  BEGIN_TEST;
+
+  constexpr zx_duration_mono_t kTimeout = ZX_SEC(10);
+
+  if (!platform_supports_suspend_cpu()) {
+    printf("platform_suspend_cpu is not supported, skipping test\n");
+    END_TEST;
+  }
+
+  cpu_mask_t active_cpus = Scheduler::PeekActiveMask();
+  if (ktl::popcount(active_cpus) <= 1) {
+    printf("not enough active CPUs, skipping test\n");
+    END_TEST;
+  }
+
+  struct Arg {
+    const cpu_num_t target;
+    // Set by thread A once it has disabled interrupts.
+    ktl::atomic<bool> ready{false};
+    // Set by thread B just before it calls mp_sync_exec.
+    ktl::atomic<bool> sending{false};
+  };
+
+  thread_start_routine a_entry = [](void* arg_) -> int {
+    auto* arg = reinterpret_cast<Arg*>(arg_);
+
+    AutoPreemptDisabler apd;
+    InterruptDisableGuard irqd;
+
+    arg->ready.store(true, ktl::memory_order_release);
+    while (!arg->sending.load(ktl::memory_order_acquire)) {
+      arch::Yield();
+    }
+    return platform_suspend_cpu(PlatformAllowDomainPowerDown::No);
+  };
+
+  thread_start_routine b_entry = [](void* arg_) -> int {
+    auto* arg = reinterpret_cast<Arg*>(arg_);
+
+    while (!arg->ready.load(ktl::memory_order_acquire)) {
+      arch::Yield();
+    }
+    const cpu_num_t target = arg->target;
+    arg->sending.store(true, ktl::memory_order_release);
+
+    // Note, |arg| must not be used from here on since, on failure, the test may return before this
+    // thread does.
+    mp_sync_exec(mp_ipi_target::MASK, cpu_num_to_mask(target), [](void*) {}, nullptr);
+    return ZX_OK;
+  };
+
+  // As in cpu_suspend_one_wakes_another, thread B runs on the boot CPU and thread A runs on one of
+  // the secondaries.
+  ASSERT_TRUE(active_cpus & cpu_num_to_mask(BOOT_CPU_ID));
+  const cpu_num_t cpu_b = BOOT_CPU_ID;
+  active_cpus &= ~cpu_num_to_mask(BOOT_CPU_ID);
+  const cpu_num_t cpu_a = remove_cpu_from_mask(active_cpus);
+
+  Arg arg{.target = cpu_a};
+
+  // Create both threads before resuming either so that, if creating one fails, the other is not
+  // left running (e.g. thread A spinning forever on CPU A with interrupts disabled).
+  Thread* a = Thread::Create("suspend_sync_exec-a", a_entry, &arg, DEFAULT_PRIORITY);
+  Thread* b = Thread::Create("suspend_sync_exec-b", b_entry, &arg, DEFAULT_PRIORITY);
+  if (a == nullptr || b == nullptr) {
+    if (a != nullptr) {
+      a->Forget();
+    }
+    if (b != nullptr) {
+      b->Forget();
+    }
+    ASSERT_TRUE(false, "failed to create threads");
+  }
+  a->SetCpuAffinity(cpu_num_to_mask(cpu_a));
+  b->SetCpuAffinity(cpu_num_to_mask(cpu_b));
+  a->Resume();
+  b->Resume();
+
+  zx_status_t a_status;
+  ASSERT_OK(a->Join(&a_status, ZX_TIME_INFINITE));
+  ASSERT_OK(a_status);
+
+  // If the IPI was lost, thread B's mp_sync_exec does not return (at least not until some later
+  // generic IPI targets CPU A).  Fail rather than hang in that case.
+  zx_status_t b_status;
+  ASSERT_OK(b->Join(&b_status, zx_time_add_duration(current_mono_time(), kTimeout)));
+  ASSERT_OK(b_status);
+
+  END_TEST;
+}
+
 // Verify that when platform_supports_suspend_system() returns false, platform_suspend_system()
 // does not attempt to suspend and fails with ZX_ERR_NOT_SUPPORTED.  Secondary CPUs are unplugged so
 // that all of platform_suspend_system()'s preconditions are met.
@@ -285,6 +387,7 @@ UNITTEST_START_TESTCASE(platform_suspend_tests)
 UNITTEST("cpu_suspend_not_supported", cpu_suspend_not_supported)
 UNITTEST("cpu_suspend_pending_ipi", cpu_suspend_pending_ipi)
 UNITTEST("cpu_suspend_one_wakes_another", cpu_suspend_one_wakes_another)
+UNITTEST("cpu_suspend_sync_exec", cpu_suspend_sync_exec)
 UNITTEST("system_suspend_not_supported", system_suspend_not_supported)
 UNITTEST("system_suspend_pending_ipi", system_suspend_pending_ipi)
 UNITTEST_END_TESTCASE(platform_suspend_tests, "platform_suspend_tests", "platform suspend tests")

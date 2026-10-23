@@ -44,6 +44,8 @@ use page;
 use pin_init::stack_pin_init;
 use pow2_range_allocator::Pow2RangeAllocator;
 use regio::{AccessRestrictsTo, MmioBank, MmioPtr, Offset, Readable, RwSafe, RwUnsafe};
+#[cfg(ktest)]
+use unittest as _;
 use zbi::DcfgArmGicV3Driver;
 use zx_status::Status;
 
@@ -411,7 +413,7 @@ fn gic_redistributor_sleep(sleep: bool) {
     gic_wait_for_mask(&gicr_bank(cpu), regs::gicr_waker(), regs::WAKER_CHILDREN_ASLEEP, val);
 }
 
-fn gic_init_percpu_lpi(cpu: cpu_num_t) {
+fn gic_init_percpu_lpi(cpu: cpu_num_t, init: PercpuInit) {
     if LPI_PROP_VA.load(Ordering::Relaxed).is_null()
         || cpu as usize >= SMP_MAX_CPUS
         || LPI_PEND_PA[cpu as usize].load(Ordering::Relaxed) == 0
@@ -426,6 +428,12 @@ fn gic_init_percpu_lpi(cpu: cpu_num_t) {
     // redistributor state was retained), keep the existing configuration.
     let gicr_ctlr = gicr_read32(cpu, regs::gicr_ctlr());
     if (gicr_ctlr & regs::GICR_CTLR_ENABLE_LPIS) != 0 {
+        // When resuming, LPIs still being enabled means the redistributor retained its LPI
+        // configuration (and any pending LPIs) while the CPU was suspended, so keep it rather than
+        // reinitializing it, which would discard pending LPIs.
+        if init == PercpuInit::Resume {
+            return;
+        }
         gicr_write32(cpu, regs::gicr_ctlr(), gicr_ctlr & !regs::GICR_CTLR_ENABLE_LPIS);
         gicr_wait_for_rwp(cpu);
         if (gicr_read32(cpu, regs::gicr_ctlr()) & regs::GICR_CTLR_ENABLE_LPIS) != 0 {
@@ -433,18 +441,26 @@ fn gic_init_percpu_lpi(cpu: cpu_num_t) {
         }
     }
 
-    // Ensure the pending table is zeroed in memory before setting GICR_PENDBASER_PTZ.
-    let pend_va = paddr_to_physmap(PAddr(lpi_pend_pa)).0;
-    // SAFETY: The pending table is an `ITS_TABLE_SIZE` run allocated by `gic_alloc_its_table`
-    // that only this driver uses, mapped through the physmap, and LPIs are disabled on this
-    // redistributor so the GIC is not accessing it. Cleaning it only needs it to be mapped.
-    unsafe {
-        core::ptr::write_bytes(
-            core::ptr::with_exposed_provenance_mut::<u8>(pend_va),
-            0,
-            ITS_TABLE_SIZE,
-        );
-        arch_clean_cache_range(pend_va, ITS_TABLE_SIZE);
+    // When resuming, LPIs being disabled means the redistributor was reset while the CPU was
+    // suspended.  LPI pending state lives in the pending table in memory, which survives the
+    // reset, so preserve it (i.e. don't zero it or set GICR_PENDBASER_PTZ) rather than discarding
+    // LPIs that were pending when the CPU suspended.  When booting, start with no LPIs pending.
+    let zero_pending_table = init == PercpuInit::Boot;
+
+    if zero_pending_table {
+        // Ensure the pending table is zeroed in memory before setting GICR_PENDBASER_PTZ.
+        let pend_va = paddr_to_physmap(PAddr(lpi_pend_pa)).0;
+        // SAFETY: The pending table is an `ITS_TABLE_SIZE` run allocated by `gic_alloc_its_table`
+        // that only this driver uses, mapped through the physmap, and LPIs are disabled on this
+        // redistributor so the GIC is not accessing it. Cleaning it only needs it to be mapped.
+        unsafe {
+            core::ptr::write_bytes(
+                core::ptr::with_exposed_provenance_mut::<u8>(pend_va),
+                0,
+                ITS_TABLE_SIZE,
+            );
+            arch_clean_cache_range(pend_va, ITS_TABLE_SIZE);
+        }
     }
 
     // Program LPI Configuration Table (IDbits = 15 -> 16-bit INTIDs 0..65535).
@@ -465,14 +481,17 @@ fn gic_init_percpu_lpi(cpu: cpu_num_t) {
         unsafe { gicr_write64_unsafe(cpu, regs::gicr_propbaser(), propbaser) };
     }
 
-    // Program LPI Pending Table with PTZ (Pending Table Zero) set.
+    // Program LPI Pending Table, with PTZ (Pending Table Zero) set if it was zeroed above.
     let mut pendbaser = (lpi_pend_pa as u64 & regs::GICR_PENDBASER_ADDR_MASK)
         | regs::GICR_PENDBASER_SHAREABILITY_ISH
-        | regs::GICR_PENDBASER_INNER_CACHE_WB
-        | regs::GICR_PENDBASER_PTZ;
+        | regs::GICR_PENDBASER_INNER_CACHE_WB;
+    if zero_pending_table {
+        pendbaser |= regs::GICR_PENDBASER_PTZ;
+    }
     // SAFETY: `lpi_pend_pa` is this CPU's `ITS_TABLE_SIZE` pending table from
-    // `gic_alloc_its_table`, which is never freed, is large enough for 16-bit INTIDs and was
-    // zeroed above as PTZ declares.
+    // `gic_alloc_its_table`, which is never freed and is large enough for 16-bit INTIDs.  PTZ is
+    // only set if the table was zeroed above.  Otherwise, it holds the pending state the GIC left
+    // in it before the redistributor was reset.
     unsafe { gicr_write64_unsafe(cpu, regs::gicr_pendbaser(), pendbaser) };
     if (gicr_read64(cpu, regs::gicr_pendbaser()) & regs::GICR_PENDBASER_SHAREABILITY_MASK) == 0 {
         pendbaser = (pendbaser
@@ -679,7 +698,7 @@ fn gic_init_its(gicd_typer: u32) {
             return;
         }
     }
-    gic_init_percpu_lpi(0);
+    gic_init_percpu_lpi(0, PercpuInit::Boot);
 
     // Disable ITS before programming BASER and CBASER registers.
     let gits_ctlr = gits_read32(regs::gits_ctlr());
@@ -1027,6 +1046,63 @@ fn arm_ipi_halt_handler() {
     }
 }
 
+/// How `gic_init_percpu_early` initializes the calling CPU's interrupt state.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PercpuInit {
+    /// The CPU is booting (or being brought back online after being taken offline).
+    Boot,
+    /// The CPU is resuming from a suspend, possibly one that powered it down (see `suspend_cpu`).
+    Resume,
+}
+
+/// Performs early per-CPU initialization of the redistributor and CPU interface.
+///
+/// When resuming, care is taken not to discard interrupts that became pending while the CPU was
+/// suspended (or that were already pending when it suspended), such as an IPI that woke it.
+/// Dropping a pending IPI could, for example, leave an mp_sync_exec caller waiting indefinitely.
+/// Whether or not the redistributor retained its state while the CPU was powered down is up to the
+/// hardware.  If it was retained, pending interrupts are still pending.  If it was not, the
+/// redistributor was reset, so there are no pending SGIs or PPIs to clear, and LPI pending state,
+/// which lives in memory, is preserved (see `gic_init_percpu_lpi`).
+fn gic_init_percpu_early(init: PercpuInit) {
+    let cpu = curr_cpu_num();
+
+    // wake up the redistributor
+    gic_redistributor_sleep(false);
+
+    // redistributer config: configure sgi/ppi as non-secure group 1.
+    gicr_write32(cpu, regs::gicr_igroupr0(), !0);
+    gicr_write32(cpu, regs::gicr_igrpmod0(), 0);
+    gicr_wait_for_rwp(cpu);
+
+    // redistributer config: mask sgi/ppi, and when booting, clear any that are pending.
+    gicr_write32(cpu, regs::gicr_icenabler0(), 0xffffffff);
+    if init == PercpuInit::Boot {
+        gicr_write32(cpu, regs::gicr_icpendr0(), !0);
+    }
+    gicr_wait_for_rwp(cpu);
+
+    gic_init_percpu_lpi(cpu, init);
+
+    // enable system register interface
+    if !regs::read_sre() {
+        regs::write_sre_enable();
+        let sre = regs::read_sre();
+        debug_assert!(sre);
+    }
+
+    // set priority threshold to max.
+    regs::write_pmr(0xff);
+
+    // enable group 1 interrupts.
+    regs::write_igrpen(1);
+
+    // Ensure the virtual CPU interface is disabled when running at EL2.
+    if libarch::arm64::CURRENT_EL.read().el() >= 2 {
+        regs::write_ich_hcr(0);
+    }
+}
+
 /// Returns true if any PPIs are enabled on the calling CPU.
 fn is_ppi_enabled() -> bool {
     debug_assert!(ints_disabled());
@@ -1198,40 +1274,7 @@ impl InterruptControllerOps for Gicv3 {
     }
 
     fn init_percpu_early(&self) {
-        let cpu = curr_cpu_num();
-
-        // wake up the redistributor
-        gic_redistributor_sleep(false);
-
-        // redistributer config: configure sgi/ppi as non-secure group 1.
-        gicr_write32(cpu, regs::gicr_igroupr0(), !0);
-        gicr_write32(cpu, regs::gicr_igrpmod0(), 0);
-        gicr_wait_for_rwp(cpu);
-
-        // redistributer config: clear and mask sgi/ppi.
-        gicr_write32(cpu, regs::gicr_icenabler0(), 0xffffffff);
-        gicr_write32(cpu, regs::gicr_icpendr0(), !0);
-        gicr_wait_for_rwp(cpu);
-
-        gic_init_percpu_lpi(cpu);
-
-        // enable system register interface
-        if !regs::read_sre() {
-            regs::write_sre_enable();
-            let sre = regs::read_sre();
-            debug_assert!(sre);
-        }
-
-        // set priority threshold to max.
-        regs::write_pmr(0xff);
-
-        // enable group 1 interrupts.
-        regs::write_igrpen(1);
-
-        // Ensure the virtual CPU interface is disabled when running at EL2.
-        if libarch::arm64::CURRENT_EL.read().el() >= 2 {
-            regs::write_ich_hcr(0);
-        }
+        gic_init_percpu_early(PercpuInit::Boot);
     }
 
     fn init_percpu(&self) {
@@ -1396,7 +1439,9 @@ impl InterruptControllerOps for Gicv3 {
     }
 
     fn resume_cpu(&self) -> Result<(), Status> {
-        self.init_percpu_early();
+        // Unlike `init_percpu_early`, preserve any pending interrupts (see
+        // `gic_init_percpu_early`).
+        gic_init_percpu_early(PercpuInit::Resume);
         self.init_percpu();
         Ok(())
     }
@@ -1717,5 +1762,68 @@ pub unsafe extern "C" fn rust_arm_gicv3_init_late(_config: &DcfgArmGicV3Driver) 
             regs::GITS_REG_SIZE,
             zx_types::ZX_RSRC_KIND_MMIO,
         );
+    }
+}
+
+/// GICv3 driver unit tests.
+#[cfg(ktest)]
+#[unittest::suite(name = "gicv3")]
+mod tests {
+    use crate::arch_rs::InterruptDisableGuard;
+    use unittest::{assert_true, expect_ok, expect_true};
+
+    /// Returns true if `vector` (an SGI or PPI) is pending on `cpu`.
+    fn is_sgi_ppi_pending(cpu: cpu_num_t, vector: u32) -> bool {
+        (gicr_read32(cpu, regs::gicr_ispendr0()) & (1u32 << vector)) != 0
+    }
+
+    /// Verifies that suspend_cpu/resume_cpu do not discard a pending IPI.
+    #[test]
+    fn test_suspend_resume_preserves_pending_ipi() {
+        if GICR_BASE.load(Ordering::Relaxed).is_null() {
+            kprintln!("GICv3 is not in use, skipping test");
+            return true;
+        }
+
+        const MAX_POLLS: u32 = 1_000_000;
+        let vector = IPI_BASE.load(Ordering::Relaxed) + MpIpi::Reschedule as u32;
+        let cpu;
+        {
+            let _irqd = InterruptDisableGuard::new();
+            cpu = curr_cpu_num();
+
+            // Send a reschedule IPI to ourselves.  Interrupts are disabled, so it remains pending.
+            expect_ok!(GICV3_DRIVER.send_ipi(cpu_num_to_mask(cpu), MpIpi::Reschedule));
+            let pending_before = (0..MAX_POLLS).any(|_| {
+                core::hint::spin_loop();
+                is_sgi_ppi_pending(cpu, vector)
+            });
+            assert_true!(pending_before, "self IPI did not become pending");
+
+            // resume_cpu masks all SGIs and PPIs, then unmasks only the IPIs.  In the real suspend
+            // path, other per-CPU interrupts (e.g. the timer PPI) are unmasked again by their
+            // drivers (see platform_suspend_cpu).  This test bypasses that path, so save the
+            // enabled SGIs and PPIs and restore them after resuming.  Otherwise, this CPU would no
+            // longer receive timer interrupts.
+            let enabled_before = gicr_read32(cpu, regs::gicr_isenabler0());
+
+            let suspend_result = GICV3_DRIVER.suspend_cpu();
+            let resume_result = GICV3_DRIVER.resume_cpu();
+            let pending_after = is_sgi_ppi_pending(cpu, vector);
+
+            gicr_write32(cpu, regs::gicr_isenabler0(), enabled_before);
+            gicr_wait_for_rwp(cpu);
+
+            expect_ok!(suspend_result);
+            expect_ok!(resume_result);
+            expect_true!(pending_after);
+        }
+
+        // Now that interrupts are enabled again, the preserved IPI should be taken (harmlessly).
+        let taken = (0..MAX_POLLS).any(|_| {
+            core::hint::spin_loop();
+            !is_sgi_ppi_pending(cpu, vector)
+        });
+        expect_true!(taken);
     }
 }
