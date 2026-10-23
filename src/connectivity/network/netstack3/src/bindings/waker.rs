@@ -163,6 +163,24 @@ impl From<fnet_resources::WakeGroupToken> for WakeGroupId {
     }
 }
 
+/// Asserts [`GROUP_WAKEUP_SIGNAL`] on a wake group's token for as long as it is
+/// held.
+struct WakeSignalGuard<'a>(&'a zx::Event);
+
+impl<'a> WakeSignalGuard<'a> {
+    fn raise(token: &'a zx::Event) -> Self {
+        token.signal(zx::Signals::NONE, GROUP_WAKEUP_SIGNAL).expect("signal doesn't fail");
+        Self(token)
+    }
+}
+
+impl Drop for WakeSignalGuard<'_> {
+    fn drop(&mut self) {
+        let Self(token) = self;
+        token.signal(GROUP_WAKEUP_SIGNAL, zx::Signals::NONE).expect("signal doesn't fail");
+    }
+}
+
 #[derive(Debug)]
 struct WakeGroup {
     name: String,
@@ -228,10 +246,10 @@ impl WakeGroup {
         let Self { name, id, data_watcher, wake_watcher } = self;
         let WakeGroupId { token, koid: _ } = &id;
 
-        enum WakeGroupState {
+        enum WakeGroupState<'a> {
             Awake,
             Asleep,
-            Waking,
+            Waking(WakeSignalGuard<'a>),
         }
 
         // Start by assuming the client is awake. If they're asleep we'll catch
@@ -239,7 +257,6 @@ impl WakeGroup {
         let mut state = WakeGroupState::Awake;
 
         let _cleanup = scopeguard::guard((wake_groups, &id), |(wake_groups, id)| {
-            let _ = id.token.signal(GROUP_WAKEUP_SIGNAL, zx::Signals::NONE);
             // Note that sockets that were attached to this wake group still
             // hold onto their DataNotifiers, but without a data watcher, those
             // notifications are no-ops.
@@ -271,16 +288,14 @@ impl WakeGroup {
                         }
                         () = data_watcher.wait().fuse() => {
                             // Assert the wake signal to wake up the other side.
-                            token
-                                .signal(zx::Signals::NONE, GROUP_WAKEUP_SIGNAL)
-                                .expect("signal doesn't fail");
+                            let signal = WakeSignalGuard::raise(token);
                             debug!("notified wake group '{name}' {id:?} of incoming data");
 
-                            WakeGroupState::Waking
+                            WakeGroupState::Waking(signal)
                         }
                     }
                 }
-                WakeGroupState::Waking => {
+                WakeGroupState::Waking(signal) => {
                     wait_for_client_state(&wake_watcher, ClientState::Awake).await?;
 
                     // TODO(https://fxbug.dev/538164589): Hold delegated wake
@@ -289,9 +304,7 @@ impl WakeGroup {
                     // Deassert wake signal. When the other side is awake, we
                     // assume they're capable of staying awake until they're
                     // done processing the incoming data.
-                    token
-                        .signal(GROUP_WAKEUP_SIGNAL, zx::Signals::NONE)
-                        .expect("signal doesn't fail");
+                    drop(signal);
                     debug!("deasserted wake signal on '{name}' {id:?}");
 
                     WakeGroupState::Awake
