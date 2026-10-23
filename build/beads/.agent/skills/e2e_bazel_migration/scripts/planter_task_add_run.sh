@@ -23,11 +23,13 @@ set -euo pipefail
 usage() {
   cat <<EOF
 Usage: $(basename "$0") --target-dir=<DIR> --title=<TITLE> [--desc=<DESC>]
-         [--task-id=<ID>]
+         [--task-id=<ID>] [--add-only]
 
 Required:
   --target-dir=<DIR>   Directory to migrate, relative to \$FUCHSIA_DIR
-                       (e.g. src/connectivity/bluetooth/lib/bt-obex/objects).
+                       (e.g. src/connectivity/bluetooth/lib/bt-obex/objects),
+                       or a comma-separated list of directories to migrate
+                       together in one CL (e.g. src/lib/foo,src/lib/bar).
   --title=<TITLE>      Commit subject, at most 65 chars. Guideline form:
                        "[bazel_migration][<area>] <reference>", without
                        "Migrate".
@@ -36,9 +38,11 @@ Optional:
   --desc=<DESC>        Commit body. Footer lines in its last paragraph
                        (e.g. Bug:, Bazel-Migration-Target:) become
                        footers. Planter adds Test:, TAG: and Change-Id.
-  --task-id=<ID>       Planter task ID. Defaults to all components of
-                       --target-dir joined by "_" (e.g.
+  --task-id=<ID>       Planter task ID. Defaults to all components of the
+                       first --target-dir directory joined by "_" (e.g.
                        src_connectivity_bluetooth_lib_bt-obex_objects).
+  --add-only           Only queue the Planter task; do not run or upload it.
+                       Used to queue several tasks for \`planter fleet\`.
   -h, --help           Show this help.
 
 Environment:
@@ -53,11 +57,13 @@ TARGET_DIR=""
 TITLE=""
 DESC=""
 TASK_ID=""
+ADD_ONLY=""
 
 # Accepts both "--flag=value" and "--flag value".
 while (( $# > 0 )); do
   case "$1" in
     -h|--help) usage; exit 0 ;;
+    --add-only) ADD_ONLY=1 ;;
     --target-dir=*) TARGET_DIR="${1#*=}" ;;
     --title=*) TITLE="${1#*=}" ;;
     --desc=*) DESC="${1#*=}" ;;
@@ -79,14 +85,30 @@ done
 [[ -n "$TARGET_DIR" ]] || { usage >&2; die "--target-dir is required"; }
 [[ -n "$TITLE" ]] || { usage >&2; die "--title is required"; }
 
-# Normalize the target dir: strip a leading "//" and trailing "/".
-TARGET_DIR="${TARGET_DIR#//}"
-TARGET_DIR="${TARGET_DIR%/}"
+# Normalize each target dir: trim surrounding whitespace and slashes (e.g. a
+# leading "//" or a trailing "/"), then drop empty entries and duplicates. An empty entry
+# would otherwise resolve to $FUCHSIA_DIR itself, whose BUILD.gn exists.
+# `read` stops at the first newline, so turn newlines into separators first.
+TARGET_DIR="${TARGET_DIR//$'\n'/,}"
+IFS=',' read -r -a raw_dirs <<< "$TARGET_DIR"
+TARGET_DIRS=()
+for dir in "${raw_dirs[@]}"; do
+  dir="${dir#"${dir%%[![:space:]/]*}"}"
+  dir="${dir%"${dir##*[![:space:]/]}"}"
+  [[ -n "$dir" ]] || continue
+  for seen in "${TARGET_DIRS[@]}"; do
+    [[ "$seen" != "$dir" ]] || continue 2
+  done
+  TARGET_DIRS+=("$dir")
+done
+(( ${#TARGET_DIRS[@]} > 0 )) || die "--target-dir has no directories"
+TARGET_DIR="$(IFS=','; echo "${TARGET_DIRS[*]}")"
 
 if [[ -z "$TASK_ID" ]]; then
-  # All components of the target dir joined by "_", as defined in
-  # references/bazel_migration_planter.md.
-  TASK_ID="${TARGET_DIR//\//_}"
+  # All components of the first target dir joined by "_", as defined in
+  # references/bazel_migration_planter.md. Only the first dir is used to keep
+  # the ID short when several dirs are migrated together.
+  TASK_ID="${TARGET_DIRS[0]//\//_}"
 fi
 
 FUCHSIA_DIR="${FUCHSIA_DIR:-$HOME/fuchsia}"
@@ -96,8 +118,10 @@ PLANTER="$(command -v planter || echo "$HOME/.local/bin/planter")"
 [[ -x "$PLANTER" ]] || die "planter not found (install it with publish_prebuilt.sh)"
 [[ -f "$HOME/.planter/beads/build/beads/planter/machinery/prompts/coder.md" ]] \
   || die "run 'planter init-project' first"
-[[ -f "$FUCHSIA_DIR/$TARGET_DIR/BUILD.gn" ]] \
-  || die "no BUILD.gn in $FUCHSIA_DIR/$TARGET_DIR"
+for dir in "${TARGET_DIRS[@]}"; do
+  [[ -f "$FUCHSIA_DIR/$dir/BUILD.gn" ]] \
+    || die "no BUILD.gn in $FUCHSIA_DIR/$dir"
+done
 
 printf 'Commit message (Planter appends Test:, TAG: and Change-Id):\n\n%s\n\n' \
   "$TITLE"
@@ -116,10 +140,17 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   echo "DRY_RUN set; would run:"
   printf '%q ' "${add_cmd[@]}"
   echo
+  [[ -z "$ADD_ONLY" ]] || exit 0
   printf '%q ' "${run_cmd[@]}"
   echo
   printf '%q ' "${upload_cmd[@]}"
   echo
+  exit 0
+fi
+
+if [[ -n "$ADD_ONLY" ]]; then
+  "${add_cmd[@]}"
+  echo "Queued Planter task $TASK_ID; run it with 'planter fleet --task=$TASK_ID'."
   exit 0
 fi
 

@@ -6,13 +6,16 @@ Run the checks to verify if the required criteria for the Bazel migration are fu
 
 The Bazel migration uses the skills below.
 
-| Skill | Used for |
-| :---- | :------- |
-| `gmail` | Sending notifications |
-| `gsheets` | Reading and updating the **control table** |
-| `fuchsia-gerrit-cli` | Getting the CL number and posting CL review results |
-| `buganizer-cli` | Creating the Buganizer ticket |
-| `go-links` | Resolving go links |
+| Skill | Used for | Location |
+| :---- | :------- | :------- |
+| `gmail` | Sending notifications | Use the `skill_search` tool to find it |
+| `gsheets` | Reading and updating the **control table** | Use the `skill_search` tool to find it |
+| `fuchsia-gerrit-cli` | Getting the CL number and posting CL review results | `//.agents/skills/fuchsia-gerrit-cli` |
+| `buganizer-cli` | Creating the Buganizer ticket | Use the `skill_search` tool to find it |
+| `go-links` | Resolving go links | Use the `skill_search` tool to find it |
+| `fx-worktree` | Allocating worktree slots for the Planter fleet | `//.agents/skills/fx-worktree` |
+
+`//` is the root of the Fuchsia checkout.
 
 ### 1. Check the Installed Skills
 
@@ -22,7 +25,9 @@ The Bazel migration uses the skills below.
 
 ### 2. Install the Missing Skills
 
-1. For each missing skill, use the `skill_search` tool to search for it by name, and get the directory that contains its `SKILL.md`. The search result must have the same skill name (e.g. `buganizer-cli`).
+1. For each missing skill, get the directory that contains its `SKILL.md` from the "Location" column above.
+   * If the location is a directory in the Fuchsia checkout (e.g. `//.agents/skills/fx-worktree`), use that directory. Check that its `SKILL.md` exists and has the same skill name.
+   * Otherwise, use the `skill_search` tool to search for it by name. The search result must have the same skill name (e.g. `buganizer-cli`).
    * If the skill is not found, fail the Pre-Migration Checks step with the reason: "Failed to find the `<skill>` skill".
 
 2. Register the skill in `~/.gemini/config/skills.json` so that it is available in later sessions.
