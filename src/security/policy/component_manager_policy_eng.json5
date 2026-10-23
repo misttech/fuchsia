@@ -317,11 +317,14 @@
                 source_name: "build-info",
                 capability: "directory",
                 target_monikers: [
+                    "/core/adb",
                     "/core/build-info",
                     "/core/feedback",
                     "/core/system-update/omaha-client-service",
                     "/core/system-update/system-update-checker",
                     "/core/system-update/system-updater",
+                    "/core/system_recovery",
+                    "/core/system_recovery/pkg-recovery/system-updater",
                     "/toolbox",
 
                     // TODO(crbug.com/1326674): Is this still needed for one
