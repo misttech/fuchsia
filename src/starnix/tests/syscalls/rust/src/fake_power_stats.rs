@@ -89,7 +89,7 @@ fn reports() -> Vec<fpowerstats::Stats> {
             ],
         },
         fpowerstats::Stats {
-            entity: "dvfs_clk_lit".to_string(),
+            entity: "cap_dvfs_clk_lit".to_string(),
             state_residency_data: vec![
                 fpowerstats::StateResidency {
                     id: 0,

@@ -51,8 +51,9 @@ const POWER_STATE_STATS_FILE: &str = "power_state_stats";
 const CAP_SYSFS_DEVICE_NAME: &str = "cap_sysfs";
 
 /// Power entities whose names start with this prefix, followed by the name of a clock domain, are
-/// served as DVFS stats files.
-const DVFS_STATS_ENTITY_PREFIX: &str = "dvfs_";
+/// served as DVFS stats files. Like [`POWER_STATE_STATS_ENTITY`], the prefix names CAP, so that
+/// DVFS entities of other components are not served under [`CAP_SYSFS_DEVICE_NAME`].
+const DVFS_STATS_ENTITY_PREFIX: &str = "cap_dvfs_";
 
 /// Prefix of the name of the DVFS stats file of each clock domain, which is followed by the name of
 /// the clock domain.
@@ -712,7 +713,7 @@ mod tests {
             ..state(/* id = */ 0, /* entry_count = */ 7, /* total_time_ms = */ 120)
         };
         let stats = stats(
-            "dvfs_clk_lit",
+            "cap_dvfs_clk_lit",
             vec![fast, state(/* id = */ 1, /* entry_count = */ 0, /* total_time_ms = */ 0)],
         );
 
@@ -802,7 +803,16 @@ mod tests {
 
     #[::fuchsia::test]
     fn dvfs_entities_are_mapped_to_cap_sysfs_files() {
-        let names = ["dvfs_clk_lit", "dvfs_clk_mid0", "dvfs_", "dvfs_../x", "dvfs_a-b", "xdvfs_a"];
+        let names = [
+            "cap_dvfs_clk_lit",
+            "cap_dvfs_clk_mid0",
+            "cap_dvfs_",
+            "cap_dvfs_../x",
+            "cap_dvfs_a-b",
+            "xcap_dvfs_a",
+            // DVFS entities of other components are not served under cap_sysfs.
+            "dvfs_gpu",
+        ];
 
         let served: Vec<_> = names
             .into_iter()
