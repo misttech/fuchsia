@@ -662,10 +662,8 @@ def _build_fuchsia_product_bundle_impl(ctx):
     all_inputs += get_ffx_product_inputs(fuchsia_toolchain)
 
     pb_outdir = ctx.actions.declare_directory(ctx.label.name + "_out")
-    size_report = ctx.actions.declare_file(ctx.label.name + "_size_report.json")
     pb_outputs = [
         pb_outdir,
-        size_report,
         assembled_system_manifest,
     ]
     all_outputs += pb_outputs
@@ -686,9 +684,15 @@ def _build_fuchsia_product_bundle_impl(ctx):
         create_system_outdir_path,
         "--out-dir",
         pb_outdir.path,
-        "--gerrit-size-report",
-        size_report.path,
     ]
+
+    if ctx.attr.generate_size_report:
+        size_report = ctx.actions.declare_file(ctx.label.name + "_size_report.json")
+        all_outputs.append(size_report)
+        ffx_pb_invocation += [
+            "--gerrit-size-report",
+            size_report.path,
+        ]
 
     if delivery_blob_type:
         ffx_pb_invocation.append("--delivery-blob-type " + delivery_blob_type)
@@ -737,7 +741,9 @@ def _build_fuchsia_product_bundle_impl(ctx):
         progress_message = "Product Image and Bundle Creation for %s" % ctx.label,
         **LOCAL_ONLY_ACTION_KWARGS
     )
-    deps = [pb_outdir, size_report] + create_system_call_info.inputs
+    deps = [pb_outdir] + create_system_call_info.inputs
+    if ctx.attr.generate_size_report:
+        deps.append(size_report)
 
     # Scrutiny Validation
     if ctx.attr.main_scrutiny_config:
@@ -768,7 +774,7 @@ def _build_fuchsia_product_bundle_impl(ctx):
         ctx.attr.recovery,
     )
 
-    return [
+    providers = [
         DefaultInfo(
             executable = product_bundles_help_executable(ctx),
             files = depset(direct = deps),
@@ -779,14 +785,18 @@ def _build_fuchsia_product_bundle_impl(ctx):
             product_bundle_name = product_bundle_name,
             build_id_dirs = build_id_dirs,
         ),
-        FuchsiaSizeCheckerInfo(
-            size_report = size_report,
-        ),
         fuchsia_debug_symbol_info,
         OutputGroupInfo(
             build_id_dirs = depset(transitive = fuchsia_debug_symbol_info.build_id_dirs_mapping.values()),
         ),
     ]
+    if ctx.attr.generate_size_report:
+        providers.append(
+            FuchsiaSizeCheckerInfo(
+                size_report = size_report,
+            ),
+        )
+    return providers
 
 _build_fuchsia_product_bundle = rule(
     doc = """Create a product bundle (PB) for flashing, emulating, or updating a Fuchsia product to a target device.""",
@@ -796,6 +806,10 @@ _build_fuchsia_product_bundle = rule(
     attrs = {
         "product_bundle_name": attr.string(
             doc = "Name of the Fuchsia product. E.g. workstation_eng.x64",
+        ),
+        "generate_size_report": attr.bool(
+            doc = "Whether to generate a Gerrit size report for the product bundle.",
+            default = True,
         ),
         "delivery_blob_type": attr.string(
             doc = "Delivery blob type of the product bundle.",

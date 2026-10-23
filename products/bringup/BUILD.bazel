@@ -76,6 +76,7 @@ fuchsia_product(
 
 fuchsia_product_bundle(
     name = "product_bundle_with_tests.x64",
+    generate_size_report = False,
     main = ":image_with_tests.x64",
     product_bundle_name = "bringup_with_tests.x64",
     recovery = "//products/zedboot:x64",
@@ -112,6 +113,7 @@ fuchsia_product(
 
 fuchsia_product_bundle(
     name = "product_bundle_with_tests.arm64",
+    generate_size_report = False,
     main = ":image_with_tests.arm64",
     product_bundle_name = "bringup_with_tests.arm64",
     recovery = "//products/zedboot:arm64",
@@ -148,6 +150,7 @@ fuchsia_product(
 
 fuchsia_product_bundle(
     name = "product_bundle_with_tests.qemu-arm64",
+    generate_size_report = False,
     main = ":image_with_tests.qemu-arm64",
     product_bundle_name = "bringup_with_tests.qemu-arm64",
     recovery = "//products/zedboot:qemu-arm64",
@@ -184,6 +187,7 @@ fuchsia_product(
 
 fuchsia_product_bundle(
     name = "product_bundle_with_tests.vim3",
+    generate_size_report = False,
     main = ":image_with_tests.vim3",
     product_bundle_name = "bringup_with_tests.vim3",
     recovery = "//products/zedboot:vim3_recovery",
@@ -215,6 +219,7 @@ fuchsia_product(
 
 fuchsia_product_bundle(
     name = "product_bundle_with_tests.riscv64",
+    generate_size_report = False,
     main = ":image_with_tests.riscv64",
     product_bundle_name = "bringup_with_tests.riscv64",
     recovery = "//products/zedboot:riscv64",
