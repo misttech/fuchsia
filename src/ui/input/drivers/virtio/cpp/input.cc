@@ -185,6 +185,16 @@ zx_status_t InputDevice::Init() {
   StartIrqThread();
   DriverStatusOk();
 
+  zx::result<> add_service_result =
+      DdkAddService<fuchsia_input_report::Service>(fuchsia_input_report::Service::InstanceHandler({
+          .input_device = bindings_.CreateHandler(
+              this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
+      }));
+  if (add_service_result.is_error()) {
+    zxlogf(ERROR, "%s: failed to add service: %s", tag(), add_service_result.status_string());
+    return add_service_result.status_value();
+  }
+
   status = DdkAdd(ddk::DeviceAddArgs("virtio-input").set_inspect_vmo(inspector_.DuplicateVmo()));
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: failed to add device: %s", tag(), zx_status_get_string(status));

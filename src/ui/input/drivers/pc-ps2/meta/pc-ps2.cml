@@ -16,11 +16,18 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         bind: "meta/bind/i8042_bind.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         { protocol: "fuchsia.kernel.IoportResource" },
         { protocol: "fuchsia.kernel.IrqResource" },
         { service: "fuchsia.hardware.interrupt.Service" },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }

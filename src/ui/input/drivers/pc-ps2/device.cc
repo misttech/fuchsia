@@ -147,6 +147,17 @@ zx_status_t I8042Device::Bind() {
   zx_status_t status;
 #endif
 
+  zx::result<> add_service_result = DdkAddService<fuchsia_input_report::Service>(
+      fuchsia_input_report::Service::InstanceHandler({
+          .input_device = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
+      }),
+      kPortInfo[port_].devname);
+  if (add_service_result.is_error()) {
+    zxlogf(ERROR, "Failed to add service for %s: %s", kPortInfo[port_].devname,
+           add_service_result.status_string());
+    return add_service_result.status_value();
+  }
+
   status = DdkAdd(ddk::DeviceAddArgs(kPortInfo[port_].devname));
   if (status != ZX_OK) {
     return status;

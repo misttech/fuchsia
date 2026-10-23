@@ -12,7 +12,6 @@
 #include <lib/virtio/ring.h>
 
 #include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/mutex.h>
 #include <virtio/input.h>
 
@@ -22,8 +21,7 @@ namespace virtio {
 
 class InputDevice
     : public Device,
-      public ddk::Device<InputDevice, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin>,
-      public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT> {
+      public ddk::Device<InputDevice, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin> {
  public:
   // Max unacknowledged report count allowed for 1/2 second.
   // VirtIO input devices are event-driven via VirtQueue interrupt notifications.
@@ -110,6 +108,8 @@ class InputDevice
   inspect::Node metrics_root_;
   inspect::UintProperty total_report_count_;
   inspect::UintProperty last_event_timestamp_;
+
+  fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> bindings_;
 };
 
 }  // namespace virtio

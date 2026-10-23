@@ -240,6 +240,16 @@ zx_status_t Gt92xxDevice::Create(zx_device_t* device) {
     }
   }
 
+  zx::result<> add_service_result = goodix_dev->DdkAddService<fuchsia_input_report::Service>(
+      fuchsia_input_report::Service::InstanceHandler({
+          .input_device = goodix_dev->bindings_.CreateHandler(
+              goodix_dev.get(), goodix_dev->dispatcher_, fidl::kIgnoreBindingClosure),
+      }));
+  if (add_service_result.is_error()) {
+    zxlogf(ERROR, "gt92xx: Could not add service: %s", add_service_result.status_string());
+    return add_service_result.status_value();
+  }
+
   status = goodix_dev->DdkAdd(ddk::DeviceAddArgs("gt92xx-HidDevice")
                                   .set_inspect_vmo(goodix_dev->inspector_.DuplicateVmo()));
   if (status != ZX_OK) {

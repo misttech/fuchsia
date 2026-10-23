@@ -10,6 +10,9 @@
         compat: "driver/pc-ps2.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         {
             name: "acpi",
@@ -32,6 +35,12 @@
         {
             name: "irq000",
             service: "fuchsia.hardware.interrupt.Service",
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
         },
     ],
 }

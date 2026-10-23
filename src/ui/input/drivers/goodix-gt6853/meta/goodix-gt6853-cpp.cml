@@ -16,7 +16,9 @@
         allowed_scheduler_roles: [ "fuchsia.ui.input.drivers.goodix-gt6853.device" ],
         bind: "meta/bind/goodix-gt6853-bind.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         { protocol: "fuchsia.scheduler.RoleManager" },
         { service: "fuchsia.hardware.gpio.Service" },
@@ -26,5 +28,10 @@
             availability: "optional",
         },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }

@@ -20,7 +20,6 @@
 #include <threads.h>
 
 #include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/ref_counted.h>
 
 #include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
@@ -51,9 +50,7 @@ using DeviceType =
     ddk::Device<Gt6853Device, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin,
                 ddk::Unbindable>;
 
-class Gt6853Device : public DeviceType,
-                     public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT>,
-                     public fbl::RefCounted<Gt6853Device> {
+class Gt6853Device : public DeviceType, public fbl::RefCounted<Gt6853Device> {
  public:
   enum class Register : uint16_t {
     kDspMcuPower = 0x2010,
@@ -220,6 +217,8 @@ class Gt6853Device : public DeviceType,
   uint64_t report_count_ = 0;
   zx::duration total_latency_ = {};
   zx::duration max_latency_ = {};
+
+  fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> bindings_;
 };
 
 }  // namespace touch

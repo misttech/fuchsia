@@ -22,7 +22,6 @@
 #include <utility>
 
 #include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/mutex.h>
 #include <fbl/vector.h>
 
@@ -76,7 +75,7 @@ using DeviceType =
     ddk::Device<Gt92xxDevice, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin,
                 ddk::Unbindable>;
 
-class Gt92xxDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT> {
+class Gt92xxDevice : public DeviceType {
  public:
   struct SectionInfo {
     uint16_t address;
@@ -254,6 +253,8 @@ class Gt92xxDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
   uint64_t report_count_ = 0;
   zx::duration total_latency_ = {};
   zx::duration max_latency_ = {};
+
+  fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> bindings_;
 
   enum {
     kNoFirmware = 0,         // No firmware file was supplied

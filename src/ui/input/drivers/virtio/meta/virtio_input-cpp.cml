@@ -14,9 +14,16 @@
         compat: "driver/virtio_input-cpp.so",
         bind: "meta/bind/virtio_input_bind.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.pci.Service" },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }
