@@ -377,7 +377,7 @@ semver = "1.0.28"
 serde_yaml = "0.9.34+deprecated" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "4.0.1" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.2", default-features = false }
-signal-hook = "0.4.4"
+signal-hook = "0.4.5"
 syn = { version = "3.0.6", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.14.0"
 tar = "0.4.46"
@@ -1270,7 +1270,7 @@ groups = [ { name = "sha2-0.10", visibility = [ ":*", "//src/microfuchsia/tee/ru
 [gn.package.signal-hook."0.3.18"]
 rustflags = []
 
-[gn.package.signal-hook."0.4.4"]
+[gn.package.signal-hook."0.4.5"]
 rustflags = []
 
 [gn.package.slab."0.4.12"]

@@ -2286,13 +2286,13 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("signal-hook") {
-    public_deps = [ ":signal-hook-v0_4_4" ]
+    public_deps = [ ":signal-hook-v0_4_5" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("signal-hook-0.4.4") {
-    public_deps = [ ":signal-hook-v0_4_4" ]
+  group("signal-hook-0.4.5") {
+    public_deps = [ ":signal-hook-v0_4_5" ]
   }
 }
 
@@ -21985,18 +21985,18 @@ rustc_library("signal-hook-v0_3_18") {
   applicable_licenses = [ ":signal-hook-v0_3_18.license" ]
 }
 
-license("signal-hook-v0_4_4.license") {
+license("signal-hook-v0_4_5.license") {
   public_package_name = "signal_hook"
   license_files = [
-    "//third_party/rust_crates/vendor/signal-hook-0.4.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/signal-hook-0.4.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/signal-hook-0.4.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/signal-hook-0.4.5/LICENSE-MIT",
   ]
 }
 
-rustc_library("signal-hook-v0_4_4") {
+rustc_library("signal-hook-v0_4_5") {
   crate_name = "signal_hook"
-  source_root = "//third_party/rust_crates/vendor/signal-hook-0.4.4/src/lib.rs"
-  output_name = "signal_hook-dd35e2ed6d1c6e8d"
+  source_root = "//third_party/rust_crates/vendor/signal-hook-0.4.5/src/lib.rs"
+  output_name = "signal_hook-5ccdaf4bf123f592"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -22010,8 +22010,8 @@ rustc_library("signal-hook-v0_4_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=dd35e2ed6d1c6e8d",
-    "-Cextra-filename=-dd35e2ed6d1c6e8d",
+    "-Cmetadata=5ccdaf4bf123f592",
+    "-Cextra-filename=-5ccdaf4bf123f592",
     "--cfg=feature=\"channel\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"iterator\"",
@@ -22019,7 +22019,7 @@ rustc_library("signal-hook-v0_4_4") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":signal-hook-v0_4_4.license" ]
+  applicable_licenses = [ ":signal-hook-v0_4_5.license" ]
 }
 
 license("signal-hook-mio-v0_2_5.license") {
