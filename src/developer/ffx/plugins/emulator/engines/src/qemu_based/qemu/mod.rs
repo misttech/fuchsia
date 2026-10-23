@@ -17,9 +17,10 @@ use emulator_instance::{
 };
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::QEMU_TOOL;
-use ffx_emulator_common::find_unused_vsock_cid;
-use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
+use ffx_emulator_common::{find_unused_vsock_cid, validate_snapshot_name};
+use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail, SnapshotInfo};
 use fho::{Result, bug, return_bug, return_user_error, user_error};
+use monitor::Monitor;
 use serde_json::{Deserializer, Value, json};
 use std::env;
 use std::io::Write;
@@ -28,6 +29,7 @@ use std::process::Command;
 use std::time::{Duration, Instant, SystemTime};
 
 mod image_conversion;
+mod monitor;
 
 #[derive(Clone, Debug)]
 pub struct QemuEngine {
@@ -95,6 +97,32 @@ impl QemuEngine {
                 not provide a disk image which supports them."
             ),
         }
+    }
+
+    /// Connects to the monitor of the running emulator, to manage its snapshots.
+    fn connect_to_snapshot_monitor(&self) -> Result<Monitor> {
+        let name = self.data.get_name();
+        if self.get_engine_state() != EngineState::Running {
+            return_user_error!(
+                "Emulator '{name}' is not running (current state: {}). Snapshots can only be \
+                saved, loaded and listed while the emulator is running.",
+                self.get_engine_state()
+            );
+        }
+        let emu_config = self.data.get_emulator_configuration();
+        if !emu_config.runtime.snapshots_enabled {
+            return_user_error!(
+                "Emulator '{name}' does not support snapshots. Snapshot support has to be \
+                enabled when the emulator instance is created, by starting it with \
+                `ffx emu start --enable-snapshots`."
+            );
+        }
+        let socket_path = self.get_path_for_console_type(
+            &emu_config.runtime.instance_directory,
+            EngineConsoleType::Command,
+        );
+        let memory = emu_config.device.memory.as_bytes().unwrap_or(u64::MAX);
+        Monitor::connect(&socket_path, monitor::snapshot_timeout(memory))
     }
 }
 
@@ -197,6 +225,20 @@ impl EmulatorEngine for QemuEngine {
 
     fn attach(&self, console: EngineConsoleType) -> Result<()> {
         self.attach_to(&self.data.get_emulator_configuration().runtime.instance_directory, console)
+    }
+
+    async fn save_snapshot(&mut self, name: &str) -> Result<()> {
+        validate_snapshot_name(name)?;
+        self.connect_to_snapshot_monitor()?.save_snapshot(name)
+    }
+
+    async fn load_snapshot(&mut self, name: &str) -> Result<()> {
+        validate_snapshot_name(name)?;
+        self.connect_to_snapshot_monitor()?.load_snapshot(name)
+    }
+
+    async fn list_snapshots(&mut self) -> Result<Vec<SnapshotInfo>> {
+        self.connect_to_snapshot_monitor()?.list_snapshots()
     }
 
     /// Build the Command to launch Qemu emulator running Fuchsia.
@@ -388,6 +430,7 @@ impl QemuBasedEngine for QemuEngine {
 
 #[cfg(test)]
 mod tests {
+    use super::monitor::tests::{SNAPSHOT_LIST, start_fake_monitor};
     use super::*;
     use crate::EngineBuilder;
     use crate::qemu_based::tests::make_fake_sdk;
@@ -395,6 +438,117 @@ mod tests {
     use std::ffi::OsStr;
     use std::fs;
     use tempfile::tempdir;
+
+    /// Returns an engine for an emulator instance which appears to be running, and which keeps
+    /// its monitor socket in `instance_directory`.
+    fn running_engine(
+        env: &ffx_config::TestEnv,
+        instance_directory: &Path,
+        snapshots_enabled: bool,
+    ) -> QemuEngine {
+        let mut cfg = EmulatorConfiguration::default();
+        cfg.runtime.name = "test-emu".to_string();
+        cfg.runtime.instance_directory = instance_directory.to_path_buf();
+        cfg.runtime.snapshots_enabled = snapshots_enabled;
+        let mut data = EmulatorInstanceData::new(cfg, EngineType::Qemu, EngineState::Running);
+        // Set the emulator PID to the PID of the test, so that the engine state is Running.
+        data.set_pid(std::process::id());
+        QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()))
+    }
+
+    #[fuchsia::test]
+    async fn test_save_snapshot() {
+        let env = ffx_config::test_init().unwrap();
+        let (temp, _socket_path, monitor) = start_fake_monitor(vec![("savevm booted", "")]);
+        let mut engine = running_engine(&env, temp.path(), true);
+
+        engine.save_snapshot("booted").await.expect("save snapshot");
+
+        assert_eq!(monitor.join().unwrap(), vec!["savevm booted"]);
+    }
+
+    #[fuchsia::test]
+    async fn test_load_snapshot() {
+        let env = ffx_config::test_init().unwrap();
+        let (temp, _socket_path, monitor) = start_fake_monitor(vec![
+            ("info snapshots", SNAPSHOT_LIST),
+            ("loadvm booted", ""),
+            ("info status", "VM status: running\r\n"),
+        ]);
+        let mut engine = running_engine(&env, temp.path(), true);
+
+        engine.load_snapshot("booted").await.expect("load snapshot");
+
+        assert_eq!(monitor.join().unwrap(), vec!["info snapshots", "loadvm booted", "info status"]);
+    }
+
+    #[fuchsia::test]
+    async fn test_list_snapshots() {
+        let env = ffx_config::test_init().unwrap();
+        let (temp, _socket_path, monitor) =
+            start_fake_monitor(vec![("info snapshots", SNAPSHOT_LIST)]);
+        let mut engine = running_engine(&env, temp.path(), true);
+
+        let snapshots = engine.list_snapshots().await.expect("list snapshots");
+
+        assert_eq!(
+            snapshots.iter().map(|snapshot| snapshot.name.as_str()).collect::<Vec<_>>(),
+            vec!["booted", "second"]
+        );
+        assert_eq!(monitor.join().unwrap(), vec!["info snapshots"]);
+    }
+
+    #[fuchsia::test]
+    async fn test_snapshots_require_running_emulator() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let mut cfg = EmulatorConfiguration::default();
+        cfg.runtime.name = "test-emu".to_string();
+        cfg.runtime.instance_directory = temp.path().to_path_buf();
+        cfg.runtime.snapshots_enabled = true;
+        let data = EmulatorInstanceData::new(cfg, EngineType::Qemu, EngineState::Staged);
+        let mut engine =
+            QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+
+        let expected = "Emulator 'test-emu' is not running";
+        let err = engine.save_snapshot("booted").await.expect_err("save fails").to_string();
+        assert!(err.contains(expected), "unexpected error: {err}");
+        let err = engine.load_snapshot("booted").await.expect_err("load fails").to_string();
+        assert!(err.contains(expected), "unexpected error: {err}");
+        let err = engine.list_snapshots().await.expect_err("list fails").to_string();
+        assert!(err.contains(expected), "unexpected error: {err}");
+    }
+
+    #[fuchsia::test]
+    async fn test_snapshots_require_snapshot_support() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let mut engine = running_engine(&env, temp.path(), false);
+
+        let expected = "Emulator 'test-emu' does not support snapshots";
+        let err = engine.save_snapshot("booted").await.expect_err("save fails").to_string();
+        assert!(err.contains(expected), "unexpected error: {err}");
+        let err = engine.load_snapshot("booted").await.expect_err("load fails").to_string();
+        assert!(err.contains(expected), "unexpected error: {err}");
+        let err = engine.list_snapshots().await.expect_err("list fails").to_string();
+        assert!(err.contains(expected), "unexpected error: {err}");
+    }
+
+    #[fuchsia::test]
+    async fn test_snapshots_require_valid_name() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        // There is no monitor for the engine to connect to, so these would fail differently if
+        // the names were not checked before they are sent to the emulator.
+        let mut engine = running_engine(&env, temp.path(), true);
+
+        for name in ["", "two words", "booted\nquit", "-booted"] {
+            let err = engine.save_snapshot(name).await.expect_err("save fails").to_string();
+            assert!(err.contains("Invalid snapshot name"), "unexpected error: {err}");
+            let err = engine.load_snapshot(name).await.expect_err("load fails").to_string();
+            assert!(err.contains("Invalid snapshot name"), "unexpected error: {err}");
+        }
+    }
 
     #[fuchsia::test]
     fn test_validate_snapshot_support() {

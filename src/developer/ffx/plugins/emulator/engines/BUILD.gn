@@ -18,6 +18,7 @@ if (is_host) {
       "src/qemu_based/mod.rs",
       "src/qemu_based/qemu/image_conversion.rs",
       "src/qemu_based/qemu/mod.rs",
+      "src/qemu_based/qemu/monitor.rs",
       "src/serialization.rs",
       "src/show_output.rs",
     ]

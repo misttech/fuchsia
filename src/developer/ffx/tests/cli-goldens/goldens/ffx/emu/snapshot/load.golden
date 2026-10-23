@@ -1,0 +1,42 @@
+{
+  "name": "load",
+  "description": "Restore a running Fuchsia emulator to a previously saved snapshot.",
+  "examples": [
+    "ffx emu snapshot load booted\nffx emu snapshot load booted --name fuchsia-emulator"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "name"
+        }
+      },
+      "optionality": "optional",
+      "long": "--name",
+      "short": null,
+      "description": "name of the emulator to restore, as specified to the start command. See a list of available instances by running `ffx emu list`. If no name is specified, and only one emulator is running, it will be selected.",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "The current state of the emulator, including any changes made to its disk\nsince the snapshot was saved, is discarded.\n\nConnections which the guest had open do not survive a load: an open\n`ffx target ssh` session hangs and has to be started again, while new ffx\ncommands reconnect to the emulator on their own. The guest's wall clock goes\nback to the time at which the snapshot was saved."
+  ],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "snapshot",
+      "description": "name of the snapshot to load, as specified to `ffx emu snapshot save`.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

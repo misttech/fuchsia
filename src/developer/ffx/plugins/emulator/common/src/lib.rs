@@ -22,9 +22,34 @@ pub mod tuntap;
 const VSOCK_PORT: u32 = 22;
 const VSOCK_CID_BOUNDS: (u32, u32) = (3, u32::MAX); // Inclusive
 
+/// The maximum length of the name of an emulator snapshot.
+const MAX_SNAPSHOT_NAME_LENGTH: usize = 64;
+
 /// A utility function for checking whether the host OS is MacOS.
 pub fn host_is_mac() -> bool {
     std::env::consts::OS == "macos"
+}
+
+/// Checks that `name` can be used as the name of an emulator snapshot. Snapshot names are passed
+/// to the emulator through its monitor console, so they are limited to characters which don't
+/// need to be quoted there.
+///
+/// This is stricter than QEMU on purpose: QEMU itself also accepts other names, such as ones
+/// which start with '_' or '.'. Keeping to a conservative set of names means that a name can
+/// always be passed on as it is, without it being taken for an option or for several words.
+pub fn validate_snapshot_name(name: &str) -> fho::Result<()> {
+    let mut chars = name.chars();
+    let valid = chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        && name.len() <= MAX_SNAPSHOT_NAME_LENGTH;
+    if !valid {
+        fho::return_user_error!(
+            "Invalid snapshot name '{name}'. Snapshot names must start with a letter or digit, \
+            can only contain letters, digits, '.', '_' and '-', and can be at most \
+            {MAX_SNAPSHOT_NAME_LENGTH} characters long."
+        );
+    }
+    Ok(())
 }
 
 /// A utility function for splitting a string at a single point and converting it into a tuple.
@@ -107,6 +132,33 @@ pub fn find_unused_vsock_cid() -> Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_snapshot_name() {
+        for name in ["booted", "Booted-2", "1", "a.b_c-d", &"a".repeat(MAX_SNAPSHOT_NAME_LENGTH)] {
+            assert!(validate_snapshot_name(name).is_ok(), "'{name}' should be valid");
+        }
+
+        for name in [
+            "",
+            " ",
+            "two words",
+            "-leading-dash",
+            ".hidden",
+            "_underscore",
+            "new\nline",
+            "semi;colon",
+            "quote\"",
+            "slash/",
+            "ünïcödé",
+            &"a".repeat(MAX_SNAPSHOT_NAME_LENGTH + 1),
+        ] {
+            let err =
+                validate_snapshot_name(name).expect_err(&format!("'{name}' should be invalid"));
+            assert!(matches!(err, fho::Error::User(_)), "expected a user error, got {err:?}");
+            assert!(err.to_string().contains("Invalid snapshot name"), "unexpected error: {err}");
+        }
+    }
 
     #[test]
     fn test_split_once() {

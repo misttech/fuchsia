@@ -105,6 +105,24 @@ impl From<VirtualDeviceV1> for VirtualDeviceInfo {
     }
 }
 
+/// Describes a snapshot of an emulator instance, as reported by the emulator.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct SnapshotInfo {
+    /// The name the snapshot was saved under.
+    pub name: String,
+
+    /// The size of the saved state of the virtual machine, e.g. "382 MiB". This does not include
+    /// the state of the disk.
+    pub vm_size: String,
+
+    /// The date and time, in the host's time zone, at which the snapshot was saved.
+    pub date: String,
+
+    /// How long the virtual machine had been running for when the snapshot was saved, formatted
+    /// as hours:minutes:seconds.milliseconds.
+    pub vm_clock: String,
+}
+
 /// Indicates which details the "show" command should return.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub enum ShowDetail {

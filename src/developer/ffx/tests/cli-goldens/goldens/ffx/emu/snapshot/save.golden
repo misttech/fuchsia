@@ -1,0 +1,42 @@
+{
+  "name": "save",
+  "description": "Save a snapshot of a running Fuchsia emulator.",
+  "examples": [
+    "ffx emu snapshot save booted\nffx emu snapshot save booted --name fuchsia-emulator"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "name"
+        }
+      },
+      "optionality": "optional",
+      "long": "--name",
+      "short": null,
+      "description": "name of the emulator to snapshot, as specified to the start command. See a list of available instances by running `ffx emu list`. If no name is specified, and only one emulator is running, it will be selected.",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "If a snapshot with the same name already exists, it is replaced.\n\nThe emulator is paused while its state is written to disk, which can take\nseveral seconds."
+  ],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "snapshot",
+      "description": "name to save the snapshot under. May contain letters, digits, '.', '_' and '-', and must start with a letter or digit.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

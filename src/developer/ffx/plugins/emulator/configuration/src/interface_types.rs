@@ -7,11 +7,11 @@
 //! types will be directly deserializable from the PBM, and converted into engine-specific types at
 //! runtime.
 
-use crate::enumerations::{EngineConsoleType, ShowDetail};
+use crate::enumerations::{EngineConsoleType, ShowDetail, SnapshotInfo};
 use async_trait::async_trait;
 use emulator_instance::{EmulatorConfiguration, EmulatorInstanceData, EngineState, EngineType};
 use ffx_config::EnvironmentContext;
-use fho::Result;
+use fho::{Result, user_error};
 use std::backtrace::Backtrace;
 use std::path::Path;
 use std::process::Command;
@@ -98,6 +98,33 @@ pub trait EmulatorEngine: Send + Sync {
             should not be used directly\n{:?}",
             bt
         )
+    }
+
+    /// Saves a snapshot of the running emulator under the given name. A snapshot captures the
+    /// state of the guest's memory, CPUs, devices and disk. If a snapshot with the same name
+    /// already exists, it is replaced.
+    ///
+    /// Snapshots are an optional capability: the default implementation, which is used by the
+    /// engines that don't support them, returns an error.
+    async fn save_snapshot(&mut self, _name: &str) -> Result<()> {
+        Err(user_error!("Snapshots are not supported by this emulator engine."))
+    }
+
+    /// Restores the running emulator to the state which was saved in the snapshot with the given
+    /// name. The emulator's current state is discarded.
+    ///
+    /// The default implementation, which is used by the engines that don't support snapshots,
+    /// returns an error.
+    async fn load_snapshot(&mut self, _name: &str) -> Result<()> {
+        Err(user_error!("Snapshots are not supported by this emulator engine."))
+    }
+
+    /// Returns the snapshots which have been saved for the running emulator.
+    ///
+    /// The default implementation, which is used by the engines that don't support snapshots,
+    /// returns an error.
+    async fn list_snapshots(&mut self) -> Result<Vec<SnapshotInfo>> {
+        Err(user_error!("Snapshots are not supported by this emulator engine."))
     }
 
     /// Output the details of an existing emulation instance. The engine should have been

@@ -15,6 +15,9 @@ emu_console.json
 emu_list.json
 emu_screenshot.json
 emu_show.json
+emu_snapshot_list.json
+emu_snapshot_load.json
+emu_snapshot_save.json
 emu_start.json
 emu_stop.json
 package_file-hash.json

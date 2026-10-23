@@ -1,0 +1,23 @@
+{
+  "name": "snapshot",
+  "description": "Save, load and list snapshots of a running Fuchsia emulator.",
+  "examples": [
+    "Start an emulator which supports snapshots, and save one once it has booted:\n  $ ffx emu start --engine qemu --enable-snapshots\n  $ ffx emu snapshot save booted\n\nRoll the running emulator back to that snapshot:\n  $ ffx emu snapshot load booted"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "A snapshot captures the complete state of a running emulator: the guest's\nmemory, CPUs, devices and disk.\n\nSnapshots are only supported by the \"qemu\" engine, and only for emulators\nwhich were started with `ffx emu start --enable-snapshots`.\n\nSnapshots are stored in the emulator's disk image, which is part of the\ninstance's working directory. Use `ffx emu stop --persist` to keep them when\nstopping the emulator; otherwise they are deleted along with the rest of the\ninstance."
+  ],
+  "commands": [],
+  "positionals": [],
+  "error_codes": []
+}

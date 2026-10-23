@@ -111,10 +111,10 @@ pub struct StartCommand {
     #[argh(switch)]
     pub edit: bool,
 
-    /// set up the emulator so that snapshots of its state can be saved and loaded. The disk
-    /// image is staged in the qcow2 format, which can hold snapshots, and the guest is given a
-    /// CPU model whose state can be saved. Snapshots are only supported by the "qemu" engine,
-    /// and cannot be used together with `--uefi`.
+    /// set up the emulator so that snapshots of its state can be saved and loaded with
+    /// `ffx emu snapshot`. The disk image is staged in the qcow2 format, which can hold
+    /// snapshots, and the guest is given a CPU model whose state can be saved. Snapshots are
+    /// only supported by the "qemu" engine, and cannot be used together with `--uefi`.
     #[argh(switch)]
     pub enable_snapshots: bool,
 

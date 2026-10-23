@@ -1,0 +1,33 @@
+{
+  "name": "list",
+  "description": "List the snapshots saved for a running Fuchsia emulator.",
+  "examples": [
+    "ffx emu snapshot list\nffx emu snapshot list --name fuchsia-emulator"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "name"
+        }
+      },
+      "optionality": "optional",
+      "long": "--name",
+      "short": null,
+      "description": "name of the emulator to list the snapshots of, as specified to the start command. See a list of available instances by running `ffx emu list`. If no name is specified, and only one emulator is running, it will be selected.",
+      "hidden": false
+    }
+  ],
+  "notes": [],
+  "commands": [],
+  "positionals": [],
+  "error_codes": []
+}

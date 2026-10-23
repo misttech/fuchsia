@@ -3,5 +3,9 @@ ffx/emu/console.golden
 ffx/emu/list.golden
 ffx/emu/screenshot.golden
 ffx/emu/show.golden
+ffx/emu/snapshot.golden
+ffx/emu/snapshot/list.golden
+ffx/emu/snapshot/load.golden
+ffx/emu/snapshot/save.golden
 ffx/emu/start.golden
 ffx/emu/stop.golden

@@ -23,6 +23,7 @@ if (is_host) {
       "commands/list:ffx_emulator_list",
       "commands/screenshot:ffx_emulator_screenshot",
       "commands/show:ffx_emulator_show",
+      "commands/snapshot:ffx_emulator_snapshot",
       "commands/start:ffx_emulator_start",
       "commands/stop:ffx_emulator_stop",
     ]
