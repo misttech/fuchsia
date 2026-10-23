@@ -11,7 +11,7 @@ use linux_uapi::{
 };
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::log_warn;
-use starnix_sync::{AuditQueueLock, AuditSinkLock, LockDepGuard, LockDepMutex};
+use starnix_sync::{AuditSinkLock, LockDepGuard, LockDepMutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{audit_status, error, pid_t};
 use std::collections::VecDeque;
@@ -61,6 +61,7 @@ struct AuditNetlinkClientRef {
     /// The PID of the registered audit sink.
     pid: pid_t,
     /// Deque for the audit messages, always present.
+    // TODO: https://fxbug.dev/438677236 - confirm single queue behaviour is valid.
     messages: VecDeque<AuditMessage>,
 }
 
@@ -124,9 +125,6 @@ pub struct AuditLogger {
     lost_audit_messages: AtomicU32,
     /// Monotonic counter for audit serial numbers
     serial_counter: AtomicCounter<u64>,
-    /// Audit message deque containing (audit type, audit string) up to `backlog_limit` messages.
-    /// TODO: https://fxbug.dev/438677236 - confirm single queue behaviour is valid.
-    audit_queue: LockDepMutex<VecDeque<AuditMessage>, AuditQueueLock>,
 }
 
 impl AuditLogger {
@@ -137,7 +135,6 @@ impl AuditLogger {
             // Audit event serial numbers start at 1 (0 is reserved to indicate an error in
             // `auparse_get_serial(3)`).
             serial_counter: AtomicCounter::new(1),
-            audit_queue: Default::default(),
         }
     }
 
@@ -215,8 +212,10 @@ impl AuditLogger {
 
     /// Retrieve the `AuditConfig` as `audit_status` struct.
     pub fn get_status(&self) -> audit_status {
-        let pid = self.configuration.audit_sink.lock().pid as u32;
-        let backlog = self.audit_queue.lock().len() as u32;
+        let (pid, backlog) = {
+            let audit_sink = self.configuration.audit_sink.lock();
+            (audit_sink.pid as u32, audit_sink.messages.len() as u32)
+        };
         audit_status {
             mask: Default::default(),
             enabled: Default::default(),
@@ -372,7 +371,6 @@ mod tests {
             configuration: AuditConfig::default(),
             lost_audit_messages: Default::default(),
             serial_counter: AtomicCounter::new(1),
-            audit_queue: Default::default(),
         };
 
         let re1 = Regex::new(r"^audit\(\d+\.\d{3}:1\): msg1$").unwrap();
@@ -382,5 +380,24 @@ mod tests {
         let re2 = Regex::new(r"^audit\(\d+\.\d{3}:2\): msg2$").unwrap();
         let msg2 = logger.prepend_audit_metadata(|| "msg2");
         assert!(re2.is_match(&msg2), "unexpected format: {msg2}");
+    }
+
+    #[::fuchsia::test]
+    fn get_status_reports_backlog_len() {
+        let logger = AuditLogger {
+            configuration: AuditConfig::new(
+                [ArgNameAndValue { name: "audit", value: Some("1") }].into_iter(),
+            ),
+            lost_audit_messages: Default::default(),
+            serial_counter: Default::default(),
+        };
+        assert_eq!(logger.get_status().pid, 0);
+        assert_eq!(logger.get_status().backlog, 0);
+
+        logger.audit_log(AUDIT_USER as u16, || "test audit message 1");
+        assert_eq!(logger.get_status().backlog, 1);
+
+        logger.audit_log(AUDIT_USER as u16, || "test audit message 2");
+        assert_eq!(logger.get_status().backlog, 2);
     }
 }

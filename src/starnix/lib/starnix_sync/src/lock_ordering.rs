@@ -305,7 +305,6 @@ lock_ordering! {
     Terminal(AndroidUsbCcToggleEnableLock),
     Terminal(AuditDenyCountsLock),
     Terminal(AuditNetlinkClientAuditResponseLock),
-    Terminal(AuditQueueLock),
     Terminal(AuditSinkLock),
     Terminal(BinderThreadRequeueEventLock),
     Terminal(BootedLock),

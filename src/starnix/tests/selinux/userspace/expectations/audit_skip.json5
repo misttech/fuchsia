@@ -5,6 +5,7 @@
         "NetlinkAuditTest.DeregisterInexistentAuditDaemon",
         "NetlinkAuditTest.ForkedChildReadsParentsQueuedMessage",
         "NetlinkAuditTest.ForkedChildUnregistersParentOnOneSocket",
+        "NetlinkAuditTest.GetStatusReportsPid",
         "NetlinkAuditTest.MessageReceivedOnlyOnDaemonSocket",
         "NetlinkAuditTest.RegisterAuditDaemon",
         "NetlinkAuditTest.RegisterAuditDaemonTwice",

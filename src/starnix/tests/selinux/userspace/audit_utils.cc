@@ -135,6 +135,56 @@ fit::result<int> UnregisterAuditDaemon(int fd) {
   return fit::ok();
 }
 
+// Helper to query the current audit status from the kernel via AUDIT_GET.
+fit::result<int, audit_utils::audit_status> GetAuditStatus(int fd) {
+  struct nlmsghdr req{};
+  req.nlmsg_len = NLMSG_LENGTH(0);
+  req.nlmsg_flags = NLM_F_REQUEST;
+  req.nlmsg_seq = 1;
+  req.nlmsg_type = AUDIT_GET;
+
+  auto send_res = SendNetlinkMessage(fd, &req, req.nlmsg_len);
+  if (send_res.is_error()) {
+    return send_res.take_error();
+  }
+
+  char buf[NETLINK_BUF_SIZE]{};
+  struct nlmsghdr* nlh;
+  do {
+    auto recv_res = ReceiveNetlinkMessage(fd, buf, sizeof(buf));
+    if (recv_res.is_error()) {
+      return recv_res.take_error();
+    }
+    if (recv_res.value() < static_cast<ssize_t>(NLMSG_LENGTH(0))) {
+      return fit::error(EINVAL);
+    }
+
+    nlh = reinterpret_cast<struct nlmsghdr*>(buf);
+    if (nlh->nlmsg_type == NLMSG_ERROR) {
+      if (recv_res.value() < static_cast<ssize_t>(NLMSG_LENGTH(sizeof(struct nlmsgerr)))) {
+        return fit::error(EBADMSG);
+      }
+      auto* err = reinterpret_cast<struct nlmsgerr*>(NLMSG_DATA(nlh));
+      return fit::error(-err->error);
+    }
+  } while (nlh->nlmsg_type != AUDIT_GET);
+  if (NLMSG_PAYLOAD(nlh, 0) < sizeof(std::declval<audit_utils::audit_status>().mask) +
+                                  sizeof(std::declval<audit_utils::audit_status>().enabled) +
+                                  sizeof(std::declval<audit_utils::audit_status>().failure) +
+                                  sizeof(std::declval<audit_utils::audit_status>().pid) +
+                                  sizeof(std::declval<audit_utils::audit_status>().rate_limit) +
+                                  sizeof(std::declval<audit_utils::audit_status>().backlog_limit) +
+                                  sizeof(std::declval<audit_utils::audit_status>().lost) +
+                                  sizeof(std::declval<audit_utils::audit_status>().backlog)) {
+    return fit::error(EBADMSG);
+  }
+
+  audit_utils::audit_status status{};
+  memcpy(&status, NLMSG_DATA(nlh),
+         std::min(static_cast<size_t>(NLMSG_PAYLOAD(nlh, 0)), sizeof(status)));
+  return fit::ok(status);
+}
+
 // Helper to send a user-space audit message (e.g., from an AVC denial).
 fit::result<int> SendUserAuditMessage(int fd, int seq, const std::string& message_text, bool ack) {
   const size_t payload_len = message_text.length() + 1;

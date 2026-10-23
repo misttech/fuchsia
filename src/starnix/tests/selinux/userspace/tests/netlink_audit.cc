@@ -39,6 +39,27 @@ TEST(NetlinkAuditTest, RegisterAuditDaemon) {
   EXPECT_TRUE(UnregisterAuditDaemon(fd.get()).is_ok());
 }
 
+TEST(NetlinkAuditTest, GetStatusReportsPid) {
+  fbl::unique_fd fd = OpenNetlinkAuditSocket();
+  ASSERT_TRUE(fd.is_valid());
+
+  auto initial_status = GetAuditStatus(fd.get());
+  ASSERT_TRUE(initial_status.is_ok()) << strerror(initial_status.error_value());
+  EXPECT_EQ(initial_status.value().pid, 0u);
+
+  ASSERT_TRUE(RegisterAsAuditDaemon(fd.get()).is_ok());
+
+  auto registered_status = GetAuditStatus(fd.get());
+  ASSERT_TRUE(registered_status.is_ok()) << strerror(registered_status.error_value());
+  EXPECT_EQ(registered_status.value().pid, static_cast<uint32_t>(getpid()));
+
+  EXPECT_TRUE(UnregisterAuditDaemon(fd.get()).is_ok());
+
+  auto unregistered_status = GetAuditStatus(fd.get());
+  ASSERT_TRUE(unregistered_status.is_ok()) << strerror(unregistered_status.error_value());
+  EXPECT_EQ(unregistered_status.value().pid, 0u);
+}
+
 TEST(NetlinkAuditTest, DeregisterInexistentAuditDaemon) {
   fbl::unique_fd fd = OpenNetlinkAuditSocket();
   ASSERT_TRUE(fd.is_valid());

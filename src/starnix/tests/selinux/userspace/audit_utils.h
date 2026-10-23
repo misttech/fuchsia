@@ -45,6 +45,8 @@ fit::result<int> RegisterAsAuditDaemon(int fd, pid_t pid = getpid());
 
 fit::result<int> UnregisterAuditDaemon(int fd);
 
+fit::result<int, audit_utils::audit_status> GetAuditStatus(int fd);
+
 fit::result<int> SendUserAuditMessage(int fd, int seq, const std::string& message_text,
                                       bool ack = true);
 
