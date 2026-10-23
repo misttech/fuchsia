@@ -242,7 +242,6 @@ def _fidl_library_impl(
         enable_hlcpp,
         enable_rust,
         enable_rust_next,
-        enable_rust_drivers,
         enable_banjo,
         enable_zither,
         additional_cpp_configs,
@@ -254,8 +253,6 @@ def _fidl_library_impl(
 
     if available and not testonly:
         fail("`available` is only allowed for `testonly` libraries.")
-    if enable_rust_drivers and not enable_rust:
-        fail("`enable_rust_drivers` requires `enable_rust`.")
     if additional_cpp_configs:
         fail("`additional_cpp_configs` is not yet supported. A different mechanism will be needed to support this in Bazel.")
 
@@ -361,7 +358,6 @@ def _fidl_library_impl(
             fidl_library_name = library_name,
             fidl_ir_json = fidl_ir_target_name,
             deps = deps,
-            contains_drivers = contains_drivers and enable_rust_drivers,
             testonly = testonly,
             visibility = visibility,
         )
@@ -593,11 +589,6 @@ If not specified, appropriate values will be determined based on the target API 
         "enable_rust_next": attr.bool(
             doc = "Set to False to disable next-generation Rust bindings for this library",
             default = True,
-            configurable = False,
-        ),
-        "enable_rust_drivers": attr.bool(
-            doc = "Set to True to enable experimental rust driver transport support",
-            default = False,
             configurable = False,
         ),
         "enable_banjo": attr.bool(

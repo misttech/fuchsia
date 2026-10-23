@@ -36,11 +36,10 @@ var flags = flagsDef{
 		"path to the rustfmt tool."),
 	rustfmtConfigPath: flag.String("rustfmt-config", "",
 		"path to rustfmt.toml."),
-	fdomain:        flag.Bool("fdomain", false, "if given, generate FDomain bindings."),
-	common:         flag.Bool("common", false, "if given, generate only the common (non-resource) data structures."),
-	use_common:     flag.String("use_common", "", "if given, depend on the given crate name for the common (non-resource) data structures."),
-	includeDrivers: flag.Bool("include-drivers", false, "whether to include driver transport protocols or not"),
-	apiCoverage:    flag.Bool("api-coverage", false, "whether to generate API coverage annotations"),
+	fdomain:     flag.Bool("fdomain", false, "if given, generate FDomain bindings."),
+	common:      flag.Bool("common", false, "if given, generate only the common (non-resource) data structures."),
+	use_common:  flag.String("use_common", "", "if given, depend on the given crate name for the common (non-resource) data structures."),
+	apiCoverage: flag.Bool("api-coverage", false, "whether to generate API coverage annotations"),
 }
 
 // valid returns true if the parsed flags are valid.
@@ -76,7 +75,7 @@ func main() {
 
 	generator := codegen.NewGenerator(*flags.rustfmtPath, *flags.rustfmtConfigPath, *flags.fdomain, *flags.common, *flags.use_common, *flags.apiCoverage)
 	err = generator.GenerateFidl(
-		root, *flags.outputFilenamePath, *flags.includeDrivers)
+		root, *flags.outputFilenamePath)
 	if err != nil {
 		log.Fatalf("Error running generator: %v", err)
 	}

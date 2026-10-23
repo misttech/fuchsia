@@ -67,7 +67,7 @@ func NewGenerator(rustfmtPath, rustfmtConfigPath string, fdomain bool, common bo
 		})}
 }
 
-func (gen *Generator) GenerateFidl(ir fidlgen.Root, outputFilename string, includeDrivers bool) error {
-	tree := Compile(ir, includeDrivers, gen.fdomain, gen.common)
+func (gen *Generator) GenerateFidl(ir fidlgen.Root, outputFilename string) error {
+	tree := Compile(ir, gen.fdomain, gen.common)
 	return gen.GenerateFile(outputFilename, "GenerateSourceFile", tree)
 }

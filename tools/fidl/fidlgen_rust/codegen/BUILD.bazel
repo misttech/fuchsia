@@ -21,7 +21,6 @@ go_library(
         "alias.tmpl",
         "bits.tmpl",
         "const.tmpl",
-        "driver_protocol.tmpl",
         "enum.tmpl",
         "protocol.tmpl",
         "service.tmpl",

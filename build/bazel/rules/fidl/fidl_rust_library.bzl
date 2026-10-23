@@ -14,7 +14,6 @@ def fidl_rust_library(
         fidl_library_name,
         fidl_ir_json,
         deps,
-        contains_drivers,
         testonly,
         visibility):
     """
@@ -26,15 +25,13 @@ def fidl_rust_library(
         fidl_ir_json: `Label` pointing to a single file containing the FIDL IR
             representation of the `fidl_library_name` library.
         deps: List of `Label`s for FIDL libraries that the `fidl_library_name` library depends on.
-        contains_drivers: Boolean indicating whether the `fidl_library_name`
-            library supports drivers.
         testonly: usual meaning.
         visibility: usual meaning.
     """
 
-    _fidl_rust_library_flavor("fidl", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
-    _fidl_rust_library_flavor("common", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
-    _fidl_rust_library_flavor("fdomain", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
+    _fidl_rust_library_flavor("fidl", name, fidl_library_name, fidl_ir_json, deps, testonly, visibility)
+    _fidl_rust_library_flavor("common", name, fidl_library_name, fidl_ir_json, deps, testonly, visibility)
+    _fidl_rust_library_flavor("fdomain", name, fidl_library_name, fidl_ir_json, deps, testonly, visibility)
     _fidl_rust_library_flex("fidl", name, fidl_library_name, testonly, visibility)
     _fidl_rust_library_flex("fdomain", name, fidl_library_name, testonly, visibility)
 
@@ -76,7 +73,7 @@ def _fidl_rust_flavor_label_name(label_name, flavor):
 def _fidl_rust_flavor_label(label, flavor):
     return "//%s:%s" % (label.package, _fidl_rust_flavor_label_name(label.name, flavor))
 
-def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility):
+def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, deps, testonly, visibility):
     flavor_label = name + "_" + _fidl_rust_flavor_label_suffix(flavor)
 
     fidlgen_label = flavor_label + "_fidlgen"
@@ -90,7 +87,6 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
         name = fidlgen_label,
         fidl_ir_json = fidl_ir_json,
         out = "bindings/rust/%s.rs" % _fidl_rust_flavor_file_name(name, flavor),
-        contains_drivers = contains_drivers,
         common = (flavor == "common"),
         fdomain = (flavor == "fdomain"),
         use_common = use_common,
@@ -116,14 +112,6 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
 
     if flavor != "common":
         library_deps.append(":" + _fidl_rust_flavor_label_name(name, "common"))
-
-    if contains_drivers:
-        # TODO(https://fxbug.dev/503359085): driver transport support
-        #     library_deps += [
-        #         "//src/lib/fidl/rust/fidl_driver",
-        #         "//sdk/lib/driver/runtime/rust",
-        #     ]
-        pass
 
     # `select()` must be appended last.
     library_deps += select({
@@ -209,8 +197,6 @@ def _fidlgen_rust_impl(ctx):
         rustfmt_config.path,
     ]
 
-    if ctx.attr.contains_drivers:
-        arguments.append("--include-drivers")
     if ctx.attr.common:
         arguments.append("--common")
     if ctx.attr.fdomain:
@@ -238,11 +224,6 @@ _fidlgen_rust = rule(
         "fidl_ir_json": attr.label(
             doc = "The FIDL IR for which to generate code.",
             allow_single_file = True,
-            mandatory = True,
-        ),
-        "contains_drivers": attr.bool(
-            doc = "Indicates if any of the FIDL files contain the driver transport or " +
-                  "references to the driver transport.",
             mandatory = True,
         ),
         "common": attr.bool(

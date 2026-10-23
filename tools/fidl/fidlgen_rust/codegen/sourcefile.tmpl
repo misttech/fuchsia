@@ -64,7 +64,6 @@ use fidl::{
 {{- else }}
 {{- range .Protocols }}
 {{ template "ProtocolDeclaration" . }}
-{{ template "DriverProtocolDeclaration" . }}
 {{- end }}
 {{- if not FDomain }}
 {{- range .Services }}

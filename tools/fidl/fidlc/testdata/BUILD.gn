@@ -90,7 +90,6 @@ foreach(filename, standalone_libraries) {
 
     if (filter_include(libaries_with_drivers, [ filename ]) == [ filename ]) {
       contains_drivers = true
-      enable_rust_drivers = true
     }
   }
 }

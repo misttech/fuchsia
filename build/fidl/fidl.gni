@@ -108,14 +108,6 @@ import("//build/testing/host_test_data.gni")
 #   enable_rust (optional flag, default to true)
 #     Set to false to disable Rust bindings for this library
 #
-#   enable_rust_drivers (optional flag, default to false)
-#     Set to true to enable experimental rust driver transport support
-#     outside the 'next' bindings. Rust driver transport bindings are
-#     always enabled for the rust_next bindings (see `enable_rust_next`)
-#     if `contains_drivers` is set, as that's the supported mechanism
-#     for using driver transport from rust.
-
-#
 #   enable_hlcpp (optional flag, default to false)
 #     Set to true to enable legacy HLCPP bindings for this library
 #
@@ -204,13 +196,10 @@ template("fidl") {
   enable_banjo = defined(invoker.enable_banjo) && invoker.enable_banjo
   enable_hlcpp = defined(invoker.enable_hlcpp) && invoker.enable_hlcpp
   enable_zither = defined(invoker.enable_zither) && invoker.enable_zither
-  enable_rust_drivers =
-      defined(invoker.enable_rust_drivers) && invoker.enable_rust_drivers
 
   not_needed([
                "enable_cpp",
                "enable_rust",
-               "enable_rust_drivers",
                "enable_rust_next",
                "enable_banjo",
                "enable_hlcpp",
@@ -467,7 +456,7 @@ template("fidl") {
                                  "visibility",
                                ])
         forward_variables_from(common_parameters, "*")
-        if (!is_host && enable_rust_drivers) {
+        if (!is_host) {
           forward_variables_from(invoker, [ "contains_drivers" ])
         }
         deps = [ "//sdk/categories:marker-${marker_category}" ]

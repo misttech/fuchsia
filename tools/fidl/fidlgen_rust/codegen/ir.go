@@ -1953,12 +1953,9 @@ func (dc *derivesCompiler) derivesForType(t Type) derives {
 	}
 }
 
-func Compile(r fidlgen.Root, includeDrivers bool, fdomain bool, isCommon bool) Root {
+func Compile(r fidlgen.Root, fdomain bool, isCommon bool) Root {
 	r = r.ForBindings("rust")
 	transports := []string{"Channel"}
-	if includeDrivers {
-		transports = append(transports, "Driver")
-	}
 	r = r.ForTransports(transports)
 
 	cratePrefix := "fidl"

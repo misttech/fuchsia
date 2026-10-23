@@ -219,10 +219,6 @@ template("_flex_crate") {
 #    - Required: The label of the target that generates the FIDL IR JSON file.
 #    - Type: label
 #
-#  * contains_drivers
-#    - Optional: The FIDL library contains drivers
-#    - Type: boolean
-#
 #  * deps
 #    - Optional: Dependencies added unaltered to the deps for this library.
 #         Used only to set non-fidl rust bindings. The use of public_deps is
@@ -241,9 +237,7 @@ template("fidl_rust") {
   assert(defined(invoker.fidl_ir_target),
          "fidl_rust(\"$target_name\") must define `fidl_ir_target`")
 
-  contains_drivers =
-      defined(invoker.contains_drivers) && invoker.contains_drivers
-
+  not_needed(invoker, [ "contains_drivers" ])
   base_crate_name = string_replace(invoker.library_name, ".", "_")
 
   common_target_name = "${target_name}_common"
@@ -269,17 +263,6 @@ template("fidl_rust") {
   shared_features = []
   if (defined(invoker.deps)) {
     shared_deps += invoker.deps
-  }
-  if (contains_drivers) {
-    shared_fidlgen_args += [ "--include-drivers" ]
-    if (is_fuchsia) {
-      shared_features = [ "driver" ]
-
-      shared_deps += [ "//src/lib/fidl/rust/fidl_driver" ]
-
-      # TODO: incorporate this into fidl_driver
-      shared_deps += [ "//sdk/lib/driver/runtime/rust" ]
-    }
   }
 
   # Standard "original flavour" Rust bindings.
