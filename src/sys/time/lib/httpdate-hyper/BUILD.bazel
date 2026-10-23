@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit test package (`:httpdate-hyper-tests`) stays in BUILD.gn because it
+# packages GN-only `//src/connectivity/network/dns:component` and
+# `//src/connectivity/network/netstack3:component-for-tests`.
+rustc_library(
+    name = "httpdate-hyper",
+    srcs = ["src/lib.rs"],
+    compile_data = [
+        "certs/ca.cert",
+        "certs/notafter",
+        "certs/notbefore",
+        "certs/server.certchain",
+        "certs/server.rsa",
+    ],
+    edition = "2024",
+    visibility = ["//src/sys/time/httpsdate_time_source:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia-hyper",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/webpki-roots-fuchsia",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:rustls",
+        "//third_party/rust_crates/vendor:rustls-webpki",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "httpdate_hyper_lib_test"
+rustc_test(
+    name = "httpdate-hyper_test",
+    crate = ":httpdate-hyper",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:base64",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper-util",
+        "//third_party/rust_crates/vendor:tokio-rustls",
+    ],
+)
