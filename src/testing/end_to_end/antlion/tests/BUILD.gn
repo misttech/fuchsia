@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//src/connectivity/policy/tests/e2e/test_lists.gni")
 import("//src/connectivity/wlan/tests/core/test_lists.gni")
 import("//src/connectivity/wlan/tests/wlancfg/test_lists.gni")
 
@@ -16,8 +17,11 @@ group("e2e_tests") {
       #
       # TODO(b/573468837): Turn down antlion builders and migrate to
       # fuchsia_internal builders.
-      core_tests_for_fyi_iperf + core_tests_for_fyi_iperf_attenuator +
-      core_tests_for_fyi_long + wlancfg_tests_for_presubmit +
-      wlancfg_tests_for_wlan_presubmit + wlancfg_tests_for_postsubmit +
-      wlancfg_tests_for_fyi + wlancfg_tests_for_fyi_long
+      connectivity_policy_e2e_tests_for_staging +
+      connectivity_policy_e2e_tests_for_postsubmit +
+      connectivity_policy_e2e_tests_for_presubmit + core_tests_for_fyi_iperf +
+      core_tests_for_fyi_iperf_attenuator + core_tests_for_fyi_long +
+      wlancfg_tests_for_presubmit + wlancfg_tests_for_wlan_presubmit +
+      wlancfg_tests_for_postsubmit + wlancfg_tests_for_fyi +
+      wlancfg_tests_for_fyi_long
 }

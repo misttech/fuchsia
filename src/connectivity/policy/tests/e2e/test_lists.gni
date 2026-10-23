@@ -1,0 +1,16 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# End-to-end tests that run in FYI/staging without blocking CI or CQ.
+connectivity_policy_e2e_tests_for_staging = []
+
+# End-to-end tests that run in blocking postsubmit CI.
+connectivity_policy_e2e_tests_for_postsubmit = [
+  "//src/connectivity/policy/tests/e2e:dhcpv4_duplicate_address_test",
+  "//src/connectivity/policy/tests/e2e:dhcpv4_interop_basic_test",
+  "//src/connectivity/policy/tests/e2e:dhcpv4_interop_combinatorial_options_test",
+]
+
+# End-to-end tests that run in blocking presubmit CQ as well as CI.
+connectivity_policy_e2e_tests_for_presubmit = []

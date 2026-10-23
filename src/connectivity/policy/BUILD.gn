@@ -14,3 +14,18 @@ group("tests") {
     "tests/integration:tests",
   ]
 }
+
+group("tests_e2e_staging") {
+  testonly = true
+  public_deps = [ "tests/e2e:tests_for_staging($host_toolchain)" ]
+}
+
+group("tests_e2e_stable_postsubmit_only") {
+  testonly = true
+  public_deps = [ "tests/e2e:tests_for_postsubmit($host_toolchain)" ]
+}
+
+group("tests_e2e_stable") {
+  testonly = true
+  public_deps = [ "tests/e2e:tests_for_presubmit($host_toolchain)" ]
+}

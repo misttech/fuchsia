@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//src/connectivity/policy/tests/e2e/test_lists.gni")
+import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
+
+assert(is_host,
+       "Network policy end-to-end tests only supported for host testing")
+
+antlion_host_test("dhcpv4_duplicate_address_test") {
+  main_source =
+      "//src/connectivity/policy/tests/e2e/Dhcpv4DuplicateAddressTest.py"
+  libraries = [
+    "//src/connectivity/policy/tests/e2e/dhcp_testing",
+    "//src/testing/end_to_end/libs",
+  ]
+}
+
+antlion_host_test("dhcpv4_interop_basic_test") {
+  main_source = "//src/connectivity/policy/tests/e2e/Dhcpv4InteropBasicTest.py"
+  libraries = [ "//src/connectivity/policy/tests/e2e/dhcp_testing" ]
+}
+
+antlion_host_test("dhcpv4_interop_combinatorial_options_test") {
+  main_source = "//src/connectivity/policy/tests/e2e/Dhcpv4InteropCombinatorialOptionsTest.py"
+  libraries = [ "//src/connectivity/policy/tests/e2e/dhcp_testing" ]
+}
+
+# Helper group so developers can easily add all host E2E tests to their build.
+group("tests_host") {
+  testonly = true
+  public_deps = [
+    ":tests_for_postsubmit",
+    ":tests_for_presubmit",
+    ":tests_for_staging",
+  ]
+}
+
+group("tests_for_staging") {
+  testonly = true
+  public_deps = connectivity_policy_e2e_tests_for_staging
+}
+
+group("tests_for_postsubmit") {
+  testonly = true
+  public_deps = connectivity_policy_e2e_tests_for_postsubmit
+}
+
+group("tests_for_presubmit") {
+  testonly = true
+  public_deps = connectivity_policy_e2e_tests_for_presubmit
+}
