@@ -161,6 +161,9 @@ class ViewManager : public fuchsia::accessibility::semantics::SemanticsManager,
   void ViewSignalHandler(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
                          const zx_packet_signal* signal);
 
+  // Closes the semantics channel for `koid` and cleans up associated state.
+  void CloseChannel(zx_koid_t koid, zx_status_t status);
+
   // |SemanticsSource|
   std::optional<fuchsia::ui::views::ViewRef> ViewRefClone(zx_koid_t view_ref_koid) override;
 
@@ -186,7 +189,7 @@ class ViewManager : public fuchsia::accessibility::semantics::SemanticsManager,
 
   fidl::Binding<fuchsia::accessibility::virtualkeyboard::Listener>
       virtualkeyboard_listener_binding_;
-  std::pair<zx_koid_t, bool> virtualkeyboard_visibility_;
+  std::pair<zx_koid_t, bool> virtualkeyboard_visibility_ = {ZX_KOID_INVALID, false};
 
   sys::ComponentContext* context_;
 };

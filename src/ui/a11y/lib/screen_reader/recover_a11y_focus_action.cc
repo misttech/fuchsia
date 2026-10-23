@@ -82,16 +82,9 @@ void RecoverA11YFocusAction::Run(a11y::gesture_util_v2::GestureContext gesture_c
     }
   }
 
-  const uint32_t focused_node_id = focused_node->node_id();
+  const uint32_t target_node_id = focused_node->node_id();
   auto promise =
-      ExecuteAccessibilityActionPromise(view_ref_koid, focused_node_id,
-                                        fuchsia::accessibility::semantics::Action::SHOW_ON_SCREEN)
-          .and_then([this, focused_node_id, view_ref_koid]() mutable {
-            return SetA11yFocusPromise(view_ref_koid, focused_node_id);
-          })
-          .and_then([this, a11y_focus, focused_node_id]() mutable {
-            return BuildSpeechTaskFromNodePromise(a11y_focus->view_ref_koid, focused_node_id);
-          })
+      ShowOnScreenFocusAndSpeakPromise(view_ref_koid, a11y_focus->node_id, target_node_id)
           // Cancel any promises if this class goes out of scope.
           .wrap_with(scope_);
   auto* executor = screen_reader_context_->executor();

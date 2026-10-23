@@ -16,6 +16,7 @@
 #include "src/ui/a11y/lib/screen_reader/speaker.h"
 #include "src/ui/a11y/lib/tts/tts_manager.h"
 #include "src/ui/a11y/lib/view/view_source.h"
+#include "src/ui/a11y/lib/virtual_keyboard/virtual_keyboard_manager.h"
 
 namespace a11y {
 
@@ -104,12 +105,13 @@ class ScreenReaderContext {
   // received.
   using OnNodeUpdateCallback = fit::function<void()>;
 
-  // |a11y_focus_manager| will be owned by this class.
-  // |tts_manager| is not kept, and must be valid only during this constructor, where
-  // |tts_engine_ptr_| is instantiated.
-  // |view_source| must outlive this object.
+  // `a11y_focus_manager` will be owned by this class.
+  // `tts_manager` is not kept, and must be valid only during this constructor, where
+  // `tts_engine_ptr_` is instantiated.
+  // `view_source` and `virtual_keyboard_manager` must outlive this object.
   explicit ScreenReaderContext(std::unique_ptr<A11yFocusManager> a11y_focus_manager,
                                TtsManager* tts_manager, ViewSource* view_source,
+                               VirtualKeyboardManager* virtual_keyboard_manager,
                                std::string locale_id = "en-US");
 
   virtual ~ScreenReaderContext();
@@ -188,6 +190,9 @@ class ScreenReaderContext {
   // Interface used to obtain view data, including semantics.
   ViewSource* const view_source_ = nullptr;
 
+  // Interface used to query visible virtual keyboards.
+  VirtualKeyboardManager* const virtual_keyboard_manager_ = nullptr;
+
   // Interface to the engine is owned by this class so that it can build and rebuild the Speaker
   // when the locale changes.
   fuchsia::accessibility::tts::EnginePtr tts_engine_ptr_;
@@ -230,9 +235,11 @@ class ScreenReaderContextFactory {
 
   virtual std::unique_ptr<ScreenReaderContext> CreateScreenReaderContext(
       std::unique_ptr<A11yFocusManager> a11y_focus_manager, TtsManager* tts_manager,
-      ViewSource* view_source, std::string locale_id = "en-US") {
+      ViewSource* view_source, VirtualKeyboardManager* virtual_keyboard_manager,
+      std::string locale_id) {
     return std::make_unique<ScreenReaderContext>(std::move(a11y_focus_manager), tts_manager,
-                                                 view_source, locale_id);
+                                                 view_source, virtual_keyboard_manager,
+                                                 std::move(locale_id));
   }
 };
 

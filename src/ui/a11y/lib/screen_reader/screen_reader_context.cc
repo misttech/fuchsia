@@ -11,14 +11,17 @@ namespace a11y {
 
 ScreenReaderContext::ScreenReaderContext(std::unique_ptr<A11yFocusManager> a11y_focus_manager,
                                          TtsManager* tts_manager, ViewSource* view_source,
+                                         VirtualKeyboardManager* virtual_keyboard_manager,
                                          std::string locale_id)
     : executor_(async_get_default_dispatcher()),
       a11y_focus_manager_(std::move(a11y_focus_manager)),
       tts_manager_(tts_manager),
       view_source_(view_source),
+      virtual_keyboard_manager_(virtual_keyboard_manager),
       locale_id_(std::move(locale_id)) {
   FX_CHECK(tts_manager);
   FX_CHECK(view_source_);
+  FX_CHECK(virtual_keyboard_manager_);
   tts_manager_->OpenEngine(tts_engine_ptr_.NewRequest(),
                            [](fuchsia::accessibility::tts::TtsManager_OpenEngine_Result result) {
                              if (result.is_err()) {
@@ -98,8 +101,12 @@ bool ScreenReaderContext::IsTextFieldFocused() const {
 }
 
 bool ScreenReaderContext::IsVirtualKeyboardFocused() const {
+  FX_DCHECK(virtual_keyboard_manager_);
   const auto a11y_focus = a11y_focus_manager_->GetA11yFocus();
   if (!a11y_focus) {
+    return false;
+  }
+  if (!virtual_keyboard_manager_->ViewHasVisibleVirtualkeyboard(a11y_focus->view_ref_koid)) {
     return false;
   }
   const auto* node = GetSemanticNode(a11y_focus->view_ref_koid, a11y_focus->node_id);

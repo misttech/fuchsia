@@ -166,6 +166,76 @@ TEST_F(ViewManagerTest, ClosesChannel) {
   EXPECT_FALSE(view_manager_->ViewHasSemantics(view_ref_helper_.koid()));
 }
 
+TEST_F(ViewManagerTest, RejectsInvalidViewRefRegistration) {
+  fuchsia::accessibility::semantics::SemanticTreePtr invalid_tree_ptr;
+  zx_status_t epitaph = ZX_OK;
+  invalid_tree_ptr.set_error_handler([&epitaph](zx_status_t status) { epitaph = status; });
+
+  semantics_manager()->RegisterViewForSemantics(
+      fuchsia::ui::views::ViewRef(),
+      fidl::InterfaceHandle<fuchsia::accessibility::semantics::SemanticListener>(),
+      invalid_tree_ptr.NewRequest());
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(epitaph, ZX_ERR_INVALID_ARGS);
+  EXPECT_FALSE(invalid_tree_ptr.is_bound());
+  EXPECT_FALSE(view_manager_->ViewHasSemantics(ZX_KOID_INVALID));
+}
+
+TEST_F(ViewManagerTest, RejectsDuplicateRegistration) {
+  view_manager_->SetSemanticsEnabled(true);
+  RunLoopUntilIdle();
+
+  auto original_wrapper = view_manager_->GetViewWrapper(view_ref_helper_.koid());
+  ASSERT_TRUE(original_wrapper);
+  auto* original_semantics = view_semantics_factory_->GetViewSemantics();
+  ASSERT_TRUE(original_semantics);
+
+  fuchsia::accessibility::semantics::SemanticTreePtr duplicate_tree_ptr;
+  zx_status_t duplicate_epitaph = ZX_OK;
+  duplicate_tree_ptr.set_error_handler(
+      [&duplicate_epitaph](zx_status_t status) { duplicate_epitaph = status; });
+
+  semantics_manager()->RegisterViewForSemantics(
+      view_ref_helper_.Clone(),
+      fidl::InterfaceHandle<fuchsia::accessibility::semantics::SemanticListener>(),
+      duplicate_tree_ptr.NewRequest());
+  RunLoopUntilIdle();
+
+  // The duplicate request should be rejected and the original ViewWrapper preserved.
+  EXPECT_EQ(duplicate_epitaph, ZX_ERR_ALREADY_BOUND);
+  EXPECT_FALSE(duplicate_tree_ptr.is_bound());
+  EXPECT_TRUE(original_wrapper);
+  EXPECT_EQ(view_semantics_factory_->GetViewSemantics(), original_semantics);
+  EXPECT_TRUE(view_manager_->ViewHasSemantics(view_ref_helper_.koid()));
+}
+
+TEST_F(ViewManagerTest, AllowsReRegistrationAfterChannelDisconnect) {
+  ViewRefHelper view_ref_helper_2;
+  fidl::InterfaceHandle<fuchsia::accessibility::semantics::SemanticListener> listener_handle;
+  auto listener_request = listener_handle.NewRequest();
+  fuchsia::accessibility::semantics::SemanticTreePtr tree_ptr;
+
+  semantics_manager()->RegisterViewForSemantics(view_ref_helper_2.Clone(),
+                                                std::move(listener_handle), tree_ptr.NewRequest());
+  RunLoopUntilIdle();
+  EXPECT_TRUE(view_manager_->ViewHasSemantics(view_ref_helper_2.koid()));
+
+  // Client closes the SemanticListener channel while the ViewRef remains alive.
+  listener_request.TakeChannel().reset();
+  RunLoopUntilIdle();
+  EXPECT_FALSE(view_manager_->ViewHasSemantics(view_ref_helper_2.koid()));
+
+  // Re-registering the same live ViewRef should now succeed.
+  fidl::InterfaceHandle<fuchsia::accessibility::semantics::SemanticListener> new_listener_handle;
+  auto new_listener_request = new_listener_handle.NewRequest();
+  fuchsia::accessibility::semantics::SemanticTreePtr new_tree_ptr;
+  semantics_manager()->RegisterViewForSemantics(
+      view_ref_helper_2.Clone(), std::move(new_listener_handle), new_tree_ptr.NewRequest());
+  RunLoopUntilIdle();
+  EXPECT_TRUE(view_manager_->ViewHasSemantics(view_ref_helper_2.koid()));
+}
+
 TEST_F(ViewManagerTest, SemanticsSourceViewHasSemantics) {
   view_manager_->SetSemanticsEnabled(true);
   RunLoopUntilIdle();
@@ -358,6 +428,66 @@ TEST_F(ViewManagerTest, VirtualkeyboardListenerUpdates) {
 
   keyboard_listener()->OnVisibilityChanged(false, []() {});
   EXPECT_FALSE(view_manager_->GetViewWithVisibleVirtualkeyboard());
+}
+
+TEST_F(ViewManagerTest, VirtualkeyboardCleanedUpOnViewDisconnect) {
+  fuchsia::accessibility::virtualkeyboard::ListenerPtr keyboard_client;
+  keyboard_registry()->Register(view_ref_helper_.Clone(), /* is_visible = */ true,
+                                keyboard_client.NewRequest());
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(keyboard_client.is_bound());
+  EXPECT_TRUE(view_manager_->ViewHasVisibleVirtualkeyboard(view_ref_helper_.koid()));
+
+  // Disconnect the view providing the virtual keyboard.
+  view_ref_helper_.SendEventPairSignal();
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(view_manager_->ViewHasVisibleVirtualkeyboard(view_ref_helper_.koid()));
+  EXPECT_FALSE(view_manager_->GetViewWithVisibleVirtualkeyboard());
+  EXPECT_FALSE(keyboard_client.is_bound());
+
+  // A subsequent view should now be able to register a virtual keyboard listener.
+  ViewRefHelper view_ref_helper_2;
+  semantics_manager()->RegisterViewForSemantics(
+      view_ref_helper_2.Clone(),
+      fidl::InterfaceHandle<fuchsia::accessibility::semantics::SemanticListener>(),
+      fidl::InterfaceRequest<fuchsia::accessibility::semantics::SemanticTree>());
+  RunLoopUntilIdle();
+
+  fuchsia::accessibility::virtualkeyboard::ListenerPtr keyboard_client_2;
+  keyboard_registry()->Register(view_ref_helper_2.Clone(), /* is_visible = */ true,
+                                keyboard_client_2.NewRequest());
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(keyboard_client_2.is_bound());
+  EXPECT_TRUE(view_manager_->ViewHasVisibleVirtualkeyboard(view_ref_helper_2.koid()));
+}
+
+TEST_F(ViewManagerTest, VirtualkeyboardCleanedUpOnListenerChannelDisconnect) {
+  fuchsia::accessibility::virtualkeyboard::ListenerPtr keyboard_client;
+  keyboard_registry()->Register(view_ref_helper_.Clone(), /* is_visible = */ true,
+                                keyboard_client.NewRequest());
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(keyboard_client.is_bound());
+  EXPECT_TRUE(view_manager_->ViewHasVisibleVirtualkeyboard(view_ref_helper_.koid()));
+
+  // Client drops the virtualkeyboard Listener channel while the view stays registered.
+  keyboard_client.Unbind();
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(view_manager_->ViewHasVisibleVirtualkeyboard(view_ref_helper_.koid()));
+  EXPECT_FALSE(view_manager_->GetViewWithVisibleVirtualkeyboard());
+
+  // Re-registering a virtual keyboard listener should succeed.
+  fuchsia::accessibility::virtualkeyboard::ListenerPtr keyboard_client_2;
+  keyboard_registry()->Register(view_ref_helper_.Clone(), /* is_visible = */ true,
+                                keyboard_client_2.NewRequest());
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(keyboard_client_2.is_bound());
+  EXPECT_TRUE(view_manager_->ViewHasVisibleVirtualkeyboard(view_ref_helper_.koid()));
 }
 
 TEST_F(ViewManagerTest, InjectorManagerTest) {

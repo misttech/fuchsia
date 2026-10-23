@@ -45,18 +45,21 @@ void ViewManager::RegisterViewForSemantics(
   // state(enabled/disabled) of screen reader.
 
   zx_koid_t koid = GetKoid(view_ref);
+  if (koid == ZX_KOID_INVALID) {
+    FX_LOGS(WARNING) << "Ignore SemanticTree registration for invalid ViewRef.";
+    semantic_tree_request.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
 
-  auto close_channel_callback = [this, koid](zx_status_t status) {
-    if (auto it = view_wrapper_map_.find(koid); it != view_wrapper_map_.end()) {
-      auto view_semantics = it->second->view_semantics();
-      if (view_semantics) {
-        FX_LOGS(INFO) << "View Manager is closing channel with koid:" << koid;
-        view_semantics->CloseChannel(status);
-      }
-    }
-    wait_map_.erase(koid);
-    view_wrapper_map_.erase(koid);
-  };
+  if (view_wrapper_map_.find(koid) != view_wrapper_map_.end() ||
+      wait_map_.find(koid) != wait_map_.end()) {
+    FX_LOGS(WARNING) << "View with koid " << koid
+                     << " is already registered; ignoring duplicate registration.";
+    semantic_tree_request.Close(ZX_ERR_ALREADY_BOUND);
+    return;
+  }
+
+  auto close_channel_callback = [this, koid](zx_status_t status) { CloseChannel(koid, status); };
 
   auto semantics_event_callback = [this, koid](SemanticsEventInfo event_info) {
     event_info.view_ref_koid = koid;
@@ -66,9 +69,10 @@ void ViewManager::RegisterViewForSemantics(
   };
 
   fuchsia::accessibility::semantics::SemanticListenerPtr semantic_listener = handle.Bind();
-  semantic_listener.set_error_handler([koid](zx_status_t status) {
+  semantic_listener.set_error_handler([this, koid](zx_status_t status) {
     FX_LOGS(INFO) << "Semantic Provider for view with koid " << koid
                   << " disconnected with status: " << zx_status_get_string(status);
+    CloseChannel(koid, status);
   });
 
   auto service =
@@ -109,6 +113,8 @@ void ViewManager::Register(
   // Note that we don't need to listen for the signals of this ViewRef here, since we are already
   // listening for them when the view started providing semantics.
   virtualkeyboard_listener_binding_.Bind(std::move(listener));
+  virtualkeyboard_listener_binding_.set_error_handler(
+      [this](zx_status_t status) { virtualkeyboard_visibility_ = {ZX_KOID_INVALID, false}; });
   virtualkeyboard_visibility_ = {koid, is_visible};
 }
 
@@ -142,8 +148,22 @@ void ViewManager::SetSemanticsEnabled(bool enabled) {
 void ViewManager::ViewSignalHandler(async_dispatcher_t* dispatcher, async::WaitBase* wait,
                                     zx_status_t status, const zx_packet_signal* signal) {
   zx_koid_t koid = fsl::GetKoid(wait->object());
+  CloseChannel(koid, ZX_ERR_PEER_CLOSED);
+}
+
+void ViewManager::CloseChannel(zx_koid_t koid, zx_status_t status) {
+  if (virtualkeyboard_visibility_.first == koid) {
+    virtualkeyboard_listener_binding_.Unbind();
+    virtualkeyboard_visibility_ = {ZX_KOID_INVALID, false};
+  }
   wait_map_.erase(koid);
-  view_wrapper_map_.erase(koid);
+  if (auto it = view_wrapper_map_.find(koid); it != view_wrapper_map_.end()) {
+    if (auto* view_semantics = it->second->view_semantics()) {
+      FX_LOGS(INFO) << "View Manager is closing channel with koid:" << koid;
+      view_semantics->CloseChannel(status);
+    }
+    view_wrapper_map_.erase(it);
+  }
 }
 
 bool ViewManager::ViewHasSemantics(zx_koid_t view_ref_koid) {

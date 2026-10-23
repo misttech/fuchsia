@@ -48,8 +48,9 @@ void LinearNavigationAction::Run(a11y::gesture_util_v2::GestureContext gesture_c
              const fuchsia::accessibility::semantics::Node* parent) {
             FX_DCHECK(node);
             return NodeIsDescribable(node) &&
-                   // ************************ Workaround for https://fxbug.dev/42142886  ************************
-                   // TODO(https://fxbug.dev/42144901): Remove workaround once flutter semantics are fixed.
+                   // ***************** Workaround for https://fxbug.dev/42142886 *****************
+                   // TODO(https://fxbug.dev/42144901): Remove workaround once flutter semantics are
+                   // fixed.
                    !SameInformationAsParent(node, parent);
           });
       break;
@@ -60,8 +61,9 @@ void LinearNavigationAction::Run(a11y::gesture_util_v2::GestureContext gesture_c
              const fuchsia::accessibility::semantics::Node* parent) {
             FX_DCHECK(node);
             return NodeIsDescribable(node) &&
-                   // ************************ Workaround for https://fxbug.dev/42142886  ************************
-                   // TODO(https://fxbug.dev/42144901): Remove workaround once flutter semantics are fixed.
+                   // ***************** Workaround for https://fxbug.dev/42142886 *****************
+                   // TODO(https://fxbug.dev/42144901): Remove workaround once flutter semantics are
+                   // fixed.
                    !SameInformationAsParent(node, parent);
           });
       break;
@@ -89,18 +91,10 @@ void LinearNavigationAction::Run(a11y::gesture_util_v2::GestureContext gesture_c
     return;
   }
 
-  uint32_t new_node_id = new_node->node_id();
-  auto promise =
-      ExecuteAccessibilityActionPromise(a11y_focus->view_ref_koid, new_node_id,
-                                        fuchsia::accessibility::semantics::Action::SHOW_ON_SCREEN)
-          .and_then([this, new_node_id, a11y_focus]() mutable {
-            return SetA11yFocusPromise(a11y_focus->view_ref_koid, new_node_id);
-          })
-          .and_then([this, a11y_focus, new_node_id]() mutable {
-            return BuildSpeechTaskFromNodePromise(a11y_focus->view_ref_koid, new_node_id);
-          })
-          // Cancel any promises if this class goes out of scope.
-          .wrap_with(scope_);
+  const uint32_t new_node_id = new_node->node_id();
+  auto promise = ShowOnScreenFocusAndSpeakPromise(koid, a11y_focus->node_id, new_node_id)
+                     // Cancel any promises if this class goes out of scope.
+                     .wrap_with(scope_);
   auto* executor = screen_reader_context_->executor();
   executor->schedule_task(std::move(promise));
 }

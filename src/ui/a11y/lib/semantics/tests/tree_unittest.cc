@@ -608,40 +608,40 @@ TEST_F(SemanticTreeTest, InspectOutput) {
   using testing::UnorderedElementsAre;
 
   auto node3 =
-      AllOf(NodeMatches(AllOf(
-                NameMatches("node_idx_0_id_3"),
-                PropertyList(UnorderedElementsAre(UintIs("id", 3), StringIs("label", "Node-3"))))),
+      AllOf(NodeMatches(
+                AllOf(NameMatches("node_idx_0_id_3"),
+                      PropertyList(UnorderedElementsAre(UintIs("id", 3), BoolIs("label", true))))),
             ChildrenMatch(UnorderedElementsAre()));
   auto node4 =
-      AllOf(NodeMatches(AllOf(
-                NameMatches("node_idx_1_id_4"),
-                PropertyList(UnorderedElementsAre(UintIs("id", 4), StringIs("label", "Node-4"))))),
+      AllOf(NodeMatches(
+                AllOf(NameMatches("node_idx_1_id_4"),
+                      PropertyList(UnorderedElementsAre(UintIs("id", 4), BoolIs("label", true))))),
             ChildrenMatch(UnorderedElementsAre()));
   auto node5 =
-      AllOf(NodeMatches(AllOf(
-                NameMatches("node_idx_0_id_5"),
-                PropertyList(UnorderedElementsAre(UintIs("id", 5), StringIs("label", "Node-5"))))),
+      AllOf(NodeMatches(
+                AllOf(NameMatches("node_idx_0_id_5"),
+                      PropertyList(UnorderedElementsAre(UintIs("id", 5), BoolIs("label", true))))),
             ChildrenMatch(UnorderedElementsAre()));
   auto node6 =
-      AllOf(NodeMatches(AllOf(
-                NameMatches("node_idx_1_id_6"),
-                PropertyList(UnorderedElementsAre(UintIs("id", 6), StringIs("label", "Node-6"))))),
+      AllOf(NodeMatches(
+                AllOf(NameMatches("node_idx_1_id_6"),
+                      PropertyList(UnorderedElementsAre(UintIs("id", 6), BoolIs("label", true))))),
             ChildrenMatch(UnorderedElementsAre()));
   auto node1 =
-      AllOf(NodeMatches(AllOf(
-                NameMatches("node_idx_0_id_1"),
-                PropertyList(UnorderedElementsAre(UintIs("id", 1), StringIs("label", "Node-1"))))),
+      AllOf(NodeMatches(
+                AllOf(NameMatches("node_idx_0_id_1"),
+                      PropertyList(UnorderedElementsAre(UintIs("id", 1), BoolIs("label", true))))),
             ChildrenMatch(UnorderedElementsAre(node3, node4)));
   auto node2 =
-      AllOf(NodeMatches(AllOf(
-                NameMatches("node_idx_1_id_2"),
-                PropertyList(UnorderedElementsAre(UintIs("id", 2), StringIs("label", "Node-2"))))),
+      AllOf(NodeMatches(
+                AllOf(NameMatches("node_idx_1_id_2"),
+                      PropertyList(UnorderedElementsAre(UintIs("id", 2), BoolIs("label", true))))),
             ChildrenMatch(UnorderedElementsAre(node5, node6)));
 
   auto root_node =
-      AllOf(NodeMatches(AllOf(
-                NameMatches("semantic_tree_root"),
-                PropertyList(UnorderedElementsAre(UintIs("id", 0), StringIs("label", "Node-0"))))),
+      AllOf(NodeMatches(
+                AllOf(NameMatches("semantic_tree_root"),
+                      PropertyList(UnorderedElementsAre(UintIs("id", 0), BoolIs("label", true))))),
             ChildrenMatch(UnorderedElementsAre(node1, node2)));
 
   auto tree_inspect_hierarchy = hierarchy.value().GetByPath({kInspectNodeName});
@@ -651,6 +651,59 @@ TEST_F(SemanticTreeTest, InspectOutput) {
       *tree_inspect_hierarchy,
       AllOf(NodeMatches(PropertyList(UnorderedElementsAre(UintIs("tree_update_count", 7u)))),
             ChildrenMatch(UnorderedElementsAre(root_node))));
+}
+
+TEST_F(SemanticTreeTest, InspectOutputStringPropertiesAreBooleans) {
+  SemanticTree::TreeUpdates updates;
+  auto root = CreateTestNode(SemanticTree::kRootNodeId, "test-label", {1u});
+  root.set_role(Role::TEXT_FIELD);
+  root.mutable_attributes()->set_secondary_label("test-secondary-label");
+  root.mutable_attributes()->set_secondary_action_description("test-action-desc");
+  root.mutable_states()->set_value("test-value");
+  updates.emplace_back(std::move(root));
+
+  auto child = CreateTestNode(1u, "");
+  child.set_role(Role::TEXT_FIELD);
+  child.mutable_attributes()->set_secondary_label("");
+  child.mutable_attributes()->set_secondary_action_description("");
+  child.mutable_states()->set_value("");
+  updates.emplace_back(std::move(child));
+
+  EXPECT_TRUE(tree_->Update(std::move(updates)));
+
+  fpromise::result<inspect::Hierarchy> hierarchy;
+  RunPromiseToCompletion(inspect::ReadFromInspector(*inspector_)
+                             .then([&](fpromise::result<inspect::Hierarchy>& result) {
+                               hierarchy = std::move(result);
+                             }));
+  ASSERT_TRUE(hierarchy.is_ok());
+
+  using namespace inspect::testing;
+  using testing::UnorderedElementsAre;
+
+  auto child_matcher =
+      AllOf(NodeMatches(AllOf(
+                NameMatches("node_idx_0_id_1"),
+                PropertyList(UnorderedElementsAre(
+                    UintIs("id", 1), StringIs("role", "TEXT_FIELD"),
+                    StringIs("location",
+                             "{ min: (x: 0.0, y: 0.0, z: 0.0), max: (x: 0.0, y: 0.0, z: 0.0) }"),
+                    BoolIs("label", false), BoolIs("secondary_label", false),
+                    BoolIs("secondary_action_description", false), BoolIs("value", false))))),
+            ChildrenMatch(UnorderedElementsAre()));
+
+  auto* root_hierarchy =
+      hierarchy.value().GetByPath({kInspectNodeName, SemanticTree::kTreeDumpInspectPropertyName});
+  ASSERT_NE(root_hierarchy, nullptr);
+  EXPECT_THAT(
+      *root_hierarchy,
+      AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
+                UintIs("id", 0), StringIs("role", "TEXT_FIELD"),
+                StringIs("location",
+                         "{ min: (x: 0.0, y: 0.0, z: 0.0), max: (x: 0.0, y: 0.0, z: 0.0) }"),
+                BoolIs("label", true), BoolIs("secondary_label", true),
+                BoolIs("secondary_action_description", true), BoolIs("value", true)))),
+            ChildrenMatch(UnorderedElementsAre(child_matcher))));
 }
 
 TEST_F(SemanticTreeTest, GetNodeToRootTransformWithV2TransformAndContainers) {

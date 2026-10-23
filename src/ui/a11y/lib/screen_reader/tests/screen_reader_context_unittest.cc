@@ -15,6 +15,7 @@
 #include "src/ui/a11y/lib/testing/view_ref_helper.h"
 #include "src/ui/a11y/lib/tts/tts_manager.h"
 #include "src/ui/a11y/lib/view/tests/mocks/mock_view_source.h"
+#include "src/ui/a11y/lib/virtual_keyboard/tests/mocks/mock_virtual_keyboard_manager.h"
 
 namespace accessibility_test {
 namespace {
@@ -30,7 +31,8 @@ class ScreenReaderContextTest : public gtest::RealLoopFixture {
 
     // Initialize screen reader context.
     screen_reader_context_ = std::make_unique<a11y::ScreenReaderContext>(
-        std::move(a11y_focus_manager), &tts_manager_, &mock_view_source_);
+        std::move(a11y_focus_manager), &tts_manager_, &mock_view_source_,
+        &mock_virtual_keyboard_manager_);
 
     // Create a mock view.
     mock_view_source_.CreateView(view_ref_helper_);
@@ -46,6 +48,7 @@ class ScreenReaderContextTest : public gtest::RealLoopFixture {
   MockAccessibilityFocusChainRequester mock_focus_requester_;
   MockAccessibilityFocusChainRegistry mock_focus_registry_;
   MockViewSource mock_view_source_;
+  MockVirtualKeyboardManager mock_virtual_keyboard_manager_;
   MockA11yFocusManager* a11y_focus_manager_ptr_ = nullptr;
   a11y::TtsManager tts_manager_;
   std::unique_ptr<a11y::ScreenReaderContext> screen_reader_context_;
@@ -81,8 +84,19 @@ TEST_F(ScreenReaderContextTest, IsVirtualKeyboardFocused) {
   node.set_node_id(0u);
   node.mutable_attributes()->set_is_keyboard_key(true);
   CreateOrUpdateSemanticNode(std::move(node));
+  mock_virtual_keyboard_manager_.set_view_with_virtual_keyboard(view_ref_helper_.koid());
 
   EXPECT_TRUE(screen_reader_context_->IsVirtualKeyboardFocused());
+}
+
+TEST_F(ScreenReaderContextTest, IsVirtualKeyboardFocusedFalseWithoutVisibleVirtualKeyboard) {
+  a11y_focus_manager_ptr_->SetA11yFocus(view_ref_helper_.koid(), 0u, [](auto...) {});
+  fuchsia::accessibility::semantics::Node node;
+  node.set_node_id(0u);
+  node.mutable_attributes()->set_is_keyboard_key(true);
+  CreateOrUpdateSemanticNode(std::move(node));
+
+  EXPECT_FALSE(screen_reader_context_->IsVirtualKeyboardFocused());
 }
 
 TEST_F(ScreenReaderContextTest, IsTextFieldFocused) {
@@ -118,7 +132,8 @@ TEST_F(ScreenReaderContextTest, FallbackToEnglishWhenLocaleIsUnknown) {
   auto a11y_focus_manager = std::make_unique<MockA11yFocusManager>();
 
   screen_reader_context_ = std::make_unique<a11y::ScreenReaderContext>(
-      std::move(a11y_focus_manager), &tts_manager_, &mock_view_source_, "sr-RS");
+      std::move(a11y_focus_manager), &tts_manager_, &mock_view_source_,
+      &mock_virtual_keyboard_manager_, "sr-RS");
 
   // Because the provided locale does not exist, check that it used en-US as a fallback.
   icu::Locale locale("en-US");

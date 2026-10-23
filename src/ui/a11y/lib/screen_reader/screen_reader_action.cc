@@ -95,6 +95,23 @@ fpromise::promise<> ScreenReaderAction::BuildSpeechTaskFromNodePromise(zx_koid_t
       });
 }
 
+fpromise::promise<> ScreenReaderAction::ShowOnScreenFocusAndSpeakPromise(
+    zx_koid_t view_koid, uint32_t initial_focus_node_id, uint32_t target_node_id) {
+  return ExecuteAccessibilityActionPromise(
+             view_koid, target_node_id, fuchsia::accessibility::semantics::Action::SHOW_ON_SCREEN)
+      .and_then([this, view_koid, initial_focus_node_id, target_node_id]() -> fpromise::promise<> {
+        auto current_focus = screen_reader_context_->GetA11yFocusManager()->GetA11yFocus();
+        if (!current_focus || current_focus->view_ref_koid != view_koid ||
+            current_focus->node_id != initial_focus_node_id) {
+          return fpromise::make_error_promise();
+        }
+        return SetA11yFocusPromise(view_koid, target_node_id);
+      })
+      .and_then([this, view_koid, target_node_id]() {
+        return BuildSpeechTaskFromNodePromise(view_koid, target_node_id);
+      });
+}
+
 void ScreenReaderAction::UpdateNavigationContext(zx_koid_t newly_focused_view_koid,
                                                  uint32_t newly_focused_node_id) {
   const auto& previous_navigation_context = screen_reader_context_->previous_navigation_context();
@@ -189,7 +206,8 @@ ScreenReaderMessageGenerator::ScreenReaderMessageContext ScreenReaderAction::Get
   // We need to report out what has changed during this navigation:
   // - which containers, if any, were entered (i.e., they are only in new_navigation_context)
   // - which containers, if any, were exited (i.e., they are only in old_navigation_context)
-  // - TODO(https://fxbug.dev/42181671): Eventually, we will likely want to report 'whether anything changed
+  // - TODO(https://fxbug.dev/42181671): Eventually, we will likely want to report 'whether anything
+  // changed
   //   about our context in the deepest common container' (e.g., table row/column index changes)
   auto previous_containers_iter = old_navigation_context.containers.begin();
   auto current_containers_iter = new_navigation_context.containers.begin();

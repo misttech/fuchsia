@@ -25,14 +25,14 @@ auto to_underlying(T value) {
 
 namespace a11y_manager {
 
-void A11yManagerInitializationState ::SetI18nProfileReady() {
+void A11yManagerInitializationState::SetI18nProfileReady() {
   has_i18N_profile_ = true;
   if (IsInitialized() && callback_) {
     callback_();
   }
 }
 
-void A11yManagerInitializationState ::SetA11yViewReady() {
+void A11yManagerInitializationState::SetA11yViewReady() {
   is_a11y_view_initialized_ = true;
   if (IsInitialized() && callback_) {
     callback_();
@@ -319,7 +319,8 @@ std::unique_ptr<a11y::ScreenReader> App::InitializeScreenReader() {
     locale_id = i18n_profile_->locales()[0].id;
   }
   auto screen_reader_context = screen_reader_context_factory_->CreateScreenReaderContext(
-      std::move(a11y_focus_manager), tts_manager_, view_manager_, locale_id);
+      std::move(a11y_focus_manager), tts_manager_, view_manager_, view_manager_,
+      std::move(locale_id));
   auto screen_reader = std::make_unique<a11y::ScreenReader>(
       std::move(screen_reader_context), view_manager_, view_manager_, gesture_listener_registry_,
       tts_manager_, state_.announce_screen_reader_enabled());

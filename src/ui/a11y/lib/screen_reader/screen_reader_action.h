@@ -69,6 +69,13 @@ class ScreenReaderAction {
                                                      Speaker::Options options = {
                                                          .interrupt = true});
 
+  // Returns a promise that requests `SHOW_ON_SCREEN` on `target_node_id` in `view_koid`, verifies
+  // that A11y focus is still at (`view_koid`, `initial_focus_node_id`) once `SHOW_ON_SCREEN`
+  // completes, sets A11y focus to `target_node_id`, and speaks the node description.
+  fpromise::promise<> ShowOnScreenFocusAndSpeakPromise(zx_koid_t view_koid,
+                                                       uint32_t initial_focus_node_id,
+                                                       uint32_t target_node_id);
+
   // Updates the current and previous navigation contexts based on the newly focused node.
   void UpdateNavigationContext(zx_koid_t newly_focused_view_koid, uint32_t newly_focused_node_id);
 

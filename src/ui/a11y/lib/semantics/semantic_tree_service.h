@@ -66,6 +66,9 @@ class SemanticTreeService : public fuchsia::accessibility::semantics::SemanticTr
   // Whether semantic updates are currently enabled.
   bool UpdatesEnabled() { return semantic_updates_enabled_; }
 
+  // Notifies the owner of the channel to close it and clean up associated state.
+  void CloseChannel(zx_status_t status);
+
  private:
   // Asks the semantics provider to perform an accessibility action on the
   // node with node id.

@@ -46,7 +46,11 @@ class ViewSemanticsTest : public gtest::TestLoopFixture {
 
     fuchsia::accessibility::semantics::SemanticListenerPtr semantic_listener_ptr;
     auto tree_service = semantic_tree_service_factory_->NewService(
-        koid_, std::move(semantic_listener_ptr), [](zx_status_t status) {},
+        koid_, std::move(semantic_listener_ptr),
+        [this](zx_status_t status) {
+          close_channel_called_ = true;
+          close_channel_status_ = status;
+        },
         [](a11y::SemanticsEventInfo event_info) {});
     tree_service_ = tree_service.get();
 
@@ -65,6 +69,8 @@ class ViewSemanticsTest : public gtest::TestLoopFixture {
   fuchsia::accessibility::semantics::SemanticTreePtr tree_ptr_;
   fuchsia::ui::views::ViewRef view_ref_;
   zx_koid_t koid_;
+  bool close_channel_called_ = false;
+  zx_status_t close_channel_status_ = ZX_OK;
 };
 
 TEST_F(ViewSemanticsTest, TestEnableSemantics) {
@@ -72,6 +78,14 @@ TEST_F(ViewSemanticsTest, TestEnableSemantics) {
 
   EXPECT_TRUE(semantic_tree_service_factory_->service());
   EXPECT_TRUE(semantic_tree_service_factory_->service()->UpdatesEnabled());
+}
+
+TEST_F(ViewSemanticsTest, DisconnectNotifiesCloseChannelCallback) {
+  tree_ptr_.Unbind();
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(close_channel_called_);
+  EXPECT_EQ(close_channel_status_, ZX_ERR_PEER_CLOSED);
 }
 
 }  // namespace

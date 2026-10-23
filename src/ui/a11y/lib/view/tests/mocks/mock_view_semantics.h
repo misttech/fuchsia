@@ -18,7 +18,7 @@ namespace accessibility_test {
 
 class MockViewSemantics : public a11y::ViewSemantics {
  public:
-  MockViewSemantics();
+  explicit MockViewSemantics(std::unique_ptr<a11y::SemanticTreeService> tree_service = nullptr);
   ~MockViewSemantics() override;
 
   // |ViewSemantics|
@@ -35,6 +35,7 @@ class MockViewSemantics : public a11y::ViewSemantics {
   MockSemanticTree* mock_semantic_tree() { return &mock_semantic_tree_; }
 
  private:
+  std::unique_ptr<a11y::SemanticTreeService> tree_service_;
   bool semantics_enabled_;
   MockSemanticTree mock_semantic_tree_;
 

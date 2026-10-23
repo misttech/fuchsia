@@ -5,13 +5,22 @@
 
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
+#include <zircon/status.h>
 
 namespace a11y {
 
 A11yViewSemantics::A11yViewSemantics(
     std::unique_ptr<SemanticTreeService> tree_service_ptr,
     fidl::InterfaceRequest<fuchsia::accessibility::semantics::SemanticTree> semantic_tree_request)
-    : semantic_tree_binding_(std::move(tree_service_ptr), std::move(semantic_tree_request)) {}
+    : semantic_tree_binding_(std::move(tree_service_ptr), std::move(semantic_tree_request)) {
+  semantic_tree_binding_.set_error_handler([this](zx_status_t status) {
+    FX_LOGS(INFO) << "SemanticTree channel disconnected with status: "
+                  << zx_status_get_string(status);
+    if (semantic_tree_binding_.impl()) {
+      semantic_tree_binding_.impl()->CloseChannel(status);
+    }
+  });
+}
 
 A11yViewSemantics::~A11yViewSemantics() { semantic_tree_binding_.Unbind(); }
 

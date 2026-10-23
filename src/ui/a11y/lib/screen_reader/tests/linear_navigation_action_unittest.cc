@@ -708,5 +708,57 @@ TEST_F(LinearNavigationActionTest, NextActionExitsList) {
   EXPECT_EQ(mock_speaker()->speak_node_message_contexts()[0].exited_containers[0].node_id(), 2u);
 }
 
+TEST_F(LinearNavigationActionTest, SameViewFocusChangedDuringShowOnScreenAbortsNavigation) {
+  AddNodeToSemanticTree();
+
+  mock_a11y_focus_manager()->UpdateA11yFocus(mock_semantic_provider()->koid(), kRootNodeId);
+
+  constexpr uint32_t kOtherNodeId = 99;
+  mock_semantics_source()->set_custom_action_callback([this]() {
+    mock_a11y_focus_manager()->UpdateA11yFocus(mock_semantic_provider()->koid(), kOtherNodeId);
+  });
+
+  a11y::LinearNavigationAction next_action(action_context(), mock_screen_reader_context(),
+                                           kNextAction);
+  a11y::gesture_util_v2::GestureContext gesture_context;
+  gesture_context.view_ref_koid = mock_semantic_provider()->koid();
+
+  next_action.Run(gesture_context);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(mock_a11y_focus_manager()->IsSetA11yFocusCalled());
+  auto focus = mock_a11y_focus_manager()->GetA11yFocus();
+  ASSERT_TRUE(focus);
+  EXPECT_EQ(focus->view_ref_koid, mock_semantic_provider()->koid());
+  EXPECT_EQ(focus->node_id, kOtherNodeId);
+  EXPECT_FALSE(mock_speaker()->ReceivedSpeak());
+}
+
+TEST_F(LinearNavigationActionTest, CrossViewFocusChangedDuringShowOnScreenAbortsNavigation) {
+  AddNodeToSemanticTree();
+
+  mock_a11y_focus_manager()->UpdateA11yFocus(mock_semantic_provider()->koid(), kRootNodeId);
+
+  const zx_koid_t kOtherViewKoid = mock_semantic_provider()->koid() + 42;
+  mock_semantics_source()->set_custom_action_callback([this, kOtherViewKoid]() {
+    mock_a11y_focus_manager()->UpdateA11yFocus(kOtherViewKoid, kRootNodeId);
+  });
+
+  a11y::LinearNavigationAction next_action(action_context(), mock_screen_reader_context(),
+                                           kNextAction);
+  a11y::gesture_util_v2::GestureContext gesture_context;
+  gesture_context.view_ref_koid = mock_semantic_provider()->koid();
+
+  next_action.Run(gesture_context);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(mock_a11y_focus_manager()->IsSetA11yFocusCalled());
+  auto focus = mock_a11y_focus_manager()->GetA11yFocus();
+  ASSERT_TRUE(focus);
+  EXPECT_EQ(focus->view_ref_koid, kOtherViewKoid);
+  EXPECT_EQ(focus->node_id, kRootNodeId);
+  EXPECT_FALSE(mock_speaker()->ReceivedSpeak());
+}
+
 }  // namespace
 }  // namespace accessibility_test

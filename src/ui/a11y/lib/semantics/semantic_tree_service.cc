@@ -76,7 +76,13 @@ void SemanticTreeService::CommitUpdates(CommitUpdatesCallback callback) {
                    << " because client sent an invalid tree update. Tree before update: "
                    << tree_str;
     callback();
-    close_channel_callback_(ZX_ERR_INVALID_ARGS);
+    CloseChannel(ZX_ERR_INVALID_ARGS);
+  }
+}
+
+void SemanticTreeService::CloseChannel(zx_status_t status) {
+  if (auto callback = std::move(close_channel_callback_)) {
+    callback(status);
   }
 }
 

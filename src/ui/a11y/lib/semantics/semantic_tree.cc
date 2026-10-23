@@ -745,7 +745,7 @@ void SemanticTree::FillInspectTree(inspect::Node inspect_node,
 
     inspect_node.CreateUint("id", node->node_id(), inspector);
     if (node->has_attributes() && node->attributes().has_label()) {
-      inspect_node.CreateString("label", node->attributes().label(), inspector);
+      inspect_node.CreateBool("label", !node->attributes().label().empty(), inspector);
     }
     if (node->has_location()) {
       inspect_node.CreateString("location", locationToString(node->location()), inspector);
@@ -787,7 +787,7 @@ void SemanticTree::FillInspectTree(inspect::Node inspect_node,
       }
 
       if (node_states.has_value()) {
-        inspect_node.CreateString("value", node_states.value(), inspector);
+        inspect_node.CreateBool("value", !node_states.value().empty(), inspector);
       }
 
       if (node_states.has_range_value()) {
@@ -816,12 +816,13 @@ void SemanticTree::FillInspectTree(inspect::Node inspect_node,
       const auto& node_attributes = node->attributes();
 
       if (node_attributes.has_secondary_label()) {
-        inspect_node.CreateString("secondary_label", node_attributes.secondary_label(), inspector);
+        inspect_node.CreateBool("secondary_label", !node_attributes.secondary_label().empty(),
+                                inspector);
       }
 
       if (node_attributes.has_secondary_action_description()) {
-        inspect_node.CreateString("secondary_action_description",
-                                  node_attributes.secondary_action_description(), inspector);
+        inspect_node.CreateBool("secondary_action_description",
+                                !node_attributes.secondary_action_description().empty(), inspector);
       }
 
       if (node_attributes.has_range()) {
