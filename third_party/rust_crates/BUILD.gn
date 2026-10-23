@@ -9277,18 +9277,18 @@ rustc_library("fancy-regex-v0_11_0") {
   applicable_licenses = [ ":fancy-regex-v0_11_0.license" ]
 }
 
-license("fastrand-v2_3_0.license") {
+license("fastrand-v2_5_0.license") {
   public_package_name = "fastrand"
   license_files = [
-    "//third_party/rust_crates/vendor/fastrand-2.3.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/fastrand-2.3.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/fastrand-2.5.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/fastrand-2.5.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("fastrand-v2_3_0") {
+rustc_library("fastrand-v2_5_0") {
   crate_name = "fastrand"
-  source_root = "//third_party/rust_crates/vendor/fastrand-2.3.0/src/lib.rs"
-  output_name = "fastrand-7306759726945126"
+  source_root = "//third_party/rust_crates/vendor/fastrand-2.5.0/src/lib.rs"
+  output_name = "fastrand-a0ad2c4630626b7b"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -9300,8 +9300,8 @@ rustc_library("fastrand-v2_3_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7306759726945126",
-    "-Cextra-filename=-7306759726945126",
+    "-Cmetadata=a0ad2c4630626b7b",
+    "-Cextra-filename=-a0ad2c4630626b7b",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
@@ -9309,7 +9309,7 @@ rustc_library("fastrand-v2_3_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":fastrand-v2_3_0.license" ]
+  applicable_licenses = [ ":fastrand-v2_5_0.license" ]
 }
 
 license("fatfs-v0_3_6.license") {
@@ -10240,7 +10240,7 @@ rustc_library("futures-lite-v2_6_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":fastrand-v2_3_0" ]
+  deps += [ ":fastrand-v2_5_0" ]
   deps += [ ":futures-core-v0_3_34" ]
   deps += [ ":futures-io-v0_3_34" ]
   deps += [ ":parking-v2_2_1" ]
@@ -16320,7 +16320,7 @@ rustc_library("phf_generator-v0_14_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":fastrand-v2_3_0" ]
+  deps += [ ":fastrand-v2_5_0" ]
   deps += [ ":phf_shared-v0_14_0" ]
 
   rustenv = []
@@ -16656,7 +16656,7 @@ rustc_library("piper-v0_2_5") {
 
   deps = []
   deps += [ ":atomic-waker-v1_1_2" ]
-  deps += [ ":fastrand-v2_3_0" ]
+  deps += [ ":fastrand-v2_5_0" ]
   deps += [ ":futures-io-v0_3_34" ]
 
   rustenv = []
@@ -23188,7 +23188,7 @@ rustc_library("tempfile-v3_27_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":fastrand-v2_3_0" ]
+  deps += [ ":fastrand-v2_5_0" ]
   deps += [ ":once_cell-v1_21_4" ]
   if (true || false) {
     deps += [ ":rustix-v1_1_5" ]

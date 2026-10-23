@@ -80,7 +80,7 @@ rust_library(
     version = "0.2.5",
     deps = [
         "//third_party/rust_crates/vendor/atomic-waker-1.1.2:atomic_waker",
-        "//third_party/rust_crates/vendor/fastrand-2.3.0:fastrand",
+        "//third_party/rust_crates/vendor/fastrand-2.5.0:fastrand",
         "//third_party/rust_crates/vendor/futures-io-0.3.34:futures_io",
     ],
 )

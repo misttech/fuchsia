@@ -83,7 +83,7 @@ rust_library(
     }),
     version = "2.6.1",
     deps = [
-        "//third_party/rust_crates/vendor/fastrand-2.3.0:fastrand",
+        "//third_party/rust_crates/vendor/fastrand-2.5.0:fastrand",
         "//third_party/rust_crates/vendor/futures-core-0.3.34:futures_core",
         "//third_party/rust_crates/vendor/futures-io-0.3.34:futures_io",
         "//third_party/rust_crates/vendor/parking-2.2.1:parking",
