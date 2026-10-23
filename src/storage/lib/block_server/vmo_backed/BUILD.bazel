@@ -1,0 +1,90 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "vmo_backed",
+    actual = ":vmo_backed_block_server",
+    visibility = [
+        "//src/recovery/integration/android:__pkg__",
+        "//src/starnix/kernel/core:__pkg__",
+        "//src/storage/benchmarks/fuchsia:__pkg__",
+        "//src/storage/fshost:__pkg__",
+        "//src/storage/gpt/component:__pkg__",
+        "//src/storage/lib/fs_management/rust:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+)
+
+# @bazel2gn:transformer=deps
+_VMO_BACKED_BLOCK_SERVER_DEPS = [
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//src/storage/lib/block_server",
+    "//src/storage/lib/fs_management/rust:fs_management",
+    "//third_party/rust_crates/vendor:anyhow",
+]
+
+rustc_library(
+    name = "vmo_backed_block_server",
+    srcs = [
+        "src/data.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/recovery/integration/android:__pkg__",
+        "//src/starnix/kernel/core:__pkg__",
+        "//src/storage/benchmarks/fuchsia:__pkg__",
+        "//src/storage/fshost:__pkg__",
+        "//src/storage/gpt/component:__pkg__",
+        "//src/storage/lib/fs_management/rust:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = _VMO_BACKED_BLOCK_SERVER_DEPS,
+)
+
+rustc_library(
+    name = "test_vmo_backed_block_server",
+    testonly = True,
+    srcs = [
+        "src/data_for_testing.rs",
+        "src/lib.rs",
+    ],
+    crate_features = ["for-testing"],
+    edition = "2024",
+    visibility = [
+        "//src/recovery/system/android:__pkg__",
+        "//src/storage:__subpackages__",
+    ],
+    deps = _VMO_BACKED_BLOCK_SERVER_DEPS + [
+        "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/fxfs/crypto",
+        "//src/storage/lib/fscrypt",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+rustc_test(
+    name = "test_vmo_backed_block_server_test",
+    crate = ":test_vmo_backed_block_server",
+    crate_features = ["for-testing"],
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_package(
+    name = "test_vmo_backed_block_server_tests",
+    unit_tests = [":test_vmo_backed_block_server_test"],
+)

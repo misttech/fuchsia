@@ -1,0 +1,80 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+rustc_library(
+    name = "block_server",
+    srcs = [
+        "src/async_interface.rs",
+        "src/c_interface.rs",
+        "src/callback_interface.rs",
+        "src/callback_interface/block_service.rs",
+        "src/decompression_tests.rs",
+        "src/lib.rs",
+        "src/mapper.rs",
+        "src/testing.rs",
+        "src/verifier.rs",
+    ],
+    edition = "2024",
+    link_deps = ["//third_party/zstd"],
+    visibility = [
+        "//src/devices/block/drivers:__subpackages__",
+        "//src/storage/fvm:__pkg__",
+        "//src/storage/fxfs/platform:__pkg__",
+        "//src/storage/gpt/component:__pkg__",
+        "//src/storage/gpt/rust:__pkg__",
+        "//src/storage/lib/block_client/rust:__pkg__",
+        "//src/storage/lib/block_server/integration:__pkg__",
+        "//src/storage/lib/block_server/vmo_backed:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/trace/rust:trace",
+        "//src/storage/lib/block_protocol",
+        "//src/storage/lib/delivery_blob",
+        "//src/storage/lib/mapping",
+        "//src/storage/lib/ptr_slice",
+        "//src/storage/lib/storage_device",
+        "//src/storage/lib/vmo-fifo",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:slab",
+        "//third_party/rust_crates/vendor:zstd",
+    ],
+)
+# LINT.ThenChange(BUILD.gn)
+
+rustc_test(
+    name = "block_server_test",
+    crate = ":block_server",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/storage/lib/blob_pager_and_verifier",
+        "//src/storage/lib/profile",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:event-listener",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "block_server_tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":block_server_test"],
+)
