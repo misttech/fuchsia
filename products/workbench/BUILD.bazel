@@ -131,6 +131,7 @@ fuchsia_product_configuration(
                     "netcfg_config_path": "LABEL(//src/connectivity/policy/netcfg/config:netcfg_default.json5)",
                     "include_tun": True,
                     "netstack_multi_vmo": True,
+                    "netstack_tcp_gro_enabled": True,
                 },
             },
             "development_support": {
