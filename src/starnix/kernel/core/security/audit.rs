@@ -218,7 +218,7 @@ impl AuditLogger {
         };
         audit_status {
             mask: Default::default(),
-            enabled: Default::default(),
+            enabled: u32::from(!self.is_disabled()),
             failure: self.configuration.fail_action.load(Ordering::Acquire) as u32,
             pid,
             rate_limit: u32::MAX,
@@ -365,13 +365,17 @@ mod tests {
     use super::*;
     use regex_lite::Regex;
 
-    #[::fuchsia::test]
-    fn prepend_audit_metadata_formats_millis_and_serial() {
-        let logger = AuditLogger {
-            configuration: AuditConfig::default(),
+    fn test_logger(configuration: AuditConfig) -> AuditLogger {
+        AuditLogger {
+            configuration,
             lost_audit_messages: Default::default(),
             serial_counter: AtomicCounter::new(1),
-        };
+        }
+    }
+
+    #[::fuchsia::test]
+    fn prepend_audit_metadata_formats_millis_and_serial() {
+        let logger = test_logger(AuditConfig::default());
 
         let re1 = Regex::new(r"^audit\(\d+\.\d{3}:1\): msg1$").unwrap();
         let msg1 = logger.prepend_audit_metadata(|| "msg1");
@@ -384,13 +388,9 @@ mod tests {
 
     #[::fuchsia::test]
     fn get_status_reports_backlog_len() {
-        let logger = AuditLogger {
-            configuration: AuditConfig::new(
-                [ArgNameAndValue { name: "audit", value: Some("1") }].into_iter(),
-            ),
-            lost_audit_messages: Default::default(),
-            serial_counter: Default::default(),
-        };
+        let logger = test_logger(AuditConfig::new(
+            [ArgNameAndValue { name: "audit", value: Some("1") }].into_iter(),
+        ));
         assert_eq!(logger.get_status().pid, 0);
         assert_eq!(logger.get_status().backlog, 0);
 
@@ -399,5 +399,21 @@ mod tests {
 
         logger.audit_log(AUDIT_USER as u16, || "test audit message 2");
         assert_eq!(logger.get_status().backlog, 2);
+    }
+
+    #[::fuchsia::test]
+    fn get_status_reports_enabled() {
+        let enabled_logger = test_logger(AuditConfig::new(
+            [ArgNameAndValue { name: "audit", value: Some("1") }].into_iter(),
+        ));
+        assert_eq!(enabled_logger.get_status().enabled, 1);
+
+        let default_logger = test_logger(AuditConfig::default());
+        assert_eq!(default_logger.get_status().enabled, 1);
+
+        let disabled_logger = test_logger(AuditConfig::new(
+            [ArgNameAndValue { name: "audit", value: Some("0") }].into_iter(),
+        ));
+        assert_eq!(disabled_logger.get_status().enabled, 0);
     }
 }
