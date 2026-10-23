@@ -16,6 +16,8 @@ if (is_host) {
     "lib/agent_hooks/engine/parser.py",
     "lib/agent_hooks/engine/router.py",
     "lib/agent_hooks/engine/shell_lexer.py",
+    "lib/agent_hooks/grant_policy.py",
+    "lib/agent_hooks/pre_tool_use.py",
     "lib/agent_hooks/schemas.py",
     "lib/config.py",
     "lib/git_staging/__init__.py",
@@ -162,12 +164,21 @@ if (is_host) {
       ":agents_testing",
     ]
   }
+
+  python_host_test("agents_agent_hooks_policy_test") {
+    main_source = "tests/agent_hooks_policy_test.py"
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":agents_agent_hooks_engine_test($host_toolchain)",
+    ":agents_agent_hooks_policy_test($host_toolchain)",
     ":agents_config_test($host_toolchain)",
     ":agents_e2e_githooks_test($host_toolchain)",
     ":agents_git_staging_test($host_toolchain)",
