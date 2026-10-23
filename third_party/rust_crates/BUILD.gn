@@ -5733,7 +5733,7 @@ rustc_library("cargo_metadata-v0_23_1") {
   deps = []
   deps += [ ":semver-v1_0_28" ]
   deps += [ ":camino-v1_2_6" ]
-  deps += [ ":cargo-platform-v0_3_1" ]
+  deps += [ ":cargo-platform-v0_3_3" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_151" ]
   deps += [ ":thiserror-v2_0_21" ]
@@ -5752,38 +5752,41 @@ rustc_library("cargo_metadata-v0_23_1") {
   applicable_licenses = [ ":cargo_metadata-v0_23_1.license" ]
 }
 
-license("cargo-platform-v0_3_1.license") {
+license("cargo-platform-v0_3_3.license") {
   public_package_name = "cargo_platform"
   license_files = [
-    "//third_party/rust_crates/vendor/cargo-platform-0.3.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/cargo-platform-0.3.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/cargo-platform-0.3.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/cargo-platform-0.3.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("cargo-platform-v0_3_1") {
+rustc_library("cargo-platform-v0_3_3") {
   crate_name = "cargo_platform"
   source_root =
-      "//third_party/rust_crates/vendor/cargo-platform-0.3.1/src/lib.rs"
-  output_name = "cargo_platform-b47a8439e65b0146"
+      "//third_party/rust_crates/vendor/cargo-platform-0.3.3/src/lib.rs"
+  output_name = "cargo_platform-a2c690db48e9ca12"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_229" ]
+  deps += [ ":serde_core-v1_0_229" ]
+  if (true) {
+    deps += [ ":serde-v1_0_229" ]
+  }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b47a8439e65b0146",
-    "-Cextra-filename=-b47a8439e65b0146",
+    "-Cmetadata=a2c690db48e9ca12",
+    "-Cextra-filename=-a2c690db48e9ca12",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":cargo-platform-v0_3_1.license" ]
+  applicable_licenses = [ ":cargo-platform-v0_3_3.license" ]
 }
 
 license("cast-v0_3_0.license") {
