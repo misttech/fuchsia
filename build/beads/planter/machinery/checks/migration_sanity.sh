@@ -1531,56 +1531,6 @@ for pkg_dir in sorted(candidate_dirs):
                 deps += re.findall(r'"([^"]+)"', dm.group(1))
             return "cc" if all(bazel_buildable(d) for d in deps) else None
 
-        def depends_on_rustc_dylib(seed_texts):
-            """Whether any direct or transitive first-party dep defines a rustc_dylib / rust_dylib_library."""
-            dylib_re = re.compile(r"\b(?:rustc_dylib|rust_dylib_library)\s*\(")
-            dep_pkg_re = re.compile(r'"//([^":(\s]+)(?::([^"(\s]+))?"')
-            vis_re = re.compile(r"\b(?:default_)?visibility\s*\+?=\s*\[[^\]]*\]")
-            trans_strip_re = re.compile(
-                r"\b(?:(?:default_)?visibility|[A-Za-z0-9_]*test_deps|[A-Z0-9_]*TEST_DEPS)\s*\+?=\s*\[[^\]]*\]"
-            )
-            queue = []
-            seen = {pkg_dir}
-            for raw in seed_texts:
-                txt = vis_re.sub("", re.sub(r"#[^\n]*", "", raw))
-                if dylib_re.search(txt):
-                    return True
-                for m in dep_pkg_re.finditer(txt):
-                    p, t = m.group(1).strip("/"), m.group(2) or ""
-                    if (
-                        p
-                        and t not in ("__pkg__", "__subpackages__", "*")
-                        and not p.startswith(("build/", "prebuilt/", "third_party/", "out/"))
-                        and p not in seen
-                    ):
-                        seen.add(p)
-                        queue.append(p)
-            visited = 0
-            while queue and visited < 256:
-                cur = queue.pop(0)
-                visited += 1
-                for fn in ("BUILD.bazel", "BUILD.gn"):
-                    fp = os.path.join(workdir, cur, fn)
-                    if not os.path.isfile(fp):
-                        continue
-                    try:
-                        txt = trans_strip_re.sub("", re.sub(r"#[^\n]*", "", open(fp, encoding="utf-8").read()))
-                    except OSError:
-                        continue
-                    if dylib_re.search(txt):
-                        return True
-                    for m in dep_pkg_re.finditer(txt):
-                        p, t = m.group(1).strip("/"), m.group(2) or ""
-                        if (
-                            p
-                            and t not in ("__pkg__", "__subpackages__", "*")
-                            and not p.startswith(("build/", "prebuilt/", "third_party/", "out/"))
-                            and p not in seen
-                        ):
-                            seen.add(p)
-                            queue.append(p)
-            return False
-
         for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
             if gtmpl not in GN_TEST_PACKAGE_TEMPLATES:
                 continue
@@ -1677,8 +1627,6 @@ for pkg_dir in sorted(candidate_dirs):
                         blockers.append("GN-blocked dependency")
             # Unknown or unbuildable tests never trigger it.
             langs = {test_language(l) for l in labels}
-            if "rust" in langs and depends_on_rustc_dylib(seed_texts):
-                blockers.append("rustc_dylib dependency (duplicate default_runfiles .so in fx_packaged_binary)")
             if blockers or not labels or not langs <= set(MIGRATABLE_TEST_LANGUAGES):
                 gn_kept_pkg_test_deps.update(pkg_test_deps)
                 continue
