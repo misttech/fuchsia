@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wlan-telemetry",
+    srcs = [
+        "src/config.rs",
+        "src/convert.rs",
+        "src/lib.rs",
+        "src/processors/client_iface_counters.rs",
+        "src/processors/connect_disconnect.rs",
+        "src/processors/iface.rs",
+        "src/processors/mod.rs",
+        "src/processors/pno_scan.rs",
+        "src/processors/power.rs",
+        "src/processors/recovery.rs",
+        "src/processors/scan.rs",
+        "src/processors/sme_timeout.rs",
+        "src/processors/toggle_events.rs",
+        "src/processors/tx_power_scenario.rs",
+        "src/testing/mod.rs",
+        "src/util/cobalt_logger.rs",
+        "src/util/mod.rs",
+        "src/util/sender.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:strum_macros",
+    ],
+    visibility = ["//src/connectivity/wlan:__subpackages__"],
+    deps = [
+        ":wlan_legacy_metrics_registry",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+        "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
+        "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
+        "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/lib/diagnostics/inspect/contrib/rust",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/windowed-stats",
+        "//third_party/cobalt/src/lib/client/rust:cobalt-client",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:strum",
+    ],
+)
+
+rustc_test(
+    name = "wlan-telemetry_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":wlan-telemetry",
+    deps = [
+        "//src/connectivity/wlan/lib/ieee80211-testutils",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "wlan-telemetry-tests",
+    unit_tests = [":wlan-telemetry_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
+
+# Note: due to b/319249805, this may not be named "wlan_metrics_registry"
+metrics_registry(
+    name = "wlan_legacy_metrics_registry",
+    generate_rust = True,  # Generates a rust target with '_rustlib' appended
+    # This must match the ID of our Cobalt project as specified in:
+    # //third_party/cobalt_config/projects.yaml
+    project_id = 3708719327,
+)

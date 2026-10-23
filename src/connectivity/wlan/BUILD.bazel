@@ -19,6 +19,7 @@ test_suite(
         "//src/connectivity/wlan/lib/rsn:wlan-rsn-tests",
         "//src/connectivity/wlan/lib/sme:wlan-sme-tests",
         "//src/connectivity/wlan/lib/statemachine:wlan-statemachine-tests",
+        "//src/connectivity/wlan/lib/telemetry:wlan-telemetry-tests",
         "//src/connectivity/wlan/lib/trace:wlan-trace-tests",
         "//src/connectivity/wlan/lib/wep_deprecated:wep-deprecated-tests",
         "//src/connectivity/wlan/testing/wlan-service-util:wlan-service-util-tests",
