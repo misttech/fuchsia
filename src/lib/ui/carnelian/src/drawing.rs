@@ -424,36 +424,44 @@ pub fn measure_text_size(face: &FontFace, size: f32, text: &str, visual: bool) -
 /// Break up text into chunks guaranteed to be no wider than max_width when rendered with
 /// face at font_size.
 pub fn linebreak_text(face: &FontFace, font_size: f32, text: &str, max_width: f32) -> Vec<String> {
-    let chunks: Vec<&str> = text.split_whitespace().collect();
     let space_width = measure_text_width(face, font_size, " ");
-    let breaks: Vec<usize> = chunks
-        .iter()
-        .enumerate()
-        .scan(0.0, |width, (index, word)| {
-            let word_width = measure_text_width(face, font_size, word);
-            let resulting_line_len = *width + word_width + space_width;
-            if resulting_line_len > max_width {
-                *width = word_width + space_width;
-                Some(Some(index))
-            } else {
-                *width += word_width;
-                *width += space_width;
-                Some(None)
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+    let mut current_width = 0.0;
+
+    for word in text.split_whitespace() {
+        let word_width = measure_text_width(face, font_size, word);
+        if !current_line.is_empty() {
+            if current_width + space_width + word_width <= max_width {
+                current_line.push(' ');
+                current_line.push_str(word);
+                current_width += space_width + word_width;
+                continue;
             }
-        })
-        .flatten()
-        .chain(std::iter::once(chunks.len()))
-        .collect();
-    let lines: Vec<String> = breaks
-        .iter()
-        .scan(0, |first_word_index, last_word_index| {
-            let first = *first_word_index;
-            *first_word_index = *last_word_index;
-            let line = &chunks[first..*last_word_index];
-            let line_str = String::from(line.join(" "));
-            Some(line_str)
-        })
-        .collect();
+            lines.push(std::mem::take(&mut current_line));
+            current_width = 0.0;
+        }
+
+        if word_width <= max_width {
+            current_line.push_str(word);
+            current_width = word_width;
+        } else {
+            let mut buf = [0u8; 4];
+            for c in word.chars() {
+                let char_width = measure_text_width(face, font_size, c.encode_utf8(&mut buf));
+                if !current_line.is_empty() && current_width + char_width > max_width {
+                    lines.push(std::mem::take(&mut current_line));
+                    current_width = 0.0;
+                }
+                current_line.push(c);
+                current_width += char_width;
+            }
+        }
+    }
+
+    if !current_line.is_empty() || lines.is_empty() {
+        lines.push(current_line);
+    }
 
     lines
 }
@@ -720,7 +728,9 @@ impl TextGrid {
 #[cfg(test)]
 mod tests {
     use super::{GlyphMap, Size, Text, TextGrid};
-    use crate::drawing::{DisplayRotation, FontFace, measure_text_size};
+    use crate::drawing::{
+        DisplayRotation, FontFace, linebreak_text, measure_text_size, measure_text_width,
+    };
     use crate::render::generic::{self, Backend};
     use crate::render::{Context as RenderContext, ContextInner};
     use euclid::approxeq::ApproxEq;
@@ -803,5 +813,53 @@ mod tests {
         assert_eq!(measure_text_size(&FONT_FACE, 32.0, "", true).width, 0.0);
         assert!(measure_text_size(&FONT_FACE, 32.0, "ahoy", false).width > 0.0);
         assert!(measure_text_size(&FONT_FACE, 32.0, "ahoy", true).width > 0.0);
+    }
+
+    #[test]
+    fn test_linebreak_text() {
+        assert_eq!(linebreak_text(&FONT_FACE, 20.0, "", 100.0), vec![""]);
+        assert_eq!(linebreak_text(&FONT_FACE, 20.0, "Good Morning", 200.0), vec!["Good Morning"]);
+        assert_eq!(
+            linebreak_text(&FONT_FACE, 20.0, "Good Morning Morning", 200.0),
+            vec!["Good Morning", "Morning"]
+        );
+
+        let morning_width = measure_text_width(&FONT_FACE, 20.0, "Morning");
+        assert_eq!(
+            linebreak_text(&FONT_FACE, 20.0, "Good Morning", morning_width + 1.0),
+            vec!["Good", "Morning"]
+        );
+
+        let long_word = "product/board:product_version/platform_version";
+        let max_width = 120.0;
+        let lines = linebreak_text(&FONT_FACE, 20.0, long_word, max_width);
+        assert!(lines.len() > 1);
+        assert_eq!(lines.concat(), long_word);
+        for line in &lines {
+            assert!(!line.is_empty());
+            assert!(measure_text_width(&FONT_FACE, 20.0, line) <= max_width);
+        }
+        for pair in lines.windows(2) {
+            let next_char = pair[1].chars().next().unwrap();
+            assert!(
+                measure_text_width(&FONT_FACE, 20.0, &format!("{}{next_char}", pair[0]))
+                    > max_width
+            );
+        }
+
+        let last_chunk = lines.last().unwrap();
+        let combined_last = format!("{last_chunk} Morning");
+        let mut expected_mixed = vec!["Good".to_string()];
+        expected_mixed.extend_from_slice(&lines[..lines.len() - 1]);
+        if measure_text_width(&FONT_FACE, 20.0, &combined_last) <= max_width {
+            expected_mixed.push(combined_last);
+        } else {
+            expected_mixed.push(last_chunk.clone());
+            expected_mixed.push("Morning".to_string());
+        }
+        assert_eq!(
+            linebreak_text(&FONT_FACE, 20.0, &format!("Good {long_word} Morning"), max_width),
+            expected_mixed
+        );
     }
 }
