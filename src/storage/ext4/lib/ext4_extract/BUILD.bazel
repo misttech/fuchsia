@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ext4_extract",
+    srcs = [
+        "src/lib.rs",
+        "src/remote_bundle.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/starnix/lib/starnix_container:__pkg__",
+        "//src/storage/ext4/bin:__pkg__",
+    ],
+    deps = [
+        "//src/storage/ext4:ext4-lib",
+        "//src/storage/ext4/lib/metadata",
+        "//src/storage/lib/sparse/rust:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)

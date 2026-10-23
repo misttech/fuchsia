@@ -1,0 +1,78 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load(
+    "//build/bazel/rules/host_tests:host_test_data.bzl",
+    "host_test_data_files",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+host_test_data_files(
+    name = "test_ext4_image",
+    srcs = ["//src/storage/ext4:tests/test.img"],
+    dest_dir = "test_data/gen-starnix-container",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+rustc_library(
+    name = "starnix_container",
+    srcs = [
+        "src/hal_manifest.rs",
+        "src/lib.rs",
+        "src/remote_bundle.rs",
+        "src/repackage.rs",
+    ],
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/assembly/tools/assembly:__pkg__",
+        "//build/assembly/tools/assembly_config:__pkg__",
+        "//src/starnix/lib:__pkg__",
+        "//src/starnix/tools/gen_android_starnix_container:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//src/lib/assembly/config_schema",
+        "//src/lib/depfile",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-url",
+        "//src/storage/ext4/lib/ext4_extract",
+        "//src/storage/ext4/lib/metadata",
+        "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:cpio",
+        "//third_party/rust_crates/vendor:flate2",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+# The test needs ROOT_OUT_DIR to find the test data.
+# @bazel2gn:skip
+host_rustc_test(
+    name = "starnix_container_test",
+    crate = ":starnix_container",
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    rustc_env = {
+        "ROOT_OUT_DIR": ".",
+    },
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_data = [":test_ext4_image"],
+    deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
