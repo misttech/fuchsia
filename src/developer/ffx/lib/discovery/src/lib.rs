@@ -25,6 +25,7 @@ pub use mdns_discovery::{
     FastbootInterface, MdnsBindEvent, MdnsEventHandler, MdnsEventType, MdnsTargetInfo, MdnsWatcher,
     TargetAddrInfo, TargetIp, TargetIpPort, recommended_watcher,
 };
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -165,6 +166,18 @@ where
     }
 }
 
+fn mdns_allowed_interfaces(context: &EnvironmentContext) -> Option<HashSet<String>> {
+    let entries: Vec<String> = context.get(ffx_config::keys::DISCOVERY_MDNS_INTERFACES).ok()?;
+    let interfaces: HashSet<String> = entries
+        .iter()
+        .flat_map(|entry| entry.split(','))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if interfaces.is_empty() { None } else { Some(interfaces) }
+}
+
 impl TargetStream {
     /// Constructs a new target stream using the config, with each watcher defaulting to the
     /// recommended one.
@@ -179,7 +192,9 @@ impl TargetStream {
         Man: ManualTargetEventHandler,
     {
         Self {
-            mdns_watcher: config.mdns_event_handler.map(|e| recommended_watcher(e)),
+            mdns_watcher: config
+                .mdns_event_handler
+                .map(|e| recommended_watcher(e, mdns_allowed_interfaces(context))),
             fastboot_usb_watcher: config.fastboot_event_handler.map(|e| fastboot_watcher(e)),
             manual_targets_watcher: config
                 .manual_targets_event_handler
@@ -1021,6 +1036,48 @@ pub mod test {
                 },
                 manual: false,
             })
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_mdns_allowed_interfaces_unset_or_empty() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        assert_eq!(mdns_allowed_interfaces(&env.context), None);
+
+        let env_empty_str = ffx_config::test_env()
+            .user_config(ffx_config::keys::DISCOVERY_MDNS_INTERFACES, " , ")
+            .build()
+            .expect("Test Env Init");
+        assert_eq!(mdns_allowed_interfaces(&env_empty_str.context), None);
+
+        let env_empty_arr = ffx_config::test_env()
+            .user_config(ffx_config::keys::DISCOVERY_MDNS_INTERFACES, serde_json::json!([]))
+            .build()
+            .expect("Test Env Init");
+        assert_eq!(mdns_allowed_interfaces(&env_empty_arr.context), None);
+    }
+
+    #[fuchsia::test]
+    fn test_mdns_allowed_interfaces_from_array_and_comma_separated_strings() {
+        let env_array = ffx_config::test_env()
+            .user_config(
+                ffx_config::keys::DISCOVERY_MDNS_INTERFACES,
+                serde_json::json!(["qemu", "tap0"]),
+            )
+            .build()
+            .expect("Test Env Init");
+        assert_eq!(
+            mdns_allowed_interfaces(&env_array.context),
+            Some(HashSet::from(["qemu".to_string(), "tap0".to_string()]))
+        );
+
+        let env_csv = ffx_config::test_env()
+            .user_config(ffx_config::keys::DISCOVERY_MDNS_INTERFACES, "qemu, tap0 , ")
+            .build()
+            .expect("Test Env Init");
+        assert_eq!(
+            mdns_allowed_interfaces(&env_csv.context),
+            Some(HashSet::from(["qemu".to_string(), "tap0".to_string()]))
         );
     }
 }

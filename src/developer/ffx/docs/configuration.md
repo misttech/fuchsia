@@ -69,6 +69,13 @@ ffx config env get
     | `discovery.mdns.enabled`                | Determines whether mDNS broadcasts |
     |                                         | are used to discover targets.      |
     |                                         | Default: `true`                    |
+    | `discovery.mdns.interfaces`             | List of host network interface     |
+    |                                         | names (as a JSON array or          |
+    |                                         | comma-separated string) on which   |
+    |                                         | mDNS discovery executes. When      |
+    |                                         | unset or empty, all                |
+    |                                         | multicast-capable interfaces are   |
+    |                                         | used.                              |
     | `discovery.timeout`                     | When doing _local_ discovery in    |
     |                                         | `ffx target list`, how long in     |
     |                                         | milliseconds to wait before        |

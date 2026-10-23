@@ -6,7 +6,7 @@ use async_lock::Mutex;
 use fuchsia_async::{Task, Timer};
 use futures::FutureExt;
 use mdns::protocol as dns;
-use netext::{IsLocalAddr, get_mcast_interfaces};
+use netext::{IsLocalAddr, McastInterface, get_mcast_interfaces};
 use packet::{InnerPacketBuilder, ParseBuffer};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -191,6 +191,7 @@ pub struct DiscoveryConfig {
     pub query_interval: Duration,
     pub ttl: u32,
     pub mdns_port: u16,
+    pub allowed_interfaces: Option<HashSet<String>>,
 }
 
 async fn propagate_bind_event(sock: &UdpSocket, svc: &Weak<MdnsProtocol>) -> u16 {
@@ -249,6 +250,7 @@ where
             query_interval: MDNS_BROADCAST_INTERVAL,
             ttl: MDNS_TTL,
             mdns_port,
+            allowed_interfaces: None,
         },
         MdnsEnabled {},
     )
@@ -315,6 +317,7 @@ pub async fn discover_targets(
                 query_interval: MDNS_BROADCAST_INTERVAL,
                 ttl: MDNS_TTL,
                 mdns_port,
+                allowed_interfaces: None,
             },
             MdnsEnabled {},
         ),
@@ -367,7 +370,10 @@ where
     }
 }
 
-pub fn recommended_watcher<F>(event_handler: F) -> MdnsWatcher
+pub fn recommended_watcher<F>(
+    event_handler: F,
+    allowed_interfaces: Option<HashSet<String>>,
+) -> MdnsWatcher
 where
     F: MdnsEventHandler,
 {
@@ -377,6 +383,7 @@ where
         MDNS_INTERFACE_DISCOVERY_INTERVAL,
         MDNS_BROADCAST_INTERVAL,
         MDNS_TTL,
+        allowed_interfaces,
     )
 }
 
@@ -387,6 +394,7 @@ impl MdnsWatcher {
         discovery_interval: Duration,
         query_interval: Duration,
         ttl: u32,
+        allowed_interfaces: Option<HashSet<String>>,
     ) -> Self
     where
         F: MdnsEventHandler,
@@ -407,6 +415,7 @@ impl MdnsWatcher {
                 query_interval,
                 ttl,
                 mdns_port,
+                allowed_interfaces,
             },
             MdnsEnabled {},
         )));
@@ -427,6 +436,18 @@ where
     }
 }
 
+fn filter_interfaces(
+    interfaces: Vec<McastInterface>,
+    allowed_interfaces: Option<&HashSet<String>>,
+) -> Vec<McastInterface> {
+    match allowed_interfaces {
+        Some(allowed) if !allowed.is_empty() => {
+            interfaces.into_iter().filter(|iface| allowed.contains(&iface.name)).collect()
+        }
+        _ => interfaces,
+    }
+}
+
 // discovery_loop iterates over all multicast interfaces and adds them to
 // the socket_tasks if there is not already a task for that interface.
 pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledChecker + 'static) {
@@ -437,7 +458,9 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
         query_interval,
         ttl,
         mdns_port,
+        allowed_interfaces,
     } = config;
+    let join_default_multicast = allowed_interfaces.as_ref().is_none_or(HashSet::is_empty);
     // See https://fxbug.dev/42141030#c10 for details. A macOS system can end up in
     // a situation where the default routes for protocols are on
     // non-functional interfaces, and under such conditions the wildcard
@@ -474,7 +497,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
         }
 
         if v4_listen_socket.upgrade().is_none() {
-            match make_listen_socket((MDNS_MCAST_V4, mdns_port).into()) {
+            match make_listen_socket((MDNS_MCAST_V4, mdns_port).into(), join_default_multicast) {
                 Ok(sock) => {
                     // TODO(https://fxbug.dev/570677204): Networking tests appear to fail when
                     // using IPv6. Only propagates the port binding event for
@@ -505,7 +528,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
         }
 
         if v6_listen_socket.upgrade().is_none() && recv_ipv6_task.is_none() {
-            match make_listen_socket((MDNS_MCAST_V6, mdns_port).into()) {
+            match make_listen_socket((MDNS_MCAST_V6, mdns_port).into(), join_default_multicast) {
                 Ok(sock) => {
                     let sock = Arc::new(sock);
                     v6_listen_socket = Arc::downgrade(&sock);
@@ -540,7 +563,10 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
             to_delete.insert(*ip);
         }
 
-        for iface in get_mcast_interfaces().unwrap_or_default() {
+        for iface in filter_interfaces(
+            get_mcast_interfaces().unwrap_or_default(),
+            allowed_interfaces.as_ref(),
+        ) {
             match iface.id() {
                 Ok(id) => {
                     if let Some(sock) = v6_listen_socket.upgrade() {
@@ -1007,6 +1033,7 @@ fn is_fastboot_response<B: zerocopy::SplitByteSlice + Copy>(
 
 fn make_listen_socket(
     listen_addr: SocketAddr,
+    join_default_multicast: bool,
 ) -> std::result::Result<UdpSocket, MdnsDiscoveryError> {
     let socket: std::net::UdpSocket = match listen_addr {
         SocketAddr::V4(_) => {
@@ -1029,9 +1056,11 @@ fn make_listen_socket(
                         e,
                     )
                 })?;
-            socket
-                .join_multicast_v4(&MDNS_MCAST_V4, &Ipv4Addr::UNSPECIFIED)
-                .map_err(MdnsDiscoveryError::JoinMulticast)?;
+            if join_default_multicast {
+                socket
+                    .join_multicast_v4(&MDNS_MCAST_V4, &Ipv4Addr::UNSPECIFIED)
+                    .map_err(MdnsDiscoveryError::JoinMulticast)?;
+            }
             socket
         }
         SocketAddr::V6(_) => {
@@ -1059,9 +1088,11 @@ fn make_listen_socket(
             // use the interface binding loop to get multicast group joining to
             // work.
             #[cfg(not(target_os = "macos"))]
-            socket
-                .join_multicast_v6(&MDNS_MCAST_V6, 0)
-                .map_err(MdnsDiscoveryError::JoinMulticast)?;
+            if join_default_multicast {
+                socket
+                    .join_multicast_v6(&MDNS_MCAST_V6, 0)
+                    .map_err(MdnsDiscoveryError::JoinMulticast)?;
+            }
             socket
         }
     }
@@ -1529,5 +1560,30 @@ mod tests {
             }))
         );
         Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_filter_interfaces_unrestricted_when_none_or_empty() {
+        let interfaces = vec![
+            McastInterface { name: "eth0".to_string(), addrs: vec![] },
+            McastInterface { name: "tap0".to_string(), addrs: vec![] },
+        ];
+        assert_eq!(filter_interfaces(interfaces.clone(), None), interfaces);
+
+        let empty_allowed = HashSet::new();
+        assert_eq!(filter_interfaces(interfaces.clone(), Some(&empty_allowed)), interfaces);
+    }
+
+    #[fuchsia::test]
+    fn test_filter_interfaces_keeps_only_allowed_names() {
+        let interfaces = vec![
+            McastInterface { name: "eth0".to_string(), addrs: vec![] },
+            McastInterface { name: "qemu".to_string(), addrs: vec![] },
+            McastInterface { name: "tap0".to_string(), addrs: vec![] },
+        ];
+        let allowed = HashSet::from(["qemu".to_string(), "tap0".to_string()]);
+        let filtered = filter_interfaces(interfaces, Some(&allowed));
+        let names: Vec<String> = filtered.into_iter().map(|i| i.name).collect();
+        assert_eq!(names, vec!["qemu".to_string(), "tap0".to_string()]);
     }
 }
